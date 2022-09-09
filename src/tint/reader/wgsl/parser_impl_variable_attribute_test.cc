@@ -29,7 +29,9 @@ TEST_F(ParserImplTest, Attribute_Location) {
     ASSERT_TRUE(var_attr->Is<ast::LocationAttribute>());
 
     auto* loc = var_attr->As<ast::LocationAttribute>();
-    EXPECT_EQ(loc->value, 4u);
+    ASSERT_TRUE(loc->expr->Is<ast::IntLiteralExpression>());
+    auto* exp = loc->expr->As<ast::IntLiteralExpression>();
+    EXPECT_EQ(exp->value, 4u);
 }
 
 TEST_F(ParserImplTest, Attribute_Location_TrailingComma) {
@@ -44,7 +46,9 @@ TEST_F(ParserImplTest, Attribute_Location_TrailingComma) {
     ASSERT_TRUE(var_attr->Is<ast::LocationAttribute>());
 
     auto* loc = var_attr->As<ast::LocationAttribute>();
-    EXPECT_EQ(loc->value, 4u);
+    ASSERT_TRUE(loc->expr->Is<ast::IntLiteralExpression>());
+    auto* exp = loc->expr->As<ast::IntLiteralExpression>();
+    EXPECT_EQ(exp->value, 4u);
 }
 
 TEST_F(ParserImplTest, Attribute_Location_MissingLeftParen) {
@@ -364,9 +368,8 @@ TEST_F(ParserImplTest, Attribute_Binding) {
     ASSERT_TRUE(var_attr->Is<ast::BindingAttribute>());
 
     auto* binding = var_attr->As<ast::BindingAttribute>();
-    ASSERT_TRUE(binding->value->Is<ast::IntLiteralExpression>());
-
-    auto* expr = binding->value->As<ast::IntLiteralExpression>();
+    ASSERT_TRUE(binding->expr->Is<ast::IntLiteralExpression>());
+    auto* expr = binding->expr->As<ast::IntLiteralExpression>();
     EXPECT_EQ(expr->value, 4);
     EXPECT_EQ(expr->suffix, ast::IntLiteralExpression::Suffix::kNone);
 }
@@ -383,9 +386,8 @@ TEST_F(ParserImplTest, Attribute_Binding_TrailingComma) {
     ASSERT_TRUE(var_attr->Is<ast::BindingAttribute>());
 
     auto* binding = var_attr->As<ast::BindingAttribute>();
-    ASSERT_TRUE(binding->value->Is<ast::IntLiteralExpression>());
-
-    auto* expr = binding->value->As<ast::IntLiteralExpression>();
+    ASSERT_TRUE(binding->expr->Is<ast::IntLiteralExpression>());
+    auto* expr = binding->expr->As<ast::IntLiteralExpression>();
     EXPECT_EQ(expr->value, 4);
     EXPECT_EQ(expr->suffix, ast::IntLiteralExpression::Suffix::kNone);
 }
@@ -442,9 +444,8 @@ TEST_F(ParserImplTest, Attribute_group) {
     ASSERT_TRUE(var_attr->Is<ast::GroupAttribute>());
 
     auto* group = var_attr->As<ast::GroupAttribute>();
-    ASSERT_TRUE(group->value->Is<ast::IntLiteralExpression>());
-
-    auto* expr = group->value->As<ast::IntLiteralExpression>();
+    ASSERT_TRUE(group->expr->Is<ast::IntLiteralExpression>());
+    auto* expr = group->expr->As<ast::IntLiteralExpression>();
     EXPECT_EQ(expr->value, 4);
     EXPECT_EQ(expr->suffix, ast::IntLiteralExpression::Suffix::kNone);
 }
@@ -461,9 +462,8 @@ TEST_F(ParserImplTest, Attribute_group_TrailingComma) {
     ASSERT_TRUE(var_attr->Is<ast::GroupAttribute>());
 
     auto* group = var_attr->As<ast::GroupAttribute>();
-    ASSERT_TRUE(group->value->Is<ast::IntLiteralExpression>());
-
-    auto* expr = group->value->As<ast::IntLiteralExpression>();
+    ASSERT_TRUE(group->expr->Is<ast::IntLiteralExpression>());
+    auto* expr = group->expr->As<ast::IntLiteralExpression>();
     EXPECT_EQ(expr->value, 4);
     EXPECT_EQ(expr->suffix, ast::IntLiteralExpression::Suffix::kNone);
 }

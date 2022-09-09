@@ -741,7 +741,7 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
             },
             [&](const ast::BindingAttribute* binding) {
                 out << "binding(";
-                if (!EmitExpression(out, binding->value)) {
+                if (!EmitExpression(out, binding->expr)) {
                     return false;
                 }
                 out << ")";
@@ -749,14 +749,18 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
             },
             [&](const ast::GroupAttribute* group) {
                 out << "group(";
-                if (!EmitExpression(out, group->value)) {
+                if (!EmitExpression(out, group->expr)) {
                     return false;
                 }
                 out << ")";
                 return true;
             },
             [&](const ast::LocationAttribute* location) {
-                out << "location(" << location->value << ")";
+                out << "location(";
+                if (!EmitExpression(out, location->expr)) {
+                    return false;
+                }
+                out << ")";
                 return true;
             },
             [&](const ast::BuiltinAttribute* builtin) {
@@ -777,7 +781,7 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
             },
             [&](const ast::IdAttribute* override_deco) {
                 out << "id(";
-                if (!EmitExpression(out, override_deco->value)) {
+                if (!EmitExpression(out, override_deco->expr)) {
                     return false;
                 }
                 out << ")";
@@ -789,7 +793,7 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
             },
             [&](const ast::StructMemberAlignAttribute* align) {
                 out << "align(";
-                if (!EmitExpression(out, align->align)) {
+                if (!EmitExpression(out, align->expr)) {
                     return false;
                 }
                 out << ")";

@@ -382,7 +382,8 @@ sem::Variable* Resolver::Let(const ast::Let* v, bool is_global) {
     if (is_global) {
         sem = builder_->create<sem::GlobalVariable>(
             v, ty, sem::EvaluationStage::kRuntime, ast::StorageClass::kNone,
-            ast::Access::kUndefined, /* constant_value */ nullptr, sem::BindingPoint{});
+            ast::Access::kUndefined, /* constant_value */ nullptr, sem::BindingPoint{},
+            std::nullopt);
     } else {
         sem = builder_->create<sem::LocalVariable>(v, ty, sem::EvaluationStage::kRuntime,
                                                    ast::StorageClass::kNone,
@@ -437,11 +438,11 @@ sem::Variable* Resolver::Override(const ast::Override* v) {
 
     auto* sem = builder_->create<sem::GlobalVariable>(
         v, ty, sem::EvaluationStage::kOverride, ast::StorageClass::kNone, ast::Access::kUndefined,
-        /* constant_value */ nullptr, sem::BindingPoint{});
+        /* constant_value */ nullptr, sem::BindingPoint{}, std::nullopt);
     sem->SetConstructor(rhs);
 
     if (auto* id_attr = ast::GetAttribute<ast::IdAttribute>(v->attributes)) {
-        auto* materialize = Materialize(Expression(id_attr->value));
+        auto* materialize = Materialize(Expression(id_attr->expr));
         if (!materialize) {
             return nullptr;
         }
@@ -521,7 +522,7 @@ sem::Variable* Resolver::Const(const ast::Const* c, bool is_global) {
 
     auto* sem = is_global ? static_cast<sem::Variable*>(builder_->create<sem::GlobalVariable>(
                                 c, ty, sem::EvaluationStage::kConstant, ast::StorageClass::kNone,
-                                ast::Access::kUndefined, value, sem::BindingPoint{}))
+                                ast::Access::kUndefined, value, sem::BindingPoint{}, std::nullopt))
                           : static_cast<sem::Variable*>(builder_->create<sem::LocalVariable>(
                                 c, ty, sem::EvaluationStage::kConstant, ast::StorageClass::kNone,
                                 ast::Access::kUndefined, current_statement_, value));
@@ -606,7 +607,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
             uint32_t binding = 0;
             {
                 auto* attr = ast::GetAttribute<ast::BindingAttribute>(var->attributes);
-                auto* materialize = Materialize(Expression(attr->value));
+                auto* materialize = Materialize(Expression(attr->expr));
                 if (!materialize) {
                     return nullptr;
                 }
@@ -622,7 +623,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
             uint32_t group = 0;
             {
                 auto* attr = ast::GetAttribute<ast::GroupAttribute>(var->attributes);
-                auto* materialize = Materialize(Expression(attr->value));
+                auto* materialize = Materialize(Expression(attr->expr));
                 if (!materialize) {
                     return nullptr;
                 }
@@ -636,9 +637,25 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
             }
             binding_point = {group, binding};
         }
-        sem = builder_->create<sem::GlobalVariable>(var, var_ty, sem::EvaluationStage::kRuntime,
-                                                    storage_class, access,
-                                                    /* constant_value */ nullptr, binding_point);
+
+        std::optional<uint32_t> location;
+        if (auto* attr = ast::GetAttribute<ast::LocationAttribute>(var->attributes)) {
+            auto* materialize = Materialize(Expression(attr->expr));
+            if (!materialize) {
+                return nullptr;
+            }
+            auto* c = materialize->ConstantValue();
+            if (!c) {
+                // TODO(crbug.com/tint/1633): Add error message about invalid materialization
+                // when location can be an expression.
+                return nullptr;
+            }
+            location = c->As<uint32_t>();
+        }
+
+        sem = builder_->create<sem::GlobalVariable>(
+            var, var_ty, sem::EvaluationStage::kRuntime, storage_class, access,
+            /* constant_value */ nullptr, binding_point, location);
 
     } else {
         sem = builder_->create<sem::LocalVariable>(var, var_ty, sem::EvaluationStage::kRuntime,
@@ -688,7 +705,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
     if (param->HasBindingPoint()) {
         {
             auto* attr = ast::GetAttribute<ast::BindingAttribute>(param->attributes);
-            auto* materialize = Materialize(Expression(attr->value));
+            auto* materialize = Materialize(Expression(attr->expr));
             if (!materialize) {
                 return nullptr;
             }
@@ -702,7 +719,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
         }
         {
             auto* attr = ast::GetAttribute<ast::GroupAttribute>(param->attributes);
-            auto* materialize = Materialize(Expression(attr->value));
+            auto* materialize = Materialize(Expression(attr->expr));
             if (!materialize) {
                 return nullptr;
             }
@@ -718,7 +735,17 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
 
     std::optional<uint32_t> location;
     if (auto* l = ast::GetAttribute<ast::LocationAttribute>(param->attributes)) {
-        location = l->value;
+        auto* materialize = Materialize(Expression(l->expr));
+        if (!materialize) {
+            return nullptr;
+        }
+        auto* c = materialize->ConstantValue();
+        if (!c) {
+            // TODO(crbug.com/tint/1633): Add error message about invalid materialization when
+            // location can be an expression.
+            return nullptr;
+        }
+        location = c->As<uint32_t>();
     }
 
     auto* sem = builder_->create<sem::Parameter>(
@@ -917,7 +944,17 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
         Mark(attr);
 
         if (auto* a = attr->As<ast::LocationAttribute>()) {
-            return_location = a->value;
+            auto* materialize = Materialize(Expression(a->expr));
+            if (!materialize) {
+                return nullptr;
+            }
+            auto* c = materialize->ConstantValue();
+            if (!c) {
+                // TODO(crbug.com/tint/1633): Add error message about invalid materialization when
+                // location can be an expression.
+                return nullptr;
+            }
+            return_location = c->As<uint32_t>();
         }
     }
     if (!validator_.NoDuplicateAttributes(decl->attributes)) {
@@ -2510,6 +2547,7 @@ sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
             if (!op.result) {
                 return nullptr;
             }
+            ty = op.result;
             if (ShouldMaterializeArgument(op.parameter)) {
                 expr = Materialize(expr, op.parameter);
                 if (!expr) {
@@ -2530,7 +2568,6 @@ sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
                     stage = sem::EvaluationStage::kRuntime;
                 }
             }
-            ty = op.result;
             break;
         }
     }
@@ -2774,13 +2811,13 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                 align = 1;
                 has_offset_attr = true;
             } else if (auto* a = attr->As<ast::StructMemberAlignAttribute>()) {
-                auto* materialized = Materialize(Expression(a->align));
+                auto* materialized = Materialize(Expression(a->expr));
                 if (!materialized) {
                     return nullptr;
                 }
                 auto const_value = materialized->ConstantValue();
                 if (!const_value) {
-                    AddError("'align' must be constant expression", a->align->source);
+                    AddError("'align' must be constant expression", a->expr->source);
                     return nullptr;
                 }
                 auto value = const_value->As<AInt>();
@@ -2801,7 +2838,17 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                 size = s->size;
                 has_size_attr = true;
             } else if (auto* l = attr->As<ast::LocationAttribute>()) {
-                location = l->value;
+                auto* materialize = Materialize(Expression(l->expr));
+                if (!materialize) {
+                    return nullptr;
+                }
+                auto* c = materialize->ConstantValue();
+                if (!c) {
+                    // TODO(crbug.com/tint/1633): Add error message about invalid materialization
+                    // when location can be an expression.
+                    return nullptr;
+                }
+                location = c->As<uint32_t>();
             }
         }
 
