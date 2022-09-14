@@ -129,7 +129,7 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@a25f92882e6d994e1d8312987d36362ab53dfa2d',
+    'url': '{chromium_git}/angle/angle@f39a9659c91a133af57464fc7a6917c67f2d5fb7',
     'condition': 'dawn_standalone',
   },
 
@@ -139,7 +139,7 @@ deps = {
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@3811e73c4b6fff9ffc641719727171079c43972b',
+    'url': '{chromium_git}/vulkan-deps@fb10489972adbbe55d593e83476923d13960dbde',
     'condition': 'dawn_standalone',
   },
 
