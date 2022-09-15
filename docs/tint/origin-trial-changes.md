@@ -6,6 +6,11 @@
 
 * `array()` constructor can now infer type and count. [tint:1628](crbug.com/tint/1628)
 * `static_assert` statement has been added. [tint:1625](crbug.com/tint/1625)
+* `saturate()` has been implemented. [tint:1591](crbug.com/tint/1591)
+
+### Breaking changes
+
+* Indexing an array, vector or matrix with a compile-time expression that's out-of-bounds is now an error [tint:1665](crbug.com/tint/1665)
 
 ### Deprecated Features
 
