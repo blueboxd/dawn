@@ -1263,6 +1263,7 @@
             {"name": "min uniform buffer offset alignment", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "min storage buffer offset alignment", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max vertex buffers", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
+            {"name": "max buffer size", "type": "uint64_t", "default": "WGPU_LIMIT_U64_UNDEFINED"},
             {"name": "max vertex attributes", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max vertex buffer array stride", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max inter stage shader components", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
@@ -1976,8 +1977,8 @@
             {
               "name": "execute bundles",
               "args": [
-                  {"name": "bundles count", "type": "uint32_t"},
-                  {"name": "bundles", "type": "render bundle", "annotation": "const*", "length": "bundles count"}
+                  {"name": "bundle count", "type": "uint32_t"},
+                  {"name": "bundles", "type": "render bundle", "annotation": "const*", "length": "bundle count"}
               ]
             },
             {
