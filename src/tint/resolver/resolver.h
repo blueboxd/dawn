@@ -113,45 +113,6 @@ class Resolver {
   private:
     Validator::ValidTypeStorageLayouts valid_type_storage_layouts_;
 
-    /// Structure holding semantic information about a block (i.e. scope), such as
-    /// parent block and variables declared in the block.
-    /// Used to validate variable scoping rules.
-    struct BlockInfo {
-        enum class Type { kGeneric, kLoop, kLoopContinuing, kSwitchCase };
-
-        BlockInfo(const ast::BlockStatement* block, Type type, BlockInfo* parent);
-        ~BlockInfo();
-
-        template <typename Pred>
-        BlockInfo* FindFirstParent(Pred&& pred) {
-            BlockInfo* curr = this;
-            while (curr && !pred(curr)) {
-                curr = curr->parent;
-            }
-            return curr;
-        }
-
-        BlockInfo* FindFirstParent(BlockInfo::Type ty) {
-            return FindFirstParent([ty](auto* block_info) { return block_info->type == ty; });
-        }
-
-        ast::BlockStatement const* const block;
-        const Type type;
-        BlockInfo* const parent;
-        std::vector<const ast::Variable*> decls;
-
-        // first_continue is set to the index of the first variable in decls
-        // declared after the first continue statement in a loop block, if any.
-        constexpr static size_t kNoContinue = size_t(~0);
-        size_t first_continue = kNoContinue;
-    };
-
-    // Structure holding information for a TypeDecl
-    struct TypeDeclInfo {
-        ast::TypeDecl const* const ast;
-        sem::Type* const sem;
-    };
-
     /// Resolves the program, without creating final the semantic nodes.
     /// @returns true on success, false on error
     bool ResolveInternal();
@@ -387,20 +348,20 @@ class Resolver {
     /// @param index the index of the parameter
     sem::Parameter* Parameter(const ast::Parameter* param, uint32_t index);
 
-    /// Records the storage class usage for the given type, and any transient
+    /// Records the address space usage for the given type, and any transient
     /// dependencies of the type. Validates that the type can be used for the
-    /// given storage class, erroring if it cannot.
-    /// @param sc the storage class to apply to the type and transitent types
-    /// @param ty the type to apply the storage class on
+    /// given address space, erroring if it cannot.
+    /// @param sc the address space to apply to the type and transitent types
+    /// @param ty the type to apply the address space on
     /// @param usage the Source of the root variable declaration that uses the
-    /// given type and storage class. Used for generating sensible error
+    /// given type and address space. Used for generating sensible error
     /// messages.
     /// @returns true on success, false on error
-    bool ApplyStorageClassUsageToType(ast::StorageClass sc, sem::Type* ty, const Source& usage);
+    bool ApplyAddressSpaceUsageToType(ast::AddressSpace sc, sem::Type* ty, const Source& usage);
 
-    /// @param storage_class the storage class
-    /// @returns the default access control for the given storage class
-    ast::Access DefaultAccessForStorageClass(ast::StorageClass storage_class);
+    /// @param address_space the address space
+    /// @returns the default access control for the given address space
+    ast::Access DefaultAccessForAddressSpace(ast::AddressSpace address_space);
 
     /// Allocate constant IDs for pipeline-overridable constants.
     /// @returns true on success, false on error

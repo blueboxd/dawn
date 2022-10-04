@@ -37,11 +37,11 @@ vars = {
 deps = {
   # Dependencies required to use GN/Clang in standalone
   'build': {
-    'url': '{chromium_git}/chromium/src/build@f14f6d206b9a0c81a0fefba487bcba0d90ddb5fe',
+    'url': '{chromium_git}/chromium/src/build@01569374d46a14b225586c564146a8e1749520b6',
     'condition': 'dawn_standalone',
   },
   'buildtools': {
-    'url': '{chromium_git}/chromium/src/buildtools@fe57e98eeb2172d7517f6dec1072ca641a019893',
+    'url': '{chromium_git}/chromium/src/buildtools@cccaf48c82bcf4ddafa6f8aa9f06014a1ef434bf',
     'condition': 'dawn_standalone',
   },
   'buildtools/clang_format/script': {
@@ -74,17 +74,17 @@ deps = {
   },
 
   'buildtools/third_party/libc++/trunk': {
-    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxx.git@eb79671bfbedd77b747d01dee8c0479ff1693f88',
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxx.git@26d0ab4151fd10c523fdbb5bbdb59aa5a5774820',
     'condition': 'dawn_standalone',
   },
 
   'buildtools/third_party/libc++abi/trunk': {
-    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxxabi.git@b954e3e65634a9e2f7b595598a30c455f5f2eb26',
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxxabi.git@5c3e02e92ae8bbc1bf1001bd9ef0d76e044ddb86',
     'condition': 'dawn_standalone',
   },
 
   'tools/clang': {
-    'url': '{chromium_git}/chromium/src/tools/clang@3d8d88e8bb600789ba3e798f38ff314521aac524',
+    'url': '{chromium_git}/chromium/src/tools/clang@a5e0d72349d028a4023927d6d166a8478355fac3',
     'condition': 'dawn_standalone',
   },
   'tools/clang/dsymutil': {
@@ -98,16 +98,16 @@ deps = {
 
   # Testing, GTest and GMock
   'testing': {
-    'url': '{chromium_git}/chromium/src/testing@1f497ac0b0afc242222780a4789d13fbf00073eb',
+    'url': '{chromium_git}/chromium/src/testing@e3e8c19554e8f47da85d35e4f990cdc30a061196',
     'condition': 'dawn_standalone',
   },
   'third_party/googletest': {
-    'url': '{chromium_git}/external/github.com/google/googletest@bda85449f48f2d80a494c8c07766b6aba3170f3b',
+    'url': '{chromium_git}/external/github.com/google/googletest@d1a0039b97291dd1dc14f123b906bb7622ffe07c',
     'condition': 'dawn_standalone',
   },
   # This is a dependency of //testing
   'third_party/catapult': {
-    'url': '{chromium_git}/catapult.git@fa35beefb3429605035f98211ddb8750dee6a13d',
+    'url': '{chromium_git}/catapult.git@4a0e6f034e9756605cfc837c8526588d6c13436b',
     'condition': 'dawn_standalone',
   },
 
@@ -132,17 +132,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@485f4d486c82a7dd86190255744a67704cbb6ab6',
+    'url': '{chromium_git}/angle/angle@1d73bad50b314f1e82d2430e22d155ec06b8fbab',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@666fb5f89f5a17e4f730fb0c93cc89bb7365250b',
+    'url': '{swiftshader_git}/SwiftShader@5f5e513c4e3c7c77a6f3cb296a99870dc1b50582',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@e0aed16f882f121a92e36a87b1c58d80da2fa2cb',
+    'url': '{chromium_git}/vulkan-deps@daf416b93bfdd0f0089b04ea36b1f205896ae698',
     'condition': 'dawn_standalone',
   },
 
