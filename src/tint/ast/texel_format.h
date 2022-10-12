@@ -30,22 +30,22 @@ namespace tint::ast {
 /// Enumerator of texel formats
 enum class TexelFormat {
     kInvalid,
-    kRgba8Unorm,
+    kR32Float,
+    kR32Sint,
+    kR32Uint,
+    kRg32Float,
+    kRg32Sint,
+    kRg32Uint,
+    kRgba16Float,
+    kRgba16Sint,
+    kRgba16Uint,
+    kRgba32Float,
+    kRgba32Sint,
+    kRgba32Uint,
+    kRgba8Sint,
     kRgba8Snorm,
     kRgba8Uint,
-    kRgba8Sint,
-    kRgba16Uint,
-    kRgba16Sint,
-    kRgba16Float,
-    kR32Uint,
-    kR32Sint,
-    kR32Float,
-    kRg32Uint,
-    kRg32Sint,
-    kRg32Float,
-    kRgba32Uint,
-    kRgba32Sint,
-    kRgba32Float,
+    kRgba8Unorm,
 };
 
 /// @param out the std::ostream to write to
@@ -57,6 +57,12 @@ std::ostream& operator<<(std::ostream& out, TexelFormat value);
 /// @param str the string to parse
 /// @returns the parsed enum, or TexelFormat::kInvalid if the string could not be parsed.
 TexelFormat ParseTexelFormat(std::string_view str);
+
+constexpr const char* kTexelFormatStrings[] = {
+    "r32float",    "r32sint",    "r32uint",    "rg32float",   "rg32sint",   "rg32uint",
+    "rgba16float", "rgba16sint", "rgba16uint", "rgba32float", "rgba32sint", "rgba32uint",
+    "rgba8sint",   "rgba8snorm", "rgba8uint",  "rgba8unorm",
+};
 
 }  // namespace tint::ast
 

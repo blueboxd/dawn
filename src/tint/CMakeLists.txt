@@ -394,6 +394,8 @@ set(TINT_LIB_SRCS
   transform/builtin_polyfill.h
   transform/calculate_array_length.cc
   transform/calculate_array_length.h
+  transform/clamp_frag_depth.cc
+  transform/clamp_frag_depth.h
   transform/canonicalize_entry_point_io.cc
   transform/canonicalize_entry_point_io.h
   transform/combine_samplers.cc
@@ -484,6 +486,7 @@ set(TINT_LIB_SRCS
   utils/map.h
   utils/math.h
   utils/scoped_assignment.h
+  utils/string.cc
   utils/string.h
   utils/unique_allocator.h
   utils/unique_vector.h
@@ -1105,6 +1108,7 @@ if(TINT_BUILD_TESTS)
       transform/binding_remapper_test.cc
       transform/builtin_polyfill_test.cc
       transform/calculate_array_length_test.cc
+      transform/clamp_frag_depth_test.cc
       transform/canonicalize_entry_point_io_test.cc
       transform/combine_samplers_test.cc
       transform/decompose_memory_access_test.cc
@@ -1130,6 +1134,7 @@ if(TINT_BUILD_TESTS)
       transform/simplify_pointers_test.cc
       transform/single_entry_point_test.cc
       transform/spirv_atomic_test.cc
+      transform/std140_exhaustive_test.cc
       transform/std140_test.cc
       transform/substitute_override_test.cc
       transform/test_helper.h

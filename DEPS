@@ -132,17 +132,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@3e25d37f23d0432aa1a43bf920ae4110f48fd36c',
+    'url': '{chromium_git}/angle/angle@a217dd56b557caf63f3303b7a5196452c4f11d94',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@acdfa394561fda026e627704d16565f36d162749',
+    'url': '{swiftshader_git}/SwiftShader@48f7cb2ab354e2fbafbde943e05082058585dca0',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@1172dba338881bb88803651e0f05885d9987335a',
+    'url': '{chromium_git}/vulkan-deps@854311606a774418eee2194ee96608ba9a241c87',
     'condition': 'dawn_standalone',
   },
 

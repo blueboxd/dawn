@@ -221,6 +221,7 @@ bool AssumesResultSignednessMatchesFirstOperand(GLSLstd450 extended_opcode) {
         case GLSLstd450UMin:
         case GLSLstd450UMax:
         case GLSLstd450UClamp:
+        case GLSLstd450FindILsb:
             // TODO(dneto): FindSMsb?
             // TODO(dneto): FindUMsb?
             return true;
@@ -1749,7 +1750,7 @@ bool ParserImpl::ConvertPipelineDecorations(const Type* store_type,
                                             AttributeList* attributes) {
     // Vulkan defaults to perspective-correct interpolation.
     ast::InterpolationType type = ast::InterpolationType::kPerspective;
-    ast::InterpolationSampling sampling = ast::InterpolationSampling::kNone;
+    ast::InterpolationSampling sampling = ast::InterpolationSampling::kInvalid;
 
     for (const auto& deco : decorations) {
         TINT_ASSERT(Reader, deco.size() > 0);
@@ -1804,7 +1805,7 @@ bool ParserImpl::ConvertPipelineDecorations(const Type* store_type,
 
     // Apply interpolation.
     if (type == ast::InterpolationType::kPerspective &&
-        sampling == ast::InterpolationSampling::kNone) {
+        sampling == ast::InterpolationSampling::kInvalid) {
         // This is the default. Don't add a decoration.
     } else {
         attributes->Push(create<ast::InterpolateAttribute>(type, sampling));

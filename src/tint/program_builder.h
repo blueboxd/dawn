@@ -478,11 +478,6 @@ class ProgramBuilder {
     /// returned`Type` will also be destructed.
     /// Types are unique (de-aliased), and so calling create() for the same `T`
     /// and arguments will return the same pointer.
-    /// @warning Use this method to acquire a type only if all of its type
-    /// information is provided in the constructor arguments `args`.<br>
-    /// If the type requires additional configuration after construction that
-    /// affect its fundamental type, build the type with `std::make_unique`, make
-    /// any necessary alterations and then call unique_type() instead.
     /// @param args the arguments to pass to the type constructor
     /// @returns the de-aliased type pointer
     template <typename T, typename... ARGS>
@@ -2914,7 +2909,7 @@ class ProgramBuilder {
     const ast::InterpolateAttribute* Interpolate(
         const Source& source,
         ast::InterpolationType type,
-        ast::InterpolationSampling sampling = ast::InterpolationSampling::kNone) {
+        ast::InterpolationSampling sampling = ast::InterpolationSampling::kInvalid) {
         return create<ast::InterpolateAttribute>(source, type, sampling);
     }
 
@@ -2924,7 +2919,7 @@ class ProgramBuilder {
     /// @returns the interpolate attribute pointer
     const ast::InterpolateAttribute* Interpolate(
         ast::InterpolationType type,
-        ast::InterpolationSampling sampling = ast::InterpolationSampling::kNone) {
+        ast::InterpolationSampling sampling = ast::InterpolationSampling::kInvalid) {
         return create<ast::InterpolateAttribute>(source_, type, sampling);
     }
 

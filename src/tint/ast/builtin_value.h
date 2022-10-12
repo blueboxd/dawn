@@ -27,22 +27,22 @@
 
 namespace tint::ast {
 
-/// Storage class of a given pointer.
+/// Builtin value defined with `@builtin(<name>)`.
 enum class BuiltinValue {
     kInvalid,
-    kPosition,
-    kVertexIndex,
-    kInstanceIndex,
-    kFrontFacing,
     kFragDepth,
+    kFrontFacing,
+    kGlobalInvocationId,
+    kInstanceIndex,
     kLocalInvocationId,
     kLocalInvocationIndex,
-    kGlobalInvocationId,
-    kWorkgroupId,
     kNumWorkgroups,
+    kPointSize,  // Tint-internal enum entry - not parsed
+    kPosition,
     kSampleIndex,
     kSampleMask,
-    kPointSize,  // Tint-internal enum entry - not parsed
+    kVertexIndex,
+    kWorkgroupId,
 };
 
 /// @param out the std::ostream to write to
@@ -54,6 +54,15 @@ std::ostream& operator<<(std::ostream& out, BuiltinValue value);
 /// @param str the string to parse
 /// @returns the parsed enum, or BuiltinValue::kInvalid if the string could not be parsed.
 BuiltinValue ParseBuiltinValue(std::string_view str);
+
+constexpr const char* kBuiltinValueStrings[] = {
+    "frag_depth",           "front_facing",
+    "global_invocation_id", "instance_index",
+    "local_invocation_id",  "local_invocation_index",
+    "num_workgroups",       "position",
+    "sample_index",         "sample_mask",
+    "vertex_index",         "workgroup_id",
+};
 
 }  // namespace tint::ast
 
