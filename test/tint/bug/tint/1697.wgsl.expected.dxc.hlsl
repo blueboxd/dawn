@@ -4,5 +4,5 @@ void unused_entry_point() {
 }
 
 void f() {
-  bool v[65535] = (bool[65535])0;
+  int v = 0;
 }

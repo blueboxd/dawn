@@ -325,7 +325,7 @@ bool GeneratorImpl::EmitDynamicVectorAssignment(const ast::AssignmentStatement* 
         std::string fn;
         {
             std::ostringstream ss;
-            if (!EmitType(ss, vec, tint::ast::AddressSpace::kInvalid, ast::Access::kUndefined,
+            if (!EmitType(ss, vec, tint::ast::AddressSpace::kUndefined, ast::Access::kUndefined,
                           "")) {
                 return "";
             }
@@ -334,12 +334,12 @@ bool GeneratorImpl::EmitDynamicVectorAssignment(const ast::AssignmentStatement* 
         {
             auto out = line(&helpers_);
             out << "void " << fn << "(inout ";
-            if (!EmitTypeAndName(out, vec, ast::AddressSpace::kInvalid, ast::Access::kUndefined,
+            if (!EmitTypeAndName(out, vec, ast::AddressSpace::kUndefined, ast::Access::kUndefined,
                                  "vec")) {
                 return "";
             }
             out << ", int idx, ";
-            if (!EmitTypeAndName(out, vec->type(), ast::AddressSpace::kInvalid,
+            if (!EmitTypeAndName(out, vec->type(), ast::AddressSpace::kUndefined,
                                  ast::Access::kUndefined, "val")) {
                 return "";
             }
@@ -399,7 +399,7 @@ bool GeneratorImpl::EmitDynamicMatrixVectorAssignment(const ast::AssignmentState
         std::string fn;
         {
             std::ostringstream ss;
-            if (!EmitType(ss, mat, tint::ast::AddressSpace::kInvalid, ast::Access::kUndefined,
+            if (!EmitType(ss, mat, tint::ast::AddressSpace::kUndefined, ast::Access::kUndefined,
                           "")) {
                 return "";
             }
@@ -408,12 +408,12 @@ bool GeneratorImpl::EmitDynamicMatrixVectorAssignment(const ast::AssignmentState
         {
             auto out = line(&helpers_);
             out << "void " << fn << "(inout ";
-            if (!EmitTypeAndName(out, mat, ast::AddressSpace::kInvalid, ast::Access::kUndefined,
+            if (!EmitTypeAndName(out, mat, ast::AddressSpace::kUndefined, ast::Access::kUndefined,
                                  "mat")) {
                 return "";
             }
             out << ", int col, ";
-            if (!EmitTypeAndName(out, mat->ColumnType(), ast::AddressSpace::kInvalid,
+            if (!EmitTypeAndName(out, mat->ColumnType(), ast::AddressSpace::kUndefined,
                                  ast::Access::kUndefined, "val")) {
                 return "";
             }
@@ -468,7 +468,7 @@ bool GeneratorImpl::EmitDynamicMatrixScalarAssignment(const ast::AssignmentState
         std::string fn;
         {
             std::ostringstream ss;
-            if (!EmitType(ss, mat, tint::ast::AddressSpace::kInvalid, ast::Access::kUndefined,
+            if (!EmitType(ss, mat, tint::ast::AddressSpace::kUndefined, ast::Access::kUndefined,
                           "")) {
                 return "";
             }
@@ -477,12 +477,12 @@ bool GeneratorImpl::EmitDynamicMatrixScalarAssignment(const ast::AssignmentState
         {
             auto out = line(&helpers_);
             out << "void " << fn << "(inout ";
-            if (!EmitTypeAndName(out, mat, ast::AddressSpace::kInvalid, ast::Access::kUndefined,
+            if (!EmitTypeAndName(out, mat, ast::AddressSpace::kUndefined, ast::Access::kUndefined,
                                  "mat")) {
                 return "";
             }
             out << ", int col, int row, ";
-            if (!EmitTypeAndName(out, mat->type(), ast::AddressSpace::kInvalid,
+            if (!EmitTypeAndName(out, mat->type(), ast::AddressSpace::kUndefined,
                                  ast::Access::kUndefined, "val")) {
                 return "";
             }
@@ -723,7 +723,8 @@ bool GeneratorImpl::EmitExpressionOrOneIfZero(std::ostream& out, const ast::Expr
         std::string ty_name;
         {
             std::ostringstream ss;
-            if (!EmitType(ss, ty, tint::ast::AddressSpace::kInvalid, ast::Access::kUndefined, "")) {
+            if (!EmitType(ss, ty, tint::ast::AddressSpace::kUndefined, ast::Access::kUndefined,
+                          "")) {
                 return "";
             }
             ty_name = ss.str();
@@ -3010,7 +3011,7 @@ std::string GeneratorImpl::interpolation_to_modifiers(ast::InterpolationType typ
         case ast::InterpolationType::kFlat:
             modifiers += "nointerpolation ";
             break;
-        case ast::InterpolationType::kInvalid:
+        case ast::InterpolationType::kUndefined:
             break;
     }
     switch (sampling) {
@@ -3021,7 +3022,7 @@ std::string GeneratorImpl::interpolation_to_modifiers(ast::InterpolationType typ
             modifiers += "sample ";
             break;
         case ast::InterpolationSampling::kCenter:
-        case ast::InterpolationSampling::kInvalid:
+        case ast::InterpolationSampling::kUndefined:
             break;
     }
     return modifiers;

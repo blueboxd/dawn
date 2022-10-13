@@ -329,6 +329,10 @@ std::string GetGlslStd450FuncName(uint32_t ext_opcode) {
             return "faceForward";
         case GLSLstd450FindILsb:
             return "firstTrailingBit";
+        case GLSLstd450FindSMsb:
+            return "firstLeadingBit";
+        case GLSLstd450FindUMsb:
+            return "firstLeadingBit";
         case GLSLstd450Floor:
             return "floor";
         case GLSLstd450Fma:
@@ -428,9 +432,6 @@ std::string GetGlslStd450FuncName(uint32_t ext_opcode) {
 
         case GLSLstd450PackDouble2x32:
         case GLSLstd450UnpackDouble2x32:
-
-        case GLSLstd450FindSMsb:
-        case GLSLstd450FindUMsb:
 
         case GLSLstd450InterpolateAtCentroid:
         case GLSLstd450InterpolateAtSample:
@@ -2592,7 +2593,6 @@ TypedExpression FunctionEmitter::MakeExpression(uint32_t id) {
             // Construct the reference type, mapping storage class correctly.
             const auto* type =
                 RemapPointerProperties(parser_impl_.ConvertType(inst->type_id(), PtrAs::Ref), id);
-            // TODO(crbug.com/tint/1041): Fix access mode
             return TypedExpression{type, create<ast::IdentifierExpression>(
                                              Source{}, builder_.Symbols().Register(name))};
         }
@@ -4858,10 +4858,15 @@ DefInfo::Pointer FunctionEmitter::GetPointerInfo(uint32_t id) {
             }
             case SpvOpFunctionParameter: {
                 const auto* type = As<Pointer>(parser_impl_.ConvertType(inst.type_id()));
-                // TODO(crbug.com/tint/1041): Add access mode.
-                // Using kUndefined is ok for now, since the only non-default access mode
-                // on a pointer would be for a storage buffer, and baseline SPIR-V doesn't
-                // allow passing pointers to buffers as function parameters.
+                // For access mode, kUndefined is ok for now, since the
+                // only non-default access mode on a pointer would be for a storage
+                // buffer, and baseline SPIR-V doesn't allow passing pointers to
+                // buffers as function parameters.
+                // If/when the SPIR-V path supports variable pointers, then we
+                // can pointers to read-only storage buffers passed as
+                // parameters.  In that case we need to do a global analysis to
+                // determine what the formal argument parameter type should be,
+                // whether it has read_only or read_write access mode.
                 return DefInfo::Pointer{type->address_space, ast::Access::kUndefined};
             }
             default:
@@ -4898,13 +4903,11 @@ DefInfo::Pointer FunctionEmitter::GetPointerInfo(uint32_t id) {
 const Type* FunctionEmitter::RemapPointerProperties(const Type* type, uint32_t result_id) {
     if (auto* ast_ptr_type = As<Pointer>(type)) {
         const auto pi = GetPointerInfo(result_id);
-        // TODO(crbug.com/tin/t1041): also do access mode
-        return ty_.Pointer(ast_ptr_type->type, pi.address_space);
+        return ty_.Pointer(ast_ptr_type->type, pi.address_space, pi.access);
     }
     if (auto* ast_ptr_type = As<Reference>(type)) {
         const auto pi = GetPointerInfo(result_id);
-        // TODO(crbug.com/tin/t1041): also do access mode
-        return ty_.Reference(ast_ptr_type->type, pi.address_space);
+        return ty_.Reference(ast_ptr_type->type, pi.address_space, pi.access);
     }
     return type;
 }
@@ -5086,7 +5089,7 @@ void FunctionEmitter::FindValuesNeedingNamedOrHoistedDefinition() {
             // Avoid moving combinatorial values across constructs.  This is a
             // simple heuristic to avoid changing the cost of an operation
             // by moving it into or out of a loop, for example.
-            if ((def_info->pointer.address_space == ast::AddressSpace::kInvalid) &&
+            if ((def_info->pointer.address_space == ast::AddressSpace::kUndefined) &&
                 local_def.used_in_another_construct) {
                 should_hoist_to_let = true;
             }

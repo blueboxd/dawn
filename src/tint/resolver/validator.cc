@@ -1021,7 +1021,7 @@ bool Validator::InterpolateAttribute(const ast::InterpolateAttribute* attr,
     }
 
     if (attr->type == ast::InterpolationType::kFlat &&
-        attr->sampling != ast::InterpolationSampling::kInvalid) {
+        attr->sampling != ast::InterpolationSampling::kUndefined) {
         AddError("flat interpolation attribute must not have a sampling parameter", attr->source);
         return false;
     }
@@ -1726,7 +1726,7 @@ bool Validator::RequiredExtensionForBuiltinFunction(
     }
 
     const auto extension = builtin->RequiredExtension();
-    if (extension == ast::Extension::kInvalid) {
+    if (extension == ast::Extension::kUndefined) {
         return true;
     }
 

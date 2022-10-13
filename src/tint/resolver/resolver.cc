@@ -251,7 +251,7 @@ sem::Type* Resolver::Type(const ast::Type* ty) {
         [&](const ast::Pointer* t) -> sem::Pointer* {
             if (auto* el = Type(t->type)) {
                 auto access = t->access;
-                if (access == ast::kUndefined) {
+                if (access == ast::Access::kUndefined) {
                     access = DefaultAccessForAddressSpace(t->address_space);
                 }
                 return builder_->create<sem::Pointer>(el, t->address_space, access);
@@ -387,8 +387,8 @@ sem::Variable* Resolver::Let(const ast::Let* v, bool is_global) {
     if (is_global) {
         sem = builder_->create<sem::GlobalVariable>(
             v, ty, sem::EvaluationStage::kRuntime, ast::AddressSpace::kNone,
-            ast::Access::kUndefined, /* constant_value */ nullptr, sem::BindingPoint{},
-            std::nullopt);
+            ast::Access::kUndefined,
+            /* constant_value */ nullptr, sem::BindingPoint{}, std::nullopt);
     } else {
         sem = builder_->create<sem::LocalVariable>(v, ty, sem::EvaluationStage::kRuntime,
                                                    ast::AddressSpace::kNone,
@@ -1123,6 +1123,15 @@ bool Resolver::WorkgroupSize(const ast::Function* func) {
             ws[i] = value->As<uint32_t>();
         } else {
             ws[i] = std::nullopt;
+        }
+    }
+
+    uint64_t total_size = static_cast<uint64_t>(ws[0].value_or(1));
+    for (size_t i = 1; i < 3; i++) {
+        total_size *= static_cast<uint64_t>(ws[i].value_or(1));
+        if (total_size > 0xffffffff) {
+            AddError("total workgroup grid size cannot exceed 0xffffffff", values[i]->source);
+            return false;
         }
     }
 

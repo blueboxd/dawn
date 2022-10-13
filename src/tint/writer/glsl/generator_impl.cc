@@ -141,7 +141,7 @@ const char* convert_texel_format_to_glsl(const ast::TexelFormat format) {
             return "rgba32i";
         case ast::TexelFormat::kRgba32Float:
             return "rgba32f";
-        case ast::TexelFormat::kInvalid:
+        case ast::TexelFormat::kUndefined:
             return "unknown";
     }
     return "unknown";
@@ -2049,7 +2049,7 @@ void GeneratorImpl::EmitInterpolationQualifiers(
             switch (interpolate->type) {
                 case ast::InterpolationType::kPerspective:
                 case ast::InterpolationType::kLinear:
-                case ast::InterpolationType::kInvalid:
+                case ast::InterpolationType::kUndefined:
                     break;
                 case ast::InterpolationType::kFlat:
                     out << "flat ";
@@ -2061,7 +2061,7 @@ void GeneratorImpl::EmitInterpolationQualifiers(
                     break;
                 case ast::InterpolationSampling::kSample:
                 case ast::InterpolationSampling::kCenter:
-                case ast::InterpolationSampling::kInvalid:
+                case ast::InterpolationSampling::kUndefined:
                     break;
             }
         }

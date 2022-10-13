@@ -3684,11 +3684,11 @@ uint32_t Builder::GenerateTypeIfNeeded(const sem::Type* type) {
     // references are not legal in WGSL, so only considering the top-level type is
     // fine.
     if (auto* ptr = type->As<sem::Pointer>()) {
-        type =
-            builder_.create<sem::Pointer>(ptr->StoreType(), ptr->AddressSpace(), ast::kReadWrite);
+        type = builder_.create<sem::Pointer>(ptr->StoreType(), ptr->AddressSpace(),
+                                             ast::Access::kReadWrite);
     } else if (auto* ref = type->As<sem::Reference>()) {
-        type =
-            builder_.create<sem::Pointer>(ref->StoreType(), ref->AddressSpace(), ast::kReadWrite);
+        type = builder_.create<sem::Pointer>(ref->StoreType(), ref->AddressSpace(),
+                                             ast::Access::kReadWrite);
     }
 
     return utils::GetOrCreate(type_to_id_, type, [&]() -> uint32_t {
@@ -4009,7 +4009,7 @@ bool Builder::GenerateVectorType(const sem::Vector* vec, const Operand& result) 
 
 SpvStorageClass Builder::ConvertAddressSpace(ast::AddressSpace klass) const {
     switch (klass) {
-        case ast::AddressSpace::kInvalid:
+        case ast::AddressSpace::kUndefined:
             return SpvStorageClassMax;
         case ast::AddressSpace::kIn:
             return SpvStorageClassInput;
@@ -4071,7 +4071,7 @@ SpvBuiltIn Builder::ConvertBuiltin(ast::BuiltinValue builtin, ast::AddressSpace 
             return SpvBuiltInSampleId;
         case ast::BuiltinValue::kSampleMask:
             return SpvBuiltInSampleMask;
-        case ast::BuiltinValue::kInvalid:
+        case ast::BuiltinValue::kUndefined:
             break;
     }
     return SpvBuiltInMax;
@@ -4088,7 +4088,7 @@ void Builder::AddInterpolationDecorations(uint32_t id,
             push_annot(spv::Op::OpDecorate, {Operand(id), U32Operand(SpvDecorationFlat)});
             break;
         case ast::InterpolationType::kPerspective:
-        case ast::InterpolationType::kInvalid:
+        case ast::InterpolationType::kUndefined:
             break;
     }
     switch (sampling) {
@@ -4100,7 +4100,7 @@ void Builder::AddInterpolationDecorations(uint32_t id,
             push_annot(spv::Op::OpDecorate, {Operand(id), U32Operand(SpvDecorationSample)});
             break;
         case ast::InterpolationSampling::kCenter:
-        case ast::InterpolationSampling::kInvalid:
+        case ast::InterpolationSampling::kUndefined:
             break;
     }
 }
@@ -4142,7 +4142,7 @@ SpvImageFormat Builder::convert_texel_format_to_spv(const ast::TexelFormat forma
             return SpvImageFormatRgba32i;
         case ast::TexelFormat::kRgba32Float:
             return SpvImageFormatRgba32f;
-        case ast::TexelFormat::kInvalid:
+        case ast::TexelFormat::kUndefined:
             return SpvImageFormatUnknown;
     }
     return SpvImageFormatUnknown;

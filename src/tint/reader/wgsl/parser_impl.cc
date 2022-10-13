@@ -383,7 +383,7 @@ Maybe<Void> ParserImpl::enable_directive() {
             return add_error(t.source(), "enable directives don't take parenthesis");
         }
 
-        auto extension = ast::Extension::kInvalid;
+        auto extension = ast::Extension::kUndefined;
         if (t.Is(Token::Type::kF16)) {
             // `f16` is a valid extension name and also a keyword
             synchronized_ = true;
@@ -760,7 +760,7 @@ Maybe<const ast::Type*> ParserImpl::texture_and_sampler_types() {
                 return Failure::kErrored;
             }
 
-            auto access = expect_access_mode("access control");
+            auto access = expect_access_mode(use);
             if (access.errored) {
                 return Failure::kErrored;
             }
@@ -967,22 +967,7 @@ Expect<ParserImpl::TypedIdentifier> ParserImpl::expect_ident_with_type_specifier
 //   | 'write'
 //   | 'read_write'
 Expect<ast::Access> ParserImpl::expect_access_mode(std::string_view use) {
-    auto ident = expect_ident(use);
-    if (ident.errored) {
-        return Failure::kErrored;
-    }
-
-    if (ident.value == "read") {
-        return {ast::Access::kRead, ident.source};
-    }
-    if (ident.value == "write") {
-        return {ast::Access::kWrite, ident.source};
-    }
-    if (ident.value == "read_write") {
-        return {ast::Access::kReadWrite, ident.source};
-    }
-
-    return add_error(ident.source, "invalid value for access control");
+    return expect_enum("access control", ast::ParseAccess, ast::kAccessStrings, use);
 }
 
 // variable_qualifier
@@ -1194,7 +1179,7 @@ Expect<ENUM> ParserImpl::expect_enum(std::string_view name,
     auto& t = peek();
     if (t.IsIdentifier()) {
         auto val = parse(t.to_str());
-        if (val != ENUM::kInvalid) {
+        if (val != ENUM::kUndefined) {
             synchronized_ = true;
             next();
             return {val, t.source()};
@@ -1281,7 +1266,7 @@ Expect<const ast::Type*> ParserImpl::expect_type_specifier_pointer(const Source&
         }
 
         if (match(Token::Type::kComma)) {
-            auto ac = expect_access_mode("access control");
+            auto ac = expect_access_mode(use);
             if (ac.errored) {
                 return Failure::kErrored;
             }
@@ -3527,7 +3512,7 @@ Maybe<const ast::Attribute*> ParserImpl::attribute() {
                 return Failure::kErrored;
             }
 
-            ast::InterpolationSampling sampling = ast::InterpolationSampling::kInvalid;
+            ast::InterpolationSampling sampling = ast::InterpolationSampling::kUndefined;
             if (match(Token::Type::kComma)) {
                 if (!peek_is(Token::Type::kParenRight)) {
                     auto sample = expect_interpolation_sample_name();
