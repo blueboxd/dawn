@@ -1230,9 +1230,11 @@ TEST_F(ResolverDependencyGraphTraversalTest, SymbolsReached) {
 
     Alias(Sym(), T);
     Structure(Sym(),  //
-              utils::Vector{
-                  Member(Sym(), T, utils::Vector{MemberAlign(V)})  //
-              });
+              utils::Vector{Member(Sym(), T,
+                                   utils::Vector{
+                                       //
+                                       MemberAlign(V), MemberSize(V)  //
+                                   })});
     GlobalVar(Sym(), T, V);
     GlobalConst(Sym(), T, V);
     Func(Sym(),                           //
@@ -1287,6 +1289,9 @@ TEST_F(ResolverDependencyGraphTraversalTest, SymbolsReached) {
     GlobalVar(Sym(), ty.storage_texture(ast::TextureDimension::k2d, ast::TexelFormat::kR32Float,
                                         ast::Access::kRead));  //
     GlobalVar(Sym(), ty.sampler(ast::SamplerKind::kSampler));
+
+    GlobalVar(Sym(), ty.i32(), utils::Vector{Binding(V), Group(V)});
+
     Func(Sym(), utils::Empty, ty.void_(), utils::Empty);
 #undef V
 #undef T

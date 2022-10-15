@@ -735,12 +735,85 @@ TEST_F(StructMemberAttributeTest, Align_Attribute_Var) {
 TEST_F(StructMemberAttributeTest, Align_Attribute_Override) {
     Override("val", ty.f32(), Expr(1.23_f));
 
-    Structure("mystruct", utils::Vector{Member(
-                              "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
+    Structure("mystruct",
+              utils::Vector{Member("a", ty.f32(),
+                                   utils::Vector{MemberAlign(Expr(Source{{12, 34}}, "val"))})});
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(
         r()->error(),
-        R"(error: @align requires a const-expression, but expression is an override-expression)");
+        R"(12:34 error: @align requires a const-expression, but expression is an override-expression)");
+}
+
+TEST_F(StructMemberAttributeTest, Size_Attribute_Const) {
+    GlobalConst("val", ty.i32(), Expr(4_i));
+
+    Structure("mystruct", utils::Vector{Member("a", ty.f32(), utils::Vector{MemberSize("val")})});
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(StructMemberAttributeTest, Size_Attribute_ConstNegative) {
+    GlobalConst("val", ty.i32(), Expr(-2_i));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, "val")})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'size' attribute must be positive)");
+}
+
+TEST_F(StructMemberAttributeTest, Size_Attribute_ConstF32) {
+    GlobalConst("val", ty.f32(), Expr(1.23_f));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, "val")})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'size' must be an i32 or u32 value)");
+}
+
+TEST_F(StructMemberAttributeTest, Size_Attribute_ConstU32) {
+    GlobalConst("val", ty.u32(), Expr(4_u));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, "val")})});
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(StructMemberAttributeTest, Size_Attribute_ConstAInt) {
+    GlobalConst("val", Expr(4_a));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, "val")})});
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(StructMemberAttributeTest, Size_Attribute_ConstAFloat) {
+    GlobalConst("val", Expr(2.0_a));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, "val")})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'size' must be an i32 or u32 value)");
+}
+
+TEST_F(StructMemberAttributeTest, Size_Attribute_Var) {
+    GlobalVar(Source{{1, 2}}, "val", ty.f32(), ast::AddressSpace::kPrivate, ast::Access::kUndefined,
+              Expr(1.23_f));
+
+    Structure(Source{{6, 4}}, "mystruct",
+              utils::Vector{Member(Source{{12, 5}}, "a", ty.f32(),
+                                   utils::Vector{MemberSize(Expr(Source{{12, 35}}, "val"))})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:35 error: var 'val' cannot be referenced at module-scope
+1:2 note: var 'val' declared here)");
+}
+
+TEST_F(StructMemberAttributeTest, Size_Attribute_Override) {
+    Override("val", ty.f32(), Expr(1.23_f));
+
+    Structure("mystruct", utils::Vector{Member("a", ty.f32(), utils::Vector{MemberSize("val")})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(error: @size requires a const-expression, but expression is an override-expression)");
 }
 
 }  // namespace StructAndStructMemberTests
@@ -1488,6 +1561,83 @@ TEST_F(InterpolateTest, MissingLocationAttribute_Struct) {
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
               R"(12:34 error: interpolate attribute must only be used with @location)");
+}
+
+using GroupAndBindingTest = ResolverTest;
+
+TEST_F(GroupAndBindingTest, Const_I32) {
+    GlobalConst("b", Expr(4_i));
+    GlobalConst("g", Expr(2_i));
+    GlobalVar("val", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()), Binding("b"),
+              Group("g"));
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(GroupAndBindingTest, Const_U32) {
+    GlobalConst("b", Expr(4_u));
+    GlobalConst("g", Expr(2_u));
+    GlobalVar("val", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()), Binding("b"),
+              Group("g"));
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(GroupAndBindingTest, Const_AInt) {
+    GlobalConst("b", Expr(4_a));
+    GlobalConst("g", Expr(2_a));
+    GlobalVar("val", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()), Binding("b"),
+              Group("g"));
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(GroupAndBindingTest, Binding_Negative) {
+    GlobalVar("val", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()),
+              Binding(Source{{12, 34}}, -2_i), Group(1_i));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'binding' value must be non-negative)");
+}
+
+TEST_F(GroupAndBindingTest, Binding_F32) {
+    GlobalVar("val", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()),
+              Binding(Source{{12, 34}}, 2.0_f), Group(1_u));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'binding' must be an i32 or u32 value)");
+}
+
+TEST_F(GroupAndBindingTest, Binding_AFloat) {
+    GlobalVar("val", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()),
+              Binding(Source{{12, 34}}, 2.0_a), Group(1_u));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'binding' must be an i32 or u32 value)");
+}
+
+TEST_F(GroupAndBindingTest, Group_Negative) {
+    GlobalVar("val", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()), Binding(2_u),
+              Group(Source{{12, 34}}, -1_i));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'group' value must be non-negative)");
+}
+
+TEST_F(GroupAndBindingTest, Group_F32) {
+    GlobalVar("val", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()), Binding(2_u),
+              Group(Source{{12, 34}}, 1.0_f));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'group' must be an i32 or u32 value)");
+}
+
+TEST_F(GroupAndBindingTest, Group_AFloat) {
+    GlobalVar("val", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()), Binding(2_u),
+              Group(Source{{12, 34}}, 1.0_a));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'group' must be an i32 or u32 value)");
 }
 
 }  // namespace
