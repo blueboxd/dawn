@@ -54,47 +54,39 @@ TEST_P(ResolverConstEvalBinaryOpTest, Test) {
     auto op = std::get<0>(GetParam());
     auto& c = std::get<1>(GetParam());
 
-    std::visit(
-        [&](auto&& expected) {
-            using T = typename std::decay_t<decltype(expected)>::ElementType;
-            if constexpr (std::is_same_v<T, AInt> || std::is_same_v<T, AFloat>) {
-                if (c.overflow) {
-                    // Overflow is not allowed for abstract types. This is tested separately.
-                    return;
-                }
-            }
+    auto* expected = ToValueBase(c.expected);
+    if (expected->IsAbstract() && c.overflow) {
+        // Overflow is not allowed for abstract types. This is tested separately.
+        return;
+    }
 
-            auto* lhs_expr = std::visit([&](auto&& value) { return value.Expr(*this); }, c.lhs);
-            auto* rhs_expr = std::visit([&](auto&& value) { return value.Expr(*this); }, c.rhs);
-            auto* expr = create<ast::BinaryExpression>(op, lhs_expr, rhs_expr);
+    auto* lhs = ToValueBase(c.lhs);
+    auto* rhs = ToValueBase(c.rhs);
 
-            GlobalConst("C", expr);
-            auto* expected_expr = expected.Expr(*this);
-            GlobalConst("E", expected_expr);
-            ASSERT_TRUE(r()->Resolve()) << r()->error();
+    auto* lhs_expr = lhs->Expr(*this);
+    auto* rhs_expr = rhs->Expr(*this);
+    auto* expr = create<ast::BinaryExpression>(op, lhs_expr, rhs_expr);
+    GlobalConst("C", expr);
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-            auto* sem = Sem().Get(expr);
-            const sem::Constant* value = sem->ConstantValue();
-            ASSERT_NE(value, nullptr);
-            EXPECT_TYPE(value->Type(), sem->Type());
+    auto* sem = Sem().Get(expr);
+    const sem::Constant* value = sem->ConstantValue();
+    ASSERT_NE(value, nullptr);
+    EXPECT_TYPE(value->Type(), sem->Type());
 
-            auto* expected_sem = Sem().Get(expected_expr);
-            const sem::Constant* expected_value = expected_sem->ConstantValue();
-            ASSERT_NE(expected_value, nullptr);
-            EXPECT_TYPE(expected_value->Type(), expected_sem->Type());
-
-            ForEachElemPair(value, expected_value,
-                            [&](const sem::Constant* a, const sem::Constant* b) {
-                                EXPECT_EQ(a->As<T>(), b->As<T>());
-                                if constexpr (IsIntegral<T>) {
-                                    // Check that the constant's integer doesn't contain unexpected
-                                    // data in the MSBs that are outside of the bit-width of T.
-                                    EXPECT_EQ(a->As<AInt>(), b->As<AInt>());
-                                }
-                                return HasFailure() ? Action::kStop : Action::kContinue;
-                            });
-        },
-        c.expected);
+    auto values_flat = ScalarArgsFrom(value);
+    auto expected_values_flat = expected->Args();
+    ASSERT_EQ(values_flat.values.Length(), expected_values_flat.values.Length());
+    for (size_t i = 0; i < values_flat.values.Length(); ++i) {
+        auto& a = values_flat.values[i];
+        auto& b = expected_values_flat.values[i];
+        EXPECT_EQ(a, b);
+        if (expected->IsIntegral()) {
+            // Check that the constant's integer doesn't contain unexpected
+            // data in the MSBs that are outside of the bit-width of T.
+            EXPECT_EQ(builder::As<AInt>(a), builder::As<AInt>(b));
+        }
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(MixedAbstractArgs,
@@ -606,7 +598,7 @@ std::vector<Case> ShiftLeftCases() {
     // Shift type is u32 for non-abstract
     using ST = std::conditional_t<IsAbstract<T>, T, u32>;
     using B = BitValues<T>;
-    return {
+    auto r = std::vector<Case>{
         C(T{0b1010}, ST{0}, T{0b0000'0000'1010}),    //
         C(T{0b1010}, ST{1}, T{0b0000'0001'0100}),    //
         C(T{0b1010}, ST{2}, T{0b0000'0010'1000}),    //
@@ -634,6 +626,25 @@ std::vector<Case> ShiftLeftCases() {
           Vec(ST{6}, ST{7}, ST{8}),                                             //
           Vec(T{0b0010'1000'0000}, T{0b0101'0000'0000}, T{0b1010'0000'0000})),  //
     };
+
+    // Only abstract 0 can be shifted left as much as we like. For concrete 0 (and any number), it
+    // cannot be shifted equal or more than the number of bits of the lhs (see
+    // ResolverConstEvalShiftLeftConcreteGeqBitWidthError)
+    ConcatIntoIf<IsAbstract<T>>(  //
+        r, std::vector<Case>{
+               C(T{0}, ST{64}, T{0}),
+               C(T{0}, ST{65}, T{0}),
+               C(T{0}, ST{65}, T{0}),
+               C(T{0}, ST{10000}, T{0}),
+               C(T{0}, T::Highest(), T{0}),
+               C(Negate(T{0}), ST{64}, Negate(T{0})),
+               C(Negate(T{0}), ST{65}, Negate(T{0})),
+               C(Negate(T{0}), ST{65}, Negate(T{0})),
+               C(Negate(T{0}), ST{10000}, Negate(T{0})),
+               C(Negate(T{0}), T::Highest(), Negate(T{0})),
+           });
+
+    return r;
 }
 INSTANTIATE_TEST_SUITE_P(ShiftLeft,
                          ResolverConstEvalBinaryOpTest,
@@ -658,21 +669,15 @@ using ResolverConstEvalBinaryOpTest_Overflow = ResolverTestWithParam<OverflowCas
 TEST_P(ResolverConstEvalBinaryOpTest_Overflow, Test) {
     Enable(ast::Extension::kF16);
     auto& c = GetParam();
-    auto* lhs_expr = std::visit([&](auto&& value) { return value.Expr(*this); }, c.lhs);
-    auto* rhs_expr = std::visit([&](auto&& value) { return value.Expr(*this); }, c.rhs);
+    auto* lhs = ToValueBase(c.lhs);
+    auto* rhs = ToValueBase(c.rhs);
+    auto* lhs_expr = lhs->Expr(*this);
+    auto* rhs_expr = rhs->Expr(*this);
     auto* expr = create<ast::BinaryExpression>(Source{{1, 1}}, c.op, lhs_expr, rhs_expr);
     GlobalConst("C", expr);
     ASSERT_FALSE(r()->Resolve());
-
-    std::string type_name = std::visit(
-        [&](auto&& value) {
-            using ValueType = std::decay_t<decltype(value)>;
-            return builder::FriendlyName<ValueType>();
-        },
-        c.lhs);
-
     EXPECT_THAT(r()->error(), HasSubstr("1:1 error: '"));
-    EXPECT_THAT(r()->error(), HasSubstr("' cannot be represented as '" + type_name + "'"));
+    EXPECT_THAT(r()->error(), HasSubstr("' cannot be represented as '" + lhs->TypeName() + "'"));
 }
 INSTANTIATE_TEST_SUITE_P(
     Test,
@@ -854,10 +859,8 @@ TEST_F(ResolverConstEvalTest, BinaryAbstractShiftLeftByNegativeValue_Error) {
 using ResolverConstEvalShiftLeftConcreteGeqBitWidthError =
     ResolverTestWithParam<std::tuple<Types, Types>>;
 TEST_P(ResolverConstEvalShiftLeftConcreteGeqBitWidthError, Test) {
-    auto* lhs_expr =
-        std::visit([&](auto&& value) { return value.Expr(*this); }, std::get<0>(GetParam()));
-    auto* rhs_expr =
-        std::visit([&](auto&& value) { return value.Expr(*this); }, std::get<1>(GetParam()));
+    auto* lhs_expr = ToValueBase(std::get<0>(GetParam()))->Expr(*this);
+    auto* rhs_expr = ToValueBase(std::get<1>(GetParam()))->Expr(*this);
     GlobalConst("c", Shl(Source{{1, 1}}, lhs_expr, rhs_expr));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(
@@ -866,24 +869,44 @@ TEST_P(ResolverConstEvalShiftLeftConcreteGeqBitWidthError, Test) {
 }
 INSTANTIATE_TEST_SUITE_P(Test,
                          ResolverConstEvalShiftLeftConcreteGeqBitWidthError,
-                         testing::Values(                                 //
-                             std::make_tuple(Val(1_i), Val(32_u)),        //
-                             std::make_tuple(Val(1_i), Val(33_u)),        //
-                             std::make_tuple(Val(1_i), Val(34_u)),        //
-                             std::make_tuple(Val(1_i), Val(99999999_u)),  //
-                             std::make_tuple(Val(1_u), Val(32_u)),        //
-                             std::make_tuple(Val(1_u), Val(33_u)),        //
-                             std::make_tuple(Val(1_u), Val(34_u)),        //
-                             std::make_tuple(Val(1_u), Val(99999999_u))   //
+                         testing::Values(                                             //
+                             std::make_tuple(Val(0_u), Val(32_u)),                    //
+                             std::make_tuple(Val(0_u), Val(33_u)),                    //
+                             std::make_tuple(Val(0_u), Val(34_u)),                    //
+                             std::make_tuple(Val(0_u), Val(10000_u)),                 //
+                             std::make_tuple(Val(0_u), Val(u32::Highest())),          //
+                             std::make_tuple(Val(0_i), Val(32_u)),                    //
+                             std::make_tuple(Val(0_i), Val(33_u)),                    //
+                             std::make_tuple(Val(0_i), Val(34_u)),                    //
+                             std::make_tuple(Val(0_i), Val(10000_u)),                 //
+                             std::make_tuple(Val(0_i), Val(u32::Highest())),          //
+                             std::make_tuple(Val(Negate(0_u)), Val(32_u)),            //
+                             std::make_tuple(Val(Negate(0_u)), Val(33_u)),            //
+                             std::make_tuple(Val(Negate(0_u)), Val(34_u)),            //
+                             std::make_tuple(Val(Negate(0_u)), Val(10000_u)),         //
+                             std::make_tuple(Val(Negate(0_u)), Val(u32::Highest())),  //
+                             std::make_tuple(Val(Negate(0_i)), Val(32_u)),            //
+                             std::make_tuple(Val(Negate(0_i)), Val(33_u)),            //
+                             std::make_tuple(Val(Negate(0_i)), Val(34_u)),            //
+                             std::make_tuple(Val(Negate(0_i)), Val(10000_u)),         //
+                             std::make_tuple(Val(Negate(0_i)), Val(u32::Highest())),  //
+                             std::make_tuple(Val(1_i), Val(32_u)),                    //
+                             std::make_tuple(Val(1_i), Val(33_u)),                    //
+                             std::make_tuple(Val(1_i), Val(34_u)),                    //
+                             std::make_tuple(Val(1_i), Val(10000_u)),                 //
+                             std::make_tuple(Val(1_i), Val(u32::Highest())),          //
+                             std::make_tuple(Val(1_u), Val(32_u)),                    //
+                             std::make_tuple(Val(1_u), Val(33_u)),                    //
+                             std::make_tuple(Val(1_u), Val(34_u)),                    //
+                             std::make_tuple(Val(1_u), Val(10000_u)),                 //
+                             std::make_tuple(Val(1_u), Val(u32::Highest()))           //
                              ));
 
 // AInt left shift results in sign change error
 using ResolverConstEvalShiftLeftSignChangeError = ResolverTestWithParam<std::tuple<Types, Types>>;
 TEST_P(ResolverConstEvalShiftLeftSignChangeError, Test) {
-    auto* lhs_expr =
-        std::visit([&](auto&& value) { return value.Expr(*this); }, std::get<0>(GetParam()));
-    auto* rhs_expr =
-        std::visit([&](auto&& value) { return value.Expr(*this); }, std::get<1>(GetParam()));
+    auto* lhs_expr = ToValueBase(std::get<0>(GetParam()))->Expr(*this);
+    auto* rhs_expr = ToValueBase(std::get<1>(GetParam()))->Expr(*this);
     GlobalConst("c", Shl(Source{{1, 1}}, lhs_expr, rhs_expr));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "1:1 error: shift left operation results in sign change");

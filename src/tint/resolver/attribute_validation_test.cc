@@ -673,7 +673,7 @@ TEST_F(StructMemberAttributeTest, Align_Attribute_ConstNegative) {
                               "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: 'align' value must be a positive, power-of-two integer)");
+              R"(12:34 error: @align value must be a positive, power-of-two integer)");
 }
 
 TEST_F(StructMemberAttributeTest, Align_Attribute_ConstPowerOfTwo) {
@@ -683,7 +683,7 @@ TEST_F(StructMemberAttributeTest, Align_Attribute_ConstPowerOfTwo) {
                               "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: 'align' value must be a positive, power-of-two integer)");
+              R"(12:34 error: @align value must be a positive, power-of-two integer)");
 }
 
 TEST_F(StructMemberAttributeTest, Align_Attribute_ConstF32) {
@@ -692,7 +692,7 @@ TEST_F(StructMemberAttributeTest, Align_Attribute_ConstF32) {
     Structure("mystruct", utils::Vector{Member(
                               "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: 'align' must be an i32 or u32 value)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: @align must be an i32 or u32 value)");
 }
 
 TEST_F(StructMemberAttributeTest, Align_Attribute_ConstU32) {
@@ -717,7 +717,7 @@ TEST_F(StructMemberAttributeTest, Align_Attribute_ConstAFloat) {
     Structure("mystruct", utils::Vector{Member(
                               "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: 'align' must be an i32 or u32 value)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: @align must be an i32 or u32 value)");
 }
 
 TEST_F(StructMemberAttributeTest, Align_Attribute_Var) {
@@ -757,7 +757,7 @@ TEST_F(StructMemberAttributeTest, Size_Attribute_ConstNegative) {
     Structure("mystruct", utils::Vector{Member(
                               "a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, "val")})});
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: 'size' attribute must be positive)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: @size must be a positive integer)");
 }
 
 TEST_F(StructMemberAttributeTest, Size_Attribute_ConstF32) {
@@ -766,7 +766,7 @@ TEST_F(StructMemberAttributeTest, Size_Attribute_ConstF32) {
     Structure("mystruct", utils::Vector{Member(
                               "a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, "val")})});
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: 'size' must be an i32 or u32 value)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: @size must be an i32 or u32 value)");
 }
 
 TEST_F(StructMemberAttributeTest, Size_Attribute_ConstU32) {
@@ -791,7 +791,7 @@ TEST_F(StructMemberAttributeTest, Size_Attribute_ConstAFloat) {
     Structure("mystruct", utils::Vector{Member(
                               "a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, "val")})});
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: 'size' must be an i32 or u32 value)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: @size must be an i32 or u32 value)");
 }
 
 TEST_F(StructMemberAttributeTest, Size_Attribute_Var) {
@@ -1638,6 +1638,41 @@ TEST_F(GroupAndBindingTest, Group_AFloat) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), R"(12:34 error: 'group' must be an i32 or u32 value)");
+}
+
+using IdTest = ResolverTest;
+
+TEST_F(IdTest, Const_I32) {
+    Override("val", ty.f32(), utils::Vector{Id(1_i)});
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(IdTest, Const_U32) {
+    Override("val", ty.f32(), utils::Vector{Id(1_u)});
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(IdTest, Const_AInt) {
+    Override("val", ty.f32(), utils::Vector{Id(1_a)});
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(IdTest, Negative) {
+    Override("val", ty.f32(), utils::Vector{Id(Source{{12, 34}}, -1_i)});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'id' value must be non-negative)");
+}
+
+TEST_F(IdTest, F32) {
+    Override("val", ty.f32(), utils::Vector{Id(Source{{12, 34}}, 1_f)});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'id' must be an i32 or u32 value)");
+}
+
+TEST_F(IdTest, AFloat) {
+    Override("val", ty.f32(), utils::Vector{Id(Source{{12, 34}}, 1.0_a)});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'id' must be an i32 or u32 value)");
 }
 
 }  // namespace
