@@ -32,8 +32,8 @@
 #include "src/tint/sem/loop_statement.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/switch_statement.h"
-#include "src/tint/sem/type_constructor.h"
 #include "src/tint/sem/type_conversion.h"
+#include "src/tint/sem/type_initializer.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/sem/while_statement.h"
 #include "src/tint/utils/block_allocator.h"
@@ -537,6 +537,51 @@ class UniformityGraph {
                 return cf;
             },
 
+            [&](const ast::BreakIfStatement* b) {
+                // This works very similar to the IfStatement uniformity below, execpt instead of
+                // processing the body, we directly inline the BreakStatement uniformity from
+                // above.
+
+                auto [_, v_cond] = ProcessExpression(cf, b->condition);
+
+                // Add a diagnostic node to capture the control flow change.
+                auto* v = current_function_->CreateNode("break_if_stmt", b);
+                v->affects_control_flow = true;
+                v->AddEdge(v_cond);
+
+                {
+                    auto* parent = sem_.Get(b)->FindFirstParent<sem::LoopStatement>();
+                    TINT_ASSERT(Resolver, current_function_->loop_switch_infos.count(parent));
+                    auto& info = current_function_->loop_switch_infos.at(parent);
+
+                    // Propagate variable values to the loop exit nodes.
+                    for (auto* var : current_function_->local_var_decls) {
+                        // Skip variables that were declared inside this loop.
+                        if (auto* lv = var->As<sem::LocalVariable>();
+                            lv && lv->Statement()->FindFirstParent(
+                                      [&](auto* s) { return s == parent; })) {
+                            continue;
+                        }
+
+                        // Add an edge from the variable exit node to its value at this point.
+                        auto* exit_node = utils::GetOrCreate(info.var_exit_nodes, var, [&]() {
+                            auto name = builder_->Symbols().NameFor(var->Declaration()->symbol);
+                            return CreateNode(name + "_value_" + info.type + "_exit");
+                        });
+
+                        exit_node->AddEdge(current_function_->variables.Get(var));
+                    }
+                }
+
+                auto* sem_break_if = sem_.Get(b);
+                if (sem_break_if->Behaviors() != sem::Behaviors{sem::Behavior::kNext}) {
+                    auto* cf_end = CreateNode("break_if_CFend");
+                    cf_end->AddEdge(v);
+                    return cf_end;
+                }
+                return cf;
+            },
+
             [&](const ast::CallStatement* c) {
                 auto [cf1, _] = ProcessCall(cf, c->expr);
                 return cf1;
@@ -831,7 +876,7 @@ class UniformityGraph {
                 // Create input nodes for any variables declared before this loop.
                 for (auto* v : current_function_->local_var_decls) {
                     auto name = builder_->Symbols().NameFor(v->Declaration()->symbol);
-                    auto* in_node = CreateNode(name + "_value_loop_in");
+                    auto* in_node = CreateNode(name + "_value_loop_in", v->Declaration());
                     in_node->AddEdge(current_function_->variables.Get(v));
                     info.var_in_nodes[v] = in_node;
                     current_function_->variables.Set(v, in_node);
@@ -965,14 +1010,14 @@ class UniformityGraph {
             [&](const ast::VariableDeclStatement* decl) {
                 Node* node;
                 auto* sem_var = sem_.Get(decl->variable);
-                if (decl->variable->constructor) {
-                    auto [cf1, v] = ProcessExpression(cf, decl->variable->constructor);
+                if (decl->variable->initializer) {
+                    auto [cf1, v] = ProcessExpression(cf, decl->variable->initializer);
                     cf = cf1;
                     node = v;
 
                     // Store if lhs is a partial pointer
                     if (sem_var->Type()->Is<sem::Pointer>()) {
-                        auto* init = sem_.Get(decl->variable->constructor);
+                        auto* init = sem_.Get(decl->variable->initializer);
                         if (auto* unary_init = init->Declaration()->As<ast::UnaryOpExpression>()) {
                             auto* e = UnwrapIndirectAndAddressOfChain(unary_init);
                             if (e->IsAnyOf<ast::IndexAccessorExpression,
@@ -1111,7 +1156,7 @@ class UniformityGraph {
                 } else {
                     auto [cf1, v1] = ProcessExpression(cf, b->lhs);
                     auto [cf2, v2] = ProcessExpression(cf1, b->rhs);
-                    auto* result = CreateNode("binary_expr_result");
+                    auto* result = CreateNode("binary_expr_result", b);
                     result->AddEdge(v1);
                     result->AddEdge(v2);
                     return std::pair<Node*, Node*>(cf2, result);
@@ -1333,7 +1378,7 @@ class UniformityGraph {
                 function_tag = info.function_tag;
                 func_info = &info;
             },
-            [&](const sem::TypeConstructor*) {
+            [&](const sem::TypeInitializer*) {
                 callsite_tag = CallSiteNoRestriction;
                 function_tag = NoRestriction;
             },
@@ -1404,7 +1449,7 @@ class UniformityGraph {
                 }
             } else {
                 // All builtin function parameters are RequiredToBeUniformForReturnValue, as are
-                // parameters for type constructors and type conversions.
+                // parameters for type initializers and type conversions.
                 // The arrayLength() builtin is a special case, as there is currently no way for it
                 // to have a non-uniform return value.
                 auto* builtin = sem->Target()->As<sem::Builtin>();
@@ -1527,39 +1572,48 @@ class UniformityGraph {
             // the actual cause of divergence.
         }
 
+        auto get_var_type = [&](const sem::Variable* var) {
+            switch (var->AddressSpace()) {
+                case ast::AddressSpace::kStorage:
+                    return "read_write storage buffer ";
+                case ast::AddressSpace::kWorkgroup:
+                    return "workgroup storage variable ";
+                case ast::AddressSpace::kPrivate:
+                    return "module-scope private variable ";
+                default:
+                    if (ast::HasAttribute<ast::BuiltinAttribute>(var->Declaration()->attributes)) {
+                        return "builtin ";
+                    } else if (ast::HasAttribute<ast::LocationAttribute>(
+                                   var->Declaration()->attributes)) {
+                        return "user-defined input ";
+                    } else {
+                        // TODO(jrprice): Provide more info for this case.
+                    }
+                    break;
+            }
+            return "";
+        };
+
         // Show the source of the non-uniform value.
         Switch(
             non_uniform_source->ast,
             [&](const ast::IdentifierExpression* ident) {
-                std::string var_type = "";
                 auto* var = sem_.Get<sem::VariableUser>(ident)->Variable();
-                switch (var->AddressSpace()) {
-                    case ast::AddressSpace::kStorage:
-                        var_type = "read_write storage buffer ";
-                        break;
-                    case ast::AddressSpace::kWorkgroup:
-                        var_type = "workgroup storage variable ";
-                        break;
-                    case ast::AddressSpace::kPrivate:
-                        var_type = "module-scope private variable ";
-                        break;
-                    default:
-                        if (ast::HasAttribute<ast::BuiltinAttribute>(
-                                var->Declaration()->attributes)) {
-                            var_type = "builtin ";
-                        } else if (ast::HasAttribute<ast::LocationAttribute>(
-                                       var->Declaration()->attributes)) {
-                            var_type = "user-defined input ";
-                        } else {
-                            // TODO(jrprice): Provide more info for this case.
-                        }
-                        break;
-                }
+                std::string var_type = get_var_type(var);
                 diagnostics_.add_note(diag::System::Resolver,
                                       "reading from " + var_type + "'" +
                                           builder_->Symbols().NameFor(ident->symbol) +
                                           "' may result in a non-uniform value",
                                       ident->source);
+            },
+            [&](const ast::Variable* v) {
+                auto* var = sem_.Get(v);
+                std::string var_type = get_var_type(var);
+                diagnostics_.add_note(diag::System::Resolver,
+                                      "reading from " + var_type + "'" +
+                                          builder_->Symbols().NameFor(v->symbol) +
+                                          "' may result in a non-uniform value",
+                                      v->source);
             },
             [&](const ast::CallExpression* c) {
                 auto target_name = builder_->Symbols().NameFor(
@@ -1599,6 +1653,10 @@ class UniformityGraph {
                         break;
                     }
                 }
+            },
+            [&](const ast::Expression* e) {
+                diagnostics_.add_note(diag::System::Resolver,
+                                      "result of expression may be non-uniform", e->source);
             },
             [&](Default) {
                 TINT_ICE(Resolver, diagnostics_) << "unhandled source of non-uniformity";

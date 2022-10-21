@@ -73,6 +73,8 @@ set(TINT_LIB_SRCS
   ast/bool_literal_expression.h
   ast/bool.cc
   ast/bool.h
+  ast/break_if_statement.cc
+  ast/break_if_statement.h
   ast/break_statement.cc
   ast/break_statement.h
   ast/builtin_attribute.cc
@@ -259,10 +261,10 @@ set(TINT_LIB_SRCS
   reader/reader.h
   resolver/const_eval.cc
   resolver/const_eval.h
-  resolver/ctor_conv_intrinsic.cc
-  resolver/ctor_conv_intrinsic.h
   resolver/dependency_graph.cc
   resolver/dependency_graph.h
+  resolver/init_conv_intrinsic.cc
+  resolver/init_conv_intrinsic.h
   resolver/intrinsic_table.cc
   resolver/intrinsic_table.h
   resolver/intrinsic_table.inl
@@ -292,6 +294,8 @@ set(TINT_LIB_SRCS
   sem/block_statement.h
   sem/bool.cc
   sem/bool.h
+  sem/break_if_statement.cc
+  sem/break_if_statement.h
   sem/builtin_type.cc
   sem/builtin_type.h
   sem/builtin.cc
@@ -359,8 +363,8 @@ set(TINT_LIB_SRCS
   sem/switch_statement.h
   sem/texture.cc
   sem/texture.h
-  sem/type_constructor.cc
-  sem/type_constructor.h
+  sem/type_initializer.cc
+  sem/type_initializer.h
   sem/type_conversion.cc
   sem/type_conversion.h
   sem/type_manager.cc
@@ -466,8 +470,8 @@ set(TINT_LIB_SRCS
   transform/var_for_dynamic_index.h
   transform/vectorize_matrix_conversions.cc
   transform/vectorize_matrix_conversions.h
-  transform/vectorize_scalar_matrix_constructors.cc
-  transform/vectorize_scalar_matrix_constructors.h
+  transform/vectorize_scalar_matrix_initializers.cc
+  transform/vectorize_scalar_matrix_initializers.h
   transform/vertex_pulling.cc
   transform/vertex_pulling.h
   transform/while_to_loop.cc
@@ -708,6 +712,7 @@ if(TINT_BUILD_TESTS)
     ast/block_statement_test.cc
     ast/bool_literal_expression_test.cc
     ast/bool_test.cc
+    ast/break_if_statement_test.cc
     ast/break_statement_test.cc
     ast/builtin_attribute_test.cc
     ast/builtin_texture_helper_test.cc
@@ -834,7 +839,7 @@ if(TINT_BUILD_TESTS)
     resolver/struct_layout_test.cc
     resolver/struct_pipeline_stage_use_test.cc
     resolver/struct_address_space_use_test.cc
-    resolver/type_constructor_validation_test.cc
+    resolver/type_initializer_validation_test.cc
     resolver/type_validation_test.cc
     resolver/validation_test.cc
     resolver/validator_is_storeable_test.cc
@@ -1050,7 +1055,7 @@ if(TINT_BUILD_TESTS)
       writer/spirv/builder_builtin_test.cc
       writer/spirv/builder_builtin_texture_test.cc
       writer/spirv/builder_call_test.cc
-      writer/spirv/builder_constructor_expression_test.cc
+      writer/spirv/builder_initializer_expression_test.cc
       writer/spirv/builder_discard_test.cc
       writer/spirv/builder_entry_point_test.cc
       writer/spirv/builder_format_conversion_test.cc
@@ -1090,7 +1095,7 @@ if(TINT_BUILD_TESTS)
       writer/wgsl/generator_impl_call_test.cc
       writer/wgsl/generator_impl_case_test.cc
       writer/wgsl/generator_impl_cast_test.cc
-      writer/wgsl/generator_impl_constructor_test.cc
+      writer/wgsl/generator_impl_initializer_test.cc
       writer/wgsl/generator_impl_continue_test.cc
       writer/wgsl/generator_impl_discard_test.cc
       writer/wgsl/generator_impl_enable_test.cc
@@ -1155,7 +1160,7 @@ if(TINT_BUILD_TESTS)
       transform/unwind_discard_functions_test.cc
       transform/var_for_dynamic_index_test.cc
       transform/vectorize_matrix_conversions_test.cc
-      transform/vectorize_scalar_matrix_constructors_test.cc
+      transform/vectorize_scalar_matrix_initializers_test.cc
       transform/vertex_pulling_test.cc
       transform/while_to_loop_test.cc
       transform/zero_init_workgroup_memory_test.cc
@@ -1177,7 +1182,7 @@ if(TINT_BUILD_TESTS)
       writer/msl/generator_impl_call_test.cc
       writer/msl/generator_impl_case_test.cc
       writer/msl/generator_impl_cast_test.cc
-      writer/msl/generator_impl_constructor_test.cc
+      writer/msl/generator_impl_initializer_test.cc
       writer/msl/generator_impl_continue_test.cc
       writer/msl/generator_impl_discard_test.cc
       writer/msl/generator_impl_function_test.cc
@@ -1212,7 +1217,7 @@ if(TINT_BUILD_TESTS)
       writer/glsl/generator_impl_call_test.cc
       writer/glsl/generator_impl_case_test.cc
       writer/glsl/generator_impl_cast_test.cc
-      writer/glsl/generator_impl_constructor_test.cc
+      writer/glsl/generator_impl_initializer_test.cc
       writer/glsl/generator_impl_continue_test.cc
       writer/glsl/generator_impl_discard_test.cc
       writer/glsl/generator_impl_function_test.cc
@@ -1249,7 +1254,7 @@ if(TINT_BUILD_TESTS)
       writer/hlsl/generator_impl_call_test.cc
       writer/hlsl/generator_impl_case_test.cc
       writer/hlsl/generator_impl_cast_test.cc
-      writer/hlsl/generator_impl_constructor_test.cc
+      writer/hlsl/generator_impl_initializer_test.cc
       writer/hlsl/generator_impl_continue_test.cc
       writer/hlsl/generator_impl_discard_test.cc
       writer/hlsl/generator_impl_function_test.cc

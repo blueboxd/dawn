@@ -44,8 +44,8 @@
 #include "src/tint/sem/storage_texture.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/switch_statement.h"
-#include "src/tint/sem/type_constructor.h"
 #include "src/tint/sem/type_conversion.h"
+#include "src/tint/sem/type_initializer.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/transform/add_block_attribute.h"
 #include "src/tint/transform/add_empty_entry_point.h"
@@ -712,6 +712,16 @@ bool GeneratorImpl::EmitBreak(const ast::BreakStatement*) {
     return true;
 }
 
+bool GeneratorImpl::EmitBreakIf(const ast::BreakIfStatement* b) {
+    auto out = line();
+    out << "if (";
+    if (!EmitExpression(out, b->condition)) {
+        return false;
+    }
+    out << ") { break; }";
+    return true;
+}
+
 bool GeneratorImpl::EmitCall(std::ostream& out, const ast::CallExpression* expr) {
     auto* call = builder_.Sem().Get<sem::Call>(expr);
     auto* target = call->Target();
@@ -725,8 +735,8 @@ bool GeneratorImpl::EmitCall(std::ostream& out, const ast::CallExpression* expr)
     if (auto* cast = target->As<sem::TypeConversion>()) {
         return EmitTypeConversion(out, call, cast);
     }
-    if (auto* ctor = target->As<sem::TypeConstructor>()) {
-        return EmitTypeConstructor(out, call, ctor);
+    if (auto* ctor = target->As<sem::TypeInitializer>()) {
+        return EmitTypeInitializer(out, call, ctor);
     }
     TINT_ICE(Writer, diagnostics_) << "unhandled call target: " << target->TypeInfo().name;
     return false;
@@ -852,12 +862,12 @@ bool GeneratorImpl::EmitTypeConversion(std::ostream& out,
     return true;
 }
 
-bool GeneratorImpl::EmitTypeConstructor(std::ostream& out,
+bool GeneratorImpl::EmitTypeInitializer(std::ostream& out,
                                         const sem::Call* call,
-                                        const sem::TypeConstructor* ctor) {
+                                        const sem::TypeInitializer* ctor) {
     auto* type = ctor->ReturnType();
 
-    // If the type constructor is empty then we need to construct with the zero
+    // If the type initializer is empty then we need to construct with the zero
     // value for all components.
     if (call->Arguments().IsEmpty()) {
         return EmitZeroValue(out, type);
@@ -1974,8 +1984,8 @@ bool GeneratorImpl::EmitPrivateVariable(const sem::Variable* var) {
     }
 
     out << " = ";
-    if (auto* constructor = decl->constructor) {
-        if (!EmitExpression(out, constructor)) {
+    if (auto* initializer = decl->initializer) {
+        if (!EmitExpression(out, initializer)) {
             return false;
         }
     } else {
@@ -2000,9 +2010,9 @@ bool GeneratorImpl::EmitWorkgroupVariable(const sem::Variable* var) {
         return false;
     }
 
-    if (auto* constructor = decl->constructor) {
+    if (auto* initializer = decl->initializer) {
         out << " = ";
-        if (!EmitExpression(out, constructor)) {
+        if (!EmitExpression(out, initializer)) {
             return false;
         }
     }
@@ -2033,9 +2043,9 @@ bool GeneratorImpl::EmitIOVariable(const sem::GlobalVariable* var) {
         return false;
     }
 
-    if (auto* constructor = decl->constructor) {
+    if (auto* initializer = decl->initializer) {
         out << " = ";
-        if (!EmitExpression(out, constructor)) {
+        if (!EmitExpression(out, initializer)) {
             return false;
         }
     }
@@ -2616,6 +2626,7 @@ bool GeneratorImpl::EmitStatement(const ast::Statement* stmt) {
         [&](const ast::AssignmentStatement* a) { return EmitAssign(a); },
         [&](const ast::BlockStatement* b) { return EmitBlock(b); },
         [&](const ast::BreakStatement* b) { return EmitBreak(b); },
+        [&](const ast::BreakIfStatement* b) { return EmitBreakIf(b); },
         [&](const ast::CallStatement* c) {
             auto out = line();
             if (!EmitCall(out, c->expr)) {
@@ -2955,8 +2966,8 @@ bool GeneratorImpl::EmitVar(const ast::Var* var) {
 
     out << " = ";
 
-    if (var->constructor) {
-        if (!EmitExpression(out, var->constructor)) {
+    if (var->initializer) {
+        if (!EmitExpression(out, var->initializer)) {
             return false;
         }
     } else {
@@ -2982,7 +2993,7 @@ bool GeneratorImpl::EmitLet(const ast::Let* let) {
 
     out << " = ";
 
-    if (!EmitExpression(out, let->constructor)) {
+    if (!EmitExpression(out, let->initializer)) {
         return false;
     }
 
@@ -3002,7 +3013,7 @@ bool GeneratorImpl::EmitProgramConstVariable(const ast::Variable* var) {
         return false;
     }
     out << " = ";
-    if (!EmitExpression(out, var->constructor)) {
+    if (!EmitExpression(out, var->initializer)) {
         return false;
     }
     out << ";";

@@ -702,9 +702,9 @@ bool GeneratorImpl::EmitVariable(std::ostream& out, const ast::Variable* v) {
         }
     }
 
-    if (v->constructor != nullptr) {
+    if (v->initializer != nullptr) {
         out << " = ";
-        if (!EmitExpression(out, v->constructor)) {
+        if (!EmitExpression(out, v->initializer)) {
             return false;
         }
     }
@@ -958,6 +958,7 @@ bool GeneratorImpl::EmitStatement(const ast::Statement* stmt) {
         [&](const ast::AssignmentStatement* a) { return EmitAssign(a); },
         [&](const ast::BlockStatement* b) { return EmitBlock(b); },
         [&](const ast::BreakStatement* b) { return EmitBreak(b); },
+        [&](const ast::BreakIfStatement* b) { return EmitBreakIf(b); },
         [&](const ast::CallStatement* c) {
             auto out = line();
             if (!EmitCall(out, c->expr)) {
@@ -1020,6 +1021,17 @@ bool GeneratorImpl::EmitAssign(const ast::AssignmentStatement* stmt) {
 
 bool GeneratorImpl::EmitBreak(const ast::BreakStatement*) {
     line() << "break;";
+    return true;
+}
+
+bool GeneratorImpl::EmitBreakIf(const ast::BreakIfStatement* b) {
+    auto out = line();
+
+    out << "break if ";
+    if (!EmitExpression(out, b->condition)) {
+        return false;
+    }
+    out << ";";
     return true;
 }
 

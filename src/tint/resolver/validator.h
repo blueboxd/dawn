@@ -51,6 +51,7 @@ namespace tint::sem {
 class Array;
 class Atomic;
 class BlockStatement;
+class BreakIfStatement;
 class Builtin;
 class Call;
 class CaseStatement;
@@ -60,7 +61,7 @@ class LoopStatement;
 class Materialize;
 class Statement;
 class SwitchStatement;
-class TypeConstructor;
+class TypeInitializer;
 class WhileStatement;
 }  // namespace tint::sem
 
@@ -256,6 +257,13 @@ class Validator {
         const std::unordered_map<OverrideId, const sem::Variable*>& override_id,
         const std::unordered_map<const sem::Type*, const Source&>& atomic_composite_info) const;
 
+    /// Validates a break-if statement
+    /// @param stmt the statement to validate
+    /// @param current_statement the current statement being resolved
+    /// @returns true on success, false otherwise
+    bool BreakIfStatement(const sem::BreakIfStatement* stmt,
+                          sem::Statement* current_statement) const;
+
     /// Validates an if statement
     /// @param stmt the statement to validate
     /// @returns true on success, false otherwise
@@ -363,11 +371,11 @@ class Validator {
     /// @returns true on success, false otherwise.
     bool Structure(const sem::Struct* str, ast::PipelineStage stage) const;
 
-    /// Validates a structure constructor
+    /// Validates a structure initializer
     /// @param ctor the call expression to validate
     /// @param struct_type the type of the structure
     /// @returns true on success, false otherwise
-    bool StructureConstructor(const ast::CallExpression* ctor,
+    bool StructureInitializer(const ast::CallExpression* ctor,
                               const sem::Struct* struct_type) const;
 
     /// Validates a switch statement
@@ -414,11 +422,11 @@ class Validator {
     /// @returns true on success, false otherwise
     bool Vector(const sem::Vector* ty, const Source& source) const;
 
-    /// Validates an array constructor
+    /// Validates an array initializer
     /// @param ctor the call expresion to validate
     /// @param arr_type the type of the array
     /// @returns true on success, false otherwise
-    bool ArrayConstructor(const ast::CallExpression* ctor, const sem::Array* arr_type) const;
+    bool ArrayInitializer(const ast::CallExpression* ctor, const sem::Array* arr_type) const;
 
     /// Validates a texture builtin function
     /// @param call the builtin call to validate

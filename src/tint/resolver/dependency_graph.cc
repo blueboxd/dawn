@@ -25,6 +25,7 @@
 #include "src/tint/ast/atomic.h"
 #include "src/tint/ast/block_statement.h"
 #include "src/tint/ast/bool.h"
+#include "src/tint/ast/break_if_statement.h"
 #include "src/tint/ast/break_statement.h"
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/compound_assignment_statement.h"
@@ -199,8 +200,8 @@ class DependencyScanner {
                 Declare(var->symbol, var);
                 TraverseType(var->type);
                 TraverseAttributes(var->attributes);
-                if (var->constructor) {
-                    TraverseExpression(var->constructor);
+                if (var->initializer) {
+                    TraverseExpression(var->initializer);
                 }
             },
             [&](const ast::Enable*) {
@@ -263,9 +264,8 @@ class DependencyScanner {
                 TINT_DEFER(scope_stack_.Pop());
                 TraverseStatements(b->statements);
             },
-            [&](const ast::CallStatement* r) {  //
-                TraverseExpression(r->expr);
-            },
+            [&](const ast::BreakIfStatement* b) { TraverseExpression(b->condition); },
+            [&](const ast::CallStatement* r) { TraverseExpression(r->expr); },
             [&](const ast::CompoundAssignmentStatement* a) {
                 TraverseExpression(a->lhs);
                 TraverseExpression(a->rhs);
@@ -292,9 +292,7 @@ class DependencyScanner {
                     TraverseStatement(i->else_statement);
                 }
             },
-            [&](const ast::ReturnStatement* r) {  //
-                TraverseExpression(r->value);
-            },
+            [&](const ast::ReturnStatement* r) { TraverseExpression(r->value); },
             [&](const ast::SwitchStatement* s) {
                 TraverseExpression(s->condition);
                 for (auto* c : s->body) {
@@ -309,7 +307,7 @@ class DependencyScanner {
                     graph_.shadows.emplace(v->variable, shadows);
                 }
                 TraverseType(v->variable->type);
-                TraverseExpression(v->variable->constructor);
+                TraverseExpression(v->variable->initializer);
                 Declare(v->variable->symbol, v->variable);
             },
             [&](const ast::WhileStatement* w) {
