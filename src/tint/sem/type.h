@@ -19,6 +19,7 @@
 #include <string>
 
 #include "src/tint/sem/node.h"
+#include "src/tint/utils/enum_set.h"
 #include "src/tint/utils/vector.h"
 
 // Forward declarations
@@ -29,12 +30,27 @@ class SymbolTable;
 
 namespace tint::sem {
 
-/// Supported memory layouts for calculating sizes
-enum class MemoryLayout { kUniformBuffer, kStorageBuffer };
+enum TypeFlag {
+    /// Type is constructable.
+    /// @see https://gpuweb.github.io/gpuweb/wgsl/#constructible-types
+    kConstructable,
+    /// Type has a creation-fixed footprint.
+    /// @see https://www.w3.org/TR/WGSL/#fixed-footprint-types
+    kCreationFixedFootprint,
+    /// Type has a fixed footprint.
+    /// @see https://www.w3.org/TR/WGSL/#fixed-footprint-types
+    kFixedFootprint,
+};
+
+/// An alias to utils::EnumSet<TypeFlag>
+using TypeFlags = utils::EnumSet<TypeFlag>;
 
 /// Base class for a type in the system
 class Type : public Castable<Type, Node> {
   public:
+    /// Alias to TypeFlag
+    using Flag = TypeFlag;
+
     /// Move constructor
     Type(Type&&);
     ~Type() override;
@@ -66,9 +82,22 @@ class Type : public Castable<Type, Node> {
     /// @note opaque types will return a size of 0.
     virtual uint32_t Align() const;
 
-    /// @returns true if constructible as per
+    /// @returns the flags on the type
+    TypeFlags Flags() { return flags_; }
+
+    /// @returns true if type is constructable
     /// https://gpuweb.github.io/gpuweb/wgsl/#constructible-types
-    virtual bool IsConstructible() const;
+    inline bool IsConstructible() const { return flags_.Contains(Flag::kConstructable); }
+
+    /// @returns true has a creation-fixed footprint.
+    /// @see https://www.w3.org/TR/WGSL/#fixed-footprint-types
+    inline bool HasCreationFixedFootprint() const {
+        return flags_.Contains(Flag::kCreationFixedFootprint);
+    }
+
+    /// @returns true has a fixed footprint.
+    /// @see https://www.w3.org/TR/WGSL/#fixed-footprint-types
+    inline bool HasFixedFootprint() const { return flags_.Contains(Flag::kFixedFootprint); }
 
     /// @returns true if this type is a scalar
     bool is_scalar() const;
@@ -166,7 +195,12 @@ class Type : public Castable<Type, Node> {
     static const sem::Type* Common(utils::VectorRef<const Type*> types);
 
   protected:
-    Type();
+    /// Constructor
+    /// @param flags the flags of this type
+    explicit Type(TypeFlags flags);
+
+    /// The flags of this type.
+    const TypeFlags flags_;
 };
 
 }  // namespace tint::sem

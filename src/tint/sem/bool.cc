@@ -20,7 +20,12 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::Bool);
 
 namespace tint::sem {
 
-Bool::Bool() = default;
+Bool::Bool()
+    : Base(TypeFlags{
+          Flag::kConstructable,
+          Flag::kCreationFixedFootprint,
+          Flag::kFixedFootprint,
+      }) {}
 
 Bool::Bool(Bool&&) = default;
 
@@ -36,10 +41,6 @@ bool Bool::Equals(const Type& other) const {
 
 std::string Bool::FriendlyName(const SymbolTable&) const {
     return "bool";
-}
-
-bool Bool::IsConstructible() const {
-    return true;
 }
 
 uint32_t Bool::Size() const {

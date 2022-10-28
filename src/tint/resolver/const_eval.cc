@@ -54,7 +54,7 @@ T First(T&& first, ...) {
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
-/// Assumes all `cs` are of the same type.
+/// Calls `f` with all constants cast to the type of the first `cs` argument.
 template <typename F, typename... CONSTANTS>
 auto Dispatch_ia_iu32(F&& f, CONSTANTS&&... cs) {
     return Switch(
@@ -65,7 +65,7 @@ auto Dispatch_ia_iu32(F&& f, CONSTANTS&&... cs) {
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
-/// Assumes all `cs` are of the same type.
+/// Calls `f` with all constants cast to the type of the first `cs` argument.
 template <typename F, typename... CONSTANTS>
 auto Dispatch_ia_iu32_bool(F&& f, CONSTANTS&&... cs) {
     return Switch(
@@ -77,7 +77,7 @@ auto Dispatch_ia_iu32_bool(F&& f, CONSTANTS&&... cs) {
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
-/// Assumes all `cs` are of the same type.
+/// Calls `f` with all constants cast to the type of the first `cs` argument.
 template <typename F, typename... CONSTANTS>
 auto Dispatch_fia_fi32_f16(F&& f, CONSTANTS&&... cs) {
     return Switch(
@@ -90,7 +90,7 @@ auto Dispatch_fia_fi32_f16(F&& f, CONSTANTS&&... cs) {
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
-/// Assumes all `cs` are of the same type.
+/// Calls `f` with all constants cast to the type of the first `cs` argument.
 template <typename F, typename... CONSTANTS>
 auto Dispatch_fia_fiu32_f16(F&& f, CONSTANTS&&... cs) {
     return Switch(
@@ -104,7 +104,7 @@ auto Dispatch_fia_fiu32_f16(F&& f, CONSTANTS&&... cs) {
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
-/// Assumes all `cs` are of the same type.
+/// Calls `f` with all constants cast to the type of the first `cs` argument.
 template <typename F, typename... CONSTANTS>
 auto Dispatch_fia_fiu32_f16_bool(F&& f, CONSTANTS&&... cs) {
     return Switch(
@@ -119,7 +119,7 @@ auto Dispatch_fia_fiu32_f16_bool(F&& f, CONSTANTS&&... cs) {
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
-/// Assumes all `cs` are of the same type.
+/// Calls `f` with all constants cast to the type of the first `cs` argument.
 template <typename F, typename... CONSTANTS>
 auto Dispatch_fa_f32_f16(F&& f, CONSTANTS&&... cs) {
     return Switch(
@@ -130,7 +130,7 @@ auto Dispatch_fa_f32_f16(F&& f, CONSTANTS&&... cs) {
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
-/// Assumes all `cs` are of the same type.
+/// Calls `f` with all constants cast to the type of the first `cs` argument.
 template <typename F, typename... CONSTANTS>
 auto Dispatch_bool(F&& f, CONSTANTS&&... cs) {
     return f(cs->template As<bool>()...);
@@ -1450,13 +1450,6 @@ ConstEval::Result ConstEval::OpShiftLeft(const sem::Type* ty,
             UT e2u = static_cast<UT>(e2);
 
             if constexpr (IsAbstract<NumberT>) {
-                // NOTE: Concrete shift left requires an unsigned rhs, so this check only applies
-                // for abstracts.
-                if (e2 < 0) {
-                    AddError("cannot shift left by a negative value", source);
-                    return nullptr;
-                }
-
                 // The e2 + 1 most significant bits of e1 must have the same bit value, otherwise
                 // sign change (overflow) would occur.
                 // Check sign change only if e2 is less than bit width of e1. If e1 is larger
@@ -1520,11 +1513,81 @@ ConstEval::Result ConstEval::OpShiftLeft(const sem::Type* ty,
         return Dispatch_ia_iu32(create, c0, c1);
     };
 
+    if (!sem::Type::DeepestElementOf(args[1]->Type())->Is<sem::U32>()) {
+        TINT_ICE(Resolver, builder.Diagnostics())
+            << "Element type of rhs of ShiftLeft must be a u32";
+        return nullptr;
+    }
+
     auto r = TransformElements(builder, ty, transform, args[0], args[1]);
     if (builder.Diagnostics().contains_errors()) {
         return utils::Failure;
     }
     return r;
+}
+
+ConstEval::Result ConstEval::asin(const sem::Type* ty,
+                                  utils::VectorRef<const sem::Constant*> args,
+                                  const Source& source) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) -> ImplResult {
+            using NumberT = decltype(i);
+            if (i.value < NumberT(-1.0) || i.value > NumberT(1.0)) {
+                AddError("asin must be called with a value in the range [-1, 1]", source);
+                return utils::Failure;
+            }
+            return CreateElement(builder, c0->Type(), decltype(i)(std::asin(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::asinh(const sem::Type* ty,
+                                   utils::VectorRef<const sem::Constant*> args,
+                                   const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) {
+            return CreateElement(builder, c0->Type(), decltype(i)(std::asinh(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+
+    auto r = TransformElements(builder, ty, transform, args[0]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::Result ConstEval::atan(const sem::Type* ty,
+                                  utils::VectorRef<const sem::Constant*> args,
+                                  const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) {
+            return CreateElement(builder, c0->Type(), decltype(i)(std::atan(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::atanh(const sem::Type* ty,
+                                   utils::VectorRef<const sem::Constant*> args,
+                                   const Source& source) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) -> ImplResult {
+            using NumberT = decltype(i);
+            if (i.value <= NumberT(-1.0) || i.value >= NumberT(1.0)) {
+                AddError("atanh must be called with a value in the range (-1, 1)", source);
+                return utils::Failure;
+            }
+            return CreateElement(builder, c0->Type(), decltype(i)(std::atanh(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+
+    return TransformElements(builder, ty, transform, args[0]);
 }
 
 ConstEval::Result ConstEval::atan2(const sem::Type* ty,
@@ -1553,6 +1616,20 @@ ConstEval::Result ConstEval::clamp(const sem::Type* ty,
     return TransformElements(builder, ty, transform, args[0], args[1], args[2]);
 }
 
+ConstEval::Result ConstEval::saturate(const sem::Type* ty,
+                                      utils::VectorRef<const sem::Constant*> args,
+                                      const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto e) {
+            using NumberT = decltype(e);
+            return CreateElement(builder, c0->Type(),
+                                 NumberT(std::min(std::max(e, NumberT(0.0)), NumberT(1.0))));
+        };
+        return Dispatch_fia_fiu32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
 ConstEval::Result ConstEval::select_bool(const sem::Type* ty,
                                          utils::VectorRef<const sem::Constant*> args,
                                          const Source&) {
@@ -1579,6 +1656,20 @@ ConstEval::Result ConstEval::select_boolvec(const sem::Type* ty,
         return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
     };
 
+    return TransformElements(builder, ty, transform, args[0], args[1]);
+}
+
+ConstEval::Result ConstEval::step(const sem::Type* ty,
+                                  utils::VectorRef<const sem::Constant*> args,
+                                  const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto edge, auto x) -> ImplResult {
+            using NumberT = decltype(edge);
+            NumberT result = x.value < edge.value ? NumberT(0.0) : NumberT(1.0);
+            return CreateElement(builder, c0->Type(), result);
+        };
+        return Dispatch_fia_fiu32_f16(create, c0, c1);
+    };
     return TransformElements(builder, ty, transform, args[0], args[1]);
 }
 

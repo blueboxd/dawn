@@ -93,6 +93,7 @@ namespace tint::resolver {
 namespace {
 
 constexpr int64_t kMaxArrayElementCount = 65536;
+constexpr uint32_t kMaxStatementDepth = 127;
 
 }  // namespace
 
@@ -173,7 +174,9 @@ bool Resolver::ResolveInternal() {
 
     if (!enabled_extensions_.Contains(ast::Extension::kChromiumDisableUniformityAnalysis)) {
         if (!AnalyzeUniformity(builder_, dependencies_)) {
-            return false;
+            if (kUniformityFailuresAsError) {
+                return false;
+            }
         }
     }
 
@@ -1779,7 +1782,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
     // call for a InitConvIntrinsic with an optional template argument type.
     auto ct_init_or_conv = [&](InitConvIntrinsic ty, const sem::Type* template_arg) -> sem::Call* {
         auto arg_tys = utils::Transform(args, [](auto* arg) { return arg->Type(); });
-        auto ctor_or_conv = intrinsic_table_->Lookup(ty, template_arg, arg_tys, expr->source);
+        auto ctor_or_conv =
+            intrinsic_table_->Lookup(ty, template_arg, arg_tys, args_stage, expr->source);
         if (!ctor_or_conv.target) {
             return nullptr;
         }
@@ -2494,7 +2498,8 @@ sem::Expression* Resolver::Binary(const ast::BinaryExpression* expr) {
     auto* lhs_ty = lhs->Type()->UnwrapRef();
     auto* rhs_ty = rhs->Type()->UnwrapRef();
 
-    auto op = intrinsic_table_->Lookup(expr->op, lhs_ty, rhs_ty, expr->source, false);
+    auto stage = sem::EarliestStage(lhs->Stage(), rhs->Stage());
+    auto op = intrinsic_table_->Lookup(expr->op, lhs_ty, rhs_ty, stage, expr->source, false);
     if (!op.result) {
         return nullptr;
     }
@@ -2512,7 +2517,6 @@ sem::Expression* Resolver::Binary(const ast::BinaryExpression* expr) {
     }
 
     const sem::Constant* value = nullptr;
-    auto stage = sem::EarliestStage(lhs->Stage(), rhs->Stage());
     if (stage == sem::EvaluationStage::kConstant) {
         if (op.const_eval_fn) {
             auto const_args = utils::Vector{lhs->ConstantValue(), rhs->ConstantValue()};
@@ -2594,7 +2598,8 @@ sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
             break;
 
         default: {
-            auto op = intrinsic_table_->Lookup(unary->op, expr_ty, unary->source);
+            stage = expr->Stage();
+            auto op = intrinsic_table_->Lookup(unary->op, expr_ty, stage, unary->source);
             if (!op.result) {
                 return nullptr;
             }
@@ -2605,7 +2610,6 @@ sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
                     return nullptr;
                 }
             }
-            stage = expr->Stage();
             if (stage == sem::EvaluationStage::kConstant) {
                 if (op.const_eval_fn) {
                     if (auto r = (const_eval_.*op.const_eval_fn)(
@@ -3273,7 +3277,9 @@ sem::Statement* Resolver::CompoundAssignmentStatement(
 
         auto* lhs_ty = lhs->Type()->UnwrapRef();
         auto* rhs_ty = rhs->Type()->UnwrapRef();
-        auto* ty = intrinsic_table_->Lookup(stmt->op, lhs_ty, rhs_ty, stmt->source, true).result;
+        auto stage = sem::EarliestStage(lhs->Stage(), rhs->Stage());
+        auto* ty =
+            intrinsic_table_->Lookup(stmt->op, lhs_ty, rhs_ty, stage, stmt->source, true).result;
         if (!ty) {
             return false;
         }
@@ -3400,6 +3406,14 @@ SEM* Resolver::StatementScope(const ast::Statement* ast, SEM* sem, F&& callback)
     TINT_SCOPED_ASSIGNMENT(current_statement_, sem);
     TINT_SCOPED_ASSIGNMENT(current_compound_statement_,
                            as_compound ? as_compound : current_compound_statement_);
+    TINT_SCOPED_ASSIGNMENT(current_scoping_depth_, current_scoping_depth_ + 1);
+
+    if (current_scoping_depth_ > kMaxStatementDepth) {
+        AddError("statement nesting depth / chaining length exceeds limit of " +
+                     std::to_string(kMaxStatementDepth),
+                 ast->source);
+        return nullptr;
+    }
 
     if (!callback()) {
         return nullptr;

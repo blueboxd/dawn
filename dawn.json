@@ -916,7 +916,6 @@
         "category": "structure",
         "extensible": "in",
         "tags": ["dawn"],
-        "_TODO": "support number as length input",
         "members": [
             {"name": "flip y", "type": "bool", "default": "false"},
             {"name": "needs color space conversion", "type": "bool", "default": "false"},
@@ -1330,6 +1329,14 @@
             {"value": 3, "name": "error"}
         ]
     },
+    "extent 2D": {
+        "category": "structure",
+        "_TODO": "crbug.com/1316671: Remove default value of 'width' after chromium side chagnes landed",
+        "members": [
+            {"name": "width", "type": "uint32_t", "default": 0},
+            {"name": "height", "type": "uint32_t", "default": 1}
+        ]
+    },
     "extent 3D": {
         "category": "structure",
         "members": [
@@ -1363,6 +1370,7 @@
             {"name": "label", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
             {"name": "plane 0", "type": "texture view"},
             {"name": "plane 1", "type": "texture view", "optional": true},
+            {"name": "visible rect", "type": "extent 2D"},
             {"name": "do yuv to rgb conversion only", "type": "bool", "default": "false"},
             {"name": "yuv to rgb conversion matrix", "type": "float", "annotation": "const*",
                 "length": 12, "optional": true},
@@ -1428,6 +1436,15 @@
             {"name": "mip level", "type": "uint32_t", "default": "0"},
             {"name": "origin", "type": "origin 3D"},
             {"name": "aspect", "type": "texture aspect", "default": "all"}
+        ]
+    },
+    "image copy external texture": {
+        "category": "structure",
+        "extensible": "in",
+        "tags": ["dawn"],
+        "members": [
+            {"name": "external texture", "type": "external texture"},
+            {"name": "origin", "type": "origin 3D"}
         ]
     },
     "index format": {
@@ -1706,6 +1723,17 @@
                 "tags": ["dawn"],
                 "args": [
                     {"name": "source", "type": "image copy texture", "annotation": "const*"},
+                    {"name": "destination", "type": "image copy texture", "annotation": "const*"},
+                    {"name": "copy size", "type": "extent 3D", "annotation": "const*"},
+                    {"name": "options", "type": "copy texture for browser options", "annotation": "const*"}
+                ]
+            },
+            {
+                "name": "copy external texture for browser",
+                "extensible": "in",
+                "tags": ["dawn"],
+                "args": [
+                    {"name": "source", "type": "image copy external texture", "annotation": "const*"},
                     {"name": "destination", "type": "image copy texture", "annotation": "const*"},
                     {"name": "copy size", "type": "extent 3D", "annotation": "const*"},
                     {"name": "options", "type": "copy texture for browser options", "annotation": "const*"}

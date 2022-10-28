@@ -34,7 +34,11 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::Type);
 
 namespace tint::sem {
 
-Type::Type() = default;
+Type::Type(TypeFlags flags) : flags_(flags) {
+    if (IsConstructible()) {
+        TINT_ASSERT(Semantic, HasCreationFixedFootprint());
+    }
+}
 
 Type::Type(Type&&) = default;
 
@@ -62,10 +66,6 @@ uint32_t Type::Size() const {
 
 uint32_t Type::Align() const {
     return 0;
-}
-
-bool Type::IsConstructible() const {
-    return false;
 }
 
 bool Type::is_scalar() const {

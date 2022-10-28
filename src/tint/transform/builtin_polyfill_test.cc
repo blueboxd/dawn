@@ -167,7 +167,7 @@ DataMap polyfillSinh() {
 TEST_F(BuiltinPolyfillTest, ShouldRunAsinh) {
     auto* src = R"(
 fn f() {
-  asinh(1.0);
+  asinh(1.0f);
 }
 )";
 
@@ -178,7 +178,7 @@ fn f() {
 TEST_F(BuiltinPolyfillTest, Asinh_f32) {
     auto* src = R"(
 fn f() {
-  let r : f32 = asinh(1234);
+  let r : f32 = asinh(1234f);
 }
 )";
 
@@ -188,7 +188,7 @@ fn tint_sinh(x : f32) -> f32 {
 }
 
 fn f() {
-  let r : f32 = tint_sinh(1234);
+  let r : f32 = tint_sinh(1234.0f);
 }
 )";
 
@@ -200,7 +200,7 @@ fn f() {
 TEST_F(BuiltinPolyfillTest, Asinh_vec3_f32) {
     auto* src = R"(
 fn f() {
-  let r : vec3<f32> = asinh(vec3<f32>(1234));
+  let r : vec3<f32> = asinh(vec3<f32>(1234f));
 }
 )";
 
@@ -210,7 +210,7 @@ fn tint_sinh(x : vec3<f32>) -> vec3<f32> {
 }
 
 fn f() {
-  let r : vec3<f32> = tint_sinh(vec3<f32>(1234));
+  let r : vec3<f32> = tint_sinh(vec3<f32>(1234.0f));
 }
 )";
 
@@ -233,7 +233,7 @@ DataMap polyfillAtanh(Level level) {
 TEST_F(BuiltinPolyfillTest, ShouldRunAtanh) {
     auto* src = R"(
 fn f() {
-  atanh(1.0);
+  atanh(0.9f);
 }
 )";
 
@@ -246,7 +246,7 @@ fn f() {
 TEST_F(BuiltinPolyfillTest, Atanh_Full_f32) {
     auto* src = R"(
 fn f() {
-  let r : f32 = atanh(1234);
+  let r : f32 = atanh(0f);
 }
 )";
 
@@ -256,7 +256,7 @@ fn tint_atanh(x : f32) -> f32 {
 }
 
 fn f() {
-  let r : f32 = tint_atanh(1234);
+  let r : f32 = tint_atanh(0.0f);
 }
 )";
 
@@ -268,7 +268,7 @@ fn f() {
 TEST_F(BuiltinPolyfillTest, Atanh_Full_vec3_f32) {
     auto* src = R"(
 fn f() {
-  let r : vec3<f32> = atanh(vec3<f32>(1234));
+  let r : vec3<f32> = atanh(vec3<f32>(0f));
 }
 )";
 
@@ -278,7 +278,7 @@ fn tint_atanh(x : vec3<f32>) -> vec3<f32> {
 }
 
 fn f() {
-  let r : vec3<f32> = tint_atanh(vec3<f32>(1234));
+  let r : vec3<f32> = tint_atanh(vec3<f32>(0.0f));
 }
 )";
 
@@ -290,7 +290,7 @@ fn f() {
 TEST_F(BuiltinPolyfillTest, Atanh_Range_f32) {
     auto* src = R"(
 fn f() {
-  let r : f32 = atanh(1234);
+  let r : f32 = atanh(0f);
 }
 )";
 
@@ -300,7 +300,7 @@ fn tint_atanh(x : f32) -> f32 {
 }
 
 fn f() {
-  let r : f32 = tint_atanh(1234);
+  let r : f32 = tint_atanh(0.0f);
 }
 )";
 
@@ -312,17 +312,21 @@ fn f() {
 TEST_F(BuiltinPolyfillTest, Atanh_Range_vec3_f32) {
     auto* src = R"(
 fn f() {
-  let r : vec3<f32> = atanh(vec3<f32>(1234));
+  let r : vec3<f32> = atanh(vec3<f32>(0f));
 }
 )";
 
     auto* expect = R"(
+fn tint_atanh(x : vec3<f32>) -> vec3<f32> {
+  return select(atanh(x), vec3<f32>(0.0), (x >= vec3<f32>(1.0)));
+}
+
 fn f() {
-  let r : vec3<f32> = atanh(vec3<f32>(1234));
+  let r : vec3<f32> = tint_atanh(vec3<f32>(0.0f));
 }
 )";
 
-    auto got = Run<BuiltinPolyfill>(src, polyfillAcosh(Level::kRangeCheck));
+    auto got = Run<BuiltinPolyfill>(src, polyfillAtanh(Level::kRangeCheck));
 
     EXPECT_EQ(expect, str(got));
 }
@@ -1431,28 +1435,6 @@ fn f() {
     EXPECT_EQ(expect, str(got));
 }
 
-TEST_F(BuiltinPolyfillTest, Saturate_f32_from_abstract_float) {
-    auto* src = R"(
-fn f() {
-  let r : f32 = saturate(0.5);
-}
-)";
-
-    auto* expect = R"(
-fn tint_saturate(v : f32) -> f32 {
-  return clamp(v, f32(0), f32(1));
-}
-
-fn f() {
-  let r : f32 = tint_saturate(0.5);
-}
-)";
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillSaturate());
-
-    EXPECT_EQ(expect, str(got));
-}
-
 TEST_F(BuiltinPolyfillTest, Saturate_f16) {
     auto* src = R"(
 enable f16;
@@ -1493,28 +1475,6 @@ fn tint_saturate(v : vec3<f32>) -> vec3<f32> {
 
 fn f() {
   let r : vec3<f32> = tint_saturate(vec3<f32>(0.5f));
-}
-)";
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillSaturate());
-
-    EXPECT_EQ(expect, str(got));
-}
-
-TEST_F(BuiltinPolyfillTest, Saturate_vec3_f32_from_abstract_float) {
-    auto* src = R"(
-fn f() {
-  let r : vec3<f32> = saturate(vec3(0.5));
-}
-)";
-
-    auto* expect = R"(
-fn tint_saturate(v : vec3<f32>) -> vec3<f32> {
-  return clamp(v, vec3<f32>(0), vec3<f32>(1));
-}
-
-fn f() {
-  let r : vec3<f32> = tint_saturate(vec3(0.5));
 }
 )";
 

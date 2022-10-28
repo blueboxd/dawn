@@ -642,14 +642,6 @@ bool Validator::GlobalVariable(
                 return false;
             }
 
-            auto name = symbols_.NameFor(var->symbol);
-            if (sem::ParseBuiltinType(name) != sem::BuiltinType::kNone) {
-                AddError(
-                    "'" + name + "' is a builtin and cannot be redeclared as a module-scope 'var'",
-                    var->source);
-                return false;
-            }
-
             return Var(global);
         },
         [&](const ast::Override*) { return Override(global, override_ids); },
@@ -818,13 +810,6 @@ bool Validator::Override(
         }
     }
 
-    auto name = symbols_.NameFor(decl->symbol);
-    if (sem::ParseBuiltinType(name) != sem::BuiltinType::kNone) {
-        AddError("'" + name + "' is a builtin and cannot be redeclared as a 'override'",
-                 decl->source);
-        return false;
-    }
-
     if (!storage_ty->is_scalar()) {
         AddError(sem_.TypeNameOf(storage_ty) + " cannot be used as the type of a 'override'",
                  decl->source);
@@ -839,15 +824,7 @@ bool Validator::Override(
     return true;
 }
 
-bool Validator::Const(const sem::Variable* v) const {
-    auto* decl = v->Declaration();
-
-    auto name = symbols_.NameFor(decl->symbol);
-    if (sem::ParseBuiltinType(name) != sem::BuiltinType::kNone) {
-        AddError("'" + name + "' is a builtin and cannot be redeclared as a 'const'", decl->source);
-        return false;
-    }
-
+bool Validator::Const(const sem::Variable*) const {
     return true;
 }
 
@@ -1033,13 +1010,6 @@ bool Validator::InterpolateAttribute(const ast::InterpolateAttribute* attr,
 bool Validator::Function(const sem::Function* func, ast::PipelineStage stage) const {
     auto* decl = func->Declaration();
 
-    auto name = symbols_.NameFor(decl->symbol);
-    if (sem::ParseBuiltinType(name) != sem::BuiltinType::kNone) {
-        AddError("'" + name + "' is a builtin and cannot be redeclared as a function",
-                 decl->source);
-        return false;
-    }
-
     for (auto* attr : decl->attributes) {
         if (attr->Is<ast::WorkgroupAttribute>()) {
             if (decl->PipelineStage() != ast::PipelineStage::kCompute) {
@@ -1112,6 +1082,7 @@ bool Validator::Function(const sem::Function* func, ast::PipelineStage stage) co
         func->Behaviors() != sem::Behavior::kNext && func->Behaviors() != sem::Behavior::kDiscard &&
         func->Behaviors() != sem::Behaviors{sem::Behavior::kNext,  //
                                             sem::Behavior::kDiscard}) {
+        auto name = symbols_.NameFor(decl->symbol);
         TINT_ICE(Resolver, diagnostics_)
             << "function '" << name << "' behaviors are: " << func->Behaviors();
     }
@@ -1465,7 +1436,7 @@ bool Validator::BreakStatement(const sem::Statement* stmt,
     if (auto* continuing = ClosestContinuing(/*stop_at_loop*/ true, current_statement)) {
         AddWarning(
             "use of deprecated language feature: `break` must not be used to exit from "
-            "a continuing block. Use break-if instead.",
+            "a continuing block. Use `break-if` instead.",
             stmt->Declaration()->source);
 
         auto fail = [&](const char* note_msg, const Source& note_src) {
@@ -1651,9 +1622,8 @@ bool Validator::BreakIfStatement(const sem::BreakIfStatement* stmt,
         if (s->Is<sem::LoopStatement>()) {
             break;
         }
-        if (s->Is<sem::LoopContinuingBlockStatement>()) {
-            if (s->Declaration()->As<ast::BlockStatement>()->statements.Back() !=
-                stmt->Declaration()) {
+        if (auto* continuing = s->As<sem::LoopContinuingBlockStatement>()) {
+            if (continuing->Declaration()->statements.Back() != stmt->Declaration()) {
                 AddError("break-if must be last statement in a continuing block",
                          stmt->Declaration()->source);
                 AddNote("see continuing block here", s->Declaration()->source);
@@ -2179,24 +2149,11 @@ bool Validator::ArrayStrideAttribute(const ast::StrideAttribute* attr,
     return true;
 }
 
-bool Validator::Alias(const ast::Alias* alias) const {
-    auto name = symbols_.NameFor(alias->name);
-    if (sem::ParseBuiltinType(name) != sem::BuiltinType::kNone) {
-        AddError("'" + name + "' is a builtin and cannot be redeclared as an alias", alias->source);
-        return false;
-    }
-
+bool Validator::Alias(const ast::Alias*) const {
     return true;
 }
 
 bool Validator::Structure(const sem::Struct* str, ast::PipelineStage stage) const {
-    auto name = symbols_.NameFor(str->Declaration()->name);
-    if (sem::ParseBuiltinType(name) != sem::BuiltinType::kNone) {
-        AddError("'" + name + "' is a builtin and cannot be redeclared as a struct",
-                 str->Declaration()->source);
-        return false;
-    }
-
     if (str->Members().empty()) {
         AddError("structures must have at least one member", str->Declaration()->source);
         return false;
@@ -2229,45 +2186,68 @@ bool Validator::Structure(const sem::Struct* str, ast::PipelineStage stage) cons
         const ast::InvariantAttribute* invariant_attribute = nullptr;
         const ast::InterpolateAttribute* interpolate_attribute = nullptr;
         for (auto* attr : member->Declaration()->attributes) {
-            if (!attr->IsAnyOf<ast::BuiltinAttribute,             //
-                               ast::InternalAttribute,            //
-                               ast::InterpolateAttribute,         //
-                               ast::InvariantAttribute,           //
-                               ast::LocationAttribute,            //
-                               ast::StructMemberOffsetAttribute,  //
-                               ast::StructMemberSizeAttribute,    //
-                               ast::StructMemberAlignAttribute>()) {
-                if (attr->Is<ast::StrideAttribute>() &&
-                    IsValidationDisabled(member->Declaration()->attributes,
-                                         ast::DisabledValidation::kIgnoreStrideAttribute)) {
-                    continue;
-                }
-                AddError("attribute is not valid for structure members", attr->source);
+            bool ok = Switch(
+                attr,  //
+                [&](const ast::InvariantAttribute* invariant) {
+                    invariant_attribute = invariant;
+                    return true;
+                },
+                [&](const ast::LocationAttribute* location) {
+                    has_location = true;
+                    TINT_ASSERT(Resolver, member->Location().has_value());
+                    if (!LocationAttribute(location, member->Location().value(), member->Type(),
+                                           locations, stage, member->Declaration()->source)) {
+                        return false;
+                    }
+                    return true;
+                },
+                [&](const ast::BuiltinAttribute* builtin) {
+                    if (!BuiltinAttribute(builtin, member->Type(), stage,
+                                          /* is_input */ false)) {
+                        return false;
+                    }
+                    if (builtin->builtin == ast::BuiltinValue::kPosition) {
+                        has_position = true;
+                    }
+                    return true;
+                },
+                [&](const ast::InterpolateAttribute* interpolate) {
+                    interpolate_attribute = interpolate;
+                    if (!InterpolateAttribute(interpolate, member->Type())) {
+                        return false;
+                    }
+                    return true;
+                },
+                [&](const ast::StructMemberSizeAttribute*) {
+                    if (!member->Type()->HasCreationFixedFootprint()) {
+                        AddError(
+                            "@size can only be applied to members where the member's type size "
+                            "can be fully determined at shader creation time",
+                            attr->source);
+                        return false;
+                    }
+                    return true;
+                },
+                [&](Default) {
+                    if (!attr->IsAnyOf<ast::BuiltinAttribute,             //
+                                       ast::InternalAttribute,            //
+                                       ast::InterpolateAttribute,         //
+                                       ast::InvariantAttribute,           //
+                                       ast::LocationAttribute,            //
+                                       ast::StructMemberOffsetAttribute,  //
+                                       ast::StructMemberAlignAttribute>()) {
+                        if (attr->Is<ast::StrideAttribute>() &&
+                            IsValidationDisabled(member->Declaration()->attributes,
+                                                 ast::DisabledValidation::kIgnoreStrideAttribute)) {
+                            return true;
+                        }
+                        AddError("attribute is not valid for structure members", attr->source);
+                        return false;
+                    }
+                    return true;
+                });
+            if (!ok) {
                 return false;
-            }
-
-            if (auto* invariant = attr->As<ast::InvariantAttribute>()) {
-                invariant_attribute = invariant;
-            } else if (auto* location = attr->As<ast::LocationAttribute>()) {
-                has_location = true;
-                TINT_ASSERT(Resolver, member->Location().has_value());
-                if (!LocationAttribute(location, member->Location().value(), member->Type(),
-                                       locations, stage, member->Declaration()->source)) {
-                    return false;
-                }
-            } else if (auto* builtin = attr->As<ast::BuiltinAttribute>()) {
-                if (!BuiltinAttribute(builtin, member->Type(), stage,
-                                      /* is_input */ false)) {
-                    return false;
-                }
-                if (builtin->builtin == ast::BuiltinValue::kPosition) {
-                    has_position = true;
-                }
-            } else if (auto* interpolate = attr->As<ast::InterpolateAttribute>()) {
-                interpolate_attribute = interpolate;
-                if (!InterpolateAttribute(interpolate, member->Type())) {
-                    return false;
-                }
             }
         }
 

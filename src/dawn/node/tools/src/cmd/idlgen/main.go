@@ -113,6 +113,9 @@ func run() error {
 		"EnumEntryName":              enumEntryName,
 		"Eval":                       g.eval,
 		"HasAnnotation":              hasAnnotation,
+		"FlattenedAttributesOf":      g.flattenedAttributesOf,
+		"FlattenedConstantsOf":       g.flattenedConstantsOf,
+		"FlattenedMethodsOf":         g.flattenedMethodsOf,
 		"Include":                    g.include,
 		"IsBasicLiteral":             is(ast.BasicLiteral{}),
 		"IsInitializer":              isInitializer,
@@ -402,9 +405,12 @@ type generator struct {
 // eval executes the sub-template with the given name and arguments, returning
 // the generated output
 // args can be a single argument:
-//   arg[0]
+//
+//	arg[0]
+//
 // or a list of name-value pairs:
-//   (args[0]: name, args[1]: value), (args[2]: name, args[3]: value)...
+//
+//	(args[0]: name, args[1]: value), (args[2]: name, args[3]: value)...
 func (g *generator) eval(template string, args ...interface{}) (string, error) {
 	target := g.t.Lookup(template)
 	if target == nil {
@@ -571,6 +577,22 @@ func methodsOf(obj interface{}) []*Method {
 	return out
 }
 
+// flattenedMethodsOf returns all the methods of the given WebIDL
+// interface or namespace, as well as all the methods of the full inheritance
+// chain
+func (g *generator) flattenedMethodsOf(obj interface{}) []*Method {
+	switch obj := obj.(type) {
+	case *ast.Interface:
+		out := methodsOf(obj)
+		if base := g.lookup(obj.Inherits); base != nil {
+			out = append(out, g.flattenedMethodsOf(base)...)
+		}
+		return out
+	default:
+		return methodsOf(obj)
+	}
+}
+
 // attributesOf returns all the attributes of the given WebIDL interface or
 // namespace.
 func attributesOf(obj interface{}) []*ast.Member {
@@ -580,6 +602,7 @@ func attributesOf(obj interface{}) []*ast.Member {
 			out = append(out, m)
 		}
 	}
+
 	switch obj := obj.(type) {
 	case *ast.Interface:
 		for _, m := range obj.Members {
@@ -593,6 +616,22 @@ func attributesOf(obj interface{}) []*ast.Member {
 		return nil
 	}
 	return out
+}
+
+// flattenedAttributesOf returns all the attributes of the given WebIDL
+// interface or namespace, as well as all the attributes of the full inheritance
+// chain
+func (g *generator) flattenedAttributesOf(obj interface{}) []*ast.Member {
+	switch obj := obj.(type) {
+	case *ast.Interface:
+		out := attributesOf(obj)
+		if base := g.lookup(obj.Inherits); base != nil {
+			out = append(out, g.flattenedAttributesOf(base)...)
+		}
+		return out
+	default:
+		return attributesOf(obj)
+	}
 }
 
 // constantsOf returns all the constant values of the given WebIDL interface or
@@ -617,6 +656,22 @@ func constantsOf(obj interface{}) []*ast.Member {
 		return nil
 	}
 	return out
+}
+
+// flattenedConstantsOf returns all the constants of the given WebIDL
+// interface or namespace, as well as all the constants of the full inheritance
+// chain
+func (g *generator) flattenedConstantsOf(obj interface{}) []*ast.Member {
+	switch obj := obj.(type) {
+	case *ast.Interface:
+		out := constantsOf(obj)
+		if base := g.lookup(obj.Inherits); base != nil {
+			out = append(out, g.flattenedConstantsOf(base)...)
+		}
+		return out
+	default:
+		return constantsOf(obj)
+	}
 }
 
 // setlikeOf returns the setlike ast.Pattern, if obj is a setlike interface.
