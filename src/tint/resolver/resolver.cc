@@ -23,6 +23,7 @@
 #include "src/tint/ast/alias.h"
 #include "src/tint/ast/array.h"
 #include "src/tint/ast/assignment_statement.h"
+#include "src/tint/ast/attribute.h"
 #include "src/tint/ast/bitcast_expression.h"
 #include "src/tint/ast/break_statement.h"
 #include "src/tint/ast/call_statement.h"
@@ -381,7 +382,8 @@ sem::Variable* Resolver::Let(const ast::Let* v, bool is_global) {
     if (is_global) {
         sem = builder_->create<sem::GlobalVariable>(
             v, ty, sem::EvaluationStage::kRuntime, ast::StorageClass::kNone,
-            ast::Access::kUndefined, /* constant_value */ nullptr, sem::BindingPoint{});
+            ast::Access::kUndefined, /* constant_value */ nullptr, sem::BindingPoint{},
+            std::nullopt);
     } else {
         sem = builder_->create<sem::LocalVariable>(v, ty, sem::EvaluationStage::kRuntime,
                                                    ast::StorageClass::kNone,
@@ -436,13 +438,36 @@ sem::Variable* Resolver::Override(const ast::Override* v) {
 
     auto* sem = builder_->create<sem::GlobalVariable>(
         v, ty, sem::EvaluationStage::kOverride, ast::StorageClass::kNone, ast::Access::kUndefined,
-        /* constant_value */ nullptr, sem::BindingPoint{});
+        /* constant_value */ nullptr, sem::BindingPoint{}, std::nullopt);
+    sem->SetConstructor(rhs);
 
-    if (auto* id = ast::GetAttribute<ast::IdAttribute>(v->attributes)) {
-        sem->SetOverrideId(OverrideId{static_cast<decltype(OverrideId::value)>(id->value)});
+    if (auto* id_attr = ast::GetAttribute<ast::IdAttribute>(v->attributes)) {
+        auto* materialize = Materialize(Expression(id_attr->expr));
+        if (!materialize) {
+            return nullptr;
+        }
+        auto* c = materialize->ConstantValue();
+        if (!c) {
+            // TODO(crbug.com/tint/1633): Handle invalid materialization when expressions
+            // are supported.
+            return nullptr;
+        }
+
+        auto value = c->As<uint32_t>();
+        if (value > std::numeric_limits<decltype(OverrideId::value)>::max()) {
+            AddError("override IDs must be between 0 and " +
+                         std::to_string(std::numeric_limits<decltype(OverrideId::value)>::max()),
+                     id_attr->source);
+            return nullptr;
+        }
+
+        auto o = OverrideId{static_cast<decltype(OverrideId::value)>(value)};
+        sem->SetOverrideId(o);
+
+        // Track the constant IDs that are specified in the shader.
+        override_ids_.emplace(o, sem);
     }
 
-    sem->SetConstructor(rhs);
     builder_->Sem().Add(v, sem);
     return sem;
 }
@@ -497,7 +522,7 @@ sem::Variable* Resolver::Const(const ast::Const* c, bool is_global) {
 
     auto* sem = is_global ? static_cast<sem::Variable*>(builder_->create<sem::GlobalVariable>(
                                 c, ty, sem::EvaluationStage::kConstant, ast::StorageClass::kNone,
-                                ast::Access::kUndefined, value, sem::BindingPoint{}))
+                                ast::Access::kUndefined, value, sem::BindingPoint{}, std::nullopt))
                           : static_cast<sem::Variable*>(builder_->create<sem::LocalVariable>(
                                 c, ty, sem::EvaluationStage::kConstant, ast::StorageClass::kNone,
                                 ast::Access::kUndefined, current_statement_, value));
@@ -578,12 +603,59 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
     sem::Variable* sem = nullptr;
     if (is_global) {
         sem::BindingPoint binding_point;
-        if (auto bp = var->BindingPoint()) {
-            binding_point = {bp.group->value, bp.binding->value};
+        if (var->HasBindingPoint()) {
+            uint32_t binding = 0;
+            {
+                auto* attr = ast::GetAttribute<ast::BindingAttribute>(var->attributes);
+                auto* materialize = Materialize(Expression(attr->expr));
+                if (!materialize) {
+                    return nullptr;
+                }
+                auto* c = materialize->ConstantValue();
+                if (!c) {
+                    // TODO(crbug.com/tint/1633): Add error message about invalid materialization
+                    // when binding can be an expression.
+                    return nullptr;
+                }
+                binding = c->As<uint32_t>();
+            }
+
+            uint32_t group = 0;
+            {
+                auto* attr = ast::GetAttribute<ast::GroupAttribute>(var->attributes);
+                auto* materialize = Materialize(Expression(attr->expr));
+                if (!materialize) {
+                    return nullptr;
+                }
+                auto* c = materialize->ConstantValue();
+                if (!c) {
+                    // TODO(crbug.com/tint/1633): Add error message about invalid materialization
+                    // when binding can be an expression.
+                    return nullptr;
+                }
+                group = c->As<uint32_t>();
+            }
+            binding_point = {group, binding};
         }
-        sem = builder_->create<sem::GlobalVariable>(var, var_ty, sem::EvaluationStage::kRuntime,
-                                                    storage_class, access,
-                                                    /* constant_value */ nullptr, binding_point);
+
+        std::optional<uint32_t> location;
+        if (auto* attr = ast::GetAttribute<ast::LocationAttribute>(var->attributes)) {
+            auto* materialize = Materialize(Expression(attr->expr));
+            if (!materialize) {
+                return nullptr;
+            }
+            auto* c = materialize->ConstantValue();
+            if (!c) {
+                // TODO(crbug.com/tint/1633): Add error message about invalid materialization
+                // when location can be an expression.
+                return nullptr;
+            }
+            location = c->As<uint32_t>();
+        }
+
+        sem = builder_->create<sem::GlobalVariable>(
+            var, var_ty, sem::EvaluationStage::kRuntime, storage_class, access,
+            /* constant_value */ nullptr, binding_point, location);
 
     } else {
         sem = builder_->create<sem::LocalVariable>(var, var_ty, sem::EvaluationStage::kRuntime,
@@ -629,8 +701,56 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
         }
     }
 
-    auto* sem = builder_->create<sem::Parameter>(param, index, ty, ast::StorageClass::kNone,
-                                                 ast::Access::kUndefined);
+    sem::BindingPoint binding_point;
+    if (param->HasBindingPoint()) {
+        {
+            auto* attr = ast::GetAttribute<ast::BindingAttribute>(param->attributes);
+            auto* materialize = Materialize(Expression(attr->expr));
+            if (!materialize) {
+                return nullptr;
+            }
+            auto* c = materialize->ConstantValue();
+            if (!c) {
+                // TODO(crbug.com/tint/1633): Add error message about invalid materialization when
+                // binding can be an expression.
+                return nullptr;
+            }
+            binding_point.binding = c->As<uint32_t>();
+        }
+        {
+            auto* attr = ast::GetAttribute<ast::GroupAttribute>(param->attributes);
+            auto* materialize = Materialize(Expression(attr->expr));
+            if (!materialize) {
+                return nullptr;
+            }
+            auto* c = materialize->ConstantValue();
+            if (!c) {
+                // TODO(crbug.com/tint/1633): Add error message about invalid materialization when
+                // binding can be an expression.
+                return nullptr;
+            }
+            binding_point.group = c->As<uint32_t>();
+        }
+    }
+
+    std::optional<uint32_t> location;
+    if (auto* l = ast::GetAttribute<ast::LocationAttribute>(param->attributes)) {
+        auto* materialize = Materialize(Expression(l->expr));
+        if (!materialize) {
+            return nullptr;
+        }
+        auto* c = materialize->ConstantValue();
+        if (!c) {
+            // TODO(crbug.com/tint/1633): Add error message about invalid materialization when
+            // location can be an expression.
+            return nullptr;
+        }
+        location = c->As<uint32_t>();
+    }
+
+    auto* sem = builder_->create<sem::Parameter>(
+        param, index, ty, ast::StorageClass::kNone, ast::Access::kUndefined,
+        sem::ParameterUsage::kNone, binding_point, location);
     builder_->Sem().Add(param, sem);
     return sem;
 }
@@ -673,8 +793,8 @@ bool Resolver::AllocateOverridableConstantIds() {
         }
 
         OverrideId id;
-        if (auto* id_attr = ast::GetAttribute<ast::IdAttribute>(override->attributes)) {
-            id = OverrideId{static_cast<decltype(OverrideId::value)>(id_attr->value)};
+        if (ast::HasAttribute<ast::IdAttribute>(override->attributes)) {
+            id = builder_->Sem().Get<sem::GlobalVariable>(override)->OverrideId();
         } else {
             // No ID was specified, so allocate the next available ID.
             while (!ids_exhausted && override_ids_.count(next_id)) {
@@ -713,12 +833,6 @@ sem::GlobalVariable* Resolver::GlobalVariable(const ast::Variable* v) {
 
     for (auto* attr : v->attributes) {
         Mark(attr);
-
-        if (auto* id_attr = attr->As<ast::IdAttribute>()) {
-            // Track the constant IDs that are specified in the shader.
-            override_ids_.emplace(
-                OverrideId{static_cast<decltype(OverrideId::value)>(id_attr->value)}, sem);
-        }
     }
 
     if (!validator_.NoDuplicateAttributes(v->attributes)) {
@@ -824,6 +938,29 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
         return_type = builder_->create<sem::Void>();
     }
 
+    // Determine if the return type has a location
+    std::optional<uint32_t> return_location;
+    for (auto* attr : decl->return_type_attributes) {
+        Mark(attr);
+
+        if (auto* a = attr->As<ast::LocationAttribute>()) {
+            auto* materialize = Materialize(Expression(a->expr));
+            if (!materialize) {
+                return nullptr;
+            }
+            auto* c = materialize->ConstantValue();
+            if (!c) {
+                // TODO(crbug.com/tint/1633): Add error message about invalid materialization when
+                // location can be an expression.
+                return nullptr;
+            }
+            return_location = c->As<uint32_t>();
+        }
+    }
+    if (!validator_.NoDuplicateAttributes(decl->attributes)) {
+        return nullptr;
+    }
+
     if (auto* str = return_type->As<sem::Struct>()) {
         if (!ApplyStorageClassUsageToType(ast::StorageClass::kNone, str, decl->source)) {
             AddNote(
@@ -847,7 +984,8 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
         }
     }
 
-    auto* func = builder_->create<sem::Function>(decl, return_type, std::move(parameters));
+    auto* func =
+        builder_->create<sem::Function>(decl, return_type, return_location, std::move(parameters));
     builder_->Sem().Add(decl, func);
 
     TINT_SCOPED_ASSIGNMENT(current_function_, func);
@@ -886,13 +1024,7 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
     for (auto* attr : decl->attributes) {
         Mark(attr);
     }
-    if (!validator_.NoDuplicateAttributes(decl->attributes)) {
-        return nullptr;
-    }
 
-    for (auto* attr : decl->return_type_attributes) {
-        Mark(attr);
-    }
     if (!validator_.NoDuplicateAttributes(decl->return_type_attributes)) {
         return nullptr;
     }
@@ -937,7 +1069,7 @@ bool Resolver::WorkgroupSize(const ast::Function* func) {
 
     for (size_t i = 0; i < 3; i++) {
         // Each argument to this attribute can either be a literal, an identifier for a module-scope
-        // constants, or nullptr if not specified.
+        // constants, a constant expression, or nullptr if not specified.
         auto* value = values[i];
         if (!value) {
             break;
@@ -995,7 +1127,7 @@ bool Resolver::WorkgroupSize(const ast::Function* func) {
                 ws[i].value = 0;
                 continue;
             }
-        } else if (values[i]->Is<ast::LiteralExpression>()) {
+        } else if (values[i]->Is<ast::LiteralExpression>() || args[i]->ConstantValue()) {
             value = materialized->ConstantValue();
         } else {
             AddError(kErrBadExpr, values[i]->source);
@@ -1608,10 +1740,12 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
         const sem::Constant* value = nullptr;
         auto stage = sem::EarliestStage(ctor_or_conv.target->Stage(), args_stage);
         if (stage == sem::EvaluationStage::kConstant) {
-            auto const_args =
-                utils::Transform(args, [](auto* arg) { return arg->ConstantValue(); });
+            auto const_args = ConvertArguments(args, ctor_or_conv.target);
+            if (!const_args) {
+                return nullptr;
+            }
             if (auto r = (const_eval_.*ctor_or_conv.const_eval_fn)(
-                    ctor_or_conv.target->ReturnType(), const_args, expr->source)) {
+                    ctor_or_conv.target->ReturnType(), const_args.Get(), expr->source)) {
                 value = r.Get();
             } else {
                 return nullptr;
@@ -2183,121 +2317,124 @@ sem::Expression* Resolver::MemberAccessor(const ast::MemberAccessorExpression* e
     auto* object = sem_.Get(expr->structure);
     auto* source_var = object->SourceVariable();
 
-    const sem::Type* ret = nullptr;
-    utils::Vector<uint32_t, 4> swizzle;
+    const sem::Type* ty = nullptr;
 
     // Object may be a side-effecting expression (e.g. function call).
     bool has_side_effects = object && object->HasSideEffects();
 
-    if (auto* str = storage_ty->As<sem::Struct>()) {
-        Mark(expr->member);
-        auto symbol = expr->member->symbol;
+    return Switch(
+        storage_ty,  //
+        [&](const sem::Struct* str) -> sem::Expression* {
+            Mark(expr->member);
+            auto symbol = expr->member->symbol;
 
-        const sem::StructMember* member = nullptr;
-        for (auto* m : str->Members()) {
-            if (m->Name() == symbol) {
-                ret = m->Type();
-                member = m;
-                break;
-            }
-        }
-
-        if (ret == nullptr) {
-            AddError("struct member " + builder_->Symbols().NameFor(symbol) + " not found",
-                     expr->source);
-            return nullptr;
-        }
-
-        // If we're extracting from a reference, we return a reference.
-        if (auto* ref = structure->As<sem::Reference>()) {
-            ret = builder_->create<sem::Reference>(ret, ref->StorageClass(), ref->Access());
-        }
-
-        const sem::Constant* val = nullptr;
-        if (auto r = const_eval_.MemberAccess(object, member)) {
-            val = r.Get();
-        } else {
-            return nullptr;
-        }
-        return builder_->create<sem::StructMemberAccess>(expr, ret, current_statement_, val, object,
-                                                         member, has_side_effects, source_var);
-    }
-
-    if (auto* vec = storage_ty->As<sem::Vector>()) {
-        Mark(expr->member);
-        std::string s = builder_->Symbols().NameFor(expr->member->symbol);
-        auto size = s.size();
-        swizzle.Reserve(s.size());
-
-        for (auto c : s) {
-            switch (c) {
-                case 'x':
-                case 'r':
-                    swizzle.Push(0u);
+            const sem::StructMember* member = nullptr;
+            for (auto* m : str->Members()) {
+                if (m->Name() == symbol) {
+                    ty = m->Type();
+                    member = m;
                     break;
-                case 'y':
-                case 'g':
-                    swizzle.Push(1u);
-                    break;
-                case 'z':
-                case 'b':
-                    swizzle.Push(2u);
-                    break;
-                case 'w':
-                case 'a':
-                    swizzle.Push(3u);
-                    break;
-                default:
-                    AddError("invalid vector swizzle character",
-                             expr->member->source.Begin() + swizzle.Length());
-                    return nullptr;
+                }
             }
 
-            if (swizzle.Back() >= vec->Width()) {
-                AddError("invalid vector swizzle member", expr->member->source);
+            if (ty == nullptr) {
+                AddError("struct member " + builder_->Symbols().NameFor(symbol) + " not found",
+                         expr->source);
                 return nullptr;
             }
-        }
 
-        if (size < 1 || size > 4) {
-            AddError("invalid vector swizzle size", expr->member->source);
-            return nullptr;
-        }
-
-        // All characters are valid, check if they're being mixed
-        auto is_rgba = [](char c) { return c == 'r' || c == 'g' || c == 'b' || c == 'a'; };
-        auto is_xyzw = [](char c) { return c == 'x' || c == 'y' || c == 'z' || c == 'w'; };
-        if (!std::all_of(s.begin(), s.end(), is_rgba) &&
-            !std::all_of(s.begin(), s.end(), is_xyzw)) {
-            AddError("invalid mixing of vector swizzle characters rgba with xyzw",
-                     expr->member->source);
-            return nullptr;
-        }
-
-        if (size == 1) {
-            // A single element swizzle is just the type of the vector.
-            ret = vec->type();
             // If we're extracting from a reference, we return a reference.
             if (auto* ref = structure->As<sem::Reference>()) {
-                ret = builder_->create<sem::Reference>(ret, ref->StorageClass(), ref->Access());
+                ty = builder_->create<sem::Reference>(ty, ref->StorageClass(), ref->Access());
             }
-        } else {
-            // The vector will have a number of components equal to the length of
-            // the swizzle.
-            ret = builder_->create<sem::Vector>(vec->type(), static_cast<uint32_t>(size));
-        }
-        if (auto r = const_eval_.Swizzle(ret, object, swizzle)) {
-            auto* val = r.Get();
-            return builder_->create<sem::Swizzle>(expr, ret, current_statement_, val, object,
-                                                  std::move(swizzle), has_side_effects, source_var);
-        }
-        return nullptr;
-    }
 
-    AddError("invalid member accessor expression. Expected vector or struct, got '" +
-                 sem_.TypeNameOf(storage_ty) + "'",
-             expr->structure->source);
-    return nullptr;
+            auto val = const_eval_.MemberAccess(object, member);
+            if (!val) {
+                return nullptr;
+            }
+            return builder_->create<sem::StructMemberAccess>(expr, ty, current_statement_,
+                                                             val.Get(), object, member,
+                                                             has_side_effects, source_var);
+        },
+
+        [&](const sem::Vector* vec) -> sem::Expression* {
+            Mark(expr->member);
+            std::string s = builder_->Symbols().NameFor(expr->member->symbol);
+            auto size = s.size();
+            utils::Vector<uint32_t, 4> swizzle;
+            swizzle.Reserve(s.size());
+
+            for (auto c : s) {
+                switch (c) {
+                    case 'x':
+                    case 'r':
+                        swizzle.Push(0u);
+                        break;
+                    case 'y':
+                    case 'g':
+                        swizzle.Push(1u);
+                        break;
+                    case 'z':
+                    case 'b':
+                        swizzle.Push(2u);
+                        break;
+                    case 'w':
+                    case 'a':
+                        swizzle.Push(3u);
+                        break;
+                    default:
+                        AddError("invalid vector swizzle character",
+                                 expr->member->source.Begin() + swizzle.Length());
+                        return nullptr;
+                }
+
+                if (swizzle.Back() >= vec->Width()) {
+                    AddError("invalid vector swizzle member", expr->member->source);
+                    return nullptr;
+                }
+            }
+
+            if (size < 1 || size > 4) {
+                AddError("invalid vector swizzle size", expr->member->source);
+                return nullptr;
+            }
+
+            // All characters are valid, check if they're being mixed
+            auto is_rgba = [](char c) { return c == 'r' || c == 'g' || c == 'b' || c == 'a'; };
+            auto is_xyzw = [](char c) { return c == 'x' || c == 'y' || c == 'z' || c == 'w'; };
+            if (!std::all_of(s.begin(), s.end(), is_rgba) &&
+                !std::all_of(s.begin(), s.end(), is_xyzw)) {
+                AddError("invalid mixing of vector swizzle characters rgba with xyzw",
+                         expr->member->source);
+                return nullptr;
+            }
+
+            if (size == 1) {
+                // A single element swizzle is just the type of the vector.
+                ty = vec->type();
+                // If we're extracting from a reference, we return a reference.
+                if (auto* ref = structure->As<sem::Reference>()) {
+                    ty = builder_->create<sem::Reference>(ty, ref->StorageClass(), ref->Access());
+                }
+            } else {
+                // The vector will have a number of components equal to the length of
+                // the swizzle.
+                ty = builder_->create<sem::Vector>(vec->type(), static_cast<uint32_t>(size));
+            }
+            auto val = const_eval_.Swizzle(ty, object, swizzle);
+            if (!val) {
+                return nullptr;
+            }
+            return builder_->create<sem::Swizzle>(expr, ty, current_statement_, val.Get(), object,
+                                                  std::move(swizzle), has_side_effects, source_var);
+        },
+
+        [&](Default) {
+            AddError("invalid member accessor expression. Expected vector or struct, got '" +
+                         sem_.TypeNameOf(storage_ty) + "'",
+                     expr->structure->source);
+            return nullptr;
+        });
 }
 
 sem::Expression* Resolver::Binary(const ast::BinaryExpression* expr) {
@@ -2410,6 +2547,7 @@ sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
             if (!op.result) {
                 return nullptr;
             }
+            ty = op.result;
             if (ShouldMaterializeArgument(op.parameter)) {
                 expr = Materialize(expr, op.parameter);
                 if (!expr) {
@@ -2430,7 +2568,6 @@ sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
                     stage = sem::EvaluationStage::kRuntime;
                 }
             }
-            ty = op.result;
             break;
         }
     }
@@ -2660,34 +2797,80 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
         bool has_offset_attr = false;
         bool has_align_attr = false;
         bool has_size_attr = false;
+        std::optional<uint32_t> location;
         for (auto* attr : member->attributes) {
             Mark(attr);
             if (auto* o = attr->As<ast::StructMemberOffsetAttribute>()) {
                 // Offset attributes are not part of the WGSL spec, but are emitted
                 // by the SPIR-V reader.
-                if (o->offset < struct_size) {
+
+                auto* materialized = Materialize(Expression(o->expr));
+                if (!materialized) {
+                    return nullptr;
+                }
+                auto const_value = materialized->ConstantValue();
+                if (!const_value) {
+                    AddError("'offset' must be constant expression", o->expr->source);
+                    return nullptr;
+                }
+                offset = const_value->As<uint64_t>();
+
+                if (offset < struct_size) {
                     AddError("offsets must be in ascending order", o->source);
                     return nullptr;
                 }
-                offset = o->offset;
                 align = 1;
                 has_offset_attr = true;
             } else if (auto* a = attr->As<ast::StructMemberAlignAttribute>()) {
-                if (a->align <= 0 || !utils::IsPowerOfTwo(a->align)) {
+                auto* materialized = Materialize(Expression(a->expr));
+                if (!materialized) {
+                    return nullptr;
+                }
+                auto const_value = materialized->ConstantValue();
+                if (!const_value) {
+                    AddError("'align' must be constant expression", a->expr->source);
+                    return nullptr;
+                }
+                auto value = const_value->As<AInt>();
+
+                if (value <= 0 || !utils::IsPowerOfTwo(value)) {
                     AddError("align value must be a positive, power-of-two integer", a->source);
                     return nullptr;
                 }
-                align = a->align;
+                align = const_value->As<u32>();
                 has_align_attr = true;
             } else if (auto* s = attr->As<ast::StructMemberSizeAttribute>()) {
-                if (s->size < size) {
+                auto* materialized = Materialize(Expression(s->expr));
+                if (!materialized) {
+                    return nullptr;
+                }
+                auto const_value = materialized->ConstantValue();
+                if (!const_value) {
+                    AddError("'size' must be constant expression", s->expr->source);
+                    return nullptr;
+                }
+                auto value = const_value->As<uint64_t>();
+
+                if (value < size) {
                     AddError("size must be at least as big as the type's size (" +
                                  std::to_string(size) + ")",
                              s->source);
                     return nullptr;
                 }
-                size = s->size;
+                size = const_value->As<u32>();
                 has_size_attr = true;
+            } else if (auto* l = attr->As<ast::LocationAttribute>()) {
+                auto* materialize = Materialize(Expression(l->expr));
+                if (!materialize) {
+                    return nullptr;
+                }
+                auto* c = materialize->ConstantValue();
+                if (!c) {
+                    // TODO(crbug.com/tint/1633): Add error message about invalid materialization
+                    // when location can be an expression.
+                    return nullptr;
+                }
+                location = c->As<uint32_t>();
             }
         }
 
@@ -2709,7 +2892,7 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
         auto* sem_member = builder_->create<sem::StructMember>(
             member, member->symbol, type, static_cast<uint32_t>(sem_members.size()),
             static_cast<uint32_t>(offset), static_cast<uint32_t>(align),
-            static_cast<uint32_t>(size));
+            static_cast<uint32_t>(size), location);
         builder_->Sem().Add(member, sem_member);
         sem_members.emplace_back(sem_member);
 

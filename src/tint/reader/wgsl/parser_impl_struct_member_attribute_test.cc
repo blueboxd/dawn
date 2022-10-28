@@ -30,7 +30,8 @@ TEST_F(ParserImplTest, Attribute_Size) {
     ASSERT_TRUE(member_attr->Is<ast::StructMemberSizeAttribute>());
 
     auto* o = member_attr->As<ast::StructMemberSizeAttribute>();
-    EXPECT_EQ(o->size, 4u);
+    ASSERT_TRUE(o->expr->Is<ast::IntLiteralExpression>());
+    EXPECT_EQ(o->expr->As<ast::IntLiteralExpression>()->value, 4u);
 }
 
 TEST_F(ParserImplTest, Attribute_Size_TrailingComma) {
@@ -46,7 +47,8 @@ TEST_F(ParserImplTest, Attribute_Size_TrailingComma) {
     ASSERT_TRUE(member_attr->Is<ast::StructMemberSizeAttribute>());
 
     auto* o = member_attr->As<ast::StructMemberSizeAttribute>();
-    EXPECT_EQ(o->size, 4u);
+    ASSERT_TRUE(o->expr->Is<ast::IntLiteralExpression>());
+    EXPECT_EQ(o->expr->As<ast::IntLiteralExpression>()->value, 4u);
 }
 
 TEST_F(ParserImplTest, Attribute_Size_MissingLeftParen) {
@@ -102,7 +104,10 @@ TEST_F(ParserImplTest, Attribute_Align) {
     ASSERT_TRUE(member_attr->Is<ast::StructMemberAlignAttribute>());
 
     auto* o = member_attr->As<ast::StructMemberAlignAttribute>();
-    EXPECT_EQ(o->align, 4u);
+    ASSERT_TRUE(o->expr->Is<ast::IntLiteralExpression>());
+    EXPECT_EQ(o->expr->As<ast::IntLiteralExpression>()->value, 4);
+    EXPECT_EQ(o->expr->As<ast::IntLiteralExpression>()->suffix,
+              ast::IntLiteralExpression::Suffix::kNone);
 }
 
 TEST_F(ParserImplTest, Attribute_Align_TrailingComma) {
@@ -118,7 +123,11 @@ TEST_F(ParserImplTest, Attribute_Align_TrailingComma) {
     ASSERT_TRUE(member_attr->Is<ast::StructMemberAlignAttribute>());
 
     auto* o = member_attr->As<ast::StructMemberAlignAttribute>();
-    EXPECT_EQ(o->align, 4u);
+    ASSERT_TRUE(o->expr->Is<ast::IntLiteralExpression>());
+
+    auto* expr = o->expr->As<ast::IntLiteralExpression>();
+    EXPECT_EQ(expr->value, 4);
+    EXPECT_EQ(expr->suffix, ast::IntLiteralExpression::Suffix::kNone);
 }
 
 TEST_F(ParserImplTest, Attribute_Align_MissingLeftParen) {

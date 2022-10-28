@@ -51,7 +51,7 @@ TEST_F(ResolverFunctionValidationTest, LocalConflictsWithParameter) {
     // }
     Func("func", utils::Vector{Param(Source{{12, 34}}, "common_name", ty.f32())}, ty.void_(),
          utils::Vector{
-             Decl(Let(Source{{56, 78}}, "common_name", nullptr, Expr(1_i))),
+             Decl(Let(Source{{56, 78}}, "common_name", Expr(1_i))),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -67,7 +67,7 @@ TEST_F(ResolverFunctionValidationTest, NestedLocalMayShadowParameter) {
     // }
     Func("func", utils::Vector{Param(Source{{12, 34}}, "common_name", ty.f32())}, ty.void_(),
          utils::Vector{
-             Block(Decl(Let(Source{{56, 78}}, "common_name", nullptr, Expr(1_i)))),
+             Block(Decl(Let(Source{{56, 78}}, "common_name", Expr(1_i)))),
          });
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
@@ -388,7 +388,7 @@ TEST_F(ResolverFunctionValidationTest, CannotCallFunctionAtModuleScope) {
          utils::Vector{
              Return(1_i),
          });
-    GlobalVar("x", nullptr, Call(Source{{12, 34}}, "F"), ast::StorageClass::kPrivate);
+    GlobalVar("x", Call(Source{{12, 34}}, "F"), ast::StorageClass::kPrivate);
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), R"(12:34 error: functions cannot be called at module-scope)");
@@ -540,6 +540,19 @@ TEST_F(ResolverFunctionValidationTest, WorkgroupSize_GoodType_U32_AInt) {
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
              WorkgroupSize(Source{{12, 34}}, 1_u, 2_a, 3_u),
+         });
+
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverFunctionValidationTest, WorkgroupSize_Expr) {
+    // @compute @workgroup_size(1 + 2)
+    // fn main() {}
+
+    Func("main", utils::Empty, ty.void_(), utils::Empty,
+         utils::Vector{
+             Stage(ast::PipelineStage::kCompute),
+             WorkgroupSize(Source{{12, 34}}, Add(1_u, 2_u)),
          });
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
@@ -750,13 +763,43 @@ TEST_F(ResolverFunctionValidationTest, WorkgroupSize_NonConst) {
               "overridable of type abstract-integer, i32 or u32");
 }
 
-TEST_F(ResolverFunctionValidationTest, WorkgroupSize_InvalidExpr) {
-    // @compute @workgroup_size(i32(1))
+TEST_F(ResolverFunctionValidationTest, WorkgroupSize_InvalidExpr_x) {
+    // @compute @workgroup_size(1 << 2 + 4)
     // fn main() {}
     Func("main", utils::Empty, ty.void_(), utils::Empty,
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
-             WorkgroupSize(Construct(Source{{12, 34}}, ty.i32(), 1_i)),
+             WorkgroupSize(Construct(Source{{12, 34}}, ty.i32(), Shr(1_i, Add(2_u, 4_u)))),
+         });
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "12:34 error: workgroup_size argument must be either a literal, constant, or "
+              "overridable of type abstract-integer, i32 or u32");
+}
+
+TEST_F(ResolverFunctionValidationTest, WorkgroupSize_InvalidExpr_y) {
+    // @compute @workgroup_size(1, 1 << 2 + 4)
+    // fn main() {}
+    Func("main", utils::Empty, ty.void_(), utils::Empty,
+         utils::Vector{
+             Stage(ast::PipelineStage::kCompute),
+             WorkgroupSize(Construct(Source{{12, 34}}, ty.i32(), Shr(1_i, Add(2_u, 4_u)))),
+         });
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "12:34 error: workgroup_size argument must be either a literal, constant, or "
+              "overridable of type abstract-integer, i32 or u32");
+}
+
+TEST_F(ResolverFunctionValidationTest, WorkgroupSize_InvalidExpr_z) {
+    // @compute @workgroup_size(1, 1, 1 << 2 + 4)
+    // fn main() {}
+    Func("main", utils::Empty, ty.void_(), utils::Empty,
+         utils::Vector{
+             Stage(ast::PipelineStage::kCompute),
+             WorkgroupSize(Construct(Source{{12, 34}}, ty.i32(), Shr(1_i, Add(2_u, 4_u)))),
          });
 
     EXPECT_FALSE(r()->Resolve());

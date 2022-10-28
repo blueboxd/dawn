@@ -271,9 +271,11 @@ bool GeneratorImpl::Generate() {
             [&](const ast::Const*) {
                 return true;  // Constants are embedded at their use
             },
-            [&](const ast::Override* override) {
-                TINT_DEFER(line());
-                return EmitOverride(override);
+            [&](const ast::Override*) {
+                // Override is removed with SubstituteOverride
+                TINT_ICE(Writer, diagnostics_)
+                    << "Override should have been removed by the substitute_override transform.";
+                return false;
             },
             [&](const ast::Function* func) {
                 TINT_DEFER(line());
@@ -1398,6 +1400,7 @@ std::string GeneratorImpl::generate_builtin_name(const sem::Builtin* builtin) {
         case sem::BuiltinType::kPow:
         case sem::BuiltinType::kReflect:
         case sem::BuiltinType::kRefract:
+        case sem::BuiltinType::kSaturate:
         case sem::BuiltinType::kSelect:
         case sem::BuiltinType::kSin:
         case sem::BuiltinType::kSinh:
@@ -1764,42 +1767,20 @@ bool GeneratorImpl::EmitLiteral(std::ostream& out, const ast::LiteralExpression*
 
 bool GeneratorImpl::EmitExpression(std::ostream& out, const ast::Expression* expr) {
     if (auto* sem = builder_.Sem().Get(expr)) {
-        if (auto* user = sem->As<sem::VariableUser>();
-            !user || !user->Variable()->Declaration()->Is<ast::Let>()) {
-            // Disable constant inlining if the constant expression is from a 'let' declaration.
-            // TODO(crbug.com/tint/1580): Once 'const' is implemented, 'let' will no longer resolve
-            // to a shader-creation time constant value, and this can be removed.
-            if (auto constant = sem->ConstantValue()) {
-                return EmitConstant(out, constant);
-            }
+        if (auto* constant = sem->ConstantValue()) {
+            return EmitConstant(out, constant);
         }
     }
     return Switch(
-        expr,
-        [&](const ast::IndexAccessorExpression* a) {  //
-            return EmitIndexAccessor(out, a);
-        },
-        [&](const ast::BinaryExpression* b) {  //
-            return EmitBinary(out, b);
-        },
-        [&](const ast::BitcastExpression* b) {  //
-            return EmitBitcast(out, b);
-        },
-        [&](const ast::CallExpression* c) {  //
-            return EmitCall(out, c);
-        },
-        [&](const ast::IdentifierExpression* i) {  //
-            return EmitIdentifier(out, i);
-        },
-        [&](const ast::LiteralExpression* l) {  //
-            return EmitLiteral(out, l);
-        },
-        [&](const ast::MemberAccessorExpression* m) {  //
-            return EmitMemberAccessor(out, m);
-        },
-        [&](const ast::UnaryOpExpression* u) {  //
-            return EmitUnaryOp(out, u);
-        },
+        expr,  //
+        [&](const ast::IndexAccessorExpression* a) { return EmitIndexAccessor(out, a); },
+        [&](const ast::BinaryExpression* b) { return EmitBinary(out, b); },
+        [&](const ast::BitcastExpression* b) { return EmitBitcast(out, b); },
+        [&](const ast::CallExpression* c) { return EmitCall(out, c); },
+        [&](const ast::IdentifierExpression* i) { return EmitIdentifier(out, i); },
+        [&](const ast::LiteralExpression* l) { return EmitLiteral(out, l); },
+        [&](const ast::MemberAccessorExpression* m) { return EmitMemberAccessor(out, m); },
+        [&](const ast::UnaryOpExpression* u) { return EmitUnaryOp(out, u); },
         [&](Default) {  //
             diagnostics_.add_error(diag::System::Writer, "unknown expression type: " +
                                                              std::string(expr->TypeInfo().name));
@@ -1936,18 +1917,19 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
     // attribute have a value of zero.
     const uint32_t kInvalidBindingIndex = std::numeric_limits<uint32_t>::max();
     auto get_binding_index = [&](const ast::Parameter* param) -> uint32_t {
-        auto bp = param->BindingPoint();
-        if (bp.group == nullptr || bp.binding == nullptr) {
+        if (!param->HasBindingPoint()) {
             TINT_ICE(Writer, diagnostics_)
                 << "missing binding attributes for entry point parameter";
             return kInvalidBindingIndex;
         }
-        if (bp.group->value != 0) {
+        auto* param_sem = program_->Sem().Get<sem::Parameter>(param);
+        auto bp = param_sem->BindingPoint();
+        if (bp.group != 0) {
             TINT_ICE(Writer, diagnostics_) << "encountered non-zero resource group index (use "
                                               "BindingRemapper to fix)";
             return kInvalidBindingIndex;
         }
-        return bp.binding->value;
+        return bp.binding;
     };
 
     {
@@ -2806,24 +2788,25 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
                         out << " [[" << name << "]]";
                         return true;
                     },
-                    [&](const ast::LocationAttribute* loc) {
+                    [&](const ast::LocationAttribute*) {
                         auto& pipeline_stage_uses = str->PipelineStageUses();
                         if (pipeline_stage_uses.size() != 1) {
                             TINT_ICE(Writer, diagnostics_) << "invalid entry point IO struct uses";
                             return false;
                         }
 
+                        uint32_t loc = mem->Location().value();
                         if (pipeline_stage_uses.count(sem::PipelineStageUsage::kVertexInput)) {
-                            out << " [[attribute(" + std::to_string(loc->value) + ")]]";
+                            out << " [[attribute(" + std::to_string(loc) + ")]]";
                         } else if (pipeline_stage_uses.count(
                                        sem::PipelineStageUsage::kVertexOutput)) {
-                            out << " [[user(locn" + std::to_string(loc->value) + ")]]";
+                            out << " [[user(locn" + std::to_string(loc) + ")]]";
                         } else if (pipeline_stage_uses.count(
                                        sem::PipelineStageUsage::kFragmentInput)) {
-                            out << " [[user(locn" + std::to_string(loc->value) + ")]]";
+                            out << " [[user(locn" + std::to_string(loc) + ")]]";
                         } else if (pipeline_stage_uses.count(
                                        sem::PipelineStageUsage::kFragmentOutput)) {
-                            out << " [[color(" + std::to_string(loc->value) + ")]]";
+                            out << " [[color(" + std::to_string(loc) + ")]]";
                         } else {
                             TINT_ICE(Writer, diagnostics_) << "invalid use of location decoration";
                             return false;
@@ -3054,22 +3037,6 @@ bool GeneratorImpl::EmitLet(const ast::Let* let) {
         return false;
     }
     out << ";";
-
-    return true;
-}
-
-bool GeneratorImpl::EmitOverride(const ast::Override* override) {
-    auto* global = program_->Sem().Get<sem::GlobalVariable>(override);
-    auto* type = global->Type();
-
-    auto out = line();
-    out << "constant ";
-    if (!EmitType(out, type, program_->Symbols().NameFor(override->symbol))) {
-        return false;
-    }
-    out << " " << program_->Symbols().NameFor(override->symbol);
-
-    out << " [[function_constant(" << global->OverrideId().value << ")]];";
 
     return true;
 }

@@ -15,6 +15,7 @@
 #ifndef SRC_TINT_SEM_VARIABLE_H_
 #define SRC_TINT_SEM_VARIABLE_H_
 
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -152,13 +153,18 @@ class GlobalVariable final : public Castable<GlobalVariable, Variable> {
     /// @param access the variable access control type
     /// @param constant_value the constant value for the variable. May be null
     /// @param binding_point the optional resource binding point of the variable
+    /// @param location the location value if provided
+    ///
+    /// Note, a GlobalVariable generally doesn't have a `location` in WGSL, as it isn't allowed by
+    /// the spec. The location maybe attached by transforms such as CanonicalizeEntryPointIO.
     GlobalVariable(const ast::Variable* declaration,
                    const sem::Type* type,
                    EvaluationStage stage,
                    ast::StorageClass storage_class,
                    ast::Access access,
                    const Constant* constant_value,
-                   sem::BindingPoint binding_point = {});
+                   sem::BindingPoint binding_point = {},
+                   std::optional<uint32_t> location = std::nullopt);
 
     /// Destructor
     ~GlobalVariable() override;
@@ -172,10 +178,14 @@ class GlobalVariable final : public Castable<GlobalVariable, Variable> {
     /// @returns the pipeline constant ID associated with the variable
     tint::OverrideId OverrideId() const { return override_id_; }
 
+    /// @returns the location value for the parameter, if set
+    std::optional<uint32_t> Location() const { return location_; }
+
   private:
     const sem::BindingPoint binding_point_;
 
     tint::OverrideId override_id_;
+    std::optional<uint32_t> location_;
 };
 
 /// Parameter is a function parameter
@@ -188,12 +198,16 @@ class Parameter final : public Castable<Parameter, Variable> {
     /// @param storage_class the variable storage class
     /// @param access the variable access control type
     /// @param usage the semantic usage for the parameter
+    /// @param binding_point the optional resource binding point of the parameter
+    /// @param location the location value, if set
     Parameter(const ast::Parameter* declaration,
               uint32_t index,
               const sem::Type* type,
               ast::StorageClass storage_class,
               ast::Access access,
-              const ParameterUsage usage = ParameterUsage::kNone);
+              const ParameterUsage usage = ParameterUsage::kNone,
+              sem::BindingPoint binding_point = {},
+              std::optional<uint32_t> location = std::nullopt);
 
     /// Destructor
     ~Parameter() override;
@@ -217,11 +231,19 @@ class Parameter final : public Castable<Parameter, Variable> {
     /// @param shadows the Type, Function or Variable that this variable shadows
     void SetShadows(const sem::Node* shadows) { shadows_ = shadows; }
 
+    /// @returns the resource binding point for the parameter
+    sem::BindingPoint BindingPoint() const { return binding_point_; }
+
+    /// @returns the location value for the parameter, if set
+    std::optional<uint32_t> Location() const { return location_; }
+
   private:
     const uint32_t index_;
     const ParameterUsage usage_;
     CallTarget const* owner_ = nullptr;
     const sem::Node* shadows_ = nullptr;
+    const sem::BindingPoint binding_point_;
+    const std::optional<uint32_t> location_;
 };
 
 /// VariableUser holds the semantic information for an identifier expression

@@ -105,8 +105,8 @@ enum texel_format {
 
 // https://gpuweb.github.io/gpuweb/wgsl/#plain-types-section
 type bool
-@precedence(5) @display("abstract-float") type fa
-@precedence(4) @display("abstract-int")   type ia
+@precedence(5) @display("abstract-int")   type ia
+@precedence(4) @display("abstract-float") type fa
 @precedence(3) type i32
 @precedence(2) type u32
 @precedence(1) type f32
@@ -508,6 +508,8 @@ fn reverseBits<T: iu32>(T) -> T
 fn reverseBits<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
 fn round<T: f32_f16>(T) -> T
 fn round<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+fn saturate<T: f32_f16>(T) -> T
+fn saturate<T: f32_f16, N: num>(vec<N, T>) -> vec<N, T>
 fn select<T: scalar>(T, T, bool) -> T
 fn select<T: scalar, N: num>(vec<N, T>, vec<N, T>, bool) -> vec<N, T>
 fn select<N: num, T: scalar>(vec<N, T>, vec<N, T>, vec<N, bool>) -> vec<N, T>
@@ -757,40 +759,40 @@ fn textureLoad(texture: texture_external, coords: vec2<i32>) -> vec4<f32>
 // Matrix constructors (scalar)
 @const("MatCtorS")
 ctor mat2x2<T: fa_f32_f16>(T, T,
-                          T, T) -> mat2x2<T>
+                           T, T) -> mat2x2<T>
 @const("MatCtorS")
 ctor mat2x3<T: fa_f32_f16>(T, T, T,
-                          T, T, T) -> mat2x3<T>
+                           T, T, T) -> mat2x3<T>
 @const("MatCtorS")
 ctor mat2x4<T: fa_f32_f16>(T, T, T, T,
-                          T, T, T, T) -> mat2x4<T>
+                           T, T, T, T) -> mat2x4<T>
 @const("MatCtorS")
 ctor mat3x2<T: fa_f32_f16>(T, T,
-                          T, T,
-                          T, T) -> mat3x2<T>
+                           T, T,
+                           T, T) -> mat3x2<T>
 @const("MatCtorS")
 ctor mat3x3<T: fa_f32_f16>(T, T, T,
-                          T, T, T,
-                          T, T, T) -> mat3x3<T>
+                           T, T, T,
+                           T, T, T) -> mat3x3<T>
 @const("MatCtorS")
 ctor mat3x4<T: fa_f32_f16>(T, T, T, T,
-                          T, T, T, T,
-                          T, T, T, T) -> mat3x4<T>
+                           T, T, T, T,
+                           T, T, T, T) -> mat3x4<T>
 @const("MatCtorS")
 ctor mat4x2<T: fa_f32_f16>(T, T,
-                          T, T,
-                          T, T,
-                          T, T) -> mat4x2<T>
+                           T, T,
+                           T, T,
+                           T, T) -> mat4x2<T>
 @const("MatCtorS")
 ctor mat4x3<T: fa_f32_f16>(T, T, T,
-                          T, T, T,
-                          T, T, T,
-                          T, T, T) -> mat4x3<T>
+                           T, T, T,
+                           T, T, T,
+                           T, T, T) -> mat4x3<T>
 @const("MatCtorS")
 ctor mat4x4<T: fa_f32_f16>(T, T, T, T,
-                          T, T, T, T,
-                          T, T, T, T,
-                          T, T, T, T) -> mat4x4<T>
+                           T, T, T, T,
+                           T, T, T, T,
+                           T, T, T, T) -> mat4x4<T>
 
 // Matrix constructors (column vectors)
 @const("MatCtorV")
@@ -874,8 +876,8 @@ ctor mat4x4<T: fa_f32_f16>(vec4<T>, vec4<T>, vec4<T>, vec4<T>) -> mat4x4<T>
 ////////////////////////////////////////////////////////////////////////////////
 // Unary Operators                                                            //
 ////////////////////////////////////////////////////////////////////////////////
-op ! (bool) -> bool
-op ! <N: num> (vec<N, bool>) -> vec<N, bool>
+@const op ! (bool) -> bool
+@const op ! <N: num> (vec<N, bool>) -> vec<N, bool>
 
 @const op ~ <T: ia_iu32>(T) -> T
 @const op ~ <T: ia_iu32, N: num> (vec<N, T>) -> vec<N, T>
@@ -898,20 +900,20 @@ op ! <N: num> (vec<N, bool>) -> vec<N, bool>
 @const op - <T: fia_fiu32_f16, N: num> (T, vec<N, T>) -> vec<N, T>
 @const op - <T: fa_f32_f16, N: num, M: num> (mat<N, M, T>, mat<N, M, T>) -> mat<N, M, T>
 
-op * <T: fiu32_f16>(T, T) -> T
-op * <T: fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
-op * <T: fiu32_f16, N: num> (vec<N, T>, T) -> vec<N, T>
-op * <T: fiu32_f16, N: num> (T, vec<N, T>) -> vec<N, T>
-op * <T: f32_f16, N: num, M: num> (T, mat<N, M, T>) -> mat<N, M, T>
-op * <T: f32_f16, N: num, M: num> (mat<N, M, T>, T) -> mat<N, M, T>
-op * <T: f32_f16, C: num, R: num> (mat<C, R, T>, vec<C, T>) -> vec<R, T>
-op * <T: f32_f16, C: num, R: num> (vec<R, T>, mat<C, R, T>) -> vec<C, T>
-op * <T: f32_f16, K: num, C: num, R: num> (mat<K, R, T>, mat<C, K, T>) -> mat<C, R, T>
+@const("Multiply") op * <T: fia_fiu32_f16>(T, T) -> T
+@const("Multiply") op * <T: fia_fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
+@const("Multiply") op * <T: fia_fiu32_f16, N: num> (vec<N, T>, T) -> vec<N, T>
+@const("Multiply") op * <T: fia_fiu32_f16, N: num> (T, vec<N, T>) -> vec<N, T>
+@const("Multiply") op * <T: fa_f32_f16, N: num, M: num> (T, mat<N, M, T>) -> mat<N, M, T>
+@const("Multiply") op * <T: fa_f32_f16, N: num, M: num> (mat<N, M, T>, T) -> mat<N, M, T>
+@const("MultiplyMatVec") op * <T: fa_f32_f16, C: num, R: num> (mat<C, R, T>, vec<C, T>) -> vec<R, T>
+@const("MultiplyVecMat") op * <T: fa_f32_f16, C: num, R: num> (vec<R, T>, mat<C, R, T>) -> vec<C, T>
+@const("MultiplyMatMat") op * <T: fa_f32_f16, K: num, C: num, R: num> (mat<K, R, T>, mat<C, K, T>) -> mat<C, R, T>
 
-op / <T: fiu32_f16>(T, T) -> T
-op / <T: fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
-op / <T: fiu32_f16, N: num> (vec<N, T>, T) -> vec<N, T>
-op / <T: fiu32_f16, N: num> (T, vec<N, T>) -> vec<N, T>
+@const op / <T: fia_fiu32_f16>(T, T) -> T
+@const op / <T: fia_fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
+@const op / <T: fia_fiu32_f16, N: num> (vec<N, T>, T) -> vec<N, T>
+@const op / <T: fia_fiu32_f16, N: num> (T, vec<N, T>) -> vec<N, T>
 
 op % <T: fiu32_f16>(T, T) -> T
 op % <T: fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
@@ -921,36 +923,36 @@ op % <T: fiu32_f16, N: num> (T, vec<N, T>) -> vec<N, T>
 op ^ <T: iu32>(T, T) -> T
 op ^ <T: iu32, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
 
-op & (bool, bool) -> bool
-op & <N: num> (vec<N, bool>, vec<N, bool>) -> vec<N, bool>
-op & <T: iu32>(T, T) -> T
-op & <T: iu32, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
+@const op & (bool, bool) -> bool
+@const op & <N: num> (vec<N, bool>, vec<N, bool>) -> vec<N, bool>
+@const op & <T: ia_iu32>(T, T) -> T
+@const op & <T: ia_iu32, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
 
-op | (bool, bool) -> bool
-op | <N: num> (vec<N, bool>, vec<N, bool>) -> vec<N, bool>
-op | <T: iu32>(T, T) -> T
-op | <T: iu32, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
+@const op | (bool, bool) -> bool
+@const op | <N: num> (vec<N, bool>, vec<N, bool>) -> vec<N, bool>
+@const op | <T: ia_iu32>(T, T) -> T
+@const op | <T: ia_iu32, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
 
 op && (bool, bool) -> bool
 op || (bool, bool) -> bool
 
-op == <T: scalar>(T, T) -> bool
-op == <T: scalar, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
+@const op == <T: abstract_or_scalar>(T, T) -> bool
+@const op == <T: abstract_or_scalar, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
 
-op != <T: scalar>(T, T) -> bool
-op != <T: scalar, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
+@const op != <T: abstract_or_scalar>(T, T) -> bool
+@const op != <T: abstract_or_scalar, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
 
-op < <T: fiu32_f16>(T, T) -> bool
-op < <T: fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
+@const op < <T: fia_fiu32_f16>(T, T) -> bool
+@const op < <T: fia_fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
 
-op > <T: fiu32_f16>(T, T) -> bool
-op > <T: fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
+@const op > <T: fia_fiu32_f16>(T, T) -> bool
+@const op > <T: fia_fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
 
-op <= <T: fiu32_f16>(T, T) -> bool
-op <= <T: fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
+@const op <= <T: fia_fiu32_f16>(T, T) -> bool
+@const op <= <T: fia_fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
 
-op >= <T: fiu32_f16>(T, T) -> bool
-op >= <T: fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
+@const op >= <T: fia_fiu32_f16>(T, T) -> bool
+@const op >= <T: fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
 
 op << <T: iu32>(T, u32) -> T
 op << <T: iu32, N: num> (vec<N, T>, vec<N, u32>) -> vec<N, T>

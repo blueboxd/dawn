@@ -10,25 +10,20 @@ struct PointLight {
   vec4 position;
 };
 
-struct Uniforms {
+layout(binding = 0, std140) uniform Uniforms_ubo {
   mat4 worldView;
   mat4 proj;
   uint numPointLights;
   uint color_source;
-  vec4 color;
-};
-
-layout(binding = 0) uniform Uniforms_1 {
-  mat4 worldView;
-  mat4 proj;
-  uint numPointLights;
-  uint color_source;
+  uint pad;
+  uint pad_1;
   vec4 color;
 } uniforms;
 
-layout(binding = 1, std430) buffer PointLights_1 {
+layout(binding = 1, std430) buffer PointLights_ssbo {
   PointLight values[];
 } pointLights;
+
 struct FragmentInput {
   vec4 position;
   vec4 view_position;

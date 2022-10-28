@@ -29,7 +29,7 @@ using ResolverStorageClassValidationTest = ResolverTest;
 
 TEST_F(ResolverStorageClassValidationTest, GlobalVariableNoStorageClass_Fail) {
     // var g : f32;
-    GlobalVar(Source{{12, 34}}, "g", ty.f32(), ast::StorageClass::kNone);
+    GlobalVar(Source{{12, 34}}, "g", ty.f32());
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
@@ -87,11 +87,8 @@ note: while analysing structure member S.m
 
 TEST_F(ResolverStorageClassValidationTest, StorageBufferBool) {
     // var<storage> g : bool;
-    GlobalVar(Source{{56, 78}}, "g", ty.bool_(), ast::StorageClass::kStorage,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", ty.bool_(), ast::StorageClass::kStorage, Binding(0_a),
+              Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -105,11 +102,8 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferBoolAlias) {
     // type a = bool;
     // var<storage, read> g : a;
     auto* a = Alias("a", ty.bool_());
-    GlobalVar(Source{{56, 78}}, "g", ty.Of(a), ast::StorageClass::kStorage,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", ty.Of(a), ast::StorageClass::kStorage, Binding(0_a),
+              Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -125,11 +119,7 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferF16_TemporallyBan) {
     // var<storage> g : f16;
     Enable(ast::Extension::kF16);
 
-    GlobalVar("g", ty.f16(Source{{56, 78}}), ast::StorageClass::kStorage,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("g", ty.f16(Source{{56, 78}}), ast::StorageClass::kStorage, Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -145,10 +135,7 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferF16Alias_TemporallyBan) 
 
     auto* a = Alias("a", ty.f16());
     GlobalVar("g", ty.type_name(Source{{56, 78}}, a->name), ast::StorageClass::kStorage,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -161,10 +148,7 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferVectorF16_TemporallyBan)
     // var<storage> g : vec4<f16>;
     Enable(ast::Extension::kF16);
     GlobalVar("g", ty.vec(Source{{56, 78}}, ty.Of<f16>(), 4u), ast::StorageClass::kStorage,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -180,11 +164,7 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferArrayF16_TemporallyBan) 
 
     auto* s = Structure("S", utils::Vector{Member("a", ty.f16(Source{{56, 78}}))});
     auto* a = ty.array(ty.Of(s), 3_u);
-    GlobalVar("g", a, ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("g", a, ast::StorageClass::kStorage, ast::Access::kRead, Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -198,11 +178,8 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferStructF16_TemporallyBan)
     Enable(ast::Extension::kF16);
 
     auto* s = Structure("S", utils::Vector{Member("x", ty.f16(Source{{12, 34}}))});
-    GlobalVar("g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -219,11 +196,8 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferNoErrorStructF16Aliases_
     auto* s = Structure("S", utils::Vector{Member("x", ty.f16(Source{{12, 34}}))});
     auto* a1 = Alias("a1", ty.Of(s));
     auto* a2 = Alias("a2", ty.Of(a1));
-    GlobalVar("g", ty.Of(a2), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("g", ty.Of(a2), ast::StorageClass::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -234,11 +208,7 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferNoErrorStructF16Aliases_
 TEST_F(ResolverStorageClassValidationTest, StorageBufferPointer) {
     // var<storage> g : ptr<private, f32>;
     GlobalVar(Source{{56, 78}}, "g", ty.pointer(ty.f32(), ast::StorageClass::kPrivate),
-              ast::StorageClass::kStorage,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              ast::StorageClass::kStorage, Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -250,22 +220,16 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferPointer) {
 
 TEST_F(ResolverStorageClassValidationTest, StorageBufferIntScalar) {
     // var<storage> g : i32;
-    GlobalVar(Source{{56, 78}}, "g", ty.i32(), ast::StorageClass::kStorage,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", ty.i32(), ast::StorageClass::kStorage, Binding(0_a),
+              Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverStorageClassValidationTest, StorageBufferVectorF32) {
     // var<storage> g : vec4<f32>;
-    GlobalVar(Source{{56, 78}}, "g", ty.vec4<f32>(), ast::StorageClass::kStorage,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", ty.vec4<f32>(), ast::StorageClass::kStorage, Binding(0_a),
+              Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
@@ -275,10 +239,7 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferArrayF32) {
     auto* s = Structure("S", utils::Vector{Member("a", ty.f32())});
     auto* a = ty.array(ty.Of(s), 3_u);
     GlobalVar(Source{{56, 78}}, "g", a, ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
@@ -297,7 +258,7 @@ TEST_F(ResolverStorageClassValidationTest, NotStorage_AccessMode) {
 TEST_F(ResolverStorageClassValidationTest, Storage_ReadAccessMode) {
     // @group(0) @binding(0) var<storage, read> a : i32;
     GlobalVar(Source{{56, 78}}, "a", ty.i32(), ast::StorageClass::kStorage, ast::Access::kRead,
-              GroupAndBinding(0, 0));
+              Group(0_a), Binding(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
@@ -305,7 +266,7 @@ TEST_F(ResolverStorageClassValidationTest, Storage_ReadAccessMode) {
 TEST_F(ResolverStorageClassValidationTest, Storage_ReadWriteAccessMode) {
     // @group(0) @binding(0) var<storage, read_write> a : i32;
     GlobalVar(Source{{56, 78}}, "a", ty.i32(), ast::StorageClass::kStorage, ast::Access::kReadWrite,
-              GroupAndBinding(0, 0));
+              Group(0_a), Binding(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
@@ -313,7 +274,7 @@ TEST_F(ResolverStorageClassValidationTest, Storage_ReadWriteAccessMode) {
 TEST_F(ResolverStorageClassValidationTest, Storage_WriteAccessMode) {
     // @group(0) @binding(0) var<storage, read_write> a : i32;
     GlobalVar(Source{{56, 78}}, "a", ty.i32(), ast::StorageClass::kStorage, ast::Access::kWrite,
-              GroupAndBinding(0, 0));
+              Group(0_a), Binding(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -326,10 +287,7 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferStructI32) {
     // var<storage, read> g : S;
     auto* s = Structure("S", utils::Vector{Member(Source{{12, 34}}, "x", ty.i32())});
     GlobalVar(Source{{56, 78}}, "g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_TRUE(r()->Resolve());
 }
@@ -342,10 +300,7 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferNoErrorStructI32Aliases)
     auto* a1 = Alias("a1", ty.Of(s));
     auto* a2 = Alias("a2", ty.Of(a1));
     GlobalVar(Source{{56, 78}}, "g", ty.Of(a2), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_TRUE(r()->Resolve());
 }
@@ -356,11 +311,8 @@ TEST_F(ResolverStorageClassValidationTest, UniformBuffer_Struct_Runtime) {
 
     auto* s = Structure(Source{{12, 34}}, "S", utils::Vector{Member("m", ty.array<i32>())});
 
-    GlobalVar(Source{{56, 78}}, "svar", ty.Of(s), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "svar", ty.Of(s), ast::StorageClass::kUniform, Binding(0_a),
+              Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
@@ -371,11 +323,8 @@ note: while analysing structure member S.m
 
 TEST_F(ResolverStorageClassValidationTest, UniformBufferBool) {
     // var<uniform> g : bool;
-    GlobalVar(Source{{56, 78}}, "g", ty.bool_(), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", ty.bool_(), ast::StorageClass::kUniform, Binding(0_a),
+              Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -389,11 +338,8 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferBoolAlias) {
     // type a = bool;
     // var<uniform> g : a;
     auto* a = Alias("a", ty.bool_());
-    GlobalVar(Source{{56, 78}}, "g", ty.Of(a), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", ty.Of(a), ast::StorageClass::kUniform, Binding(0_a),
+              Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -409,11 +355,7 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferF16_TemporallyBan) {
     // var<uniform> g : f16;
     Enable(ast::Extension::kF16);
 
-    GlobalVar("g", ty.f16(Source{{56, 78}}), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("g", ty.f16(Source{{56, 78}}), ast::StorageClass::kUniform, Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -429,10 +371,7 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferF16Alias_TemporallyBan) 
 
     auto* a = Alias("a", ty.f16());
     GlobalVar("g", ty.type_name(Source{{56, 78}}, a->name), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -445,10 +384,7 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferVectorF16_TemporallyBan)
     // var<uniform> g : vec4<f16>;
     Enable(ast::Extension::kF16);
     GlobalVar("g", ty.vec(Source{{56, 78}}, ty.Of<f16>(), 4u), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -464,13 +400,9 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferArrayF16_TemporallyBan) 
     Enable(ast::Extension::kF16);
 
     auto* s = Structure(
-        "S", utils::Vector{Member("a", ty.f16(Source{{56, 78}}), utils::Vector{MemberSize(16)})});
+        "S", utils::Vector{Member("a", ty.f16(Source{{56, 78}}), utils::Vector{MemberSize(16_a)})});
     auto* a = ty.array(ty.Of(s), 3_u);
-    GlobalVar("g", a, ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("g", a, ast::StorageClass::kUniform, Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -484,11 +416,7 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferStructF16_TemporallyBan)
     Enable(ast::Extension::kF16);
 
     auto* s = Structure("S", utils::Vector{Member("x", ty.f16(Source{{12, 34}}))});
-    GlobalVar("g", ty.Of(s), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("g", ty.Of(s), ast::StorageClass::kUniform, Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -504,11 +432,7 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferStructF16Aliases_Tempora
 
     auto* s = Structure("S", utils::Vector{Member("x", ty.f16(Source{{12, 34}}))});
     auto* a1 = Alias("a1", ty.Of(s));
-    GlobalVar("g", ty.Of(a1), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("g", ty.Of(a1), ast::StorageClass::kUniform, Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -519,11 +443,7 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferStructF16Aliases_Tempora
 TEST_F(ResolverStorageClassValidationTest, UniformBufferPointer) {
     // var<uniform> g : ptr<private, f32>;
     GlobalVar(Source{{56, 78}}, "g", ty.pointer(ty.f32(), ast::StorageClass::kPrivate),
-              ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              ast::StorageClass::kUniform, Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -535,22 +455,16 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferPointer) {
 
 TEST_F(ResolverStorageClassValidationTest, UniformBufferIntScalar) {
     // var<uniform> g : i32;
-    GlobalVar(Source{{56, 78}}, "g", ty.i32(), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", ty.i32(), ast::StorageClass::kUniform, Binding(0_a),
+              Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverStorageClassValidationTest, UniformBufferVectorF32) {
     // var<uniform> g : vec4<f32>;
-    GlobalVar(Source{{56, 78}}, "g", ty.vec4<f32>(), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", ty.vec4<f32>(), ast::StorageClass::kUniform, Binding(0_a),
+              Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
@@ -560,13 +474,9 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferArrayF32) {
     //   @size(16) f : f32;
     // }
     // var<uniform> g : array<S, 3u>;
-    auto* s = Structure("S", utils::Vector{Member("a", ty.f32(), utils::Vector{MemberSize(16)})});
+    auto* s = Structure("S", utils::Vector{Member("a", ty.f32(), utils::Vector{MemberSize(16_a)})});
     auto* a = ty.array(ty.Of(s), 3_u);
-    GlobalVar(Source{{56, 78}}, "g", a, ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", a, ast::StorageClass::kUniform, Binding(0_a), Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
@@ -575,11 +485,8 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferStructI32) {
     // struct S { x : i32 };
     // var<uniform> g :  S;
     auto* s = Structure("S", utils::Vector{Member(Source{{12, 34}}, "x", ty.i32())});
-    GlobalVar(Source{{56, 78}}, "g", ty.Of(s), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", ty.Of(s), ast::StorageClass::kUniform, Binding(0_a),
+              Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
@@ -590,11 +497,8 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferStructI32Aliases) {
     // var<uniform> g : a1;
     auto* s = Structure("S", utils::Vector{Member(Source{{12, 34}}, "x", ty.i32())});
     auto* a1 = Alias("a1", ty.Of(s));
-    GlobalVar(Source{{56, 78}}, "g", ty.Of(a1), ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{56, 78}}, "g", ty.Of(a1), ast::StorageClass::kUniform, Binding(0_a),
+              Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }

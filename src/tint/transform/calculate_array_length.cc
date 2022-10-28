@@ -130,6 +130,16 @@ void CalculateArrayLength::Run(CloneContext& ctx, const DataMap&, DataMap&) cons
                 if (builtin->Type() == sem::BuiltinType::kArrayLength) {
                     // We're dealing with an arrayLength() call
 
+                    if (auto* call_stmt = call->Stmt()->Declaration()->As<ast::CallStatement>()) {
+                        if (call_stmt->expr == call_expr) {
+                            // arrayLength() is used as a statement.
+                            // The argument expression must be side-effect free, so just drop the
+                            // statement.
+                            RemoveStatement(ctx, call_stmt);
+                            continue;
+                        }
+                    }
+
                     // A runtime-sized array can only appear as the store type of a variable, or the
                     // last element of a structure (which cannot itself be nested). Given that we
                     // require SimplifyPointers, we can assume that the arrayLength() call has one
@@ -169,9 +179,8 @@ void CalculateArrayLength::Run(CloneContext& ctx, const DataMap&, DataMap&) cons
 
                             // Construct the variable that'll hold the result of
                             // RWByteAddressBuffer.GetDimensions()
-                            auto* buffer_size_result = ctx.dst->Decl(
-                                ctx.dst->Var(ctx.dst->Sym(), ctx.dst->ty.u32(),
-                                             ast::StorageClass::kNone, ctx.dst->Expr(0_u)));
+                            auto* buffer_size_result = ctx.dst->Decl(ctx.dst->Var(
+                                ctx.dst->Sym(), ctx.dst->ty.u32(), ctx.dst->Expr(0_u)));
 
                             // Call storage_buffer.GetDimensions(&buffer_size_result)
                             auto* call_get_dims = ctx.dst->CallStmt(ctx.dst->Call(

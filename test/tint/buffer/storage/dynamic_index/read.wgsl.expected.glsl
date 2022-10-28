@@ -9,12 +9,15 @@ struct Inner {
   float f;
   mat2x3 g;
   mat3x2 h;
+  uint pad;
+  uint pad_1;
   ivec4 i[4];
 };
 
-layout(binding = 0, std430) buffer S_1 {
+layout(binding = 0, std430) buffer S_ssbo {
   Inner arr[];
 } s;
+
 void tint_symbol(uint idx) {
   ivec3 a = s.arr[idx].a;
   int b = s.arr[idx].b;

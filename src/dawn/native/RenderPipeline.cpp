@@ -156,7 +156,7 @@ MaybeError ValidatePrimitiveState(const DeviceBase* device, const PrimitiveState
     DAWN_TRY(ValidateSingleSType(descriptor->nextInChain, wgpu::SType::PrimitiveDepthClipControl));
     const PrimitiveDepthClipControl* depthClipControl = nullptr;
     FindInChain(descriptor->nextInChain, &depthClipControl);
-    DAWN_INVALID_IF(depthClipControl && !device->IsFeatureEnabled(Feature::DepthClipControl),
+    DAWN_INVALID_IF(depthClipControl && !device->HasFeature(Feature::DepthClipControl),
                     "%s is not supported", wgpu::FeatureName::DepthClipControl);
     DAWN_TRY(ValidatePrimitiveTopology(descriptor->topology));
     DAWN_TRY(ValidateIndexFormat(descriptor->stripIndexFormat));
@@ -177,9 +177,7 @@ MaybeError ValidatePrimitiveState(const DeviceBase* device, const PrimitiveState
 
 MaybeError ValidateDepthStencilState(const DeviceBase* device,
                                      const DepthStencilState* descriptor) {
-    if (descriptor->nextInChain != nullptr) {
-        return DAWN_VALIDATION_ERROR("nextInChain must be nullptr");
-    }
+    DAWN_INVALID_IF(descriptor->nextInChain != nullptr, "nextInChain is not nullptr.");
 
     DAWN_TRY(ValidateCompareFunction(descriptor->depthCompare));
     DAWN_TRY(ValidateCompareFunction(descriptor->stencilFront.compare));
@@ -377,7 +375,6 @@ MaybeError ValidateInterStageMatching(DeviceBase* device,
         vertexMetadata.usedInterStageVariables != fragmentMetadata.usedInterStageVariables,
         "One or more fragment inputs and vertex outputs are not one-to-one matching");
 
-    // TODO(dawn:802): Validate interpolation types and interpolition sampling types
     for (size_t i : IterateBitSet(vertexMetadata.usedInterStageVariables)) {
         const auto& vertexOutputInfo = vertexMetadata.interStageVariables[i];
         const auto& fragmentInputInfo = fragmentMetadata.interStageVariables[i];

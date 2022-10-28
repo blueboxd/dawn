@@ -2,6 +2,9 @@
 
 struct Inner {
   int x;
+  uint pad;
+  uint pad_1;
+  uint pad_2;
 };
 
 struct S {
@@ -19,7 +22,7 @@ struct S {
   Inner l[4];
 };
 
-layout(binding = 0) uniform S_1 {
+layout(binding = 0, std140) uniform S_std140_ubo {
   ivec3 a;
   int b;
   uvec3 c;
@@ -29,10 +32,18 @@ layout(binding = 0) uniform S_1 {
   ivec2 g;
   ivec2 h;
   mat2x3 i;
-  mat3x2 j;
+  vec2 j_0;
+  vec2 j_1;
+  vec2 j_2;
+  uint pad_3;
+  uint pad_4;
   Inner k;
   Inner l[4];
 } s;
+
+mat3x2 load_s_j() {
+  return mat3x2(s.j_0, s.j_1, s.j_2);
+}
 
 void tint_symbol() {
   ivec3 a = s.a;
@@ -44,7 +55,7 @@ void tint_symbol() {
   ivec2 g = s.g;
   ivec2 h = s.h;
   mat2x3 i = s.i;
-  mat3x2 j = s.j;
+  mat3x2 j = load_s_j();
   Inner k = s.k;
   Inner l[4] = s.l;
 }

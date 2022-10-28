@@ -42,12 +42,12 @@ MaybeError ValidateProgrammableStage(DeviceBase* device,
     const EntryPointMetadata& metadata = module->GetEntryPoint(entryPoint);
 
     if (!metadata.infringedLimitErrors.empty()) {
-        std::ostringstream out;
-        out << "Entry point \"" << entryPoint << "\" infringes limits:\n";
+        std::ostringstream limitList;
         for (const std::string& limit : metadata.infringedLimitErrors) {
-            out << " - " << limit << "\n";
+            limitList << " - " << limit << "\n";
         }
-        return DAWN_VALIDATION_ERROR(out.str());
+        return DAWN_VALIDATION_ERROR("Entry point \"%s\" infringes limits:\n%s", entryPoint,
+                                     limitList.str());
     }
 
     DAWN_INVALID_IF(metadata.stage != stage,
@@ -56,12 +56,6 @@ MaybeError ValidateProgrammableStage(DeviceBase* device,
 
     if (layout != nullptr) {
         DAWN_TRY(ValidateCompatibilityWithPipelineLayout(device, metadata, layout));
-    }
-
-    if (constantCount > 0u && device->IsToggleEnabled(Toggle::DisallowUnsafeAPIs)) {
-        return DAWN_VALIDATION_ERROR(
-            "Pipeline overridable constants are disallowed because they are partially "
-            "implemented.");
     }
 
     // Validate if overridable constants exist in shader module
@@ -73,6 +67,9 @@ MaybeError ValidateProgrammableStage(DeviceBase* device,
         DAWN_INVALID_IF(metadata.overrides.count(constants[i].key) == 0,
                         "Pipeline overridable constant \"%s\" not found in %s.", constants[i].key,
                         module);
+        DAWN_INVALID_IF(!std::isfinite(constants[i].value),
+                        "Pipeline overridable constant \"%s\" with value (%f) is not finite",
+                        constants[i].key, constants[i].value);
 
         if (stageInitializedConstantIdentifiers.count(constants[i].key) == 0) {
             if (metadata.uninitializedOverrides.count(constants[i].key) > 0) {
@@ -81,7 +78,7 @@ MaybeError ValidateProgrammableStage(DeviceBase* device,
             stageInitializedConstantIdentifiers.insert(constants[i].key);
         } else {
             // There are duplicate initializations
-            return DAWN_FORMAT_VALIDATION_ERROR(
+            return DAWN_VALIDATION_ERROR(
                 "Pipeline overridable constants \"%s\" is set more than once in %s",
                 constants[i].key, module);
         }
@@ -104,7 +101,7 @@ MaybeError ValidateProgrammableStage(DeviceBase* device,
             uninitializedConstantsArray.append(identifier);
         }
 
-        return DAWN_FORMAT_VALIDATION_ERROR(
+        return DAWN_VALIDATION_ERROR(
             "There are uninitialized pipeline overridable constants in shader module %s, their "
             "identifiers:[%s]",
             module, uninitializedConstantsArray);
@@ -233,6 +230,7 @@ size_t PipelineBase::ComputeContentHash() {
     for (SingleShaderStage stage : IterateStages(mStageMask)) {
         recorder.Record(mStages[stage].module->GetContentHash());
         recorder.Record(mStages[stage].entryPoint);
+        recorder.Record(mStages[stage].constants);
     }
 
     return recorder.GetContentHash();
@@ -248,7 +246,14 @@ bool PipelineBase::EqualForCache(const PipelineBase* a, const PipelineBase* b) {
     for (SingleShaderStage stage : IterateStages(a->mStageMask)) {
         // The module is deduplicated so it can be compared by pointer.
         if (a->mStages[stage].module.Get() != b->mStages[stage].module.Get() ||
-            a->mStages[stage].entryPoint != b->mStages[stage].entryPoint) {
+            a->mStages[stage].entryPoint != b->mStages[stage].entryPoint ||
+            a->mStages[stage].constants.size() != b->mStages[stage].constants.size()) {
+            return false;
+        }
+
+        // If the constants.size are the same, we still need to compare the key and value.
+        if (!std::equal(a->mStages[stage].constants.begin(), a->mStages[stage].constants.end(),
+                        b->mStages[stage].constants.begin())) {
             return false;
         }
     }

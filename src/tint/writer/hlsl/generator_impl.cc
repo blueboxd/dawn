@@ -112,39 +112,37 @@ const char* image_format_to_rwtexture_type(ast::TexelFormat image_format) {
 }
 
 void PrintF32(std::ostream& out, float value) {
-    // Note: Currently inf and nan should not be constructable, but this is implemented for the day
-    // we support them.
     if (std::isinf(value)) {
-        out << (value >= 0 ? "asfloat(0x7f800000u)" : "asfloat(0xff800000u)");
+        out << "0.0f " << (value >= 0 ? "/* inf */" : "/* -inf */");
     } else if (std::isnan(value)) {
-        out << "asfloat(0x7fc00000u)";
+        out << "0.0f /* nan */";
     } else {
         out << FloatToString(value) << "f";
     }
 }
 
-bool PrintF16(std::ostream& out, float value) {
-    // Note: Currently inf and nan should not be constructable, don't emit them.
-    if (std::isinf(value) || std::isnan(value)) {
-        return false;
+void PrintF16(std::ostream& out, float value) {
+    if (std::isinf(value)) {
+        out << "0.0h " << (value >= 0 ? "/* inf */" : "/* -inf */");
+    } else if (std::isnan(value)) {
+        out << "0.0h /* nan */";
     } else {
         out << FloatToString(value) << "h";
-        return true;
     }
 }
 
 // Helper for writing " : register(RX, spaceY)", where R is the register, X is
 // the binding point binding value, and Y is the binding point group value.
 struct RegisterAndSpace {
-    RegisterAndSpace(char r, ast::VariableBindingPoint bp) : reg(r), binding_point(bp) {}
+    RegisterAndSpace(char r, sem::BindingPoint bp) : reg(r), binding_point(bp) {}
 
     const char reg;
-    ast::VariableBindingPoint const binding_point;
+    sem::BindingPoint const binding_point;
 };
 
 std::ostream& operator<<(std::ostream& s, const RegisterAndSpace& rs) {
-    s << " : register(" << rs.reg << rs.binding_point.binding->value << ", space"
-      << rs.binding_point.group->value << ")";
+    s << " : register(" << rs.reg << rs.binding_point.binding << ", space" << rs.binding_point.group
+      << ")";
     return s;
 }
 
@@ -2512,6 +2510,7 @@ std::string GeneratorImpl::generate_builtin_name(const sem::Builtin* builtin) {
         case sem::BuiltinType::kReflect:
         case sem::BuiltinType::kRefract:
         case sem::BuiltinType::kRound:
+        case sem::BuiltinType::kSaturate:
         case sem::BuiltinType::kSign:
         case sem::BuiltinType::kSin:
         case sem::BuiltinType::kSinh:
@@ -2631,32 +2630,16 @@ bool GeneratorImpl::EmitExpression(std::ostream& out, const ast::Expression* exp
         }
     }
     return Switch(
-        expr,
-        [&](const ast::IndexAccessorExpression* a) {  //
-            return EmitIndexAccessor(out, a);
-        },
-        [&](const ast::BinaryExpression* b) {  //
-            return EmitBinary(out, b);
-        },
-        [&](const ast::BitcastExpression* b) {  //
-            return EmitBitcast(out, b);
-        },
-        [&](const ast::CallExpression* c) {  //
-            return EmitCall(out, c);
-        },
-        [&](const ast::IdentifierExpression* i) {  //
-            return EmitIdentifier(out, i);
-        },
-        [&](const ast::LiteralExpression* l) {  //
-            return EmitLiteral(out, l);
-        },
-        [&](const ast::MemberAccessorExpression* m) {  //
-            return EmitMemberAccessor(out, m);
-        },
-        [&](const ast::UnaryOpExpression* u) {  //
-            return EmitUnaryOp(out, u);
-        },
-        [&](Default) {  //
+        expr,  //
+        [&](const ast::IndexAccessorExpression* a) { return EmitIndexAccessor(out, a); },
+        [&](const ast::BinaryExpression* b) { return EmitBinary(out, b); },
+        [&](const ast::BitcastExpression* b) { return EmitBitcast(out, b); },
+        [&](const ast::CallExpression* c) { return EmitCall(out, c); },
+        [&](const ast::IdentifierExpression* i) { return EmitIdentifier(out, i); },
+        [&](const ast::LiteralExpression* l) { return EmitLiteral(out, l); },
+        [&](const ast::MemberAccessorExpression* m) { return EmitMemberAccessor(out, m); },
+        [&](const ast::UnaryOpExpression* u) { return EmitUnaryOp(out, u); },
+        [&](Default) {
             diagnostics_.add_error(diag::System::Writer, "unknown expression type: " +
                                                              std::string(expr->TypeInfo().name));
             return false;
@@ -2864,7 +2847,12 @@ bool GeneratorImpl::EmitGlobalVariable(const ast::Variable* global) {
                 }
             }
         },
-        [&](const ast::Override* override) { return EmitOverride(override); },
+        [&](const ast::Override*) {
+            // Override is removed with SubstituteOverride
+            TINT_ICE(Writer, diagnostics_)
+                << "Override should have been removed by the substitute_override transform.";
+            return false;
+        },
         [&](const ast::Const*) {
             return true;  // Constants are embedded at their use
         },
@@ -2877,7 +2865,7 @@ bool GeneratorImpl::EmitGlobalVariable(const ast::Variable* global) {
 }
 
 bool GeneratorImpl::EmitUniformVariable(const ast::Var* var, const sem::Variable* sem) {
-    auto binding_point = var->BindingPoint();
+    auto binding_point = sem->As<sem::GlobalVariable>()->BindingPoint();
     auto* type = sem->Type()->UnwrapRef();
     auto name = builder_.Symbols().NameFor(var->symbol);
     line() << "cbuffer cbuffer_" << name << RegisterAndSpace('b', binding_point) << " {";
@@ -2904,7 +2892,9 @@ bool GeneratorImpl::EmitStorageVariable(const ast::Var* var, const sem::Variable
         return false;
     }
 
-    out << RegisterAndSpace(sem->Access() == ast::Access::kRead ? 't' : 'u', var->BindingPoint())
+    auto* global_sem = sem->As<sem::GlobalVariable>();
+    out << RegisterAndSpace(sem->Access() == ast::Access::kRead ? 't' : 'u',
+                            global_sem->BindingPoint())
         << ";";
 
     return true;
@@ -2932,9 +2922,8 @@ bool GeneratorImpl::EmitHandleVariable(const ast::Var* var, const sem::Variable*
     }
 
     if (register_space) {
-        auto bp = var->BindingPoint();
-        out << " : register(" << register_space << bp.binding->value << ", space" << bp.group->value
-            << ")";
+        auto bp = sem->As<sem::GlobalVariable>()->BindingPoint();
+        out << " : register(" << register_space << bp.binding << ", space" << bp.group << ")";
     }
 
     out << ";";
@@ -3142,9 +3131,9 @@ bool GeneratorImpl::EmitConstant(std::ostream& out, const sem::Constant* constan
         [&](const sem::F16*) {
             // emit a f16 scalar with explicit float16_t type declaration.
             out << "float16_t(";
-            bool valid = PrintF16(out, constant->As<float>());
+            PrintF16(out, constant->As<float>());
             out << ")";
-            return valid;
+            return true;
         },
         [&](const sem::I32*) {
             out << constant->As<AInt>();
@@ -3269,9 +3258,8 @@ bool GeneratorImpl::EmitLiteral(std::ostream& out, const ast::LiteralExpression*
             if (l->suffix == ast::FloatLiteralExpression::Suffix::kH) {
                 // Emit f16 literal with explicit float16_t type declaration.
                 out << "float16_t(";
-                bool valid = PrintF16(out, static_cast<float>(l->value));
+                PrintF16(out, static_cast<float>(l->value));
                 out << ")";
-                return valid;
             }
             PrintF32(out, static_cast<float>(l->value));
             return true;
@@ -3965,23 +3953,24 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
             std::string pre, post;
             if (auto* decl = mem->Declaration()) {
                 for (auto* attr : decl->attributes) {
-                    if (auto* location = attr->As<ast::LocationAttribute>()) {
+                    if (attr->Is<ast::LocationAttribute>()) {
                         auto& pipeline_stage_uses = str->PipelineStageUses();
                         if (pipeline_stage_uses.size() != 1) {
                             TINT_ICE(Writer, diagnostics_) << "invalid entry point IO struct uses";
                         }
 
+                        auto loc = mem->Location().value();
                         if (pipeline_stage_uses.count(sem::PipelineStageUsage::kVertexInput)) {
-                            post += " : TEXCOORD" + std::to_string(location->value);
+                            post += " : TEXCOORD" + std::to_string(loc);
                         } else if (pipeline_stage_uses.count(
                                        sem::PipelineStageUsage::kVertexOutput)) {
-                            post += " : TEXCOORD" + std::to_string(location->value);
+                            post += " : TEXCOORD" + std::to_string(loc);
                         } else if (pipeline_stage_uses.count(
                                        sem::PipelineStageUsage::kFragmentInput)) {
-                            post += " : TEXCOORD" + std::to_string(location->value);
+                            post += " : TEXCOORD" + std::to_string(loc);
                         } else if (pipeline_stage_uses.count(
                                        sem::PipelineStageUsage::kFragmentOutput)) {
-                            post += " : SV_Target" + std::to_string(location->value);
+                            post += " : SV_Target" + std::to_string(loc);
                         } else {
                             TINT_ICE(Writer, diagnostics_) << "invalid use of location attribute";
                         }
@@ -4106,36 +4095,6 @@ bool GeneratorImpl::EmitLet(const ast::Let* let) {
     }
     out << ";";
 
-    return true;
-}
-
-bool GeneratorImpl::EmitOverride(const ast::Override* override) {
-    auto* sem = builder_.Sem().Get(override);
-    auto* type = sem->Type();
-
-    auto override_id = sem->OverrideId();
-
-    line() << "#ifndef " << kSpecConstantPrefix << override_id.value;
-
-    if (override->constructor != nullptr) {
-        auto out = line();
-        out << "#define " << kSpecConstantPrefix << override_id.value << " ";
-        if (!EmitExpression(out, override->constructor)) {
-            return false;
-        }
-    } else {
-        line() << "#error spec constant required for constant id " << override_id.value;
-    }
-    line() << "#endif";
-    {
-        auto out = line();
-        out << "static const ";
-        if (!EmitTypeAndName(out, type, sem->StorageClass(), sem->Access(),
-                             builder_.Symbols().NameFor(override->symbol))) {
-            return false;
-        }
-        out << " = " << kSpecConstantPrefix << override_id.value << ";";
-    }
     return true;
 }
 

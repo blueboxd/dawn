@@ -255,9 +255,9 @@ struct Data {
     std::string target_element_type_name;
     builder::ast_type_func_ptr target_ast_ty;
     builder::sem_type_func_ptr target_sem_ty;
-    builder::ast_expr_func_ptr target_expr;
+    builder::ast_expr_from_double_func_ptr target_expr;
     std::string abstract_type_name;
-    builder::ast_expr_func_ptr abstract_expr;
+    builder::ast_expr_from_double_func_ptr abstract_expr;
     std::variant<AInt, AFloat> materialized_value;
     double literal_value;
 };
@@ -268,13 +268,13 @@ Data Types(MATERIALIZED_TYPE materialized_value, double literal_value) {
     using AbstractDataType = builder::DataType<ABSTRACT_TYPE>;
     using TargetElementDataType = builder::DataType<typename TargetDataType::ElementType>;
     return {
-        TargetDataType::Name(),         // target_type_name
-        TargetElementDataType::Name(),  // target_element_type_name
-        TargetDataType::AST,            // target_ast_ty
-        TargetDataType::Sem,            // target_sem_ty
-        TargetDataType::Expr,           // target_expr
-        AbstractDataType::Name(),       // abstract_type_name
-        AbstractDataType::Expr,         // abstract_expr
+        TargetDataType::Name(),            // target_type_name
+        TargetElementDataType::Name(),     // target_element_type_name
+        TargetDataType::AST,               // target_ast_ty
+        TargetDataType::Sem,               // target_sem_ty
+        TargetDataType::ExprFromDouble,    // target_expr
+        AbstractDataType::Name(),          // abstract_type_name
+        AbstractDataType::ExprFromDouble,  // abstract_expr
         materialized_value,
         literal_value,
     };
@@ -286,13 +286,13 @@ Data Types() {
     using AbstractDataType = builder::DataType<ABSTRACT_TYPE>;
     using TargetElementDataType = builder::DataType<typename TargetDataType::ElementType>;
     return {
-        TargetDataType::Name(),         // target_type_name
-        TargetElementDataType::Name(),  // target_element_type_name
-        TargetDataType::AST,            // target_ast_ty
-        TargetDataType::Sem,            // target_sem_ty
-        TargetDataType::Expr,           // target_expr
-        AbstractDataType::Name(),       // abstract_type_name
-        AbstractDataType::Expr,         // abstract_expr
+        TargetDataType::Name(),            // target_type_name
+        TargetElementDataType::Name(),     // target_element_type_name
+        TargetDataType::AST,               // target_ast_ty
+        TargetDataType::Sem,               // target_sem_ty
+        TargetDataType::ExprFromDouble,    // target_expr
+        AbstractDataType::Name(),          // abstract_type_name
+        AbstractDataType::ExprFromDouble,  // abstract_expr
         0_a,
         0.0,
     };
@@ -328,7 +328,7 @@ TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
             WrapInFunction(Decl(Let("a", target_ty(), abstract_expr)));
             break;
         case Method::kAssign:
-            WrapInFunction(Decl(Var("a", target_ty(), nullptr)), Assign("a", abstract_expr));
+            WrapInFunction(Decl(Var("a", target_ty())), Assign("a", abstract_expr));
             break;
         case Method::kPhonyAssign:
             WrapInFunction(Assign(Phony(), abstract_expr));
@@ -381,7 +381,7 @@ TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
                                Stage(ast::PipelineStage::kCompute)});
             break;
         case Method::kRuntimeIndex:
-            auto* runtime_index = Var("runtime_index", nullptr, Expr(1_i));
+            auto* runtime_index = Var("runtime_index", Expr(1_i));
             WrapInFunction(runtime_index, IndexAccessor(abstract_expr, runtime_index));
             break;
     }
@@ -826,7 +826,7 @@ struct Data {
     std::string expected_element_type_name;
     builder::sem_type_func_ptr expected_sem_ty;
     std::string abstract_type_name;
-    builder::ast_expr_func_ptr abstract_expr;
+    builder::ast_expr_from_double_func_ptr abstract_expr;
     std::variant<AInt, AFloat> materialized_value;
     double literal_value;
 };
@@ -837,11 +837,11 @@ Data Types(MATERIALIZED_TYPE materialized_value, double literal_value) {
     using AbstractDataType = builder::DataType<ABSTRACT_TYPE>;
     using TargetElementDataType = builder::DataType<typename ExpectedDataType::ElementType>;
     return {
-        ExpectedDataType::Name(),       // expected_type_name
-        TargetElementDataType::Name(),  // expected_element_type_name
-        ExpectedDataType::Sem,          // expected_sem_ty
-        AbstractDataType::Name(),       // abstract_type_name
-        AbstractDataType::Expr,         // abstract_expr
+        ExpectedDataType::Name(),          // expected_type_name
+        TargetElementDataType::Name(),     // expected_element_type_name
+        ExpectedDataType::Sem,             // expected_sem_ty
+        AbstractDataType::Name(),          // abstract_type_name
+        AbstractDataType::ExprFromDouble,  // abstract_expr
         materialized_value,
         literal_value,
     };
@@ -872,10 +872,10 @@ TEST_P(MaterializeAbstractNumericToDefaultType, Test) {
     };
     switch (method) {
         case Method::kVar:
-            WrapInFunction(Decl(Var("a", nullptr, abstract_expr())));
+            WrapInFunction(Decl(Var("a", abstract_expr())));
             break;
         case Method::kLet:
-            WrapInFunction(Decl(Let("a", nullptr, abstract_expr())));
+            WrapInFunction(Decl(Let("a", abstract_expr())));
             break;
         case Method::kBuiltinArg:
             WrapInFunction(CallStmt(Call("min", abstract_expr(), abstract_expr())));
@@ -904,7 +904,7 @@ TEST_P(MaterializeAbstractNumericToDefaultType, Test) {
             WrapInFunction(IndexAccessor("arr", abstract_expr()));
             break;
         case Method::kRuntimeIndex:
-            auto* runtime_index = Var("runtime_index", nullptr, Expr(1_i));
+            auto* runtime_index = Var("runtime_index", Expr(1_i));
             WrapInFunction(runtime_index, IndexAccessor(abstract_expr(), runtime_index));
             break;
     }
@@ -952,14 +952,6 @@ constexpr Method kScalarMethods[] = {
     Method::kVar,
     Method::kBuiltinArg,
     Method::kBitcastF32Arg,
-};
-
-/// Methods that support abstract-integer materialization
-/// Note: Doesn't contain kWorkgroupSize or kArrayLength as they have tighter constraints on the
-///       range of allowed integer values.
-constexpr Method kAIntMethods[] = {
-    Method::kSwitch,
-    Method::kIndex,
 };
 
 /// Methods that support vector materialization
@@ -1039,11 +1031,36 @@ INSTANTIATE_TEST_SUITE_P(
             Types<f32M, AFloatM>(AFloat(-kSubnormalF32), -kSubnormalF32),                       //
         })));
 
+INSTANTIATE_TEST_SUITE_P(MaterializeAInt,
+                         MaterializeAbstractNumericToDefaultType,
+                         testing::Combine(testing::Values(Expectation::kMaterialize),
+                                          testing::Values(Method::kWorkgroupSize,
+                                                          Method::kArrayLength),
+                                          testing::ValuesIn(std::vector<Data>{
+                                              Types<i32, AInt>(1_a, 1.0),          //
+                                              Types<i32, AInt>(10_a, 10.0),        //
+                                              Types<i32, AInt>(100_a, 100.0),      //
+                                              Types<i32, AInt>(1000_a, 1000.0),    //
+                                              Types<i32, AInt>(10000_a, 10000.0),  //
+                                              Types<i32, AInt>(65535_a, 65535.0),  //
+                                          })));
+
+INSTANTIATE_TEST_SUITE_P(MaterializeAIntIndex,
+                         MaterializeAbstractNumericToDefaultType,
+                         testing::Combine(testing::Values(Expectation::kMaterialize),
+                                          testing::Values(Method::kIndex),
+                                          testing::ValuesIn(std::vector<Data>{
+                                              Types<i32, AInt>(0_a, 0.0),  //
+                                              Types<i32, AInt>(1_a, 1.0),  //
+                                              Types<i32, AInt>(2_a, 2.0),  //
+                                              Types<i32, AInt>(3_a, 3.0),  //
+                                          })));
+
 INSTANTIATE_TEST_SUITE_P(
-    MaterializeAInt,
+    MaterializeAIntSwitch,
     MaterializeAbstractNumericToDefaultType,
     testing::Combine(testing::Values(Expectation::kMaterialize),
-                     testing::ValuesIn(kAIntMethods),
+                     testing::Values(Method::kSwitch),
                      testing::ValuesIn(std::vector<Data>{
                          Types<i32, AInt>(0_a, 0.0),                              //
                          Types<i32, AInt>(10_a, 10.0),                            //
@@ -1133,7 +1150,10 @@ INSTANTIATE_TEST_SUITE_P(
     AIntValueCannotBeRepresented,
     MaterializeAbstractNumericToDefaultType,
     testing::Combine(testing::Values(Expectation::kValueCannotBeRepresented),
-                     testing::ValuesIn(kAIntMethods),
+                     testing::Values(Method::kWorkgroupSize,
+                                     Method::kArrayLength,
+                                     Method::kSwitch,
+                                     Method::kIndex),
                      testing::ValuesIn(std::vector<Data>{
                          Types<i32, AInt>(0_a, static_cast<double>(i32::kHighestValue) + 1),  //
                          Types<i32, AInt>(0_a, static_cast<double>(i32::kLowestValue) - 1),   //

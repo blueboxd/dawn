@@ -69,7 +69,7 @@ ResultOrError<uint32_t> GetModifierPlaneCount(const VulkanFunctions& fn,
     if (GetFormatModifierProps(fn, physicalDevice, format, modifier, &props)) {
         return static_cast<uint32_t>(props.drmFormatModifierPlaneCount);
     }
-    return DAWN_FORMAT_VALIDATION_ERROR("DRM format modifier not supported.");
+    return DAWN_VALIDATION_ERROR("DRM format modifier not supported.");
 }
 
 bool IsMultiPlanarVkFormat(VkFormat format) {
@@ -254,6 +254,10 @@ ResultOrError<MemoryImportParams> Service::GetMemoryImportParams(
 
     MemoryImportParams params = {memoryRequirements.size, static_cast<uint32_t>(memoryTypeIndex)};
     return params;
+}
+
+uint32_t Service::GetQueueFamilyIndex() {
+    return VK_QUEUE_FAMILY_EXTERNAL_KHR;
 }
 
 ResultOrError<VkDeviceMemory> Service::ImportMemory(ExternalMemoryHandle handle,

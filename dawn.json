@@ -1142,6 +1142,11 @@
                 ]
             },
             {
+                "name": "get adapter",
+                "returns": "adapter",
+                "tags": ["dawn"]
+            },
+            {
                 "name": "get queue",
                 "returns": "queue"
             },
@@ -1154,7 +1159,11 @@
                 "tags": ["dawn"]
             },
             {
-                "name": "lose for testing",
+                "name": "force loss",
+                "args": [
+                    {"name": "type", "type": "device lost reason"},
+                    {"name": "message", "type": "char", "annotation": "const*", "length": "strlen"}
+                ],
                 "tags": ["dawn"]
             },
             {
@@ -1293,7 +1302,8 @@
         "category": "enum",
         "values": [
             {"value": 0, "name": "validation"},
-            {"value": 1, "name": "out of memory"}
+            {"value": 1, "name": "out of memory"},
+            {"value": 2, "name": "internal"}
         ]
     },
     "error type": {
@@ -1303,8 +1313,9 @@
             {"value": 0, "name": "no error"},
             {"value": 1, "name": "validation"},
             {"value": 2, "name": "out of memory"},
-            {"value": 3, "name": "unknown"},
-            {"value": 4, "name": "device lost"}
+            {"value": 3, "name": "internal"},
+            {"value": 4, "name": "unknown"},
+            {"value": 5, "name": "device lost"}
         ]
     },
     "logging type": {
@@ -1373,6 +1384,7 @@
             {"value": 6, "name": "texture compression ETC2"},
             {"value": 7, "name": "texture compression ASTC"},
             {"value": 8, "name": "indirect first instance"},
+            {"value": 9, "name": "shader f16"},
             {"value": 1001, "name": "dawn shader float 16", "tags": ["dawn"]},
             {"value": 1002, "name": "dawn internal usages", "tags": ["dawn"]},
             {"value": 1003, "name": "dawn multi planar formats", "tags": ["dawn"]},

@@ -47,20 +47,20 @@ class ResolverTypeConstructorValidationTest : public resolver::TestHelper, publi
 namespace InferTypeTest {
 struct Params {
     builder::ast_type_func_ptr create_rhs_ast_type;
-    builder::ast_expr_func_ptr create_rhs_ast_value;
+    builder::ast_expr_from_double_func_ptr create_rhs_ast_value;
     builder::sem_type_func_ptr create_rhs_sem_type;
 };
 
 template <typename T>
 constexpr Params ParamsFor() {
-    return Params{DataType<T>::AST, DataType<T>::Expr, DataType<T>::Sem};
+    return Params{DataType<T>::AST, DataType<T>::ExprFromDouble, DataType<T>::Sem};
 }
 
 TEST_F(ResolverTypeConstructorValidationTest, InferTypeTest_Simple) {
     // var a = 1i;
     // var b = a;
-    auto* a = Var("a", nullptr, ast::StorageClass::kNone, Expr(1_i));
-    auto* b = Var("b", nullptr, ast::StorageClass::kNone, Expr("a"));
+    auto* a = Var("a", Expr(1_i));
+    auto* b = Var("b", Expr("a"));
     auto* a_ident = Expr("a");
     auto* b_ident = Expr("b");
 
@@ -87,7 +87,7 @@ TEST_P(InferTypeTest_FromConstructorExpression, All) {
 
     auto* constructor_expr = params.create_rhs_ast_value(*this, 0);
 
-    auto* a = Var("a", nullptr, ast::StorageClass::kNone, constructor_expr);
+    auto* a = Var("a", constructor_expr);
     // Self-assign 'a' to force the expression to be resolved so we can test its
     // type below
     auto* a_ident = Expr("a");
@@ -141,7 +141,7 @@ TEST_P(InferTypeTest_FromArithmeticExpression, All) {
     auto* arith_rhs_expr = params.create_rhs_ast_value(*this, 3);
     auto* constructor_expr = Mul(arith_lhs_expr, arith_rhs_expr);
 
-    auto* a = Var("a", nullptr, constructor_expr);
+    auto* a = Var("a", constructor_expr);
     // Self-assign 'a' to force the expression to be resolved so we can test its
     // type below
     auto* a_ident = Expr("a");
@@ -189,7 +189,7 @@ TEST_P(InferTypeTest_FromCallExpression, All) {
     Func("foo", utils::Empty, params.create_rhs_ast_type(*this),
          utils::Vector{Return(Construct(params.create_rhs_ast_type(*this)))}, {});
 
-    auto* a = Var("a", nullptr, Call("foo"));
+    auto* a = Var("a", Call("foo"));
     // Self-assign 'a' to force the expression to be resolved so we can test its
     // type below
     auto* a_ident = Expr("a");
@@ -242,12 +242,13 @@ struct Params {
     Kind kind;
     builder::ast_type_func_ptr lhs_type;
     builder::ast_type_func_ptr rhs_type;
-    builder::ast_expr_func_ptr rhs_value_expr;
+    builder::ast_expr_from_double_func_ptr rhs_value_expr;
 };
 
 template <typename LhsType, typename RhsType>
 constexpr Params ParamsFor(Kind kind) {
-    return Params{kind, DataType<LhsType>::AST, DataType<RhsType>::AST, DataType<RhsType>::Expr};
+    return Params{kind, DataType<LhsType>::AST, DataType<RhsType>::AST,
+                  DataType<RhsType>::ExprFromDouble};
 }
 
 static constexpr Params valid_cases[] = {
@@ -355,7 +356,7 @@ TEST_P(ConversionConstructorValidTest, All) {
 
     auto* arg = Construct(rhs_type, rhs_value_expr);
     auto* tc = Construct(lhs_type2, arg);
-    auto* a = Var("a", lhs_type1, ast::StorageClass::kNone, tc);
+    auto* a = Var("a", lhs_type1, tc);
 
     // Self-assign 'a' to force the expression to be resolved so we can test its
     // type below
@@ -426,7 +427,7 @@ TEST_P(ConversionConstructorInvalidTest, All) {
     // Skip test for valid cases
     for (auto& v : valid_cases) {
         if (v.lhs_type == lhs_params.ast && v.rhs_type == rhs_params.ast &&
-            v.rhs_value_expr == rhs_params.expr) {
+            v.rhs_value_expr == rhs_params.expr_from_double) {
             return;
         }
     }
@@ -439,7 +440,7 @@ TEST_P(ConversionConstructorInvalidTest, All) {
     auto* lhs_type1 = lhs_params.ast(*this);
     auto* lhs_type2 = lhs_params.ast(*this);
     auto* rhs_type = rhs_params.ast(*this);
-    auto* rhs_value_expr = rhs_params.expr(*this, 0);
+    auto* rhs_value_expr = rhs_params.expr_from_double(*this, 0);
 
     std::stringstream ss;
     ss << FriendlyName(lhs_type1) << " = " << FriendlyName(lhs_type2) << "("
@@ -448,8 +449,7 @@ TEST_P(ConversionConstructorInvalidTest, All) {
 
     Enable(ast::Extension::kF16);
 
-    auto* a = Var("a", lhs_type1, ast::StorageClass::kNone,
-                  Construct(lhs_type2, Construct(rhs_type, rhs_value_expr)));
+    auto* a = Var("a", lhs_type1, Construct(lhs_type2, Construct(rhs_type, rhs_value_expr)));
 
     // Self-assign 'a' to force the expression to be resolved so we can test its
     // type below
@@ -464,8 +464,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverTypeConstructorValidationTest,
                                           testing::ValuesIn(all_types)));
 
 TEST_F(ResolverTypeConstructorValidationTest, ConversionConstructorInvalid_TooManyInitializers) {
-    auto* a = Var("a", ty.f32(), ast::StorageClass::kNone,
-                  Construct(Source{{12, 34}}, ty.f32(), Expr(1_f), Expr(2_f)));
+    auto* a = Var("a", ty.f32(), Construct(Source{{12, 34}}, ty.f32(), Expr(1_f), Expr(2_f)));
     WrapInFunction(a);
 
     ASSERT_FALSE(r()->Resolve());
@@ -473,8 +472,8 @@ TEST_F(ResolverTypeConstructorValidationTest, ConversionConstructorInvalid_TooMa
 }
 
 TEST_F(ResolverTypeConstructorValidationTest, ConversionConstructorInvalid_InvalidInitializer) {
-    auto* a = Var("a", ty.f32(), ast::StorageClass::kNone,
-                  Construct(Source{{12, 34}}, ty.f32(), Construct(ty.array<f32, 4>())));
+    auto* a =
+        Var("a", ty.f32(), Construct(Source{{12, 34}}, ty.f32(), Construct(ty.array<f32, 4>())));
     WrapInFunction(a);
 
     ASSERT_FALSE(r()->Resolve());
@@ -600,7 +599,7 @@ TEST_F(ResolverTypeConstructorValidationTest, ArrayU32_AIAIAI) {
 TEST_F(ResolverTypeConstructorValidationTest, InferredArray_AIAIAI) {
     // const c = array(0, 10, 20);
     auto* tc = array(Source{{12, 34}}, nullptr, nullptr, 0_a, 10_a, 20_a);
-    WrapInFunction(Decl(Const("C", nullptr, tc)));
+    WrapInFunction(Decl(Const("C", tc)));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
@@ -2439,7 +2438,7 @@ struct MatrixParams {
     uint32_t columns;
     name_func_ptr get_element_type_name;
     builder::ast_type_func_ptr create_element_ast_type;
-    builder::ast_expr_func_ptr create_element_ast_value;
+    builder::ast_expr_from_double_func_ptr create_element_ast_value;
     builder::ast_type_func_ptr create_column_ast_type;
     builder::ast_type_func_ptr create_mat_ast_type;
 };
@@ -2451,7 +2450,7 @@ constexpr MatrixParams MatrixParamsFor() {
         C,
         DataType<T>::Name,
         DataType<T>::AST,
-        DataType<T>::Expr,
+        DataType<T>::ExprFromDouble,
         DataType<tint::resolver::builder::vec<R, T>>::AST,
         DataType<tint::resolver::builder::mat<C, R, T>>::AST,
     };
@@ -3060,7 +3059,7 @@ TEST_P(StructConstructorInputsTest, TooFew) {
         auto* struct_type = str_params.ast(*this);
         members.Push(Member("member_" + std::to_string(i), struct_type));
         if (i < N - 1) {
-            auto* ctor_value_expr = str_params.expr(*this, 0);
+            auto* ctor_value_expr = str_params.expr_from_double(*this, 0);
             values.Push(ctor_value_expr);
         }
     }
@@ -3086,7 +3085,7 @@ TEST_P(StructConstructorInputsTest, TooMany) {
             auto* struct_type = str_params.ast(*this);
             members.Push(Member("member_" + std::to_string(i), struct_type));
         }
-        auto* ctor_value_expr = str_params.expr(*this, 0);
+        auto* ctor_value_expr = str_params.expr_from_double(*this, 0);
         values.Push(ctor_value_expr);
     }
     auto* s = Structure("s", members);
@@ -3124,8 +3123,8 @@ TEST_P(StructConstructorTypeTest, AllTypes) {
         auto* struct_type = str_params.ast(*this);
         members.Push(Member("member_" + std::to_string(i), struct_type));
         auto* ctor_value_expr = (i == constructor_value_with_different_type)
-                                    ? ctor_params.expr(*this, 0)
-                                    : str_params.expr(*this, 0);
+                                    ? ctor_params.expr_from_double(*this, 0)
+                                    : str_params.expr_from_double(*this, 0);
         values.Push(ctor_value_expr);
     }
     auto* s = Structure("s", members);

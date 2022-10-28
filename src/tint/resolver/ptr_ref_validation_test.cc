@@ -54,8 +54,8 @@ TEST_F(ResolverPtrRefValidationTest, AddressOfLet) {
 TEST_F(ResolverPtrRefValidationTest, AddressOfHandle) {
     // @group(0) @binding(0) var t: texture_3d<f32>;
     // &t
-    GlobalVar("t", ty.sampled_texture(ast::TextureDimension::k3d, ty.f32()),
-              GroupAndBinding(0u, 0u));
+    GlobalVar("t", ty.sampled_texture(ast::TextureDimension::k3d, ty.f32()), Group(0_a),
+              Binding(0_a));
     auto* expr = AddressOf(Expr(Source{{12, 34}}, "t"));
     WrapInFunction(expr);
 
@@ -94,8 +94,8 @@ TEST_F(ResolverPtrRefValidationTest, AddressOfVectorComponent_IndexAccessor) {
 TEST_F(ResolverPtrRefValidationTest, IndirectOfAddressOfHandle) {
     // @group(0) @binding(0) var t: texture_3d<f32>;
     // *&t
-    GlobalVar("t", ty.sampled_texture(ast::TextureDimension::k3d, ty.f32()),
-              GroupAndBinding(0u, 0u));
+    GlobalVar("t", ty.sampled_texture(ast::TextureDimension::k3d, ty.f32()), Group(0_a),
+              Binding(0_a));
     auto* expr = Deref(AddressOf(Expr(Source{{12, 34}}, "t")));
     WrapInFunction(expr);
 
@@ -144,10 +144,7 @@ TEST_F(ResolverPtrRefValidationTest, InferredPtrAccessMismatch) {
     auto* inner = Structure("Inner", utils::Vector{Member("arr", ty.array<i32, 4>())});
     auto* buf = Structure("S", utils::Vector{Member("inner", ty.Of(inner))});
     auto* storage = GlobalVar("s", ty.Of(buf), ast::StorageClass::kStorage, ast::Access::kReadWrite,
-                              utils::Vector{
-                                  create<ast::BindingAttribute>(0u),
-                                  create<ast::GroupAttribute>(0u),
-                              });
+                              Binding(0_a), Group(0_a));
 
     auto* expr = IndexAccessor(MemberAccessor(MemberAccessor(storage, "inner"), "arr"), 2_i);
     auto* ptr =

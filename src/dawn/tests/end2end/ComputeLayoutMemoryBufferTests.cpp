@@ -137,9 +137,6 @@ class ComputeLayoutMemoryBufferTests
 };
 
 TEST_P(ComputeLayoutMemoryBufferTests, Fields) {
-    // TODO(tint:1632) Re-enable after the bug is fixed for Vulkan.
-    DAWN_SUPPRESS_TEST_IF(IsVulkan());
-
     // Sentinel value markers codes used to check that the start and end of
     // structures are correctly aligned. Each of these codes are distinct and
     // are not likely to be confused with data.
@@ -347,13 +344,15 @@ namespace {
 auto GenerateParams() {
     auto params = MakeParamGenerator<ComputeLayoutMemoryBufferTestParams>(
         {
-            D3D12Backend(), MetalBackend(), VulkanBackend(),
+            D3D12Backend(),
+            MetalBackend(),
+            VulkanBackend(),
             // TODO(crbug.com/dawn/942)
             // There was a compiler error: Buffer block cannot be expressed as any of std430,
             // std140, scalar, even with enhanced layouts. You can try flattening this block to
             // support a more flexible layout.
             // OpenGLBackend(),
-            // OpenGLESBackend(),
+            OpenGLESBackend(),
         },
         {StorageClass::Storage, StorageClass::Uniform},
         {

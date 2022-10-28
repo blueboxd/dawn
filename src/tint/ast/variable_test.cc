@@ -38,7 +38,7 @@ TEST_F(VariableTest, Creation) {
 
 TEST_F(VariableTest, CreationWithSource) {
     auto* v = Var(Source{Source::Range{Source::Location{27, 4}, Source::Location{27, 5}}}, "i",
-                  ty.f32(), StorageClass::kPrivate, nullptr, utils::Empty);
+                  ty.f32(), StorageClass::kPrivate, utils::Empty);
 
     EXPECT_EQ(v->symbol, Symbol(1, ID()));
     EXPECT_EQ(v->declared_storage_class, StorageClass::kPrivate);
@@ -51,7 +51,7 @@ TEST_F(VariableTest, CreationWithSource) {
 
 TEST_F(VariableTest, CreationEmpty) {
     auto* v = Var(Source{Source::Range{Source::Location{27, 4}, Source::Location{27, 7}}}, "a_var",
-                  ty.i32(), StorageClass::kWorkgroup, nullptr, utils::Empty);
+                  ty.i32(), StorageClass::kWorkgroup, utils::Empty);
 
     EXPECT_EQ(v->symbol, Symbol(1, ID()));
     EXPECT_EQ(v->declared_storage_class, StorageClass::kWorkgroup);
@@ -66,7 +66,7 @@ TEST_F(VariableTest, Assert_MissingSymbol) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b;
-            b.Var("", b.ty.i32(), StorageClass::kNone);
+            b.Var("", b.ty.i32());
         },
         "internal compiler error");
 }
@@ -76,7 +76,7 @@ TEST_F(VariableTest, Assert_DifferentProgramID_Symbol) {
         {
             ProgramBuilder b1;
             ProgramBuilder b2;
-            b1.Var(b2.Sym("x"), b1.ty.f32(), StorageClass::kNone);
+            b1.Var(b2.Sym("x"), b1.ty.f32());
         },
         "internal compiler error");
 }
@@ -86,18 +86,14 @@ TEST_F(VariableTest, Assert_DifferentProgramID_Constructor) {
         {
             ProgramBuilder b1;
             ProgramBuilder b2;
-            b1.Var("x", b1.ty.f32(), StorageClass::kNone, b2.Expr(1.2_f));
+            b1.Var("x", b1.ty.f32(), b2.Expr(1.2_f));
         },
         "internal compiler error");
 }
 
 TEST_F(VariableTest, WithAttributes) {
-    auto* var = Var("my_var", ty.i32(), StorageClass::kFunction, nullptr,
-                    utils::Vector{
-                        create<LocationAttribute>(1u),
-                        create<BuiltinAttribute>(BuiltinValue::kPosition),
-                        create<IdAttribute>(1200u),
-                    });
+    auto* var = Var("my_var", ty.i32(), StorageClass::kFunction, Location(1_u),
+                    Builtin(BuiltinValue::kPosition), Id(1200_u));
 
     auto& attributes = var->attributes;
     EXPECT_TRUE(ast::HasAttribute<ast::LocationAttribute>(attributes));
@@ -106,47 +102,28 @@ TEST_F(VariableTest, WithAttributes) {
 
     auto* location = ast::GetAttribute<ast::LocationAttribute>(attributes);
     ASSERT_NE(nullptr, location);
-    EXPECT_EQ(1u, location->value);
+    ASSERT_NE(nullptr, location->expr);
+    EXPECT_TRUE(location->expr->Is<ast::IntLiteralExpression>());
 }
 
-TEST_F(VariableTest, BindingPoint) {
-    auto* var = Var("my_var", ty.i32(), StorageClass::kFunction, nullptr,
-                    utils::Vector{
-                        create<BindingAttribute>(2u),
-                        create<GroupAttribute>(1u),
-                    });
-    EXPECT_TRUE(var->BindingPoint());
-    ASSERT_NE(var->BindingPoint().binding, nullptr);
-    ASSERT_NE(var->BindingPoint().group, nullptr);
-    EXPECT_EQ(var->BindingPoint().binding->value, 2u);
-    EXPECT_EQ(var->BindingPoint().group->value, 1u);
+TEST_F(VariableTest, HasBindingPoint_BothProvided) {
+    auto* var = Var("my_var", ty.i32(), StorageClass::kFunction, Binding(2_a), Group(1_a));
+    EXPECT_TRUE(var->HasBindingPoint());
 }
 
-TEST_F(VariableTest, BindingPointAttributes) {
-    auto* var = Var("my_var", ty.i32(), StorageClass::kFunction, nullptr, utils::Empty);
-    EXPECT_FALSE(var->BindingPoint());
-    EXPECT_EQ(var->BindingPoint().group, nullptr);
-    EXPECT_EQ(var->BindingPoint().binding, nullptr);
+TEST_F(VariableTest, HasBindingPoint_NeitherProvided) {
+    auto* var = Var("my_var", ty.i32(), StorageClass::kFunction, utils::Empty);
+    EXPECT_FALSE(var->HasBindingPoint());
 }
 
-TEST_F(VariableTest, BindingPointMissingGroupAttribute) {
-    auto* var = Var("my_var", ty.i32(), StorageClass::kFunction, nullptr,
-                    utils::Vector{
-                        create<BindingAttribute>(2u),
-                    });
-    EXPECT_FALSE(var->BindingPoint());
-    ASSERT_NE(var->BindingPoint().binding, nullptr);
-    EXPECT_EQ(var->BindingPoint().binding->value, 2u);
-    EXPECT_EQ(var->BindingPoint().group, nullptr);
+TEST_F(VariableTest, HasBindingPoint_MissingGroupAttribute) {
+    auto* var = Var("my_var", ty.i32(), StorageClass::kFunction, Binding(2_a));
+    EXPECT_FALSE(var->HasBindingPoint());
 }
 
-TEST_F(VariableTest, BindingPointMissingBindingAttribute) {
-    auto* var = Var("my_var", ty.i32(), StorageClass::kFunction, nullptr,
-                    utils::Vector{create<GroupAttribute>(1u)});
-    EXPECT_FALSE(var->BindingPoint());
-    ASSERT_NE(var->BindingPoint().group, nullptr);
-    EXPECT_EQ(var->BindingPoint().group->value, 1u);
-    EXPECT_EQ(var->BindingPoint().binding, nullptr);
+TEST_F(VariableTest, HasBindingPoint_MissingBindingAttribute) {
+    auto* var = Var("my_var", ty.i32(), StorageClass::kFunction, Group(1_a));
+    EXPECT_FALSE(var->HasBindingPoint());
 }
 
 }  // namespace

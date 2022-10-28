@@ -464,7 +464,7 @@ ParserImpl::AttributeList ParserImpl::ConvertMemberDecoration(uint32_t struct_ty
                 return {};
             }
             return {
-                create<ast::StructMemberOffsetAttribute>(Source{}, decoration[1]),
+                builder_.MemberOffset(Source{}, AInt(decoration[1])),
             };
         case SpvDecorationNonReadable:
             // WGSL doesn't have a member decoration for this.  Silently drop it.
@@ -1366,7 +1366,7 @@ bool ParserImpl::EmitScalarSpecConstants() {
                                          "between 0 and 65535: ID %"
                                       << inst.result_id() << " has SpecId " << id;
                     }
-                    auto* cid = create<ast::IdAttribute>(Source{}, id);
+                    auto* cid = builder_.Id(Source{}, AInt(id));
                     spec_id_decos.Push(cid);
                     break;
                 }
@@ -1690,13 +1690,13 @@ bool ParserImpl::ConvertDecorationsForVariable(uint32_t id,
                 return Fail() << "malformed DescriptorSet decoration on ID " << id
                               << ": has no operand";
             }
-            decorations->Push(create<ast::GroupAttribute>(Source{}, deco[1]));
+            decorations->Push(builder_.Group(Source{}, AInt(deco[1])));
         }
         if (deco[0] == SpvDecorationBinding) {
             if (deco.size() == 1) {
                 return Fail() << "malformed Binding decoration on ID " << id << ": has no operand";
             }
-            decorations->Push(create<ast::BindingAttribute>(Source{}, deco[1]));
+            decorations->Push(builder_.Binding(Source{}, AInt(deco[1])));
         }
     }
 
@@ -1723,25 +1723,22 @@ DecorationList ParserImpl::GetMemberPipelineDecorations(const Struct& struct_typ
     return result;
 }
 
-const ast::Attribute* ParserImpl::SetLocation(AttributeList* attributes,
-                                              const ast::Attribute* replacement) {
+void ParserImpl::SetLocation(AttributeList* attributes, const ast::Attribute* replacement) {
     if (!replacement) {
-        return nullptr;
+        return;
     }
     for (auto*& attribute : *attributes) {
         if (attribute->Is<ast::LocationAttribute>()) {
             // Replace this location attribute with the replacement.
             // The old one doesn't leak because it's kept in the builder's AST node
             // list.
-            const ast::Attribute* result = nullptr;
-            result = attribute;
             attribute = replacement;
-            return result;  // Assume there is only one such decoration.
+            return;  // Assume there is only one such decoration.
         }
     }
     // The list didn't have a location. Add it.
     attributes->Push(replacement);
-    return nullptr;
+    return;
 }
 
 bool ParserImpl::ConvertPipelineDecorations(const Type* store_type,
@@ -1759,7 +1756,7 @@ bool ParserImpl::ConvertPipelineDecorations(const Type* store_type,
                     return Fail() << "malformed Location decoration on ID requires one "
                                      "literal operand";
                 }
-                SetLocation(attributes, create<ast::LocationAttribute>(Source{}, deco[1]));
+                SetLocation(attributes, builder_.Location(AInt(deco[1])));
                 if (store_type->IsIntegerScalarOrVector()) {
                     // Default to flat interpolation for integral user-defined IO types.
                     type = ast::InterpolationType::kFlat;

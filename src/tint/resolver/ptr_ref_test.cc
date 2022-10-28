@@ -21,13 +21,15 @@
 namespace tint::resolver {
 namespace {
 
+using namespace tint::number_suffixes;  // NOLINT
+
 struct ResolverPtrRefTest : public resolver::TestHelper, public testing::Test {};
 
 TEST_F(ResolverPtrRefTest, AddressOf) {
     // var v : i32;
     // &v
 
-    auto* v = Var("v", ty.i32(), ast::StorageClass::kNone);
+    auto* v = Var("v", ty.i32());
     auto* expr = AddressOf(v);
 
     WrapInFunction(v, expr);
@@ -43,7 +45,7 @@ TEST_F(ResolverPtrRefTest, AddressOfThenDeref) {
     // var v : i32;
     // *(&v)
 
-    auto* v = Var("v", ty.i32(), ast::StorageClass::kNone);
+    auto* v = Var("v", ty.i32());
     auto* expr = Deref(AddressOf(v));
 
     WrapInFunction(v, expr);
@@ -61,16 +63,10 @@ TEST_F(ResolverPtrRefTest, DefaultPtrStorageClass) {
     auto* function = Var("f", ty.i32());
     auto* private_ = GlobalVar("p", ty.i32(), ast::StorageClass::kPrivate);
     auto* workgroup = GlobalVar("w", ty.i32(), ast::StorageClass::kWorkgroup);
-    auto* uniform = GlobalVar("ub", ty.Of(buf), ast::StorageClass::kUniform,
-                              utils::Vector{
-                                  create<ast::BindingAttribute>(0u),
-                                  create<ast::GroupAttribute>(0u),
-                              });
-    auto* storage = GlobalVar("sb", ty.Of(buf), ast::StorageClass::kStorage,
-                              utils::Vector{
-                                  create<ast::BindingAttribute>(1u),
-                                  create<ast::GroupAttribute>(0u),
-                              });
+    auto* uniform =
+        GlobalVar("ub", ty.Of(buf), ast::StorageClass::kUniform, Binding(0_a), Group(0_a));
+    auto* storage =
+        GlobalVar("sb", ty.Of(buf), ast::StorageClass::kStorage, Binding(1_a), Group(0_a));
 
     auto* function_ptr =
         Let("f_ptr", ty.pointer(ty.i32(), ast::StorageClass::kFunction), AddressOf(function));

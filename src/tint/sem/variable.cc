@@ -61,9 +61,11 @@ GlobalVariable::GlobalVariable(const ast::Variable* declaration,
                                ast::StorageClass storage_class,
                                ast::Access access,
                                const Constant* constant_value,
-                               sem::BindingPoint binding_point)
+                               sem::BindingPoint binding_point,
+                               std::optional<uint32_t> location)
     : Base(declaration, type, stage, storage_class, access, constant_value),
-      binding_point_(binding_point) {}
+      binding_point_(binding_point),
+      location_(location) {}
 
 GlobalVariable::~GlobalVariable() = default;
 
@@ -72,10 +74,14 @@ Parameter::Parameter(const ast::Parameter* declaration,
                      const sem::Type* type,
                      ast::StorageClass storage_class,
                      ast::Access access,
-                     const ParameterUsage usage /* = ParameterUsage::kNone */)
+                     const ParameterUsage usage /* = ParameterUsage::kNone */,
+                     sem::BindingPoint binding_point /* = {} */,
+                     std::optional<uint32_t> location /* = std::nullopt */)
     : Base(declaration, type, EvaluationStage::kRuntime, storage_class, access, nullptr),
       index_(index),
-      usage_(usage) {}
+      usage_(usage),
+      binding_point_(binding_point),
+      location_(location) {}
 
 Parameter::~Parameter() = default;
 

@@ -1,11 +1,10 @@
 #version 310 es
 
-struct S {
+layout(binding = 0, std140) uniform S_ubo {
   int i;
-};
-
-layout(binding = 0) uniform S_1 {
-  int i;
+  uint pad;
+  uint pad_1;
+  uint pad_2;
 } u;
 
 void tint_symbol() {

@@ -38,6 +38,7 @@
 #include "src/tint/sem/vector.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/map.h"
+#include "src/tint/utils/scoped_assignment.h"
 #include "src/tint/utils/transform.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -61,6 +62,18 @@ auto Dispatch_ia_iu32(F&& f, CONSTANTS&&... cs) {
         [&](const sem::AbstractInt*) { return f(cs->template As<AInt>()...); },
         [&](const sem::I32*) { return f(cs->template As<i32>()...); },
         [&](const sem::U32*) { return f(cs->template As<u32>()...); });
+}
+
+/// Helper that calls `f` passing in the value of all `cs`.
+/// Assumes all `cs` are of the same type.
+template <typename F, typename... CONSTANTS>
+auto Dispatch_ia_iu32_bool(F&& f, CONSTANTS&&... cs) {
+    return Switch(
+        First(cs...)->Type(),  //
+        [&](const sem::AbstractInt*) { return f(cs->template As<AInt>()...); },
+        [&](const sem::I32*) { return f(cs->template As<i32>()...); },
+        [&](const sem::U32*) { return f(cs->template As<u32>()...); },
+        [&](const sem::Bool*) { return f(cs->template As<bool>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -93,12 +106,34 @@ auto Dispatch_fia_fiu32_f16(F&& f, CONSTANTS&&... cs) {
 /// Helper that calls `f` passing in the value of all `cs`.
 /// Assumes all `cs` are of the same type.
 template <typename F, typename... CONSTANTS>
+auto Dispatch_fia_fiu32_f16_bool(F&& f, CONSTANTS&&... cs) {
+    return Switch(
+        First(cs...)->Type(),  //
+        [&](const sem::AbstractInt*) { return f(cs->template As<AInt>()...); },
+        [&](const sem::AbstractFloat*) { return f(cs->template As<AFloat>()...); },
+        [&](const sem::F32*) { return f(cs->template As<f32>()...); },
+        [&](const sem::I32*) { return f(cs->template As<i32>()...); },
+        [&](const sem::U32*) { return f(cs->template As<u32>()...); },
+        [&](const sem::F16*) { return f(cs->template As<f16>()...); },
+        [&](const sem::Bool*) { return f(cs->template As<bool>()...); });
+}
+
+/// Helper that calls `f` passing in the value of all `cs`.
+/// Assumes all `cs` are of the same type.
+template <typename F, typename... CONSTANTS>
 auto Dispatch_fa_f32_f16(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
         [&](const sem::AbstractFloat*) { return f(cs->template As<AFloat>()...); },
         [&](const sem::F32*) { return f(cs->template As<f32>()...); },
         [&](const sem::F16*) { return f(cs->template As<f16>()...); });
+}
+
+/// Helper that calls `f` passing in the value of all `cs`.
+/// Assumes all `cs` are of the same type.
+template <typename F, typename... CONSTANTS>
+auto Dispatch_bool(F&& f, CONSTANTS&&... cs) {
+    return f(cs->template As<bool>()...);
 }
 
 /// ZeroTypeDispatch is a helper for calling the function `f`, passing a single zero-value argument
@@ -137,6 +172,14 @@ template <typename T>
 inline bool IsPositiveZero(T value) {
     using N = UnwrapNumber<T>;
     return Number<N>(value) == Number<N>(0);  // Considers sign bit
+}
+
+template <typename NumberT>
+std::string OverflowErrorMessage(NumberT lhs, const char* op, NumberT rhs) {
+    std::stringstream ss;
+    ss << "'" << lhs.value << " " << op << " " << rhs.value << "' cannot be represented as '"
+       << FriendlyName<NumberT>() << "'";
+    return ss.str();
 }
 
 /// Constant inherits from sem::Constant to add an private implementation method for conversion.
@@ -323,7 +366,7 @@ struct Composite : Constant {
     size_t CalcHash() {
         auto h = utils::Hash(type, all_zero, any_zero);
         for (auto* el : elements) {
-            utils::HashCombine(&h, el->Hash());
+            h = utils::HashCombine(h, el->Hash());
         }
         return h;
     }
@@ -457,10 +500,14 @@ const Constant* CreateComposite(ProgramBuilder& builder,
     }
 }
 
-/// TransformElements constructs a new constant by applying the transformation function 'f' on each
-/// of the most deeply nested elements of 'cs'. Assumes that all constants are the same type.
+/// TransformElements constructs a new constant of type `composite_ty` by applying the
+/// transformation function 'f' on each of the most deeply nested elements of 'cs'. Assumes that all
+/// input constants `cs` are of the same type.
 template <typename F, typename... CONSTANTS>
-const Constant* TransformElements(ProgramBuilder& builder, F&& f, CONSTANTS&&... cs) {
+const Constant* TransformElements(ProgramBuilder& builder,
+                                  const sem::Type* composite_ty,
+                                  F&& f,
+                                  CONSTANTS&&... cs) {
     uint32_t n = 0;
     auto* ty = First(cs...)->Type();
     auto* el_ty = sem::Type::ElementOf(ty, &n);
@@ -470,16 +517,19 @@ const Constant* TransformElements(ProgramBuilder& builder, F&& f, CONSTANTS&&...
     utils::Vector<const sem::Constant*, 8> els;
     els.Reserve(n);
     for (uint32_t i = 0; i < n; i++) {
-        els.Push(TransformElements(builder, std::forward<F>(f), cs->Index(i)...));
+        els.Push(TransformElements(builder, sem::Type::ElementOf(composite_ty), std::forward<F>(f),
+                                   cs->Index(i)...));
     }
-    return CreateComposite(builder, ty, std::move(els));
+    return CreateComposite(builder, composite_ty, std::move(els));
 }
 
-/// TransformBinaryElements constructs a new constant by applying the transformation function 'f' on
-/// each of the most deeply nested elements of both `c0` and `c1`. Unlike TransformElements, this
-/// function handles the constants being of different types, e.g. vector-scalar, scalar-vector.
+/// TransformBinaryElements constructs a new constant of type `composite_ty` by applying the
+/// transformation function 'f' on each of the most deeply nested elements of both `c0` and `c1`.
+/// Unlike TransformElements, this function handles the constants being of different types, e.g.
+/// vector-scalar, scalar-vector.
 template <typename F>
 const Constant* TransformBinaryElements(ProgramBuilder& builder,
+                                        const sem::Type* composite_ty,
                                         F&& f,
                                         const sem::Constant* c0,
                                         const sem::Constant* c1) {
@@ -501,17 +551,203 @@ const Constant* TransformBinaryElements(ProgramBuilder& builder,
             }
             return c->Index(i);
         };
-        els.Push(TransformBinaryElements(builder, std::forward<F>(f), nested_or_self(c0, n0),
+        els.Push(TransformBinaryElements(builder, sem::Type::ElementOf(composite_ty),
+                                         std::forward<F>(f), nested_or_self(c0, n0),
                                          nested_or_self(c1, n1)));
     }
-    // Use larger type
-    auto* ty = n0 > n1 ? c0->Type() : c1->Type();
-    return CreateComposite(builder, ty, std::move(els));
+    return CreateComposite(builder, composite_ty, std::move(els));
 }
-
 }  // namespace
 
 ConstEval::ConstEval(ProgramBuilder& b) : builder(b) {}
+
+template <typename NumberT>
+utils::Result<NumberT> ConstEval::Add(NumberT a, NumberT b) {
+    NumberT result;
+    if constexpr (std::is_same_v<NumberT, AInt> || std::is_same_v<NumberT, AFloat>) {
+        // Check for over/underflow for abstract values
+        if (auto r = CheckedAdd(a, b)) {
+            result = r->value;
+        } else {
+            AddError(OverflowErrorMessage(a, "+", b), *current_source);
+            return utils::Failure;
+        }
+    } else {
+        using T = UnwrapNumber<NumberT>;
+        auto add_values = [](T lhs, T rhs) {
+            if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
+                // Ensure no UB for signed overflow
+                using UT = std::make_unsigned_t<T>;
+                return static_cast<T>(static_cast<UT>(lhs) + static_cast<UT>(rhs));
+            } else {
+                return lhs + rhs;
+            }
+        };
+        result = add_values(a.value, b.value);
+    }
+    return result;
+}
+
+template <typename NumberT>
+utils::Result<NumberT> ConstEval::Mul(NumberT a, NumberT b) {
+    using T = UnwrapNumber<NumberT>;
+    NumberT result;
+    if constexpr (std::is_same_v<NumberT, AInt> || std::is_same_v<NumberT, AFloat>) {
+        // Check for over/underflow for abstract values
+        if (auto r = CheckedMul(a, b)) {
+            result = r->value;
+        } else {
+            AddError(OverflowErrorMessage(a, "*", b), *current_source);
+            return utils::Failure;
+        }
+    } else {
+        auto mul_values = [](T lhs, T rhs) {
+            if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
+                // For signed integrals, avoid C++ UB by multiplying as unsigned
+                using UT = std::make_unsigned_t<T>;
+                return static_cast<T>(static_cast<UT>(lhs) * static_cast<UT>(rhs));
+            } else {
+                return lhs * rhs;
+            }
+        };
+        result = mul_values(a.value, b.value);
+    }
+    return result;
+}
+
+template <typename NumberT>
+utils::Result<NumberT> ConstEval::Dot2(NumberT a1, NumberT a2, NumberT b1, NumberT b2) {
+    auto r1 = Mul(a1, b1);
+    if (!r1) {
+        return utils::Failure;
+    }
+    auto r2 = Mul(a2, b2);
+    if (!r2) {
+        return utils::Failure;
+    }
+    auto r = Add(r1.Get(), r2.Get());
+    if (!r) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+template <typename NumberT>
+utils::Result<NumberT> ConstEval::Dot3(NumberT a1,
+                                       NumberT a2,
+                                       NumberT a3,
+                                       NumberT b1,
+                                       NumberT b2,
+                                       NumberT b3) {
+    auto r1 = Mul(a1, b1);
+    if (!r1) {
+        return utils::Failure;
+    }
+    auto r2 = Mul(a2, b2);
+    if (!r2) {
+        return utils::Failure;
+    }
+    auto r3 = Mul(a3, b3);
+    if (!r3) {
+        return utils::Failure;
+    }
+    auto r = Add(r1.Get(), r2.Get());
+    if (!r) {
+        return utils::Failure;
+    }
+    r = Add(r.Get(), r3.Get());
+    if (!r) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+template <typename NumberT>
+utils::Result<NumberT> ConstEval::Dot4(NumberT a1,
+                                       NumberT a2,
+                                       NumberT a3,
+                                       NumberT a4,
+                                       NumberT b1,
+                                       NumberT b2,
+                                       NumberT b3,
+                                       NumberT b4) {
+    auto r1 = Mul(a1, b1);
+    if (!r1) {
+        return utils::Failure;
+    }
+    auto r2 = Mul(a2, b2);
+    if (!r2) {
+        return utils::Failure;
+    }
+    auto r3 = Mul(a3, b3);
+    if (!r3) {
+        return utils::Failure;
+    }
+    auto r4 = Mul(a4, b4);
+    if (!r4) {
+        return utils::Failure;
+    }
+    auto r = Add(r1.Get(), r2.Get());
+    if (!r) {
+        return utils::Failure;
+    }
+    r = Add(r.Get(), r3.Get());
+    if (!r) {
+        return utils::Failure;
+    }
+    r = Add(r.Get(), r4.Get());
+    if (!r) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+auto ConstEval::AddFunc(const sem::Type* elem_ty) {
+    return [=](auto a1, auto a2) -> utils::Result<const Constant*> {
+        if (auto r = Add(a1, a2)) {
+            return CreateElement(builder, elem_ty, r.Get());
+        }
+        return utils::Failure;
+    };
+}
+
+auto ConstEval::MulFunc(const sem::Type* elem_ty) {
+    return [=](auto a1, auto a2) -> utils::Result<const Constant*> {
+        if (auto r = Mul(a1, a2)) {
+            return CreateElement(builder, elem_ty, r.Get());
+        }
+        return utils::Failure;
+    };
+}
+
+auto ConstEval::Dot2Func(const sem::Type* elem_ty) {
+    return [=](auto a1, auto a2, auto b1, auto b2) -> utils::Result<const Constant*> {
+        if (auto r = Dot2(a1, a2, b1, b2)) {
+            return CreateElement(builder, elem_ty, r.Get());
+        }
+        return utils::Failure;
+    };
+}
+
+auto ConstEval::Dot3Func(const sem::Type* elem_ty) {
+    return [=](auto a1, auto a2, auto a3, auto b1, auto b2,
+               auto b3) -> utils::Result<const Constant*> {
+        if (auto r = Dot3(a1, a2, a3, b1, b2, b3)) {
+            return CreateElement(builder, elem_ty, r.Get());
+        }
+        return utils::Failure;
+    };
+}
+
+auto ConstEval::Dot4Func(const sem::Type* elem_ty) {
+    return [=](auto a1, auto a2, auto a3, auto a4, auto b1, auto b2, auto b3,
+               auto b4) -> utils::Result<const Constant*> {
+        if (auto r = Dot4(a1, a2, a3, a4, b1, b2, b3, b4)) {
+            return CreateElement(builder, elem_ty, r.Get());
+        }
+        return utils::Failure;
+    };
+}
 
 ConstEval::ConstantResult ConstEval::Literal(const sem::Type* ty,
                                              const ast::LiteralExpression* literal) {
@@ -663,27 +899,28 @@ ConstEval::ConstantResult ConstEval::MatCtorV(const sem::Type* ty,
 
 ConstEval::ConstantResult ConstEval::Index(const sem::Expression* obj_expr,
                                            const sem::Expression* idx_expr) {
-    auto obj_val = obj_expr->ConstantValue();
-    if (!obj_val) {
-        return nullptr;
-    }
-
     auto idx_val = idx_expr->ConstantValue();
     if (!idx_val) {
         return nullptr;
     }
 
     uint32_t el_count = 0;
-    sem::Type::ElementOf(obj_val->Type(), &el_count);
+    sem::Type::ElementOf(obj_expr->Type()->UnwrapRef(), &el_count);
 
     AInt idx = idx_val->As<AInt>();
-    if (idx < 0 || idx >= el_count) {
-        auto clamped = std::min<AInt::type>(std::max<AInt::type>(idx, 0), el_count - 1);
-        AddWarning("index " + std::to_string(idx) + " out of bounds [0.." +
-                       std::to_string(el_count - 1) + "]. Clamping index to " +
-                       std::to_string(clamped),
-                   idx_expr->Declaration()->source);
-        idx = clamped;
+    if (idx < 0 || (el_count > 0 && idx >= el_count)) {
+        std::string range;
+        if (el_count > 0) {
+            range = " [0.." + std::to_string(el_count - 1) + "]";
+        }
+        AddError("index " + std::to_string(idx) + " out of bounds" + range,
+                 idx_expr->Declaration()->source);
+        return utils::Failure;
+    }
+
+    auto obj_val = obj_expr->ConstantValue();
+    if (!obj_val) {
+        return nullptr;
     }
 
     return obj_val->Index(static_cast<size_t>(idx));
@@ -719,7 +956,7 @@ ConstEval::ConstantResult ConstEval::Bitcast(const sem::Type*, const sem::Expres
     return nullptr;
 }
 
-ConstEval::ConstantResult ConstEval::OpComplement(const sem::Type*,
+ConstEval::ConstantResult ConstEval::OpComplement(const sem::Type* ty,
                                                   utils::VectorRef<const sem::Constant*> args,
                                                   const Source&) {
     auto transform = [&](const sem::Constant* c) {
@@ -728,10 +965,10 @@ ConstEval::ConstantResult ConstEval::OpComplement(const sem::Type*,
         };
         return Dispatch_ia_iu32(create, c);
     };
-    return TransformElements(builder, transform, args[0]);
+    return TransformElements(builder, ty, transform, args[0]);
 }
 
-ConstEval::ConstantResult ConstEval::OpUnaryMinus(const sem::Type*,
+ConstEval::ConstantResult ConstEval::OpUnaryMinus(const sem::Type* ty,
                                                   utils::VectorRef<const sem::Constant*> args,
                                                   const Source&) {
     auto transform = [&](const sem::Constant* c) {
@@ -753,48 +990,31 @@ ConstEval::ConstantResult ConstEval::OpUnaryMinus(const sem::Type*,
         };
         return Dispatch_fia_fi32_f16(create, c);
     };
-    return TransformElements(builder, transform, args[0]);
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::ConstantResult ConstEval::OpNot(const sem::Type* ty,
+                                           utils::VectorRef<const sem::Constant*> args,
+                                           const Source&) {
+    auto transform = [&](const sem::Constant* c) {
+        auto create = [&](auto i) { return CreateElement(builder, c->Type(), decltype(i)(!i)); };
+        return Dispatch_bool(create, c);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
 }
 
 ConstEval::ConstantResult ConstEval::OpPlus(const sem::Type* ty,
                                             utils::VectorRef<const sem::Constant*> args,
                                             const Source& source) {
-    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
-        auto create = [&](auto i, auto j) -> const Constant* {
-            using NumberT = decltype(i);
-            using T = UnwrapNumber<NumberT>;
-
-            auto add_values = [](T lhs, T rhs) {
-                if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    // Ensure no UB for signed overflow
-                    using UT = std::make_unsigned_t<T>;
-                    return static_cast<T>(static_cast<UT>(lhs) + static_cast<UT>(rhs));
-                } else {
-                    return lhs + rhs;
-                }
-            };
-
-            NumberT result;
-            if constexpr (std::is_same_v<NumberT, AInt> || std::is_same_v<NumberT, AFloat>) {
-                // Check for over/underflow for abstract values
-                if (auto r = CheckedAdd(i, j)) {
-                    result = r->value;
-                } else {
-                    AddError("'" + std::to_string(add_values(i.value, j.value)) +
-                                 "' cannot be represented as '" +
-                                 ty->FriendlyName(builder.Symbols()) + "'",
-                             source);
-                    return nullptr;
-                }
-            } else {
-                result = add_values(i.value, j.value);
-            }
-            return CreateElement(builder, c0->Type(), result);
-        };
-        return Dispatch_fia_fiu32_f16(create, c0, c1);
+    TINT_SCOPED_ASSIGNMENT(current_source, &source);
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) -> const Constant* {
+        if (auto r = Dispatch_fia_fiu32_f16(AddFunc(c0->Type()), c0, c1)) {
+            return r.Get();
+        }
+        return nullptr;
     };
 
-    auto r = TransformBinaryElements(builder, transform, args[0], args[1]);
+    auto r = TransformBinaryElements(builder, ty, transform, args[0], args[1]);
     if (builder.Diagnostics().contains_errors()) {
         return utils::Failure;
     }
@@ -807,31 +1027,26 @@ ConstEval::ConstantResult ConstEval::OpMinus(const sem::Type* ty,
     auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
         auto create = [&](auto i, auto j) -> const Constant* {
             using NumberT = decltype(i);
-            using T = UnwrapNumber<NumberT>;
-
-            auto subtract_values = [](T lhs, T rhs) {
-                if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    // Ensure no UB for signed underflow
-                    using UT = std::make_unsigned_t<T>;
-                    return static_cast<T>(static_cast<UT>(lhs) - static_cast<UT>(rhs));
-                } else {
-                    return lhs - rhs;
-                }
-            };
-
             NumberT result;
             if constexpr (std::is_same_v<NumberT, AInt> || std::is_same_v<NumberT, AFloat>) {
                 // Check for over/underflow for abstract values
                 if (auto r = CheckedSub(i, j)) {
                     result = r->value;
                 } else {
-                    AddError("'" + std::to_string(subtract_values(i.value, j.value)) +
-                                 "' cannot be represented as '" +
-                                 ty->FriendlyName(builder.Symbols()) + "'",
-                             source);
+                    AddError(OverflowErrorMessage(i, "-", j), source);
                     return nullptr;
                 }
             } else {
+                using T = UnwrapNumber<NumberT>;
+                auto subtract_values = [](T lhs, T rhs) {
+                    if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
+                        // Ensure no UB for signed underflow
+                        using UT = std::make_unsigned_t<T>;
+                        return static_cast<T>(static_cast<UT>(lhs) - static_cast<UT>(rhs));
+                    } else {
+                        return lhs - rhs;
+                    }
+                };
                 result = subtract_values(i.value, j.value);
             }
             return CreateElement(builder, c0->Type(), result);
@@ -839,14 +1054,398 @@ ConstEval::ConstantResult ConstEval::OpMinus(const sem::Type* ty,
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
 
-    auto r = TransformBinaryElements(builder, transform, args[0], args[1]);
+    auto r = TransformBinaryElements(builder, ty, transform, args[0], args[1]);
     if (builder.Diagnostics().contains_errors()) {
         return utils::Failure;
     }
     return r;
 }
 
-ConstEval::ConstantResult ConstEval::atan2(const sem::Type*,
+ConstEval::ConstantResult ConstEval::OpMultiply(const sem::Type* ty,
+                                                utils::VectorRef<const sem::Constant*> args,
+                                                const Source& source) {
+    TINT_SCOPED_ASSIGNMENT(current_source, &source);
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) -> const Constant* {
+        if (auto r = Dispatch_fia_fiu32_f16(MulFunc(c0->Type()), c0, c1)) {
+            return r.Get();
+        }
+        return nullptr;
+    };
+
+    auto r = TransformBinaryElements(builder, ty, transform, args[0], args[1]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::ConstantResult ConstEval::OpMultiplyMatVec(const sem::Type* ty,
+                                                      utils::VectorRef<const sem::Constant*> args,
+                                                      const Source& source) {
+    TINT_SCOPED_ASSIGNMENT(current_source, &source);
+    auto* mat_ty = args[0]->Type()->As<sem::Matrix>();
+    auto* vec_ty = args[1]->Type()->As<sem::Vector>();
+    auto* elem_ty = vec_ty->type();
+
+    auto dot = [&](const sem::Constant* m, size_t row, const sem::Constant* v) {
+        utils::Result<const Constant*> result;
+        switch (mat_ty->columns()) {
+            case 2:
+                result = Dispatch_fa_f32_f16(Dot2Func(elem_ty),        //
+                                             m->Index(0)->Index(row),  //
+                                             m->Index(1)->Index(row),  //
+                                             v->Index(0),              //
+                                             v->Index(1));
+                break;
+            case 3:
+                result = Dispatch_fa_f32_f16(Dot3Func(elem_ty),        //
+                                             m->Index(0)->Index(row),  //
+                                             m->Index(1)->Index(row),  //
+                                             m->Index(2)->Index(row),  //
+                                             v->Index(0),              //
+                                             v->Index(1), v->Index(2));
+                break;
+            case 4:
+                result = Dispatch_fa_f32_f16(Dot4Func(elem_ty),        //
+                                             m->Index(0)->Index(row),  //
+                                             m->Index(1)->Index(row),  //
+                                             m->Index(2)->Index(row),  //
+                                             m->Index(3)->Index(row),  //
+                                             v->Index(0),              //
+                                             v->Index(1),              //
+                                             v->Index(2),              //
+                                             v->Index(3));
+                break;
+        }
+        return result;
+    };
+
+    utils::Vector<const sem::Constant*, 4> result;
+    for (size_t i = 0; i < mat_ty->rows(); ++i) {
+        auto r = dot(args[0], i, args[1]);  // matrix row i * vector
+        if (!r) {
+            return utils::Failure;
+        }
+        result.Push(r.Get());
+    }
+    return CreateComposite(builder, ty, result);
+}
+ConstEval::ConstantResult ConstEval::OpMultiplyVecMat(const sem::Type* ty,
+                                                      utils::VectorRef<const sem::Constant*> args,
+                                                      const Source& source) {
+    TINT_SCOPED_ASSIGNMENT(current_source, &source);
+    auto* vec_ty = args[0]->Type()->As<sem::Vector>();
+    auto* mat_ty = args[1]->Type()->As<sem::Matrix>();
+    auto* elem_ty = vec_ty->type();
+
+    auto dot = [&](const sem::Constant* v, const sem::Constant* m, size_t col) {
+        utils::Result<const Constant*> result;
+        switch (mat_ty->rows()) {
+            case 2:
+                result = Dispatch_fa_f32_f16(Dot2Func(elem_ty),        //
+                                             m->Index(col)->Index(0),  //
+                                             m->Index(col)->Index(1),  //
+                                             v->Index(0),              //
+                                             v->Index(1));
+                break;
+            case 3:
+                result = Dispatch_fa_f32_f16(Dot3Func(elem_ty),        //
+                                             m->Index(col)->Index(0),  //
+                                             m->Index(col)->Index(1),  //
+                                             m->Index(col)->Index(2),
+                                             v->Index(0),  //
+                                             v->Index(1),  //
+                                             v->Index(2));
+                break;
+            case 4:
+                result = Dispatch_fa_f32_f16(Dot4Func(elem_ty),        //
+                                             m->Index(col)->Index(0),  //
+                                             m->Index(col)->Index(1),  //
+                                             m->Index(col)->Index(2),  //
+                                             m->Index(col)->Index(3),  //
+                                             v->Index(0),              //
+                                             v->Index(1),              //
+                                             v->Index(2),              //
+                                             v->Index(3));
+        }
+        return result;
+    };
+
+    utils::Vector<const sem::Constant*, 4> result;
+    for (size_t i = 0; i < mat_ty->columns(); ++i) {
+        auto r = dot(args[0], args[1], i);  // vector * matrix col i
+        if (!r) {
+            return utils::Failure;
+        }
+        result.Push(r.Get());
+    }
+    return CreateComposite(builder, ty, result);
+}
+
+ConstEval::ConstantResult ConstEval::OpMultiplyMatMat(const sem::Type* ty,
+                                                      utils::VectorRef<const sem::Constant*> args,
+                                                      const Source& source) {
+    TINT_SCOPED_ASSIGNMENT(current_source, &source);
+    auto* mat1 = args[0];
+    auto* mat2 = args[1];
+    auto* mat1_ty = mat1->Type()->As<sem::Matrix>();
+    auto* mat2_ty = mat2->Type()->As<sem::Matrix>();
+    auto* elem_ty = mat1_ty->type();
+
+    auto dot = [&](const sem::Constant* m1, size_t row, const sem::Constant* m2, size_t col) {
+        auto m1e = [&](size_t r, size_t c) { return m1->Index(c)->Index(r); };
+        auto m2e = [&](size_t r, size_t c) { return m2->Index(c)->Index(r); };
+
+        utils::Result<const Constant*> result;
+        switch (mat1_ty->columns()) {
+            case 2:
+                result = Dispatch_fa_f32_f16(Dot2Func(elem_ty),  //
+                                             m1e(row, 0),        //
+                                             m1e(row, 1),        //
+                                             m2e(0, col),        //
+                                             m2e(1, col));
+                break;
+            case 3:
+                result = Dispatch_fa_f32_f16(Dot3Func(elem_ty),  //
+                                             m1e(row, 0),        //
+                                             m1e(row, 1),        //
+                                             m1e(row, 2),        //
+                                             m2e(0, col),        //
+                                             m2e(1, col),        //
+                                             m2e(2, col));
+                break;
+            case 4:
+                result = Dispatch_fa_f32_f16(Dot4Func(elem_ty),  //
+                                             m1e(row, 0),        //
+                                             m1e(row, 1),        //
+                                             m1e(row, 2),        //
+                                             m1e(row, 3),        //
+                                             m2e(0, col),        //
+                                             m2e(1, col),        //
+                                             m2e(2, col),        //
+                                             m2e(3, col));
+                break;
+        }
+        return result;
+    };
+
+    utils::Vector<const sem::Constant*, 4> result_mat;
+    for (size_t c = 0; c < mat2_ty->columns(); ++c) {
+        utils::Vector<const sem::Constant*, 4> col_vec;
+        for (size_t r = 0; r < mat1_ty->rows(); ++r) {
+            auto v = dot(mat1, r, mat2, c);  // mat1 row r * mat2 col c
+            if (!v) {
+                return utils::Failure;
+            }
+            col_vec.Push(v.Get());  // mat1 row r * mat2 col c
+        }
+
+        // Add column vector to matrix
+        auto* col_vec_ty = ty->As<sem::Matrix>()->ColumnType();
+        result_mat.Push(CreateComposite(builder, col_vec_ty, col_vec));
+    }
+    return CreateComposite(builder, ty, result_mat);
+}
+
+ConstEval::ConstantResult ConstEval::OpDivide(const sem::Type* ty,
+                                              utils::VectorRef<const sem::Constant*> args,
+                                              const Source& source) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto i, auto j) -> const Constant* {
+            using NumberT = decltype(i);
+            NumberT result;
+            if constexpr (std::is_same_v<NumberT, AInt> || std::is_same_v<NumberT, AFloat>) {
+                // Check for over/underflow for abstract values
+                if (auto r = CheckedDiv(i, j)) {
+                    result = r->value;
+                } else {
+                    AddError(OverflowErrorMessage(i, "/", j), source);
+                    return nullptr;
+                }
+            } else {
+                using T = UnwrapNumber<NumberT>;
+                auto divide_values = [](T lhs, T rhs) {
+                    if constexpr (std::is_integral_v<T>) {
+                        // For integers, lhs / 0 returns lhs
+                        if (rhs == 0) {
+                            return lhs;
+                        }
+
+                        if constexpr (std::is_signed_v<T>) {
+                            // For signed integers, for lhs / -1, return lhs if lhs is the
+                            // most negative value
+                            if (rhs == -1 && lhs == std::numeric_limits<T>::min()) {
+                                return lhs;
+                            }
+                        }
+                    }
+                    return lhs / rhs;
+                };
+                result = divide_values(i.value, j.value);
+            }
+            return CreateElement(builder, c0->Type(), result);
+        };
+        return Dispatch_fia_fiu32_f16(create, c0, c1);
+    };
+
+    auto r = TransformBinaryElements(builder, ty, transform, args[0], args[1]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::ConstantResult ConstEval::OpEqual(const sem::Type* ty,
+                                             utils::VectorRef<const sem::Constant*> args,
+                                             const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto i, auto j) -> const Constant* {
+            return CreateElement(builder, sem::Type::DeepestElementOf(ty), i == j);
+        };
+        return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
+    };
+
+    auto r = TransformElements(builder, ty, transform, args[0], args[1]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::ConstantResult ConstEval::OpNotEqual(const sem::Type* ty,
+                                                utils::VectorRef<const sem::Constant*> args,
+                                                const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto i, auto j) -> const Constant* {
+            return CreateElement(builder, sem::Type::DeepestElementOf(ty), i != j);
+        };
+        return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
+    };
+
+    auto r = TransformElements(builder, ty, transform, args[0], args[1]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::ConstantResult ConstEval::OpLessThan(const sem::Type* ty,
+                                                utils::VectorRef<const sem::Constant*> args,
+                                                const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto i, auto j) -> const Constant* {
+            return CreateElement(builder, sem::Type::DeepestElementOf(ty), i < j);
+        };
+        return Dispatch_fia_fiu32_f16(create, c0, c1);
+    };
+
+    auto r = TransformElements(builder, ty, transform, args[0], args[1]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::ConstantResult ConstEval::OpGreaterThan(const sem::Type* ty,
+                                                   utils::VectorRef<const sem::Constant*> args,
+                                                   const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto i, auto j) -> const Constant* {
+            return CreateElement(builder, sem::Type::DeepestElementOf(ty), i > j);
+        };
+        return Dispatch_fia_fiu32_f16(create, c0, c1);
+    };
+
+    auto r = TransformElements(builder, ty, transform, args[0], args[1]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::ConstantResult ConstEval::OpLessThanEqual(const sem::Type* ty,
+                                                     utils::VectorRef<const sem::Constant*> args,
+                                                     const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto i, auto j) -> const Constant* {
+            return CreateElement(builder, sem::Type::DeepestElementOf(ty), i <= j);
+        };
+        return Dispatch_fia_fiu32_f16(create, c0, c1);
+    };
+
+    auto r = TransformElements(builder, ty, transform, args[0], args[1]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::ConstantResult ConstEval::OpGreaterThanEqual(const sem::Type* ty,
+                                                        utils::VectorRef<const sem::Constant*> args,
+                                                        const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto i, auto j) -> const Constant* {
+            return CreateElement(builder, sem::Type::DeepestElementOf(ty), i >= j);
+        };
+        return Dispatch_fia_fiu32_f16(create, c0, c1);
+    };
+
+    auto r = TransformElements(builder, ty, transform, args[0], args[1]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::ConstantResult ConstEval::OpAnd(const sem::Type* ty,
+                                           utils::VectorRef<const sem::Constant*> args,
+                                           const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto i, auto j) -> const Constant* {
+            using T = decltype(i);
+            T result;
+            if constexpr (std::is_same_v<T, bool>) {
+                result = i && j;
+            } else {  // integral
+                result = i & j;
+            }
+            return CreateElement(builder, sem::Type::DeepestElementOf(ty), result);
+        };
+        return Dispatch_ia_iu32_bool(create, c0, c1);
+    };
+
+    auto r = TransformElements(builder, ty, transform, args[0], args[1]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::ConstantResult ConstEval::OpOr(const sem::Type* ty,
+                                          utils::VectorRef<const sem::Constant*> args,
+                                          const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto i, auto j) -> const Constant* {
+            using T = decltype(i);
+            T result;
+            if constexpr (std::is_same_v<T, bool>) {
+                result = i || j;
+            } else {  // integral
+                result = i | j;
+            }
+            return CreateElement(builder, sem::Type::DeepestElementOf(ty), result);
+        };
+        return Dispatch_ia_iu32_bool(create, c0, c1);
+    };
+
+    auto r = TransformElements(builder, ty, transform, args[0], args[1]);
+    if (builder.Diagnostics().contains_errors()) {
+        return utils::Failure;
+    }
+    return r;
+}
+
+ConstEval::ConstantResult ConstEval::atan2(const sem::Type* ty,
                                            utils::VectorRef<const sem::Constant*> args,
                                            const Source&) {
     auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
@@ -855,10 +1454,10 @@ ConstEval::ConstantResult ConstEval::atan2(const sem::Type*,
         };
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
-    return TransformElements(builder, transform, args[0], args[1]);
+    return TransformElements(builder, ty, transform, args[0], args[1]);
 }
 
-ConstEval::ConstantResult ConstEval::clamp(const sem::Type*,
+ConstEval::ConstantResult ConstEval::clamp(const sem::Type* ty,
                                            utils::VectorRef<const sem::Constant*> args,
                                            const Source&) {
     auto transform = [&](const sem::Constant* c0, const sem::Constant* c1,
@@ -869,7 +1468,7 @@ ConstEval::ConstantResult ConstEval::clamp(const sem::Type*,
         };
         return Dispatch_fia_fiu32_f16(create, c0, c1, c2);
     };
-    return TransformElements(builder, transform, args[0], args[1], args[2]);
+    return TransformElements(builder, ty, transform, args[0], args[1], args[2]);
 }
 
 utils::Result<const sem::Constant*> ConstEval::Convert(const sem::Type* target_ty,

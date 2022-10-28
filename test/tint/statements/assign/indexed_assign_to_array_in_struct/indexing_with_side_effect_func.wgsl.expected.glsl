@@ -1,10 +1,5 @@
 #version 310 es
 
-struct Uniforms {
-  uint i;
-  uint j;
-};
-
 struct InnerS {
   int v;
 };
@@ -23,9 +18,11 @@ uint getNextIndex() {
   return nextIndex;
 }
 
-layout(binding = 4) uniform Uniforms_1 {
+layout(binding = 4, std140) uniform Uniforms_ubo {
   uint i;
   uint j;
+  uint pad;
+  uint pad_1;
 } uniforms;
 
 void tint_symbol() {

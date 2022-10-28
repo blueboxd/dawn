@@ -1,27 +1,20 @@
 #version 310 es
 
-struct Constants {
+layout(binding = 0, std140) uniform Constants_ubo {
   uint zero;
-};
-
-layout(binding = 0) uniform Constants_1 {
-  uint zero;
+  uint pad;
+  uint pad_1;
+  uint pad_2;
 } constants;
 
-struct Result {
-  uint value;
-};
-
-layout(binding = 1, std430) buffer Result_1 {
+layout(binding = 1, std430) buffer Result_ssbo {
   uint value;
 } result;
-struct TestData {
-  int data[3];
-};
 
-layout(binding = 0, std430) buffer TestData_1 {
+layout(binding = 0, std430) buffer TestData_ssbo {
   int data[3];
 } s;
+
 int runTest() {
   return atomicOr(s.data[(0u + uint(constants.zero))], 0);
 }

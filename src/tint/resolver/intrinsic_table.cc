@@ -349,7 +349,7 @@ const sem::AbstractFloat* build_fa(MatchState& state) {
 }
 
 bool match_fa(const sem::Type* ty) {
-    return ty->IsAnyOf<Any, sem::AbstractFloat>();
+    return ty->IsAnyOf<Any, sem::AbstractNumeric>();
 }
 
 const sem::AbstractInt* build_ia(MatchState& state) {
@@ -793,7 +793,8 @@ const sem::Struct* build_struct(MatchState& state,
             /* index */ static_cast<uint32_t>(members.size()),
             /* offset */ offset,
             /* align */ align,
-            /* size */ size));
+            /* size */ size,
+            /* location */ std::nullopt));
         offset += size;
     }
     uint32_t size_without_padding = offset;
@@ -935,7 +936,7 @@ struct IntrinsicPrototype {
         inline std::size_t operator()(const IntrinsicPrototype& i) const {
             size_t hash = utils::Hash(i.parameters.Length());
             for (auto& p : i.parameters) {
-                utils::HashCombine(&hash, p.type, p.usage);
+                hash = utils::HashCombine(hash, p.type, p.usage);
             }
             return utils::Hash(hash, i.overload, i.return_type);
         }

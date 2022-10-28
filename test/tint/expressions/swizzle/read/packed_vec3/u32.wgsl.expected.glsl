@@ -4,12 +4,9 @@ layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void unused_entry_point() {
   return;
 }
-struct S {
+layout(binding = 0, std140) uniform S_ubo {
   uvec3 v;
-};
-
-layout(binding = 0) uniform S_1 {
-  uvec3 v;
+  uint pad;
 } U;
 
 void f() {

@@ -1,14 +1,10 @@
 #version 310 es
 precision mediump float;
 
-struct S {
+layout(binding = 0, std140) uniform S_ubo {
   mat3 matrix;
   vec3 vector;
-};
-
-layout(binding = 0) uniform S_1 {
-  mat3 matrix;
-  vec3 vector;
+  uint pad;
 } data;
 
 void tint_symbol() {

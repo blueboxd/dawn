@@ -177,11 +177,8 @@ TEST_F(HlslGeneratorImplTest_Type, EmitType_StructDecl_OmittedIfStorageBuffer) {
                                  Member("a", ty.i32()),
                                  Member("b", ty.f32()),
                              });
-    GlobalVar("g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kReadWrite,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kReadWrite, Binding(0_a),
+              Group(0_a));
 
     GeneratorImpl& gen = Build();
 
@@ -224,8 +221,8 @@ TEST_F(HlslGeneratorImplTest_Type, EmitType_Struct_NameCollision) {
 
 TEST_F(HlslGeneratorImplTest_Type, EmitType_Struct_WithOffsetAttributes) {
     auto* s = Structure("S", utils::Vector{
-                                 Member("a", ty.i32(), utils::Vector{MemberOffset(0)}),
-                                 Member("b", ty.f32(), utils::Vector{MemberOffset(8)}),
+                                 Member("a", ty.i32(), utils::Vector{MemberOffset(0_a)}),
+                                 Member("b", ty.f32(), utils::Vector{MemberOffset(8_a)}),
                              });
     GlobalVar("g", ty.Of(s), ast::StorageClass::kPrivate);
 
@@ -311,11 +308,7 @@ TEST_P(HlslDepthTexturesTest, Emit) {
 
     auto* t = ty.depth_texture(params.dim);
 
-    GlobalVar("tex", t,
-              utils::Vector{
-                  create<ast::BindingAttribute>(1u),
-                  create<ast::GroupAttribute>(2u),
-              });
+    GlobalVar("tex", t, Binding(1_a), Group(2_a));
 
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
@@ -346,11 +339,7 @@ using HlslDepthMultisampledTexturesTest = TestHelper;
 TEST_F(HlslDepthMultisampledTexturesTest, Emit) {
     auto* t = ty.depth_multisampled_texture(ast::TextureDimension::k2d);
 
-    GlobalVar("tex", t,
-              utils::Vector{
-                  create<ast::BindingAttribute>(1u),
-                  create<ast::GroupAttribute>(2u),
-              });
+    GlobalVar("tex", t, Binding(1_a), Group(2_a));
 
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
@@ -394,11 +383,7 @@ TEST_P(HlslSampledTexturesTest, Emit) {
     }
     auto* t = ty.sampled_texture(params.dim, datatype);
 
-    GlobalVar("tex", t,
-              utils::Vector{
-                  create<ast::BindingAttribute>(1u),
-                  create<ast::GroupAttribute>(2u),
-              });
+    GlobalVar("tex", t, Binding(1_a), Group(2_a));
 
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
@@ -536,7 +521,8 @@ TEST_P(HlslStorageTexturesTest, Emit) {
 
     GlobalVar("tex", t,
               utils::Vector{
-                  GroupAndBinding(2, 1),
+                  Group(2_a),
+                  Binding(1_a),
               });
 
     Func("main", utils::Empty, ty.void_(),

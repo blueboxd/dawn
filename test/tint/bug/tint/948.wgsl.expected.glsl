@@ -25,9 +25,11 @@ layout(location = 3) in vec2 stageUnits_1_param_1;
 layout(location = 0) in vec3 vPosition_param_1;
 layout(location = 1) in vec2 vUV_param_1;
 layout(location = 0) out vec4 glFragColor_1_1;
-struct LeftOver {
+layout(binding = 9, std140) uniform LeftOver_ubo {
   float time;
   uint padding;
+  uint pad;
+  uint pad_1;
   mat4 worldViewProjection;
   vec2 outputSize;
   vec2 stageSize;
@@ -35,18 +37,7 @@ struct LeftOver {
   float stageScale;
   float spriteCount;
   vec3 colorMul;
-};
-
-layout(binding = 9) uniform LeftOver_1 {
-  float time;
-  uint padding;
-  mat4 worldViewProjection;
-  vec2 outputSize;
-  vec2 stageSize;
-  vec2 spriteMapSize;
-  float stageScale;
-  float spriteCount;
-  vec3 colorMul;
+  uint pad_2;
 } x_20;
 
 vec2 tUV = vec2(0.0f, 0.0f);

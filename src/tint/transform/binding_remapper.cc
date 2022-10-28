@@ -69,8 +69,9 @@ void BindingRemapper::Run(CloneContext& ctx, const DataMap& inputs, DataMap&) co
             auto* func = ctx.src->Sem().Get(func_ast);
             std::unordered_map<sem::BindingPoint, int> binding_point_counts;
             for (auto* global : func->TransitivelyReferencedGlobals()) {
-                if (auto binding_point = global->Declaration()->BindingPoint()) {
-                    BindingPoint from{binding_point.group->value, binding_point.binding->value};
+                if (global->Declaration()->HasBindingPoint()) {
+                    BindingPoint from = global->BindingPoint();
+
                     auto bp_it = remappings->binding_points.find(from);
                     if (bp_it != remappings->binding_points.end()) {
                         // Remapped
@@ -90,9 +91,11 @@ void BindingRemapper::Run(CloneContext& ctx, const DataMap& inputs, DataMap&) co
     }
 
     for (auto* var : ctx.src->AST().Globals<ast::Var>()) {
-        if (auto binding_point = var->BindingPoint()) {
+        if (var->HasBindingPoint()) {
+            auto* global_sem = ctx.src->Sem().Get<sem::GlobalVariable>(var);
+
             // The original binding point
-            BindingPoint from{binding_point.group->value, binding_point.binding->value};
+            BindingPoint from = global_sem->BindingPoint();
 
             // The binding point after remapping
             BindingPoint bp = from;
@@ -103,11 +106,14 @@ void BindingRemapper::Run(CloneContext& ctx, const DataMap& inputs, DataMap&) co
             auto bp_it = remappings->binding_points.find(from);
             if (bp_it != remappings->binding_points.end()) {
                 BindingPoint to = bp_it->second;
-                auto* new_group = ctx.dst->create<ast::GroupAttribute>(to.group);
-                auto* new_binding = ctx.dst->create<ast::BindingAttribute>(to.binding);
+                auto* new_group = ctx.dst->Group(AInt(to.group));
+                auto* new_binding = ctx.dst->Binding(AInt(to.binding));
 
-                ctx.Replace(binding_point.group, new_group);
-                ctx.Replace(binding_point.binding, new_binding);
+                auto* old_group = ast::GetAttribute<ast::GroupAttribute>(var->attributes);
+                auto* old_binding = ast::GetAttribute<ast::BindingAttribute>(var->attributes);
+
+                ctx.Replace(old_group, new_group);
+                ctx.Replace(old_binding, new_binding);
                 bp = to;
             }
 

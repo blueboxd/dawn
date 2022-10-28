@@ -1,24 +1,22 @@
 #version 310 es
 
-struct Uniforms {
-  uint dimAOuter;
-  uint dimInner;
-  uint dimBOuter;
-};
-
-layout(binding = 0, std430) buffer Matrix_1 {
+layout(binding = 0, std430) buffer Matrix_ssbo {
   float numbers[];
 } firstMatrix;
-layout(binding = 1, std430) buffer Matrix_2 {
+
+layout(binding = 1, std430) buffer Matrix_ssbo_1 {
   float numbers[];
 } secondMatrix;
-layout(binding = 2, std430) buffer Matrix_3 {
+
+layout(binding = 2, std430) buffer Matrix_ssbo_2 {
   float numbers[];
 } resultMatrix;
-layout(binding = 3) uniform Uniforms_1 {
+
+layout(binding = 3, std140) uniform Uniforms_ubo {
   uint dimAOuter;
   uint dimInner;
   uint dimBOuter;
+  uint pad;
 } uniforms;
 
 float mm_readA(uint row, uint col) {
@@ -77,13 +75,13 @@ void tint_symbol(uvec3 local_id, uvec3 global_id, uint local_invocation_index) {
   float ACached = 0.0f;
   float BCached[4] = float[4](0.0f, 0.0f, 0.0f, 0.0f);
   {
-    for(uint index = 0u; (index < (4u * 4u)); index = (index + 1u)) {
+    for(uint index = 0u; (index < 16u); index = (index + 1u)) {
       acc[index] = 0.0f;
     }
   }
-  uint ColPerThreadA = (64u / 16u);
+  uint ColPerThreadA = 4u;
   uint tileColA = (local_id.x * ColPerThreadA);
-  uint RowPerThreadB = (64u / 16u);
+  uint RowPerThreadB = 4u;
   uint tileRowB = (local_id.y * RowPerThreadB);
   {
     for(uint t = 0u; (t < numTiles); t = (t + 1u)) {

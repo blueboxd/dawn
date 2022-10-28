@@ -291,7 +291,7 @@ TEST_P(InspectorGetEntryPointComponentAndCompositionTest, Test) {
 
     auto* in_var = Param("in_var", tint_type(),
                          utils::Vector{
-                             Location(0u),
+                             Location(0_u),
                              Flat(),
                          });
     Func("foo", utils::Vector{in_var}, tint_type(),
@@ -302,7 +302,7 @@ TEST_P(InspectorGetEntryPointComponentAndCompositionTest, Test) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0u),
+             Location(0_u),
          });
     Inspector& inspector = Build();
 
@@ -336,17 +336,17 @@ INSTANTIATE_TEST_SUITE_P(InspectorGetEntryPointTest,
 TEST_F(InspectorGetEntryPointTest, MultipleInOutVariables) {
     auto* in_var0 = Param("in_var0", ty.u32(),
                           utils::Vector{
-                              Location(0u),
+                              Location(0_u),
                               Flat(),
                           });
     auto* in_var1 = Param("in_var1", ty.u32(),
                           utils::Vector{
-                              Location(1u),
+                              Location(1_u),
                               Flat(),
                           });
     auto* in_var4 = Param("in_var4", ty.u32(),
                           utils::Vector{
-                              Location(4u),
+                              Location(4_u),
                               Flat(),
                           });
     Func("foo", utils::Vector{in_var0, in_var1, in_var4}, ty.u32(),
@@ -357,7 +357,7 @@ TEST_F(InspectorGetEntryPointTest, MultipleInOutVariables) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0u),
+             Location(0_u),
          });
     Inspector& inspector = Build();
 
@@ -393,7 +393,7 @@ TEST_F(InspectorGetEntryPointTest, MultipleInOutVariables) {
 TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutVariables) {
     auto* in_var_foo = Param("in_var_foo", ty.u32(),
                              utils::Vector{
-                                 Location(0u),
+                                 Location(0_u),
                                  Flat(),
                              });
     Func("foo", utils::Vector{in_var_foo}, ty.u32(),
@@ -404,12 +404,12 @@ TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutVariables) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0u),
+             Location(0_u),
          });
 
     auto* in_var_bar = Param("in_var_bar", ty.u32(),
                              utils::Vector{
-                                 Location(0u),
+                                 Location(0_u),
                                  Flat(),
                              });
     Func("bar", utils::Vector{in_var_bar}, ty.u32(),
@@ -420,7 +420,7 @@ TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutVariables) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(1u),
+             Location(1_u),
          });
 
     Inspector& inspector = Build();
@@ -464,7 +464,7 @@ TEST_F(InspectorGetEntryPointTest, BuiltInsNotStageVariables) {
                           });
     auto* in_var1 = Param("in_var1", ty.f32(),
                           utils::Vector{
-                              Location(0u),
+                              Location(0_u),
                           });
     Func("foo", utils::Vector{in_var0, in_var1}, ty.f32(),
          utils::Vector{
@@ -596,8 +596,8 @@ TEST_F(InspectorGetEntryPointTest, MixInOutVariablesAndStruct) {
          utils::Vector{
              Param("param_a", ty.Of(struct_a)),
              Param("param_b", ty.Of(struct_b)),
-             Param("param_c", ty.f32(), utils::Vector{Location(3u)}),
-             Param("param_d", ty.f32(), utils::Vector{Location(4u)}),
+             Param("param_c", ty.f32(), utils::Vector{Location(3_u)}),
+             Param("param_d", ty.f32(), utils::Vector{Location(4_u)}),
          },
          ty.Of(struct_a),
          utils::Vector{
@@ -647,7 +647,7 @@ TEST_F(InspectorGetEntryPointTest, MixInOutVariablesAndStruct) {
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideUnreferenced) {
-    Override("foo", ty.f32(), nullptr);
+    Override("foo", ty.f32());
     MakeEmptyBodyFunction("ep_func", utils::Vector{
                                          Stage(ast::PipelineStage::kCompute),
                                          WorkgroupSize(1_i),
@@ -662,7 +662,7 @@ TEST_F(InspectorGetEntryPointTest, OverrideUnreferenced) {
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideReferencedByEntryPoint) {
-    Override("foo", ty.f32(), nullptr);
+    Override("foo", ty.f32());
     MakePlainGlobalReferenceBodyFunction("ep_func", "foo", ty.f32(),
                                          utils::Vector{
                                              Stage(ast::PipelineStage::kCompute),
@@ -679,7 +679,7 @@ TEST_F(InspectorGetEntryPointTest, OverrideReferencedByEntryPoint) {
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideReferencedByCallee) {
-    Override("foo", ty.f32(), nullptr);
+    Override("foo", ty.f32());
     MakePlainGlobalReferenceBodyFunction("callee_func", "foo", ty.f32(), utils::Empty);
     MakeCallerBodyFunction("ep_func", utils::Vector{std::string("callee_func")},
                            utils::Vector{
@@ -697,14 +697,8 @@ TEST_F(InspectorGetEntryPointTest, OverrideReferencedByCallee) {
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideSomeReferenced) {
-    Override("foo", ty.f32(), nullptr,
-             utils::Vector{
-                 Id(1),
-             });
-    Override("bar", ty.f32(), nullptr,
-             utils::Vector{
-                 Id(2),
-             });
+    Override("foo", ty.f32(), Id(1_a));
+    Override("bar", ty.f32(), Id(2_a));
     MakePlainGlobalReferenceBodyFunction("callee_func", "foo", ty.f32(), utils::Empty);
     MakeCallerBodyFunction("ep_func", utils::Vector{std::string("callee_func")},
                            utils::Vector{
@@ -723,10 +717,10 @@ TEST_F(InspectorGetEntryPointTest, OverrideSomeReferenced) {
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideTypes) {
-    Override("bool_var", ty.bool_(), nullptr);
-    Override("float_var", ty.f32(), nullptr);
-    Override("u32_var", ty.u32(), nullptr);
-    Override("i32_var", ty.i32(), nullptr);
+    Override("bool_var", ty.bool_());
+    Override("float_var", ty.f32());
+    Override("u32_var", ty.u32());
+    Override("i32_var", ty.i32());
 
     MakePlainGlobalReferenceBodyFunction("bool_func", "bool_var", ty.bool_(), utils::Empty);
     MakePlainGlobalReferenceBodyFunction("float_func", "float_var", ty.f32(), utils::Empty);
@@ -775,7 +769,7 @@ TEST_F(InspectorGetEntryPointTest, OverrideInitialized) {
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideUninitialized) {
-    Override("foo", ty.f32(), nullptr);
+    Override("foo", ty.f32());
     MakePlainGlobalReferenceBodyFunction("ep_func", "foo", ty.f32(),
                                          utils::Vector{
                                              Stage(ast::PipelineStage::kCompute),
@@ -794,11 +788,8 @@ TEST_F(InspectorGetEntryPointTest, OverrideUninitialized) {
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideNumericIDSpecified) {
-    Override("foo_no_id", ty.f32(), nullptr);
-    Override("foo_id", ty.f32(), nullptr,
-             utils::Vector{
-                 Id(1234),
-             });
+    Override("foo_no_id", ty.f32());
+    Override("foo_id", ty.f32(), Id(1234_a));
 
     MakePlainGlobalReferenceBodyFunction("no_id_func", "foo_no_id", ty.f32(), utils::Empty);
     MakePlainGlobalReferenceBodyFunction("id_func", "foo_id", ty.f32(), utils::Empty);
@@ -1145,7 +1136,7 @@ TEST_F(InspectorGetEntryPointTest, NumWorkgroupsStructReferenced) {
 
 TEST_F(InspectorGetEntryPointTest, ImplicitInterpolate) {
     Structure("in_struct", utils::Vector{
-                               Member("struct_inner", ty.f32(), utils::Vector{Location(0)}),
+                               Member("struct_inner", ty.f32(), utils::Vector{Location(0_a)}),
                            });
 
     Func("ep_func",
@@ -1176,7 +1167,7 @@ TEST_P(InspectorGetEntryPointInterpolateTest, Test) {
         "in_struct",
         utils::Vector{
             Member("struct_inner", ty.f32(),
-                   utils::Vector{Interpolate(params.in_type, params.in_sampling), Location(0)}),
+                   utils::Vector{Interpolate(params.in_type, params.in_sampling), Location(0_a)}),
         });
 
     Func("ep_func",
@@ -1234,18 +1225,9 @@ INSTANTIATE_TEST_SUITE_P(
             InterpolationType::kFlat, InterpolationSampling::kNone}));
 
 TEST_F(InspectorGetOverrideDefaultValuesTest, Bool) {
-    Override("foo", ty.bool_(), nullptr,
-             utils::Vector{
-                 Id(1),
-             });
-    Override("bar", ty.bool_(), Expr(true),
-             utils::Vector{
-                 Id(20),
-             });
-    Override("baz", ty.bool_(), Expr(false),
-             utils::Vector{
-                 Id(300),
-             });
+    Override("foo", ty.bool_(), Id(1_a));
+    Override("bar", ty.bool_(), Expr(true), Id(20_a));
+    Override("baz", ty.bool_(), Expr(false), Id(300_a));
 
     Inspector& inspector = Build();
 
@@ -1265,14 +1247,8 @@ TEST_F(InspectorGetOverrideDefaultValuesTest, Bool) {
 }
 
 TEST_F(InspectorGetOverrideDefaultValuesTest, U32) {
-    Override("foo", ty.u32(), nullptr,
-             utils::Vector{
-                 Id(1),
-             });
-    Override("bar", ty.u32(), Expr(42_u),
-             utils::Vector{
-                 Id(20),
-             });
+    Override("foo", ty.u32(), Id(1_a));
+    Override("bar", ty.u32(), Expr(42_u), Id(20_a));
 
     Inspector& inspector = Build();
 
@@ -1288,18 +1264,9 @@ TEST_F(InspectorGetOverrideDefaultValuesTest, U32) {
 }
 
 TEST_F(InspectorGetOverrideDefaultValuesTest, I32) {
-    Override("foo", ty.i32(), nullptr,
-             utils::Vector{
-                 Id(1),
-             });
-    Override("bar", ty.i32(), Expr(-42_i),
-             utils::Vector{
-                 Id(20),
-             });
-    Override("baz", ty.i32(), Expr(42_i),
-             utils::Vector{
-                 Id(300),
-             });
+    Override("foo", ty.i32(), Id(1_a));
+    Override("bar", ty.i32(), Expr(-42_i), Id(20_a));
+    Override("baz", ty.i32(), Expr(42_i), Id(300_a));
 
     Inspector& inspector = Build();
 
@@ -1319,22 +1286,10 @@ TEST_F(InspectorGetOverrideDefaultValuesTest, I32) {
 }
 
 TEST_F(InspectorGetOverrideDefaultValuesTest, Float) {
-    Override("foo", ty.f32(), nullptr,
-             utils::Vector{
-                 Id(1),
-             });
-    Override("bar", ty.f32(), Expr(0_f),
-             utils::Vector{
-                 Id(20),
-             });
-    Override("baz", ty.f32(), Expr(-10_f),
-             utils::Vector{
-                 Id(300),
-             });
-    Override("x", ty.f32(), Expr(15_f),
-             utils::Vector{
-                 Id(4000),
-             });
+    Override("foo", ty.f32(), Id(1_a));
+    Override("bar", ty.f32(), Expr(0_f), Id(20_a));
+    Override("baz", ty.f32(), Expr(-10_f), Id(300_a));
+    Override("x", ty.f32(), Expr(15_f), Id(4000_a));
 
     Inspector& inspector = Build();
 
@@ -1358,21 +1313,12 @@ TEST_F(InspectorGetOverrideDefaultValuesTest, Float) {
 }
 
 TEST_F(InspectorGetConstantNameToIdMapTest, WithAndWithoutIds) {
-    Override("v1", ty.f32(), nullptr,
-             utils::Vector{
-                 Id(1),
-             });
-    Override("v20", ty.f32(), nullptr,
-             utils::Vector{
-                 Id(20),
-             });
-    Override("v300", ty.f32(), nullptr,
-             utils::Vector{
-                 Id(300),
-             });
-    auto* a = Override("a", ty.f32(), nullptr);
-    auto* b = Override("b", ty.f32(), nullptr);
-    auto* c = Override("c", ty.f32(), nullptr);
+    Override("v1", ty.f32(), Id(1_a));
+    Override("v20", ty.f32(), Id(20_a));
+    Override("v300", ty.f32(), Id(300_a));
+    auto* a = Override("a", ty.f32());
+    auto* b = Override("b", ty.f32());
+    auto* c = Override("c", ty.f32());
 
     Inspector& inspector = Build();
 
@@ -1416,9 +1362,9 @@ TEST_F(InspectorGetStorageSizeTest, Simple_NonStruct) {
     AddStorageBuffer("rosb_var", ty.i32(), ast::Access::kRead, 1, 1);
     Func("ep_func", utils::Empty, ty.void_(),
          utils::Vector{
-             Decl(Let("ub", nullptr, Expr("ub_var"))),
-             Decl(Let("sb", nullptr, Expr("sb_var"))),
-             Decl(Let("rosb", nullptr, Expr("rosb_var"))),
+             Decl(Let("ub", Expr("ub_var"))),
+             Decl(Let("sb", Expr("sb_var"))),
+             Decl(Let("rosb", Expr("rosb_var"))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -1474,7 +1420,7 @@ TEST_F(InspectorGetStorageSizeTest, NonStructVec3) {
     AddUniformBuffer("ub_var", ty.vec3<f32>(), 0, 0);
     Func("ep_func", utils::Empty, ty.void_(),
          utils::Vector{
-             Decl(Let("ub", nullptr, Expr("ub_var"))),
+             Decl(Let("ub", Expr("ub_var"))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -1493,7 +1439,7 @@ TEST_F(InspectorGetStorageSizeTest, StructVec3) {
     AddUniformBuffer("ub_var", ty.Of(ub_struct_type), 0, 0);
     Func("ep_func", utils::Empty, ty.void_(),
          utils::Vector{
-             Decl(Let("ub", nullptr, Expr("ub_var"))),
+             Decl(Let("ub", Expr("ub_var"))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -1865,7 +1811,7 @@ TEST_F(InspectorGetUniformBufferResourceBindingsTest, ContainingArray) {
         "foo_type",
         utils::Vector{
             Member("0i32", ty.i32()),
-            Member("b", ty.array(ty.u32(), 4_u, /*stride*/ 16), utils::Vector{MemberAlign(16)}),
+            Member("b", ty.array(ty.u32(), 4_u, /*stride*/ 16), utils::Vector{MemberAlign(16_u)}),
         });
 
     AddUniformBuffer("foo_ub", ty.Of(foo_struct_type), 0, 0);
@@ -3292,11 +3238,9 @@ TEST_F(InspectorGetWorkgroupStorageSizeTest, StructAlignment) {
     // of its last member, rounded up to the alignment of its largest member. So
     // here the struct is expected to occupy 1024 bytes of workgroup storage.
     const auto* wg_struct_type = MakeStructTypeFromMembers(
-        "WgStruct",
-        utils::Vector{
-            MakeStructMember(0, ty.f32(),
-                             utils::Vector{create<ast::StructMemberAlignAttribute>(1024u)}),
-        });
+        "WgStruct", utils::Vector{
+                        MakeStructMember(0, ty.f32(), utils::Vector{MemberAlign(1024_u)}),
+                    });
 
     AddWorkgroupStorage("wg_struct_var", ty.Of(wg_struct_type));
     MakeStructVariableReferenceBodyFunction("wg_struct_func", "wg_struct_var",

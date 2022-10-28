@@ -3,39 +3,42 @@ note: 'workgroupBarrier' must only be called from uniform control flow
 note: reading from module-scope private variable 'dimInner_1' may result in a non-uniform value
 #version 310 es
 
-struct Uniforms {
-  float NAN;
-  ivec3 aShape;
-  ivec3 bShape;
-  ivec3 outShape;
-  ivec2 outShapeStrides;
-};
-
 int dimAOuter_1 = 0;
-layout(binding = 3) uniform Uniforms_1 {
+layout(binding = 3, std140) uniform Uniforms_ubo {
   float NAN;
+  uint pad;
+  uint pad_1;
+  uint pad_2;
   ivec3 aShape;
+  uint pad_3;
   ivec3 bShape;
+  uint pad_4;
   ivec3 outShape;
+  uint pad_5;
   ivec2 outShapeStrides;
+  uint pad_6;
+  uint pad_7;
 } x_48;
 
 int dimInner_1 = 0;
 int dimBOuter_1 = 0;
-layout(binding = 0, std430) buffer ssbOut_1 {
+layout(binding = 0, std430) buffer ssbOut_ssbo {
   float result[];
 } x_54;
+
 uvec3 tint_symbol = uvec3(0u, 0u, 0u);
 uvec3 tint_symbol_1 = uvec3(0u, 0u, 0u);
 shared float mm_Asub[64][64];
 shared float mm_Bsub[64][1];
-layout(binding = 1, std430) buffer ssbA_1 {
+layout(binding = 1, std430) buffer ssbA_ssbo {
   float A[];
 } x_165;
+
 int batch = 0;
-layout(binding = 2, std430) buffer ssbB_1 {
+layout(binding = 2, std430) buffer ssbB_ssbo {
   float B[];
 } x_185;
+
 bool coordsInBounds_vi2_vi2_(inout ivec2 coord, inout ivec2 shape) {
   bool x_87 = false;
   bool x_88_phi = false;

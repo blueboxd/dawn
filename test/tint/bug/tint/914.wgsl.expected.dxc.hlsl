@@ -68,13 +68,13 @@ void main_inner(uint3 local_id, uint3 global_id, uint local_invocation_index) {
   float ACached = 0.0f;
   float BCached[4] = (float[4])0;
   {
-    [loop] for(uint index = 0u; (index < (4u * 4u)); index = (index + 1u)) {
+    [loop] for(uint index = 0u; (index < 16u); index = (index + 1u)) {
       acc[index] = 0.0f;
     }
   }
-  const uint ColPerThreadA = (64u / 16u);
+  const uint ColPerThreadA = 4u;
   const uint tileColA = (local_id.x * ColPerThreadA);
-  const uint RowPerThreadB = (64u / 16u);
+  const uint RowPerThreadB = 4u;
   const uint tileRowB = (local_id.y * RowPerThreadB);
   {
     [loop] for(uint t = 0u; (t < numTiles); t = (t + 1u)) {

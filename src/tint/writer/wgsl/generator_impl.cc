@@ -740,15 +740,27 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
                 return true;
             },
             [&](const ast::BindingAttribute* binding) {
-                out << "binding(" << binding->value << ")";
+                out << "binding(";
+                if (!EmitExpression(out, binding->expr)) {
+                    return false;
+                }
+                out << ")";
                 return true;
             },
             [&](const ast::GroupAttribute* group) {
-                out << "group(" << group->value << ")";
+                out << "group(";
+                if (!EmitExpression(out, group->expr)) {
+                    return false;
+                }
+                out << ")";
                 return true;
             },
             [&](const ast::LocationAttribute* location) {
-                out << "location(" << location->value << ")";
+                out << "location(";
+                if (!EmitExpression(out, location->expr)) {
+                    return false;
+                }
+                out << ")";
                 return true;
             },
             [&](const ast::BuiltinAttribute* builtin) {
@@ -768,15 +780,27 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
                 return true;
             },
             [&](const ast::IdAttribute* override_deco) {
-                out << "id(" << override_deco->value << ")";
+                out << "id(";
+                if (!EmitExpression(out, override_deco->expr)) {
+                    return false;
+                }
+                out << ")";
                 return true;
             },
             [&](const ast::StructMemberSizeAttribute* size) {
-                out << "size(" << size->size << ")";
+                out << "size(";
+                if (!EmitExpression(out, size->expr)) {
+                    return false;
+                }
+                out << ")";
                 return true;
             },
             [&](const ast::StructMemberAlignAttribute* align) {
-                out << "align(" << align->align << ")";
+                out << "align(";
+                if (!EmitExpression(out, align->expr)) {
+                    return false;
+                }
+                out << ")";
                 return true;
             },
             [&](const ast::StrideAttribute* stride) {

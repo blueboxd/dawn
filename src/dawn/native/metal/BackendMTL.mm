@@ -299,8 +299,10 @@ class Adapter : public AdapterBase {
     }
 
   private:
-    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(const DeviceDescriptor* descriptor) override {
-        return Device::Create(this, mDevice, descriptor);
+    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(
+        const DeviceDescriptor* descriptor,
+        const TripleStateTogglesSet& userProvidedToggles) override {
+        return Device::Create(this, mDevice, descriptor, userProvidedToggles);
     }
 
     MaybeError InitializeImpl() override { return {}; }
@@ -378,6 +380,8 @@ class Adapter : public AdapterBase {
 
         mSupportedFeatures.EnableFeature(Feature::IndirectFirstInstance);
 
+        mSupportedFeatures.EnableFeature(Feature::ShaderF16);
+
         return {};
     }
 
@@ -406,7 +410,7 @@ class Adapter : public AdapterBase {
         if (mDeviceId != 0) {
             mArchitectureName = gpu_info::GetArchitectureName(mVendorId, mDeviceId);
         }
-    };
+    }
 
     enum class MTLGPUFamily {
         Apple1,
@@ -620,6 +624,12 @@ class Adapter : public AdapterBase {
         return {};
     }
 
+    MaybeError ValidateFeatureSupportedWithTogglesImpl(
+        wgpu::FeatureName feature,
+        const TripleStateTogglesSet& userProvidedToggles) override {
+        return {};
+    }
+
     NSPRef<id<MTLDevice>> mDevice;
 };
 
@@ -661,8 +671,7 @@ ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
 
     // iOS only has a single device so MTLCopyAllDevices doesn't exist there.
 #if defined(DAWN_PLATFORM_IOS)
-    Ref<Adapter> adapter =
-        AcquireRef(new Adapter(GetInstance(), MTLCreateSystemDefaultDevice()));
+    Ref<Adapter> adapter = AcquireRef(new Adapter(GetInstance(), MTLCreateSystemDefaultDevice()));
     if (!GetInstance()->ConsumedError(adapter->Initialize())) {
         adapters.push_back(std::move(adapter));
     }

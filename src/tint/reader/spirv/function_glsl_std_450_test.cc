@@ -52,6 +52,9 @@ std::string Preamble() {
   OpName %v3f2 "v3f2"
   OpName %v4f1 "v4f1"
   OpName %v4f2 "v4f2"
+  OpName %m2x2f1 "m2x2f1"
+  OpName %m3x3f1 "m3x3f1"
+  OpName %m4x4f1 "m4x4f1"
 
   %void = OpTypeVoid
   %voidfn = OpTypeFunction %void
@@ -75,6 +78,9 @@ std::string Preamble() {
   %v2float = OpTypeVector %float 2
   %v3float = OpTypeVector %float 3
   %v4float = OpTypeVector %float 4
+  %mat2v2float = OpTypeMatrix %v2float 2
+  %mat3v3float = OpTypeMatrix %v3float 3
+  %mat4v4float = OpTypeMatrix %v4float 4
 
   %v2uint_10_20 = OpConstantComposite %v2uint %uint_10 %uint_20
   %v2uint_20_10 = OpConstantComposite %v2uint %uint_20 %uint_10
@@ -90,6 +96,10 @@ std::string Preamble() {
   %v3float_60_70_50 = OpConstantComposite %v3float %float_60 %float_70 %float_50
 
   %v4float_50_50_50_50 = OpConstantComposite %v4float %float_50 %float_50 %float_50 %float_50
+
+  %mat2v2float_50_60 = OpConstantComposite %mat2v2float %v2float_50_60 %v2float_50_60
+  %mat3v3float_50_60_70 = OpConstantComposite %mat3v3float %v3float_50_60_70 %v3float_50_60_70 %v3float_50_60_70
+  %mat4v4float_50_50_50_50 = OpConstantComposite %mat4v4float %v4float_50_50_50_50 %v4float_50_50_50_50 %v4float_50_50_50_50 %v4float_50_50_50_50
 
   %100 = OpFunction %void None %voidfn
   %entry = OpLabel
@@ -123,6 +133,10 @@ std::string Preamble() {
 
   %v4f1 = OpCopyObject %v4float %v4float_50_50_50_50
   %v4f2 = OpCopyObject %v4float %v4f1
+
+  %m2x2f1 = OpCopyObject %mat2v2float %mat2v2float_50_60
+  %m3x3f1 = OpCopyObject %mat3v3float %mat3v3float_50_60_70
+  %m4x4f1 = OpCopyObject %mat4v4float %mat4v4float_50_50_50_50
 )";
 }
 
@@ -1122,5 +1136,181 @@ TEST_F(SpvParserTest, GlslStd450_Ldexp_Vector_Floatvec_Uintvec) {
     EXPECT_THAT(body, HasSubstr(expected)) << body;
 }
 
+using GlslStd450_Determinant = SpvParserTestBase<::testing::TestWithParam<std::string>>;
+TEST_P(GlslStd450_Determinant, Test) {
+    const auto assembly = Preamble() + R"(
+     %1 = OpExtInst %float %glsl Determinant %)" +
+                          GetParam() + R"(
+     OpReturn
+     OpFunctionEnd
+  )";
+    auto p = parser(test::Assemble(assembly));
+    ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions());
+    auto fe = p->function_emitter(100);
+    EXPECT_TRUE(fe.EmitBody()) << p->error();
+    auto ast_body = fe.ast_body();
+    const auto body = test::ToString(p->program(), ast_body);
+    std::string expected = "let x_1 : f32 = determinant(" + GetParam() + ");";
+
+    EXPECT_THAT(body, HasSubstr(expected)) << body;
+}
+INSTANTIATE_TEST_SUITE_P(Test,
+                         GlslStd450_Determinant,
+                         ::testing::Values("m2x2f1", "m3x3f1", "m4x4f1"));
+
+TEST_F(SpvParserTest, GlslStd450_MatrixInverse_mat2x2) {
+    const auto assembly = Preamble() + R"(
+     %1 = OpExtInst %mat2v2float %glsl MatrixInverse %m2x2f1
+     OpReturn
+     OpFunctionEnd
+  )";
+    auto p = parser(test::Assemble(assembly));
+    ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions());
+    auto fe = p->function_emitter(100);
+    EXPECT_TRUE(fe.EmitBody()) << p->error();
+    auto ast_body = fe.ast_body();
+    const auto body = test::ToString(p->program(), ast_body);
+
+    std::string expected =
+        "let s = (1.0f / determinant(m2x2f1));\n"
+        "let x_1 : mat2x2<f32> = mat2x2<f32>(vec2<f32>((s * m2x2f1[1u][1u]), (-(s) * "
+        "m2x2f1[0u][1u])), vec2<f32>((-(s) * m2x2f1[1u][0u]), (s * m2x2f1[0u][0u])));";
+
+    EXPECT_THAT(body, HasSubstr(expected)) << body;
+}
+
+TEST_F(SpvParserTest, GlslStd450_MatrixInverse_mat3x3) {
+    const auto assembly = Preamble() + R"(
+     %1 = OpExtInst %mat3v3float %glsl MatrixInverse %m3x3f1
+     OpReturn
+     OpFunctionEnd
+  )";
+    auto p = parser(test::Assemble(assembly));
+    ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions());
+    auto fe = p->function_emitter(100);
+    EXPECT_TRUE(fe.EmitBody()) << p->error();
+    auto ast_body = fe.ast_body();
+    const auto body = test::ToString(p->program(), ast_body);
+
+    std::string expected =
+        "let s = (1.0f / determinant(m3x3f1));\n"
+        "let x_1 : mat3x3<f32> = (s * mat3x3<f32>(vec3<f32>(((m3x3f1[1u][1u] * m3x3f1[2u][2u]) - "
+        "(m3x3f1[1u][2u] * m3x3f1[2u][1u])), ((m3x3f1[0u][2u] * m3x3f1[2u][1u]) - (m3x3f1[0u][1u] "
+        "* m3x3f1[2u][2u])), ((m3x3f1[0u][1u] * m3x3f1[1u][2u]) - (m3x3f1[0u][2u] * "
+        "m3x3f1[1u][1u]))), vec3<f32>(((m3x3f1[1u][2u] * m3x3f1[2u][0u]) - (m3x3f1[1u][0u] * "
+        "m3x3f1[2u][2u])), ((m3x3f1[0u][0u] * m3x3f1[2u][2u]) - (m3x3f1[0u][2u] * "
+        "m3x3f1[2u][0u])), ((m3x3f1[0u][2u] * m3x3f1[1u][0u]) - (m3x3f1[0u][0u] * "
+        "m3x3f1[1u][2u]))), vec3<f32>(((m3x3f1[1u][0u] * m3x3f1[2u][1u]) - (m3x3f1[1u][1u] * "
+        "m3x3f1[2u][0u])), ((m3x3f1[0u][1u] * m3x3f1[2u][0u]) - (m3x3f1[0u][0u] * "
+        "m3x3f1[2u][1u])), ((m3x3f1[0u][0u] * m3x3f1[1u][1u]) - (m3x3f1[0u][1u] * "
+        "m3x3f1[1u][0u])))));";
+
+    EXPECT_THAT(body, HasSubstr(expected)) << body;
+}
+
+TEST_F(SpvParserTest, GlslStd450_MatrixInverse_mat4x4) {
+    const auto assembly = Preamble() + R"(
+     %1 = OpExtInst %mat4v4float %glsl MatrixInverse %m4x4f1
+     OpReturn
+     OpFunctionEnd
+  )";
+    auto p = parser(test::Assemble(assembly));
+    ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions());
+    auto fe = p->function_emitter(100);
+    EXPECT_TRUE(fe.EmitBody()) << p->error();
+    auto ast_body = fe.ast_body();
+    const auto body = test::ToString(p->program(), ast_body);
+
+    std::string expected =
+        "let s = (1.0f / determinant(m4x4f1));\n"
+        "let x_1 : mat4x4<f32> = (s * mat4x4<f32>(vec4<f32>((((m4x4f1[1u][1u] * ((m4x4f1[2u][2u] * "
+        "m4x4f1[3u][3u]) - (m4x4f1[2u][3u] * m4x4f1[3u][2u]))) - (m4x4f1[1u][2u] * "
+        "((m4x4f1[2u][1u] * m4x4f1[3u][3u]) - (m4x4f1[2u][3u] * m4x4f1[3u][1u])))) + "
+        "(m4x4f1[1u][3u] * ((m4x4f1[2u][1u] * m4x4f1[3u][2u]) - (m4x4f1[2u][2u] * "
+        "m4x4f1[3u][1u])))), (((-(m4x4f1[0u][1u]) * ((m4x4f1[2u][2u] * m4x4f1[3u][3u]) - "
+        "(m4x4f1[2u][3u] * m4x4f1[3u][2u]))) + (m4x4f1[0u][2u] * ((m4x4f1[2u][1u] * "
+        "m4x4f1[3u][3u]) - (m4x4f1[2u][3u] * m4x4f1[3u][1u])))) - (m4x4f1[0u][3u] * "
+        "((m4x4f1[2u][1u] * m4x4f1[3u][2u]) - (m4x4f1[2u][2u] * m4x4f1[3u][1u])))), "
+        "(((m4x4f1[0u][1u] * ((m4x4f1[1u][2u] * m4x4f1[3u][3u]) - (m4x4f1[1u][3u] * "
+        "m4x4f1[3u][2u]))) - (m4x4f1[0u][2u] * ((m4x4f1[1u][1u] * m4x4f1[3u][3u]) - "
+        "(m4x4f1[1u][3u] * m4x4f1[3u][1u])))) + (m4x4f1[0u][3u] * ((m4x4f1[1u][1u] * "
+        "m4x4f1[3u][2u]) - (m4x4f1[1u][2u] * m4x4f1[3u][1u])))), (((-(m4x4f1[0u][1u]) * "
+        "((m4x4f1[1u][2u] * m4x4f1[2u][3u]) - (m4x4f1[1u][3u] * m4x4f1[2u][2u]))) + "
+        "(m4x4f1[0u][2u] * ((m4x4f1[1u][1u] * m4x4f1[2u][3u]) - (m4x4f1[1u][3u] * "
+        "m4x4f1[2u][1u])))) - (m4x4f1[0u][3u] * ((m4x4f1[1u][1u] * m4x4f1[2u][2u]) - "
+        "(m4x4f1[1u][2u] * m4x4f1[2u][1u]))))), vec4<f32>((((-(m4x4f1[1u][0u]) * ((m4x4f1[2u][2u] "
+        "* m4x4f1[3u][3u]) - (m4x4f1[2u][3u] * m4x4f1[3u][2u]))) + (m4x4f1[1u][2u] * "
+        "((m4x4f1[2u][0u] * m4x4f1[3u][3u]) - (m4x4f1[2u][3u] * m4x4f1[3u][0u])))) - "
+        "(m4x4f1[1u][3u] * ((m4x4f1[2u][0u] * m4x4f1[3u][2u]) - (m4x4f1[2u][2u] * "
+        "m4x4f1[3u][0u])))), (((m4x4f1[0u][0u] * ((m4x4f1[2u][2u] * m4x4f1[3u][3u]) - "
+        "(m4x4f1[2u][3u] * m4x4f1[3u][2u]))) - (m4x4f1[0u][2u] * ((m4x4f1[2u][0u] * "
+        "m4x4f1[3u][3u]) - (m4x4f1[2u][3u] * m4x4f1[3u][0u])))) + (m4x4f1[0u][3u] * "
+        "((m4x4f1[2u][0u] * m4x4f1[3u][2u]) - (m4x4f1[2u][2u] * m4x4f1[3u][0u])))), "
+        "(((-(m4x4f1[0u][0u]) * ((m4x4f1[1u][2u] * m4x4f1[3u][3u]) - (m4x4f1[1u][3u] * "
+        "m4x4f1[3u][2u]))) + (m4x4f1[0u][2u] * ((m4x4f1[1u][0u] * m4x4f1[3u][3u]) - "
+        "(m4x4f1[1u][3u] * m4x4f1[3u][0u])))) - (m4x4f1[0u][3u] * ((m4x4f1[1u][0u] * "
+        "m4x4f1[3u][2u]) - (m4x4f1[1u][2u] * m4x4f1[3u][0u])))), (((m4x4f1[0u][0u] * "
+        "((m4x4f1[1u][2u] * m4x4f1[2u][3u]) - (m4x4f1[1u][3u] * m4x4f1[2u][2u]))) - "
+        "(m4x4f1[0u][2u] * ((m4x4f1[1u][0u] * m4x4f1[2u][3u]) - (m4x4f1[1u][3u] * "
+        "m4x4f1[2u][0u])))) + (m4x4f1[0u][3u] * ((m4x4f1[1u][0u] * m4x4f1[2u][2u]) - "
+        "(m4x4f1[1u][2u] * m4x4f1[2u][0u]))))), vec4<f32>((((m4x4f1[1u][0u] * ((m4x4f1[2u][1u] * "
+        "m4x4f1[3u][3u]) - (m4x4f1[2u][3u] * m4x4f1[3u][1u]))) - (m4x4f1[1u][1u] * "
+        "((m4x4f1[2u][0u] * m4x4f1[3u][3u]) - (m4x4f1[2u][3u] * m4x4f1[3u][0u])))) + "
+        "(m4x4f1[1u][3u] * ((m4x4f1[2u][0u] * m4x4f1[3u][1u]) - (m4x4f1[2u][1u] * "
+        "m4x4f1[3u][0u])))), (((-(m4x4f1[0u][0u]) * ((m4x4f1[2u][1u] * m4x4f1[3u][3u]) - "
+        "(m4x4f1[2u][3u] * m4x4f1[3u][1u]))) + (m4x4f1[0u][1u] * ((m4x4f1[2u][0u] * "
+        "m4x4f1[3u][3u]) - (m4x4f1[2u][3u] * m4x4f1[3u][0u])))) - (m4x4f1[0u][3u] * "
+        "((m4x4f1[2u][0u] * m4x4f1[3u][1u]) - (m4x4f1[2u][1u] * m4x4f1[3u][0u])))), "
+        "(((m4x4f1[0u][0u] * ((m4x4f1[1u][1u] * m4x4f1[3u][3u]) - (m4x4f1[1u][3u] * "
+        "m4x4f1[3u][1u]))) - (m4x4f1[0u][1u] * ((m4x4f1[1u][0u] * m4x4f1[3u][3u]) - "
+        "(m4x4f1[1u][3u] * m4x4f1[3u][0u])))) + (m4x4f1[0u][3u] * ((m4x4f1[1u][0u] * "
+        "m4x4f1[3u][1u]) - (m4x4f1[1u][1u] * m4x4f1[3u][0u])))), (((-(m4x4f1[0u][0u]) * "
+        "((m4x4f1[1u][1u] * m4x4f1[2u][3u]) - (m4x4f1[1u][3u] * m4x4f1[2u][1u]))) + "
+        "(m4x4f1[0u][1u] * ((m4x4f1[1u][0u] * m4x4f1[2u][3u]) - (m4x4f1[1u][3u] * "
+        "m4x4f1[2u][0u])))) - (m4x4f1[0u][3u] * ((m4x4f1[1u][0u] * m4x4f1[2u][1u]) - "
+        "(m4x4f1[1u][1u] * m4x4f1[2u][0u]))))), vec4<f32>((((-(m4x4f1[1u][0u]) * ((m4x4f1[2u][1u] "
+        "* m4x4f1[3u][2u]) - (m4x4f1[2u][2u] * m4x4f1[3u][1u]))) + (m4x4f1[1u][1u] * "
+        "((m4x4f1[2u][0u] * m4x4f1[3u][2u]) - (m4x4f1[2u][2u] * m4x4f1[3u][0u])))) - "
+        "(m4x4f1[1u][2u] * ((m4x4f1[2u][0u] * m4x4f1[3u][1u]) - (m4x4f1[2u][1u] * "
+        "m4x4f1[3u][0u])))), (((m4x4f1[0u][0u] * ((m4x4f1[2u][1u] * m4x4f1[3u][2u]) - "
+        "(m4x4f1[2u][2u] * m4x4f1[3u][1u]))) - (m4x4f1[0u][1u] * ((m4x4f1[2u][0u] * "
+        "m4x4f1[3u][2u]) - (m4x4f1[2u][2u] * m4x4f1[3u][0u])))) + (m4x4f1[0u][2u] * "
+        "((m4x4f1[2u][0u] * m4x4f1[3u][1u]) - (m4x4f1[2u][1u] * m4x4f1[3u][0u])))), "
+        "(((-(m4x4f1[0u][0u]) * ((m4x4f1[1u][1u] * m4x4f1[3u][2u]) - (m4x4f1[1u][2u] * "
+        "m4x4f1[3u][1u]))) + (m4x4f1[0u][1u] * ((m4x4f1[1u][0u] * m4x4f1[3u][2u]) - "
+        "(m4x4f1[1u][2u] * m4x4f1[3u][0u])))) - (m4x4f1[0u][2u] * ((m4x4f1[1u][0u] * "
+        "m4x4f1[3u][1u]) - (m4x4f1[1u][1u] * m4x4f1[3u][0u])))), (((m4x4f1[0u][0u] * "
+        "((m4x4f1[1u][1u] * m4x4f1[2u][2u]) - (m4x4f1[1u][2u] * m4x4f1[2u][1u]))) - "
+        "(m4x4f1[0u][1u] * ((m4x4f1[1u][0u] * m4x4f1[2u][2u]) - (m4x4f1[1u][2u] * "
+        "m4x4f1[2u][0u])))) + (m4x4f1[0u][2u] * ((m4x4f1[1u][0u] * m4x4f1[2u][1u]) - "
+        "(m4x4f1[1u][1u] * m4x4f1[2u][0u])))))));";
+
+    EXPECT_THAT(body, HasSubstr(expected)) << body;
+}
+
+TEST_F(SpvParserTest, GlslStd450_MatrixInverse_MultipleInScope) {
+    const auto assembly = Preamble() + R"(
+     %1 = OpExtInst %mat2v2float %glsl MatrixInverse %m2x2f1
+     %2 = OpExtInst %mat2v2float %glsl MatrixInverse %m2x2f1
+     OpReturn
+     OpFunctionEnd
+  )";
+    auto p = parser(test::Assemble(assembly));
+    ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions());
+    auto fe = p->function_emitter(100);
+    EXPECT_TRUE(fe.EmitBody()) << p->error();
+    auto ast_body = fe.ast_body();
+    const auto body = test::ToString(p->program(), ast_body);
+
+    std::string expected =
+        "let s = (1.0f / determinant(m2x2f1));\n"
+        "let x_1 : mat2x2<f32> = mat2x2<f32>(vec2<f32>((s * m2x2f1[1u][1u]), (-(s) * "
+        "m2x2f1[0u][1u])), vec2<f32>((-(s) * m2x2f1[1u][0u]), (s * m2x2f1[0u][0u])));\n"
+        "let s_1 = (1.0f / determinant(m2x2f1));\n"
+        "let x_2 : mat2x2<f32> = mat2x2<f32>(vec2<f32>((s_1 * m2x2f1[1u][1u]), (-(s_1) * "
+        "m2x2f1[0u][1u])), vec2<f32>((-(s_1) * m2x2f1[1u][0u]), (s_1 * m2x2f1[0u][0u])));";
+
+    EXPECT_THAT(body, HasSubstr(expected)) << body;
+}
 }  // namespace
 }  // namespace tint::reader::spirv

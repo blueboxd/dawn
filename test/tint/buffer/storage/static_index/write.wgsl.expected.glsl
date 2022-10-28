@@ -4,7 +4,7 @@ struct Inner {
   int x;
 };
 
-struct S {
+layout(binding = 0, std430) buffer S_ssbo {
   ivec3 a;
   int b;
   uvec3 c;
@@ -15,20 +15,9 @@ struct S {
   mat3x2 h;
   Inner i;
   Inner j[4];
-};
-
-layout(binding = 0, std430) buffer S_1 {
-  ivec3 a;
-  int b;
-  uvec3 c;
-  uint d;
-  vec3 e;
-  float f;
-  mat2x3 g;
-  mat3x2 h;
-  Inner i;
-  Inner j[4];
+  uint pad;
 } s;
+
 void tint_symbol() {
   s.a = ivec3(0);
   s.b = 0;

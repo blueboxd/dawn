@@ -133,6 +133,110 @@ Inspector::Inspector(const Program* program) : program_(program) {}
 
 Inspector::~Inspector() = default;
 
+EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
+    EntryPoint entry_point;
+    TINT_ASSERT(Inspector, func != nullptr);
+    TINT_ASSERT(Inspector, func->IsEntryPoint());
+
+    auto* sem = program_->Sem().Get(func);
+
+    entry_point.name = program_->Symbols().NameFor(func->symbol);
+    entry_point.remapped_name = program_->Symbols().NameFor(func->symbol);
+
+    switch (func->PipelineStage()) {
+        case ast::PipelineStage::kCompute: {
+            entry_point.stage = PipelineStage::kCompute;
+
+            auto wgsize = sem->WorkgroupSize();
+            if (!wgsize[0].overridable_const && !wgsize[1].overridable_const &&
+                !wgsize[2].overridable_const) {
+                entry_point.workgroup_size = {wgsize[0].value, wgsize[1].value, wgsize[2].value};
+            }
+            break;
+        }
+        case ast::PipelineStage::kFragment: {
+            entry_point.stage = PipelineStage::kFragment;
+            break;
+        }
+        case ast::PipelineStage::kVertex: {
+            entry_point.stage = PipelineStage::kVertex;
+            break;
+        }
+        default: {
+            TINT_UNREACHABLE(Inspector, diagnostics_)
+                << "invalid pipeline stage for entry point '" << entry_point.name << "'";
+            break;
+        }
+    }
+
+    for (auto* param : sem->Parameters()) {
+        AddEntryPointInOutVariables(program_->Symbols().NameFor(param->Declaration()->symbol),
+                                    param->Type(), param->Declaration()->attributes,
+                                    param->Location(), entry_point.input_variables);
+
+        entry_point.input_position_used |= ContainsBuiltin(
+            ast::BuiltinValue::kPosition, param->Type(), param->Declaration()->attributes);
+        entry_point.front_facing_used |= ContainsBuiltin(
+            ast::BuiltinValue::kFrontFacing, param->Type(), param->Declaration()->attributes);
+        entry_point.sample_index_used |= ContainsBuiltin(
+            ast::BuiltinValue::kSampleIndex, param->Type(), param->Declaration()->attributes);
+        entry_point.input_sample_mask_used |= ContainsBuiltin(
+            ast::BuiltinValue::kSampleMask, param->Type(), param->Declaration()->attributes);
+        entry_point.num_workgroups_used |= ContainsBuiltin(
+            ast::BuiltinValue::kNumWorkgroups, param->Type(), param->Declaration()->attributes);
+    }
+
+    if (!sem->ReturnType()->Is<sem::Void>()) {
+        AddEntryPointInOutVariables("<retval>", sem->ReturnType(), func->return_type_attributes,
+                                    sem->ReturnLocation(), entry_point.output_variables);
+
+        entry_point.output_sample_mask_used = ContainsBuiltin(
+            ast::BuiltinValue::kSampleMask, sem->ReturnType(), func->return_type_attributes);
+    }
+
+    for (auto* var : sem->TransitivelyReferencedGlobals()) {
+        auto* decl = var->Declaration();
+
+        auto name = program_->Symbols().NameFor(decl->symbol);
+
+        auto* global = var->As<sem::GlobalVariable>();
+        if (global && global->Declaration()->Is<ast::Override>()) {
+            Override override;
+            override.name = name;
+            override.id = global->OverrideId();
+            auto* type = var->Type();
+            TINT_ASSERT(Inspector, type->is_scalar());
+            if (type->is_bool_scalar_or_vector()) {
+                override.type = Override::Type::kBool;
+            } else if (type->is_float_scalar()) {
+                override.type = Override::Type::kFloat32;
+            } else if (type->is_signed_integer_scalar()) {
+                override.type = Override::Type::kInt32;
+            } else if (type->is_unsigned_integer_scalar()) {
+                override.type = Override::Type::kUint32;
+            } else {
+                TINT_UNREACHABLE(Inspector, diagnostics_);
+            }
+
+            override.is_initialized = global->Declaration()->constructor;
+            override.is_id_specified =
+                ast::HasAttribute<ast::IdAttribute>(global->Declaration()->attributes);
+
+            entry_point.overrides.push_back(override);
+        }
+    }
+
+    return entry_point;
+}
+
+EntryPoint Inspector::GetEntryPoint(const std::string& entry_point_name) {
+    auto* func = FindEntryPointByName(entry_point_name);
+    if (!func) {
+        return EntryPoint();
+    }
+    return GetEntryPoint(func);
+}
+
 std::vector<EntryPoint> Inspector::GetEntryPoints() {
     std::vector<EntryPoint> result;
 
@@ -141,97 +245,7 @@ std::vector<EntryPoint> Inspector::GetEntryPoints() {
             continue;
         }
 
-        auto* sem = program_->Sem().Get(func);
-
-        EntryPoint entry_point;
-        entry_point.name = program_->Symbols().NameFor(func->symbol);
-        entry_point.remapped_name = program_->Symbols().NameFor(func->symbol);
-
-        switch (func->PipelineStage()) {
-            case ast::PipelineStage::kCompute: {
-                entry_point.stage = PipelineStage::kCompute;
-
-                auto wgsize = sem->WorkgroupSize();
-                if (!wgsize[0].overridable_const && !wgsize[1].overridable_const &&
-                    !wgsize[2].overridable_const) {
-                    entry_point.workgroup_size = {wgsize[0].value, wgsize[1].value,
-                                                  wgsize[2].value};
-                }
-                break;
-            }
-            case ast::PipelineStage::kFragment: {
-                entry_point.stage = PipelineStage::kFragment;
-                break;
-            }
-            case ast::PipelineStage::kVertex: {
-                entry_point.stage = PipelineStage::kVertex;
-                break;
-            }
-            default: {
-                TINT_UNREACHABLE(Inspector, diagnostics_)
-                    << "invalid pipeline stage for entry point '" << entry_point.name << "'";
-                break;
-            }
-        }
-
-        for (auto* param : sem->Parameters()) {
-            AddEntryPointInOutVariables(program_->Symbols().NameFor(param->Declaration()->symbol),
-                                        param->Type(), param->Declaration()->attributes,
-                                        entry_point.input_variables);
-
-            entry_point.input_position_used |= ContainsBuiltin(
-                ast::BuiltinValue::kPosition, param->Type(), param->Declaration()->attributes);
-            entry_point.front_facing_used |= ContainsBuiltin(
-                ast::BuiltinValue::kFrontFacing, param->Type(), param->Declaration()->attributes);
-            entry_point.sample_index_used |= ContainsBuiltin(
-                ast::BuiltinValue::kSampleIndex, param->Type(), param->Declaration()->attributes);
-            entry_point.input_sample_mask_used |= ContainsBuiltin(
-                ast::BuiltinValue::kSampleMask, param->Type(), param->Declaration()->attributes);
-            entry_point.num_workgroups_used |= ContainsBuiltin(
-                ast::BuiltinValue::kNumWorkgroups, param->Type(), param->Declaration()->attributes);
-        }
-
-        if (!sem->ReturnType()->Is<sem::Void>()) {
-            AddEntryPointInOutVariables("<retval>", sem->ReturnType(), func->return_type_attributes,
-                                        entry_point.output_variables);
-
-            entry_point.output_sample_mask_used = ContainsBuiltin(
-                ast::BuiltinValue::kSampleMask, sem->ReturnType(), func->return_type_attributes);
-        }
-
-        for (auto* var : sem->TransitivelyReferencedGlobals()) {
-            auto* decl = var->Declaration();
-
-            auto name = program_->Symbols().NameFor(decl->symbol);
-
-            auto* global = var->As<sem::GlobalVariable>();
-            if (global && global->Declaration()->Is<ast::Override>()) {
-                Override override;
-                override.name = name;
-                override.id = global->OverrideId();
-                auto* type = var->Type();
-                TINT_ASSERT(Inspector, type->is_scalar());
-                if (type->is_bool_scalar_or_vector()) {
-                    override.type = Override::Type::kBool;
-                } else if (type->is_float_scalar()) {
-                    override.type = Override::Type::kFloat32;
-                } else if (type->is_signed_integer_scalar()) {
-                    override.type = Override::Type::kInt32;
-                } else if (type->is_unsigned_integer_scalar()) {
-                    override.type = Override::Type::kUint32;
-                } else {
-                    TINT_UNREACHABLE(Inspector, diagnostics_);
-                }
-
-                override.is_initialized = global->Declaration()->constructor;
-                override.is_id_specified =
-                    ast::HasAttribute<ast::IdAttribute>(global->Declaration()->attributes);
-
-                entry_point.overrides.push_back(override);
-            }
-        }
-
-        result.push_back(std::move(entry_point));
+        result.push_back(GetEntryPoint(func));
     }
 
     return result;
@@ -370,8 +384,8 @@ std::vector<ResourceBinding> Inspector::GetUniformBufferResourceBindings(
 
         ResourceBinding entry;
         entry.resource_type = ResourceBinding::ResourceType::kUniformBuffer;
-        entry.bind_group = binding_info.group->value;
-        entry.binding = binding_info.binding->value;
+        entry.bind_group = binding_info.group;
+        entry.binding = binding_info.binding;
         entry.size = unwrapped_type->Size();
         entry.size_no_padding = entry.size;
         if (auto* str = unwrapped_type->As<sem::Struct>()) {
@@ -410,8 +424,8 @@ std::vector<ResourceBinding> Inspector::GetSamplerResourceBindings(const std::st
 
         ResourceBinding entry;
         entry.resource_type = ResourceBinding::ResourceType::kSampler;
-        entry.bind_group = binding_info.group->value;
-        entry.binding = binding_info.binding->value;
+        entry.bind_group = binding_info.group;
+        entry.binding = binding_info.binding;
 
         result.push_back(entry);
     }
@@ -434,8 +448,8 @@ std::vector<ResourceBinding> Inspector::GetComparisonSamplerResourceBindings(
 
         ResourceBinding entry;
         entry.resource_type = ResourceBinding::ResourceType::kComparisonSampler;
-        entry.bind_group = binding_info.group->value;
-        entry.binding = binding_info.binding->value;
+        entry.bind_group = binding_info.group;
+        entry.binding = binding_info.binding;
 
         result.push_back(entry);
     }
@@ -475,8 +489,8 @@ std::vector<ResourceBinding> Inspector::GetTextureResourceBindings(
 
         ResourceBinding entry;
         entry.resource_type = resource_type;
-        entry.bind_group = binding_info.group->value;
-        entry.binding = binding_info.binding->value;
+        entry.bind_group = binding_info.group;
+        entry.binding = binding_info.binding;
 
         auto* tex = var->Type()->UnwrapRef()->As<sem::Texture>();
         entry.dim = TypeTextureDimensionToResourceBindingTextureDimension(tex->dim());
@@ -609,6 +623,7 @@ const ast::Function* Inspector::FindEntryPointByName(const std::string& name) {
 void Inspector::AddEntryPointInOutVariables(std::string name,
                                             const sem::Type* type,
                                             utils::VectorRef<const ast::Attribute*> attributes,
+                                            std::optional<uint32_t> location,
                                             std::vector<StageVariable>& variables) const {
     // Skip builtins.
     if (ast::HasAttribute<ast::BuiltinAttribute>(attributes)) {
@@ -622,7 +637,7 @@ void Inspector::AddEntryPointInOutVariables(std::string name,
         for (auto* member : struct_ty->Members()) {
             AddEntryPointInOutVariables(
                 name + "." + program_->Symbols().NameFor(member->Declaration()->symbol),
-                member->Type(), member->Declaration()->attributes, variables);
+                member->Type(), member->Declaration()->attributes, member->Location(), variables);
         }
         return;
     }
@@ -634,10 +649,9 @@ void Inspector::AddEntryPointInOutVariables(std::string name,
     std::tie(stage_variable.component_type, stage_variable.composition_type) =
         CalculateComponentAndComposition(type);
 
-    auto* location = ast::GetAttribute<ast::LocationAttribute>(attributes);
-    TINT_ASSERT(Inspector, location != nullptr);
+    TINT_ASSERT(Inspector, location.has_value());
     stage_variable.has_location_attribute = true;
-    stage_variable.location_attribute = location->value;
+    stage_variable.location_attribute = location.value();
 
     std::tie(stage_variable.interpolation_type, stage_variable.interpolation_sampling) =
         CalculateInterpolationData(type, attributes);
@@ -692,8 +706,8 @@ std::vector<ResourceBinding> Inspector::GetStorageBufferResourceBindingsImpl(
         ResourceBinding entry;
         entry.resource_type = read_only ? ResourceBinding::ResourceType::kReadOnlyStorageBuffer
                                         : ResourceBinding::ResourceType::kStorageBuffer;
-        entry.bind_group = binding_info.group->value;
-        entry.binding = binding_info.binding->value;
+        entry.bind_group = binding_info.group;
+        entry.binding = binding_info.binding;
         entry.size = unwrapped_type->Size();
         if (auto* str = unwrapped_type->As<sem::Struct>()) {
             entry.size_no_padding = str->SizeNoPadding();
@@ -728,8 +742,8 @@ std::vector<ResourceBinding> Inspector::GetSampledTextureResourceBindingsImpl(
         entry.resource_type = multisampled_only
                                   ? ResourceBinding::ResourceType::kMultisampledTexture
                                   : ResourceBinding::ResourceType::kSampledTexture;
-        entry.bind_group = binding_info.group->value;
-        entry.binding = binding_info.binding->value;
+        entry.bind_group = binding_info.group;
+        entry.binding = binding_info.binding;
 
         auto* texture_type = var->Type()->UnwrapRef()->As<sem::Texture>();
         entry.dim = TypeTextureDimensionToResourceBindingTextureDimension(texture_type->dim());
@@ -765,8 +779,8 @@ std::vector<ResourceBinding> Inspector::GetStorageTextureResourceBindingsImpl(
 
         ResourceBinding entry;
         entry.resource_type = ResourceBinding::ResourceType::kWriteOnlyStorageTexture;
-        entry.bind_group = binding_info.group->value;
-        entry.binding = binding_info.binding->value;
+        entry.bind_group = binding_info.group;
+        entry.binding = binding_info.binding;
 
         entry.dim = TypeTextureDimensionToResourceBindingTextureDimension(texture_type->dim());
 
@@ -838,13 +852,8 @@ void Inspector::GenerateSamplerTargets() {
         GetOriginatingResources(
             std::array<const ast::Expression*, 2>{t, s},
             [&](std::array<const sem::GlobalVariable*, 2> globals) {
-                auto* texture = globals[0]->Declaration()->As<ast::Var>();
-                sem::BindingPoint texture_binding_point = {texture->BindingPoint().group->value,
-                                                           texture->BindingPoint().binding->value};
-
-                auto* sampler = globals[1]->Declaration()->As<ast::Var>();
-                sem::BindingPoint sampler_binding_point = {sampler->BindingPoint().group->value,
-                                                           sampler->BindingPoint().binding->value};
+                auto texture_binding_point = globals[0]->BindingPoint();
+                auto sampler_binding_point = globals[1]->BindingPoint();
 
                 for (auto* entry_point : entry_points) {
                     const auto& ep_name =

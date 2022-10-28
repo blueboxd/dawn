@@ -324,7 +324,7 @@ class GeneratorImpl : public TextGenerator {
     /// Handles emitting a global variable with the input or output storage class
     /// @param var the global variable
     /// @returns true on success
-    bool EmitIOVariable(const sem::Variable* var);
+    bool EmitIOVariable(const sem::GlobalVariable* var);
 
     /// Handles emitting interpolation qualifiers
     /// @param out the output of the expression stream
@@ -333,9 +333,12 @@ class GeneratorImpl : public TextGenerator {
                                      utils::VectorRef<const ast::Attribute*> attrs);
     /// Handles emitting attributes
     /// @param out the output of the expression stream
+    /// @param var the global variable semantics
     /// @param attrs the attributes
     /// @returns true if the attributes were emitted
-    bool EmitAttributes(std::ostream& out, utils::VectorRef<const ast::Attribute*> attrs);
+    bool EmitAttributes(std::ostream& out,
+                        const sem::GlobalVariable* var,
+                        utils::VectorRef<const ast::Attribute*> attrs);
     /// Handles emitting the entry point function
     /// @param func the entry point
     /// @returns true if the entry point function was emitted
@@ -429,9 +432,8 @@ class GeneratorImpl : public TextGenerator {
     /// Handles generating the members of a structure
     /// @param buffer the text buffer that the struct members will be written to
     /// @param ty the struct to generate
-    /// @param emit_offsets whether offsets should be emitted as offset=
     /// @returns true if the struct members are emitted
-    bool EmitStructMembers(TextBuffer* buffer, const sem::Struct* ty, bool emit_offsets);
+    bool EmitStructMembers(TextBuffer* buffer, const sem::Struct* ty);
     /// Handles a unary op expression
     /// @param out the output of the expression stream
     /// @param expr the expression to emit
@@ -454,10 +456,6 @@ class GeneratorImpl : public TextGenerator {
     /// @param let the 'let' to emit
     /// @returns true if the variable was emitted
     bool EmitProgramConstVariable(const ast::Variable* let);
-    /// Handles generating a module-scope 'override' declaration
-    /// @param override the 'override' to emit
-    /// @returns true if the variable was emitted
-    bool EmitOverride(const ast::Override* override);
     /// Handles generating a builtin method name
     /// @param builtin the semantic info for the builtin
     /// @returns the name or "" if not valid

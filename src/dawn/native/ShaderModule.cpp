@@ -20,7 +20,6 @@
 #include "absl/strings/str_format.h"
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Constants.h"
-#include "dawn/common/HashUtils.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/ChainUtils_autogen.h"
 #include "dawn/native/CompilationMessages.h"
@@ -299,13 +298,12 @@ ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
         outMessages->AddMessages(program.Diagnostics());
     }
     if (!program.IsValid()) {
-        return DAWN_FORMAT_VALIDATION_ERROR("Tint WGSL reader failure: %s\n",
-                                            program.Diagnostics().str());
+        return DAWN_VALIDATION_ERROR("Tint WGSL reader failure: %s\n", program.Diagnostics().str());
     }
 
     return std::move(program);
 #else
-    return DAWN_FORMAT_VALIDATION_ERROR("TINT_BUILD_WGSL_READER is not defined.");
+    return DAWN_VALIDATION_ERROR("TINT_BUILD_WGSL_READER is not defined.");
 #endif
 }
 
@@ -317,13 +315,13 @@ ResultOrError<tint::Program> ParseSPIRV(const std::vector<uint32_t>& spirv,
         outMessages->AddMessages(program.Diagnostics());
     }
     if (!program.IsValid()) {
-        return DAWN_FORMAT_VALIDATION_ERROR("Tint SPIR-V reader failure:\nParser: %s\n",
-                                            program.Diagnostics().str());
+        return DAWN_VALIDATION_ERROR("Tint SPIR-V reader failure:\nParser: %s\n",
+                                     program.Diagnostics().str());
     }
 
     return std::move(program);
 #else
-    return DAWN_FORMAT_VALIDATION_ERROR("TINT_BUILD_SPV_READER is not defined.");
+    return DAWN_VALIDATION_ERROR("TINT_BUILD_SPV_READER is not defined.");
 
 #endif
 }
@@ -512,7 +510,6 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
     const DeviceBase* device,
     tint::inspector::Inspector* inspector,
     const tint::inspector::EntryPoint& entryPoint) {
-    const CombinedLimits& limits = device->GetLimits();
     constexpr uint32_t kMaxInterStageShaderLocation = kMaxInterStageShaderVariables - 1;
 
     std::unique_ptr<EntryPointMetadata> metadata = std::make_unique<EntryPointMetadata>();
@@ -529,10 +526,6 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
     })()
 
     if (!entryPoint.overrides.empty()) {
-        DAWN_INVALID_IF(device->IsToggleEnabled(Toggle::DisallowUnsafeAPIs),
-                        "Pipeline overridable constants are disallowed because they "
-                        "are partially implemented.");
-
         const auto& name2Id = inspector->GetNamedOverrideIds();
         const auto& id2Scalar = inspector->GetOverrideDefaultValues();
 
@@ -554,10 +547,10 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
                     UNREACHABLE();
                 }
             }
-            EntryPointMetadata::Override override = {id.value, FromTintOverrideType(c.type),
+            EntryPointMetadata::Override override = {id, FromTintOverrideType(c.type),
                                                      c.is_initialized, defaultValue};
 
-            std::string identifier = c.is_id_specified ? std::to_string(override.id) : c.name;
+            std::string identifier = c.is_id_specified ? std::to_string(override.id.value) : c.name;
             metadata->overrides[identifier] = override;
 
             if (!c.is_initialized) {
@@ -576,39 +569,6 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
     DAWN_TRY_ASSIGN(metadata->stage, TintPipelineStageToShaderStage(entryPoint.stage));
 
     if (metadata->stage == SingleShaderStage::Compute) {
-        auto workgroup_size = entryPoint.workgroup_size;
-        DAWN_INVALID_IF(
-            !workgroup_size.has_value(),
-            "TODO(crbug.com/dawn/1504): Dawn does not currently support @workgroup_size "
-            "attributes using override-expressions");
-        DelayedInvalidIf(workgroup_size->x > limits.v1.maxComputeWorkgroupSizeX ||
-                             workgroup_size->y > limits.v1.maxComputeWorkgroupSizeY ||
-                             workgroup_size->z > limits.v1.maxComputeWorkgroupSizeZ,
-                         "Entry-point uses workgroup_size(%u, %u, %u) that exceeds the "
-                         "maximum allowed (%u, %u, %u).",
-                         workgroup_size->x, workgroup_size->y, workgroup_size->z,
-                         limits.v1.maxComputeWorkgroupSizeX, limits.v1.maxComputeWorkgroupSizeY,
-                         limits.v1.maxComputeWorkgroupSizeZ);
-
-        // Dimensions have already been validated against their individual limits above.
-        // Cast to uint64_t to avoid overflow in this multiplication.
-        uint64_t numInvocations =
-            static_cast<uint64_t>(workgroup_size->x) * workgroup_size->y * workgroup_size->z;
-        DelayedInvalidIf(numInvocations > limits.v1.maxComputeInvocationsPerWorkgroup,
-                         "The total number of workgroup invocations (%u) exceeds the "
-                         "maximum allowed (%u).",
-                         numInvocations, limits.v1.maxComputeInvocationsPerWorkgroup);
-
-        const size_t workgroupStorageSize = inspector->GetWorkgroupStorageSize(entryPoint.name);
-        DelayedInvalidIf(workgroupStorageSize > limits.v1.maxComputeWorkgroupStorageSize,
-                         "The total use of workgroup storage (%u bytes) is larger than "
-                         "the maximum allowed (%u bytes).",
-                         workgroupStorageSize, limits.v1.maxComputeWorkgroupStorageSize);
-
-        metadata->localWorkgroupSize.x = workgroup_size->x;
-        metadata->localWorkgroupSize.y = workgroup_size->y;
-        metadata->localWorkgroupSize.z = workgroup_size->z;
-
         metadata->usesNumWorkgroups = entryPoint.num_workgroups_used;
     }
 
@@ -883,6 +843,46 @@ MaybeError ReflectShaderUsingTint(const DeviceBase* device,
     return {};
 }
 }  // anonymous namespace
+
+ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
+    const tint::Program& program,
+    const char* entryPointName,
+    const LimitsForCompilationRequest& limits) {
+    tint::inspector::Inspector inspector(&program);
+    // At this point the entry point must exist and must have workgroup size values.
+    tint::inspector::EntryPoint entryPoint = inspector.GetEntryPoint(entryPointName);
+    ASSERT(entryPoint.workgroup_size.has_value());
+    const tint::inspector::WorkgroupSize& workgroup_size = entryPoint.workgroup_size.value();
+
+    DAWN_INVALID_IF(workgroup_size.x < 1 || workgroup_size.y < 1 || workgroup_size.z < 1,
+                    "Entry-point uses workgroup_size(%u, %u, %u) that are below the "
+                    "minimum allowed (1, 1, 1).",
+                    workgroup_size.x, workgroup_size.y, workgroup_size.z);
+
+    DAWN_INVALID_IF(workgroup_size.x > limits.maxComputeWorkgroupSizeX ||
+                        workgroup_size.y > limits.maxComputeWorkgroupSizeY ||
+                        workgroup_size.z > limits.maxComputeWorkgroupSizeZ,
+                    "Entry-point uses workgroup_size(%u, %u, %u) that exceeds the "
+                    "maximum allowed (%u, %u, %u).",
+                    workgroup_size.x, workgroup_size.y, workgroup_size.z,
+                    limits.maxComputeWorkgroupSizeX, limits.maxComputeWorkgroupSizeY,
+                    limits.maxComputeWorkgroupSizeZ);
+
+    uint64_t numInvocations =
+        static_cast<uint64_t>(workgroup_size.x) * workgroup_size.y * workgroup_size.z;
+    DAWN_INVALID_IF(numInvocations > limits.maxComputeInvocationsPerWorkgroup,
+                    "The total number of workgroup invocations (%u) exceeds the "
+                    "maximum allowed (%u).",
+                    numInvocations, limits.maxComputeInvocationsPerWorkgroup);
+
+    const size_t workgroupStorageSize = inspector.GetWorkgroupStorageSize(entryPointName);
+    DAWN_INVALID_IF(workgroupStorageSize > limits.maxComputeWorkgroupStorageSize,
+                    "The total use of workgroup storage (%u bytes) is larger than "
+                    "the maximum allowed (%u bytes).",
+                    workgroupStorageSize, limits.maxComputeWorkgroupStorageSize);
+
+    return Extent3D{workgroup_size.x, workgroup_size.y, workgroup_size.z};
+}
 
 ShaderModuleParseResult::ShaderModuleParseResult() = default;
 ShaderModuleParseResult::~ShaderModuleParseResult() = default;
@@ -1199,13 +1199,6 @@ MaybeError ShaderModuleBase::InitializeBase(ShaderModuleParseResult* parseResult
     DAWN_TRY(ReflectShaderUsingTint(GetDevice(), mTintProgram.get(), compilationMessages,
                                     &mEntryPoints, &mEnabledWGSLExtensions));
     return {};
-}
-
-size_t PipelineLayoutEntryPointPairHashFunc::operator()(
-    const PipelineLayoutEntryPointPair& pair) const {
-    size_t hash = 0;
-    HashCombine(&hash, pair.first, pair.second);
-    return hash;
 }
 
 }  // namespace dawn::native

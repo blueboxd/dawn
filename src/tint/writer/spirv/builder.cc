@@ -43,7 +43,7 @@
 #include "src/tint/sem/type_conversion.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/sem/vector.h"
-#include "src/tint/transform/add_spirv_block_attribute.h"
+#include "src/tint/transform/add_block_attribute.h"
 #include "src/tint/utils/defer.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/writer/append_vector.h"
@@ -506,60 +506,13 @@ bool Builder::GenerateExecutionModes(const ast::Function* func, uint32_t id) {
     } else if (func->PipelineStage() == ast::PipelineStage::kCompute) {
         auto& wgsize = func_sem->WorkgroupSize();
 
-        // Check if the workgroup_size uses pipeline-overridable constants.
-        if (wgsize[0].overridable_const || wgsize[1].overridable_const ||
-            wgsize[2].overridable_const) {
-            if (has_overridable_workgroup_size_) {
-                // Only one stage can have a pipeline-overridable workgroup size.
-                // TODO(crbug.com/tint/810): Use LocalSizeId to handle this scenario.
-                TINT_ICE(Writer, builder_.Diagnostics())
-                    << "multiple stages using pipeline-overridable workgroup sizes";
-            }
-            has_overridable_workgroup_size_ = true;
-
-            auto* vec3_u32 = builder_.create<sem::Vector>(builder_.create<sem::U32>(), 3u);
-            uint32_t vec3_u32_type_id = GenerateTypeIfNeeded(vec3_u32);
-            if (vec3_u32_type_id == 0) {
-                return 0;
-            }
-
-            OperandList wgsize_ops;
-            auto wgsize_result = result_op();
-            wgsize_ops.push_back(Operand(vec3_u32_type_id));
-            wgsize_ops.push_back(wgsize_result);
-
-            // Generate OpConstant instructions for each dimension.
-            for (size_t i = 0; i < 3; i++) {
-                auto constant = ScalarConstant::U32(wgsize[i].value);
-                if (wgsize[i].overridable_const) {
-                    // Make the constant specializable.
-                    auto* sem_const =
-                        builder_.Sem().Get<sem::GlobalVariable>(wgsize[i].overridable_const);
-                    if (!sem_const->Declaration()->Is<ast::Override>()) {
-                        TINT_ICE(Writer, builder_.Diagnostics())
-                            << "expected a pipeline-overridable constant";
-                    }
-                    constant.is_spec_op = true;
-                    constant.constant_id = sem_const->OverrideId().value;
-                }
-
-                auto result = GenerateConstantIfNeeded(constant);
-                wgsize_ops.push_back(Operand(result));
-            }
-
-            // Generate the WorkgroupSize builtin.
-            push_type(spv::Op::OpSpecConstantComposite, wgsize_ops);
-            push_annot(spv::Op::OpDecorate, {wgsize_result, U32Operand(SpvDecorationBuiltIn),
-                                             U32Operand(SpvBuiltInWorkgroupSize)});
-        } else {
-            // Not overridable, so just use OpExecutionMode LocalSize.
-            uint32_t x = wgsize[0].value;
-            uint32_t y = wgsize[1].value;
-            uint32_t z = wgsize[2].value;
-            push_execution_mode(spv::Op::OpExecutionMode,
-                                {Operand(id), U32Operand(SpvExecutionModeLocalSize), Operand(x),
-                                 Operand(y), Operand(z)});
-        }
+        // SubstituteOverride replaced all overrides with constants.
+        uint32_t x = wgsize[0].value;
+        uint32_t y = wgsize[1].value;
+        uint32_t z = wgsize[2].value;
+        push_execution_mode(spv::Op::OpExecutionMode,
+                            {Operand(id), U32Operand(SpvExecutionModeLocalSize), Operand(x),
+                             Operand(y), Operand(z)});
     }
 
     for (auto builtin : func_sem->TransitivelyReferencedBuiltinVariables()) {
@@ -585,7 +538,7 @@ uint32_t Builder::GenerateExpression(const ast::Expression* expr) {
         [&](const ast::BitcastExpression* b) { return GenerateBitcastExpression(b); },
         [&](const ast::CallExpression* c) { return GenerateCallExpression(c); },
         [&](const ast::IdentifierExpression* i) { return GenerateIdentifierExpression(i); },
-        [&](const ast::LiteralExpression* l) { return GenerateLiteralIfNeeded(nullptr, l); },
+        [&](const ast::LiteralExpression* l) { return GenerateLiteralIfNeeded(l); },
         [&](const ast::MemberAccessorExpression* m) { return GenerateAccessorExpression(m); },
         [&](const ast::UnaryOpExpression* u) { return GenerateUnaryOpExpression(u); },
         [&](Default) {
@@ -762,7 +715,12 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
         return true;
     }
 
-    auto* sem = builder_.Sem().Get(v);
+    auto* sem = builder_.Sem().Get<sem::GlobalVariable>(v);
+    if (!sem) {
+        TINT_ICE(Writer, builder_.Diagnostics())
+            << "attempted to generate a global from a non-global variable";
+        return false;
+    }
     auto* type = sem->Type()->UnwrapRef();
 
     uint32_t init_id = 0;
@@ -771,46 +729,6 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
         if (init_id == 0) {
             return false;
         }
-    }
-
-    if (auto* override = v->As<ast::Override>(); override && !override->constructor) {
-        // SPIR-V requires specialization constants to have initializers.
-        init_id = Switch(
-            type,  //
-            [&](const sem::F32*) {
-                ast::FloatLiteralExpression l(ProgramID{}, ast::NodeID{}, Source{}, 0,
-                                              ast::FloatLiteralExpression::Suffix::kF);
-                return GenerateLiteralIfNeeded(override, &l);
-            },
-            [&](const sem::U32*) {
-                ast::IntLiteralExpression l(ProgramID{}, ast::NodeID{}, Source{}, 0,
-                                            ast::IntLiteralExpression::Suffix::kU);
-                return GenerateLiteralIfNeeded(override, &l);
-            },
-            [&](const sem::I32*) {
-                ast::IntLiteralExpression l(ProgramID{}, ast::NodeID{}, Source{}, 0,
-                                            ast::IntLiteralExpression::Suffix::kI);
-                return GenerateLiteralIfNeeded(override, &l);
-            },
-            [&](const sem::Bool*) {
-                ast::BoolLiteralExpression l(ProgramID{}, ast::NodeID{}, Source{}, false);
-                return GenerateLiteralIfNeeded(override, &l);
-            },
-            [&](Default) {
-                error_ = "invalid type for pipeline constant ID, must be scalar";
-                return 0;
-            });
-        if (init_id == 0) {
-            return 0;
-        }
-    }
-
-    if (v->Is<ast::Override>()) {
-        push_debug(spv::Op::OpName,
-                   {Operand(init_id), Operand(builder_.Symbols().NameFor(v->symbol))});
-
-        RegisterVariable(sem, init_id);
-        return true;
     }
 
     auto result = result_op();
@@ -879,9 +797,9 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
                             U32Operand(ConvertBuiltin(builtin->builtin, sem->StorageClass()))});
                 return true;
             },
-            [&](const ast::LocationAttribute* location) {
+            [&](const ast::LocationAttribute*) {
                 push_annot(spv::Op::OpDecorate, {Operand(var_id), U32Operand(SpvDecorationLocation),
-                                                 Operand(location->value)});
+                                                 Operand(sem->Location().value())});
                 return true;
             },
             [&](const ast::InterpolateAttribute* interpolate) {
@@ -893,15 +811,17 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
                            {Operand(var_id), U32Operand(SpvDecorationInvariant)});
                 return true;
             },
-            [&](const ast::BindingAttribute* binding) {
+            [&](const ast::BindingAttribute*) {
+                auto bp = sem->BindingPoint();
                 push_annot(spv::Op::OpDecorate, {Operand(var_id), U32Operand(SpvDecorationBinding),
-                                                 Operand(binding->value)});
+                                                 Operand(bp.binding)});
                 return true;
             },
-            [&](const ast::GroupAttribute* group) {
-                push_annot(spv::Op::OpDecorate,
-                           {Operand(var_id), U32Operand(SpvDecorationDescriptorSet),
-                            Operand(group->value)});
+            [&](const ast::GroupAttribute*) {
+                auto bp = sem->BindingPoint();
+                push_annot(
+                    spv::Op::OpDecorate,
+                    {Operand(var_id), U32Operand(SpvDecorationDescriptorSet), Operand(bp.group)});
                 return true;
             },
             [&](const ast::IdAttribute*) {
@@ -1286,15 +1206,9 @@ uint32_t Builder::GetGLSLstd450Import() {
 
 uint32_t Builder::GenerateConstructorExpression(const ast::Variable* var,
                                                 const ast::Expression* expr) {
-    if (Is<ast::Override>(var)) {
-        if (auto* literal = expr->As<ast::LiteralExpression>()) {
-            return GenerateLiteralIfNeeded(var, literal);
-        }
-    } else {
-        if (auto* sem = builder_.Sem().Get(expr)) {
-            if (auto constant = sem->ConstantValue()) {
-                return GenerateConstantIfNeeded(constant);
-            }
+    if (auto* sem = builder_.Sem().Get(expr)) {
+        if (auto constant = sem->ConstantValue()) {
+            return GenerateConstantIfNeeded(constant);
         }
     }
     if (auto* call = builder_.Sem().Get<sem::Call>(expr)) {
@@ -1339,24 +1253,6 @@ uint32_t Builder::GenerateTypeConstructorOrConversion(const sem::Call* call,
 
     // Generate the zero initializer if there are no values provided.
     if (args.IsEmpty()) {
-        if (global_var && global_var->Declaration()->Is<ast::Override>()) {
-            auto constant_id = global_var->OverrideId().value;
-            if (result_type->Is<sem::I32>()) {
-                return GenerateConstantIfNeeded(ScalarConstant::I32(0).AsSpecOp(constant_id));
-            }
-            if (result_type->Is<sem::U32>()) {
-                return GenerateConstantIfNeeded(ScalarConstant::U32(0).AsSpecOp(constant_id));
-            }
-            if (result_type->Is<sem::F32>()) {
-                return GenerateConstantIfNeeded(ScalarConstant::F32(0).AsSpecOp(constant_id));
-            }
-            if (result_type->Is<sem::F16>()) {
-                return GenerateConstantIfNeeded(ScalarConstant::F16(0).AsSpecOp(constant_id));
-            }
-            if (result_type->Is<sem::Bool>()) {
-                return GenerateConstantIfNeeded(ScalarConstant::Bool(false).AsSpecOp(constant_id));
-            }
-        }
         return GenerateConstantNullIfNeeded(result_type->UnwrapRef());
     }
 
@@ -1383,8 +1279,7 @@ uint32_t Builder::GenerateTypeConstructorOrConversion(const sem::Call* call,
         auto* value_type = args[0]->Type()->UnwrapRef();
         if (auto* val_mat = value_type->As<sem::Matrix>()) {
             // Generate passthrough for matrices of the same type
-            can_cast_or_copy =
-                (res_mat->columns() == val_mat->columns()) && (res_mat->rows() == val_mat->rows());
+            can_cast_or_copy = res_mat == val_mat;
         }
     }
 
@@ -1571,13 +1466,19 @@ uint32_t Builder::GenerateCastOrCopyOrPassthrough(const sem::Type* to_type,
     } else if ((from_type->is_float_scalar() && to_type->Is<sem::U32>()) ||
                (from_type->is_float_vector() && to_type->is_unsigned_integer_vector())) {
         op = spv::Op::OpConvertFToU;
-    } else if ((from_type->Is<sem::Bool>() && to_type->Is<sem::Bool>()) ||
-               (from_type->Is<sem::U32>() && to_type->Is<sem::U32>()) ||
-               (from_type->Is<sem::I32>() && to_type->Is<sem::I32>()) ||
-               (from_type->Is<sem::F32>() && to_type->Is<sem::F32>()) ||
-               (from_type->Is<sem::F16>() && to_type->Is<sem::F16>()) ||
-               (from_type->Is<sem::Vector>() && (from_type == to_type))) {
+    } else if (from_type
+                   ->IsAnyOf<sem::Bool, sem::F32, sem::I32, sem::U32, sem::F16, sem::Vector>() &&
+               from_type == to_type) {
+        // Identity constructor for scalar and vector types
         return val_id;
+    } else if ((from_type->is_float_scalar() && to_type->is_float_scalar()) ||
+               (from_type->is_float_vector() && to_type->is_float_vector() &&
+                from_type->As<sem::Vector>()->Width() == to_type->As<sem::Vector>()->Width())) {
+        // Convert between f32 and f16 types.
+        // OpFConvert requires the scalar component types to be different, and the case of from_type
+        // and to_type being the same floating point scalar or vector type, i.e. identity
+        // constructor, is already handled in the previous else-if clause.
+        op = spv::Op::OpFConvert;
     } else if ((from_type->Is<sem::I32>() && to_type->Is<sem::U32>()) ||
                (from_type->Is<sem::U32>() && to_type->Is<sem::I32>()) ||
                (from_type->is_signed_integer_vector() && to_type->is_unsigned_integer_vector()) ||
@@ -1637,8 +1538,18 @@ uint32_t Builder::GenerateCastOrCopyOrPassthrough(const sem::Type* to_type,
         }
 
         return result_id;
-    } else if (from_type->Is<sem::Matrix>()) {
-        return val_id;
+    } else if (from_type->Is<sem::Matrix>() && to_type->Is<sem::Matrix>()) {
+        // SPIRV does not support matrix conversion, the only valid case is matrix identity
+        // constructor. Matrix conversion between f32 and f16 should be transformed into vector
+        // conversions for each column vectors by VectorizeMatrixConversions.
+        auto* from_mat = from_type->As<sem::Matrix>();
+        auto* to_mat = to_type->As<sem::Matrix>();
+        if (from_mat == to_mat) {
+            return val_id;
+        }
+        TINT_ICE(Writer, builder_.Diagnostics())
+            << "matrix conversion is not supported and should have been handled by "
+               "VectorizeMatrixConversions";
     } else {
         TINT_ICE(Writer, builder_.Diagnostics()) << "Invalid from_type";
     }
@@ -1657,16 +1568,8 @@ uint32_t Builder::GenerateCastOrCopyOrPassthrough(const sem::Type* to_type,
     return result_id;
 }
 
-uint32_t Builder::GenerateLiteralIfNeeded(const ast::Variable* var,
-                                          const ast::LiteralExpression* lit) {
+uint32_t Builder::GenerateLiteralIfNeeded(const ast::LiteralExpression* lit) {
     ScalarConstant constant;
-
-    auto* global = builder_.Sem().Get<sem::GlobalVariable>(var);
-    if (global && global->Declaration()->Is<ast::Override>()) {
-        constant.is_spec_op = true;
-        constant.constant_id = global->OverrideId().value;
-    }
-
     Switch(
         lit,
         [&](const ast::BoolLiteralExpression* l) {
@@ -1815,42 +1718,30 @@ uint32_t Builder::GenerateConstantIfNeeded(const ScalarConstant& constant) {
     auto result = result_op();
     auto result_id = std::get<uint32_t>(result);
 
-    if (constant.is_spec_op) {
-        push_annot(spv::Op::OpDecorate, {Operand(result_id), U32Operand(SpvDecorationSpecId),
-                                         Operand(constant.constant_id)});
-    }
-
     switch (constant.kind) {
         case ScalarConstant::Kind::kU32: {
-            push_type(constant.is_spec_op ? spv::Op::OpSpecConstant : spv::Op::OpConstant,
-                      {Operand(type_id), result, Operand(constant.value.u32)});
+            push_type(spv::Op::OpConstant, {Operand(type_id), result, Operand(constant.value.u32)});
             break;
         }
         case ScalarConstant::Kind::kI32: {
-            push_type(constant.is_spec_op ? spv::Op::OpSpecConstant : spv::Op::OpConstant,
+            push_type(spv::Op::OpConstant,
                       {Operand(type_id), result, U32Operand(constant.value.i32)});
             break;
         }
         case ScalarConstant::Kind::kF32: {
-            push_type(constant.is_spec_op ? spv::Op::OpSpecConstant : spv::Op::OpConstant,
-                      {Operand(type_id), result, Operand(constant.value.f32)});
+            push_type(spv::Op::OpConstant, {Operand(type_id), result, Operand(constant.value.f32)});
             break;
         }
         case ScalarConstant::Kind::kF16: {
-            push_type(
-                constant.is_spec_op ? spv::Op::OpSpecConstant : spv::Op::OpConstant,
-                {Operand(type_id), result, U32Operand(constant.value.f16.bits_representation)});
+            push_type(spv::Op::OpConstant, {Operand(type_id), result,
+                                            U32Operand(constant.value.f16.bits_representation)});
             break;
         }
         case ScalarConstant::Kind::kBool: {
             if (constant.value.b) {
-                push_type(
-                    constant.is_spec_op ? spv::Op::OpSpecConstantTrue : spv::Op::OpConstantTrue,
-                    {Operand(type_id), result});
+                push_type(spv::Op::OpConstantTrue, {Operand(type_id), result});
             } else {
-                push_type(
-                    constant.is_spec_op ? spv::Op::OpSpecConstantFalse : spv::Op::OpConstantFalse,
-                    {Operand(type_id), result});
+                push_type(spv::Op::OpConstantFalse, {Operand(type_id), result});
             }
             break;
         }
@@ -4037,8 +3928,7 @@ bool Builder::GenerateStructType(const sem::Struct* struct_type, const Operand& 
     ops.push_back(result);
 
     auto* decl = struct_type->Declaration();
-    if (decl && ast::HasAttribute<transform::AddSpirvBlockAttribute::SpirvBlockAttribute>(
-                    decl->attributes)) {
+    if (decl && ast::HasAttribute<transform::AddBlockAttribute::BlockAttribute>(decl->attributes)) {
         push_annot(spv::Op::OpDecorate, {Operand(struct_id), U32Operand(SpvDecorationBlock)});
     }
 

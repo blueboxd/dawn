@@ -21,16 +21,15 @@
 namespace tint::resolver {
 namespace {
 
+using namespace tint::number_suffixes;  // NOLINT
+
 using ResolverHostShareableValidationTest = ResolverTest;
 
 TEST_F(ResolverHostShareableValidationTest, BoolMember) {
     auto* s = Structure("S", utils::Vector{Member(Source{{12, 34}}, "x", ty.bool_())});
 
     GlobalVar(Source{{56, 78}}, "g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -45,10 +44,7 @@ TEST_F(ResolverHostShareableValidationTest, BoolVectorMember) {
     auto* s = Structure("S", utils::Vector{Member(Source{{12, 34}}, "x", ty.vec3<bool>())});
 
     GlobalVar(Source{{56, 78}}, "g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -64,10 +60,7 @@ TEST_F(ResolverHostShareableValidationTest, Aliases) {
     auto* s = Structure("S", utils::Vector{Member(Source{{12, 34}}, "x", ty.Of(a1))});
     auto* a2 = Alias("a2", ty.Of(s));
     GlobalVar(Source{{56, 78}}, "g", ty.Of(a2), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -86,10 +79,7 @@ TEST_F(ResolverHostShareableValidationTest, NestedStructures) {
     auto* s = Structure("S", utils::Vector{Member(Source{{7, 8}}, "m", ty.Of(i3))});
 
     GlobalVar(Source{{9, 10}}, "g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_FALSE(r()->Resolve());
 
@@ -128,10 +118,7 @@ TEST_F(ResolverHostShareableValidationTest, NoError) {
     auto* s = Structure("S", utils::Vector{Member(Source{{7, 8}}, "m", ty.Of(i3))});
 
     GlobalVar(Source{{9, 10}}, "g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+              Binding(0_a), Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
