@@ -415,8 +415,8 @@ fn all<N: num>(vec<N, bool>) -> bool
 fn any(bool) -> bool
 fn any<N: num>(vec<N, bool>) -> bool
 fn arrayLength<T, A: access>(ptr<storage, array<T>, A>) -> u32
-@const fn asin<T: fa_f32_f16>(T) -> T
-@const fn asin<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn asin<T: fa_f32_f16>(@test_value(0.479425538604) T) -> T
+@const fn asin<N: num, T: fa_f32_f16>(@test_value(0.479425538604) vec<N, T>) -> vec<N, T>
 @const fn asinh<T: fa_f32_f16>(T) -> T
 @const fn asinh<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
 @const fn atan<T: fa_f32_f16>(T) -> T
@@ -527,8 +527,8 @@ fn round<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 @const("select_bool") fn select<T: scalar>(T, T, bool) -> T
 @const("select_bool") fn select<T: scalar, N: num>(vec<N, T>, vec<N, T>, bool) -> vec<N, T>
 @const("select_boolvec") fn select<N: num, T: scalar>(vec<N, T>, vec<N, T>, vec<N, bool>) -> vec<N, T>
-fn sign<T: f32_f16>(T) -> T
-fn sign<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn sign<T: fa_f32_f16>(T) -> T
+@const fn sign<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
 fn sin<T: f32_f16>(T) -> T
 fn sin<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 fn sinh<T: f32_f16>(T) -> T
@@ -739,9 +739,9 @@ fn textureLoad<C: iu32>(texture: texture_external, coords: vec2<C>) -> vec4<f32>
 @const("Identity") init f32(f32) -> f32
 @const("Identity") init f16(f16) -> f16
 @const("Identity") init bool(bool) -> bool
-@const("Identity") init vec2<T: concrete_scalar>(vec2<T>) -> vec2<T>
-@const("Identity") init vec3<T: concrete_scalar>(vec3<T>) -> vec3<T>
-@const("Identity") init vec4<T: concrete_scalar>(vec4<T>) -> vec4<T>
+@const("Identity") init vec2<T: scalar>(vec2<T>) -> vec2<T>
+@const("Identity") init vec3<T: scalar>(vec3<T>) -> vec3<T>
+@const("Identity") init vec4<T: scalar>(vec4<T>) -> vec4<T>
 @const("Identity") init mat2x2<T: f32_f16>(mat2x2<T>) -> mat2x2<T>
 @const("Identity") init mat2x3<T: f32_f16>(mat2x3<T>) -> mat2x3<T>
 @const("Identity") init mat2x4<T: f32_f16>(mat2x4<T>) -> mat2x4<T>

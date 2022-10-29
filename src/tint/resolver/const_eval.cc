@@ -1625,7 +1625,7 @@ ConstEval::Result ConstEval::saturate(const sem::Type* ty,
             return CreateElement(builder, c0->Type(),
                                  NumberT(std::min(std::max(e, NumberT(0.0)), NumberT(1.0))));
         };
-        return Dispatch_fia_fiu32_f16(create, c0);
+        return Dispatch_fa_f32_f16(create, c0);
     };
     return TransformElements(builder, ty, transform, args[0]);
 }
@@ -1659,6 +1659,28 @@ ConstEval::Result ConstEval::select_boolvec(const sem::Type* ty,
     return TransformElements(builder, ty, transform, args[0], args[1]);
 }
 
+ConstEval::Result ConstEval::sign(const sem::Type* ty,
+                                  utils::VectorRef<const sem::Constant*> args,
+                                  const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto e) -> ImplResult {
+            using NumberT = decltype(e);
+            NumberT result;
+            NumberT zero{0.0};
+            if (e.value < zero) {
+                result = NumberT{-1.0};
+            } else if (e.value > zero) {
+                result = NumberT{1.0};
+            } else {
+                result = zero;
+            }
+            return CreateElement(builder, c0->Type(), result);
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
 ConstEval::Result ConstEval::step(const sem::Type* ty,
                                   utils::VectorRef<const sem::Constant*> args,
                                   const Source&) {
@@ -1668,7 +1690,7 @@ ConstEval::Result ConstEval::step(const sem::Type* ty,
             NumberT result = x.value < edge.value ? NumberT(0.0) : NumberT(1.0);
             return CreateElement(builder, c0->Type(), result);
         };
-        return Dispatch_fia_fiu32_f16(create, c0, c1);
+        return Dispatch_fa_f32_f16(create, c0, c1);
     };
     return TransformElements(builder, ty, transform, args[0], args[1]);
 }
