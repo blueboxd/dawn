@@ -377,6 +377,15 @@ class ConstEval {
     // Builtins
     ////////////////////////////////////////////////////////////////////////////
 
+    /// any builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result any(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
     /// asin builtin
     /// @param ty the expression type
     /// @param args the input arguments
@@ -430,6 +439,51 @@ class ConstEval {
     Result clamp(const sem::Type* ty,
                  utils::VectorRef<const sem::Constant*> args,
                  const Source& source);
+
+    /// countLeadingZeros builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result countLeadingZeros(const sem::Type* ty,
+                             utils::VectorRef<const sem::Constant*> args,
+                             const Source& source);
+
+    /// countOneBits builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result countOneBits(const sem::Type* ty,
+                        utils::VectorRef<const sem::Constant*> args,
+                        const Source& source);
+
+    /// countTrailingZeros builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result countTrailingZeros(const sem::Type* ty,
+                              utils::VectorRef<const sem::Constant*> args,
+                              const Source& source);
+
+    /// firstLeadingBit builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result firstLeadingBit(const sem::Type* ty,
+                           utils::VectorRef<const sem::Constant*> args,
+                           const Source& source);
+
+    /// firstTrailingBit builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result firstTrailingBit(const sem::Type* ty,
+                            utils::VectorRef<const sem::Constant*> args,
+                            const Source& source);
 
     /// saturate builtin
     /// @param ty the expression type

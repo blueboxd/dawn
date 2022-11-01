@@ -175,6 +175,12 @@ webgpu:api,validation,error_scope:current_scope:errorFilter="out-of-memory";stac
 webgpu:api,validation,error_scope:current_scope:errorFilter="validation";stackDepth=100000 [ Slow ]
 
 ################################################################################
+# Likely Intel Linux compiler slowness causing timeouts.
+################################################################################
+crbug.com/dawn/1587 webgpu:shader,execution,zero_init:compute,zero_init:storageClass="function";workgroupSize=[1,1,1];batch__=9 [ Slow ]
+crbug.com/dawn/1587 webgpu:shader,execution,zero_init:compute,zero_init:storageClass="private";workgroupSize=[1,1,1];batch__=9 [ Slow ]
+
+################################################################################
 # entry_point_name_must_match failures
 ################################################################################
 crbug.com/dawn/1345 webgpu:api,validation,shader_module,entry_point:fragment:isAsync=false;shaderModuleEntryPoint="main";stageEntryPoint="main%5Cu0000" [ Failure ]
@@ -460,14 +466,6 @@ crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countLeading
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countLeadingZeros:u32:inputSource="const";vectorize=2 [ Failure ]
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countLeadingZeros:u32:inputSource="const";vectorize=3 [ Failure ]
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countLeadingZeros:u32:inputSource="const";vectorize=4 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countOneBits:i32:inputSource="const";vectorize="_undef_" [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countOneBits:i32:inputSource="const";vectorize=2 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countOneBits:i32:inputSource="const";vectorize=3 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countOneBits:i32:inputSource="const";vectorize=4 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countOneBits:u32:inputSource="const";vectorize="_undef_" [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countOneBits:u32:inputSource="const";vectorize=2 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countOneBits:u32:inputSource="const";vectorize=3 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countOneBits:u32:inputSource="const";vectorize=4 [ Failure ]
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countTrailingZeros:i32:inputSource="const";vectorize="_undef_" [ Failure ]
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countTrailingZeros:i32:inputSource="const";vectorize=2 [ Failure ]
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,countTrailingZeros:i32:inputSource="const";vectorize=3 [ Failure ]
@@ -496,22 +494,6 @@ crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,extractBits:
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,extractBits:u32:inputSource="const";width=2 [ Failure ]
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,extractBits:u32:inputSource="const";width=3 [ Failure ]
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,extractBits:u32:inputSource="const";width=4 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstLeadingBit:i32:inputSource="const";vectorize="_undef_" [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstLeadingBit:i32:inputSource="const";vectorize=2 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstLeadingBit:i32:inputSource="const";vectorize=3 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstLeadingBit:i32:inputSource="const";vectorize=4 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstLeadingBit:u32:inputSource="const";vectorize="_undef_" [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstLeadingBit:u32:inputSource="const";vectorize=2 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstLeadingBit:u32:inputSource="const";vectorize=3 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstLeadingBit:u32:inputSource="const";vectorize=4 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstTrailingBit:i32:inputSource="const";vectorize="_undef_" [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstTrailingBit:i32:inputSource="const";vectorize=2 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstTrailingBit:i32:inputSource="const";vectorize=3 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstTrailingBit:i32:inputSource="const";vectorize=4 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstTrailingBit:u32:inputSource="const";vectorize="_undef_" [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstTrailingBit:u32:inputSource="const";vectorize=2 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstTrailingBit:u32:inputSource="const";vectorize=3 [ Failure ]
-crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,firstTrailingBit:u32:inputSource="const";vectorize=4 [ Failure ]
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,floor:f32:inputSource="const";vectorize="_undef_" [ Failure ]
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,floor:f32:inputSource="const";vectorize=2 [ Failure ]
 crbug.com/tint/1613 webgpu:shader,execution,expression,call,builtin,floor:f32:inputSource="const";vectorize=3 [ Failure ]

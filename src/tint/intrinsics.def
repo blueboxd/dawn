@@ -412,8 +412,8 @@ fn acosh<T: f32_f16>(T) -> T
 fn acosh<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 fn all(bool) -> bool
 fn all<N: num>(vec<N, bool>) -> bool
-fn any(bool) -> bool
-fn any<N: num>(vec<N, bool>) -> bool
+@const fn any(bool) -> bool
+@const fn any<N: num>(vec<N, bool>) -> bool
 fn arrayLength<T, A: access>(ptr<storage, array<T>, A>) -> u32
 @const fn asin<T: fa_f32_f16>(@test_value(0.479425538604) T) -> T
 @const fn asin<N: num, T: fa_f32_f16>(@test_value(0.479425538604) vec<N, T>) -> vec<N, T>
@@ -433,12 +433,12 @@ fn cos<T: f32_f16>(T) -> T
 fn cos<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 fn cosh<T: f32_f16>(T) -> T
 fn cosh<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn countLeadingZeros<T: iu32>(T) -> T
-fn countLeadingZeros<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
-fn countOneBits<T: iu32>(T) -> T
-fn countOneBits<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
-fn countTrailingZeros<T: iu32>(T) -> T
-fn countTrailingZeros<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
+@const fn countLeadingZeros<T: iu32>(T) -> T
+@const fn countLeadingZeros<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
+@const fn countOneBits<T: iu32>(T) -> T
+@const fn countOneBits<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
+@const fn countTrailingZeros<T: iu32>(T) -> T
+@const fn countTrailingZeros<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
 fn cross<T: f32_f16>(vec3<T>, vec3<T>) -> vec3<T>
 fn degrees<T: f32_f16>(T) -> T
 fn degrees<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
@@ -467,10 +467,10 @@ fn exp2<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 fn extractBits<T: iu32>(T, u32, u32) -> T
 fn extractBits<N: num, T: iu32>(vec<N, T>, u32, u32) -> vec<N, T>
 fn faceForward<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
-fn firstLeadingBit<T: iu32>(T) -> T
-fn firstLeadingBit<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
-fn firstTrailingBit<T: iu32>(T) -> T
-fn firstTrailingBit<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
+@const fn firstLeadingBit<T: iu32>(T) -> T
+@const fn firstLeadingBit<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
+@const fn firstTrailingBit<T: iu32>(T) -> T
+@const fn firstTrailingBit<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
 fn floor<T: f32_f16>(T) -> T
 fn floor<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 fn fma<T: f32_f16>(T, T, T) -> T

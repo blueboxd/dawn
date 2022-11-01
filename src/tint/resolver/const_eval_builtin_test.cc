@@ -146,6 +146,35 @@ INSTANTIATE_TEST_SUITE_P(  //
                          C({1.0_a, 0_a}, kPiOver2<AFloat>),
                      })));
 
+static std::vector<Case> AnyCases() {
+    return {
+        C({Val(true)}, Val(true)),
+        C({Val(false)}, Val(false)),
+
+        C({Vec(true, true)}, Val(true)),
+        C({Vec(true, false)}, Val(true)),
+        C({Vec(false, true)}, Val(true)),
+        C({Vec(false, false)}, Val(false)),
+
+        C({Vec(true, true, true)}, Val(true)),
+        C({Vec(false, true, true)}, Val(true)),
+        C({Vec(true, false, true)}, Val(true)),
+        C({Vec(true, true, false)}, Val(true)),
+        C({Vec(false, false, false)}, Val(false)),
+
+        C({Vec(true, true, true, true)}, Val(true)),
+        C({Vec(false, true, true, true)}, Val(true)),
+        C({Vec(true, false, true, true)}, Val(true)),
+        C({Vec(true, true, false, true)}, Val(true)),
+        C({Vec(true, true, true, false)}, Val(true)),
+        C({Vec(false, false, false, false)}, Val(false)),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Any,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kAny), testing::ValuesIn(AnyCases())));
+
 template <typename T, bool finite_only>
 std::vector<Case> Atan2Cases() {
     std::vector<Case> cases = {
@@ -459,6 +488,230 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               ClampCases<AFloat>(),
                                               ClampCases<f32>(),
                                               ClampCases<f16>()))));
+
+template <typename T>
+std::vector<Case> CountLeadingZerosCases() {
+    using B = BitValues<T>;
+    return {
+        C({B::Lsh(1, 31)}, T(0)),  //
+        C({B::Lsh(1, 30)}, T(1)),  //
+        C({B::Lsh(1, 29)}, T(2)),  //
+        C({B::Lsh(1, 28)}, T(3)),
+        //...
+        C({B::Lsh(1, 3)}, T(28)),  //
+        C({B::Lsh(1, 2)}, T(29)),  //
+        C({B::Lsh(1, 1)}, T(30)),  //
+        C({B::Lsh(1, 0)}, T(31)),
+
+        C({T(0b1111'0000'1111'0000'1111'0000'1111'0000)}, T(0)),
+        C({T(0b0111'1000'0111'1000'0111'1000'0111'1000)}, T(1)),
+        C({T(0b0011'1100'0011'1100'0011'1100'0011'1100)}, T(2)),
+        C({T(0b0001'1110'0001'1110'0001'1110'0001'1110)}, T(3)),
+        //...
+        C({T(0b0000'0000'0000'0000'0000'0000'0000'0111)}, T(29)),
+        C({T(0b0000'0000'0000'0000'0000'0000'0000'0011)}, T(30)),
+        C({T(0b0000'0000'0000'0000'0000'0000'0000'0001)}, T(31)),
+        C({T(0b0000'0000'0000'0000'0000'0000'0000'0000)}, T(32)),
+
+        // Same as above, but remove leading 0
+        C({T(0b1111'1000'0111'1000'0111'1000'0111'1000)}, T(0)),
+        C({T(0b1011'1100'0011'1100'0011'1100'0011'1100)}, T(0)),
+        C({T(0b1001'1110'0001'1110'0001'1110'0001'1110)}, T(0)),
+        //...
+        C({T(0b1000'0000'0000'0000'0000'0000'0000'0111)}, T(0)),
+        C({T(0b1000'0000'0000'0000'0000'0000'0000'0011)}, T(0)),
+        C({T(0b1000'0000'0000'0000'0000'0000'0000'0001)}, T(0)),
+        C({T(0b1000'0000'0000'0000'0000'0000'0000'0000)}, T(0)),
+
+        // Vector tests
+        C({Vec(B::Lsh(1, 31), B::Lsh(1, 30), B::Lsh(1, 29))}, Vec(T(0), T(1), T(2))),
+        C({Vec(B::Lsh(1, 2), B::Lsh(1, 1), B::Lsh(1, 0))}, Vec(T(29), T(30), T(31))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    CountLeadingZeros,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kCountLeadingZeros),
+                     testing::ValuesIn(Concat(CountLeadingZerosCases<i32>(),  //
+                                              CountLeadingZerosCases<u32>()))));
+
+template <typename T>
+std::vector<Case> CountTrailingZerosCases() {
+    using B = BitValues<T>;
+    return {
+        C({B::Lsh(1, 31)}, T(31)),  //
+        C({B::Lsh(1, 30)}, T(30)),  //
+        C({B::Lsh(1, 29)}, T(29)),  //
+        C({B::Lsh(1, 28)}, T(28)),
+        //...
+        C({B::Lsh(1, 3)}, T(3)),  //
+        C({B::Lsh(1, 2)}, T(2)),  //
+        C({B::Lsh(1, 1)}, T(1)),  //
+        C({B::Lsh(1, 0)}, T(0)),
+
+        C({T(0b0000'1111'0000'1111'0000'1111'0000'1111)}, T(0)),
+        C({T(0b0001'1110'0001'1110'0001'1110'0001'1110)}, T(1)),
+        C({T(0b0011'1100'0011'1100'0011'1100'0011'1100)}, T(2)),
+        C({T(0b0111'1000'0111'1000'0111'1000'0111'1000)}, T(3)),
+        //...
+        C({T(0b1110'0000'0000'0000'0000'0000'0000'0000)}, T(29)),
+        C({T(0b1100'0000'0000'0000'0000'0000'0000'0000)}, T(30)),
+        C({T(0b1000'0000'0000'0000'0000'0000'0000'0000)}, T(31)),
+        C({T(0b0000'0000'0000'0000'0000'0000'0000'0000)}, T(32)),
+
+        //// Same as above, but remove trailing 0
+        C({T(0b0001'1110'0001'1110'0001'1110'0001'1111)}, T(0)),
+        C({T(0b0011'1100'0011'1100'0011'1100'0011'1101)}, T(0)),
+        C({T(0b0111'1000'0111'1000'0111'1000'0111'1001)}, T(0)),
+        //...
+        C({T(0b1110'0000'0000'0000'0000'0000'0000'0001)}, T(0)),
+        C({T(0b1100'0000'0000'0000'0000'0000'0000'0001)}, T(0)),
+        C({T(0b1000'0000'0000'0000'0000'0000'0000'0001)}, T(0)),
+        C({T(0b0000'0000'0000'0000'0000'0000'0000'0001)}, T(0)),
+
+        // Vector tests
+        C({Vec(B::Lsh(1, 31), B::Lsh(1, 30), B::Lsh(1, 29))}, Vec(T(31), T(30), T(29))),
+        C({Vec(B::Lsh(1, 2), B::Lsh(1, 1), B::Lsh(1, 0))}, Vec(T(2), T(1), T(0))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    CountTrailingZeros,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kCountTrailingZeros),
+                     testing::ValuesIn(Concat(CountTrailingZerosCases<i32>(),  //
+                                              CountTrailingZerosCases<u32>()))));
+
+template <typename T>
+std::vector<Case> CountOneBitsCases() {
+    using B = BitValues<T>;
+    return {
+        C({T(0)}, T(0)),  //
+
+        C({B::Lsh(1, 31)}, T(1)),  //
+        C({B::Lsh(1, 30)}, T(1)),  //
+        C({B::Lsh(1, 29)}, T(1)),  //
+        C({B::Lsh(1, 28)}, T(1)),
+        //...
+        C({B::Lsh(1, 3)}, T(1)),  //
+        C({B::Lsh(1, 2)}, T(1)),  //
+        C({B::Lsh(1, 1)}, T(1)),  //
+        C({B::Lsh(1, 0)}, T(1)),
+
+        C({T(0b1010'1010'1010'1010'1010'1010'1010'1010)}, T(16)),
+        C({T(0b0000'1111'0000'1111'0000'1111'0000'1111)}, T(16)),
+        C({T(0b0101'0000'0000'0000'0000'0000'0000'0101)}, T(4)),
+
+        // Vector tests
+        C({Vec(B::Lsh(1, 31), B::Lsh(1, 30), B::Lsh(1, 29))}, Vec(T(1), T(1), T(1))),
+        C({Vec(B::Lsh(1, 2), B::Lsh(1, 1), B::Lsh(1, 0))}, Vec(T(1), T(1), T(1))),
+
+        C({Vec(T(0b1010'1010'1010'1010'1010'1010'1010'1010),
+               T(0b0000'1111'0000'1111'0000'1111'0000'1111),
+               T(0b0101'0000'0000'0000'0000'0000'0000'0101))},
+          Vec(T(16), T(16), T(4))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    CountOneBits,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kCountOneBits),
+                     testing::ValuesIn(Concat(CountOneBitsCases<i32>(),  //
+                                              CountOneBitsCases<u32>()))));
+
+template <typename T>
+std::vector<Case> FirstLeadingBitCases() {
+    using B = BitValues<T>;
+    auto r = std::vector<Case>{
+        // Both signed and unsigned return T(-1) for input 0
+        C({T(0)}, T(-1)),
+
+        C({B::Lsh(1, 30)}, T(30)),  //
+        C({B::Lsh(1, 29)}, T(29)),  //
+        C({B::Lsh(1, 28)}, T(28)),
+        //...
+        C({B::Lsh(1, 3)}, T(3)),  //
+        C({B::Lsh(1, 2)}, T(2)),  //
+        C({B::Lsh(1, 1)}, T(1)),  //
+        C({B::Lsh(1, 0)}, T(0)),
+
+        C({T(0b0000'0000'0100'1000'1000'1000'0000'0000)}, T(22)),
+        C({T(0b0000'0000'0000'0100'1000'1000'0000'0000)}, T(18)),
+
+        // Vector tests
+        C({Vec(B::Lsh(1, 30), B::Lsh(1, 29), B::Lsh(1, 28))}, Vec(T(30), T(29), T(28))),
+        C({Vec(B::Lsh(1, 2), B::Lsh(1, 1), B::Lsh(1, 0))}, Vec(T(2), T(1), T(0))),
+    };
+
+    ConcatIntoIf<IsUnsignedIntegral<T>>(  //
+        r, std::vector<Case>{
+               C({B::Lsh(1, 31)}, T(31)),
+
+               C({T(0b1111'1111'1111'1111'1111'1111'1111'1110)}, T(31)),
+               C({T(0b1111'1111'1111'1111'1111'1111'1111'1100)}, T(31)),
+               C({T(0b1111'1111'1111'1111'1111'1111'1111'1000)}, T(31)),
+               //...
+               C({T(0b1110'0000'0000'0000'0000'0000'0000'0000)}, T(31)),
+               C({T(0b1100'0000'0000'0000'0000'0000'0000'0000)}, T(31)),
+               C({T(0b1000'0000'0000'0000'0000'0000'0000'0000)}, T(31)),
+           });
+
+    ConcatIntoIf<IsSignedIntegral<T>>(  //
+        r, std::vector<Case>{
+               // Signed returns -1 for input -1
+               C({T(-1)}, T(-1)),
+
+               C({B::Lsh(1, 31)}, T(30)),
+
+               C({T(0b1111'1111'1111'1111'1111'1111'1111'1110)}, T(0)),
+               C({T(0b1111'1111'1111'1111'1111'1111'1111'1100)}, T(1)),
+               C({T(0b1111'1111'1111'1111'1111'1111'1111'1000)}, T(2)),
+               //...
+               C({T(0b1110'0000'0000'0000'0000'0000'0000'0000)}, T(28)),
+               C({T(0b1100'0000'0000'0000'0000'0000'0000'0000)}, T(29)),
+               C({T(0b1000'0000'0000'0000'0000'0000'0000'0000)}, T(30)),
+           });
+
+    return r;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    FirstLeadingBit,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kFirstLeadingBit),
+                     testing::ValuesIn(Concat(FirstLeadingBitCases<i32>(),  //
+                                              FirstLeadingBitCases<u32>()))));
+
+template <typename T>
+std::vector<Case> FirstTrailingBitCases() {
+    using B = BitValues<T>;
+    auto r = std::vector<Case>{
+        C({T(0)}, T(-1)),
+
+        C({B::Lsh(1, 31)}, T(31)),  //
+        C({B::Lsh(1, 30)}, T(30)),  //
+        C({B::Lsh(1, 29)}, T(29)),  //
+        C({B::Lsh(1, 28)}, T(28)),
+        //...
+        C({B::Lsh(1, 3)}, T(3)),  //
+        C({B::Lsh(1, 2)}, T(2)),  //
+        C({B::Lsh(1, 1)}, T(1)),  //
+        C({B::Lsh(1, 0)}, T(0)),
+
+        C({T(0b0000'0000'0100'1000'1000'1000'0000'0000)}, T(11)),
+        C({T(0b0000'0100'1000'1000'1000'0000'0000'0000)}, T(15)),
+
+        // Vector tests
+        C({Vec(B::Lsh(1, 31), B::Lsh(1, 30), B::Lsh(1, 29))}, Vec(T(31), T(30), T(29))),
+        C({Vec(B::Lsh(1, 2), B::Lsh(1, 1), B::Lsh(1, 0))}, Vec(T(2), T(1), T(0))),
+    };
+
+    return r;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    FirstTrailingBit,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kFirstTrailingBit),
+                     testing::ValuesIn(Concat(FirstTrailingBitCases<i32>(),  //
+                                              FirstTrailingBitCases<u32>()))));
 
 template <typename T>
 std::vector<Case> SaturateCases() {

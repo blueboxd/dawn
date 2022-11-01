@@ -56,6 +56,16 @@ T First(T&& first, ...) {
 /// Helper that calls `f` passing in the value of all `cs`.
 /// Calls `f` with all constants cast to the type of the first `cs` argument.
 template <typename F, typename... CONSTANTS>
+auto Dispatch_iu32(F&& f, CONSTANTS&&... cs) {
+    return Switch(
+        First(cs...)->Type(),  //
+        [&](const sem::I32*) { return f(cs->template As<i32>()...); },
+        [&](const sem::U32*) { return f(cs->template As<u32>()...); });
+}
+
+/// Helper that calls `f` passing in the value of all `cs`.
+/// Calls `f` with all constants cast to the type of the first `cs` argument.
+template <typename F, typename... CONSTANTS>
 auto Dispatch_ia_iu32(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
@@ -180,6 +190,40 @@ std::string OverflowErrorMessage(NumberT lhs, const char* op, NumberT rhs) {
     ss << "'" << lhs.value << " " << op << " " << rhs.value << "' cannot be represented as '"
        << FriendlyName<NumberT>() << "'";
     return ss.str();
+}
+
+/// @returns the number of consecutive leading bits in `@p e` set to `@p bit_value_to_count`.
+template <typename T>
+auto CountLeadingBits(T e, T bit_value_to_count) -> std::make_unsigned_t<T> {
+    using UT = std::make_unsigned_t<T>;
+    constexpr UT kNumBits = sizeof(UT) * 8;
+    constexpr UT kLeftMost = UT{1} << (kNumBits - 1);
+    const UT b = bit_value_to_count == 0 ? UT{0} : kLeftMost;
+
+    auto v = static_cast<UT>(e);
+    auto count = UT{0};
+    while ((count < kNumBits) && ((v & kLeftMost) == b)) {
+        ++count;
+        v <<= 1;
+    }
+    return count;
+}
+
+/// @returns the number of consecutive trailing bits set to `@p bit_value_to_count` in `@p e`
+template <typename T>
+auto CountTrailingBits(T e, T bit_value_to_count) -> std::make_unsigned_t<T> {
+    using UT = std::make_unsigned_t<T>;
+    constexpr UT kNumBits = sizeof(UT) * 8;
+    constexpr UT kRightMost = UT{1};
+    const UT b = static_cast<UT>(bit_value_to_count);
+
+    auto v = static_cast<UT>(e);
+    auto count = UT{0};
+    while ((count < kNumBits) && ((v & kRightMost) == b)) {
+        ++count;
+        v >>= 1;
+    }
+    return count;
 }
 
 /// ImplConstant inherits from sem::Constant to add an private implementation method for conversion.
@@ -1526,6 +1570,12 @@ ConstEval::Result ConstEval::OpShiftLeft(const sem::Type* ty,
     return r;
 }
 
+ConstEval::Result ConstEval::any(const sem::Type* ty,
+                                 utils::VectorRef<const sem::Constant*> args,
+                                 const Source&) {
+    return CreateElement(builder, ty, !args[0]->AllZero());
+}
+
 ConstEval::Result ConstEval::asin(const sem::Type* ty,
                                   utils::VectorRef<const sem::Constant*> args,
                                   const Source& source) {
@@ -1614,6 +1664,130 @@ ConstEval::Result ConstEval::clamp(const sem::Type* ty,
         return Dispatch_fia_fiu32_f16(create, c0, c1, c2);
     };
     return TransformElements(builder, ty, transform, args[0], args[1], args[2]);
+}
+
+ConstEval::Result ConstEval::countLeadingZeros(const sem::Type* ty,
+                                               utils::VectorRef<const sem::Constant*> args,
+                                               const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto e) {
+            using NumberT = decltype(e);
+            using T = UnwrapNumber<NumberT>;
+            auto count = CountLeadingBits(T{e}, T{0});
+            return CreateElement(builder, c0->Type(), NumberT(count));
+        };
+        return Dispatch_iu32(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::countOneBits(const sem::Type* ty,
+                                          utils::VectorRef<const sem::Constant*> args,
+                                          const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto e) {
+            using NumberT = decltype(e);
+            using T = UnwrapNumber<NumberT>;
+            using UT = std::make_unsigned_t<T>;
+            constexpr UT kRightMost = UT{1};
+
+            auto count = UT{0};
+            for (auto v = static_cast<UT>(e); v != UT{0}; v >>= 1) {
+                if ((v & kRightMost) == 1) {
+                    ++count;
+                }
+            }
+
+            return CreateElement(builder, c0->Type(), NumberT(count));
+        };
+        return Dispatch_iu32(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::countTrailingZeros(const sem::Type* ty,
+                                                utils::VectorRef<const sem::Constant*> args,
+                                                const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto e) {
+            using NumberT = decltype(e);
+            using T = UnwrapNumber<NumberT>;
+            auto count = CountTrailingBits(T{e}, T{0});
+            return CreateElement(builder, c0->Type(), NumberT(count));
+        };
+        return Dispatch_iu32(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::firstLeadingBit(const sem::Type* ty,
+                                             utils::VectorRef<const sem::Constant*> args,
+                                             const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto e) {
+            using NumberT = decltype(e);
+            using T = UnwrapNumber<NumberT>;
+            using UT = std::make_unsigned_t<T>;
+            constexpr UT kNumBits = sizeof(UT) * 8;
+
+            NumberT result;
+            if constexpr (IsUnsignedIntegral<T>) {
+                if (e == T{0}) {
+                    // T(-1) if e is zero.
+                    result = NumberT(static_cast<T>(-1));
+                } else {
+                    // Otherwise the position of the most significant 1 bit in e.
+                    static_assert(std::is_same_v<T, UT>);
+                    UT count = CountLeadingBits(UT{e}, UT{0});
+                    UT pos = kNumBits - count - 1;
+                    result = NumberT(pos);
+                }
+            } else {
+                if (e == T{0} || e == T{-1}) {
+                    // -1 if e is 0 or -1.
+                    result = NumberT(-1);
+                } else {
+                    // Otherwise the position of the most significant bit in e that is different
+                    // from e's sign bit.
+                    UT eu = static_cast<UT>(e);
+                    UT sign_bit = eu >> (kNumBits - 1);
+                    UT count = CountLeadingBits(eu, sign_bit);
+                    UT pos = kNumBits - count - 1;
+                    result = NumberT(pos);
+                }
+            }
+
+            return CreateElement(builder, c0->Type(), result);
+        };
+        return Dispatch_iu32(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::firstTrailingBit(const sem::Type* ty,
+                                              utils::VectorRef<const sem::Constant*> args,
+                                              const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto e) {
+            using NumberT = decltype(e);
+            using T = UnwrapNumber<NumberT>;
+            using UT = std::make_unsigned_t<T>;
+
+            NumberT result;
+            if (e == T{0}) {
+                // T(-1) if e is zero.
+                result = NumberT(static_cast<T>(-1));
+            } else {
+                // Otherwise the position of the least significant 1 bit in e.
+                UT pos = CountTrailingBits(T{e}, T{0});
+                result = NumberT(pos);
+            }
+
+            return CreateElement(builder, c0->Type(), result);
+        };
+        return Dispatch_iu32(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
 }
 
 ConstEval::Result ConstEval::saturate(const sem::Type* ty,

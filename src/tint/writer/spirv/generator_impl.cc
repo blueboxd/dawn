@@ -25,6 +25,7 @@
 #include "src/tint/transform/expand_compound_assignment.h"
 #include "src/tint/transform/for_loop_to_loop.h"
 #include "src/tint/transform/manager.h"
+#include "src/tint/transform/merge_return.h"
 #include "src/tint/transform/promote_side_effects_to_decl.h"
 #include "src/tint/transform/remove_phonies.h"
 #include "src/tint/transform/remove_unreachable_statements.h"
@@ -51,6 +52,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         transform::BuiltinPolyfill::Builtins polyfills;
         polyfills.acosh = transform::BuiltinPolyfill::Level::kRangeCheck;
         polyfills.atanh = transform::BuiltinPolyfill::Level::kRangeCheck;
+        polyfills.clamp_int = true;
         polyfills.count_leading_zeros = true;
         polyfills.count_trailing_zeros = true;
         polyfills.extract_bits = transform::BuiltinPolyfill::Level::kClampParameters;
@@ -84,6 +86,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     manager.Add<transform::VectorizeScalarMatrixInitializers>();
     manager.Add<transform::VectorizeMatrixConversions>();
     manager.Add<transform::WhileToLoop>();  // ZeroInitWorkgroupMemory
+    manager.Add<transform::MergeReturn>();
     manager.Add<transform::CanonicalizeEntryPointIO>();
     manager.Add<transform::AddEmptyEntryPoint>();
     manager.Add<transform::AddBlockAttribute>();
