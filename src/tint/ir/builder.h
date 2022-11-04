@@ -26,6 +26,9 @@
 namespace tint {
 class Program;
 }  // namespace tint
+namespace tint::ast {
+class CaseSelector;
+}  // namespace tint::ast
 
 namespace tint::ir {
 
@@ -52,30 +55,31 @@ class Builder {
     /// @returns the flow node
     Function* CreateFunction(const ast::Function* func);
 
-    /// Flags used for creation of if flow nodes
-    enum class IfFlags {
-        /// Do not create a merge node, `merge_target` will be `nullptr`
-        kSkipMerge,
-        /// Create the `merge_target` block
-        kCreateMerge,
-    };
-
     /// Creates an if flow node for the given ast::IfStatement or ast::BreakIfStatement
     /// @param stmt the ast::IfStatement or ast::BreakIfStatement
-    /// @param flags the if creation flags. By default the merge block will not be created, pass
-    ///              IfFlags::kCreateMerge if creation is desired.
     /// @returns the flow node
-    If* CreateIf(const ast::Statement* stmt, IfFlags flags = IfFlags::kSkipMerge);
+    If* CreateIf(const ast::Statement* stmt);
 
-    /// Creates a loop flow node for the given ast::LoopStatement
-    /// @param stmt the ast::LoopStatement
+    /// Creates a loop flow node for the given ast loop, while or for statement
+    /// @param stmt the ast loop, while or for statement
     /// @returns the flow node
-    Loop* CreateLoop(const ast::LoopStatement* stmt);
+    Loop* CreateLoop(const ast::Statement* stmt);
+
+    /// Creates a switch flow node for the given ast::SwitchStatement
+    /// @param stmt the ast::SwitchStatment
+    /// @returns the flow node
+    Switch* CreateSwitch(const ast::SwitchStatement* stmt);
+
+    /// Creates a case flow node for the given case branch.
+    /// @param s the switch to create the case into
+    /// @param selectors the case selectors for the case statement
+    /// @returns the start block for the case flow node
+    Block* CreateCase(Switch* s, const utils::VectorRef<const ast::CaseSelector*> selectors);
 
     /// Branches the given block to the given flow node.
     /// @param from the block to branch from
     /// @param to the node to branch too
-    void Branch(Block* from, const FlowNode* to);
+    void Branch(Block* from, FlowNode* to);
 
     /// The IR module.
     Module ir;

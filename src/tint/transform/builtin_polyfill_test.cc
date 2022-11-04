@@ -399,6 +399,145 @@ fn f() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// bitshiftModulo
+////////////////////////////////////////////////////////////////////////////////
+DataMap polyfillBitshiftModulo() {
+    BuiltinPolyfill::Builtins builtins;
+    builtins.bitshift_modulo = true;
+    DataMap data;
+    data.Add<BuiltinPolyfill::Config>(builtins);
+    return data;
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunBitshiftModulo_shl_scalar) {
+    auto* src = R"(
+fn f() {
+  let v = 15u;
+  let r = 1i << v;
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillBitshiftModulo()));
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunBitshiftModulo_shl_vector) {
+    auto* src = R"(
+fn f() {
+  let v = 15u;
+  let r = vec3(1i) << vec3(v);
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillBitshiftModulo()));
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunBitshiftModulo_shr_scalar) {
+    auto* src = R"(
+fn f() {
+  let v = 15u;
+  let r = 1i >> v;
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillBitshiftModulo()));
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunBitshiftModulo_shr_vector) {
+    auto* src = R"(
+fn f() {
+  let v = 15u;
+  let r = vec3(1i) >> vec3(v);
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillBitshiftModulo()));
+}
+
+TEST_F(BuiltinPolyfillTest, BitshiftModulo_shl_scalar) {
+    auto* src = R"(
+fn f() {
+  let v = 15u;
+  let r = 1i << v;
+}
+)";
+
+    auto* expect = R"(
+fn f() {
+  let v = 15u;
+  let r = (1i << (v & 31));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillBitshiftModulo());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, BitshiftModulo_shl_vector) {
+    auto* src = R"(
+fn f() {
+  let v = 15u;
+  let r = vec3(1i) << vec3(v);
+}
+)";
+
+    auto* expect = R"(
+fn f() {
+  let v = 15u;
+  let r = (vec3(1i) << (vec3(v) & vec3<u32>(31)));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillBitshiftModulo());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, BitshiftModulo_shr_scalar) {
+    auto* src = R"(
+fn f() {
+  let v = 15u;
+  let r = 1i >> v;
+}
+)";
+
+    auto* expect = R"(
+fn f() {
+  let v = 15u;
+  let r = (1i >> (v & 31));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillBitshiftModulo());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, BitshiftModulo_shr_vector) {
+    auto* src = R"(
+fn f() {
+  let v = 15u;
+  let r = vec3(1i) >> vec3(v);
+}
+)";
+
+    auto* expect = R"(
+fn f() {
+  let v = 15u;
+  let r = (vec3(1i) >> (vec3(v) & vec3<u32>(31)));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillBitshiftModulo());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // clampInteger
 ////////////////////////////////////////////////////////////////////////////////
 DataMap polyfillClampInteger() {
@@ -1561,7 +1700,8 @@ fn f() {
 TEST_F(BuiltinPolyfillTest, DISABLED_InsertBits_ConstantExpression) {
     auto* src = R"(
 fn f() {
-  let r : i32 = insertBits(1234, 5678, 5u, 6u);
+  let v = 1234i;
+  let r : i32 = insertBits(v, 5678, 5u, 6u);
 }
 )";
 
@@ -1975,10 +2115,6 @@ fn f() {
 )";
 
     auto* expect = R"(
-@group(0) @binding(0) var t : texture_2d<f32>;
-
-@group(0) @binding(1) var s : sampler;
-
 fn tint_textureSampleBaseClampToEdge(t : texture_2d<f32>, s : sampler, coord : vec2<f32>) -> vec4<f32> {
   let dims = vec2<f32>(textureDimensions(t, 0));
   let half_texel = (vec2<f32>(0.5) / dims);
@@ -1986,12 +2122,123 @@ fn tint_textureSampleBaseClampToEdge(t : texture_2d<f32>, s : sampler, coord : v
   return textureSampleLevel(t, s, clamped, 0);
 }
 
+@group(0) @binding(0) var t : texture_2d<f32>;
+
+@group(0) @binding(1) var s : sampler;
+
 fn f() {
   let r = tint_textureSampleBaseClampToEdge(t, s, vec2<f32>(0.5));
 }
 )";
 
     auto got = Run<BuiltinPolyfill>(src, polyfillTextureSampleBaseClampToEdge_2d_f32());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// quantizeToF16
+////////////////////////////////////////////////////////////////////////////////
+DataMap polyfillQuantizeToF16_2d_f32() {
+    BuiltinPolyfill::Builtins builtins;
+    builtins.quantize_to_vec_f16 = true;
+    DataMap data;
+    data.Add<BuiltinPolyfill::Config>(builtins);
+    return data;
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunQuantizeToF16_Scalar) {
+    auto* src = R"(
+fn f() {
+  let v = 0.5;
+  quantizeToF16(0.5);
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillQuantizeToF16_2d_f32()));
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunQuantizeToF16_Vector) {
+    auto* src = R"(
+fn f() {
+  let v = 0.5;
+  quantizeToF16(vec2(v));
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillQuantizeToF16_2d_f32()));
+}
+
+TEST_F(BuiltinPolyfillTest, QuantizeToF16_Vec2) {
+    auto* src = R"(
+fn f() {
+  let v = 0.5;
+  quantizeToF16(vec2(v));
+}
+)";
+
+    auto* expect = R"(
+fn tint_quantizeToF16(v : vec2<f32>) -> vec2<f32> {
+  return vec2<f32>(quantizeToF16(v[0u]), quantizeToF16(v[1u]));
+}
+
+fn f() {
+  let v = 0.5;
+  tint_quantizeToF16(vec2(v));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillQuantizeToF16_2d_f32());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, QuantizeToF16_Vec3) {
+    auto* src = R"(
+fn f() {
+  let v = 0.5;
+  quantizeToF16(vec3(v));
+}
+)";
+
+    auto* expect = R"(
+fn tint_quantizeToF16(v : vec3<f32>) -> vec3<f32> {
+  return vec3<f32>(quantizeToF16(v[0u]), quantizeToF16(v[1u]), quantizeToF16(v[2u]));
+}
+
+fn f() {
+  let v = 0.5;
+  tint_quantizeToF16(vec3(v));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillQuantizeToF16_2d_f32());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, QuantizeToF16_Vec4) {
+    auto* src = R"(
+fn f() {
+  let v = 0.5;
+  quantizeToF16(vec4(v));
+}
+)";
+
+    auto* expect = R"(
+fn tint_quantizeToF16(v : vec4<f32>) -> vec4<f32> {
+  return vec4<f32>(quantizeToF16(v[0u]), quantizeToF16(v[1u]), quantizeToF16(v[2u]), quantizeToF16(v[3u]));
+}
+
+fn f() {
+  let v = 0.5;
+  tint_quantizeToF16(vec4(v));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillQuantizeToF16_2d_f32());
 
     EXPECT_EQ(expect, str(got));
 }

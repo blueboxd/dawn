@@ -39,35 +39,58 @@ Function* Builder::CreateFunction(const ast::Function* ast_func) {
     auto* ir_func = ir.flow_nodes.Create<Function>(ast_func);
     ir_func->start_target = CreateBlock();
     ir_func->end_target = CreateTerminator();
+
+    // Function is always branching into the start target
+    ir_func->start_target->inbound_branches.Push(ir_func);
+
     return ir_func;
 }
 
-If* Builder::CreateIf(const ast::Statement* stmt, IfFlags flags) {
+If* Builder::CreateIf(const ast::Statement* stmt) {
     auto* ir_if = ir.flow_nodes.Create<If>(stmt);
-    ir_if->false_target = CreateBlock();
     ir_if->true_target = CreateBlock();
+    ir_if->false_target = CreateBlock();
+    ir_if->merge_target = CreateBlock();
 
-    if (flags == IfFlags::kCreateMerge) {
-        ir_if->merge_target = CreateBlock();
-    } else {
-        ir_if->merge_target = nullptr;
-    }
+    // An if always branches to both the true and false block.
+    ir_if->true_target->inbound_branches.Push(ir_if);
+    ir_if->false_target->inbound_branches.Push(ir_if);
+
     return ir_if;
 }
 
-Loop* Builder::CreateLoop(const ast::LoopStatement* stmt) {
+Loop* Builder::CreateLoop(const ast::Statement* stmt) {
     auto* ir_loop = ir.flow_nodes.Create<Loop>(stmt);
     ir_loop->start_target = CreateBlock();
     ir_loop->continuing_target = CreateBlock();
     ir_loop->merge_target = CreateBlock();
 
+    // A loop always branches to the start block.
+    ir_loop->start_target->inbound_branches.Push(ir_loop);
+
     return ir_loop;
 }
 
-void Builder::Branch(Block* from, const FlowNode* to) {
+Switch* Builder::CreateSwitch(const ast::SwitchStatement* stmt) {
+    auto* ir_switch = ir.flow_nodes.Create<Switch>(stmt);
+    ir_switch->merge_target = CreateBlock();
+    return ir_switch;
+}
+
+Block* Builder::CreateCase(Switch* s, const utils::VectorRef<const ast::CaseSelector*> selectors) {
+    s->cases.Push(Switch::Case{selectors, CreateBlock()});
+
+    Block* b = s->cases.Back().start_target;
+    // Switch branches into the case block
+    b->inbound_branches.Push(s);
+    return b;
+}
+
+void Builder::Branch(Block* from, FlowNode* to) {
     TINT_ASSERT(IR, from);
     TINT_ASSERT(IR, to);
     from->branch_target = to;
+    to->inbound_branches.Push(from);
 }
 
 }  // namespace tint::ir

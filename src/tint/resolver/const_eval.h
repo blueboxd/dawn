@@ -377,6 +377,33 @@ class ConstEval {
     // Builtins
     ////////////////////////////////////////////////////////////////////////////
 
+    /// abs builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result abs(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// all builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result all(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// acos builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result acos(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
     /// any builtin
     /// @param ty the expression type
     /// @param args the input arguments
@@ -431,6 +458,15 @@ class ConstEval {
                  utils::VectorRef<const sem::Constant*> args,
                  const Source& source);
 
+    /// ceil builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result ceil(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
     /// clamp builtin
     /// @param ty the expression type
     /// @param args the input arguments
@@ -467,6 +503,15 @@ class ConstEval {
                               utils::VectorRef<const sem::Constant*> args,
                               const Source& source);
 
+    /// extractBits builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result extractBits(const sem::Type* ty,
+        utils::VectorRef<const sem::Constant*> args,
+        const Source& source);
+
     /// firstLeadingBit builtin
     /// @param ty the expression type
     /// @param args the input arguments
@@ -484,6 +529,24 @@ class ConstEval {
     Result firstTrailingBit(const sem::Type* ty,
                             utils::VectorRef<const sem::Constant*> args,
                             const Source& source);
+
+    /// floor builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result floor(const sem::Type* ty,
+                 utils::VectorRef<const sem::Constant*> args,
+                 const Source& source);
+
+    /// insertBits builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result insertBits(const sem::Type* ty,
+                      utils::VectorRef<const sem::Constant*> args,
+                      const Source& source);
 
     /// saturate builtin
     /// @param ty the expression type
@@ -529,6 +592,15 @@ class ConstEval {
     Result step(const sem::Type* ty,
                 utils::VectorRef<const sem::Constant*> args,
                 const Source& source);
+
+    /// quantizeToF16 builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result quantizeToF16(const sem::Type* ty,
+                         utils::VectorRef<const sem::Constant*> args,
+                         const Source& source);
 
   private:
     /// Adds the given error message to the diagnostics
