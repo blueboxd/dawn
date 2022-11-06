@@ -15,6 +15,7 @@
 #include "src/tint/resolver/const_eval.h"
 
 #include <algorithm>
+#include <iomanip>
 #include <limits>
 #include <optional>
 #include <string>
@@ -187,14 +188,24 @@ inline bool IsPositiveZero(T value) {
 template <typename NumberT>
 std::string OverflowErrorMessage(NumberT lhs, const char* op, NumberT rhs) {
     std::stringstream ss;
+    ss << std::setprecision(20);
     ss << "'" << lhs.value << " " << op << " " << rhs.value << "' cannot be represented as '"
        << FriendlyName<NumberT>() << "'";
     return ss.str();
 }
 
+template <typename VALUE_TY>
+std::string OverflowErrorMessage(VALUE_TY value, std::string_view target_ty) {
+    std::stringstream ss;
+    ss << std::setprecision(20);
+    ss << "value " << value << " cannot be represented as "
+       << "'" << target_ty << "'";
+    return ss.str();
+}
+
 /// @returns the number of consecutive leading bits in `@p e` set to `@p bit_value_to_count`.
 template <typename T>
-auto CountLeadingBits(T e, T bit_value_to_count) -> std::make_unsigned_t<T> {
+std::make_unsigned_t<T> CountLeadingBits(T e, T bit_value_to_count) {
     using UT = std::make_unsigned_t<T>;
     constexpr UT kNumBits = sizeof(UT) * 8;
     constexpr UT kLeftMost = UT{1} << (kNumBits - 1);
@@ -211,7 +222,7 @@ auto CountLeadingBits(T e, T bit_value_to_count) -> std::make_unsigned_t<T> {
 
 /// @returns the number of consecutive trailing bits set to `@p bit_value_to_count` in `@p e`
 template <typename T>
-auto CountTrailingBits(T e, T bit_value_to_count) -> std::make_unsigned_t<T> {
+std::make_unsigned_t<T> CountTrailingBits(T e, T bit_value_to_count) {
     using UT = std::make_unsigned_t<T>;
     constexpr UT kNumBits = sizeof(UT) * 8;
     constexpr UT kRightMost = UT{1};
@@ -292,10 +303,9 @@ struct Element : ImplConstant {
                 // --- Below this point are the failure cases ---
             } else if constexpr (IsAbstract<FROM>) {
                 // [abstract-numeric -> x] - materialization failure
-                std::stringstream ss;
-                ss << "value " << value << " cannot be represented as ";
-                ss << "'" << builder.FriendlyName(target_ty) << "'";
-                builder.Diagnostics().add_error(tint::diag::System::Resolver, ss.str(), source);
+                builder.Diagnostics().add_error(
+                    tint::diag::System::Resolver,
+                    OverflowErrorMessage(value, builder.FriendlyName(target_ty)), source);
                 return utils::Failure;
             } else if constexpr (IsFloatingPoint<TO>) {
                 // [x -> floating-point] - number not exactly representable
@@ -1602,7 +1612,7 @@ ConstEval::Result ConstEval::acos(const sem::Type* ty,
         auto create = [&](auto i) -> ImplResult {
             using NumberT = decltype(i);
             if (i < NumberT(-1.0) || i > NumberT(1.0)) {
-                AddError("acos must be called with a value in the range [-1, 1]", source);
+                AddError("acos must be called with a value in the range [-1 .. 1] (inclusive)", source);
                 return utils::Failure;
             }
             return CreateElement(builder, c0->Type(), NumberT(std::acos(i.value)));
@@ -1631,7 +1641,7 @@ ConstEval::Result ConstEval::asin(const sem::Type* ty,
         auto create = [&](auto i) -> ImplResult {
             using NumberT = decltype(i);
             if (i < NumberT(-1.0) || i > NumberT(1.0)) {
-                AddError("asin must be called with a value in the range [-1, 1]", source);
+                AddError("asin must be called with a value in the range [-1 .. 1] (inclusive)", source);
                 return utils::Failure;
             }
             return CreateElement(builder, c0->Type(), NumberT(std::asin(i.value)));
@@ -1677,7 +1687,7 @@ ConstEval::Result ConstEval::atanh(const sem::Type* ty,
         auto create = [&](auto i) -> ImplResult {
             using NumberT = decltype(i);
             if (i <= NumberT(-1.0) || i >= NumberT(1.0)) {
-                AddError("atanh must be called with a value in the range (-1, 1)", source);
+                AddError("atanh must be called with a value in the range (-1 .. 1) (exclusive)", source);
                 return utils::Failure;
             }
             return CreateElement(builder, c0->Type(), NumberT(std::atanh(i.value)));
@@ -1822,7 +1832,7 @@ ConstEval::Result ConstEval::extractBits(const sem::Type* ty,
                     // Only need to set other bits if bit at c - 1 of result is 1
                     if ((r & (UT{1} << (c - UT{1}))) != UT{0}) {
                         UT dst_mask = src_mask >> o;
-                        r = r | (~UT{0} & ~dst_mask);
+                        r |= (~UT{0} & ~dst_mask);
                     }
                 }
 
@@ -1956,9 +1966,9 @@ ConstEval::Result ConstEval::insertBits(const sem::Type* ty,
                 // newbits. Other bits of the result are copied from e.
                 UT from = newbits << o;
                 UT mask = ((UT{1} << c) - UT{1}) << UT{o};
-                auto r = e;             // Start with 'e' as the result
-                r = r & ~mask;          // Zero the bits in 'e' we're overwriting
-                r = r | (from & mask);  // Overwrite from 'newbits' (shifted into position)
+                auto r = e;          // Start with 'e' as the result
+                r &= ~mask;          // Zero the bits in 'e' we're overwriting
+                r |= (from & mask);  // Overwrite from 'newbits' (shifted into position)
                 result = NumberT{r};
             }
 
@@ -1967,6 +1977,33 @@ ConstEval::Result ConstEval::insertBits(const sem::Type* ty,
         return Dispatch_iu32(create, c0, c1);
     };
     return TransformElements(builder, ty, transform, args[0], args[1]);
+}
+
+ConstEval::Result ConstEval::reverseBits(const sem::Type* ty,
+                                         utils::VectorRef<const sem::Constant*> args,
+                                         const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto in_e) -> ImplResult {
+            using NumberT = decltype(in_e);
+            using T = UnwrapNumber<NumberT>;
+            using UT = std::make_unsigned_t<T>;
+            constexpr UT kNumBits = sizeof(UT) * 8;
+
+            UT e = static_cast<UT>(in_e);
+            UT r = UT{0};
+            for (size_t s = 0; s < kNumBits; ++s) {
+                // Write source 's' bit to destination 'd' bit if 1
+                if (e & (UT{1} << s)) {
+                    size_t d = kNumBits - s - 1;
+                    r |= (UT{1} << d);
+                }
+            }
+
+            return CreateElement(builder, c0->Type(), NumberT{r});
+        };
+        return Dispatch_iu32(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
 }
 
 ConstEval::Result ConstEval::saturate(const sem::Type* ty,
