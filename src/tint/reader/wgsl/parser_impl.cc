@@ -615,12 +615,11 @@ Maybe<const ast::Variable*> ParserImpl::global_constant_decl(AttributeList& attr
     Source source;
     if (match(Token::Type::kConst)) {
         use = "'const' declaration";
-    } else if (match(Token::Type::kLet, &source)) {
-        use = "'let' declaration";
-        deprecated(source, "module-scope 'let' has been replaced with 'const'");
     } else if (match(Token::Type::kOverride)) {
         use = "'override' declaration";
         is_overridable = true;
+    } else if (match(Token::Type::kLet, &source)) {
+        return add_error(source, "module-scope 'let' is invalid, use 'const'");
     } else {
         return Failure::kNoMatch;
     }
@@ -1611,29 +1610,6 @@ Expect<ast::Parameter*> ParserImpl::expect_param() {
                                   builder_.Symbols().Register(decl->name),  // symbol
                                   decl->type,                               // type
                                   std::move(attrs.value));                  // attributes
-}
-
-// pipeline_stage
-//   : VERTEX
-//   | FRAGMENT
-//   | COMPUTE
-//
-// TODO(crbug.com/tint/1503): Remove when deprecation period is over.
-Expect<ast::PipelineStage> ParserImpl::expect_pipeline_stage() {
-    auto& t = peek();
-    if (t == "vertex") {
-        next();  // Consume the peek
-        return {ast::PipelineStage::kVertex, t.source()};
-    }
-    if (t == "fragment") {
-        next();  // Consume the peek
-        return {ast::PipelineStage::kFragment, t.source()};
-    }
-    if (t == "compute") {
-        next();  // Consume the peek
-        return {ast::PipelineStage::kCompute, t.source()};
-    }
-    return add_error(peek(), "invalid value for stage attribute");
 }
 
 // interpolation_sample_name
@@ -3637,34 +3613,6 @@ Maybe<const ast::Attribute*> ParserImpl::attribute() {
         });
     }
 
-    // TODO(crbug.com/tint/1503): Remove when deprecation period is over.
-    if (t == "stage") {
-        return expect_paren_block("stage attribute", [&]() -> Result {
-            auto stage = expect_pipeline_stage();
-            if (stage.errored) {
-                return Failure::kErrored;
-            }
-
-            std::string warning = "remove stage and use @";
-            switch (stage.value) {
-                case ast::PipelineStage::kVertex:
-                    warning += "vertex";
-                    break;
-                case ast::PipelineStage::kFragment:
-                    warning += "fragment";
-                    break;
-                case ast::PipelineStage::kCompute:
-                    warning += "compute";
-                    break;
-                case ast::PipelineStage::kNone:
-                    break;
-            }
-            deprecated(t.source(), warning);
-
-            return create<ast::StageAttribute>(t.source(), stage.value);
-        });
-    }
-
     if (t == "vertex") {
         return create<ast::StageAttribute>(t.source(), ast::PipelineStage::kVertex);
     }
@@ -3826,7 +3774,7 @@ Expect<std::string> ParserImpl::expect_ident(std::string_view use) {
         next();
 
         if (is_reserved(t)) {
-            deprecated(t.source(), "'" + t.to_str() + "' is a reserved keyword");
+            return add_error(t.source(), "'" + t.to_str() + "' is a reserved keyword");
         }
 
         return {t.to_str(), t.source()};

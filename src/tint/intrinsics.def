@@ -406,8 +406,8 @@ match storage
 // https://gpuweb.github.io/gpuweb/wgsl/#builtin-functions
 @const fn abs<T: fia_fiu32_f16>(T) -> T
 @const fn abs<N: num, T: fia_fiu32_f16>(vec<N, T>) -> vec<N, T>
-@const fn acos<T: fa_f32_f16>(@test_value(0.87758256189) T) -> T
-@const fn acos<N: num, T: fa_f32_f16>(@test_value(0.87758256189) vec<N, T>) -> vec<N, T>
+@const fn acos<T: fa_f32_f16>(@test_value(0.96891242171) T) -> T
+@const fn acos<N: num, T: fa_f32_f16>(@test_value(0.96891242171) vec<N, T>) -> vec<N, T>
 fn acosh<T: f32_f16>(T) -> T
 fn acosh<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 @const fn all(bool) -> bool
@@ -439,7 +439,7 @@ fn cosh<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 @const fn countOneBits<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
 @const fn countTrailingZeros<T: iu32>(T) -> T
 @const fn countTrailingZeros<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
-fn cross<T: f32_f16>(vec3<T>, vec3<T>) -> vec3<T>
+@const fn cross<T: fa_f32_f16>(vec3<T>, vec3<T>) -> vec3<T>
 fn degrees<T: f32_f16>(T) -> T
 fn degrees<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 fn determinant<N: num, T: f32_f16>(mat<N, N, T>) -> T
@@ -507,11 +507,11 @@ fn mix<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, T) -> vec<N, T>
 fn modf<T: f32_f16>(T) -> __modf_result<T>
 fn modf<N: num, T: f32_f16>(vec<N, T>) -> __modf_result_vec<N, T>
 fn normalize<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn pack2x16float(vec2<f32>) -> u32
-fn pack2x16snorm(vec2<f32>) -> u32
-fn pack2x16unorm(vec2<f32>) -> u32
-fn pack4x8snorm(vec4<f32>) -> u32
-fn pack4x8unorm(vec4<f32>) -> u32
+@const fn pack2x16float(vec2<f32>) -> u32
+@const fn pack2x16snorm(vec2<f32>) -> u32
+@const fn pack2x16unorm(vec2<f32>) -> u32
+@const fn pack4x8snorm(vec4<f32>) -> u32
+@const fn pack4x8unorm(vec4<f32>) -> u32
 fn pow<T: f32_f16>(T, T) -> T
 fn pow<N: num, T: f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
 @const fn quantizeToF16(f32) -> f32
@@ -549,11 +549,11 @@ fn tanh<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 fn transpose<M: num, N: num, T: f32_f16>(mat<M, N, T>) -> mat<N, M, T>
 fn trunc<T: f32_f16>(T) -> T
 fn trunc<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn unpack2x16float(u32) -> vec2<f32>
-fn unpack2x16snorm(u32) -> vec2<f32>
-fn unpack2x16unorm(u32) -> vec2<f32>
-fn unpack4x8snorm(u32) -> vec4<f32>
-fn unpack4x8unorm(u32) -> vec4<f32>
+@const fn unpack2x16float(u32) -> vec2<f32>
+@const fn unpack2x16snorm(u32) -> vec2<f32>
+@const fn unpack2x16unorm(u32) -> vec2<f32>
+@const fn unpack4x8snorm(u32) -> vec4<f32>
+@const fn unpack4x8unorm(u32) -> vec4<f32>
 @stage("compute") fn workgroupBarrier()
 
 fn textureDimensions<T: fiu32>(texture: texture_1d<T>) -> u32

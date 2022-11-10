@@ -425,6 +425,8 @@ list(APPEND TINT_LIB_SRCS
   transform/decompose_strided_array.h
   transform/decompose_strided_matrix.cc
   transform/decompose_strided_matrix.h
+  transform/demote_to_helper.cc
+  transform/demote_to_helper.h
   transform/disable_uniformity_analysis.cc
   transform/disable_uniformity_analysis.h
   transform/expand_compound_assignment.cc
@@ -477,8 +479,6 @@ list(APPEND TINT_LIB_SRCS
   transform/transform.h
   transform/unshadow.cc
   transform/unshadow.h
-  transform/unwind_discard_functions.cc
-  transform/unwind_discard_functions.h
   transform/utils/get_insertion_point.cc
   transform/utils/get_insertion_point.h
   transform/utils/hoist_to_decl_before.cc
@@ -752,6 +752,7 @@ if(${TINT_BUILD_SPV_READER} OR ${TINT_BUILD_SPV_WRITER})
   endif()
 endif()
 
+
 ################################################################################
 # Tests
 ################################################################################
@@ -884,7 +885,7 @@ if(TINT_BUILD_TESTS)
     resolver/resolver_test.cc
     resolver/side_effects_test.cc
     resolver/static_assert_test.cc
-    resolver/source_variable_test.cc
+    resolver/root_identifier_test.cc
     resolver/address_space_layout_validation_test.cc
     resolver/address_space_validation_test.cc
     resolver/struct_layout_test.cc
@@ -1054,7 +1055,6 @@ if(TINT_BUILD_TESTS)
       reader/wgsl/parser_impl_multiplicative_expression_test.cc
       reader/wgsl/parser_impl_param_list_test.cc
       reader/wgsl/parser_impl_paren_expression_test.cc
-      reader/wgsl/parser_impl_pipeline_stage_test.cc
       reader/wgsl/parser_impl_primary_expression_test.cc
       reader/wgsl/parser_impl_relational_expression_test.cc
       reader/wgsl/parser_impl_reserved_keyword_test.cc
@@ -1183,6 +1183,7 @@ if(TINT_BUILD_TESTS)
       transform/decompose_memory_access_test.cc
       transform/decompose_strided_array_test.cc
       transform/decompose_strided_matrix_test.cc
+      transform/demote_to_helper_test.cc
       transform/disable_uniformity_analysis_test.cc
       transform/expand_compound_assignment_test.cc
       transform/first_index_offset_test.cc
@@ -1210,7 +1211,6 @@ if(TINT_BUILD_TESTS)
       transform/substitute_override_test.cc
       transform/test_helper.h
       transform/unshadow_test.cc
-      transform/unwind_discard_functions_test.cc
       transform/var_for_dynamic_index_test.cc
       transform/vectorize_matrix_conversions_test.cc
       transform/vectorize_scalar_matrix_initializers_test.cc
@@ -1352,7 +1352,16 @@ if(TINT_BUILD_TESTS)
   add_executable(tint_unittests ${TINT_TEST_SRCS})
   set_target_properties(${target} PROPERTIES FOLDER "Tests")
 
-  if(NOT MSVC)
+  if(MSVC)
+    # TODO(crbug.com/tint/1749): MSVC debug builds can suffer from stack
+    # overflows when resolving deeply nested expression chains or statements.
+    # Production builds neither use MSVC nor debug, so just bump the stack size
+    # for this build combination.
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" build_type)
+    if ((NOT ${build_type} STREQUAL "RELEASE") AND (NOT ${build_type} STREQUAL "RELWITHDEBINFO"))
+      target_link_options(tint_unittests PRIVATE "/STACK 2097152") # 2MB, default is 1MB
+    endif()
+  else()
     target_compile_options(tint_unittests PRIVATE
       -Wno-global-constructors
       -Wno-weak-vtables

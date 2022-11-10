@@ -503,6 +503,15 @@ class ConstEval {
                               utils::VectorRef<const sem::Constant*> args,
                               const Source& source);
 
+    /// cross builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result cross(const sem::Type* ty,
+                 utils::VectorRef<const sem::Constant*> args,
+                 const Source& source);
+
     /// extractBits builtin
     /// @param ty the expression type
     /// @param args the input arguments
@@ -547,6 +556,51 @@ class ConstEval {
     Result insertBits(const sem::Type* ty,
                       utils::VectorRef<const sem::Constant*> args,
                       const Source& source);
+
+    /// pack2x16float builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result pack2x16float(const sem::Type* ty,
+                         utils::VectorRef<const sem::Constant*> args,
+                         const Source& source);
+
+    /// pack2x16snorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result pack2x16snorm(const sem::Type* ty,
+                         utils::VectorRef<const sem::Constant*> args,
+                         const Source& source);
+
+    /// pack2x16unorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result pack2x16unorm(const sem::Type* ty,
+                         utils::VectorRef<const sem::Constant*> args,
+                         const Source& source);
+
+    /// pack4x8snorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result pack4x8snorm(const sem::Type* ty,
+                        utils::VectorRef<const sem::Constant*> args,
+                        const Source& source);
+
+    /// pack4x8unorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result pack4x8unorm(const sem::Type* ty,
+                        utils::VectorRef<const sem::Constant*> args,
+                        const Source& source);
 
     /// reverseBits builtin
     /// @param ty the expression type
@@ -602,6 +656,51 @@ class ConstEval {
                 utils::VectorRef<const sem::Constant*> args,
                 const Source& source);
 
+    /// unpack2x16float builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result unpack2x16float(const sem::Type* ty,
+                           utils::VectorRef<const sem::Constant*> args,
+                           const Source& source);
+
+    /// unpack2x16snorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result unpack2x16snorm(const sem::Type* ty,
+                           utils::VectorRef<const sem::Constant*> args,
+                           const Source& source);
+
+    /// unpack2x16unorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result unpack2x16unorm(const sem::Type* ty,
+                           utils::VectorRef<const sem::Constant*> args,
+                           const Source& source);
+
+    /// unpack4x8snorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result unpack4x8snorm(const sem::Type* ty,
+                          utils::VectorRef<const sem::Constant*> args,
+                          const Source& source);
+
+    /// unpack4x8unorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result unpack4x8unorm(const sem::Type* ty,
+                          utils::VectorRef<const sem::Constant*> args,
+                          const Source& source);
+
     /// quantizeToF16 builtin
     /// @param ty the expression type
     /// @param args the input arguments
@@ -624,6 +723,13 @@ class ConstEval {
     /// @returns the result number on success, or logs an error and returns Failure
     template <typename NumberT>
     utils::Result<NumberT> Add(NumberT a, NumberT b);
+
+    /// Subtracts two Number<T>s
+    /// @param a the lhs number
+    /// @param b the rhs number
+    /// @returns the result number on success, or logs an error and returns Failure
+    template <typename NumberT>
+    utils::Result<NumberT> Sub(NumberT a, NumberT b);
 
     /// Multiplies two Number<T>s
     /// @param a the lhs number
@@ -677,11 +783,33 @@ class ConstEval {
                                 NumberT b3,
                                 NumberT b4);
 
+    /// Returns the determinant of the 2x2 matrix [(a1, a2), (b1, b2)]
+    /// @param a1 component 1 of the first column vector
+    /// @param a2 component 2 of the first column vector
+    /// @param b1 component 1 of the second column vector
+    /// @param b2 component 2 of the second column vector
+    template <typename NumberT>
+    utils::Result<NumberT> Det2(NumberT a1, NumberT a2, NumberT b1, NumberT b2);
+
+    /// Clamps e between low and high
+    /// @param e the number to clamp
+    /// @param low the lower bound
+    /// @param high the upper bound
+    /// @returns the result number on success, or logs an error and returns Failure
+    template <typename NumberT>
+    utils::Result<NumberT> Clamp(NumberT e, NumberT low, NumberT high);
+
     /// Returns a callable that calls Add, and creates a Constant with its result of type `elem_ty`
     /// if successful, or returns Failure otherwise.
     /// @param elem_ty the element type of the Constant to create on success
     /// @returns the callable function
     auto AddFunc(const sem::Type* elem_ty);
+
+    /// Returns a callable that calls Sub, and creates a Constant with its result of type `elem_ty`
+    /// if successful, or returns Failure otherwise.
+    /// @param elem_ty the element type of the Constant to create on success
+    /// @returns the callable function
+    auto SubFunc(const sem::Type* elem_ty);
 
     /// Returns a callable that calls Mul, and creates a Constant with its result of type `elem_ty`
     /// if successful, or returns Failure otherwise.
@@ -706,6 +834,18 @@ class ConstEval {
     /// @param elem_ty the element type of the Constant to create on success
     /// @returns the callable function
     auto Dot4Func(const sem::Type* elem_ty);
+
+    /// Returns a callable that calls Det2, and creates a Constant with its result of type `elem_ty`
+    /// if successful, or returns Failure otherwise.
+    /// @param elem_ty the element type of the Constant to create on success
+    /// @returns the callable function
+    auto Det2Func(const sem::Type* elem_ty);
+
+    /// Returns a callable that calls Clamp, and creates a Constant with its result of type
+    /// `elem_ty` if successful, or returns Failure otherwise.
+    /// @param elem_ty the element type of the Constant to create on success
+    /// @returns the callable function
+    auto ClampFunc(const sem::Type* elem_ty);
 
     ProgramBuilder& builder;
     const Source* current_source = nullptr;

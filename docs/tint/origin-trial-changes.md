@@ -5,6 +5,11 @@
 ### Breaking changes
 
 * `textureDimensions()`, `textureNumLayers()` and `textureNumLevels()` now return unsigned integers / vectors. [tint:1526](crbug.com/tint/1526)
+* The `@stage` attribute has been removed. The short forms should be used
+  instead (`@vertex`, `@fragment`, or `@compute`). [tint:1503](crbug.com/tint/1503)
+* Module-scope `let` is now an error. Use module-scope `const` instead. [tint:1580](crbug.com/tint/1584)
+* Reserved words are now an error instead of a deprecation. [tint:1463](crbug.com/tint/1463)
+* You may no longer use pointer parameters in `workgroup` address space. [tint:1721](crbug.com/tint/1721)
 
 ### New features
 

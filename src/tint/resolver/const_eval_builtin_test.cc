@@ -9,7 +9,7 @@
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
+// See the License for the empecific language governing permissions and
 // limitations under the License.
 
 #include "src/tint/resolver/const_eval_test.h"
@@ -17,6 +17,7 @@
 #include "src/tint/utils/result.h"
 
 using namespace tint::number_suffixes;  // NOLINT
+using ::testing::HasSubstr;
 
 namespace tint::resolver {
 namespace {
@@ -28,8 +29,8 @@ struct Case {
     Case(utils::VectorRef<Types> in_args, Types expected_value)
         : args(std::move(in_args)), expected(Success{std::move(expected_value), false, false}) {}
 
-    Case(utils::VectorRef<Types> in_args, const char* expected_err)
-        : args(std::move(in_args)), expected(Failure{expected_err}) {}
+    Case(utils::VectorRef<Types> in_args, std::string expected_err)
+        : args(std::move(in_args)), expected(Failure{std::move(expected_err)}) {}
 
     /// Expected value may be positive or negative
     Case& PosOrNeg() {
@@ -53,7 +54,7 @@ struct Case {
         bool float_compare = false;
     };
     struct Failure {
-        const char* error = nullptr;
+        std::string error = nullptr;
     };
 
     utils::Vector<Types, 8> args;
@@ -94,17 +95,27 @@ static Case C(std::initializer_list<ScalarTypes> sargs, ScalarTypes sresult) {
 }
 
 /// Creates a Case with Values for args and expected error
-static Case E(std::initializer_list<Types> args, const char* err) {
-    return Case{utils::Vector<Types, 8>{args}, err};
+static Case E(std::initializer_list<Types> args, std::string err) {
+    return Case{utils::Vector<Types, 8>{args}, std::move(err)};
 }
 
 /// Convenience overload that creates an expected-error Case with just scalars
-static Case E(std::initializer_list<ScalarTypes> sargs, const char* err) {
+static Case E(std::initializer_list<ScalarTypes> sargs, std::string err) {
     utils::Vector<Types, 8> args;
     for (auto& sa : sargs) {
         std::visit([&](auto&& v) { return args.Push(Val(v)); }, sa);
     }
-    return Case{std::move(args), err};
+    return Case{std::move(args), std::move(err)};
+}
+
+/// Returns the overflow error message for binary ops
+template <typename NumberT>
+std::string OverflowErrorMessage(NumberT lhs, const char* op, NumberT rhs) {
+    std::stringstream ss;
+    ss << std::setprecision(20);
+    ss << "'" << lhs.value << " " << op << " " << rhs.value << "' cannot be represented as '"
+       << FriendlyName<NumberT>() << "'";
+    return ss.str();
 }
 
 using ResolverConstEvalBuiltinTest = ResolverTestWithParam<std::tuple<sem::BuiltinType, Case>>;
@@ -776,6 +787,130 @@ INSTANTIATE_TEST_SUITE_P(  //
                      testing::ValuesIn(Concat(CountOneBitsCases<i32>(),  //
                                               CountOneBitsCases<u32>()))));
 
+template <typename T, bool finite_only>
+std::vector<Case> CrossCases() {
+    constexpr auto vec_x = [](T v) { return Vec(T(v), T(0), T(0)); };
+    constexpr auto vec_y = [](T v) { return Vec(T(0), T(v), T(0)); };
+    constexpr auto vec_z = [](T v) { return Vec(T(0), T(0), T(v)); };
+
+    const auto zero = Vec(T(0), T(0), T(0));
+    const auto unit_x = vec_x(T(1));
+    const auto unit_y = vec_y(T(1));
+    const auto unit_z = vec_z(T(1));
+    const auto neg_unit_x = vec_x(-T(1));
+    const auto neg_unit_y = vec_y(-T(1));
+    const auto neg_unit_z = vec_z(-T(1));
+    const auto highest_x = vec_x(T::Highest());
+    const auto highest_y = vec_y(T::Highest());
+    const auto highest_z = vec_z(T::Highest());
+    const auto smallest_x = vec_x(T::Smallest());
+    const auto smallest_y = vec_y(T::Smallest());
+    const auto smallest_z = vec_z(T::Smallest());
+    const auto lowest_x = vec_x(T::Lowest());
+    const auto lowest_y = vec_y(T::Lowest());
+    const auto lowest_z = vec_z(T::Lowest());
+    const auto inf_x = vec_x(T::Inf());
+    const auto inf_y = vec_y(T::Inf());
+    const auto inf_z = vec_z(T::Inf());
+    const auto neg_inf_x = vec_x(-T::Inf());
+    const auto neg_inf_y = vec_y(-T::Inf());
+    const auto neg_inf_z = vec_z(-T::Inf());
+
+    std::vector<Case> r = {
+        C({zero, zero}, zero),
+
+        C({unit_x, unit_x}, zero),
+        C({unit_y, unit_y}, zero),
+        C({unit_z, unit_z}, zero),
+
+        C({smallest_x, smallest_x}, zero),
+        C({smallest_y, smallest_y}, zero),
+        C({smallest_z, smallest_z}, zero),
+
+        C({lowest_x, lowest_x}, zero),
+        C({lowest_y, lowest_y}, zero),
+        C({lowest_z, lowest_z}, zero),
+
+        C({highest_x, highest_x}, zero),
+        C({highest_y, highest_y}, zero),
+        C({highest_z, highest_z}, zero),
+
+        C({smallest_x, highest_x}, zero),
+        C({smallest_y, highest_y}, zero),
+        C({smallest_z, highest_z}, zero),
+
+        C({unit_x, neg_unit_x}, zero).PosOrNeg(),
+        C({unit_y, neg_unit_y}, zero).PosOrNeg(),
+        C({unit_z, neg_unit_z}, zero).PosOrNeg(),
+
+        C({unit_x, unit_y}, unit_z),
+        C({unit_y, unit_x}, neg_unit_z),
+
+        C({unit_z, unit_x}, unit_y),
+        C({unit_x, unit_z}, neg_unit_y),
+
+        C({unit_y, unit_z}, unit_x),
+        C({unit_z, unit_y}, neg_unit_x),
+
+        C({vec_x(T(1)), vec_y(T(2))}, vec_z(T(2))),
+        C({vec_y(T(1)), vec_x(T(2))}, vec_z(-T(2))),
+        C({vec_x(T(2)), vec_y(T(3))}, vec_z(T(6))),
+        C({vec_y(T(2)), vec_x(T(3))}, vec_z(-T(6))),
+
+        C({Vec(T(1), T(2), T(3)), Vec(T(1), T(5), T(7))}, Vec(T(-1), T(-4), T(3))),
+        C({Vec(T(33), T(44), T(55)), Vec(T(13), T(42), T(39))}, Vec(T(-594), T(-572), T(814))),
+        C({Vec(T(3.5), T(4), T(5.5)), Vec(T(1), T(4.5), T(3.5))},
+          Vec(T(-10.75), T(-6.75), T(11.75))),
+    };
+
+    ConcatIntoIf<!finite_only>(  //
+        r, std::vector<Case>{
+               C({highest_x, highest_y}, inf_z).PosOrNeg(),  //
+               C({highest_y, highest_x}, inf_z).PosOrNeg(),  //
+               C({highest_z, highest_x}, inf_y).PosOrNeg(),  //
+               C({highest_x, highest_z}, inf_y).PosOrNeg(),  //
+               C({highest_y, highest_z}, inf_x).PosOrNeg(),  //
+               C({highest_z, highest_y}, inf_x).PosOrNeg(),  //
+               C({lowest_x, lowest_y}, inf_z).PosOrNeg(),    //
+               C({lowest_y, lowest_x}, inf_z).PosOrNeg(),    //
+               C({lowest_z, lowest_x}, inf_y).PosOrNeg(),    //
+               C({lowest_x, lowest_z}, inf_y).PosOrNeg(),    //
+               C({lowest_y, lowest_z}, inf_x).PosOrNeg(),    //
+               C({lowest_z, lowest_y}, inf_x).PosOrNeg(),
+           });
+
+    std::string pos_error_msg =
+        "12:34 error: " + OverflowErrorMessage(T::Highest(), "*", T::Highest());
+    std::string neg_error_msg =
+        "12:34 error: " + OverflowErrorMessage(T::Lowest(), "*", T::Lowest());
+
+    ConcatIntoIf<finite_only>(  //
+        r, std::vector<Case>{
+               E({highest_x, highest_y}, pos_error_msg),
+               E({highest_y, highest_x}, pos_error_msg),
+               E({highest_z, highest_x}, pos_error_msg),
+               E({highest_x, highest_z}, pos_error_msg),
+               E({highest_y, highest_z}, pos_error_msg),
+               E({highest_z, highest_y}, pos_error_msg),
+               E({lowest_x, lowest_y}, neg_error_msg),
+               E({lowest_y, lowest_x}, neg_error_msg),
+               E({lowest_z, lowest_x}, neg_error_msg),
+               E({lowest_x, lowest_z}, neg_error_msg),
+               E({lowest_y, lowest_z}, neg_error_msg),
+               E({lowest_z, lowest_y}, neg_error_msg),
+           });
+
+    return r;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Cross,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kCross),
+                     testing::ValuesIn(Concat(CrossCases<AFloat, true>(),  //
+                                              CrossCases<f32, false>(),
+                                              CrossCases<f32, false>(),  //
+                                              CrossCases<f16, false>()))));
+
 template <typename T>
 std::vector<Case> FirstLeadingBitCases() {
     using B = BitValues<T>;
@@ -1091,7 +1226,95 @@ INSTANTIATE_TEST_SUITE_P(ExtractBits,
                              std::make_tuple(33, 33),             //
                              std::make_tuple(34, 34),             //
                              std::make_tuple(1000, 1000),         //
+                             std::make_tuple(u32::Highest(), 1),  //
+                             std::make_tuple(1, u32::Highest()),  //
                              std::make_tuple(u32::Highest(), u32::Highest())));
+
+std::vector<Case> Pack4x8snormCases() {
+    return {
+        C({Vec(f32(0), f32(0), f32(0), f32(0))}, Val(u32(0x0000'0000))),
+        C({Vec(f32(0), f32(0), f32(0), f32(-1))}, Val(u32(0x8100'0000))),
+        C({Vec(f32(0), f32(0), f32(0), f32(1))}, Val(u32(0x7f00'0000))),
+        C({Vec(f32(0), f32(0), f32(-1), f32(0))}, Val(u32(0x0081'0000))),
+        C({Vec(f32(0), f32(1), f32(0), f32(0))}, Val(u32(0x0000'7f00))),
+        C({Vec(f32(-1), f32(0), f32(0), f32(0))}, Val(u32(0x0000'0081))),
+        C({Vec(f32(1), f32(-1), f32(1), f32(-1))}, Val(u32(0x817f'817f))),
+        C({Vec(f32::Highest(), f32(-0.5), f32(0.5), f32::Lowest())}, Val(u32(0x8140'c17f))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Pack4x8snorm,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kPack4X8Snorm),
+                     testing::ValuesIn(Pack4x8snormCases())));
+
+std::vector<Case> Pack4x8unormCases() {
+    return {
+        C({Vec(f32(0), f32(0), f32(0), f32(0))}, Val(u32(0x0000'0000))),
+        C({Vec(f32(0), f32(0), f32(0), f32(1))}, Val(u32(0xff00'0000))),
+        C({Vec(f32(0), f32(0), f32(1), f32(0))}, Val(u32(0x00ff'0000))),
+        C({Vec(f32(0), f32(1), f32(0), f32(0))}, Val(u32(0x0000'ff00))),
+        C({Vec(f32(1), f32(0), f32(0), f32(0))}, Val(u32(0x0000'00ff))),
+        C({Vec(f32(1), f32(0), f32(1), f32(0))}, Val(u32(0x00ff'00ff))),
+        C({Vec(f32::Highest(), f32(0), f32(0.5), f32::Lowest())}, Val(u32(0x0080'00ff))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Pack4x8unorm,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kPack4X8Unorm),
+                     testing::ValuesIn(Pack4x8unormCases())));
+
+std::vector<Case> Pack2x16floatCases() {
+    return {
+        C({Vec(f32(f16::Lowest()), f32(f16::Highest()))}, Val(u32(0x7bff'fbff))),
+        C({Vec(f32(1), f32(-1))}, Val(u32(0xbc00'3c00))),
+        C({Vec(f32(0), f32(0))}, Val(u32(0x0000'0000))),
+        C({Vec(f32(10), f32(-10.5))}, Val(u32(0xc940'4900))),
+
+        E({Vec(f32(0), f32::Highest())},
+          "12:34 error: value 3.4028234663852885981e+38 cannot be represented as 'f16'"),
+        E({Vec(f32::Lowest(), f32(0))},
+          "12:34 error: value -3.4028234663852885981e+38 cannot be represented as 'f16'"),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Pack2x16float,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kPack2X16Float),
+                     testing::ValuesIn(Pack2x16floatCases())));
+
+std::vector<Case> Pack2x16snormCases() {
+    return {
+        C({Vec(f32(0), f32(0))}, Val(u32(0x0000'0000))),
+        C({Vec(f32(0), f32(-1))}, Val(u32(0x8001'0000))),
+        C({Vec(f32(0), f32(1))}, Val(u32(0x7fff'0000))),
+        C({Vec(f32(-1), f32(0))}, Val(u32(0x0000'8001))),
+        C({Vec(f32(1), f32(0))}, Val(u32(0x0000'7fff))),
+        C({Vec(f32(1), f32(-1))}, Val(u32(0x8001'7fff))),
+        C({Vec(f32::Highest(), f32::Lowest())}, Val(u32(0x8001'7fff))),
+        C({Vec(f32(-0.5), f32(0.5))}, Val(u32(0x4000'c001))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Pack2x16snorm,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kPack2X16Snorm),
+                     testing::ValuesIn(Pack2x16snormCases())));
+
+std::vector<Case> Pack2x16unormCases() {
+    return {
+        C({Vec(f32(0), f32(1))}, Val(u32(0xffff'0000))),
+        C({Vec(f32(1), f32(0))}, Val(u32(0x0000'ffff))),
+        C({Vec(f32(0.5), f32(0))}, Val(u32(0x0000'8000))),
+        C({Vec(f32::Highest(), f32::Lowest())}, Val(u32(0x0000'ffff))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Pack2x16unorm,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kPack2X16Unorm),
+                     testing::ValuesIn(Pack2x16unormCases())));
 
 template <typename T>
 std::vector<Case> ReverseBitsCases() {
@@ -1267,6 +1490,88 @@ INSTANTIATE_TEST_SUITE_P(  //
                      testing::ValuesIn(Concat(StepCases<AFloat>(),  //
                                               StepCases<f32>(),
                                               StepCases<f16>()))));
+
+std::vector<Case> Unpack4x8snormCases() {
+    return {
+        C({Val(u32(0x0000'0000))}, Vec(f32(0), f32(0), f32(0), f32(0))),
+        C({Val(u32(0x8100'0000))}, Vec(f32(0), f32(0), f32(0), f32(-1))),
+        C({Val(u32(0x7f00'0000))}, Vec(f32(0), f32(0), f32(0), f32(1))),
+        C({Val(u32(0x0081'0000))}, Vec(f32(0), f32(0), f32(-1), f32(0))),
+        C({Val(u32(0x0000'7f00))}, Vec(f32(0), f32(1), f32(0), f32(0))),
+        C({Val(u32(0x0000'0081))}, Vec(f32(-1), f32(0), f32(0), f32(0))),
+        C({Val(u32(0x817f'817f))}, Vec(f32(1), f32(-1), f32(1), f32(-1))),
+        C({Val(u32(0x816d'937f))},
+          Vec(f32(1), f32(-0.8582677165354), f32(0.8582677165354), f32(-1))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Unpack4x8snorm,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kUnpack4X8Snorm),
+                     testing::ValuesIn(Unpack4x8snormCases())));
+
+std::vector<Case> Unpack4x8unormCases() {
+    return {
+        C({Val(u32(0x0000'0000))}, Vec(f32(0), f32(0), f32(0), f32(0))),
+        C({Val(u32(0xff00'0000))}, Vec(f32(0), f32(0), f32(0), f32(1))),
+        C({Val(u32(0x00ff'0000))}, Vec(f32(0), f32(0), f32(1), f32(0))),
+        C({Val(u32(0x0000'ff00))}, Vec(f32(0), f32(1), f32(0), f32(0))),
+        C({Val(u32(0x0000'00ff))}, Vec(f32(1), f32(0), f32(0), f32(0))),
+        C({Val(u32(0x00ff'00ff))}, Vec(f32(1), f32(0), f32(1), f32(0))),
+        C({Val(u32(0x0066'00ff))}, Vec(f32(1), f32(0), f32(0.4), f32(0))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Unpack4x8unorm,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kUnpack4X8Unorm),
+                     testing::ValuesIn(Unpack4x8unormCases())));
+
+std::vector<Case> Unpack2x16floatCases() {
+    return {
+        C({Val(u32(0x7bff'fbff))}, Vec(f32(f16::Lowest()), f32(f16::Highest()))),
+        C({Val(u32(0xbc00'3c00))}, Vec(f32(1), f32(-1))),
+        C({Val(u32(0x0000'0000))}, Vec(f32(0), f32(0))),
+        C({Val(u32(0xc940'4900))}, Vec(f32(10), f32(-10.5))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Unpack2x16float,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kUnpack2X16Float),
+                     testing::ValuesIn(Unpack2x16floatCases())));
+
+std::vector<Case> Unpack2x16snormCases() {
+    return {
+        C({Val(u32(0x0000'0000))}, Vec(f32(0), f32(0))),
+        C({Val(u32(0x8001'0000))}, Vec(f32(0), f32(-1))),
+        C({Val(u32(0x7fff'0000))}, Vec(f32(0), f32(1))),
+        C({Val(u32(0x0000'8001))}, Vec(f32(-1), f32(0))),
+        C({Val(u32(0x0000'7fff))}, Vec(f32(1), f32(0))),
+        C({Val(u32(0x8001'7fff))}, Vec(f32(1), f32(-1))),
+        C({Val(u32(0x8001'7fff))}, Vec(f32(1), f32(-1))),
+        C({Val(u32(0x4000'999a))}, Vec(f32(-0.80001220740379), f32(0.500015259254737))).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Unpack2x16snorm,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kUnpack2X16Snorm),
+                     testing::ValuesIn(Unpack2x16snormCases())));
+
+std::vector<Case> Unpack2x16unormCases() {
+    return {
+        C({Val(u32(0xffff'0000))}, Vec(f32(0), f32(1))),
+        C({Val(u32(0x0000'ffff))}, Vec(f32(1), f32(0))),
+        C({Val(u32(0x0000'6666))}, Vec(f32(0.4), f32(0))),
+        C({Val(u32(0x0000'ffff))}, Vec(f32(1), f32(0))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Unpack2x16unorm,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kUnpack2X16Unorm),
+                     testing::ValuesIn(Unpack2x16unormCases())));
 
 std::vector<Case> QuantizeToF16Cases() {
     (void)E({Vec(0_f, 0_f)}, "");  // Currently unused, but will be soon.

@@ -853,8 +853,7 @@ bool Validator::Parameter(const ast::Function* func, const sem::Variable* var) c
     if (auto* ref = var->Type()->As<sem::Pointer>()) {
         auto address_space = ref->AddressSpace();
         if (!(address_space == ast::AddressSpace::kFunction ||
-              address_space == ast::AddressSpace::kPrivate ||
-              address_space == ast::AddressSpace::kWorkgroup) &&
+              address_space == ast::AddressSpace::kPrivate) &&
             IsValidationEnabled(decl->attributes, ast::DisabledValidation::kIgnoreAddressSpace)) {
             std::stringstream ss;
             ss << "function parameter of pointer type cannot be in '" << address_space
@@ -1076,12 +1075,8 @@ bool Validator::Function(const sem::Function* func, ast::PipelineStage stage) co
     }
 
     // https://www.w3.org/TR/WGSL/#behaviors-rules
-    // a function behavior is always one of {}, {Next}, {Discard}, or
-    // {Next, Discard}.
-    if (func->Behaviors() != sem::Behaviors{} &&  // NOLINT: bad warning
-        func->Behaviors() != sem::Behavior::kNext && func->Behaviors() != sem::Behavior::kDiscard &&
-        func->Behaviors() != sem::Behaviors{sem::Behavior::kNext,  //
-                                            sem::Behavior::kDiscard}) {
+    // a function behavior is always one of {}, or {Next}.
+    if (func->Behaviors() != sem::Behaviors{} && func->Behaviors() != sem::Behavior::kNext) {
         auto name = symbols_.NameFor(decl->symbol);
         TINT_ICE(Resolver, diagnostics_)
             << "function '" << name << "' behaviors are: " << func->Behaviors();
@@ -1544,19 +1539,6 @@ bool Validator::Call(const sem::Call* call, sem::Statement* current_statement) c
     return true;
 }
 
-bool Validator::DiscardStatement(const sem::Statement* stmt,
-                                 sem::Statement* current_statement) const {
-    if (auto* continuing = ClosestContinuing(/*stop_at_loop*/ false, current_statement)) {
-        AddError("continuing blocks must not contain a discard statement",
-                 stmt->Declaration()->source);
-        if (continuing != stmt->Declaration() && continuing != stmt->Parent()->Declaration()) {
-            AddNote("see continuing block here", continuing->source);
-        }
-        return false;
-    }
-    return true;
-}
-
 bool Validator::FallthroughStatement(const sem::Statement* stmt) const {
     if (auto* block = As<sem::BlockStatement>(stmt->Parent())) {
         if (auto* c = As<sem::CaseStatement>(block->Parent())) {
@@ -1799,35 +1781,28 @@ bool Validator::FunctionCall(const sem::Call* call, sem::Statement* current_stat
         }
 
         if (param_type->Is<sem::Pointer>()) {
-            auto is_valid = false;
-            if (auto* ident_expr = arg_expr->As<ast::IdentifierExpression>()) {
-                auto* var = sem_.ResolvedSymbol<sem::Variable>(ident_expr);
-                if (!var) {
-                    TINT_ICE(Resolver, diagnostics_) << "failed to resolve identifier";
-                    return false;
-                }
-                if (var->Is<sem::Parameter>()) {
-                    is_valid = true;
-                }
-            } else if (auto* unary = arg_expr->As<ast::UnaryOpExpression>()) {
-                if (unary->op == ast::UnaryOp::kAddressOf) {
-                    if (auto* ident_unary = unary->expr->As<ast::IdentifierExpression>()) {
-                        auto* var = sem_.ResolvedSymbol<sem::Variable>(ident_unary);
-                        if (!var) {
-                            TINT_ICE(Resolver, diagnostics_) << "failed to resolve identifier";
-                            return false;
-                        }
-                        is_valid = true;
-                    }
-                }
+            // https://gpuweb.github.io/gpuweb/wgsl/#function-restriction
+            // Each argument of pointer type to a user-defined function must have the same memory
+            // view as its root identifier.
+            // We can validate this by just comparing the store type of the argument with that of
+            // its root identifier, as these will match iff the memory view is the same.
+            auto* arg_store_type = arg_type->As<sem::Pointer>()->StoreType();
+            auto* root = call->Arguments()[i]->RootIdentifier();
+            auto* root_ptr_ty = root->Type()->As<sem::Pointer>();
+            auto* root_ref_ty = root->Type()->As<sem::Reference>();
+            TINT_ASSERT(Resolver, root_ptr_ty || root_ref_ty);
+            const sem::Type* root_store_type;
+            if (root_ptr_ty) {
+                root_store_type = root_ptr_ty->StoreType();
+            } else {
+                root_store_type = root_ref_ty->StoreType();
             }
-
-            if (!is_valid &&
+            if (root_store_type != arg_store_type &&
                 IsValidationEnabled(param->Declaration()->attributes,
                                     ast::DisabledValidation::kIgnoreInvalidPointerArgument)) {
                 AddError(
-                    "expected an address-of expression of a variable identifier expression or a "
-                    "function parameter",
+                    "arguments of pointer type must not point to a subset of the originating "
+                    "variable",
                     arg_expr->source);
                 return false;
             }
@@ -1846,18 +1821,6 @@ bool Validator::FunctionCall(const sem::Call* call, sem::Statement* current_stat
             // If the called function does not return a value, a function call
             // statement should be used instead.
             AddError("function '" + name + "' does not return a value", decl->source);
-            return false;
-        }
-    }
-
-    if (call->Behaviors().Contains(sem::Behavior::kDiscard)) {
-        if (auto* continuing = ClosestContinuing(/*stop_at_loop*/ false, current_statement)) {
-            AddError("cannot call a function that may discard inside a continuing block",
-                     call->Declaration()->source);
-            if (continuing != call->Stmt()->Declaration() &&
-                continuing != call->Stmt()->Parent()->Declaration()) {
-                AddNote("see continuing block here", continuing->source);
-            }
             return false;
         }
     }
