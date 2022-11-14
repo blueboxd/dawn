@@ -507,6 +507,33 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               AcosCases<f16, false>()))));
 
 template <typename T, bool finite_only>
+std::vector<Case> AcoshCases() {
+    std::vector<Case> cases = {
+        C({T(1.0)}, T(0.0)),
+        C({T(11.5919532755)}, kPi<T>).FloatComp(),
+
+        // Vector tests
+        C({Vec(T(1.0), T(11.5919532755))}, Vec(T(0), kPi<T>)).FloatComp(),
+    };
+
+    ConcatIntoIf<finite_only>(  //
+        cases, std::vector<Case>{
+                   E({T::Smallest()}, "12:34 error: acosh must be called with a value >= 1.0"),
+                   E({-1.1_a}, "12:34 error: acosh must be called with a value >= 1.0"),
+                   E({0_a}, "12:34 error: acosh must be called with a value >= 1.0"),
+               });
+
+    return cases;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Acosh,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kAcosh),
+                     testing::ValuesIn(Concat(AcoshCases<AFloat, true>(),  //
+                                              AcoshCases<f32, false>(),
+                                              AcoshCases<f16, false>()))));
+
+template <typename T, bool finite_only>
 std::vector<Case> AsinCases() {
     std::vector<Case> cases = {
         // If i is +/-0, +/-0 is returned
@@ -657,6 +684,51 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               ClampCases<AFloat>(),
                                               ClampCases<f32>(),
                                               ClampCases<f16>()))));
+
+template <typename T>
+std::vector<Case> CosCases() {
+    std::vector<Case> cases = {
+        C({-T(0)}, T(1)),
+        C({T(0)}, T(1)),
+
+        C({T(0.75)}, T(0.7316888689)).FloatComp(),
+
+        // Vector test
+        C({Vec(T(0), -T(0), T(0.75))}, Vec(T(1), T(1), T(0.7316888689))).FloatComp(),
+    };
+
+    return cases;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Cos,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kCos),
+                     testing::ValuesIn(Concat(CosCases<AFloat>(),  //
+                                              CosCases<f32>(),
+                                              CosCases<f16>()))));
+
+template <typename T>
+std::vector<Case> CoshCases() {
+    std::vector<Case> cases = {
+        C({T(0)}, T(1)),
+        C({-T(0)}, T(1)),
+        C({T(1)}, T(1.5430806348)).FloatComp(),
+
+        C({T(.75)}, T(1.2946832847)).FloatComp(),
+
+        // Vector tests
+        C({Vec(T(0), -T(0), T(1))}, Vec(T(1), T(1), T(1.5430806348))).FloatComp(),
+    };
+
+    return cases;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Cosh,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kCosh),
+                     testing::ValuesIn(Concat(CoshCases<AFloat>(),  //
+                                              CoshCases<f32>(),
+                                              CoshCases<f16>()))));
 
 template <typename T>
 std::vector<Case> CountLeadingZerosCases() {
@@ -1460,6 +1532,50 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               SignCases<f16>()))));
 
 template <typename T>
+std::vector<Case> SinCases() {
+    std::vector<Case> cases = {
+        C({-T(0)}, -T(0)),
+        C({T(0)}, T(0)),
+        C({T(0.75)}, T(0.68163876)).FloatComp(),
+        C({-T(0.75)}, -T(0.68163876)).FloatComp(),
+
+        // Vector test
+        C({Vec(T(0), -T(0), T(0.75))}, Vec(T(0), -T(0), T(0.68163876))).FloatComp(),
+    };
+
+    return cases;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Sin,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kSin),
+                     testing::ValuesIn(Concat(SinCases<AFloat>(),  //
+                                              SinCases<f32>(),
+                                              SinCases<f16>()))));
+
+template <typename T>
+std::vector<Case> SinhCases() {
+    std::vector<Case> cases = {
+        C({T(0)}, T(0)),
+        C({-T(0)}, -T(0)),
+        C({T(1)}, T(1.1752012)).FloatComp(),
+        C({T(-1)}, -T(1.1752012)).FloatComp(),
+
+        // Vector tests
+        C({Vec(T(0), -T(0), T(1))}, Vec(T(0), -T(0), T(1.1752012))).FloatComp(),
+    };
+
+    return cases;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Sinh,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kSinh),
+                     testing::ValuesIn(Concat(SinhCases<AFloat>(),  //
+                                              SinhCases<f32>(),
+                                              SinhCases<f16>()))));
+
+template <typename T>
 std::vector<Case> StepCases() {
     return {
         C({T(0), T(0)}, T(1.0)),
@@ -1490,6 +1606,49 @@ INSTANTIATE_TEST_SUITE_P(  //
                      testing::ValuesIn(Concat(StepCases<AFloat>(),  //
                                               StepCases<f32>(),
                                               StepCases<f16>()))));
+
+template <typename T>
+std::vector<Case> TanCases() {
+    std::vector<Case> cases = {
+        C({-T(0)}, -T(0)),
+        C({T(0)}, T(0)),
+        C({T(.75)}, T(0.9315964599)).FloatComp(),
+
+        // Vector test
+        C({Vec(T(0), -T(0), T(.75))}, Vec(T(0), -T(0), T(0.9315964599))).FloatComp(),
+    };
+
+    return cases;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Tan,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kTan),
+                     testing::ValuesIn(Concat(TanCases<AFloat>(),  //
+                                              TanCases<f32>(),
+                                              TanCases<f16>()))));
+
+template <typename T>
+std::vector<Case> TanhCases() {
+    std::vector<Case> cases = {
+        C({T(0)}, T(0)),
+        C({-T(0)}, -T(0)),
+        C({T(1)}, T(0.761594156)).FloatComp(),
+        C({T(-1)}, -T(0.761594156)).FloatComp(),
+
+        // Vector tests
+        C({Vec(T(0), -T(0), T(1))}, Vec(T(0), -T(0), T(0.761594156))).FloatComp(),
+    };
+
+    return cases;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Tanh,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kTanh),
+                     testing::ValuesIn(Concat(TanhCases<AFloat>(),  //
+                                              TanhCases<f32>(),
+                                              TanhCases<f16>()))));
 
 std::vector<Case> Unpack4x8snormCases() {
     return {

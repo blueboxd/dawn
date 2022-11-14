@@ -386,15 +386,6 @@ class ConstEval {
                utils::VectorRef<const sem::Constant*> args,
                const Source& source);
 
-    /// all builtin
-    /// @param ty the expression type
-    /// @param args the input arguments
-    /// @param source the source location of the conversion
-    /// @return the result value, or null if the value cannot be calculated
-    Result all(const sem::Type* ty,
-               utils::VectorRef<const sem::Constant*> args,
-               const Source& source);
-
     /// acos builtin
     /// @param ty the expression type
     /// @param args the input arguments
@@ -403,6 +394,24 @@ class ConstEval {
     Result acos(const sem::Type* ty,
                 utils::VectorRef<const sem::Constant*> args,
                 const Source& source);
+
+    /// acosh builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result acosh(const sem::Type* ty,
+                 utils::VectorRef<const sem::Constant*> args,
+                 const Source& source);
+
+    /// all builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result all(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
 
     /// any builtin
     /// @param ty the expression type
@@ -475,6 +484,24 @@ class ConstEval {
     Result clamp(const sem::Type* ty,
                  utils::VectorRef<const sem::Constant*> args,
                  const Source& source);
+
+    /// cos builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result cos(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// cosh builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result cosh(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
 
     /// countLeadingZeros builtin
     /// @param ty the expression type
@@ -647,12 +674,48 @@ class ConstEval {
                 utils::VectorRef<const sem::Constant*> args,
                 const Source& source);
 
+    /// sin builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result sin(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// sinh builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result sinh(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
     /// step builtin
     /// @param ty the expression type
     /// @param args the input arguments
     /// @param source the source location of the conversion
     /// @return the result value, or null if the value cannot be calculated
     Result step(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
+    /// tan builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result tan(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// tanh builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result tanh(const sem::Type* ty,
                 utils::VectorRef<const sem::Constant*> args,
                 const Source& source);
 

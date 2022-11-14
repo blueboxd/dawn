@@ -10,7 +10,7 @@
                OpExecutionMode %main LocalSize 1 1 1
                OpName %main "main"
                OpName %__frexp_result "__frexp_result"
-               OpMemberName %__frexp_result 0 "sig"
+               OpMemberName %__frexp_result 0 "fract"
                OpMemberName %__frexp_result 1 "exp"
                OpMemberDecorate %__frexp_result 0 Offset 0
                OpMemberDecorate %__frexp_result 1 Offset 4

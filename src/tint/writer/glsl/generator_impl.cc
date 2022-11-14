@@ -182,6 +182,9 @@ SanitizedResult Sanitize(const Program* in,
 
     manager.Add<transform::DisableUniformityAnalysis>();
 
+    // ExpandCompoundAssignment must come before BuiltinPolyfill
+    manager.Add<transform::ExpandCompoundAssignment>();
+
     {  // Builtin polyfills
         transform::BuiltinPolyfill::Builtins polyfills;
         polyfills.acosh = transform::BuiltinPolyfill::Level::kRangeCheck;
@@ -193,6 +196,7 @@ SanitizedResult Sanitize(const Program* in,
         polyfills.first_leading_bit = true;
         polyfills.first_trailing_bit = true;
         polyfills.insert_bits = transform::BuiltinPolyfill::Level::kClampParameters;
+        polyfills.int_div_mod = true;
         polyfills.saturate = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         data.Add<transform::BuiltinPolyfill::Config>(polyfills);
@@ -214,7 +218,6 @@ SanitizedResult Sanitize(const Program* in,
         manager.Add<transform::ZeroInitWorkgroupMemory>();
     }
     manager.Add<transform::CanonicalizeEntryPointIO>();
-    manager.Add<transform::ExpandCompoundAssignment>();
     manager.Add<transform::PromoteSideEffectsToDecl>();
     manager.Add<transform::PadStructs>();
 
@@ -1261,7 +1264,7 @@ bool GeneratorImpl::EmitFrexpCall(std::ostream& out,
                 }
                 l << " result;";
             }
-            line(b) << "result.sig = frexp(" << params[0] << ", result.exp);";
+            line(b) << "result.fract = frexp(" << params[0] << ", result.exp);";
             line(b) << "return result;";
             return true;
         });
@@ -2694,14 +2697,24 @@ bool GeneratorImpl::EmitMemberAccessor(std::ostream& out,
     }
     out << ".";
 
-    // Swizzles output the name directly
-    if (builder_.Sem().Get(expr)->Is<sem::Swizzle>()) {
-        out << builder_.Symbols().NameFor(expr->member->symbol);
-    } else if (!EmitExpression(out, expr->member)) {
-        return false;
-    }
+    auto* sem = builder_.Sem().Get(expr);
 
-    return true;
+    return Switch(
+        sem,
+        [&](const sem::Swizzle*) {
+            // Swizzles output the name directly
+            out << builder_.Symbols().NameFor(expr->member->symbol);
+            return true;
+        },
+        [&](const sem::StructMemberAccess* member_access) {
+            out << program_->Symbols().NameFor(member_access->Member()->Name());
+            return true;
+        },
+        [&](Default) {
+            TINT_ICE(Writer, diagnostics_)
+                << "unknown member access type: " << sem->TypeInfo().name;
+            return false;
+        });
 }
 
 bool GeneratorImpl::EmitReturn(const ast::ReturnStatement* stmt) {

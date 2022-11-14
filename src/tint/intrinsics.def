@@ -408,8 +408,8 @@ match storage
 @const fn abs<N: num, T: fia_fiu32_f16>(vec<N, T>) -> vec<N, T>
 @const fn acos<T: fa_f32_f16>(@test_value(0.96891242171) T) -> T
 @const fn acos<N: num, T: fa_f32_f16>(@test_value(0.96891242171) vec<N, T>) -> vec<N, T>
-fn acosh<T: f32_f16>(T) -> T
-fn acosh<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn acosh<T: fa_f32_f16>(@test_value(2.0) T) -> T
+@const fn acosh<N: num, T: fa_f32_f16>(@test_value(2.0) vec<N, T>) -> vec<N, T>
 @const fn all(bool) -> bool
 @const fn all<N: num>(vec<N, bool>) -> bool
 @const fn any(bool) -> bool
@@ -429,10 +429,10 @@ fn arrayLength<T, A: access>(ptr<storage, array<T>, A>) -> u32
 @const fn ceil<N: num, T: fa_f32_f16>(@test_value(1.5) vec<N, T>) -> vec<N, T>
 @const fn clamp<T: fia_fiu32_f16>(T, T, T) -> T
 @const fn clamp<T: fia_fiu32_f16, N: num>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
-fn cos<T: f32_f16>(T) -> T
-fn cos<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn cosh<T: f32_f16>(T) -> T
-fn cosh<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn cos<T: fa_f32_f16>(@test_value(0) T) -> T
+@const fn cos<N: num, T: fa_f32_f16>(@test_value(0) vec<N, T>) -> vec<N, T>
+@const fn cosh<T: fa_f32_f16>(@test_value(0) T) -> T
+@const fn cosh<N: num, T: fa_f32_f16>(@test_value(0) vec<N, T>) -> vec<N, T>
 @const fn countLeadingZeros<T: iu32>(T) -> T
 @const fn countLeadingZeros<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
 @const fn countOneBits<T: iu32>(T) -> T
@@ -531,10 +531,10 @@ fn round<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 @const("select_boolvec") fn select<N: num, T: scalar>(vec<N, T>, vec<N, T>, vec<N, bool>) -> vec<N, T>
 @const fn sign<T: fa_f32_f16>(T) -> T
 @const fn sign<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
-fn sin<T: f32_f16>(T) -> T
-fn sin<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn sinh<T: f32_f16>(T) -> T
-fn sinh<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn sin<T: fa_f32_f16>(T) -> T
+@const fn sin<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn sinh<T: fa_f32_f16>(T) -> T
+@const fn sinh<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
 fn smoothstep<T: f32_f16>(T, T, T) -> T
 fn smoothstep<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
 fn sqrt<T: f32_f16>(T) -> T
@@ -542,10 +542,10 @@ fn sqrt<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 @const fn step<T: fa_f32_f16>(T, T) -> T
 @const fn step<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
 @stage("compute") fn storageBarrier()
-fn tan<T: f32_f16>(T) -> T
-fn tan<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn tanh<T: f32_f16>(T) -> T
-fn tanh<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn tan<T: fa_f32_f16>(T) -> T
+@const fn tan<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn tanh<T: fa_f32_f16>(T) -> T
+@const fn tanh<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
 fn transpose<M: num, N: num, T: f32_f16>(mat<M, N, T>) -> mat<N, M, T>
 fn trunc<T: f32_f16>(T) -> T
 fn trunc<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>

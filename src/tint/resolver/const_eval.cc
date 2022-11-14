@@ -20,7 +20,6 @@
 #include <optional>
 #include <string>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
 
 #include "src/tint/program_builder.h"
@@ -463,18 +462,18 @@ const ImplConstant* ZeroValue(ProgramBuilder& builder, const sem::Type* type) {
             return nullptr;
         },
         [&](const sem::Struct* s) -> const ImplConstant* {
-            std::unordered_map<const sem::Type*, const ImplConstant*> zero_by_type;
+            utils::Hashmap<const sem::Type*, const ImplConstant*, 8> zero_by_type;
             utils::Vector<const sem::Constant*, 4> zeros;
             zeros.Reserve(s->Members().size());
             for (auto* member : s->Members()) {
-                auto* zero = utils::GetOrCreate(zero_by_type, member->Type(),
-                                                [&] { return ZeroValue(builder, member->Type()); });
+                auto* zero = zero_by_type.GetOrCreate(
+                    member->Type(), [&] { return ZeroValue(builder, member->Type()); });
                 if (!zero) {
                     return nullptr;
                 }
                 zeros.Push(zero);
             }
-            if (zero_by_type.size() == 1) {
+            if (zero_by_type.Count() == 1) {
                 // All members were of the same type, so the zero value is the same for all members.
                 return builder.create<Splat>(type, zeros[0], s->Members().size());
             }
@@ -1675,6 +1674,24 @@ ConstEval::Result ConstEval::acos(const sem::Type* ty,
     return TransformElements(builder, ty, transform, args[0]);
 }
 
+ConstEval::Result ConstEval::acosh(const sem::Type* ty,
+                                   utils::VectorRef<const sem::Constant*> args,
+                                   const Source& source) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) -> ImplResult {
+            using NumberT = decltype(i);
+            if (i < NumberT(1.0)) {
+                AddError("acosh must be called with a value >= 1.0", source);
+                return utils::Failure;
+            }
+            return CreateElement(builder, c0->Type(), NumberT(std::acosh(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
 ConstEval::Result ConstEval::all(const sem::Type* ty,
                                  utils::VectorRef<const sem::Constant*> args,
                                  const Source&) {
@@ -1785,6 +1802,32 @@ ConstEval::Result ConstEval::clamp(const sem::Type* ty,
         return Dispatch_fia_fiu32_f16(ClampFunc(c0->Type()), c0, c1, c2);
     };
     return TransformElements(builder, ty, transform, args[0], args[1], args[2]);
+}
+
+ConstEval::Result ConstEval::cos(const sem::Type* ty,
+                                 utils::VectorRef<const sem::Constant*> args,
+                                 const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) -> ImplResult {
+            using NumberT = decltype(i);
+            return CreateElement(builder, c0->Type(), NumberT(std::cos(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::cosh(const sem::Type* ty,
+                                  utils::VectorRef<const sem::Constant*> args,
+                                  const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) -> ImplResult {
+            using NumberT = decltype(i);
+            return CreateElement(builder, c0->Type(), NumberT(std::cosh(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
 }
 
 ConstEval::Result ConstEval::countLeadingZeros(const sem::Type* ty,
@@ -2268,6 +2311,32 @@ ConstEval::Result ConstEval::sign(const sem::Type* ty,
     return TransformElements(builder, ty, transform, args[0]);
 }
 
+ConstEval::Result ConstEval::sin(const sem::Type* ty,
+                                 utils::VectorRef<const sem::Constant*> args,
+                                 const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) -> ImplResult {
+            using NumberT = decltype(i);
+            return CreateElement(builder, c0->Type(), NumberT(std::sin(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::sinh(const sem::Type* ty,
+                                  utils::VectorRef<const sem::Constant*> args,
+                                  const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) -> ImplResult {
+            using NumberT = decltype(i);
+            return CreateElement(builder, c0->Type(), NumberT(std::sinh(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
 ConstEval::Result ConstEval::step(const sem::Type* ty,
                                   utils::VectorRef<const sem::Constant*> args,
                                   const Source&) {
@@ -2280,6 +2349,32 @@ ConstEval::Result ConstEval::step(const sem::Type* ty,
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
     return TransformElements(builder, ty, transform, args[0], args[1]);
+}
+
+ConstEval::Result ConstEval::tan(const sem::Type* ty,
+                                 utils::VectorRef<const sem::Constant*> args,
+                                 const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) -> ImplResult {
+            using NumberT = decltype(i);
+            return CreateElement(builder, c0->Type(), NumberT(std::tan(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::tanh(const sem::Type* ty,
+                                  utils::VectorRef<const sem::Constant*> args,
+                                  const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) -> ImplResult {
+            using NumberT = decltype(i);
+            return CreateElement(builder, c0->Type(), NumberT(std::tanh(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
 }
 
 ConstEval::Result ConstEval::unpack2x16float(const sem::Type* ty,

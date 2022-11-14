@@ -86,6 +86,7 @@
 #include "src/tint/utils/math.h"
 #include "src/tint/utils/reverse.h"
 #include "src/tint/utils/scoped_assignment.h"
+#include "src/tint/utils/string.h"
 #include "src/tint/utils/transform.h"
 #include "src/tint/utils/vector.h"
 
@@ -482,7 +483,7 @@ sem::Variable* Resolver::Override(const ast::Override* v) {
         sem->SetOverrideId(o);
 
         // Track the constant IDs that are specified in the shader.
-        override_ids_.emplace(o, sem);
+        override_ids_.Add(o, sem);
     }
 
     builder_->Sem().Add(v, sem);
@@ -842,7 +843,7 @@ bool Resolver::AllocateOverridableConstantIds() {
             id = builder_->Sem().Get<sem::GlobalVariable>(override)->OverrideId();
         } else {
             // No ID was specified, so allocate the next available ID.
-            while (!ids_exhausted && override_ids_.count(next_id)) {
+            while (!ids_exhausted && override_ids_.Contains(next_id)) {
                 increment_next_id();
             }
             if (ids_exhausted) {
@@ -864,9 +865,9 @@ bool Resolver::AllocateOverridableConstantIds() {
 void Resolver::SetShadows() {
     for (auto it : dependencies_.shadows) {
         Switch(
-            sem_.Get(it.first),  //
-            [&](sem::LocalVariable* local) { local->SetShadows(sem_.Get(it.second)); },
-            [&](sem::Parameter* param) { param->SetShadows(sem_.Get(it.second)); });
+            sem_.Get(it.key),  //
+            [&](sem::LocalVariable* local) { local->SetShadows(sem_.Get(it.value)); },
+            [&](sem::Parameter* param) { param->SetShadows(sem_.Get(it.value)); });
     }
 }
 
@@ -923,7 +924,7 @@ sem::Statement* Resolver::StaticAssert(const ast::StaticAssert* assertion) {
 
 sem::Function* Resolver::Function(const ast::Function* decl) {
     uint32_t parameter_index = 0;
-    std::unordered_map<Symbol, Source> parameter_names;
+    utils::Hashmap<Symbol, Source, 8> parameter_names;
     utils::Vector<sem::Parameter*, 8> parameters;
 
     // Resolve all the parameters
@@ -931,11 +932,10 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
         Mark(param);
 
         {  // Check the parameter name is unique for the function
-            auto emplaced = parameter_names.emplace(param->symbol, param->source);
-            if (!emplaced.second) {
+            if (auto added = parameter_names.Add(param->symbol, param->source); !added) {
                 auto name = builder_->Symbols().NameFor(param->symbol);
                 AddError("redefinition of parameter '" + name + "'", param->source);
-                AddNote("previous definition is here", emplaced.first->second);
+                AddNote("previous definition is here", *added.value);
                 return nullptr;
             }
         }
@@ -1031,7 +1031,7 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
     }
 
     if (decl->IsEntryPoint()) {
-        entry_points_.emplace_back(func);
+        entry_points_.Push(func);
     }
 
     if (decl->body) {
@@ -1850,8 +1850,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             [&](const sem::F32*) { return ct_init_or_conv(InitConvIntrinsic::kF32, nullptr); },
             [&](const sem::Bool*) { return ct_init_or_conv(InitConvIntrinsic::kBool, nullptr); },
             [&](const sem::Array* arr) -> sem::Call* {
-                auto* call_target = utils::GetOrCreate(
-                    array_inits_, ArrayInitializerSig{{arr, args.Length(), args_stage}},
+                auto* call_target = array_inits_.GetOrCreate(
+                    ArrayInitializerSig{{arr, args.Length(), args_stage}},
                     [&]() -> sem::TypeInitializer* {
                         auto params = utils::Transform(args, [&](auto, size_t i) {
                             return builder_->create<sem::Parameter>(
@@ -1877,8 +1877,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                 return call;
             },
             [&](const sem::Struct* str) -> sem::Call* {
-                auto* call_target = utils::GetOrCreate(
-                    struct_inits_, StructInitializerSig{{str, args.Length(), args_stage}},
+                auto* call_target = struct_inits_.GetOrCreate(
+                    StructInitializerSig{{str, args.Length(), args_stage}},
                     [&]() -> sem::TypeInitializer* {
                         utils::Vector<const sem::Parameter*, 8> params;
                         params.Resize(std::min(args.Length(), str->Members().size()));
@@ -1981,9 +1981,9 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                         AddError(
                             "cannot infer common array element type from initializer arguments",
                             expr->source);
-                        std::unordered_set<const sem::Type*> types;
+                        utils::Hashset<const sem::Type*, 8> types;
                         for (size_t i = 0; i < args.Length(); i++) {
-                            if (types.emplace(args[i]->Type()).second) {
+                            if (types.Add(args[i]->Type())) {
                                 AddNote("argument " + std::to_string(i) + " is of type '" +
                                             sem_.TypeNameOf(args[i]->Type()) + "'",
                                         args[i]->Declaration()->source);
@@ -2381,17 +2381,28 @@ sem::Expression* Resolver::MemberAccessor(const ast::MemberAccessorExpression* e
             const sem::StructMember* member = nullptr;
             for (auto* m : str->Members()) {
                 if (m->Name() == symbol) {
-                    ty = m->Type();
                     member = m;
                     break;
                 }
             }
 
-            if (ty == nullptr) {
+            // TODO(crbug.com/tint/1757): Remove
+            if (utils::HasPrefix(builder_->Symbols().NameFor(str->Name()), "__frexp_result")) {
+                if (builder_->Symbols().NameFor(symbol) == "sig") {
+                    AddWarning(
+                        "use of deprecated language feature: 'sig' has been renamed to 'fract'",
+                        expr->member->source);
+                    member = str->Members()[0];
+                }
+            }
+
+            if (member == nullptr) {
                 AddError("struct member " + builder_->Symbols().NameFor(symbol) + " not found",
                          expr->source);
                 return nullptr;
             }
+
+            ty = member->Type();
 
             // If we're extracting from a reference, we return a reference.
             if (auto* ref = structure->As<sem::Reference>()) {
@@ -2687,11 +2698,10 @@ sem::Array* Resolver::Array(const ast::Array* arr) {
     }
 
     if (el_ty->Is<sem::Atomic>()) {
-        atomic_composite_info_.emplace(out, arr->type->source);
+        atomic_composite_info_.Add(out, &arr->type->source);
     } else {
-        auto found = atomic_composite_info_.find(el_ty);
-        if (found != atomic_composite_info_.end()) {
-            atomic_composite_info_.emplace(out, found->second);
+        if (auto found = atomic_composite_info_.Get(el_ty)) {
+            atomic_composite_info_.Add(out, *found);
         }
     }
 
@@ -2832,15 +2842,14 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
     // validation.
     uint64_t struct_size = 0;
     uint64_t struct_align = 1;
-    std::unordered_map<Symbol, const ast::StructMember*> member_map;
+    utils::Hashmap<Symbol, const ast::StructMember*, 8> member_map;
 
     for (auto* member : str->members) {
         Mark(member);
-        auto result = member_map.emplace(member->symbol, member);
-        if (!result.second) {
+        if (auto added = member_map.Add(member->symbol, member); !added) {
             AddError("redefinition of '" + builder_->Symbols().NameFor(member->symbol) + "'",
                      member->source);
-            AddNote("previous definition is here", result.first->second->source);
+            AddNote("previous definition is here", (*added.value)->source);
             return nullptr;
         }
 
@@ -3027,12 +3036,11 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
     for (size_t i = 0; i < sem_members.size(); i++) {
         auto* mem_type = sem_members[i]->Type();
         if (mem_type->Is<sem::Atomic>()) {
-            atomic_composite_info_.emplace(out, sem_members[i]->Declaration()->source);
+            atomic_composite_info_.Add(out, &sem_members[i]->Declaration()->source);
             break;
         } else {
-            auto found = atomic_composite_info_.find(mem_type);
-            if (found != atomic_composite_info_.end()) {
-                atomic_composite_info_.emplace(out, found->second);
+            if (auto found = atomic_composite_info_.Get(mem_type)) {
+                atomic_composite_info_.Add(out, *found);
                 break;
             }
         }
