@@ -655,8 +655,7 @@ ConstEval::ConstEval(ProgramBuilder& b) : builder(b) {}
 template <typename NumberT>
 utils::Result<NumberT> ConstEval::Add(NumberT a, NumberT b) {
     NumberT result;
-    if constexpr (IsAbstract<NumberT>) {
-        // Check for over/underflow for abstract values
+    if constexpr (IsAbstract<NumberT> || IsFloatingPoint<NumberT>) {
         if (auto r = CheckedAdd(a, b)) {
             result = r->value;
         } else {
@@ -682,8 +681,7 @@ utils::Result<NumberT> ConstEval::Add(NumberT a, NumberT b) {
 template <typename NumberT>
 utils::Result<NumberT> ConstEval::Sub(NumberT a, NumberT b) {
     NumberT result;
-    if constexpr (IsAbstract<NumberT>) {
-        // Check for over/underflow for abstract values
+    if constexpr (IsAbstract<NumberT> || IsFloatingPoint<NumberT>) {
         if (auto r = CheckedSub(a, b)) {
             result = r->value;
         } else {
@@ -710,7 +708,7 @@ template <typename NumberT>
 utils::Result<NumberT> ConstEval::Mul(NumberT a, NumberT b) {
     using T = UnwrapNumber<NumberT>;
     NumberT result;
-    if constexpr (IsAbstract<NumberT>) {
+    if constexpr (IsAbstract<NumberT> || IsFloatingPoint<NumberT>) {
         // Check for over/underflow for abstract values
         if (auto r = CheckedMul(a, b)) {
             result = r->value;
@@ -729,6 +727,41 @@ utils::Result<NumberT> ConstEval::Mul(NumberT a, NumberT b) {
             }
         };
         result = mul_values(a.value, b.value);
+    }
+    return result;
+}
+
+template <typename NumberT>
+utils::Result<NumberT> ConstEval::Div(NumberT a, NumberT b) {
+    NumberT result;
+    if constexpr (IsAbstract<NumberT> || IsFloatingPoint<NumberT>) {
+        // Check for over/underflow for abstract values
+        if (auto r = CheckedDiv(a, b)) {
+            result = r->value;
+        } else {
+            AddError(OverflowErrorMessage(a, "/", b), *current_source);
+            return utils::Failure;
+        }
+    } else {
+        using T = UnwrapNumber<NumberT>;
+        auto divide_values = [](T lhs, T rhs) {
+            if constexpr (std::is_integral_v<T>) {
+                // For integers, lhs / 0 returns lhs
+                if (rhs == 0) {
+                    return lhs;
+                }
+
+                if constexpr (std::is_signed_v<T>) {
+                    // For signed integers, for lhs / -1, return lhs if lhs is the
+                    // most negative value
+                    if (rhs == -1 && lhs == std::numeric_limits<T>::min()) {
+                        return lhs;
+                    }
+                }
+            }
+            return lhs / rhs;
+        };
+        result = divide_values(a.value, b.value);
     }
     return result;
 }
@@ -872,6 +905,15 @@ auto ConstEval::SubFunc(const sem::Type* elem_ty) {
 auto ConstEval::MulFunc(const sem::Type* elem_ty) {
     return [=](auto a1, auto a2) -> ImplResult {
         if (auto r = Mul(a1, a2)) {
+            return CreateElement(builder, elem_ty, r.Get());
+        }
+        return utils::Failure;
+    };
+}
+
+auto ConstEval::DivFunc(const sem::Type* elem_ty) {
+    return [=](auto a1, auto a2) -> ImplResult {
+        if (auto r = Div(a1, a2)) {
             return CreateElement(builder, elem_ty, r.Get());
         }
         return utils::Failure;
@@ -1366,42 +1408,9 @@ ConstEval::Result ConstEval::OpMultiplyMatMat(const sem::Type* ty,
 ConstEval::Result ConstEval::OpDivide(const sem::Type* ty,
                                       utils::VectorRef<const sem::Constant*> args,
                                       const Source& source) {
+    TINT_SCOPED_ASSIGNMENT(current_source, &source);
     auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
-        auto create = [&](auto i, auto j) -> ImplResult {
-            using NumberT = decltype(i);
-            NumberT result;
-            if constexpr (IsAbstract<NumberT>) {
-                // Check for over/underflow for abstract values
-                if (auto r = CheckedDiv(i, j)) {
-                    result = r->value;
-                } else {
-                    AddError(OverflowErrorMessage(i, "/", j), source);
-                    return utils::Failure;
-                }
-            } else {
-                using T = UnwrapNumber<NumberT>;
-                auto divide_values = [](T lhs, T rhs) {
-                    if constexpr (std::is_integral_v<T>) {
-                        // For integers, lhs / 0 returns lhs
-                        if (rhs == 0) {
-                            return lhs;
-                        }
-
-                        if constexpr (std::is_signed_v<T>) {
-                            // For signed integers, for lhs / -1, return lhs if lhs is the
-                            // most negative value
-                            if (rhs == -1 && lhs == std::numeric_limits<T>::min()) {
-                                return lhs;
-                            }
-                        }
-                    }
-                    return lhs / rhs;
-                };
-                result = divide_values(i.value, j.value);
-            }
-            return CreateElement(builder, c0->Type(), result);
-        };
-        return Dispatch_fia_fiu32_f16(create, c0, c1);
+        return Dispatch_fia_fiu32_f16(DivFunc(c0->Type()), c0, c1);
     };
 
     return TransformBinaryElements(builder, ty, transform, args[0], args[1]);
@@ -1911,8 +1920,6 @@ ConstEval::Result ConstEval::cross(const sem::Type* ty,
     auto* v1 = v->Index(1);
     auto* v2 = v->Index(2);
 
-    // auto x = Dispatch_fa_f32_f16(ab_minus_cd_func(elem_ty), u->Index(1), v->Index(2),
-    //                              v->Index(1), u->Index(2));
     auto x = Dispatch_fa_f32_f16(Det2Func(elem_ty), u1, u2, v1, v2);
     if (!x) {
         return utils::Failure;
@@ -2081,18 +2088,18 @@ ConstEval::Result ConstEval::insertBits(const sem::Type* ty,
             NumberUT in_offset = args[2]->As<NumberUT>();
             NumberUT in_count = args[3]->As<NumberUT>();
 
-            constexpr UT w = sizeof(UT) * 8;
-            if ((in_offset + in_count) > w) {
-                AddError("'offset + 'count' must be less than or equal to the bit width of 'e'",
-                         source);
-                return utils::Failure;
-            }
-
             // Cast all to unsigned
             UT e = static_cast<UT>(in_e);
             UT newbits = static_cast<UT>(in_newbits);
             UT o = static_cast<UT>(in_offset);
             UT c = static_cast<UT>(in_count);
+
+            constexpr UT w = sizeof(UT) * 8;
+            if (o > w || c > w || (o + c) > w) {
+                AddError("'offset + 'count' must be less than or equal to the bit width of 'e'",
+                         source);
+                return utils::Failure;
+            }
 
             NumberT result;
             if (c == UT{0}) {
@@ -2115,6 +2122,30 @@ ConstEval::Result ConstEval::insertBits(const sem::Type* ty,
             return CreateElement(builder, c0->Type(), result);
         };
         return Dispatch_iu32(create, c0, c1);
+    };
+    return TransformElements(builder, ty, transform, args[0], args[1]);
+}
+
+ConstEval::Result ConstEval::max(const sem::Type* ty,
+                                 utils::VectorRef<const sem::Constant*> args,
+                                 const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto e0, auto e1) {
+            return CreateElement(builder, c0->Type(), decltype(e0)(std::max(e0, e1)));
+        };
+        return Dispatch_fia_fiu32_f16(create, c0, c1);
+    };
+    return TransformElements(builder, ty, transform, args[0], args[1]);
+}
+
+ConstEval::Result ConstEval::min(const sem::Type* ty,
+                                 utils::VectorRef<const sem::Constant*> args,
+                                 const Source&) {
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1) {
+        auto create = [&](auto e0, auto e1) {
+            return CreateElement(builder, c0->Type(), decltype(e0)(std::min(e0, e1)));
+        };
+        return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
     return TransformElements(builder, ty, transform, args[0], args[1]);
 }
@@ -2246,6 +2277,42 @@ ConstEval::Result ConstEval::reverseBits(const sem::Type* ty,
     return TransformElements(builder, ty, transform, args[0]);
 }
 
+ConstEval::Result ConstEval::round(const sem::Type* ty,
+                                   utils::VectorRef<const sem::Constant*> args,
+                                   const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto e) {
+            using NumberT = decltype(e);
+            using T = UnwrapNumber<NumberT>;
+
+            auto integral = NumberT(0);
+            auto fract = std::abs(std::modf(e.value, &(integral.value)));
+            // When e lies halfway between integers k and k + 1, the result is k when k is even,
+            // and k + 1 when k is odd.
+            NumberT result = NumberT(0.0);
+            if (fract == NumberT(0.5)) {
+                // If the integral value is negative, then we need to subtract one in order to move
+                // to the correct `k`. The half way check is `k` and `k + 1` which in the positive
+                // case is `x` and `x + 1` but in the negative case is `x - 1` and `x`.
+                T integral_val = integral.value;
+                if (std::signbit(integral_val)) {
+                    integral_val = std::abs(integral_val - 1);
+                }
+                if (uint64_t(integral_val) % 2 == 0) {
+                    result = NumberT(std::floor(e.value));
+                } else {
+                    result = NumberT(std::ceil(e.value));
+                }
+            } else {
+                result = NumberT(std::round(e.value));
+            }
+            return CreateElement(builder, c0->Type(), result);
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
 ConstEval::Result ConstEval::saturate(const sem::Type* ty,
                                       utils::VectorRef<const sem::Constant*> args,
                                       const Source&) {
@@ -2337,6 +2404,59 @@ ConstEval::Result ConstEval::sinh(const sem::Type* ty,
     return TransformElements(builder, ty, transform, args[0]);
 }
 
+ConstEval::Result ConstEval::smoothstep(const sem::Type* ty,
+                                        utils::VectorRef<const sem::Constant*> args,
+                                        const Source& source) {
+    TINT_SCOPED_ASSIGNMENT(current_source, &source);
+
+    auto transform = [&](const sem::Constant* c0, const sem::Constant* c1,
+                         const sem::Constant* c2) {
+        auto create = [&](auto low, auto high, auto x) -> ImplResult {
+            using NumberT = decltype(low);
+
+            auto err = [&] {
+                AddNote("when calculating smoothstep", source);
+                return utils::Failure;
+            };
+
+            // t = clamp((x - low) / (high - low), 0.0, 1.0)
+            auto x_minus_low = Sub(x, low);
+            auto high_minus_low = Sub(high, low);
+            if (!x_minus_low || !high_minus_low) {
+                return err();
+            }
+
+            auto div = Div(x_minus_low.Get(), high_minus_low.Get());
+            if (!div) {
+                return err();
+            }
+
+            auto clamp = Clamp(div.Get(), NumberT(0), NumberT(1));
+            auto t = clamp.Get();
+
+            // result = t * t * (3.0 - 2.0 * t)
+            auto t_times_t = Mul(t, t);
+            auto t_times_2 = Mul(NumberT(2), t);
+            if (!t_times_t || !t_times_2) {
+                return err();
+            }
+
+            auto three_minus_t_times_2 = Sub(NumberT(3), t_times_2.Get());
+            if (!three_minus_t_times_2) {
+                return err();
+            }
+
+            auto result = Mul(t_times_t.Get(), three_minus_t_times_2.Get());
+            if (!result) {
+                return err();
+            }
+            return CreateElement(builder, c0->Type(), result.Get());
+        };
+        return Dispatch_fa_f32_f16(create, c0, c1, c2);
+    };
+    return TransformElements(builder, ty, transform, args[0], args[1], args[2]);
+}
+
 ConstEval::Result ConstEval::step(const sem::Type* ty,
                                   utils::VectorRef<const sem::Constant*> args,
                                   const Source&) {
@@ -2349,6 +2469,24 @@ ConstEval::Result ConstEval::step(const sem::Type* ty,
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
     return TransformElements(builder, ty, transform, args[0], args[1]);
+}
+
+ConstEval::Result ConstEval::sqrt(const sem::Type* ty,
+                                  utils::VectorRef<const sem::Constant*> args,
+                                  const Source& source) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) -> ImplResult {
+            using NumberT = decltype(i);
+            if (i < NumberT(0)) {
+                AddError("sqrt must be called with a value >= 0", source);
+                return utils::Failure;
+            }
+            return CreateElement(builder, c0->Type(), NumberT(std::sqrt(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+
+    return TransformElements(builder, ty, transform, args[0]);
 }
 
 ConstEval::Result ConstEval::tan(const sem::Type* ty,
@@ -2371,6 +2509,18 @@ ConstEval::Result ConstEval::tanh(const sem::Type* ty,
         auto create = [&](auto i) -> ImplResult {
             using NumberT = decltype(i);
             return CreateElement(builder, c0->Type(), NumberT(std::tanh(i.value)));
+        };
+        return Dispatch_fa_f32_f16(create, c0);
+    };
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::trunc(const sem::Type* ty,
+                                   utils::VectorRef<const sem::Constant*> args,
+                                   const Source&) {
+    auto transform = [&](const sem::Constant* c0) {
+        auto create = [&](auto i) {
+            return CreateElement(builder, c0->Type(), decltype(i)(std::trunc(i.value)));
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
@@ -2461,19 +2611,13 @@ ConstEval::Result ConstEval::unpack4x8unorm(const sem::Type* ty,
 
 ConstEval::Result ConstEval::quantizeToF16(const sem::Type* ty,
                                            utils::VectorRef<const sem::Constant*> args,
-                                           const Source&) {
-    auto transform = [&](const sem::Constant* c) {
-        auto conv = CheckedConvert<f32>(f16(c->As<f32>()));
+                                           const Source& source) {
+    auto transform = [&](const sem::Constant* c) -> ImplResult {
+        auto value = c->As<f32>();
+        auto conv = CheckedConvert<f32>(f16(value));
         if (!conv) {
-            // https://www.w3.org/TR/WGSL/#quantizeToF16-builtin
-            // If e is outside the finite range of binary16, then the result is any value of type
-            // f32
-            switch (conv.Failure()) {
-                case ConversionFailure::kExceedsNegativeLimit:
-                    return CreateElement(builder, c->Type(), f16(f16::kLowestValue));
-                case ConversionFailure::kExceedsPositiveLimit:
-                    return CreateElement(builder, c->Type(), f16(f16::kHighestValue));
-            }
+            AddError(OverflowErrorMessage(value, "f16"), source);
+            return utils::Failure;
         }
         return CreateElement(builder, c->Type(), conv.Get());
     };
@@ -2495,6 +2639,10 @@ void ConstEval::AddError(const std::string& msg, const Source& source) const {
 
 void ConstEval::AddWarning(const std::string& msg, const Source& source) const {
     builder.Diagnostics().add_warning(diag::System::Resolver, msg, source);
+}
+
+void ConstEval::AddNote(const std::string& msg, const Source& source) const {
+    builder.Diagnostics().add_note(diag::System::Resolver, msg, source);
 }
 
 }  // namespace tint::resolver

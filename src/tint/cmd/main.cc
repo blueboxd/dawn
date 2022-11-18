@@ -69,7 +69,8 @@ void PrintHash(uint32_t hash) {
 }
 
 enum class Format {
-    kNone = -1,
+    kUnknown,
+    kNone,
     kSpirv,
     kSpvAsm,
     kWgsl,
@@ -94,7 +95,7 @@ struct Options {
 
     std::unordered_set<uint32_t> skip_hash;
 
-    Format format = Format::kNone;
+    Format format = Format::kUnknown;
 
     bool emit_single_entry_point = false;
     std::string ep_name;
@@ -110,6 +111,7 @@ struct Options {
     std::optional<tint::sem::BindingPoint> hlsl_root_constant_binding_point;
 
 #if TINT_BUILD_IR
+    bool dump_ir = false;
     bool dump_ir_graph = false;
 #endif  // TINT_BUILD_IR
 };
@@ -117,7 +119,7 @@ struct Options {
 const char kUsage[] = R"(Usage: tint [options] <input-file>
 
  options:
-  --format <spirv|spvasm|wgsl|msl|hlsl>  -- Output format.
+  --format <spirv|spvasm|wgsl|msl|hlsl|none>  -- Output format.
                                If not provided, will be inferred from output
                                filename extension:
                                    .spvasm -> spvasm
@@ -192,7 +194,11 @@ Format parse_format(const std::string& fmt) {
     }
 #endif  // TINT_BUILD_GLSL_WRITER
 
-    return Format::kNone;
+    if (fmt == "none") {
+        return Format::kNone;
+    }
+
+    return Format::kUnknown;
 }
 
 #if TINT_BUILD_SPV_WRITER || TINT_BUILD_WGSL_WRITER || TINT_BUILD_MSL_WRITER || \
@@ -240,7 +246,7 @@ Format infer_format(const std::string& filename) {
     }
 #endif  // TINT_BUILD_HLSL_WRITER
 
-    return Format::kNone;
+    return Format::kUnknown;
 }
 
 std::vector<std::string> split_on_char(std::string list, char c) {
@@ -400,7 +406,7 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
             }
             opts->format = parse_format(args[i]);
 
-            if (opts->format == Format::kNone) {
+            if (opts->format == Format::kUnknown) {
                 std::cerr << "Unknown output format: " << args[i] << std::endl;
                 return false;
             }
@@ -475,6 +481,8 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
             }
             opts->dxc_path = args[i];
 #if TINT_BUILD_IR
+        } else if (arg == "--dump-ir") {
+            opts->dump_ir = true;
         } else if (arg == "--dump-ir-graph") {
             opts->dump_ir_graph = true;
 #endif  // TINT_BUILD_IR
@@ -1205,6 +1213,7 @@ int main(int argc, const char** argv) {
         std::string usage = tint::utils::ReplaceAll(kUsage, "${transforms}", transform_names());
 #if TINT_BUILD_IR
         usage +=
+            "  --dump-ir                 -- Writes the IR to stdout\n"
             "  --dump-ir-graph           -- Writes the IR graph to 'tint.dot' as a dot graph\n";
 #endif  // TINT_BUILD_IR
 
@@ -1213,11 +1222,11 @@ int main(int argc, const char** argv) {
     }
 
     // Implement output format defaults.
-    if (options.format == Format::kNone) {
+    if (options.format == Format::kUnknown) {
         // Try inferring from filename.
         options.format = infer_format(options.output_file);
     }
-    if (options.format == Format::kNone) {
+    if (options.format == Format::kUnknown) {
         // Ultimately, default to SPIR-V assembly. That's nice for interactive use.
         options.format = Format::kSpvAsm;
     }
@@ -1327,14 +1336,19 @@ int main(int argc, const char** argv) {
     }
 
 #if TINT_BUILD_IR
-    if (options.dump_ir_graph) {
+    if (options.dump_ir || options.dump_ir_graph) {
         auto result = tint::ir::Module::FromProgram(program.get());
         if (!result) {
             std::cerr << "Failed to build IR from program: " << result.Failure() << std::endl;
         } else {
             auto mod = result.Move();
-            auto graph = tint::ir::Debug::AsDotGraph(&mod);
-            WriteFile("tint.dot", "w", graph);
+            if (options.dump_ir) {
+                std::cout << tint::ir::Debug::AsString(&mod) << std::endl;
+            }
+            if (options.dump_ir_graph) {
+                auto graph = tint::ir::Debug::AsDotGraph(&mod);
+                WriteFile("tint.dot", "w", graph);
+            }
         }
     }
 #endif  // TINT_BUILD_IR
@@ -1475,6 +1489,8 @@ int main(int argc, const char** argv) {
             break;
         case Format::kGlsl:
             success = GenerateGlsl(program.get(), options);
+            break;
+        case Format::kNone:
             break;
         default:
             std::cerr << "Unknown output format specified" << std::endl;
