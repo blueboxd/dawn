@@ -26,8 +26,9 @@ namespace {
 using resolver::operator<<;
 
 struct Case {
-    Case(utils::VectorRef<Types> in_args, Types expected_value)
-        : args(std::move(in_args)), expected(Success{std::move(expected_value), false, false}) {}
+    Case(utils::VectorRef<Types> in_args, utils::VectorRef<Types> expected_values)
+        : args(std::move(in_args)),
+          expected(Success{std::move(expected_values), CheckConstantFlags{}}) {}
 
     Case(utils::VectorRef<Types> in_args, std::string expected_err)
         : args(std::move(in_args)), expected(Failure{std::move(expected_err)}) {}
@@ -35,7 +36,7 @@ struct Case {
     /// Expected value may be positive or negative
     Case& PosOrNeg() {
         Success s = expected.Get();
-        s.pos_or_neg = true;
+        s.flags.pos_or_neg = true;
         expected = s;
         return *this;
     }
@@ -43,15 +44,14 @@ struct Case {
     /// Expected value should be compared using FLOAT_EQ instead of EQ
     Case& FloatComp() {
         Success s = expected.Get();
-        s.float_compare = true;
+        s.flags.float_compare = true;
         expected = s;
         return *this;
     }
 
     struct Success {
-        Types value;
-        bool pos_or_neg = false;
-        bool float_compare = false;
+        utils::Vector<Types, 2> values;
+        CheckConstantFlags flags;
     };
     struct Failure {
         std::string error;
@@ -69,7 +69,20 @@ static std::ostream& operator<<(std::ostream& o, const Case& c) {
     o << "expected: ";
     if (c.expected) {
         auto s = c.expected.Get();
-        o << s.value << ", pos_or_neg: " << s.pos_or_neg;
+        if (s.values.Length() == 1) {
+            o << s.values[0];
+        } else {
+            o << "[";
+            for (auto& v : s.values) {
+                if (&v != &s.values[0]) {
+                    o << ", ";
+                }
+                o << v;
+            }
+            o << "]";
+        }
+        o << ", pos_or_neg: " << s.flags.pos_or_neg;
+        o << ", float_compare: " << s.flags.float_compare;
     } else {
         o << "[ERROR: " << c.expected.Failure().error << "]";
     }
@@ -80,7 +93,7 @@ using ScalarTypes = std::variant<AInt, AFloat, u32, i32, f32, f16>;
 
 /// Creates a Case with Values for args and result
 static Case C(std::initializer_list<Types> args, Types result) {
-    return Case{utils::Vector<Types, 8>{args}, std::move(result)};
+    return Case{utils::Vector<Types, 8>{args}, utils::Vector<Types, 2>{std::move(result)}};
 }
 
 /// Convenience overload that creates a Case with just scalars
@@ -91,7 +104,7 @@ static Case C(std::initializer_list<ScalarTypes> sargs, ScalarTypes sresult) {
     }
     Types result = Val(0_a);
     std::visit([&](auto&& v) { result = Val(v); }, sresult);
-    return Case{std::move(args), std::move(result)};
+    return Case{std::move(args), utils::Vector<Types, 2>{std::move(result)}};
 }
 
 /// Creates a Case with Values for args and expected error
@@ -127,9 +140,6 @@ TEST_P(ResolverConstEvalBuiltinTest, Test) {
     if (c.expected) {
         auto expected_case = c.expected.Get();
 
-        auto* expected_expr = ToValueBase(expected_case.value)->Expr(*this);
-        GlobalConst("E", expected_expr);
-
         ASSERT_TRUE(r()->Resolve()) << r()->error();
 
         auto* sem = Sem().Get(expr);
@@ -138,43 +148,19 @@ TEST_P(ResolverConstEvalBuiltinTest, Test) {
         ASSERT_NE(value, nullptr);
         EXPECT_TYPE(value->Type(), sem->Type());
 
-        auto* expected_sem = Sem().Get(expected_expr);
-        const sem::Constant* expected_value = expected_sem->ConstantValue();
-        ASSERT_NE(expected_value, nullptr);
-        EXPECT_TYPE(expected_value->Type(), expected_sem->Type());
-
-        // @TODO(amaiorano): Rewrite using ScalarArgsFrom()
-        ForEachElemPair(value, expected_value, [&](const sem::Constant* a, const sem::Constant* b) {
-            std::visit(
-                [&](auto&& ct_expected) {
-                    using T = typename std::decay_t<decltype(ct_expected)>::ElementType;
-
-                    auto v = a->As<T>();
-                    auto e = b->As<T>();
-                    if constexpr (std::is_same_v<bool, T>) {
-                        EXPECT_EQ(v, e);
-                    } else if constexpr (IsFloatingPoint<T>) {
-                        if (std::isnan(e)) {
-                            EXPECT_TRUE(std::isnan(v));
-                        } else {
-                            auto vf = (expected_case.pos_or_neg ? Abs(v) : v);
-                            if (expected_case.float_compare) {
-                                EXPECT_FLOAT_EQ(vf, e);
-                            } else {
-                                EXPECT_EQ(vf, e);
-                            }
-                        }
-                    } else {
-                        EXPECT_EQ((expected_case.pos_or_neg ? Abs(v) : v), e);
-                        // Check that the constant's integer doesn't contain unexpected
-                        // data in the MSBs that are outside of the bit-width of T.
-                        EXPECT_EQ(a->As<AInt>(), b->As<AInt>());
-                    }
-                },
-                expected_case.value);
-
-            return HasFailure() ? Action::kStop : Action::kContinue;
-        });
+        if (value->Type()->Is<sem::Struct>()) {
+            // The result type of the constant-evaluated expression is a structure.
+            // Compare each of the fields individually.
+            for (size_t i = 0; i < expected_case.values.Length(); i++) {
+                CheckConstant(value->Index(i), ToValueBase(expected_case.values[i]),
+                              expected_case.flags);
+            }
+        } else {
+            // Return type is not a structure. Just compare the single value
+            ASSERT_EQ(expected_case.values.Length(), 1u)
+                << "const-eval returned non-struct, but Case expected multiple values";
+            CheckConstant(value, ToValueBase(expected_case.values[0]), expected_case.flags);
+        }
     } else {
         EXPECT_FALSE(r()->Resolve());
         EXPECT_EQ(r()->error(), c.expected.Failure().error);
@@ -349,9 +335,9 @@ std::vector<Case> AtanhCases() {
         // Vector tests
         C({Vec(T(0.0), T(0.9), -T(0.9))}, Vec(T(0.0), T(1.4722193), -T(1.4722193))).FloatComp(),
 
-        E({1.1_a},
+        E({T(1.1)},
           "12:34 error: atanh must be called with a value in the range (-1 .. 1) (exclusive)"),
-        E({-1.1_a},
+        E({-T(1.1)},
           "12:34 error: atanh must be called with a value in the range (-1 .. 1) (exclusive)"),
     };
 }
@@ -375,9 +361,9 @@ std::vector<Case> AcosCases() {
         // Vector tests
         C({Vec(T(1.0), -T(1.0))}, Vec(T(0), kPi<T>)).FloatComp(),
 
-        E({1.1_a},
+        E({T(1.1)},
           "12:34 error: acos must be called with a value in the range [-1 .. 1] (inclusive)"),
-        E({-1.1_a},
+        E({-T(1.1)},
           "12:34 error: acos must be called with a value in the range [-1 .. 1] (inclusive)"),
     };
 }
@@ -399,8 +385,8 @@ std::vector<Case> AcoshCases() {
         C({Vec(T(1.0), T(11.5919532755))}, Vec(T(0), kPi<T>)).FloatComp(),
 
         E({T::Smallest()}, "12:34 error: acosh must be called with a value >= 1.0"),
-        E({-1.1_a}, "12:34 error: acosh must be called with a value >= 1.0"),
-        E({0_a}, "12:34 error: acosh must be called with a value >= 1.0"),
+        E({-T(1.1)}, "12:34 error: acosh must be called with a value >= 1.0"),
+        E({T(0)}, "12:34 error: acosh must be called with a value >= 1.0"),
     };
 }
 INSTANTIATE_TEST_SUITE_P(  //
@@ -424,9 +410,9 @@ std::vector<Case> AsinCases() {
         // Vector tests
         C({Vec(T(0.0), T(1.0), -T(1.0))}, Vec(T(0.0), kPiOver2<T>, -kPiOver2<T>)).FloatComp(),
 
-        E({1.1_a},
+        E({T(1.1)},
           "12:34 error: asin must be called with a value in the range [-1 .. 1] (inclusive)"),
-        E({-1.1_a},
+        E({-T(1.1)},
           "12:34 error: asin must be called with a value in the range [-1 .. 1] (inclusive)"),
     };
 }
@@ -541,6 +527,9 @@ INSTANTIATE_TEST_SUITE_P(  //
 
 template <typename T>
 std::vector<Case> CoshCases() {
+    auto error_msg = [](auto a) {
+        return "12:34 error: " + OverflowErrorMessage(a, FriendlyName<decltype(a)>());
+    };
     std::vector<Case> cases = {
         C({T(0)}, T(1)),
         C({-T(0)}, T(1)),
@@ -550,8 +539,9 @@ std::vector<Case> CoshCases() {
 
         // Vector tests
         C({Vec(T(0), -T(0), T(1))}, Vec(T(1), T(1), T(1.5430806348))).FloatComp(),
-    };
 
+        E({T(10000)}, error_msg(T::Inf())),
+    };
     return cases;
 }
 INSTANTIATE_TEST_SUITE_P(  //
@@ -788,9 +778,59 @@ INSTANTIATE_TEST_SUITE_P(  //
     ResolverConstEvalBuiltinTest,
     testing::Combine(testing::Values(sem::BuiltinType::kCross),
                      testing::ValuesIn(Concat(CrossCases<AFloat>(),  //
-                                              CrossCases<f32>(),
-                                              CrossCases<f32>(),  //
+                                              CrossCases<f32>(),     //
                                               CrossCases<f16>()))));
+
+template <typename T>
+std::vector<Case> DotCases() {
+    auto r = std::vector<Case>{
+        C({Vec(T(0), T(0)), Vec(T(0), T(0))}, Val(T(0))),
+        C({Vec(T(0), T(0), T(0)), Vec(T(0), T(0), T(0))}, Val(T(0))),
+        C({Vec(T(0), T(0), T(0), T(0)), Vec(T(0), T(0), T(0), T(0))}, Val(T(0))),
+        C({Vec(T(1), T(2), T(3), T(4)), Vec(T(5), T(6), T(7), T(8))}, Val(T(70))),
+
+        C({Vec(T(1), T(1)), Vec(T(1), T(1))}, Val(T(2))),
+        C({Vec(T(1), T(2)), Vec(T(2), T(1))}, Val(T(4))),
+        C({Vec(T(2), T(2)), Vec(T(2), T(2))}, Val(T(8))),
+
+        C({Vec(T::Highest(), T::Highest()), Vec(T(1), T(0))}, Val(T::Highest())),
+        C({Vec(T::Lowest(), T::Lowest()), Vec(T(1), T(0))}, Val(T::Lowest())),
+    };
+
+    if constexpr (IsAbstract<T> || IsFloatingPoint<T>) {
+        auto error_msg = [](auto a, const char* op, auto b) {
+            return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
+12:34 note: when calculating dot)";
+        };
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   E({Vec(T::Highest(), T::Highest()), Vec(T(1), T(1))},
+                     error_msg(T::Highest(), "+", T::Highest())),
+                   E({Vec(T::Lowest(), T::Lowest()), Vec(T(1), T(1))},
+                     error_msg(T::Lowest(), "+", T::Lowest())),
+               });
+    } else {
+        // Overflow is not an error for concrete integrals
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C({Vec(T::Highest(), T::Highest()), Vec(T(1), T(1))},
+                     Val(Add(T::Highest(), T::Highest()))),
+                   C({Vec(T::Lowest(), T::Lowest()), Vec(T(1), T(1))},
+                     Val(Add(T::Lowest(), T::Lowest()))),
+               });
+    }
+    return r;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Dot,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kDot),
+                     testing::ValuesIn(Concat(DotCases<AInt>(),    //
+                                              DotCases<i32>(),     //
+                                              DotCases<u32>(),     //
+                                              DotCases<AFloat>(),  //
+                                              DotCases<f32>(),     //
+                                              DotCases<f16>()))));
 
 template <typename T>
 std::vector<Case> FirstLeadingBitCases() {
@@ -988,6 +1028,57 @@ INSTANTIATE_TEST_SUITE_P(  //
     testing::Combine(testing::Values(sem::BuiltinType::kInsertBits),
                      testing::ValuesIn(Concat(InsertBitsCases<i32>(),  //
                                               InsertBitsCases<u32>()))));
+
+template <typename T>
+std::vector<Case> DegreesAFloatCases() {
+    return std::vector<Case>{
+        C({T(0)}, T(0)),                             //
+        C({-T(0)}, -T(0)),                           //
+        C({T(0.698132)}, T(40)).FloatComp(),         //
+        C({-T(1.5708)}, -T(90.000214)).FloatComp(),  //
+        C({T(1.5708)}, T(90.000214)).FloatComp(),    //
+        C({T(6.28319)}, T(360.00027)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    DegreesAFloat,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kDegrees),
+                     testing::ValuesIn(DegreesAFloatCases<AFloat>())));
+
+template <typename T>
+std::vector<Case> DegreesF32Cases() {
+    return std::vector<Case>{
+        C({T(0)}, T(0)),                             //
+        C({-T(0)}, -T(0)),                           //
+        C({T(0.698132)}, T(40)).FloatComp(),         //
+        C({-T(1.5708)}, -T(90.000206)).FloatComp(),  //
+        C({T(1.5708)}, T(90.000206)).FloatComp(),    //
+        C({T(6.28319)}, T(360.00024)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    DegreesF32,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kDegrees),
+                     testing::ValuesIn(DegreesF32Cases<f32>())));
+
+template <typename T>
+std::vector<Case> DegreesF16Cases() {
+    return std::vector<Case>{
+        C({T(0)}, T(0)),                            //
+        C({-T(0)}, -T(0)),                          //
+        C({T(0.698132)}, T(39.96875)).FloatComp(),  //
+        C({-T(1.5708)}, -T(89.9375)).FloatComp(),   //
+        C({T(1.5708)}, T(89.9375)).FloatComp(),     //
+        C({T(6.28319)}, T(359.75)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    DegreesF16,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kDegrees),
+                     testing::ValuesIn(DegreesF16Cases<f16>())));
 
 template <typename T>
 std::vector<Case> ExtractBitsCases() {
@@ -1272,6 +1363,41 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               ReverseBitsCases<u32>()))));
 
 template <typename T>
+std::vector<Case> RadiansCases() {
+    return std::vector<Case>{
+        C({T(0)}, T(0)),                         //
+        C({-T(0)}, -T(0)),                       //
+        C({T(40)}, T(0.69813168)).FloatComp(),   //
+        C({-T(90)}, -T(1.5707964)).FloatComp(),  //
+        C({T(90)}, T(1.5707964)).FloatComp(),    //
+        C({T(360)}, T(6.2831855)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Radians,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kRadians),
+                     testing::ValuesIn(Concat(RadiansCases<AFloat>(),  //
+                                              RadiansCases<f32>()))));
+
+template <typename T>
+std::vector<Case> RadiansF16Cases() {
+    return std::vector<Case>{
+        C({T(0)}, T(0)),                         //
+        C({-T(0)}, -T(0)),                       //
+        C({T(40)}, T(0.69726562)).FloatComp(),   //
+        C({-T(90)}, -T(1.5693359)).FloatComp(),  //
+        C({T(90)}, T(1.5693359)).FloatComp(),    //
+        C({T(360)}, T(6.2773438)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    RadiansF16,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kRadians),
+                     testing::ValuesIn(RadiansF16Cases<f16>())));
+
+template <typename T>
 std::vector<Case> RoundCases() {
     std::vector<Case> cases = {
         C({T(0.0)}, T(0.0)),      //
@@ -1422,6 +1548,9 @@ INSTANTIATE_TEST_SUITE_P(  //
 
 template <typename T>
 std::vector<Case> SinhCases() {
+    auto error_msg = [](auto a) {
+        return "12:34 error: " + OverflowErrorMessage(a, FriendlyName<decltype(a)>());
+    };
     std::vector<Case> cases = {
         C({T(0)}, T(0)),
         C({-T(0)}, -T(0)),
@@ -1430,8 +1559,9 @@ std::vector<Case> SinhCases() {
 
         // Vector tests
         C({Vec(T(0), -T(0), T(1))}, Vec(T(0), -T(0), T(1.1752012))).FloatComp(),
-    };
 
+        E({T(10000)}, error_msg(T::Inf())),
+    };
     return cases;
 }
 INSTANTIATE_TEST_SUITE_P(  //
@@ -1444,6 +1574,10 @@ INSTANTIATE_TEST_SUITE_P(  //
 
 template <typename T>
 std::vector<Case> SmoothstepCases() {
+    auto error_msg = [](auto a, const char* op, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
+12:34 note: when calculating smoothstep)";
+    };
     return {
         // t == 0
         C({T(4), T(6), T(2)}, T(0)),
@@ -1454,6 +1588,13 @@ std::vector<Case> SmoothstepCases() {
 
         // Vector tests
         C({Vec(T(4), T(4)), Vec(T(6), T(6)), Vec(T(2), T(8))}, Vec(T(0), T(1))),
+
+        // `x - low` underflows
+        E({T::Highest(), T(1), T::Lowest()}, error_msg(T::Lowest(), "-", T::Highest())),
+        // `high - low` underflows
+        E({T::Highest(), T::Lowest(), T(0)}, error_msg(T::Lowest(), "-", T::Highest())),
+        // Divide by zero on `(x - low) / (high - low)`
+        E({T(0), T(0), T(0)}, error_msg(T(0), "/", T(0))),
     };
 }
 INSTANTIATE_TEST_SUITE_P(  //
@@ -1463,68 +1604,6 @@ INSTANTIATE_TEST_SUITE_P(  //
                      testing::ValuesIn(Concat(SmoothstepCases<AFloat>(),  //
                                               SmoothstepCases<f32>(),
                                               SmoothstepCases<f16>()))));
-
-template <typename T>
-std::vector<Case> SmoothstepAFloatErrorCases() {
-    auto error_msg = [](auto a, const char* op, auto b) {
-        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
-12:34 note: when calculating smoothstep)";
-    };
-
-    return {// `x - low` underflows
-            E({T::Highest(), T(1), T::Lowest()}, error_msg(T::Lowest(), "-", T::Highest())),
-            // `high - low` underflows
-            E({T::Highest(), T::Lowest(), T(0)}, error_msg(T::Lowest(), "-", T::Highest())),
-            // Divid by zero on `(x - low) / (high - low)`
-            E({T(0), T(0), T(0)}, error_msg(T(0), "/", T(0)))};
-}
-INSTANTIATE_TEST_SUITE_P(  //
-    SmoothstepAFloatError,
-    ResolverConstEvalBuiltinTest,
-    testing::Combine(testing::Values(sem::BuiltinType::kSmoothstep),
-                     testing::ValuesIn(SmoothstepAFloatErrorCases<AFloat>())));
-
-template <typename T>
-std::vector<Case> SmoothstepF16ErrorCases() {
-    auto error_msg = [](auto a, const char* op, auto b) {
-        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
-12:34 note: when calculating smoothstep)";
-    };
-
-    return {// `x - low` underflows
-            E({T::Highest(), T(1), T::Lowest()}, error_msg(T::Lowest(), "-", T::Highest())),
-            // `high - low` underflows
-            E({T::Highest(), T::Lowest(), T(0)}, error_msg(T::Lowest(), "-", T::Highest())),
-            // Divid by zero on `(x - low) / (high - low)`
-            E({T(0), T(0), T(0)}, error_msg(T(0), "/", T(0)))};
-}
-// TODO(crbug.com/tint/1581): Enable when non-abstract math is checked.
-INSTANTIATE_TEST_SUITE_P(  //
-    DISABLED_SmoothstepF16Error,
-    ResolverConstEvalBuiltinTest,
-    testing::Combine(testing::Values(sem::BuiltinType::kSmoothstep),
-                     testing::ValuesIn(SmoothstepF16ErrorCases<f16>())));
-
-template <typename T>
-std::vector<Case> SmoothstepF32ErrorCases() {
-    auto error_msg = [](auto a, const char* op, auto b) {
-        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
-12:34 note: when calculating smoothstep)";
-    };
-
-    return {// `x - low` underflows
-            E({T::Highest(), T(1), T::Lowest()}, error_msg(T::Lowest(), "-", T::Highest())),
-            // `high - low` underflows
-            E({T::Highest(), T::Lowest(), T(0)}, error_msg(T::Lowest(), "-", T::Highest())),
-            // Divid by zero on `(x - low) / (high - low)`
-            E({T(0), T(0), T(0)}, error_msg(T(0), "/", T(0)))};
-}
-// TODO(crbug.com/tint/1581): Enable when non-abstract math is checked.
-INSTANTIATE_TEST_SUITE_P(  //
-    DISABLED_SmoothstepF32Error,
-    ResolverConstEvalBuiltinTest,
-    testing::Combine(testing::Values(sem::BuiltinType::kSmoothstep),
-                     testing::ValuesIn(SmoothstepF32ErrorCases<f32>())));
 
 template <typename T>
 std::vector<Case> StepCases() {
