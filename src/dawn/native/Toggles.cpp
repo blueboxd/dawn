@@ -266,12 +266,6 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Disables usage of the blob cache (backed by the platform cache if set/passed). Prevents any "
       "persistent caching capabilities, i.e. pipeline caching.",
       "https://crbug.com/dawn/549"}},
-    // TODO(dawn:549) Remove after deprecating usage on the Chromium side.
-    {Toggle::EnableBlobCache,
-     {"enable_blob_cache",
-      "Enables usage of the blob cache (backed by the platform cache if set/passed). Necessary for "
-      "any persistent caching capabilities, i.e. pipeline caching.",
-      "https://crbug.com/dawn/549"}},
     {Toggle::D3D12ForceClearCopyableDepthStencilTextureOnCreation,
      {"d3d12_force_clear_copyable_depth_stencil_texture_on_creation",
       "Always clearing copyable depth stencil textures when creating them instead of skipping the "
@@ -331,6 +325,13 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "resources. This toggle is enabled by default on D3D12 backends using Intel Gen9.5 and Gen11 "
       "GPUs due to a driver issue on Intel D3D12 driver.",
       "https://crbug.com/1237175"}},
+    {Toggle::DisallowDeprecatedAPIs,
+     {"disallow_deprecated_apis",
+      "Disallow all deprecated paths by changing the deprecation warnings to validation error for "
+      "these paths."
+      "This toggle is off by default. It is expected to turn on or get removed when WebGPU V1 "
+      "ships and stays stable.",
+      "https://crbug.com/dawn/1563"}},
     // Comment to separate the }} so it is clearer what to copy-paste to add a toggle.
 }};
 }  // anonymous namespace

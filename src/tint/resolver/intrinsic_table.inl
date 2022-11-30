@@ -12198,24 +12198,24 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 2,
     /* num template types */ 1,
     /* num template numbers */ 0,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[10],
     /* parameters */ &kParameters[600],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::distance,
   },
   {
     /* [324] */
     /* num parameters */ 2,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[602],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::distance,
   },
   {
     /* [325] */
@@ -12366,48 +12366,48 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 0,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[10],
     /* parameters */ &kParameters[850],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::exp,
   },
   {
     /* [338] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[851],
     /* return matcher indices */ &kMatcherIndices[30],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::exp,
   },
   {
     /* [339] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 0,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[10],
     /* parameters */ &kParameters[852],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::exp2,
   },
   {
     /* [340] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[853],
     /* return matcher indices */ &kMatcherIndices[30],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::exp2,
   },
   {
     /* [341] */
@@ -12510,24 +12510,24 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 3,
     /* num template types */ 1,
     /* num template numbers */ 0,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[10],
     /* parameters */ &kParameters[462],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::fma,
   },
   {
     /* [350] */
     /* num parameters */ 3,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[465],
     /* return matcher indices */ &kMatcherIndices[30],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::fma,
   },
   {
     /* [351] */
@@ -12558,24 +12558,24 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 0,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[10],
     /* parameters */ &kParameters[862],
     /* return matcher indices */ &kMatcherIndices[104],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::frexp,
   },
   {
     /* [354] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[863],
     /* return matcher indices */ &kMatcherIndices[39],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::frexp,
   },
   {
     /* [355] */
@@ -12678,24 +12678,24 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 0,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[10],
     /* parameters */ &kParameters[870],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::inverseSqrt,
   },
   {
     /* [364] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[871],
     /* return matcher indices */ &kMatcherIndices[30],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::inverseSqrt,
   },
   {
     /* [365] */
@@ -12726,72 +12726,72 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 0,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[10],
     /* parameters */ &kParameters[872],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::length,
   },
   {
     /* [368] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[873],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::length,
   },
   {
     /* [369] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 0,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[10],
     /* parameters */ &kParameters[874],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::log,
   },
   {
     /* [370] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[875],
     /* return matcher indices */ &kMatcherIndices[30],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::log,
   },
   {
     /* [371] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 0,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[10],
     /* parameters */ &kParameters[876],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::log2,
   },
   {
     /* [372] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[877],
     /* return matcher indices */ &kMatcherIndices[30],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::log2,
   },
   {
     /* [373] */
@@ -12846,24 +12846,24 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 0,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[10],
     /* parameters */ &kParameters[878],
     /* return matcher indices */ &kMatcherIndices[106],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::modf,
   },
   {
     /* [378] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[879],
     /* return matcher indices */ &kMatcherIndices[45],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::modf,
   },
   {
     /* [379] */
@@ -13566,12 +13566,12 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[837],
     /* return matcher indices */ &kMatcherIndices[3],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::determinant,
   },
   {
     /* [438] */
@@ -13614,24 +13614,24 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 3,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[459],
     /* return matcher indices */ &kMatcherIndices[30],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::faceForward,
   },
   {
     /* [442] */
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[880],
     /* return matcher indices */ &kMatcherIndices[30],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::normalize,
   },
   {
     /* [443] */
@@ -13698,24 +13698,24 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 2,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[626],
     /* return matcher indices */ &kMatcherIndices[30],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::reflect,
   },
   {
     /* [449] */
     /* num parameters */ 3,
     /* num template types */ 1,
     /* num template numbers */ 1,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[4],
     /* parameters */ &kParameters[477],
     /* return matcher indices */ &kMatcherIndices[30],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::refract,
   },
   {
     /* [450] */
@@ -13734,12 +13734,12 @@ constexpr OverloadInfo kOverloads[] = {
     /* num parameters */ 1,
     /* num template types */ 1,
     /* num template numbers */ 2,
-    /* template types */ &kTemplateTypes[26],
+    /* template types */ &kTemplateTypes[23],
     /* template numbers */ &kTemplateNumbers[3],
     /* parameters */ &kParameters[908],
     /* return matcher indices */ &kMatcherIndices[18],
     /* flags */ OverloadFlags(OverloadFlag::kIsBuiltin, OverloadFlag::kSupportsVertexPipeline, OverloadFlag::kSupportsFragmentPipeline, OverloadFlag::kSupportsComputePipeline),
-    /* const eval */ nullptr,
+    /* const eval */ &ConstEval::transpose,
   },
   {
     /* [452] */
@@ -14124,14 +14124,14 @@ constexpr IntrinsicInfo kBuiltins[] = {
   },
   {
     /* [20] */
-    /* fn determinant<N : num, T : f32_f16>(mat<N, N, T>) -> T */
+    /* fn determinant<N : num, T : fa_f32_f16>(mat<N, N, T>) -> T */
     /* num overloads */ 1,
     /* overloads */ &kOverloads[437],
   },
   {
     /* [21] */
-    /* fn distance<T : f32_f16>(T, T) -> T */
-    /* fn distance<N : num, T : f32_f16>(vec<N, T>, vec<N, T>) -> T */
+    /* fn distance<T : fa_f32_f16>(T, T) -> T */
+    /* fn distance<N : num, T : fa_f32_f16>(vec<N, T>, vec<N, T>) -> T */
     /* num overloads */ 2,
     /* overloads */ &kOverloads[323],
   },
@@ -14197,15 +14197,15 @@ constexpr IntrinsicInfo kBuiltins[] = {
   },
   {
     /* [31] */
-    /* fn exp<T : f32_f16>(T) -> T */
-    /* fn exp<N : num, T : f32_f16>(vec<N, T>) -> vec<N, T> */
+    /* fn exp<T : fa_f32_f16>(T) -> T */
+    /* fn exp<N : num, T : fa_f32_f16>(vec<N, T>) -> vec<N, T> */
     /* num overloads */ 2,
     /* overloads */ &kOverloads[337],
   },
   {
     /* [32] */
-    /* fn exp2<T : f32_f16>(T) -> T */
-    /* fn exp2<N : num, T : f32_f16>(vec<N, T>) -> vec<N, T> */
+    /* fn exp2<T : fa_f32_f16>(T) -> T */
+    /* fn exp2<N : num, T : fa_f32_f16>(vec<N, T>) -> vec<N, T> */
     /* num overloads */ 2,
     /* overloads */ &kOverloads[339],
   },
@@ -14218,7 +14218,7 @@ constexpr IntrinsicInfo kBuiltins[] = {
   },
   {
     /* [34] */
-    /* fn faceForward<N : num, T : f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T> */
+    /* fn faceForward<N : num, T : fa_f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T> */
     /* num overloads */ 1,
     /* overloads */ &kOverloads[441],
   },
@@ -14245,8 +14245,8 @@ constexpr IntrinsicInfo kBuiltins[] = {
   },
   {
     /* [38] */
-    /* fn fma<T : f32_f16>(T, T, T) -> T */
-    /* fn fma<N : num, T : f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T> */
+    /* fn fma<T : fa_f32_f16>(T, T, T) -> T */
+    /* fn fma<N : num, T : fa_f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T> */
     /* num overloads */ 2,
     /* overloads */ &kOverloads[349],
   },
@@ -14259,8 +14259,8 @@ constexpr IntrinsicInfo kBuiltins[] = {
   },
   {
     /* [40] */
-    /* fn frexp<T : f32_f16>(T) -> __frexp_result<T> */
-    /* fn frexp<N : num, T : f32_f16>(vec<N, T>) -> __frexp_result_vec<N, T> */
+    /* fn frexp<T : fa_f32_f16>(T) -> __frexp_result<T> */
+    /* fn frexp<N : num, T : fa_f32_f16>(vec<N, T>) -> __frexp_result_vec<N, T> */
     /* num overloads */ 2,
     /* overloads */ &kOverloads[353],
   },
@@ -14294,8 +14294,8 @@ constexpr IntrinsicInfo kBuiltins[] = {
   },
   {
     /* [45] */
-    /* fn inverseSqrt<T : f32_f16>(T) -> T */
-    /* fn inverseSqrt<N : num, T : f32_f16>(vec<N, T>) -> vec<N, T> */
+    /* fn inverseSqrt<T : fa_f32_f16>(T) -> T */
+    /* fn inverseSqrt<N : num, T : fa_f32_f16>(vec<N, T>) -> vec<N, T> */
     /* num overloads */ 2,
     /* overloads */ &kOverloads[363],
   },
@@ -14308,22 +14308,22 @@ constexpr IntrinsicInfo kBuiltins[] = {
   },
   {
     /* [47] */
-    /* fn length<T : f32_f16>(T) -> T */
-    /* fn length<N : num, T : f32_f16>(vec<N, T>) -> T */
+    /* fn length<T : fa_f32_f16>(@test_value(0) T) -> T */
+    /* fn length<N : num, T : fa_f32_f16>(@test_value(0) vec<N, T>) -> T */
     /* num overloads */ 2,
     /* overloads */ &kOverloads[367],
   },
   {
     /* [48] */
-    /* fn log<T : f32_f16>(T) -> T */
-    /* fn log<N : num, T : f32_f16>(vec<N, T>) -> vec<N, T> */
+    /* fn log<T : fa_f32_f16>(T) -> T */
+    /* fn log<N : num, T : fa_f32_f16>(vec<N, T>) -> vec<N, T> */
     /* num overloads */ 2,
     /* overloads */ &kOverloads[369],
   },
   {
     /* [49] */
-    /* fn log2<T : f32_f16>(T) -> T */
-    /* fn log2<N : num, T : f32_f16>(vec<N, T>) -> vec<N, T> */
+    /* fn log2<T : fa_f32_f16>(T) -> T */
+    /* fn log2<N : num, T : fa_f32_f16>(vec<N, T>) -> vec<N, T> */
     /* num overloads */ 2,
     /* overloads */ &kOverloads[371],
   },
@@ -14351,14 +14351,14 @@ constexpr IntrinsicInfo kBuiltins[] = {
   },
   {
     /* [53] */
-    /* fn modf<T : f32_f16>(T) -> __modf_result<T> */
-    /* fn modf<N : num, T : f32_f16>(vec<N, T>) -> __modf_result_vec<N, T> */
+    /* fn modf<T : fa_f32_f16>(@test_value(-1.5) T) -> __modf_result<T> */
+    /* fn modf<N : num, T : fa_f32_f16>(@test_value(-1.5) vec<N, T>) -> __modf_result_vec<N, T> */
     /* num overloads */ 2,
     /* overloads */ &kOverloads[377],
   },
   {
     /* [54] */
-    /* fn normalize<N : num, T : f32_f16>(vec<N, T>) -> vec<N, T> */
+    /* fn normalize<N : num, T : fa_f32_f16>(vec<N, T>) -> vec<N, T> */
     /* num overloads */ 1,
     /* overloads */ &kOverloads[442],
   },
@@ -14415,13 +14415,13 @@ constexpr IntrinsicInfo kBuiltins[] = {
   },
   {
     /* [63] */
-    /* fn reflect<N : num, T : f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T> */
+    /* fn reflect<N : num, T : fa_f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T> */
     /* num overloads */ 1,
     /* overloads */ &kOverloads[448],
   },
   {
     /* [64] */
-    /* fn refract<N : num, T : f32_f16>(vec<N, T>, vec<N, T>, T) -> vec<N, T> */
+    /* fn refract<N : num, T : fa_f32_f16>(vec<N, T>, vec<N, T>, T) -> vec<N, T> */
     /* num overloads */ 1,
     /* overloads */ &kOverloads[449],
   },
@@ -14518,7 +14518,7 @@ constexpr IntrinsicInfo kBuiltins[] = {
   },
   {
     /* [78] */
-    /* fn transpose<M : num, N : num, T : f32_f16>(mat<M, N, T>) -> mat<N, M, T> */
+    /* fn transpose<M : num, N : num, T : fa_f32_f16>(mat<M, N, T>) -> mat<N, M, T> */
     /* num overloads */ 1,
     /* overloads */ &kOverloads[451],
   },

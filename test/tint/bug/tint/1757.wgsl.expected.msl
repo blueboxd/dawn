@@ -6,18 +6,12 @@ bug/tint/1757.wgsl:6:25 warning: use of deprecated language feature: 'sig' has b
 
 using namespace metal;
 
-struct frexp_result {
+struct frexp_result_f32 {
   float fract;
   int exp;
 };
-frexp_result tint_frexp(float param_0) {
-  frexp_result result;
-  result.fract = frexp(param_0, result.exp);
-  return result;
-}
-
 kernel void tint_symbol() {
-  frexp_result const res = tint_frexp(1.230000019f);
+  frexp_result_f32 const res = frexp_result_f32{.fract=0.61500001f, .exp=1};
   int const exp = res.exp;
   float const sig = res.fract;
   return;

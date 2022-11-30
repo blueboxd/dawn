@@ -656,24 +656,32 @@ if(${TINT_BUILD_IR})
     ir/builder.h
     ir/builder_impl.cc
     ir/builder_impl.h
+    ir/constant.cc
+    ir/constant.h
     ir/debug.cc
     ir/debug.h
+    ir/disassembler.cc
+    ir/disassembler.h
     ir/flow_node.cc
     ir/flow_node.h
     ir/function.cc
     ir/function.h
     ir/if.cc
     ir/if.h
+    ir/instruction.cc
+    ir/instruction.h
     ir/loop.cc
     ir/loop.h
     ir/module.cc
     ir/module.h
-    ir/register.cc
-    ir/register.h
     ir/switch.cc
     ir/switch.h
+    ir/temp.cc
+    ir/temp.h
     ir/terminator.cc
     ir/terminator.h
+    ir/value.cc
+    ir/value.h
   )
 endif()
 
@@ -1208,6 +1216,8 @@ if(TINT_BUILD_TESTS)
       transform/single_entry_point_test.cc
       transform/spirv_atomic_test.cc
       transform/std140_exhaustive_test.cc
+      transform/std140_f16_test.cc
+      transform/std140_f32_test.cc
       transform/std140_test.cc
       transform/substitute_override_test.cc
       transform/test_helper.h
@@ -1335,7 +1345,9 @@ if(TINT_BUILD_TESTS)
   if (${TINT_BUILD_IR})
     list(APPEND TINT_TEST_SRCS
       ir/builder_impl_test.cc
-      ir/register_test.cc
+      ir/constant_test.cc
+      ir/instruction_test.cc
+      ir/temp_test.cc
       ir/test_helper.h
     )
   endif()

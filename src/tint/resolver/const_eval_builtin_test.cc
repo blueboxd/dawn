@@ -22,15 +22,12 @@ using ::testing::HasSubstr;
 namespace tint::resolver {
 namespace {
 
-// Bring in std::ostream& operator<<(std::ostream& o, const Types& types)
-using resolver::operator<<;
-
 struct Case {
-    Case(utils::VectorRef<Types> in_args, utils::VectorRef<Types> expected_values)
+    Case(utils::VectorRef<Value> in_args, utils::VectorRef<Value> expected_values)
         : args(std::move(in_args)),
           expected(Success{std::move(expected_values), CheckConstantFlags{}}) {}
 
-    Case(utils::VectorRef<Types> in_args, std::string expected_err)
+    Case(utils::VectorRef<Value> in_args, std::string expected_err)
         : args(std::move(in_args)), expected(Failure{std::move(expected_err)}) {}
 
     /// Expected value may be positive or negative
@@ -41,23 +38,25 @@ struct Case {
         return *this;
     }
 
-    /// Expected value should be compared using FLOAT_EQ instead of EQ
-    Case& FloatComp() {
+    /// Expected value should be compared using EXPECT_FLOAT_EQ instead of EXPECT_EQ.
+    /// If optional epsilon is passed in, will be compared using EXPECT_NEAR with that epsilon.
+    Case& FloatComp(std::optional<double> epsilon = {}) {
         Success s = expected.Get();
         s.flags.float_compare = true;
+        s.flags.float_compare_epsilon = epsilon;
         expected = s;
         return *this;
     }
 
     struct Success {
-        utils::Vector<Types, 2> values;
+        utils::Vector<Value, 2> values;
         CheckConstantFlags flags;
     };
     struct Failure {
         std::string error;
     };
 
-    utils::Vector<Types, 8> args;
+    utils::Vector<Value, 8> args;
     utils::Result<Success, Failure> expected;
 };
 
@@ -92,29 +91,48 @@ static std::ostream& operator<<(std::ostream& o, const Case& c) {
 using ScalarTypes = std::variant<AInt, AFloat, u32, i32, f32, f16>;
 
 /// Creates a Case with Values for args and result
-static Case C(std::initializer_list<Types> args, Types result) {
-    return Case{utils::Vector<Types, 8>{args}, utils::Vector<Types, 2>{std::move(result)}};
+static Case C(std::initializer_list<Value> args, Value result) {
+    return Case{utils::Vector<Value, 8>{args}, utils::Vector<Value, 2>{std::move(result)}};
+}
+
+/// Creates a Case with Values for args and result
+static Case C(std::initializer_list<Value> args, std::initializer_list<Value> results) {
+    return Case{utils::Vector<Value, 8>{args}, utils::Vector<Value, 2>{results}};
 }
 
 /// Convenience overload that creates a Case with just scalars
 static Case C(std::initializer_list<ScalarTypes> sargs, ScalarTypes sresult) {
-    utils::Vector<Types, 8> args;
+    utils::Vector<Value, 8> args;
     for (auto& sa : sargs) {
         std::visit([&](auto&& v) { return args.Push(Val(v)); }, sa);
     }
-    Types result = Val(0_a);
+    Value result = Val(0_a);
     std::visit([&](auto&& v) { result = Val(v); }, sresult);
-    return Case{std::move(args), utils::Vector<Types, 2>{std::move(result)}};
+    return Case{std::move(args), utils::Vector<Value, 2>{std::move(result)}};
+}
+
+/// Creates a Case with Values for args and result
+static Case C(std::initializer_list<ScalarTypes> sargs,
+              std::initializer_list<ScalarTypes> sresults) {
+    utils::Vector<Value, 8> args;
+    for (auto& sa : sargs) {
+        std::visit([&](auto&& v) { return args.Push(Val(v)); }, sa);
+    }
+    utils::Vector<Value, 2> results;
+    for (auto& sa : sresults) {
+        std::visit([&](auto&& v) { return results.Push(Val(v)); }, sa);
+    }
+    return Case{std::move(args), std::move(results)};
 }
 
 /// Creates a Case with Values for args and expected error
-static Case E(std::initializer_list<Types> args, std::string err) {
-    return Case{utils::Vector<Types, 8>{args}, std::move(err)};
+static Case E(std::initializer_list<Value> args, std::string err) {
+    return Case{utils::Vector<Value, 8>{args}, std::move(err)};
 }
 
 /// Convenience overload that creates an expected-error Case with just scalars
 static Case E(std::initializer_list<ScalarTypes> sargs, std::string err) {
-    utils::Vector<Types, 8> args;
+    utils::Vector<Value, 8> args;
     for (auto& sa : sargs) {
         std::visit([&](auto&& v) { return args.Push(Val(v)); }, sa);
     }
@@ -131,7 +149,7 @@ TEST_P(ResolverConstEvalBuiltinTest, Test) {
 
     utils::Vector<const ast::Expression*, 8> args;
     for (auto& a : c.args) {
-        std::visit([&](auto&& v) { args.Push(v.Expr(*this)); }, a);
+        args.Push(a.Expr(*this));
     }
 
     auto* expr = Call(Source{{12, 34}}, sem::str(builtin), std::move(args));
@@ -152,14 +170,13 @@ TEST_P(ResolverConstEvalBuiltinTest, Test) {
             // The result type of the constant-evaluated expression is a structure.
             // Compare each of the fields individually.
             for (size_t i = 0; i < expected_case.values.Length(); i++) {
-                CheckConstant(value->Index(i), ToValueBase(expected_case.values[i]),
-                              expected_case.flags);
+                CheckConstant(value->Index(i), expected_case.values[i], expected_case.flags);
             }
         } else {
             // Return type is not a structure. Just compare the single value
             ASSERT_EQ(expected_case.values.Length(), 1u)
                 << "const-eval returned non-struct, but Case expected multiple values";
-            CheckConstant(value, ToValueBase(expected_case.values[0]), expected_case.flags);
+            CheckConstant(value, expected_case.values[0], expected_case.flags);
         }
     } else {
         EXPECT_FALSE(r()->Resolve());
@@ -782,6 +799,33 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               CrossCases<f16>()))));
 
 template <typename T>
+std::vector<Case> DistanceCases() {
+    auto error_msg = [](auto a, const char* op, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
+12:34 note: when calculating distance)";
+    };
+
+    return std::vector<Case>{
+        C({T(0), T(0)}, T(0)),
+        // length(-5) -> 5
+        C({T(30), T(35)}, T(5)),
+
+        C({Vec(T(30), T(20)), Vec(T(25), T(15))}, Val(T(7.0710678119))).FloatComp(),
+
+        E({T::Lowest(), T::Highest()}, error_msg(T::Lowest(), "-", T::Highest())),
+        E({Vec(T::Highest(), T::Highest()), Vec(T(1), T(1))},
+          error_msg(T(T::Highest() - T(1)), "*", T(T::Highest() - T(1)))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Distance,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kDistance),
+                     testing::ValuesIn(Concat(DistanceCases<AFloat>(),  //
+                                              DistanceCases<f32>(),     //
+                                              DistanceCases<f16>()))));
+
+template <typename T>
 std::vector<Case> DotCases() {
     auto r = std::vector<Case>{
         C({Vec(T(0), T(0)), Vec(T(0), T(0))}, Val(T(0))),
@@ -831,6 +875,165 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               DotCases<AFloat>(),  //
                                               DotCases<f32>(),     //
                                               DotCases<f16>()))));
+
+template <typename T>
+std::vector<Case> DeterminantCases() {
+    auto error_msg = [](auto a, const char* op, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
+12:34 note: when calculating determinant)";
+    };
+
+    auto r = std::vector<Case>{
+        // All zero == 0
+        C({Mat({T(0), T(0)},    //
+               {T(0), T(0)})},  //
+          Val(T(0))),
+
+        C({Mat({T(0), T(0), T(0)},    //
+               {T(0), T(0), T(0)},    //
+               {T(0), T(0), T(0)})},  //
+          Val(T(0))),
+
+        C({Mat({T(0), T(0), T(0), T(0)},    //
+               {T(0), T(0), T(0), T(0)},    //
+               {T(0), T(0), T(0), T(0)},    //
+               {T(0), T(0), T(0), T(0)})},  //
+          Val(T(0))),
+
+        // All same == 0
+        C({Mat({T(42), T(42)},    //
+               {T(42), T(42)})},  //
+          Val(T(0))),
+
+        C({Mat({T(42), T(42), T(42)},    //
+               {T(42), T(42), T(42)},    //
+               {T(42), T(42), T(42)})},  //
+          Val(T(0))),
+
+        C({Mat({T(42), T(42), T(42), T(42)},    //
+               {T(42), T(42), T(42), T(42)},    //
+               {T(42), T(42), T(42), T(42)},    //
+               {T(42), T(42), T(42), T(42)})},  //
+          Val(T(0))),
+
+        // Various values
+        C({Mat({-T(2), T(17)},   //
+               {T(5), T(45)})},  //
+          Val(-T(175))),
+
+        C({Mat({T(4), T(6), -T(13)},    //
+               {T(12), T(5), T(8)},     //
+               {T(9), T(17), T(16)})},  //
+          Val(-T(3011))),
+
+        C({Mat({T(2), T(9), T(8), T(1)},       //
+               {-T(4), T(11), -T(3), T(7)},    //
+               {T(6), T(5), T(12), -T(6)},     //
+               {T(3), -T(10), T(4), -T(7)})},  //
+          Val(T(469))),
+
+        // Overflow during multiply
+        E({Mat({T::Highest(), T(0)},  //
+               {T(0), T(2)})},        //
+          error_msg(T::Highest(), "*", T(2))),
+
+        // Overflow during subtract
+        E({Mat({T::Highest(), T::Lowest()},  //
+               {T(1), T(1)})},               //
+          error_msg(T::Highest(), "-", T::Lowest())),
+    };
+
+    return r;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Determinant,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kDeterminant),
+                     testing::ValuesIn(Concat(DeterminantCases<AFloat>(),  //
+                                              DeterminantCases<f32>(),     //
+                                              DeterminantCases<f16>()))));
+
+template <typename T>
+std::vector<Case> FaceForwardCases() {
+    // Rotate v by degs around Z axis
+    auto rotate = [&](const Value& v, float degs) {
+        auto x = builder::As<T>(v.args[0]);
+        auto y = builder::As<T>(v.args[1]);
+        auto z = builder::As<T>(v.args[2]);
+        auto rads = T(degs) * kPi<T> / T(180);
+        auto x2 = T(x * std::cos(rads) - y * std::sin(rads));
+        auto y2 = T(x * std::sin(rads) + y * std::cos(rads));
+        return Vec(x2, y2, z);
+    };
+
+    // An arbitrary input vector and its negation, used for e1 args to FaceForward
+    auto pos_vec = Vec(T(1), T(2), T(3));
+    auto neg_vec = Vec(-T(1), -T(2), -T(3));
+
+    // An arbitrary vector in the xy plane, used for e2 and e3 args to FaceForward.
+    auto fwd_xy = Vec(T(1.23), T(4.56), T(0));
+
+    std::vector<Case> r = {
+        C({pos_vec, fwd_xy, rotate(fwd_xy, 85)}, neg_vec),
+        C({pos_vec, fwd_xy, rotate(fwd_xy, 85)}, neg_vec),
+        C({pos_vec, fwd_xy, rotate(fwd_xy, 95)}, pos_vec),
+        C({pos_vec, fwd_xy, rotate(fwd_xy, -95)}, pos_vec),
+        C({pos_vec, fwd_xy, rotate(fwd_xy, 180)}, pos_vec),
+
+        C({pos_vec, rotate(fwd_xy, 33), rotate(fwd_xy, 33 + 85)}, neg_vec),
+        C({pos_vec, rotate(fwd_xy, 33), rotate(fwd_xy, 33 - 85)}, neg_vec),
+        C({pos_vec, rotate(fwd_xy, 33), rotate(fwd_xy, 33 + 95)}, pos_vec),
+        C({pos_vec, rotate(fwd_xy, 33), rotate(fwd_xy, 33 - 95)}, pos_vec),
+        C({pos_vec, rotate(fwd_xy, 33), rotate(fwd_xy, 33 + 180)}, pos_vec),
+
+        C({pos_vec, rotate(fwd_xy, 234), rotate(fwd_xy, 234 + 85)}, neg_vec),
+        C({pos_vec, rotate(fwd_xy, 234), rotate(fwd_xy, 234 - 85)}, neg_vec),
+        C({pos_vec, rotate(fwd_xy, 234), rotate(fwd_xy, 234 + 95)}, pos_vec),
+        C({pos_vec, rotate(fwd_xy, 234), rotate(fwd_xy, 234 - 95)}, pos_vec),
+        C({pos_vec, rotate(fwd_xy, 234), rotate(fwd_xy, 234 + 180)}, pos_vec),
+
+        // Same, but swap input and result vectors
+        C({neg_vec, fwd_xy, rotate(fwd_xy, 85)}, pos_vec),
+        C({neg_vec, fwd_xy, rotate(fwd_xy, 85)}, pos_vec),
+        C({neg_vec, fwd_xy, rotate(fwd_xy, 95)}, neg_vec),
+        C({neg_vec, fwd_xy, rotate(fwd_xy, -95)}, neg_vec),
+        C({neg_vec, fwd_xy, rotate(fwd_xy, 180)}, neg_vec),
+
+        C({neg_vec, rotate(fwd_xy, 33), rotate(fwd_xy, 33 + 85)}, pos_vec),
+        C({neg_vec, rotate(fwd_xy, 33), rotate(fwd_xy, 33 - 85)}, pos_vec),
+        C({neg_vec, rotate(fwd_xy, 33), rotate(fwd_xy, 33 + 95)}, neg_vec),
+        C({neg_vec, rotate(fwd_xy, 33), rotate(fwd_xy, 33 - 95)}, neg_vec),
+        C({neg_vec, rotate(fwd_xy, 33), rotate(fwd_xy, 33 + 180)}, neg_vec),
+
+        C({neg_vec, rotate(fwd_xy, 234), rotate(fwd_xy, 234 + 85)}, pos_vec),
+        C({neg_vec, rotate(fwd_xy, 234), rotate(fwd_xy, 234 - 85)}, pos_vec),
+        C({neg_vec, rotate(fwd_xy, 234), rotate(fwd_xy, 234 + 95)}, neg_vec),
+        C({neg_vec, rotate(fwd_xy, 234), rotate(fwd_xy, 234 - 95)}, neg_vec),
+        C({neg_vec, rotate(fwd_xy, 234), rotate(fwd_xy, 234 + 180)}, neg_vec),
+    };
+
+    auto error_msg = [](auto a, const char* op, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
+12:34 note: when calculating faceForward)";
+    };
+    ConcatInto(  //
+        r, std::vector<Case>{
+               // Overflow the dot product operation
+               E({pos_vec, Vec(T::Highest(), T::Highest(), T(0)), Vec(T(1), T(1), T(0))},
+                 error_msg(T::Highest(), "+", T::Highest())),
+               E({pos_vec, Vec(T::Lowest(), T::Lowest(), T(0)), Vec(T(1), T(1), T(0))},
+                 error_msg(T::Lowest(), "+", T::Lowest())),
+           });
+
+    return r;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    FaceForward,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kFaceForward),
+                     testing::ValuesIn(Concat(FaceForwardCases<AFloat>(),  //
+                                              FaceForwardCases<f32>(),     //
+                                              FaceForwardCases<f16>()))));
 
 template <typename T>
 std::vector<Case> FirstLeadingBitCases() {
@@ -949,6 +1152,87 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               FloorCases<f16>()))));
 
 template <typename T>
+std::vector<Case> FmaCases() {
+    auto error_msg = [](auto a, const char* op, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
+12:34 note: when calculating fma)";
+    };
+    return {
+        C({T(0), T(0), T(0)}, T(0)),
+        C({T(1), T(2), T(3)}, T(5)),
+        C({Vec(T(1), T(2.5), -T(1)), Vec(T(2), T(2.5), T(1)), Vec(T(4), T(3.75), -T(2))},
+          Vec(T(6), T(10), -T(3))),
+
+        E({T::Highest(), T::Highest(), T(0)}, error_msg(T::Highest(), "*", T::Highest())),
+        E({T::Highest(), T(1), T::Highest()}, error_msg(T::Highest(), "+", T::Highest())),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Fma,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kFma),
+                     testing::ValuesIn(Concat(FmaCases<AFloat>(),  //
+                                              FmaCases<f32>(),
+                                              FmaCases<f16>()))));
+
+template <typename T>
+std::vector<Case> FrexpCases() {
+    using F = T;                                                         // fract type
+    using E = std::conditional_t<std::is_same_v<T, AFloat>, AInt, i32>;  // exp type
+
+    auto cases = std::vector<Case>{
+        // Scalar tests
+        //  in         fract     exp
+        C({T(-3.5)}, {F(-0.875), E(2)}),  //
+        C({T(-3.0)}, {F(-0.750), E(2)}),  //
+        C({T(-2.5)}, {F(-0.625), E(2)}),  //
+        C({T(-2.0)}, {F(-0.500), E(2)}),  //
+        C({T(-1.5)}, {F(-0.750), E(1)}),  //
+        C({T(-1.0)}, {F(-0.500), E(1)}),  //
+        C({T(+0.0)}, {F(+0.000), E(0)}),  //
+        C({T(+1.0)}, {F(+0.500), E(1)}),  //
+        C({T(+1.5)}, {F(+0.750), E(1)}),  //
+        C({T(+2.0)}, {F(+0.500), E(2)}),  //
+        C({T(+2.5)}, {F(+0.625), E(2)}),  //
+        C({T(+3.0)}, {F(+0.750), E(2)}),  //
+        C({T(+3.5)}, {F(+0.875), E(2)}),  //
+
+        // Vector tests
+        //         in                 fract                    exp
+        C({Vec(T(-2.5), T(+1.0))}, {Vec(F(-0.625), F(+0.500)), Vec(E(2), E(1))}),
+        C({Vec(T(+3.5), T(-2.5))}, {Vec(F(+0.875), F(-0.625)), Vec(E(2), E(2))}),
+    };
+
+    ConcatIntoIf<std::is_same_v<T, f16>>(cases, std::vector<Case>{
+                                                    C({T::Highest()}, {F(0x0.ffep0), E(16)}),  //
+                                                    C({T::Lowest()}, {F(-0x0.ffep0), E(16)}),  //
+                                                    C({T::Smallest()}, {F(0.5), E(-13)}),      //
+                                                });
+
+    ConcatIntoIf<std::is_same_v<T, f32>>(cases,
+                                         std::vector<Case>{
+                                             C({T::Highest()}, {F(0x0.ffffffp0), E(128)}),  //
+                                             C({T::Lowest()}, {F(-0x0.ffffffp0), E(128)}),  //
+                                             C({T::Smallest()}, {F(0.5), E(-125)}),         //
+                                         });
+
+    ConcatIntoIf<std::is_same_v<T, AFloat>>(
+        cases, std::vector<Case>{
+                   C({T::Highest()}, {F(0x0.fffffffffffff8p0), E(1024)}),  //
+                   C({T::Lowest()}, {F(-0x0.fffffffffffff8p0), E(1024)}),  //
+                   C({T::Smallest()}, {F(0.5), E(-1021)}),                 //
+               });
+    return cases;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Frexp,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kFrexp),
+                     testing::ValuesIn(Concat(FrexpCases<AFloat>(),  //
+                                              FrexpCases<f32>(),     //
+                                              FrexpCases<f16>()))));
+
+template <typename T>
 std::vector<Case> InsertBitsCases() {
     using UT = Number<std::make_unsigned_t<UnwrapNumber<T>>>;
 
@@ -1030,6 +1314,28 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               InsertBitsCases<u32>()))));
 
 template <typename T>
+std::vector<Case> InverseSqrtCases() {
+    std::vector<Case> cases = {
+        C({T(25)}, T(.2)),
+
+        // Vector tests
+        C({Vec(T(25), T(100))}, Vec(T(.2), T(.1))),
+
+        E({T(0)}, "12:34 error: inverseSqrt must be called with a value > 0"),
+        E({-T(0)}, "12:34 error: inverseSqrt must be called with a value > 0"),
+        E({-T(25)}, "12:34 error: inverseSqrt must be called with a value > 0"),
+    };
+    return cases;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    InverseSqrt,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kInverseSqrt),
+                     testing::ValuesIn(Concat(InverseSqrtCases<AFloat>(),  //
+                                              InverseSqrtCases<f32>(),
+                                              InverseSqrtCases<f16>()))));
+
+template <typename T>
 std::vector<Case> DegreesAFloatCases() {
     return std::vector<Case>{
         C({T(0)}, T(0)),                             //
@@ -1079,6 +1385,46 @@ INSTANTIATE_TEST_SUITE_P(  //
     ResolverConstEvalBuiltinTest,
     testing::Combine(testing::Values(sem::BuiltinType::kDegrees),
                      testing::ValuesIn(DegreesF16Cases<f16>())));
+
+template <typename T>
+std::vector<Case> ExpCases() {
+    auto error_msg = [](auto a) { return "12:34 error: " + OverflowExpErrorMessage("e", a); };
+    return std::vector<Case>{C({T(0)}, T(1)),   //
+                             C({-T(0)}, T(1)),  //
+                             C({T(2)}, T(7.3890562)).FloatComp(),
+                             C({-T(2)}, T(0.13533528)).FloatComp(),  //
+                             C({T::Lowest()}, T(0)),
+
+                             E({T::Highest()}, error_msg(T::Highest()))};
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Exp,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kExp),
+                     testing::ValuesIn(Concat(ExpCases<AFloat>(),  //
+                                              ExpCases<f32>(),
+                                              ExpCases<f16>()))));
+
+template <typename T>
+std::vector<Case> Exp2Cases() {
+    auto error_msg = [](auto a) { return "12:34 error: " + OverflowExpErrorMessage("2", a); };
+    return std::vector<Case>{
+        C({T(0)}, T(1)),   //
+        C({-T(0)}, T(1)),  //
+        C({T(2)}, T(4.0)),
+        C({-T(2)}, T(0.25)),  //
+        C({T::Lowest()}, T(0)),
+
+        E({T::Highest()}, error_msg(T::Highest())),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Exp2,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kExp2),
+                     testing::ValuesIn(Concat(Exp2Cases<AFloat>(),  //
+                                              Exp2Cases<f32>(),
+                                              Exp2Cases<f16>()))));
 
 template <typename T>
 std::vector<Case> ExtractBitsCases() {
@@ -1177,6 +1523,169 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               ExtractBitsCases<u32>()))));
 
 template <typename T>
+std::vector<Case> LengthCases() {
+    const auto kSqrtOfHighest = T(std::sqrt(T::Highest()));
+    const auto kSqrtOfHighestSquared = T(kSqrtOfHighest * kSqrtOfHighest);
+
+    auto error_msg = [](auto a, const char* op, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
+12:34 note: when calculating length)";
+    };
+    return {
+        C({T(0)}, T(0)),
+        C({Vec(T(0), T(0))}, Val(T(0))),
+        C({Vec(T(0), T(0), T(0))}, Val(T(0))),
+        C({Vec(T(0), T(0), T(0), T(0))}, Val(T(0))),
+
+        C({T(1)}, T(1)),
+        C({Vec(T(1), T(1))}, Val(T(std::sqrt(2)))),
+        C({Vec(T(1), T(1), T(1))}, Val(T(std::sqrt(3)))),
+        C({Vec(T(1), T(1), T(1), T(1))}, Val(T(std::sqrt(4)))),
+
+        C({T(2)}, T(2)),
+        C({Vec(T(2), T(2))}, Val(T(std::sqrt(8)))),
+        C({Vec(T(2), T(2), T(2))}, Val(T(std::sqrt(12)))),
+        C({Vec(T(2), T(2), T(2), T(2))}, Val(T(std::sqrt(16)))),
+
+        C({Vec(T(2), T(3))}, Val(T(std::sqrt(13)))),
+        C({Vec(T(2), T(3), T(4))}, Val(T(std::sqrt(29)))),
+        C({Vec(T(2), T(3), T(4), T(5))}, Val(T(std::sqrt(54)))),
+
+        C({T(-5)}, T(5)),
+        C({T::Highest()}, T::Highest()),
+        C({T::Lowest()}, T::Highest()),
+
+        C({Vec(T(-2), T(-3), T(-4), T(-5))}, Val(T(std::sqrt(54)))),
+        C({Vec(T(2), T(-3), T(4), T(-5))}, Val(T(std::sqrt(54)))),
+        C({Vec(T(-2), T(3), T(-4), T(5))}, Val(T(std::sqrt(54)))),
+
+        C({Vec(kSqrtOfHighest, T(0))}, Val(kSqrtOfHighest)).FloatComp(0.2),
+        C({Vec(T(0), kSqrtOfHighest)}, Val(kSqrtOfHighest)).FloatComp(0.2),
+
+        C({Vec(-kSqrtOfHighest, T(0))}, Val(kSqrtOfHighest)).FloatComp(0.2),
+        C({Vec(T(0), -kSqrtOfHighest)}, Val(kSqrtOfHighest)).FloatComp(0.2),
+
+        // Overflow when squaring a term
+        E({Vec(T::Highest(), T(0))}, error_msg(T::Highest(), "*", T::Highest())),
+        E({Vec(T(0), T::Highest())}, error_msg(T::Highest(), "*", T::Highest())),
+        // Overflow when adding squared terms
+        E({Vec(kSqrtOfHighest, kSqrtOfHighest)},
+          error_msg(kSqrtOfHighestSquared, "+", kSqrtOfHighestSquared)),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Length,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kLength),
+                     testing::ValuesIn(Concat(LengthCases<AFloat>(),  //
+                                              LengthCases<f32>(),
+                                              LengthCases<f16>()))));
+
+template <typename T>
+std::vector<Case> LogCases() {
+    auto error_msg = [] { return "12:34 error: log must be called with a value > 0"; };
+    return std::vector<Case>{C({T(1)}, T(0)),                              //
+                             C({T(54.598150033)}, T(4)).FloatComp(0.002),  //
+
+                             E({T::Lowest()}, error_msg()), E({T(0)}, error_msg()),
+                             E({-T(0)}, error_msg())};
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Log,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kLog),
+                     testing::ValuesIn(Concat(LogCases<AFloat>(),  //
+                                              LogCases<f32>(),
+                                              LogCases<f16>()))));
+template <typename T>
+std::vector<Case> LogF16Cases() {
+    return std::vector<Case>{
+        C({T::Highest()}, T(11.085938)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    LogF16,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kLog),
+                     testing::ValuesIn(LogF16Cases<f16>())));
+template <typename T>
+std::vector<Case> LogF32Cases() {
+    return std::vector<Case>{
+        C({T::Highest()}, T(88.722839)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    LogF32,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kLog),
+                     testing::ValuesIn(LogF32Cases<f32>())));
+
+template <typename T>
+std::vector<Case> LogAbstractCases() {
+    return std::vector<Case>{
+        C({T::Highest()}, T(709.78271)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    LogAbstract,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kLog),
+                     testing::ValuesIn(LogAbstractCases<AFloat>())));
+
+template <typename T>
+std::vector<Case> Log2Cases() {
+    auto error_msg = [] { return "12:34 error: log2 must be called with a value > 0"; };
+    return std::vector<Case>{
+        C({T(1)}, T(0)),  //
+        C({T(4)}, T(2)),  //
+
+        E({T::Lowest()}, error_msg()),
+        E({T(0)}, error_msg()),
+        E({-T(0)}, error_msg()),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Log2,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kLog2),
+                     testing::ValuesIn(Concat(Log2Cases<AFloat>(),  //
+                                              Log2Cases<f32>(),
+                                              Log2Cases<f16>()))));
+template <typename T>
+std::vector<Case> Log2F16Cases() {
+    return std::vector<Case>{
+        C({T::Highest()}, T(15.9922)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Log2F16,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kLog2),
+                     testing::ValuesIn(Log2F16Cases<f16>())));
+template <typename T>
+std::vector<Case> Log2F32Cases() {
+    return std::vector<Case>{
+        C({T::Highest()}, T(128)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Log2F32,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kLog2),
+                     testing::ValuesIn(Log2F32Cases<f32>())));
+template <typename T>
+std::vector<Case> Log2AbstractCases() {
+    return std::vector<Case>{
+        C({T::Highest()}, T(1024)).FloatComp(),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Log2Abstract,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kLog2),
+                     testing::ValuesIn(Log2AbstractCases<AFloat>())));
+
+template <typename T>
 std::vector<Case> MaxCases() {
     return {
         C({T(0), T(0)}, T(0)),
@@ -1229,6 +1738,69 @@ INSTANTIATE_TEST_SUITE_P(  //
                                               MinCases<AFloat>(),
                                               MinCases<f32>(),
                                               MinCases<f16>()))));
+template <typename T>
+std::vector<Case> ModfCases() {
+    return {
+        // Scalar tests
+        //  in     fract    whole
+        C({T(0.0)}, {T(0.0), T(0.0)}),              //
+        C({T(1.0)}, {T(0.0), T(1.0)}),              //
+        C({T(2.0)}, {T(0.0), T(2.0)}),              //
+        C({T(1.5)}, {T(0.5), T(1.0)}),              //
+        C({T(4.25)}, {T(0.25), T(4.0)}),            //
+        C({T(-1.0)}, {T(0.0), T(-1.0)}),            //
+        C({T(-2.0)}, {T(0.0), T(-2.0)}),            //
+        C({T(-1.5)}, {T(-0.5), T(-1.0)}),           //
+        C({T(-4.25)}, {T(-0.25), T(-4.0)}),         //
+        C({T::Lowest()}, {T(0.0), T::Lowest()}),    //
+        C({T::Highest()}, {T(0.0), T::Highest()}),  //
+
+        // Vector tests
+        //         in                 fract                    whole
+        C({Vec(T(0.0), T(0.0))}, {Vec(T(0.0), T(0.0)), Vec(T(0.0), T(0.0))}),
+        C({Vec(T(1.0), T(2.0))}, {Vec(T(0.0), T(0.0)), Vec(T(1), T(2))}),
+        C({Vec(T(-2.0), T(1.0))}, {Vec(T(0.0), T(0.0)), Vec(T(-2), T(1))}),
+        C({Vec(T(1.5), T(-2.25))}, {Vec(T(0.5), T(-0.25)), Vec(T(1.0), T(-2.0))}),
+        C({Vec(T::Lowest(), T::Highest())}, {Vec(T(0.0), T(0.0)), Vec(T::Lowest(), T::Highest())}),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Modf,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kModf),
+                     testing::ValuesIn(Concat(ModfCases<AFloat>(),  //
+                                              ModfCases<f32>(),     //
+                                              ModfCases<f16>()))));
+
+template <typename T>
+std::vector<Case> NormalizeCases() {
+    auto error_msg = [&](auto a) {
+        return "12:34 error: " + OverflowErrorMessage(a, "*", a) + R"(
+12:34 note: when calculating normalize)";
+    };
+
+    return {
+        C({Vec(T(2), T(4), T(2))}, Vec(T(0.4082482905), T(0.8164965809), T(0.4082482905)))
+            .FloatComp(),
+
+        C({Vec(T(2), T(0), T(0))}, Vec(T(1), T(0), T(0))),
+        C({Vec(T(0), T(2), T(0))}, Vec(T(0), T(1), T(0))),
+        C({Vec(T(0), T(0), T(2))}, Vec(T(0), T(0), T(1))),
+        C({Vec(-T(2), T(0), T(0))}, Vec(-T(1), T(0), T(0))),
+        C({Vec(T(0), -T(2), T(0))}, Vec(T(0), -T(1), T(0))),
+        C({Vec(T(0), T(0), -T(2))}, Vec(T(0), T(0), -T(1))),
+
+        E({Vec(T(0), T(0), T(0))}, "12:34 error: zero length vector can not be normalized"),
+        E({Vec(T::Highest(), T::Highest(), T::Highest())}, error_msg(T::Highest())),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Normalize,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kNormalize),
+                     testing::ValuesIn(Concat(NormalizeCases<AFloat>(),  //
+                                              NormalizeCases<f32>(),     //
+                                              NormalizeCases<f16>()))));
 
 std::vector<Case> Pack4x8snormCases() {
     return {
@@ -1361,6 +1933,141 @@ INSTANTIATE_TEST_SUITE_P(  //
     testing::Combine(testing::Values(sem::BuiltinType::kReverseBits),
                      testing::ValuesIn(Concat(ReverseBitsCases<i32>(),  //
                                               ReverseBitsCases<u32>()))));
+
+template <typename T>
+std::vector<Case> ReflectCases() {
+    auto pos_y = Vec(T(0), T(1), T(0));
+    auto neg_y = Vec(T(0), -T(1), T(0));
+    auto pos_large_y = Vec(T(0), T(10000), T(0));
+    auto neg_large_y = Vec(T(0), -T(10000), T(0));
+
+    auto cos_45 = T(0.70710678118654752440084436210485);
+    auto pos_xyz = Vec(cos_45, cos_45, cos_45);
+
+    auto r = std::vector<Case>{
+        C({Vec(T(1), -T(1), T(0)), pos_y}, Vec(T(1), T(1), T(0))),
+        C({Vec(T(24), -T(42), T(0)), pos_y}, Vec(T(24), T(42), T(0))),
+        // Flipping reflection vector doesn't change the result
+        C({Vec(T(1), -T(1), T(0)), neg_y}, Vec(T(1), T(1), T(0))),
+        C({Vec(T(24), -T(42), T(0)), neg_y}, Vec(T(24), T(42), T(0))),
+        // Parallel input and reflection vectors: result is negation of input
+        C({pos_y, pos_y}, neg_y),
+        C({neg_y, pos_y}, pos_y),
+        C({pos_large_y, pos_y}, neg_large_y),
+        C({neg_large_y, pos_y}, pos_large_y),
+        // Input axis vectors reflected by normalized(vec(1,1,1)) vector.
+        C({Vec(T(1), T(0), T(0)), pos_xyz}, Vec(T(0), -T(1), -T(1))).FloatComp(0.02),
+        C({Vec(T(0), T(1), T(0)), pos_xyz}, Vec(-T(1), T(0), -T(1))).FloatComp(0.02),
+        C({Vec(T(0), T(0), T(1)), pos_xyz}, Vec(-T(1), -T(1), T(0))).FloatComp(0.02),
+        C({Vec(-T(1), T(0), T(0)), pos_xyz}, Vec(T(0), T(1), T(1))).FloatComp(0.02),
+        C({Vec(T(0), -T(1), T(0)), pos_xyz}, Vec(T(1), T(0), T(1))).FloatComp(0.02),
+        C({Vec(T(0), T(0), -T(1)), pos_xyz}, Vec(T(1), T(1), T(0))).FloatComp(0.02),
+    };
+
+    auto error_msg = [](auto a, const char* op, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
+12:34 note: when calculating reflect)";
+    };
+    ConcatInto(  //
+        r, std::vector<Case>{
+               // Overflow the dot product operation
+               E({Vec(T::Highest(), T::Highest(), T(0)), Vec(T(1), T(1), T(0))},
+                 error_msg(T::Highest(), "+", T::Highest())),
+               E({Vec(T::Lowest(), T::Lowest(), T(0)), Vec(T(1), T(1), T(0))},
+                 error_msg(T::Lowest(), "+", T::Lowest())),
+           });
+
+    return r;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Reflect,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kReflect),
+                     testing::ValuesIn(Concat(ReflectCases<AFloat>(),  //
+                                              ReflectCases<f32>(),     //
+                                              ReflectCases<f16>()))));
+
+template <typename T>
+std::vector<Case> RefractCases() {
+    // Returns "eta" (Greek letter) that denotes the ratio of indices of refraction for the input
+    // and output vector angles from the normal vector.
+    auto eta = [](auto angle1, auto angle2) {
+        // Snell's law: sin(angle1) / sin(angle2) == n2 / n1
+        // We want the ratio of n1 to n2, so sin(angle2) / sin(angle1)
+        auto angle1_rads = T(angle1) * kPi<T> / T(180);
+        auto angle2_rads = T(angle2) * kPi<T> / T(180);
+        return T(std::sin(angle2_rads) / std::sin(angle1_rads));
+    };
+
+    auto zero = Vec(T(0), T(0), T(0));
+    auto pos_y = Vec(T(0), T(1), T(0));
+    auto neg_y = Vec(T(0), -T(1), T(0));
+    auto pos_x = Vec(T(1), T(0), T(0));
+    auto neg_x = Vec(-T(1), T(0), T(0));
+    auto cos_45 = T(0.70710678118654752440084436210485);
+    auto cos_30 = T(0.86602540378443864676372317075294);
+    auto down_right = Vec(T(cos_45), -T(cos_45), T(0));
+    auto up_right = Vec(T(cos_45), T(cos_45), T(0));
+
+    auto eps = 0.001;
+    if constexpr (std::is_same_v<T, f16>) {
+        eps = 0.1;
+    }
+
+    auto r = std::vector<Case>{
+        // e3 (eta) == 1, no refraction, so input is same as output
+        C({down_right, pos_y, Val(T(1))}, down_right),
+        C({neg_y, pos_y, Val(T(1))}, neg_y),
+        // Varying etas
+        C({down_right, pos_y, Val(eta(45, 45))}, down_right).FloatComp(eps),  // e3 == 1
+        C({down_right, pos_y, Val(eta(45, 30))}, Vec(T(0.5), -T(cos_30), T(0))).FloatComp(eps),
+        C({down_right, pos_y, Val(eta(45, 60))}, Vec(T(cos_30), -T(0.5), T(0))).FloatComp(eps),
+        C({down_right, pos_y, Val(eta(45, 90))}, Vec(T(1), T(0), T(0))).FloatComp(eps),
+        // Flip input and normal, same result
+        C({up_right, neg_y, Val(eta(45, 45))}, up_right).FloatComp(eps),  // e3 == 1
+        C({up_right, neg_y, Val(eta(45, 30))}, Vec(T(0.5), T(cos_30), T(0))).FloatComp(eps),
+        C({up_right, neg_y, Val(eta(45, 60))}, Vec(T(cos_30), T(0.5), T(0))).FloatComp(eps),
+        C({up_right, neg_y, Val(eta(45, 90))}, Vec(T(1), T(0), T(0))).FloatComp(eps),
+        // Flip only normal, result is flipped
+        C({down_right, neg_y, Val(eta(45, 45))}, up_right).FloatComp(eps),  // e3 == 1
+        C({down_right, neg_y, Val(eta(45, 30))}, Vec(T(0.5), T(cos_30), T(0))).FloatComp(eps),
+        C({down_right, neg_y, Val(eta(45, 60))}, Vec(T(cos_30), T(0.5), T(0))).FloatComp(eps),
+        C({down_right, neg_y, Val(eta(45, 90))}, Vec(T(1), T(0), T(0))).FloatComp(eps),
+
+        // If k < 0.0, returns the refraction vector 0.0
+        C({down_right, pos_y, Val(T(2))}, zero).FloatComp(eps),
+
+        // A few more with a different normal (e2)
+        C({down_right, neg_x, Val(eta(45, 45))}, down_right).FloatComp(eps),  // e3 == 1
+        C({down_right, neg_x, Val(eta(45, 30))}, Vec(cos_30, -T(0.5), T(0))).FloatComp(eps),
+        C({down_right, neg_x, Val(eta(45, 60))}, Vec(T(0.5), -T(cos_30), T(0))).FloatComp(eps),
+    };
+
+    auto error_msg = [](auto a, const char* op, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, op, b) + R"(
+12:34 note: when calculating refract)";
+    };
+    ConcatInto(  //
+        r,
+        std::vector<Case>{
+            // Overflow the dot product operation
+            E({Vec(T::Highest(), T::Highest(), T(0)), Vec(T(1), T(1), T(0)), Val(T(1))},
+              error_msg(T::Highest(), "+", T::Highest())),
+            E({Vec(T::Lowest(), T::Lowest(), T(0)), Vec(T(1), T(1), T(0)), Val(T(1))},
+              error_msg(T::Lowest(), "+", T::Lowest())),
+            // Overflow the k^2 operation
+            E({down_right, pos_y, Val(T::Highest())}, error_msg(T::Highest(), "*", T::Highest())),
+        });
+
+    return r;
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Refract,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kRefract),
+                     testing::ValuesIn(Concat(RefractCases<AFloat>(),  //
+                                              RefractCases<f32>(),     //
+                                              RefractCases<f16>()))));
 
 template <typename T>
 std::vector<Case> RadiansCases() {
@@ -1701,6 +2408,72 @@ INSTANTIATE_TEST_SUITE_P(  //
                      testing::ValuesIn(Concat(TanhCases<AFloat>(),  //
                                               TanhCases<f32>(),
                                               TanhCases<f16>()))));
+
+template <typename T>
+std::vector<Case> TransposeCases() {
+    return {
+        // 2x2
+        C({Mat({T(1), T(2)},    //
+               {T(3), T(4)})},  //
+          Mat({T(1), T(3)},     //
+              {T(2), T(4)})),
+
+        // 3x3
+        C({Mat({T(1), T(2), T(3)},    //
+               {T(4), T(5), T(6)},    //
+               {T(7), T(8), T(9)})},  //
+          Mat({T(1), T(4), T(7)},     //
+              {T(2), T(5), T(8)},     //
+              {T(3), T(6), T(9)})),
+
+        // 4x4
+        C({Mat({T(1), T(2), T(3), T(4)},        //
+               {T(5), T(6), T(7), T(8)},        //
+               {T(9), T(10), T(11), T(12)},     //
+               {T(13), T(14), T(15), T(16)})},  //
+          Mat({T(1), T(5), T(9), T(13)},        //
+              {T(2), T(6), T(10), T(14)},       //
+              {T(3), T(7), T(11), T(15)},       //
+              {T(4), T(8), T(12), T(16)})),
+
+        // 4x2
+        C({Mat({T(1), T(2), T(3), T(4)},    //
+               {T(5), T(6), T(7), T(8)})},  //
+          Mat({T(1), T(5)},                 //
+              {T(2), T(6)},                 //
+              {T(3), T(7)},                 //
+              {T(4), T(8)})),
+
+        // 2x4
+        C({Mat({T(1), T(2)},             //
+               {T(3), T(4)},             //
+               {T(5), T(6)},             //
+               {T(7), T(8)})},           //
+          Mat({T(1), T(3), T(5), T(7)},  //
+              {T(2), T(4), T(6), T(8)})),
+
+        // 3x2
+        C({Mat({T(1), T(2), T(3)},    //
+               {T(4), T(5), T(6)})},  //
+          Mat({T(1), T(4)},           //
+              {T(2), T(5)},           //
+              {T(3), T(6)})),
+
+        // 2x3
+        C({Mat({T(1), T(2)},       //
+               {T(3), T(4)},       //
+               {T(5), T(6)})},     //
+          Mat({T(1), T(3), T(5)},  //
+              {T(2), T(4), T(6)})),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Transpose,
+    ResolverConstEvalBuiltinTest,
+    testing::Combine(testing::Values(sem::BuiltinType::kTranspose),
+                     testing::ValuesIn(Concat(TransposeCases<AFloat>(),  //
+                                              TransposeCases<f32>(),
+                                              TransposeCases<f16>()))));
 
 template <typename T>
 std::vector<Case> TruncCases() {

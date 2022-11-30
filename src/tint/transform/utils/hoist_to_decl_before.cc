@@ -38,23 +38,39 @@ struct HoistToDeclBefore::State {
     /// @copydoc HoistToDeclBefore::Add()
     bool Add(const sem::Expression* before_expr,
              const ast::Expression* expr,
-             bool as_let,
+             VariableKind kind,
              const char* decl_name) {
         auto name = b.Symbols().New(decl_name);
 
-        if (as_let) {
-            auto builder = [this, expr, name] {
-                return b.Decl(b.Let(name, ctx.CloneWithoutTransform(expr)));
-            };
-            if (!InsertBeforeImpl(before_expr->Stmt(), std::move(builder))) {
-                return false;
+        switch (kind) {
+            case VariableKind::kLet: {
+                auto builder = [this, expr, name] {
+                    return b.Decl(b.Let(name, ctx.CloneWithoutTransform(expr)));
+                };
+                if (!InsertBeforeImpl(before_expr->Stmt(), std::move(builder))) {
+                    return false;
+                }
+                break;
             }
-        } else {
-            auto builder = [this, expr, name] {
-                return b.Decl(b.Var(name, ctx.CloneWithoutTransform(expr)));
-            };
-            if (!InsertBeforeImpl(before_expr->Stmt(), std::move(builder))) {
-                return false;
+
+            case VariableKind::kVar: {
+                auto builder = [this, expr, name] {
+                    return b.Decl(b.Var(name, ctx.CloneWithoutTransform(expr)));
+                };
+                if (!InsertBeforeImpl(before_expr->Stmt(), std::move(builder))) {
+                    return false;
+                }
+                break;
+            }
+
+            case VariableKind::kConst: {
+                auto builder = [this, expr, name] {
+                    return b.Decl(b.Const(name, ctx.CloneWithoutTransform(expr)));
+                };
+                if (!InsertBeforeImpl(before_expr->Stmt(), std::move(builder))) {
+                    return false;
+                }
+                break;
             }
         }
 
@@ -119,7 +135,7 @@ struct HoistToDeclBefore::State {
     /// automatically called.
     /// @warning the returned reference is invalid if this is called a second time, or the
     /// #for_loops map is mutated.
-    LoopInfo& ForLoop(const sem::ForLoopStatement* for_loop) {
+    auto ForLoop(const sem::ForLoopStatement* for_loop) {
         if (for_loops.IsEmpty()) {
             RegisterForLoopTransform();
         }
@@ -131,7 +147,7 @@ struct HoistToDeclBefore::State {
     /// automatically called.
     /// @warning the returned reference is invalid if this is called a second time, or the
     /// #for_loops map is mutated.
-    LoopInfo& WhileLoop(const sem::WhileStatement* while_loop) {
+    auto WhileLoop(const sem::WhileStatement* while_loop) {
         if (while_loops.IsEmpty()) {
             RegisterWhileLoopTransform();
         }
@@ -143,7 +159,7 @@ struct HoistToDeclBefore::State {
     /// automatically called.
     /// @warning the returned reference is invalid if this is called a second time, or the
     /// #else_ifs map is mutated.
-    ElseIfInfo& ElseIf(const ast::IfStatement* else_if) {
+    auto ElseIf(const ast::IfStatement* else_if) {
         if (else_ifs.IsEmpty()) {
             RegisterElseIfTransform();
         }
@@ -156,7 +172,7 @@ struct HoistToDeclBefore::State {
             auto& sem = ctx.src->Sem();
 
             if (auto* fl = sem.Get(stmt)) {
-                if (auto* info = for_loops.Find(fl)) {
+                if (auto info = for_loops.Find(fl)) {
                     auto* for_loop = fl->Declaration();
                     // For-loop needs to be decomposed to a loop.
                     // Build the loop body's statements.
@@ -206,7 +222,7 @@ struct HoistToDeclBefore::State {
             auto& sem = ctx.src->Sem();
 
             if (auto* w = sem.Get(stmt)) {
-                if (auto* info = while_loops.Find(w)) {
+                if (auto info = while_loops.Find(w)) {
                     auto* while_loop = w->Declaration();
                     // While needs to be decomposed to a loop.
                     // Build the loop body's statements.
@@ -243,7 +259,7 @@ struct HoistToDeclBefore::State {
     void RegisterElseIfTransform() const {
         // Decompose 'else-if' statements into 'else { if }' blocks.
         ctx.ReplaceAll([&](const ast::IfStatement* stmt) -> const ast::Statement* {
-            if (auto* info = else_ifs.Find(stmt)) {
+            if (auto info = else_ifs.Find(stmt)) {
                 // Build the else block's body statements, starting with let decls for the
                 // conditional expression.
                 auto body_stmts = Build(info->cond_decls);
@@ -275,10 +291,10 @@ struct HoistToDeclBefore::State {
         if (else_if && else_if->Parent()->Is<sem::IfStatement>()) {
             // Insertion point is an 'else if' condition.
             // Need to convert 'else if' to 'else { if }'.
-            auto& else_if_info = ElseIf(else_if->Declaration());
+            auto else_if_info = ElseIf(else_if->Declaration());
 
             // Index the map to convert this else if, even if `stmt` is nullptr.
-            auto& decls = else_if_info.cond_decls;
+            auto& decls = else_if_info->cond_decls;
             if constexpr (!std::is_same_v<BUILDER, Decompose>) {
                 decls.Push(std::forward<BUILDER>(builder));
             }
@@ -290,7 +306,7 @@ struct HoistToDeclBefore::State {
             // For-loop needs to be decomposed to a loop.
 
             // Index the map to convert this for-loop, even if `stmt` is nullptr.
-            auto& decls = ForLoop(fl).cond_decls;
+            auto& decls = ForLoop(fl)->cond_decls;
             if constexpr (!std::is_same_v<BUILDER, Decompose>) {
                 decls.Push(std::forward<BUILDER>(builder));
             }
@@ -302,7 +318,7 @@ struct HoistToDeclBefore::State {
             // While needs to be decomposed to a loop.
 
             // Index the map to convert this while, even if `stmt` is nullptr.
-            auto& decls = WhileLoop(w).cond_decls;
+            auto& decls = WhileLoop(w)->cond_decls;
             if constexpr (!std::is_same_v<BUILDER, Decompose>) {
                 decls.Push(std::forward<BUILDER>(builder));
             }
@@ -338,7 +354,7 @@ struct HoistToDeclBefore::State {
                 // For-loop needs to be decomposed to a loop.
 
                 // Index the map to convert this for-loop, even if `stmt` is nullptr.
-                auto& decls = ForLoop(fl).cont_decls;
+                auto& decls = ForLoop(fl)->cont_decls;
                 if constexpr (!std::is_same_v<BUILDER, Decompose>) {
                     decls.Push(std::forward<BUILDER>(builder));
                 }
@@ -361,9 +377,9 @@ HoistToDeclBefore::~HoistToDeclBefore() {}
 
 bool HoistToDeclBefore::Add(const sem::Expression* before_expr,
                             const ast::Expression* expr,
-                            bool as_let,
+                            VariableKind kind,
                             const char* decl_name) {
-    return state_->Add(before_expr, expr, as_let, decl_name);
+    return state_->Add(before_expr, expr, kind, decl_name);
 }
 
 bool HoistToDeclBefore::InsertBefore(const sem::Statement* before_stmt,

@@ -235,9 +235,7 @@ ComPtr<IDXGIFactory4> Device::GetFactory() const {
 }
 
 MaybeError Device::ApplyUseDxcToggle() {
-    // Require DXC version 1.4 or higher to enable using DXC, as DXC 1.2 have some known issues when
-    // compiling Tint generated HLSL program. Please refer to crbug.com/tint/1719.
-    if (!ToBackend(GetAdapter())->GetBackend()->IsDXCAvailable(1, 4)) {
+    if (!ToBackend(GetAdapter())->GetBackend()->IsDXCAvailable()) {
         ForceSetToggle(Toggle::UseDXC, false);
     }
 
@@ -859,6 +857,10 @@ void Device::DestroyImpl() {
 
     ASSERT(mUsedComObjectRefs.Empty());
     ASSERT(!mPendingCommands.IsOpen());
+
+    // Now that we've cleared out pending work from the queue, we can safely release it and reclaim
+    // memory.
+    mCommandQueue.Reset();
 }
 
 ShaderVisibleDescriptorAllocator* Device::GetViewShaderVisibleDescriptorAllocator() const {

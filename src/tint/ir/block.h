@@ -16,6 +16,8 @@
 #define SRC_TINT_IR_BLOCK_H_
 
 #include "src/tint/ir/flow_node.h"
+#include "src/tint/ir/instruction.h"
+#include "src/tint/utils/vector.h"
 
 namespace tint::ir {
 
@@ -30,6 +32,9 @@ class Block : public Castable<Block, FlowNode> {
 
     /// The node this block branches too.
     const FlowNode* branch_target = nullptr;
+
+    /// The instructions in the block
+    utils::Vector<const Instruction*, 16> instructions;
 };
 
 }  // namespace tint::ir

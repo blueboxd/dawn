@@ -17,6 +17,7 @@
 
 #include "src/tint/ast/if_statement.h"
 #include "src/tint/ir/flow_node.h"
+#include "src/tint/ir/value.h"
 
 // Forward declarations
 namespace tint::ir {
@@ -43,6 +44,8 @@ class If : public Castable<If, FlowNode> {
     /// An block to reconvert the true/false barnches. The block always exists, but there maybe no
     /// branches into it. (e.g. if both branches `return`)
     Block* merge_target = nullptr;
+    /// Value holding the condition result
+    const Value* condition = nullptr;
 };
 
 }  // namespace tint::ir

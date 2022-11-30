@@ -16,6 +16,7 @@
 #define SRC_TINT_RESOLVER_CONST_EVAL_TEST_H_
 
 #include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -36,28 +37,29 @@ template <typename T>
 inline const auto k3PiOver4 = T(UnwrapNumber<T>(2.356194490192344928846));
 
 /// Walks the sem::Constant @p c, accumulating all the inner-most scalar values into @p args
-inline void CollectScalarArgs(const sem::Constant* c, builder::ScalarArgs& args) {
+template <size_t N>
+inline void CollectScalars(const sem::Constant* c, utils::Vector<builder::Scalar, N>& scalars) {
     Switch(
         c->Type(),  //
-        [&](const sem::AbstractInt*) { args.values.Push(c->As<AInt>()); },
-        [&](const sem::AbstractFloat*) { args.values.Push(c->As<AFloat>()); },
-        [&](const sem::Bool*) { args.values.Push(c->As<bool>()); },
-        [&](const sem::I32*) { args.values.Push(c->As<i32>()); },
-        [&](const sem::U32*) { args.values.Push(c->As<u32>()); },
-        [&](const sem::F32*) { args.values.Push(c->As<f32>()); },
-        [&](const sem::F16*) { args.values.Push(c->As<f16>()); },
+        [&](const sem::AbstractInt*) { scalars.Push(c->As<AInt>()); },
+        [&](const sem::AbstractFloat*) { scalars.Push(c->As<AFloat>()); },
+        [&](const sem::Bool*) { scalars.Push(c->As<bool>()); },
+        [&](const sem::I32*) { scalars.Push(c->As<i32>()); },
+        [&](const sem::U32*) { scalars.Push(c->As<u32>()); },
+        [&](const sem::F32*) { scalars.Push(c->As<f32>()); },
+        [&](const sem::F16*) { scalars.Push(c->As<f16>()); },
         [&](Default) {
             size_t i = 0;
             while (auto* child = c->Index(i++)) {
-                CollectScalarArgs(child, args);
+                CollectScalars(child, scalars);
             }
         });
 }
 
 /// Walks the sem::Constant @p c, returning all the inner-most scalar values.
-inline builder::ScalarArgs ScalarArgsFrom(const sem::Constant* c) {
-    builder::ScalarArgs out;
-    CollectScalarArgs(c, out);
+inline utils::Vector<builder::Scalar, 16> ScalarsFrom(const sem::Constant* c) {
+    utils::Vector<builder::Scalar, 16> out;
+    CollectScalars(c, out);
     return out;
 }
 
@@ -74,8 +76,11 @@ inline auto Abs(const Number<T>& v) {
 struct CheckConstantFlags {
     /// Expected value may be positive or negative
     bool pos_or_neg = false;
-    /// Expected value should be compared using FLOAT_EQ instead of EQ
+    /// Expected value should be compared using EXPECT_FLOAT_EQ instead of EQ, or EXPECT_NEAR if
+    /// float_compare_epsilon is set.
     bool float_compare = false;
+    /// Expected value should be compared using EXPECT_NEAR if float_compare is set.
+    std::optional<double> float_compare_epsilon;
 };
 
 /// CheckConstant checks that @p got_constant, the result value of
@@ -84,52 +89,50 @@ struct CheckConstantFlags {
 /// @param expected_value the expected value for the test
 /// @param flags optional flags for controlling the comparisons
 inline void CheckConstant(const sem::Constant* got_constant,
-                          const builder::ValueBase* expected_value,
+                          const builder::Value& expected_value,
                           CheckConstantFlags flags = {}) {
-    auto values_flat = ScalarArgsFrom(got_constant);
-    auto expected_values_flat = expected_value->Args();
-    ASSERT_EQ(values_flat.values.Length(), expected_values_flat.values.Length());
-    for (size_t i = 0; i < values_flat.values.Length(); ++i) {
-        auto& got_scalar = values_flat.values[i];
-        auto& expected_scalar = expected_values_flat.values[i];
+    auto values_flat = ScalarsFrom(got_constant);
+    auto expected_values_flat = expected_value.args;
+    ASSERT_EQ(values_flat.Length(), expected_values_flat.Length());
+    for (size_t i = 0; i < values_flat.Length(); ++i) {
+        auto& got_scalar = values_flat[i];
+        auto& expected_scalar = expected_values_flat[i];
         std::visit(
-            [&](auto&& expected) {
+            [&](const auto& expected) {
                 using T = std::decay_t<decltype(expected)>;
 
                 ASSERT_TRUE(std::holds_alternative<T>(got_scalar));
                 auto got = std::get<T>(got_scalar);
 
                 if constexpr (std::is_same_v<bool, T>) {
-                    EXPECT_EQ(got, expected);
+                    EXPECT_EQ(got, expected) << "index: " << i;
                 } else if constexpr (IsFloatingPoint<T>) {
                     if (std::isnan(expected)) {
-                        EXPECT_TRUE(std::isnan(got));
+                        EXPECT_TRUE(std::isnan(got)) << "index: " << i;
                     } else {
                         if (flags.pos_or_neg) {
-                            auto got_abs = Abs(got);
-                            if (flags.float_compare) {
-                                EXPECT_FLOAT_EQ(got_abs, expected);
+                            got = Abs(got);
+                        }
+                        if (flags.float_compare) {
+                            if (flags.float_compare_epsilon) {
+                                EXPECT_NEAR(got, expected, *flags.float_compare_epsilon)
+                                    << "index: " << i;
                             } else {
-                                EXPECT_EQ(got_abs, expected);
+                                EXPECT_FLOAT_EQ(got, expected) << "index: " << i;
                             }
                         } else {
-                            if (flags.float_compare) {
-                                EXPECT_FLOAT_EQ(got, expected);
-                            } else {
-                                EXPECT_EQ(got, expected);
-                            }
+                            EXPECT_EQ(got, expected) << "index: " << i;
                         }
                     }
                 } else {
                     if (flags.pos_or_neg) {
-                        auto got_abs = Abs(got);
-                        EXPECT_EQ(got_abs, expected);
-                    } else {
-                        EXPECT_EQ(got, expected);
+                        got = Abs(got);
                     }
+                    EXPECT_EQ(got, expected) << "index: " << i;
+
                     // Check that the constant's integer doesn't contain unexpected
                     // data in the MSBs that are outside of the bit-width of T.
-                    EXPECT_EQ(AInt(got), AInt(expected));
+                    EXPECT_EQ(AInt(got), AInt(expected)) << "index: " << i;
                 }
             },
             expected_scalar);
@@ -221,7 +224,7 @@ inline std::string OverflowErrorMessage(NumberT lhs, const char* op, NumberT rhs
     return ss.str();
 }
 
-/// Returns the overflow error message for converions
+/// Returns the overflow error message for conversions
 template <typename VALUE_TY>
 std::string OverflowErrorMessage(VALUE_TY value, std::string_view target_ty) {
     std::stringstream ss;
@@ -231,76 +234,21 @@ std::string OverflowErrorMessage(VALUE_TY value, std::string_view target_ty) {
     return ss.str();
 }
 
+/// Returns the overflow error message for exponentiation
+template <typename NumberT>
+std::string OverflowExpErrorMessage(std::string_view base, NumberT value) {
+    std::stringstream ss;
+    ss << std::setprecision(20);
+    ss << base << "^" << value << " cannot be represented as "
+       << "'" << FriendlyName<NumberT>() << "'";
+    return ss.str();
+}
+
 using builder::IsValue;
 using builder::Mat;
 using builder::Val;
 using builder::Value;
-using builder::ValueBase;
 using builder::Vec;
-
-using Types = std::variant<  //
-    Value<AInt>,
-    Value<AFloat>,
-    Value<u32>,
-    Value<i32>,
-    Value<f32>,
-    Value<f16>,
-    Value<bool>,
-
-    Value<builder::vec2<AInt>>,
-    Value<builder::vec2<AFloat>>,
-    Value<builder::vec2<u32>>,
-    Value<builder::vec2<i32>>,
-    Value<builder::vec2<f32>>,
-    Value<builder::vec2<f16>>,
-    Value<builder::vec2<bool>>,
-
-    Value<builder::vec3<AInt>>,
-    Value<builder::vec3<AFloat>>,
-    Value<builder::vec3<u32>>,
-    Value<builder::vec3<i32>>,
-    Value<builder::vec3<f32>>,
-    Value<builder::vec3<f16>>,
-    Value<builder::vec3<bool>>,
-
-    Value<builder::vec4<AInt>>,
-    Value<builder::vec4<AFloat>>,
-    Value<builder::vec4<u32>>,
-    Value<builder::vec4<i32>>,
-    Value<builder::vec4<f32>>,
-    Value<builder::vec4<f16>>,
-    Value<builder::vec4<bool>>,
-
-    Value<builder::mat2x2<AInt>>,
-    Value<builder::mat2x2<AFloat>>,
-    Value<builder::mat2x2<f32>>,
-    Value<builder::mat2x2<f16>>,
-
-    Value<builder::mat2x3<AInt>>,
-    Value<builder::mat2x3<AFloat>>,
-    Value<builder::mat2x3<f32>>,
-    Value<builder::mat2x3<f16>>,
-
-    Value<builder::mat3x2<AInt>>,
-    Value<builder::mat3x2<AFloat>>,
-    Value<builder::mat3x2<f32>>,
-    Value<builder::mat3x2<f16>>
-    //
-    >;
-
-/// Returns the current Value<T> in the `types` variant as a `ValueBase` pointer to use the
-/// polymorphic API. This trades longer compile times using std::variant for longer runtime via
-/// virtual function calls.
-template <typename ValueVariant>
-inline const ValueBase* ToValueBase(const ValueVariant& types) {
-    return std::visit(
-        [](auto&& t) -> const ValueBase* { return static_cast<const ValueBase*>(&t); }, types);
-}
-
-/// Prints Types to ostream
-inline std::ostream& operator<<(std::ostream& o, const Types& types) {
-    return ToValueBase(types)->Print(o);
-}
 
 // Calls `f` on deepest elements of both `a` and `b`. If function returns Action::kStop, it stops
 // traversing, and return Action::kStop; if the function returns Action::kContinue, it continues and

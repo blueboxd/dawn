@@ -15,13 +15,17 @@
 #include "src/tint/ir/builder_impl.h"
 
 #include "src/tint/ast/alias.h"
+#include "src/tint/ast/binary_expression.h"
 #include "src/tint/ast/block_statement.h"
+#include "src/tint/ast/bool_literal_expression.h"
 #include "src/tint/ast/break_if_statement.h"
 #include "src/tint/ast/break_statement.h"
 #include "src/tint/ast/continue_statement.h"
+#include "src/tint/ast/float_literal_expression.h"
 #include "src/tint/ast/for_loop_statement.h"
 #include "src/tint/ast/function.h"
 #include "src/tint/ast/if_statement.h"
+#include "src/tint/ast/int_literal_expression.h"
 #include "src/tint/ast/literal_expression.h"
 #include "src/tint/ast/loop_statement.h"
 #include "src/tint/ast/return_statement.h"
@@ -231,7 +235,12 @@ bool BuilderImpl::EmitBlock(const ast::BlockStatement* block) {
 bool BuilderImpl::EmitIf(const ast::IfStatement* stmt) {
     auto* if_node = builder.CreateIf(stmt);
 
-    // TODO(dsinclair): Emit the condition expression into the current block
+    // Emit the if condition into the end of the preceeding block
+    auto reg = EmitExpression(stmt->condition);
+    if (!reg) {
+        return false;
+    }
+    if_node->condition = reg.Get();
 
     BranchTo(if_node);
 
@@ -239,8 +248,6 @@ bool BuilderImpl::EmitIf(const ast::IfStatement* stmt) {
 
     {
         FlowStackScope scope(this, if_node);
-
-        // TODO(dsinclair): set if condition register into if flow node
 
         current_flow_block = if_node->true_target;
         if (!EmitStatement(stmt->body)) {
@@ -320,13 +327,17 @@ bool BuilderImpl::EmitWhile(const ast::WhileStatement* stmt) {
 
         current_flow_block = loop_node->start_target;
 
-        // TODO(dsinclair): Emit the instructions for the condition
+        // Emit the while condition into the start target of the loop
+        auto reg = EmitExpression(stmt->condition);
+        if (!reg) {
+            return false;
+        }
 
         // Create an if (cond) {} else {break;} control flow
         auto* if_node = builder.CreateIf(nullptr);
         builder.Branch(if_node->true_target, if_node->merge_target);
         builder.Branch(if_node->false_target, loop_node->merge_target);
-        // TODO(dsinclair): set if condition register into if flow node
+        if_node->condition = reg.Get();
 
         BranchTo(if_node);
 
@@ -364,13 +375,17 @@ bool BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
         current_flow_block = loop_node->start_target;
 
         if (stmt->condition) {
-            // TODO(dsinclair): Emit the instructions for the condition
+            // Emit the condition into the target target of the loop
+            auto reg = EmitExpression(stmt->condition);
+            if (!reg) {
+                return false;
+            }
 
             // Create an if (cond) {} else {break;} control flow
             auto* if_node = builder.CreateIf(nullptr);
             builder.Branch(if_node->true_target, if_node->merge_target);
             builder.Branch(if_node->false_target, loop_node->merge_target);
-            // TODO(dsinclair): set if condition register into if flow node
+            if_node->condition = reg.Get();
 
             BranchTo(if_node);
             current_flow_block = if_node->merge_target;
@@ -398,7 +413,12 @@ bool BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
 bool BuilderImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
     auto* switch_node = builder.CreateSwitch(stmt);
 
-    // TODO(dsinclair): Emit the condition expression into the current block
+    // Emit the condition into the preceeding block
+    auto reg = EmitExpression(stmt->condition);
+    if (!reg) {
+        return false;
+    }
+    switch_node->condition = reg.Get();
 
     BranchTo(switch_node);
 
@@ -463,7 +483,12 @@ bool BuilderImpl::EmitContinue(const ast::ContinueStatement*) {
 bool BuilderImpl::EmitBreakIf(const ast::BreakIfStatement* stmt) {
     auto* if_node = builder.CreateIf(stmt);
 
-    // TODO(dsinclair): Emit the condition expression into the current block
+    // Emit the break-if condition into the end of the preceeding block
+    auto reg = EmitExpression(stmt->condition);
+    if (!reg) {
+        return false;
+    }
+    if_node->condition = reg.Get();
 
     BranchTo(if_node);
 
@@ -474,8 +499,6 @@ bool BuilderImpl::EmitBreakIf(const ast::BreakIfStatement* stmt) {
     TINT_ASSERT(IR, current_control->Is<Loop>());
 
     auto* loop = current_control->As<Loop>();
-
-    // TODO(dsinclair): set if condition register into if flow node
 
     current_flow_block = if_node->true_target;
     BranchTo(loop->merge_target);
@@ -493,11 +516,11 @@ bool BuilderImpl::EmitBreakIf(const ast::BreakIfStatement* stmt) {
     return true;
 }
 
-bool BuilderImpl::EmitExpression(const ast::Expression* expr) {
+utils::Result<const Value*> BuilderImpl::EmitExpression(const ast::Expression* expr) {
     return tint::Switch(
         expr,
         // [&](const ast::IndexAccessorExpression* a) { return EmitIndexAccessor(a); },
-        // [&](const ast::BinaryExpression* b) { return EmitBinary(b); },
+        [&](const ast::BinaryExpression* b) { return EmitBinary(b); },
         // [&](const ast::BitcastExpression* b) { return EmitBitcast(b); },
         // [&](const ast::CallExpression* c) { return EmitCall(c); },
         // [&](const ast::IdentifierExpression* i) { return EmitIdentifier(i); },
@@ -509,7 +532,7 @@ bool BuilderImpl::EmitExpression(const ast::Expression* expr) {
             diagnostics_.add_warning(
                 tint::diag::System::IR,
                 "unknown expression type: " + std::string(expr->TypeInfo().name), expr->source);
-            return false;
+            return utils::Failure;
         });
 }
 
@@ -528,17 +551,106 @@ bool BuilderImpl::EmitVariable(const ast::Variable* var) {
         });
 }
 
-bool BuilderImpl::EmitLiteral(const ast::LiteralExpression* lit) {
+utils::Result<const Value*> BuilderImpl::EmitBinary(const ast::BinaryExpression* expr) {
+    auto lhs = EmitExpression(expr->lhs);
+    if (!lhs) {
+        return utils::Failure;
+    }
+
+    auto rhs = EmitExpression(expr->rhs);
+    if (!rhs) {
+        return utils::Failure;
+    }
+
+    const Instruction* instr = nullptr;
+    switch (expr->op) {
+        case ast::BinaryOp::kAnd:
+            instr = builder.And(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kOr:
+            instr = builder.Or(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kXor:
+            instr = builder.Xor(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kLogicalAnd:
+            instr = builder.LogicalAnd(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kLogicalOr:
+            instr = builder.LogicalOr(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kEqual:
+            instr = builder.Equal(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kNotEqual:
+            instr = builder.NotEqual(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kLessThan:
+            instr = builder.LessThan(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kGreaterThan:
+            instr = builder.GreaterThan(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kLessThanEqual:
+            instr = builder.LessThanEqual(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kGreaterThanEqual:
+            instr = builder.GreaterThanEqual(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kShiftLeft:
+            instr = builder.ShiftLeft(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kShiftRight:
+            instr = builder.ShiftRight(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kAdd:
+            instr = builder.Add(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kSubtract:
+            instr = builder.Subtract(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kMultiply:
+            instr = builder.Multiply(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kDivide:
+            instr = builder.Divide(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kModulo:
+            instr = builder.Modulo(lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kNone:
+            TINT_ICE(IR, diagnostics_) << "missing binary operand type";
+            return utils::Failure;
+    }
+
+    current_flow_block->instructions.Push(instr);
+    return utils::Result<const Value*>(instr->Result());
+}
+
+utils::Result<const Value*> BuilderImpl::EmitLiteral(const ast::LiteralExpression* lit) {
     return tint::Switch(  //
         lit,
-        // [&](const ast::BoolLiteralExpression* l) { },
-        // [&](const ast::FloatLiteralExpression* l) { },
-        // [&](const ast::IntLiteralExpression* l) { },
+        [&](const ast::BoolLiteralExpression* l) {
+            return utils::Result<const Value*>(builder.Constant(l->value));
+        },
+        [&](const ast::FloatLiteralExpression* l) {
+            if (l->suffix == ast::FloatLiteralExpression::Suffix::kF) {
+                return utils::Result<const Value*>(
+                    builder.Constant(f32(static_cast<float>(l->value))));
+            }
+            return utils::Result<const Value*>(builder.Constant(f16(static_cast<float>(l->value))));
+        },
+        [&](const ast::IntLiteralExpression* l) {
+            if (l->suffix == ast::IntLiteralExpression::Suffix::kI) {
+                return utils::Result<const Value*>(builder.Constant(i32(l->value)));
+            }
+            return utils::Result<const Value*>(builder.Constant(u32(l->value)));
+        },
         [&](Default) {
             diagnostics_.add_warning(tint::diag::System::IR,
                                      "unknown literal type: " + std::string(lit->TypeInfo().name),
                                      lit->source);
-            return false;
+            return utils::Failure;
         });
 }
 

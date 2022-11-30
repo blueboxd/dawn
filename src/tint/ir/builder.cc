@@ -93,4 +93,86 @@ void Builder::Branch(Block* from, FlowNode* to) {
     to->inbound_branches.Push(from);
 }
 
+Temp::Id Builder::AllocateTempId() {
+    return next_temp_id++;
+}
+
+const Instruction* Builder::CreateInstruction(Instruction::Kind kind,
+                                              const Value* lhs,
+                                              const Value* rhs) {
+    return ir.instructions.Create<ir::Instruction>(kind, Temp(), lhs, rhs);
+}
+
+const Instruction* Builder::And(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kAnd, lhs, rhs);
+}
+
+const Instruction* Builder::Or(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kOr, lhs, rhs);
+}
+
+const Instruction* Builder::Xor(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kXor, lhs, rhs);
+}
+
+const Instruction* Builder::LogicalAnd(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kLogicalAnd, lhs, rhs);
+}
+
+const Instruction* Builder::LogicalOr(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kLogicalOr, lhs, rhs);
+}
+
+const Instruction* Builder::Equal(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kEqual, lhs, rhs);
+}
+
+const Instruction* Builder::NotEqual(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kNotEqual, lhs, rhs);
+}
+
+const Instruction* Builder::LessThan(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kLessThan, lhs, rhs);
+}
+
+const Instruction* Builder::GreaterThan(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kGreaterThan, lhs, rhs);
+}
+
+const Instruction* Builder::LessThanEqual(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kLessThanEqual, lhs, rhs);
+}
+
+const Instruction* Builder::GreaterThanEqual(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kGreaterThanEqual, lhs, rhs);
+}
+
+const Instruction* Builder::ShiftLeft(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kShiftLeft, lhs, rhs);
+}
+
+const Instruction* Builder::ShiftRight(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kShiftRight, lhs, rhs);
+}
+
+const Instruction* Builder::Add(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kAdd, lhs, rhs);
+}
+
+const Instruction* Builder::Subtract(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kSubtract, lhs, rhs);
+}
+
+const Instruction* Builder::Multiply(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kMultiply, lhs, rhs);
+}
+
+const Instruction* Builder::Divide(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kDivide, lhs, rhs);
+}
+
+const Instruction* Builder::Modulo(const Value* lhs, const Value* rhs) {
+    return CreateInstruction(Instruction::Kind::kModulo, lhs, rhs);
+}
+
 }  // namespace tint::ir

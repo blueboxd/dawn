@@ -103,7 +103,11 @@ Resolver::Resolver(ProgramBuilder* builder)
       const_eval_(*builder),
       intrinsic_table_(IntrinsicTable::Create(*builder)),
       sem_(builder, dependencies_),
-      validator_(builder, sem_) {}
+      validator_(builder,
+                 sem_,
+                 enabled_extensions_,
+                 atomic_composite_info_,
+                 valid_type_storage_layouts_) {}
 
 Resolver::~Resolver() = default;
 
@@ -258,7 +262,18 @@ sem::Type* Resolver::Type(const ast::Type* ty) {
                 if (access == ast::Access::kUndefined) {
                     access = DefaultAccessForAddressSpace(t->address_space);
                 }
-                return builder_->create<sem::Pointer>(el, t->address_space, access);
+                auto ptr = builder_->create<sem::Pointer>(el, t->address_space, access);
+                if (!ptr) {
+                    return nullptr;
+                }
+                if (!validator_.Pointer(t, ptr)) {
+                    return nullptr;
+                }
+                if (!ApplyAddressSpaceUsageToType(t->address_space, el, t->type->source)) {
+                    AddNote("while instantiating " + builder_->FriendlyName(ptr), t->source);
+                    return nullptr;
+                }
+                return ptr;
             }
             return nullptr;
         },
@@ -621,7 +636,8 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
 
     auto* var_ty = builder_->create<sem::Reference>(storage_ty, address_space, access);
 
-    if (!ApplyAddressSpaceUsageToType(address_space, var_ty, var->source)) {
+    if (!ApplyAddressSpaceUsageToType(address_space, var_ty,
+                                      var->type ? var->type->source : var->source)) {
         AddNote("while instantiating 'var' " + builder_->Symbols().NameFor(var->symbol),
                 var->source);
         return nullptr;
@@ -723,7 +739,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
         return nullptr;
     }
 
-    if (!ApplyAddressSpaceUsageToType(ast::AddressSpace::kNone, ty, param->source)) {
+    if (!ApplyAddressSpaceUsageToType(ast::AddressSpace::kNone, ty, param->type->source)) {
         add_note();
         return nullptr;
     }
@@ -891,13 +907,7 @@ sem::GlobalVariable* Resolver::GlobalVariable(const ast::Variable* v) {
         return nullptr;
     }
 
-    if (!validator_.GlobalVariable(sem, override_ids_, atomic_composite_info_)) {
-        return nullptr;
-    }
-
-    // TODO(bclayton): Call this at the end of resolve on all uniform and storage
-    // referenced structs
-    if (!validator_.AddressSpaceLayout(sem, enabled_extensions_, valid_type_storage_layouts_)) {
+    if (!validator_.GlobalVariable(sem, override_ids_)) {
         return nullptr;
     }
 
@@ -1726,6 +1736,12 @@ const sem::Type* Resolver::ConcreteType(const sem::Type* ty,
                 return Array(source, source, el_ty, a->Count(), /* explicit_stride */ 0);
             }
             return nullptr;
+        },
+        [&](const sem::Struct* s) -> const sem::Type* {
+            if (auto& tys = s->ConcreteTypes(); !tys.IsEmpty()) {
+                return target_ty ? target_ty : tys[0];
+            }
+            return nullptr;
         });
 }
 
@@ -1938,8 +1954,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
     bool has_side_effects =
         std::any_of(args.begin(), args.end(), [](auto* e) { return e->HasSideEffects(); });
 
-    // ct_init_or_conv is a helper for building either a sem::TypeInitializer or sem::TypeConversion
-    // call for a InitConvIntrinsic with an optional template argument type.
+    // ct_init_or_conv is a helper for building either a sem::TypeInitializer or
+    // sem::TypeConversion call for a InitConvIntrinsic with an optional template argument type.
     auto ct_init_or_conv = [&](InitConvIntrinsic ty, const sem::Type* template_arg) -> sem::Call* {
         auto arg_tys = utils::Transform(args, [](auto* arg) { return arg->Type(); });
         auto ctor_or_conv =
@@ -1987,8 +2003,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             if (!value) {
                 // Constant evaluation failed.
                 // Can happen for expressions that will fail validation (later).
-                // Use the kRuntime EvaluationStage, as kConstant will trigger an assertion in the
-                // sem::Expression initializer, which checks that kConstant is paired with a
+                // Use the kRuntime EvaluationStage, as kConstant will trigger an assertion in
+                // the sem::Expression initializer, which checks that kConstant is paired with a
                 // constant value.
                 stage = sem::EvaluationStage::kRuntime;
             }
@@ -1998,8 +2014,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                                            current_statement_, value, has_side_effects);
     };
 
-    // ty_init_or_conv is a helper for building either a sem::TypeInitializer or sem::TypeConversion
-    // call for the given semantic type.
+    // ty_init_or_conv is a helper for building either a sem::TypeInitializer or
+    // sem::TypeConversion call for the given semantic type.
     auto ty_init_or_conv = [&](const sem::Type* ty) {
         return Switch(
             ty,  //
@@ -2076,7 +2092,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             });
     };
 
-    // ast::CallExpression has a target which is either an ast::Type or an ast::IdentifierExpression
+    // ast::CallExpression has a target which is either an ast::Type or an
+    // ast::IdentifierExpression
     sem::Call* call = nullptr;
     if (expr->target.type) {
         // ast::CallExpression has an ast::Type as the target.
@@ -2188,7 +2205,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             });
     } else {
         // ast::CallExpression has an ast::IdentifierExpression as the target.
-        // This call is either a function call, builtin call, type initializer or type conversion.
+        // This call is either a function call, builtin call, type initializer or type
+        // conversion.
         auto* ident = expr->target.name;
         Mark(ident);
         auto* resolved = sem_.ResolvedSymbol(ident);
@@ -2197,8 +2215,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             [&](sem::Type* ty) {
                 // A type initializer or conversions.
                 // Note: Unlike the code path where we're resolving the call target from an
-                // ast::Type, all types must already have the element type explicitly specified, so
-                // there's no need to infer element types.
+                // ast::Type, all types must already have the element type explicitly specified,
+                // so there's no need to infer element types.
                 return ty_init_or_conv(ty);
             },
             [&](sem::Function* func) { return FunctionCall(expr, func, args, arg_behaviors); },
@@ -2264,7 +2282,8 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         AddWarning("use of deprecated builtin", expr->source);
     }
 
-    // If the builtin is @const, and all arguments have constant values, evaluate the builtin now.
+    // If the builtin is @const, and all arguments have constant values, evaluate the builtin
+    // now.
     auto stage = sem::EarliestStage(arg_stage, builtin.sem->Stage());
     const sem::Constant* value = nullptr;
     if (stage == sem::EvaluationStage::kConstant) {
@@ -2291,7 +2310,7 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         current_function_->AddDirectCall(call);
     }
 
-    if (!validator_.RequiredExtensionForBuiltinFunction(call, enabled_extensions_)) {
+    if (!validator_.RequiredExtensionForBuiltinFunction(call)) {
         return nullptr;
     }
 
@@ -2472,7 +2491,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
                 if (loop_block->FirstContinue()) {
                     // If our identifier is in loop_block->decls, make sure its index is
                     // less than first_continue
-                    if (auto* decl = loop_block->Decls().Find(symbol)) {
+                    if (auto decl = loop_block->Decls().Find(symbol)) {
                         if (decl->order >= loop_block->NumDeclsAtFirstContinue()) {
                             AddError("continue statement bypasses declaration of '" +
                                          builder_->Symbols().NameFor(symbol) + "'",
@@ -2894,7 +2913,8 @@ sem::Array* Resolver::Array(const ast::Array* arr) {
         }
     }
 
-    // Track the pipeline-overridable constants that are transitively referenced by this array type.
+    // Track the pipeline-overridable constants that are transitively referenced by this array
+    // type.
     for (auto* var : transitively_referenced_overrides) {
         out->AddTransitivelyReferencedOverride(var);
     }
@@ -2955,8 +2975,9 @@ bool Resolver::ArrayAttributes(utils::VectorRef<const ast::Attribute*> attribute
         Mark(attr);
         if (auto* sd = attr->As<ast::StrideAttribute>()) {
             // If the element type is not plain, then el_ty->Align() may be 0, in which case we
-            // could get a DBZ in ArrayStrideAttribute(). In this case, validation will error about
-            // the invalid array element type (which is tested later), so this is just a seatbelt.
+            // could get a DBZ in ArrayStrideAttribute(). In this case, validation will error
+            // about the invalid array element type (which is tested later), so this is just a
+            // seatbelt.
             if (IsPlain(el_ty)) {
                 explicit_stride = sd->stride;
                 if (!validator_.ArrayStrideAttribute(sd, el_ty->Size(), el_ty->Align())) {
@@ -3553,12 +3574,14 @@ bool Resolver::ApplyAddressSpaceUsageToType(ast::AddressSpace address_space,
         str->AddUsage(address_space);
 
         for (auto* member : str->Members()) {
-            if (!ApplyAddressSpaceUsageToType(address_space, const_cast<sem::Type*>(member->Type()),
-                                              usage)) {
+            auto decl = member->Declaration();
+            if (decl &&
+                !ApplyAddressSpaceUsageToType(address_space, const_cast<sem::Type*>(member->Type()),
+                                              decl->type->source)) {
                 std::stringstream err;
                 err << "while analyzing structure member " << sem_.TypeNameOf(str) << "."
-                    << builder_->Symbols().NameFor(member->Declaration()->symbol);
-                AddNote(err.str(), member->Declaration()->source);
+                    << builder_->Symbols().NameFor(decl->symbol);
+                AddNote(err.str(), decl->source);
                 return false;
             }
         }

@@ -17,7 +17,7 @@
 #include <string>
 #include <tuple>
 
-#include "gtest/gtest.h"
+#include "gmock/gmock.h"
 
 #include "src/tint/utils/bitcast.h"
 
@@ -1795,6 +1795,21 @@ TEST(TintVectorTest, ConstBeginEnd_WithSpill) {
     EXPECT_EQ(vec.end(), &vec[0] + 3);
 }
 
+TEST(TintVectorTest, Equality) {
+    EXPECT_EQ((Vector<int, 2>{1, 2}), (Vector<int, 2>{1, 2}));
+    EXPECT_EQ((Vector<int, 1>{1, 2}), (Vector<int, 3>{1, 2}));
+    EXPECT_NE((Vector{1, 2}), (Vector{1}));
+    EXPECT_NE((Vector{1}), (Vector{1, 2}));
+    EXPECT_NE((Vector{1, 2}), (Vector{2, 1}));
+    EXPECT_NE((Vector{2, 1}), (Vector{1, 2}));
+}
+
+TEST(TintVectorTest, ostream) {
+    std::stringstream ss;
+    ss << Vector{1, 2, 3};
+    EXPECT_EQ(ss.str(), "[1, 2, 3]");
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // TintVectorRefTest
 ////////////////////////////////////////////////////////////////////////////////
@@ -1994,6 +2009,18 @@ TEST(TintVectorRefTest, Index) {
     EXPECT_EQ(vec_ref[1], "two");
 }
 
+TEST(TintVectorRefTest, Sort) {
+    Vector vec{1, 5, 3, 4, 2};
+    vec.Sort();
+    EXPECT_THAT(vec, testing::ElementsAre(1, 2, 3, 4, 5));
+}
+
+TEST(TintVectorRefTest, SortPredicate) {
+    Vector vec{1, 5, 3, 4, 2};
+    vec.Sort([](int a, int b) { return b < a; });
+    EXPECT_THAT(vec, testing::ElementsAre(5, 4, 3, 2, 1));
+}
+
 TEST(TintVectorRefTest, ConstIndex) {
     Vector<std::string, 2> vec{"one", "two"};
     const VectorRef<std::string> vec_ref(vec);
@@ -2060,15 +2087,13 @@ TEST(TintVectorRefTest, ConstBeginEnd) {
     EXPECT_EQ(vec_ref.end(), &vec[0] + 3);
 }
 
-TEST(TintVectorTest, Equality) {
-    EXPECT_EQ((Vector<int, 2>{1, 2}), (Vector<int, 2>{1, 2}));
-    EXPECT_EQ((Vector<int, 1>{1, 2}), (Vector<int, 3>{1, 2}));
-    EXPECT_NE((Vector{1, 2}), (Vector{1}));
-    EXPECT_NE((Vector{1}), (Vector{1, 2}));
-    EXPECT_NE((Vector{1, 2}), (Vector{2, 1}));
-    EXPECT_NE((Vector{2, 1}), (Vector{1, 2}));
+TEST(TintVectorRefTest, ostream) {
+    std::stringstream ss;
+    Vector vec{1, 2, 3};
+    const VectorRef<int> vec_ref(vec);
+    ss << vec_ref;
+    EXPECT_EQ(ss.str(), "[1, 2, 3]");
 }
-
 }  // namespace
 }  // namespace tint::utils
 

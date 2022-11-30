@@ -73,7 +73,6 @@ enum class Toggle {
     D3D12SplitBufferTextureCopyForRowsPerImagePaddings,
     MetalRenderR8RG8UnormSmallMipToTempTexture,
     DisableBlobCache,
-    EnableBlobCache,
     D3D12ForceClearCopyableDepthStencilTextureOnCreation,
     D3D12DontSetClearValueOnDepthTextureCreation,
     D3D12AlwaysUseTypelessFormatsForCastableTexture,
@@ -83,6 +82,7 @@ enum class Toggle {
     MetalUseMockBlitEncoderForWriteTimestamp,
     VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass,
     D3D12Allocate2DTexturewithCopyDstAsCommittedResource,
+    DisallowDeprecatedAPIs,
 
     EnumCount,
     InvalidEnum = EnumCount,

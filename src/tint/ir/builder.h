@@ -15,12 +15,16 @@
 #ifndef SRC_TINT_IR_BUILDER_H_
 #define SRC_TINT_IR_BUILDER_H_
 
+#include "src/tint/ir/constant.h"
 #include "src/tint/ir/function.h"
 #include "src/tint/ir/if.h"
+#include "src/tint/ir/instruction.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
 #include "src/tint/ir/switch.h"
+#include "src/tint/ir/temp.h"
 #include "src/tint/ir/terminator.h"
+#include "src/tint/ir/value.h"
 
 // Forward Declarations
 namespace tint {
@@ -81,8 +85,143 @@ class Builder {
     /// @param to the node to branch too
     void Branch(Block* from, FlowNode* to);
 
+    /// Creates a new Constant
+    /// @param val the constant value
+    /// @returns the new constant
+    template <typename T>
+    const ir::Constant* Constant(T val) {
+        return ir.values.Create<ir::Constant>(val);
+    }
+
+    /// Creates a new Temporary
+    /// @returns the new temporary
+    const ir::Temp* Temp() { return ir.values.Create<ir::Temp>(AllocateTempId()); }
+
+    /// Creates an op for `lhs kind rhs`
+    /// @param kind the kind of operation
+    /// @param lhs the left-hand-side of the operation
+    /// @param rhs the right-hand-side of the operation
+    /// @returns the operation
+    const Instruction* CreateInstruction(Instruction::Kind kind,
+                                         const Value* lhs,
+                                         const Value* rhs);
+
+    /// Creates an And operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* And(const Value* lhs, const Value* rhs);
+
+    /// Creates an Or operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* Or(const Value* lhs, const Value* rhs);
+
+    /// Creates an Xor operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* Xor(const Value* lhs, const Value* rhs);
+
+    /// Creates an LogicalAnd operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* LogicalAnd(const Value* lhs, const Value* rhs);
+
+    /// Creates an LogicalOr operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* LogicalOr(const Value* lhs, const Value* rhs);
+
+    /// Creates an Equal operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* Equal(const Value* lhs, const Value* rhs);
+
+    /// Creates an NotEqual operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* NotEqual(const Value* lhs, const Value* rhs);
+
+    /// Creates an LessThan operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* LessThan(const Value* lhs, const Value* rhs);
+
+    /// Creates an GreaterThan operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* GreaterThan(const Value* lhs, const Value* rhs);
+
+    /// Creates an LessThanEqual operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* LessThanEqual(const Value* lhs, const Value* rhs);
+
+    /// Creates an GreaterThanEqual operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* GreaterThanEqual(const Value* lhs, const Value* rhs);
+
+    /// Creates an ShiftLeft operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* ShiftLeft(const Value* lhs, const Value* rhs);
+
+    /// Creates an ShiftRight operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* ShiftRight(const Value* lhs, const Value* rhs);
+
+    /// Creates an Add operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* Add(const Value* lhs, const Value* rhs);
+
+    /// Creates an Subtract operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* Subtract(const Value* lhs, const Value* rhs);
+
+    /// Creates an Multiply operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* Multiply(const Value* lhs, const Value* rhs);
+
+    /// Creates an Divide operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* Divide(const Value* lhs, const Value* rhs);
+
+    /// Creates an Modulo operation
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    const Instruction* Modulo(const Value* lhs, const Value* rhs);
+
+    /// @returns a unique temp id
+    Temp::Id AllocateTempId();
+
     /// The IR module.
     Module ir;
+
+    /// The next temporary number to allocate
+    Temp::Id next_temp_id = 1;
 };
 
 }  // namespace tint::ir

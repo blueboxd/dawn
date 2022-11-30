@@ -882,8 +882,8 @@ TEST_F(ResolverBuiltinFloatTest, Distance_TooManyParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to distance(vec3<f32>, vec3<f32>, vec3<f32>)
 
 2 candidate functions:
-  distance(T, T) -> T  where: T is f32 or f16
-  distance(vecN<T>, vecN<T>) -> T  where: T is f32 or f16
+  distance(T, T) -> T  where: T is abstract-float, f32 or f16
+  distance(vecN<T>, vecN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -896,8 +896,8 @@ TEST_F(ResolverBuiltinFloatTest, Distance_TooFewParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to distance(vec3<f32>)
 
 2 candidate functions:
-  distance(T, T) -> T  where: T is f32 or f16
-  distance(vecN<T>, vecN<T>) -> T  where: T is f32 or f16
+  distance(T, T) -> T  where: T is abstract-float, f32 or f16
+  distance(vecN<T>, vecN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -910,8 +910,8 @@ TEST_F(ResolverBuiltinFloatTest, Distance_NoParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to distance()
 
 2 candidate functions:
-  distance(T, T) -> T  where: T is f32 or f16
-  distance(vecN<T>, vecN<T>) -> T  where: T is f32 or f16
+  distance(T, T) -> T  where: T is abstract-float, f32 or f16
+  distance(vecN<T>, vecN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1079,54 +1079,8 @@ TEST_F(ResolverBuiltinFloatTest, Frexp_Error_FirstParamInt) {
               R"(error: no matching call to frexp(i32, ptr<workgroup, i32, read_write>)
 
 2 candidate functions:
-  frexp(T) -> __frexp_result_T  where: T is f32 or f16
-  frexp(vecN<T>) -> __frexp_result_vecN_T  where: T is f32 or f16
-)");
-}
-
-TEST_F(ResolverBuiltinFloatTest, Frexp_Error_SecondParamFloatPtr) {
-    GlobalVar("v", ty.f32(), ast::AddressSpace::kWorkgroup);
-    auto* call = Call("frexp", 1_f, AddressOf("v"));
-    WrapInFunction(call);
-
-    EXPECT_FALSE(r()->Resolve());
-
-    EXPECT_EQ(r()->error(),
-              R"(error: no matching call to frexp(f32, ptr<workgroup, f32, read_write>)
-
-2 candidate functions:
-  frexp(T) -> __frexp_result_T  where: T is f32 or f16
-  frexp(vecN<T>) -> __frexp_result_vecN_T  where: T is f32 or f16
-)");
-}
-
-TEST_F(ResolverBuiltinFloatTest, Frexp_Error_SecondParamNotAPointer) {
-    auto* call = Call("frexp", 1_f, 1_i);
-    WrapInFunction(call);
-
-    EXPECT_FALSE(r()->Resolve());
-
-    EXPECT_EQ(r()->error(), R"(error: no matching call to frexp(f32, i32)
-
-2 candidate functions:
-  frexp(T) -> __frexp_result_T  where: T is f32 or f16
-  frexp(vecN<T>) -> __frexp_result_vecN_T  where: T is f32 or f16
-)");
-}
-
-TEST_F(ResolverBuiltinFloatTest, Frexp_Error_VectorSizesDontMatch) {
-    GlobalVar("v", ty.vec4<i32>(), ast::AddressSpace::kWorkgroup);
-    auto* call = Call("frexp", vec2<f32>(1_f, 2_f), AddressOf("v"));
-    WrapInFunction(call);
-
-    EXPECT_FALSE(r()->Resolve());
-
-    EXPECT_EQ(r()->error(),
-              R"(error: no matching call to frexp(vec2<f32>, ptr<workgroup, vec4<i32>, read_write>)
-
-2 candidate functions:
-  frexp(T) -> __frexp_result_T  where: T is f32 or f16
-  frexp(vecN<T>) -> __frexp_result_vecN_T  where: T is f32 or f16
+  frexp(T) -> __frexp_result_T  where: T is abstract-float, f32 or f16
+  frexp(vecN<T>) -> __frexp_result_vecN_T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1184,8 +1138,8 @@ TEST_F(ResolverBuiltinFloatTest, Length_NoParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to length()
 
 2 candidate functions:
-  length(T) -> T  where: T is f32 or f16
-  length(vecN<T>) -> T  where: T is f32 or f16
+  length(T) -> T  where: T is abstract-float, f32 or f16
+  length(vecN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1198,8 +1152,8 @@ TEST_F(ResolverBuiltinFloatTest, Length_TooManyParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to length(f32, f32)
 
 2 candidate functions:
-  length(T) -> T  where: T is f32 or f16
-  length(vecN<T>) -> T  where: T is f32 or f16
+  length(T) -> T  where: T is abstract-float, f32 or f16
+  length(vecN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1374,8 +1328,8 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_FirstParamInt) {
               R"(error: no matching call to modf(i32, ptr<workgroup, f32, read_write>)
 
 2 candidate functions:
-  modf(T) -> __modf_result_T  where: T is f32 or f16
-  modf(vecN<T>) -> __modf_result_vecN_T  where: T is f32 or f16
+  modf(T) -> __modf_result_T  where: T is abstract-float, f32 or f16
+  modf(vecN<T>) -> __modf_result_vecN_T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1390,8 +1344,8 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_SecondParamIntPtr) {
               R"(error: no matching call to modf(f32, ptr<workgroup, i32, read_write>)
 
 2 candidate functions:
-  modf(T) -> __modf_result_T  where: T is f32 or f16
-  modf(vecN<T>) -> __modf_result_vecN_T  where: T is f32 or f16
+  modf(T) -> __modf_result_T  where: T is abstract-float, f32 or f16
+  modf(vecN<T>) -> __modf_result_vecN_T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1404,8 +1358,8 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_SecondParamNotAPointer) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to modf(f32, f32)
 
 2 candidate functions:
-  modf(T) -> __modf_result_T  where: T is f32 or f16
-  modf(vecN<T>) -> __modf_result_vecN_T  where: T is f32 or f16
+  modf(T) -> __modf_result_T  where: T is abstract-float, f32 or f16
+  modf(vecN<T>) -> __modf_result_vecN_T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1420,8 +1374,8 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_VectorSizesDontMatch) {
               R"(error: no matching call to modf(vec2<f32>, ptr<workgroup, vec4<f32>, read_write>)
 
 2 candidate functions:
-  modf(T) -> __modf_result_T  where: T is f32 or f16
-  modf(vecN<T>) -> __modf_result_vecN_T  where: T is f32 or f16
+  modf(T) -> __modf_result_T  where: T is abstract-float, f32 or f16
+  modf(vecN<T>) -> __modf_result_vecN_T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1461,7 +1415,7 @@ TEST_F(ResolverBuiltinFloatTest, Normalize_Error_NoParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to normalize()
 
 1 candidate function:
-  normalize(vecN<T>) -> vecN<T>  where: T is f32 or f16
+  normalize(vecN<T>) -> vecN<T>  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1978,7 +1932,7 @@ TEST_F(ResolverBuiltinTest, Determinant_NotSquare) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to determinant(mat2x3<f32>)
 
 1 candidate function:
-  determinant(matNxN<T>) -> T  where: T is f32 or f16
+  determinant(matNxN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1993,7 +1947,7 @@ TEST_F(ResolverBuiltinTest, Determinant_NotMatrix) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to determinant(f32)
 
 1 candidate function:
-  determinant(matNxN<T>) -> T  where: T is f32 or f16
+  determinant(matNxN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 

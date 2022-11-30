@@ -23,6 +23,7 @@
 #include "src/tint/ir/builder.h"
 #include "src/tint/ir/flow_node.h"
 #include "src/tint/ir/module.h"
+#include "src/tint/ir/value.h"
 #include "src/tint/utils/result.h"
 
 // Forward Declarations
@@ -30,6 +31,7 @@ namespace tint {
 class Program;
 }  // namespace tint
 namespace tint::ast {
+class BinaryExpression;
 class BlockStatement;
 class BreakIfStatement;
 class BreakStatement;
@@ -138,17 +140,22 @@ class BuilderImpl {
     /// Emits an expression
     /// @param expr the expression to emit
     /// @returns true if successful, false otherwise
-    bool EmitExpression(const ast::Expression* expr);
+    utils::Result<const Value*> EmitExpression(const ast::Expression* expr);
 
     /// Emits a variable
     /// @param var the variable to emit
     /// @returns true if successful, false otherwise
     bool EmitVariable(const ast::Variable* var);
 
+    /// Emits a binary expression
+    /// @param expr the binary expression
+    /// @returns the value storing the result if successful, utils::Failure otherwise
+    utils::Result<const Value*> EmitBinary(const ast::BinaryExpression* expr);
+
     /// Emits a literal expression
     /// @param lit the literal to emit
     /// @returns true if successful, false otherwise
-    bool EmitLiteral(const ast::LiteralExpression* lit);
+    utils::Result<const Value*> EmitLiteral(const ast::LiteralExpression* lit);
 
     /// Emits a type
     /// @param ty the type to emit

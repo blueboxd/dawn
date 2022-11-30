@@ -22,30 +22,26 @@ using ::testing::HasSubstr;
 namespace tint::resolver {
 namespace {
 
-// Bring in std::ostream& operator<<(std::ostream& o, const Types& types)
-using resolver::operator<<;
-
 struct Case {
     struct Success {
-        Types value;
+        Value value;
     };
     struct Failure {
         std::string error;
     };
 
-    Types lhs;
-    Types rhs;
+    Value lhs;
+    Value rhs;
     utils::Result<Success, Failure> expected;
 };
 
 struct ErrorCase {
-    Types lhs;
-    Types rhs;
+    Value lhs;
+    Value rhs;
 };
 
 /// Creates a Case with Values of any type
-template <typename T, typename U, typename V>
-Case C(Value<T> lhs, Value<U> rhs, Value<V> expected) {
+Case C(Value lhs, Value rhs, Value expected) {
     return Case{std::move(lhs), std::move(rhs), Case::Success{std::move(expected)}};
 }
 
@@ -56,8 +52,7 @@ Case C(T lhs, U rhs, V expected) {
 }
 
 /// Creates an failure Case with Values of any type
-template <typename T, typename U>
-Case E(Value<T> lhs, Value<U> rhs, std::string error) {
+Case E(Value lhs, Value rhs, std::string error) {
     return Case{std::move(lhs), std::move(rhs), Case::Failure{std::move(error)}};
 }
 
@@ -71,7 +66,7 @@ Case E(T lhs, U rhs, std::string error) {
 static std::ostream& operator<<(std::ostream& o, const Case& c) {
     o << "lhs: " << c.lhs << ", rhs: " << c.rhs << ", expected: ";
     if (c.expected) {
-        auto s = c.expected.Get();
+        auto& s = c.expected.Get();
         o << s.value;
     } else {
         o << "[ERROR: " << c.expected.Failure().error << "]";
@@ -91,15 +86,16 @@ TEST_P(ResolverConstEvalBinaryOpTest, Test) {
     auto op = std::get<0>(GetParam());
     auto& c = std::get<1>(GetParam());
 
-    auto* lhs_expr = ToValueBase(c.lhs)->Expr(*this);
-    auto* rhs_expr = ToValueBase(c.rhs)->Expr(*this);
+    auto* lhs_expr = c.lhs.Expr(*this);
+    auto* rhs_expr = c.rhs.Expr(*this);
+
     auto* expr = create<ast::BinaryExpression>(Source{{12, 34}}, op, lhs_expr, rhs_expr);
     GlobalConst("C", expr);
 
     if (c.expected) {
         ASSERT_TRUE(r()->Resolve()) << r()->error();
         auto expected_case = c.expected.Get();
-        auto* expected = ToValueBase(expected_case.value);
+        auto& expected = expected_case.value;
 
         auto* sem = Sem().Get(expr);
         const sem::Constant* value = sem->ConstantValue();
@@ -423,36 +419,31 @@ INSTANTIATE_TEST_SUITE_P(Mul,
 
 template <typename T>
 std::vector<Case> OpDivIntCases() {
-    std::vector<Case> r = {
-        C(Val(T{0}), Val(T{1}), Val(T{0})),
-        C(Val(T{1}), Val(T{1}), Val(T{1})),
-        C(Val(T{1}), Val(T{1}), Val(T{1})),
-        C(Val(T{2}), Val(T{1}), Val(T{2})),
-        C(Val(T{4}), Val(T{2}), Val(T{2})),
-        C(Val(T::Highest()), Val(T{1}), Val(T::Highest())),
-        C(Val(T::Lowest()), Val(T{1}), Val(T::Lowest())),
-        C(Val(T::Highest()), Val(T::Highest()), Val(T{1})),
-        C(Val(T{0}), Val(T::Highest()), Val(T{0})),
-        C(Val(T{0}), Val(T::Lowest()), Val(T{0})),
-    };
-    ConcatIntoIf<!IsAbstract<T> && IsIntegral<T>>(  //
-        r, std::vector<Case>{
-               // e1, when e2 is zero.
-               C(T{123}, T{0}, T{123}),
-           });
-    ConcatIntoIf<!IsAbstract<T> && IsSignedIntegral<T>>(  //
-        r, std::vector<Case>{
-               // e1, when e1 is the most negative value in T, and e2 is -1.
-               C(T::Smallest(), T{-1}, T::Smallest()),
-           });
-
     auto error_msg = [](auto a, auto b) {
         return "12:34 error: " + OverflowErrorMessage(a, "/", b);
     };
-    ConcatIntoIf<IsAbstract<T>>(  //
+
+    std::vector<Case> r = {
+        C(T{0}, T{1}, T{0}),
+        C(T{1}, T{1}, T{1}),
+        C(T{1}, T{1}, T{1}),
+        C(T{2}, T{1}, T{2}),
+        C(T{4}, T{2}, T{2}),
+        C(T::Highest(), T{1}, T::Highest()),
+        C(T::Lowest(), T{1}, T::Lowest()),
+        C(T::Highest(), T::Highest(), T{1}),
+        C(T{0}, T::Highest(), T{0}),
+
+        // Divide by zero
+        E(T{123}, T{0}, error_msg(T{123}, T{0})),
+        E(T::Highest(), T{0}, error_msg(T::Highest(), T{0})),
+        E(T::Lowest(), T{0}, error_msg(T::Lowest(), T{0})),
+    };
+
+    // Error on most negative divided by -1
+    ConcatIntoIf<IsSignedIntegral<T>>(  //
         r, std::vector<Case>{
-               // Most negative value divided by -1
-               E(AInt::Lowest(), -1_a, error_msg(AInt::Lowest(), -1_a)),
+               E(T::Lowest(), T{-1}, error_msg(T::Lowest(), T{-1})),
            });
     return r;
 }
@@ -463,16 +454,16 @@ std::vector<Case> OpDivFloatCases() {
         return "12:34 error: " + OverflowErrorMessage(a, "/", b);
     };
     std::vector<Case> r = {
-        C(Val(T{0}), Val(T{1}), Val(T{0})),
-        C(Val(T{1}), Val(T{1}), Val(T{1})),
-        C(Val(T{1}), Val(T{1}), Val(T{1})),
-        C(Val(T{2}), Val(T{1}), Val(T{2})),
-        C(Val(T{4}), Val(T{2}), Val(T{2})),
-        C(Val(T::Highest()), Val(T{1}), Val(T::Highest())),
-        C(Val(T::Lowest()), Val(T{1}), Val(T::Lowest())),
-        C(Val(T::Highest()), Val(T::Highest()), Val(T{1})),
-        C(Val(T{0}), Val(T::Highest()), Val(T{0})),
-        C(Val(T{0}), Val(T::Lowest()), Val(-T{0})),
+        C(T{0}, T{1}, T{0}),
+        C(T{1}, T{1}, T{1}),
+        C(T{1}, T{1}, T{1}),
+        C(T{2}, T{1}, T{2}),
+        C(T{4}, T{2}, T{2}),
+        C(T::Highest(), T{1}, T::Highest()),
+        C(T::Lowest(), T{1}, T::Lowest()),
+        C(T::Highest(), T::Highest(), T{1}),
+        C(T{0}, T::Highest(), T{0}),
+        C(T{0}, T::Lowest(), -T{0}),
 
         // Divide by zero
         E(T{123}, T{0}, error_msg(T{123}, T{0})),
@@ -497,10 +488,10 @@ INSTANTIATE_TEST_SUITE_P(Div,
 template <typename T, bool equals>
 std::vector<Case> OpEqualCases() {
     return {
-        C(Val(T{0}), Val(T{0}), Val(true == equals)),
-        C(Val(T{0}), Val(T{1}), Val(false == equals)),
-        C(Val(T{1}), Val(T{0}), Val(false == equals)),
-        C(Val(T{1}), Val(T{1}), Val(true == equals)),
+        C(T{0}, T{0}, true == equals),
+        C(T{0}, T{1}, false == equals),
+        C(T{1}, T{0}, false == equals),
+        C(T{1}, T{1}, true == equals),
         C(Vec(T{0}, T{0}), Vec(T{0}, T{0}), Vec(true == equals, true == equals)),
         C(Vec(T{1}, T{0}), Vec(T{0}, T{1}), Vec(false == equals, false == equals)),
         C(Vec(T{1}, T{1}), Vec(T{0}, T{1}), Vec(false == equals, true == equals)),
@@ -534,10 +525,10 @@ INSTANTIATE_TEST_SUITE_P(NotEqual,
 template <typename T, bool less_than>
 std::vector<Case> OpLessThanCases() {
     return {
-        C(Val(T{0}), Val(T{0}), Val(false == less_than)),
-        C(Val(T{0}), Val(T{1}), Val(true == less_than)),
-        C(Val(T{1}), Val(T{0}), Val(false == less_than)),
-        C(Val(T{1}), Val(T{1}), Val(false == less_than)),
+        C(T{0}, T{0}, false == less_than),
+        C(T{0}, T{1}, true == less_than),
+        C(T{1}, T{0}, false == less_than),
+        C(T{1}, T{1}, false == less_than),
         C(Vec(T{0}, T{0}), Vec(T{0}, T{0}), Vec(false == less_than, false == less_than)),
         C(Vec(T{0}, T{0}), Vec(T{1}, T{1}), Vec(true == less_than, true == less_than)),
         C(Vec(T{1}, T{1}), Vec(T{0}, T{0}), Vec(false == less_than, false == less_than)),
@@ -570,10 +561,10 @@ INSTANTIATE_TEST_SUITE_P(GreaterThanEqual,
 template <typename T, bool greater_than>
 std::vector<Case> OpGreaterThanCases() {
     return {
-        C(Val(T{0}), Val(T{0}), Val(false == greater_than)),
-        C(Val(T{0}), Val(T{1}), Val(false == greater_than)),
-        C(Val(T{1}), Val(T{0}), Val(true == greater_than)),
-        C(Val(T{1}), Val(T{1}), Val(false == greater_than)),
+        C(T{0}, T{0}, false == greater_than),
+        C(T{0}, T{1}, false == greater_than),
+        C(T{1}, T{0}, true == greater_than),
+        C(T{1}, T{1}, false == greater_than),
         C(Vec(T{0}, T{0}), Vec(T{0}, T{0}), Vec(false == greater_than, false == greater_than)),
         C(Vec(T{1}, T{1}), Vec(T{0}, T{0}), Vec(true == greater_than, true == greater_than)),
         C(Vec(T{0}, T{0}), Vec(T{1}, T{1}), Vec(false == greater_than, false == greater_than)),
@@ -707,7 +698,6 @@ INSTANTIATE_TEST_SUITE_P(Or,
                                                       OpOrIntCases<u32>()))));
 
 TEST_F(ResolverConstEvalTest, NotAndOrOfVecs) {
-    // const C = !((vec2(true, true) & vec2(true, false)) | vec2(false, true));
     auto v1 = Vec(true, true).Expr(*this);
     auto v2 = Vec(true, false).Expr(*this);
     auto v3 = Vec(false, true).Expr(*this);
@@ -978,8 +968,8 @@ TEST_F(ResolverConstEvalTest, BinaryAbstractShiftLeftRemainsAbstract) {
 // i32/u32 left shift by >= 32 -> error
 using ResolverConstEvalShiftLeftConcreteGeqBitWidthError = ResolverTestWithParam<ErrorCase>;
 TEST_P(ResolverConstEvalShiftLeftConcreteGeqBitWidthError, Test) {
-    auto* lhs_expr = ToValueBase(GetParam().lhs)->Expr(*this);
-    auto* rhs_expr = ToValueBase(GetParam().rhs)->Expr(*this);
+    auto* lhs_expr = GetParam().lhs.Expr(*this);
+    auto* rhs_expr = GetParam().rhs.Expr(*this);
     GlobalConst("c", Shl(Source{{1, 1}}, lhs_expr, rhs_expr));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(
@@ -1024,8 +1014,8 @@ INSTANTIATE_TEST_SUITE_P(Test,
 // AInt left shift results in sign change error
 using ResolverConstEvalShiftLeftSignChangeError = ResolverTestWithParam<ErrorCase>;
 TEST_P(ResolverConstEvalShiftLeftSignChangeError, Test) {
-    auto* lhs_expr = ToValueBase(GetParam().lhs)->Expr(*this);
-    auto* rhs_expr = ToValueBase(GetParam().rhs)->Expr(*this);
+    auto* lhs_expr = GetParam().lhs.Expr(*this);
+    auto* rhs_expr = GetParam().rhs.Expr(*this);
     GlobalConst("c", Shl(Source{{1, 1}}, lhs_expr, rhs_expr));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "1:1 error: shift left operation results in sign change");

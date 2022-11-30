@@ -143,83 +143,19 @@ using namespace tint::number_suffixes;  // NOLINT
 
 namespace tint::reader::spirv {
 
-namespace three_sided_patch_function_cc {
-// This machinery is only used while SPIRV-Tools is in transition before it fully
-// uses the C++11 header spirv.hpp11
-
-/// Typedef for pointer to member function while the API call uses
-/// SpvStorageClass for its second argument.
-typedef uint32_t (
-    spvtools::opt::analysis::TypeManager::*PointerFinderSpvStorageClass)(uint32_t, SpvStorageClass);
-/// Typedef for pointer to member function while the API call uses
-/// spv::StorageClass for its second argument.
-typedef uint32_t (spvtools::opt::analysis::TypeManager::*PointerFinderSpvStorageClassCpp11)(
-    uint32_t,
-    spv::StorageClass);
-
-/// @param type_manager the SPIRV-Tools optimizer's type manager
-/// @param finder a pointer to member function in the type manager that does the
-/// actual lookup
-/// @param pointee_type_id the ID of the pointee type
-/// @param sc the storage class.  SC can be SpvStorageClass or spv::StorageClass
-/// @returns the ID for a SPIR-V pointer to pointee_type_id in storage class sc
-template <typename FinderType, typename SC>
-uint32_t FindPointerToType(spvtools::opt::analysis::TypeManager* type_manager,
-                           FinderType finder,
-                           uint32_t pointee_type_id,
-                           SC sc);
-
-template <>
-uint32_t FindPointerToType(spvtools::opt::analysis::TypeManager* type_mgr,
-                           PointerFinderSpvStorageClass finder,
-                           uint32_t pointee_type_id,
-                           SpvStorageClass sc) {
-    return (type_mgr->*finder)(pointee_type_id, sc);
-}
-
-template <>
-uint32_t FindPointerToType(spvtools::opt::analysis::TypeManager* type_mgr,
-                           PointerFinderSpvStorageClass finder,
-                           uint32_t pointee_type_id,
-                           spv::StorageClass sc) {
-    return (type_mgr->*finder)(pointee_type_id, static_cast<SpvStorageClass>(sc));
-}
-
-template <>
-uint32_t FindPointerToType(spvtools::opt::analysis::TypeManager* type_mgr,
-                           PointerFinderSpvStorageClassCpp11 finder,
-                           uint32_t pointee_type_id,
-                           SpvStorageClass sc) {
-    return (type_mgr->*finder)(pointee_type_id, static_cast<spv::StorageClass>(sc));
-}
-
-template <>
-uint32_t FindPointerToType(spvtools::opt::analysis::TypeManager* type_mgr,
-                           PointerFinderSpvStorageClassCpp11 finder,
-                           uint32_t pointee_type_id,
-                           spv::StorageClass sc) {
-    return (type_mgr->*finder)(pointee_type_id, sc);
-}
-}  // namespace three_sided_patch_function_cc
-
 namespace {
 
 constexpr uint32_t kMaxVectorLen = 4;
 
-template <typename FromOpcodeType>
-spv::Op ToOpcode(FromOpcodeType oc) {
-    return static_cast<spv::Op>(oc);
-}
-
 /// @param inst a SPIR-V instruction
 /// @returns Returns the opcode for an instruciton
 inline spv::Op opcode(const spvtools::opt::Instruction& inst) {
-    return ToOpcode(inst.opcode());
+    return inst.opcode();
 }
 /// @param inst a SPIR-V instruction pointer
 /// @returns Returns the opcode for an instruciton
 inline spv::Op opcode(const spvtools::opt::Instruction* inst) {
-    return ToOpcode(inst->opcode());
+    return inst->opcode();
 }
 
 // Gets the AST unary opcode for the given SPIR-V opcode, if any
@@ -727,7 +663,7 @@ class StructuredTraverser {
         // Visit successors. We will naturally skip the continue target and merge
         // blocks.
         auto* terminator = bb->terminator();
-        auto opcode = ToOpcode(terminator->opcode());
+        const auto opcode = terminator->opcode();
         if (opcode == spv::Op::OpBranchConditional) {
             // Visit the false branch, then the true branch, to make them come
             // out in the natural order for an "if".
@@ -3210,8 +3146,8 @@ bool FunctionEmitter::EmitNormalTerminator(const BlockInfo& block_info) {
                 return false;
             }
             AddStatement(create<ast::ReturnStatement>(Source{}, value.expr));
-        }
             return true;
+        }
         case spv::Op::OpKill:
             // For now, assume SPIR-V OpKill has same semantics as WGSL discard.
             // TODO(dneto): https://github.com/gpuweb/gpuweb/issues/676
@@ -3266,21 +3202,58 @@ bool FunctionEmitter::EmitNormalTerminator(const BlockInfo& block_info) {
                 return Fail() << "Fallthrough not supported in WGSL";
             }
 
+            // In the case of a continuing block a `break-if` needs to be emitted for either an
+            // if-break or an if-else-break statement. This only happens inside the continue block.
+            // It's possible for a continue block to also be the loop block, so checks are needed
+            // that this is a continue construct and the header construct will cause a continuing
+            // construct to be emitted. (i.e. the header is not `continue is entire loop`.
+            bool needs_break_if = false;
+            if ((true_kind == EdgeKind::kLoopBreak || false_kind == EdgeKind::kLoopBreak) &&
+                block_info.construct && block_info.construct->kind == Construct::Kind::kContinue) {
+                auto* header = GetBlockInfo(block_info.construct->begin_id);
+
+                TINT_ASSERT(Reader, header->construct &&
+                                        header->construct->kind == Construct::Kind::kContinue);
+                if (!header->is_continue_entire_loop) {
+                    needs_break_if = true;
+                }
+            }
+
             // At this point, at most one edge is kForward or kIfBreak.
 
-            // Emit an 'if' statement to express the *other* branch as a conditional
-            // break or continue.  Either or both of these could be nullptr.
-            // (A nullptr is generated for kIfBreak, kForward, or kBack.)
-            // Also if one of the branches is an if-break out of an if-selection
-            // requiring a flow guard, then get that flow guard name too.  It will
-            // come from at most one of these two branches.
-            std::string flow_guard;
-            auto* true_branch = MakeBranchDetailed(block_info, *true_info, &flow_guard);
-            auto* false_branch = MakeBranchDetailed(block_info, *false_info, &flow_guard);
+            // If this is a continuing block and a `break` is to be emitted, then this needs to be
+            // converted to a `break-if`. This may involve inverting the condition if this was a
+            // `break-unless`.
+            if (needs_break_if) {
+                if (true_kind == EdgeKind::kLoopBreak && false_kind == EdgeKind::kLoopBreak) {
+                    // Both branches break ... ?
+                    return Fail() << "Both branches of if inside continuing break.";
+                }
 
-            AddStatement(MakeSimpleIf(cond, true_branch, false_branch));
-            if (!flow_guard.empty()) {
-                PushGuard(flow_guard, statements_stack_.Back().GetEndId());
+                if (true_kind == EdgeKind::kLoopBreak) {
+                    AddStatement(create<ast::BreakIfStatement>(Source{}, cond));
+                } else {
+                    AddStatement(create<ast::BreakIfStatement>(
+                        Source{},
+                        create<ast::UnaryOpExpression>(Source{}, ast::UnaryOp::kNot, cond)));
+                }
+                return true;
+
+            } else {
+                // Emit an 'if' statement to express the *other* branch as a conditional
+                // break or continue.  Either or both of these could be nullptr.
+                // (A nullptr is generated for kIfBreak, kForward, or kBack.)
+                // Also if one of the branches is an if-break out of an if-selection
+                // requiring a flow guard, then get that flow guard name too.  It will
+                // come from at most one of these two branches.
+                std::string flow_guard;
+                auto* true_branch = MakeBranchDetailed(block_info, *true_info, &flow_guard);
+                auto* false_branch = MakeBranchDetailed(block_info, *false_info, &flow_guard);
+
+                AddStatement(MakeSimpleIf(cond, true_branch, false_branch));
+                if (!flow_guard.empty()) {
+                    PushGuard(flow_guard, statements_stack_.Back().GetEndId());
+                }
             }
             return true;
         }
@@ -3485,7 +3458,7 @@ bool FunctionEmitter::EmitStatementsInBasicBlock(const BlockInfo& block_info,
             const auto phi_id = assignment.phi_id;
             auto* const lhs_expr = builder_.Expr(namer_.Name(phi_id));
             // If RHS value is actually a phi we just cpatured, then use it.
-            auto* const copy_sym = copied_phis.Find(assignment.value_id);
+            auto copy_sym = copied_phis.Find(assignment.value_id);
             auto* const rhs_expr =
                 copy_sym ? builder_.Expr(*copy_sym) : MakeExpression(assignment.value_id).expr;
             AddStatement(builder_.Assign(lhs_expr, rhs_expr));
@@ -4574,9 +4547,7 @@ TypedExpression FunctionEmitter::MakeAccessChain(const spvtools::opt::Instructio
                        << ": " << pointee_type_inst->PrettyPrint();
                 return {};
         }
-        const auto pointer_type_id = three_sided_patch_function_cc::FindPointerToType(
-            type_mgr_, &spvtools::opt::analysis::TypeManager::FindPointerToType, pointee_type_id,
-            address_space);
+        const auto pointer_type_id = type_mgr_->FindPointerToType(pointee_type_id, address_space);
         auto* type = parser_impl_.ConvertType(pointer_type_id, PtrAs::Ref);
         TINT_ASSERT(Reader, type && type->Is<Reference>());
         current_expr = TypedExpression{type, next_expr};

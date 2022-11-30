@@ -265,8 +265,8 @@ struct Std140::State {
     };
 
     /// @returns true if the given matrix needs decomposing to column vectors for std140 layout.
-    /// TODO(crbug.com/tint/1502): This may need adjusting for `f16` matrices.
-    static bool MatrixNeedsDecomposing(const sem::Matrix* mat) { return mat->ColumnStride() == 8; }
+    /// Std140 layout require matrix stride to be 16, otherwise decomposing is needed.
+    static bool MatrixNeedsDecomposing(const sem::Matrix* mat) { return mat->ColumnStride() != 16; }
 
     /// ForkTypes walks the user-declared types in dependency order, forking structures that are
     /// used as uniform buffers which (transitively) use matrices that need std140 decomposition to
@@ -401,7 +401,7 @@ struct Std140::State {
         return Switch(
             ty,  //
             [&](const sem::Struct* str) -> const ast::Type* {
-                if (auto* std140 = std140_structs.Find(str)) {
+                if (auto std140 = std140_structs.Find(str)) {
                     return b.create<ast::TypeName>(*std140);
                 }
                 return nullptr;
@@ -474,7 +474,7 @@ struct Std140::State {
                 // natural size for the matrix. This extra padding needs to be
                 // applied to the last column vector.
                 attributes.Push(
-                    b.MemberSize(AInt(size - mat->ColumnType()->Size() * (num_columns - 1))));
+                    b.MemberSize(AInt(size - mat->ColumnType()->Align() * (num_columns - 1))));
             }
 
             // Build the member
@@ -645,7 +645,8 @@ struct Std140::State {
                 return "mat" + std::to_string(mat->columns()) + "x" + std::to_string(mat->rows()) +
                        "_" + ConvertSuffix(mat->type());
             },
-            [&](const sem::F32*) { return "f32"; },
+            [&](const sem::F32*) { return "f32"; },  //
+            [&](const sem::F16*) { return "f16"; },
             [&](Default) {
                 TINT_ICE(Transform, b.Diagnostics())
                     << "unhandled type for conversion name: " << src->FriendlyName(ty);
@@ -695,7 +696,7 @@ struct Std140::State {
                     // call, or by reassembling a std140 matrix from column vector members.
                     utils::Vector<const ast::Expression*, 8> args;
                     for (auto* member : str->Members()) {
-                        if (auto* col_members = std140_mat_members.Find(member)) {
+                        if (auto col_members = std140_mat_members.Find(member)) {
                             // std140 decomposed matrix. Reassemble.
                             auto* mat_ty = CreateASTTypeFor(ctx, member->Type());
                             auto mat_args =

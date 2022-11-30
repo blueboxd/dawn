@@ -20,12 +20,14 @@
 #include <algorithm>
 #include <array>
 #include <iterator>
+#include <ostream>
 #include <utility>
 #include <vector>
 
 #include "src/tint/castable.h"
 #include "src/tint/traits.h"
 #include "src/tint/utils/bitcast.h"
+#include "src/tint/utils/string.h"
 
 namespace tint::utils {
 
@@ -419,6 +421,19 @@ class Vector {
         auto val = std::move(el);
         el.~T();
         return val;
+    }
+
+    /// Sort sorts the vector in-place using the predicate function @p pred
+    /// @param pred a function that has the signature `bool(const T& a, const T& b)` which returns
+    /// true if `a` is ordered before `b`.
+    template <typename PREDICATE>
+    void Sort(PREDICATE&& pred) {
+        std::sort(begin(), end(), std::forward<PREDICATE>(pred));
+    }
+
+    /// Sort sorts the vector in-place using `T::operator<()`
+    void Sort() {
+        Sort([](auto& a, auto& b) { return a < b; });
     }
 
     /// @returns true if the vector is empty.
@@ -830,6 +845,44 @@ Vector<T, N> ToVector(const std::vector<T>& vector) {
         out.Push(el);
     }
     return out;
+}
+
+/// Prints the vector @p vec to @p o
+/// @param o the std::ostream to write to
+/// @param vec the vector
+/// @return the std::ostream so calls can be chained
+template <typename T, size_t N>
+inline std::ostream& operator<<(std::ostream& o, const utils::Vector<T, N>& vec) {
+    o << "[";
+    bool first = true;
+    for (auto& el : vec) {
+        if (!first) {
+            o << ", ";
+        }
+        first = false;
+        o << ToString(el);
+    }
+    o << "]";
+    return o;
+}
+
+/// Prints the vector @p vec to @p o
+/// @param o the std::ostream to write to
+/// @param vec the vector reference
+/// @return the std::ostream so calls can be chained
+template <typename T>
+inline std::ostream& operator<<(std::ostream& o, const utils::VectorRef<T>& vec) {
+    o << "[";
+    bool first = true;
+    for (auto& el : vec) {
+        if (!first) {
+            o << ", ";
+        }
+        first = false;
+        o << ToString(el);
+    }
+    o << "]";
+    return o;
 }
 
 }  // namespace tint::utils
