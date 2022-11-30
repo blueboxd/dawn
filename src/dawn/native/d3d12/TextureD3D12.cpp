@@ -607,9 +607,13 @@ MaybeError Texture::InitializeAsInternalTexture() {
     resourceDescriptor.Flags = D3D12ResourceFlags(GetInternalUsage(), GetFormat());
     mD3D12ResourceFlags = resourceDescriptor.Flags;
 
+    uint32_t bytesPerBlock = 0;
+    if (GetFormat().IsColor()) {
+        bytesPerBlock = GetFormat().GetAspectInfo(wgpu::TextureAspect::All).block.byteSize;
+    }
     DAWN_TRY_ASSIGN(mResourceAllocation,
                     device->AllocateMemory(D3D12_HEAP_TYPE_DEFAULT, resourceDescriptor,
-                                           D3D12_RESOURCE_STATE_COMMON));
+                                           D3D12_RESOURCE_STATE_COMMON, bytesPerBlock));
 
     SetLabelImpl();
 
@@ -656,54 +660,38 @@ Texture::~Texture() {}
 void Texture::DestroyImpl() {
     TextureBase::DestroyImpl();
 
-    Device* device = ToBackend(GetDevice());
+    ToBackend(GetDevice())->DeallocateMemory(mResourceAllocation);
 
-    // In PIX's D3D12-only mode, there is no way to determine frame boundaries
-    // for WebGPU since Dawn does not manage DXGI swap chains. Without assistance,
-    // PIX will wait forever for a present that never happens.
-    // If we know we're dealing with a swapbuffer texture, inform PIX we've
-    // "presented" the texture so it can determine frame boundaries and use its
-    // contents for the UI.
-    if (mSwapChainTexture) {
-        ID3D12SharingContract* d3dSharingContract = device->GetSharingContract();
-        if (d3dSharingContract != nullptr) {
-            d3dSharingContract->Present(mResourceAllocation.GetD3D12Resource(), 0, 0);
-        }
-    }
-
-    device->DeallocateMemory(mResourceAllocation);
-
-    // Now that we've deallocated the memory, the texture is no longer a swap chain texture.
-    // We can set mSwapChainTexture to false to avoid passing a nullptr to
-    // ID3D12SharingContract::Present.
+    // Set mSwapChainTexture to false to prevent ever calling ID3D12SharingContract::Present again.
     mSwapChainTexture = false;
 
-    // Now that the texture has been destroyed. It should release the refptr of the d3d11on12
-    // resource and the fence.
+    // Now that the texture has been destroyed, it should release the d3d11on12 resource refptr.
     mD3D11on12Resource = nullptr;
 }
 
 ResultOrError<ExecutionSerial> Texture::EndAccess() {
     ASSERT(mD3D11on12Resource == nullptr);
 
+    Device* device = ToBackend(GetDevice());
+
     // Synchronize if texture access wasn't synchronized already due to ExecuteCommandLists.
     if (!mSignalFenceValue.has_value()) {
         // Needed to ensure that command allocator doesn't get destroyed before pending commands
         // are submitted due to calling NextSerial(). No-op if there are no pending commands.
-        DAWN_TRY(ToBackend(GetDevice())->ExecutePendingCommandContext());
-
+        DAWN_TRY(device->ExecutePendingCommandContext());
         // If there were pending commands that used this texture mSignalFenceValue will be set,
         // but if it's still not set, generate a signal fence after waiting on wait fences.
         if (!mSignalFenceValue.has_value()) {
             DAWN_TRY(SynchronizeImportedTextureBeforeUse());
-            DAWN_TRY(ToBackend(GetDevice())->NextSerial());
             DAWN_TRY(SynchronizeImportedTextureAfterUse());
-            ASSERT(mSignalFenceValue.has_value());
         }
+        DAWN_TRY(device->NextSerial());
+        ASSERT(mSignalFenceValue.has_value());
     }
 
-    // Explicitly call reset() since std::move() on optional doesn't make it std::nullopt.
     ExecutionSerial ret = mSignalFenceValue.value();
+    ASSERT(ret <= device->GetLastSubmittedCommandSerial());
+    // Explicitly call reset() since std::move() on optional doesn't make it std::nullopt.
     mSignalFenceValue.reset();
     return ret;
 }
@@ -751,17 +739,32 @@ MaybeError Texture::SynchronizeImportedTextureBeforeUse() {
         DAWN_TRY(CheckHRESULT(device->GetCommandQueue()->Wait(fence->GetD3D12Fence(),
                                                               fence->GetFenceValue()),
                               "D3D12 fence wait"););
+        // Keep D3D12 fence alive since we'll clear the waitFences list below.
+        device->ReferenceUntilUnused(fence->GetD3D12Fence());
     }
     mWaitFences.clear();
     return {};
 }
 
 MaybeError Texture::SynchronizeImportedTextureAfterUse() {
+    // In PIX's D3D12-only mode, there is no way to determine frame boundaries
+    // for WebGPU since Dawn does not manage DXGI swap chains. Without assistance,
+    // PIX will wait forever for a present that never happens.
+    // If we know we're dealing with a swapbuffer texture, inform PIX we've
+    // "presented" the texture so it can determine frame boundaries and use its
+    // contents for the UI.
+    Device* device = ToBackend(GetDevice());
+    if (mSwapChainTexture) {
+        ID3D12SharingContract* d3dSharingContract = device->GetSharingContract();
+        if (d3dSharingContract != nullptr) {
+            d3dSharingContract->Present(mResourceAllocation.GetD3D12Resource(), 0, 0);
+        }
+    }
     if (mD3D11on12Resource != nullptr) {
         DAWN_TRY(mD3D11on12Resource->ReleaseKeyedMutex());
     } else {
-        // CommandRecordingContext will call NextSerial() to increment the fence before this call.
-        mSignalFenceValue = ToBackend(GetDevice())->GetLastSubmittedCommandSerial();
+        // NextSerial() will be called after this - this is also checked in EndAccess().
+        mSignalFenceValue = device->GetPendingCommandSerial();
     }
     return {};
 }

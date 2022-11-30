@@ -100,7 +100,7 @@ using ResolverBuiltinsStageTest = ResolverTestWithParam<Params>;
 TEST_P(ResolverBuiltinsStageTest, All_input) {
     const Params& params = GetParam();
 
-    auto* p = GlobalVar("p", ty.vec4<f32>(), ast::StorageClass::kPrivate);
+    auto* p = GlobalVar("p", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
     auto* input = Param("input", params.type(*this),
                         utils::Vector{Builtin(Source{{12, 34}}, params.builtin)});
     switch (params.stage) {
@@ -204,7 +204,7 @@ TEST_F(ResolverBuiltinsValidationTest, FragDepthIsInputStruct_Fail) {
     EXPECT_EQ(r()->error(),
               "12:34 error: builtin(frag_depth) cannot be used in input of "
               "fragment pipeline stage\n"
-              "note: while analysing entry point 'fragShader'");
+              "note: while analyzing entry point 'fragShader'");
 }
 
 TEST_F(ResolverBuiltinsValidationTest, StructBuiltinInsideEntryPoint_Ignored) {

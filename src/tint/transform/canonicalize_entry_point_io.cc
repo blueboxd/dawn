@@ -45,6 +45,42 @@ struct MemberInfo {
     std::optional<uint32_t> location;
 };
 
+/// FXC is sensitive to field order in structures, this is used by StructMemberComparator to ensure
+/// that FXC is happy with the order of emitted fields.
+uint32_t BuiltinOrder(ast::BuiltinValue builtin) {
+    switch (builtin) {
+        case ast::BuiltinValue::kPosition:
+            return 1;
+        case ast::BuiltinValue::kVertexIndex:
+            return 2;
+        case ast::BuiltinValue::kInstanceIndex:
+            return 3;
+        case ast::BuiltinValue::kFrontFacing:
+            return 4;
+        case ast::BuiltinValue::kFragDepth:
+            return 5;
+        case ast::BuiltinValue::kLocalInvocationId:
+            return 6;
+        case ast::BuiltinValue::kLocalInvocationIndex:
+            return 7;
+        case ast::BuiltinValue::kGlobalInvocationId:
+            return 8;
+        case ast::BuiltinValue::kWorkgroupId:
+            return 9;
+        case ast::BuiltinValue::kNumWorkgroups:
+            return 10;
+        case ast::BuiltinValue::kSampleIndex:
+            return 11;
+        case ast::BuiltinValue::kSampleMask:
+            return 12;
+        case ast::BuiltinValue::kPointSize:
+            return 13;
+        default:
+            break;
+    }
+    return 0;
+}
+
 /// Comparison function used to reorder struct members such that all members with
 /// location attributes appear first (ordered by location slot), followed by
 /// those with builtin attributes.
@@ -68,8 +104,8 @@ bool StructMemberComparator(const MemberInfo& a, const MemberInfo& b) {
             // `b` has location attribute and `a` does not: `b` goes first.
             return false;
         }
-        // Both are builtins: order doesn't matter, just use enum value.
-        return a_blt->builtin < b_blt->builtin;
+        // Both are builtins: order matters for FXC.
+        return BuiltinOrder(a_blt->builtin) < BuiltinOrder(b_blt->builtin);
     }
 }
 
@@ -187,18 +223,18 @@ struct CanonicalizeEntryPointIO::State {
                 (ast::HasAttribute<ast::LocationAttribute>(attributes) ||
                  cfg.shader_style == ShaderStyle::kSpirv)) {
                 attributes.Push(ctx.dst->Interpolate(ast::InterpolationType::kFlat,
-                                                     ast::InterpolationSampling::kNone));
+                                                     ast::InterpolationSampling::kUndefined));
             }
 
-            // Disable validation for use of the `input` storage class.
-            attributes.Push(ctx.dst->Disable(ast::DisabledValidation::kIgnoreStorageClass));
+            // Disable validation for use of the `input` address space.
+            attributes.Push(ctx.dst->Disable(ast::DisabledValidation::kIgnoreAddressSpace));
 
             // In GLSL, if it's a builtin, override the name with the
             // corresponding gl_ builtin name
             auto* builtin = ast::GetAttribute<ast::BuiltinAttribute>(attributes);
             if (cfg.shader_style == ShaderStyle::kGlsl && builtin) {
                 name = GLSLBuiltinToString(builtin->builtin, func_ast->PipelineStage(),
-                                           ast::StorageClass::kIn);
+                                           ast::AddressSpace::kIn);
             }
             auto symbol = ctx.dst->Symbols().New(name);
 
@@ -215,7 +251,7 @@ struct CanonicalizeEntryPointIO::State {
                     value = ctx.dst->IndexAccessor(value, 0_i);
                 }
             }
-            ctx.dst->GlobalVar(symbol, ast_type, ast::StorageClass::kIn, std::move(attributes));
+            ctx.dst->GlobalVar(symbol, ast_type, ast::AddressSpace::kIn, std::move(attributes));
             return value;
         } else if (cfg.shader_style == ShaderStyle::kMsl &&
                    ast::HasAttribute<ast::BuiltinAttribute>(attributes)) {
@@ -256,7 +292,7 @@ struct CanonicalizeEntryPointIO::State {
             ast::HasAttribute<ast::LocationAttribute>(attributes) &&
             !ast::HasAttribute<ast::InterpolateAttribute>(attributes)) {
             attributes.Push(ctx.dst->Interpolate(ast::InterpolationType::kFlat,
-                                                 ast::InterpolationSampling::kNone));
+                                                 ast::InterpolationSampling::kUndefined));
         }
 
         // In GLSL, if it's a builtin, override the name with the
@@ -264,7 +300,7 @@ struct CanonicalizeEntryPointIO::State {
         if (cfg.shader_style == ShaderStyle::kGlsl) {
             if (auto* b = ast::GetAttribute<ast::BuiltinAttribute>(attributes)) {
                 name = GLSLBuiltinToString(b->builtin, func_ast->PipelineStage(),
-                                           ast::StorageClass::kOut);
+                                           ast::AddressSpace::kOut);
                 value = ToGLSLBuiltin(b->builtin, value, type);
             }
         }
@@ -480,9 +516,9 @@ struct CanonicalizeEntryPointIO::State {
     /// Create and assign the wrapper function's output variables.
     void CreateGlobalOutputVariables() {
         for (auto& outval : wrapper_output_values) {
-            // Disable validation for use of the `output` storage class.
+            // Disable validation for use of the `output` address space.
             utils::Vector<const ast::Attribute*, 8> attributes = std::move(outval.attributes);
-            attributes.Push(ctx.dst->Disable(ast::DisabledValidation::kIgnoreStorageClass));
+            attributes.Push(ctx.dst->Disable(ast::DisabledValidation::kIgnoreAddressSpace));
 
             // Create the global variable and assign it the output value.
             auto name = ctx.dst->Symbols().New(outval.name);
@@ -494,7 +530,7 @@ struct CanonicalizeEntryPointIO::State {
                 type = ctx.dst->ty.array(type, 1_u);
                 lhs = ctx.dst->IndexAccessor(lhs, 0_i);
             }
-            ctx.dst->GlobalVar(name, type, ast::StorageClass::kOut, std::move(attributes));
+            ctx.dst->GlobalVar(name, type, ast::AddressSpace::kOut, std::move(attributes));
             wrapper_body.Push(ctx.dst->Assign(lhs, outval.value));
         }
     }
@@ -634,11 +670,11 @@ struct CanonicalizeEntryPointIO::State {
     /// Retrieve the gl_ string corresponding to a builtin.
     /// @param builtin the builtin
     /// @param stage the current pipeline stage
-    /// @param storage_class the storage class (input or output)
+    /// @param address_space the address space (input or output)
     /// @returns the gl_ string corresponding to that builtin
     const char* GLSLBuiltinToString(ast::BuiltinValue builtin,
                                     ast::PipelineStage stage,
-                                    ast::StorageClass storage_class) {
+                                    ast::AddressSpace address_space) {
         switch (builtin) {
             case ast::BuiltinValue::kPosition:
                 switch (stage) {
@@ -670,7 +706,7 @@ struct CanonicalizeEntryPointIO::State {
             case ast::BuiltinValue::kSampleIndex:
                 return "gl_SampleID";
             case ast::BuiltinValue::kSampleMask:
-                if (storage_class == ast::StorageClass::kIn) {
+                if (address_space == ast::AddressSpace::kIn) {
                     return "gl_SampleMaskIn";
                 } else {
                     return "gl_SampleMask";

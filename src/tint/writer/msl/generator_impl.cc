@@ -152,6 +152,32 @@ class ScopedBitCast {
     std::ostream& s;
 };
 
+class ScopedCast {
+  public:
+    ScopedCast(GeneratorImpl* generator,
+               std::ostream& stream,
+               const sem::Type* curr_type,
+               const sem::Type* target_type)
+        : s(stream) {
+        auto* target_vec_type = target_type->As<sem::Vector>();
+
+        // If we need to promote from scalar to vector, cast the scalar to the
+        // vector element type.
+        if (curr_type->is_scalar() && target_vec_type) {
+            target_type = target_vec_type->type();
+        }
+
+        // Cast
+        generator->EmitType(s, target_type, "");
+        s << "(";
+    }
+
+    ~ScopedCast() { s << ")"; }
+
+  private:
+    std::ostream& s;
+};
+
 }  // namespace
 
 SanitizedResult::SanitizedResult() = default;
@@ -172,6 +198,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         polyfills.first_leading_bit = true;
         polyfills.first_trailing_bit = true;
         polyfills.insert_bits = transform::BuiltinPolyfill::Level::kClampParameters;
+        polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         data.Add<transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<transform::BuiltinPolyfill>();
     }
@@ -192,7 +219,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         // Use the SSBO binding numbers as the indices for the buffer size lookups.
         for (auto* var : in->AST().GlobalVariables()) {
             auto* global = in->Sem().Get<sem::GlobalVariable>(var);
-            if (global && global->StorageClass() == ast::StorageClass::kStorage) {
+            if (global && global->AddressSpace() == ast::AddressSpace::kStorage) {
                 array_length_from_uniform_cfg.bindpoint_to_size_index.emplace(
                     global->BindingPoint(), global->BindingPoint().binding);
             }
@@ -273,8 +300,9 @@ bool GeneratorImpl::Generate() {
             },
             [&](const ast::Override*) {
                 // Override is removed with SubstituteOverride
-                TINT_ICE(Writer, diagnostics_)
-                    << "Override should have been removed by the substitute_override transform.";
+                diagnostics_.add_error(diag::System::Writer,
+                                       "override-expressions should have been removed with the "
+                                       "SubstituteOverride transform.");
                 return false;
             },
             [&](const ast::Function* func) {
@@ -515,8 +543,18 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
         ScopedParen sp(out);
         {
             ScopedBitCast lhs_uint_cast(this, out, lhs_type, unsigned_type_of(target_type));
-            if (!EmitExpression(out, expr->lhs)) {
-                return false;
+
+            // In case the type is packed, cast to our own type in order to remove the packing.
+            // Otherwise, this just casts to itself.
+            if (lhs_type->is_signed_integer_vector()) {
+                ScopedCast lhs_self_cast(this, out, lhs_type, lhs_type);
+                if (!EmitExpression(out, expr->lhs)) {
+                    return false;
+                }
+            } else {
+                if (!EmitExpression(out, expr->lhs)) {
+                    return false;
+                }
             }
         }
         if (!emit_op()) {
@@ -524,8 +562,18 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
         }
         {
             ScopedBitCast rhs_uint_cast(this, out, rhs_type, unsigned_type_of(target_type));
-            if (!EmitExpression(out, expr->rhs)) {
-                return false;
+
+            // In case the type is packed, cast to our own type in order to remove the packing.
+            // Otherwise, this just casts to itself.
+            if (rhs_type->is_signed_integer_vector()) {
+                ScopedCast rhs_self_cast(this, out, rhs_type, rhs_type);
+                if (!EmitExpression(out, expr->rhs)) {
+                    return false;
+                }
+            } else {
+                if (!EmitExpression(out, expr->rhs)) {
+                    return false;
+                }
             }
         }
         return true;
@@ -542,8 +590,18 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
         ScopedParen sp(out);
         {
             ScopedBitCast lhs_uint_cast(this, out, lhs_type, unsigned_type_of(lhs_type));
-            if (!EmitExpression(out, expr->lhs)) {
-                return false;
+
+            // In case the type is packed, cast to our own type in order to remove the packing.
+            // Otherwise, this just casts to itself.
+            if (lhs_type->is_signed_integer_vector()) {
+                ScopedCast lhs_self_cast(this, out, lhs_type, lhs_type);
+                if (!EmitExpression(out, expr->lhs)) {
+                    return false;
+                }
+            } else {
+                if (!EmitExpression(out, expr->lhs)) {
+                    return false;
+                }
             }
         }
         if (!emit_op()) {
@@ -652,9 +710,9 @@ bool GeneratorImpl::EmitBuiltinCall(std::ostream& out,
         case sem::BuiltinType::kRadians:
             return EmitRadiansCall(out, expr, builtin);
 
-        case sem::BuiltinType::kPack2x16float:
-        case sem::BuiltinType::kUnpack2x16float: {
-            if (builtin->Type() == sem::BuiltinType::kPack2x16float) {
+        case sem::BuiltinType::kPack2X16Float:
+        case sem::BuiltinType::kUnpack2X16Float: {
+            if (builtin->Type() == sem::BuiltinType::kPack2X16Float) {
                 out << "as_type<uint>(half2(";
             } else {
                 out << "float2(as_type<half2>(";
@@ -858,7 +916,7 @@ bool GeneratorImpl::EmitAtomicCall(std::ostream& out,
 
         case sem::BuiltinType::kAtomicCompareExchangeWeak: {
             auto* ptr_ty = TypeOf(expr->args[0])->UnwrapRef()->As<sem::Pointer>();
-            auto sc = ptr_ty->StorageClass();
+            auto sc = ptr_ty->AddressSpace();
             auto* str = builtin->ReturnType()->As<sem::Struct>();
 
             auto func = utils::GetOrCreate(
@@ -1468,16 +1526,16 @@ std::string GeneratorImpl::generate_builtin_name(const sem::Builtin* builtin) {
         case sem::BuiltinType::kFaceForward:
             out += "faceforward";
             break;
-        case sem::BuiltinType::kPack4x8snorm:
+        case sem::BuiltinType::kPack4X8Snorm:
             out += "pack_float_to_snorm4x8";
             break;
-        case sem::BuiltinType::kPack4x8unorm:
+        case sem::BuiltinType::kPack4X8Unorm:
             out += "pack_float_to_unorm4x8";
             break;
-        case sem::BuiltinType::kPack2x16snorm:
+        case sem::BuiltinType::kPack2X16Snorm:
             out += "pack_float_to_snorm2x16";
             break;
-        case sem::BuiltinType::kPack2x16unorm:
+        case sem::BuiltinType::kPack2X16Unorm:
             out += "pack_float_to_unorm2x16";
             break;
         case sem::BuiltinType::kReverseBits:
@@ -1492,16 +1550,16 @@ std::string GeneratorImpl::generate_builtin_name(const sem::Builtin* builtin) {
         case sem::BuiltinType::kInverseSqrt:
             out += "rsqrt";
             break;
-        case sem::BuiltinType::kUnpack4x8snorm:
+        case sem::BuiltinType::kUnpack4X8Snorm:
             out += "unpack_snorm4x8_to_float";
             break;
-        case sem::BuiltinType::kUnpack4x8unorm:
+        case sem::BuiltinType::kUnpack4X8Unorm:
             out += "unpack_unorm4x8_to_float";
             break;
-        case sem::BuiltinType::kUnpack2x16snorm:
+        case sem::BuiltinType::kUnpack2X16Snorm:
             out += "unpack_snorm2x16_to_float";
             break;
-        case sem::BuiltinType::kUnpack2x16unorm:
+        case sem::BuiltinType::kUnpack2X16Unorm:
             out += "unpack_unorm2x16_to_float";
             break;
         case sem::BuiltinType::kArrayLength:
@@ -1689,7 +1747,13 @@ bool GeneratorImpl::EmitConstant(std::ostream& out, const sem::Constant* constan
                 return true;
             }
 
-            for (size_t i = 0; i < a->Count(); i++) {
+            auto count = a->ConstantCount();
+            if (!count) {
+                diagnostics_.add_error(diag::System::Writer, sem::Array::kErrExpectedConstantCount);
+                return false;
+            }
+
+            for (size_t i = 0; i < count; i++) {
                 if (i > 0) {
                     out << ", ";
                 }
@@ -1893,7 +1957,7 @@ std::string GeneratorImpl::interpolation_to_attribute(ast::InterpolationType typ
         case ast::InterpolationSampling::kSample:
             attr = "sample_";
             break;
-        case ast::InterpolationSampling::kNone:
+        case ast::InterpolationSampling::kUndefined:
             break;
     }
     switch (type) {
@@ -1905,6 +1969,8 @@ std::string GeneratorImpl::interpolation_to_attribute(ast::InterpolationType typ
             break;
         case ast::InterpolationType::kFlat:
             attr += "flat";
+            break;
+        case ast::InterpolationType::kUndefined:
             break;
     }
     return attr;
@@ -1974,12 +2040,12 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
                     return false;
                 }
             } else if (auto* ptr = param->type->As<ast::Pointer>()) {
-                auto sc = ptr->storage_class;
-                if (sc == ast::StorageClass::kWorkgroup) {
+                auto sc = ptr->address_space;
+                if (sc == ast::AddressSpace::kWorkgroup) {
                     auto& allocations = workgroup_allocations_[func_name];
                     out << " [[threadgroup(" << allocations.size() << ")]]";
                     allocations.push_back(program_->Sem().Get(ptr->type)->Size());
-                } else if (sc == ast::StorageClass::kStorage || sc == ast::StorageClass::kUniform) {
+                } else if (sc == ast::AddressSpace::kStorage || sc == ast::AddressSpace::kUniform) {
                     uint32_t binding = get_binding_index(param);
                     if (binding == kInvalidBindingIndex) {
                         return false;
@@ -1987,7 +2053,7 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
                     out << " [[buffer(" << binding << ")]]";
                 } else {
                     TINT_ICE(Writer, diagnostics_)
-                        << "invalid pointer storage class for entry point parameter";
+                        << "invalid pointer address space for entry point parameter";
                     return false;
                 }
             } else {
@@ -2480,7 +2546,20 @@ bool GeneratorImpl::EmitType(std::ostream& out,
             if (!EmitType(out, arr->ElemType(), "")) {
                 return false;
             }
-            out << ", " << (arr->IsRuntimeSized() ? 1u : arr->Count()) << ">";
+            out << ", ";
+            if (arr->IsRuntimeSized()) {
+                out << "1";
+            } else {
+                auto count = arr->ConstantCount();
+                if (!count) {
+                    diagnostics_.add_error(diag::System::Writer,
+                                           sem::Array::kErrExpectedConstantCount);
+                    return false;
+                }
+
+                out << count.value();
+            }
+            out << ">";
             return true;
         },
         [&](const sem::Bool*) {
@@ -2510,7 +2589,7 @@ bool GeneratorImpl::EmitType(std::ostream& out,
             if (ptr->Access() == ast::Access::kRead) {
                 out << "const ";
             }
-            if (!EmitStorageClass(out, ptr->StorageClass())) {
+            if (!EmitAddressSpace(out, ptr->AddressSpace())) {
                 return false;
             }
             out << " ";
@@ -2657,26 +2736,26 @@ bool GeneratorImpl::EmitTypeAndName(std::ostream& out,
     return true;
 }
 
-bool GeneratorImpl::EmitStorageClass(std::ostream& out, ast::StorageClass sc) {
+bool GeneratorImpl::EmitAddressSpace(std::ostream& out, ast::AddressSpace sc) {
     switch (sc) {
-        case ast::StorageClass::kFunction:
-        case ast::StorageClass::kPrivate:
-        case ast::StorageClass::kHandle:
+        case ast::AddressSpace::kFunction:
+        case ast::AddressSpace::kPrivate:
+        case ast::AddressSpace::kHandle:
             out << "thread";
             return true;
-        case ast::StorageClass::kWorkgroup:
+        case ast::AddressSpace::kWorkgroup:
             out << "threadgroup";
             return true;
-        case ast::StorageClass::kStorage:
+        case ast::AddressSpace::kStorage:
             out << "device";
             return true;
-        case ast::StorageClass::kUniform:
+        case ast::AddressSpace::kUniform:
             out << "constant";
             return true;
         default:
             break;
     }
-    TINT_ICE(Writer, diagnostics_) << "unhandled storage class: " << sc;
+    TINT_ICE(Writer, diagnostics_) << "unhandled address space: " << sc;
     return false;
 }
 
@@ -2957,19 +3036,19 @@ bool GeneratorImpl::EmitVar(const ast::Var* var) {
 
     auto out = line();
 
-    switch (sem->StorageClass()) {
-        case ast::StorageClass::kFunction:
-        case ast::StorageClass::kHandle:
-        case ast::StorageClass::kNone:
+    switch (sem->AddressSpace()) {
+        case ast::AddressSpace::kFunction:
+        case ast::AddressSpace::kHandle:
+        case ast::AddressSpace::kNone:
             break;
-        case ast::StorageClass::kPrivate:
+        case ast::AddressSpace::kPrivate:
             out << "thread ";
             break;
-        case ast::StorageClass::kWorkgroup:
+        case ast::AddressSpace::kWorkgroup:
             out << "threadgroup ";
             break;
         default:
-            TINT_ICE(Writer, diagnostics_) << "unhandled variable storage class";
+            TINT_ICE(Writer, diagnostics_) << "unhandled variable address space";
             return false;
     }
 
@@ -2987,9 +3066,9 @@ bool GeneratorImpl::EmitVar(const ast::Var* var) {
         if (!EmitExpression(out, var->constructor)) {
             return false;
         }
-    } else if (sem->StorageClass() == ast::StorageClass::kPrivate ||
-               sem->StorageClass() == ast::StorageClass::kFunction ||
-               sem->StorageClass() == ast::StorageClass::kNone) {
+    } else if (sem->AddressSpace() == ast::AddressSpace::kPrivate ||
+               sem->AddressSpace() == ast::AddressSpace::kFunction ||
+               sem->AddressSpace() == ast::AddressSpace::kNone) {
         out << " = ";
         if (!EmitZeroValue(out, type)) {
             return false;
@@ -3006,19 +3085,19 @@ bool GeneratorImpl::EmitLet(const ast::Let* let) {
 
     auto out = line();
 
-    switch (sem->StorageClass()) {
-        case ast::StorageClass::kFunction:
-        case ast::StorageClass::kHandle:
-        case ast::StorageClass::kNone:
+    switch (sem->AddressSpace()) {
+        case ast::AddressSpace::kFunction:
+        case ast::AddressSpace::kHandle:
+        case ast::AddressSpace::kNone:
             break;
-        case ast::StorageClass::kPrivate:
+        case ast::AddressSpace::kPrivate:
             out << "thread ";
             break;
-        case ast::StorageClass::kWorkgroup:
+        case ast::AddressSpace::kWorkgroup:
             out << "threadgroup ";
             break;
         default:
-            TINT_ICE(Writer, diagnostics_) << "unhandled variable storage class";
+            TINT_ICE(Writer, diagnostics_) << "unhandled variable address space";
             return false;
     }
 
@@ -3132,8 +3211,14 @@ GeneratorImpl::SizeAndAlign GeneratorImpl::MslPackedTypeSizeAndAlign(const sem::
                     << "arrays with explicit strides should not exist past the SPIR-V reader";
                 return SizeAndAlign{};
             }
-            auto num_els = std::max<uint32_t>(arr->Count(), 1);
-            return SizeAndAlign{arr->Stride() * num_els, arr->Align()};
+            if (arr->IsRuntimeSized()) {
+                return SizeAndAlign{arr->Stride(), arr->Align()};
+            }
+            if (auto count = arr->ConstantCount()) {
+                return SizeAndAlign{arr->Stride() * count.value(), arr->Align()};
+            }
+            diagnostics_.add_error(diag::System::Writer, sem::Array::kErrExpectedConstantCount);
+            return SizeAndAlign{};
         },
 
         [&](const sem::Struct* str) {

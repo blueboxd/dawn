@@ -121,25 +121,25 @@ void BindingRemapper::Run(CloneContext& ctx, const DataMap& inputs, DataMap&) co
             auto ac_it = remappings->access_controls.find(from);
             if (ac_it != remappings->access_controls.end()) {
                 ast::Access ac = ac_it->second;
-                if (ac > ast::Access::kLastValid) {
+                if (ac == ast::Access::kUndefined) {
                     ctx.dst->Diagnostics().add_error(
                         diag::System::Transform,
                         "invalid access mode (" + std::to_string(static_cast<uint32_t>(ac)) + ")");
                     return;
                 }
                 auto* sem = ctx.src->Sem().Get(var);
-                if (sem->StorageClass() != ast::StorageClass::kStorage) {
+                if (sem->AddressSpace() != ast::AddressSpace::kStorage) {
                     ctx.dst->Diagnostics().add_error(
                         diag::System::Transform,
-                        "cannot apply access control to variable with storage class " +
-                            std::string(utils::ToString(sem->StorageClass())));
+                        "cannot apply access control to variable with address space " +
+                            std::string(utils::ToString(sem->AddressSpace())));
                     return;
                 }
                 auto* ty = sem->Type()->UnwrapRef();
                 const ast::Type* inner_ty = CreateASTTypeFor(ctx, ty);
                 auto* new_var =
                     ctx.dst->Var(ctx.Clone(var->source), ctx.Clone(var->symbol), inner_ty,
-                                 var->declared_storage_class, ac, ctx.Clone(var->constructor),
+                                 var->declared_address_space, ac, ctx.Clone(var->constructor),
                                  ctx.Clone(var->attributes));
                 ctx.Replace(var, new_var);
             }

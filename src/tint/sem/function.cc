@@ -44,7 +44,7 @@ Function::Function(const ast::Function* declaration,
                    utils::VectorRef<Parameter*> parameters)
     : Base(return_type, SetOwner(std::move(parameters), this), EvaluationStage::kRuntime),
       declaration_(declaration),
-      workgroup_size_{WorkgroupDimension{1}, WorkgroupDimension{1}, WorkgroupDimension{1}},
+      workgroup_size_{1, 1, 1},
       return_location_(return_location) {}
 
 Function::~Function() = default;
@@ -68,7 +68,7 @@ Function::VariableBindings Function::TransitivelyReferencedUniformVariables() co
     VariableBindings ret;
 
     for (auto* global : TransitivelyReferencedGlobals()) {
-        if (global->StorageClass() != ast::StorageClass::kUniform) {
+        if (global->AddressSpace() != ast::AddressSpace::kUniform) {
             continue;
         }
 
@@ -83,7 +83,7 @@ Function::VariableBindings Function::TransitivelyReferencedStorageBufferVariable
     VariableBindings ret;
 
     for (auto* global : TransitivelyReferencedGlobals()) {
-        if (global->StorageClass() != ast::StorageClass::kStorage) {
+        if (global->AddressSpace() != ast::AddressSpace::kStorage) {
             continue;
         }
 

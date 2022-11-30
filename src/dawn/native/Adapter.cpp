@@ -49,7 +49,8 @@ MaybeError AdapterBase::Initialize() {
         "backend=%s type=%s)",
         mName, mDriverDescription, mVendorId, mDeviceId, mBackend, mAdapterType);
 
-    // Enforce internal Dawn constants.
+    // Enforce internal Dawn constants for some limits to ensure they don't go over fixed-size
+    // arrays in Dawn's internal code.
     mLimits.v1.maxVertexBufferArrayStride =
         std::min(mLimits.v1.maxVertexBufferArrayStride, kMaxVertexBufferArrayStride);
     mLimits.v1.maxColorAttachments =
@@ -86,6 +87,19 @@ bool AdapterBase::APIGetLimits(SupportedLimits* limits) const {
 }
 
 void AdapterBase::APIGetProperties(AdapterProperties* properties) const {
+    MaybeError result = ValidateSingleSType(properties->nextInChain,
+                                            wgpu::SType::DawnAdapterPropertiesPowerPreference);
+    if (result.IsError()) {
+        mInstance->ConsumedError(result.AcquireError());
+        return;
+    }
+
+    DawnAdapterPropertiesPowerPreference* powerPreferenceDesc = nullptr;
+    FindInChain(properties->nextInChain, &powerPreferenceDesc);
+    if (powerPreferenceDesc != nullptr) {
+        powerPreferenceDesc->powerPreference = wgpu::PowerPreference::Undefined;
+    }
+
     properties->vendorID = mVendorId;
     properties->vendorName = mVendorName.c_str();
     properties->architecture = mArchitectureName.c_str();

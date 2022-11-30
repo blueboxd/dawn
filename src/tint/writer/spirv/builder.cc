@@ -183,15 +183,15 @@ uint32_t builtin_to_glsl_method(const sem::Builtin* builtin) {
             return GLSLstd450ModfStruct;
         case BuiltinType::kNormalize:
             return GLSLstd450Normalize;
-        case BuiltinType::kPack4x8snorm:
+        case BuiltinType::kPack4X8Snorm:
             return GLSLstd450PackSnorm4x8;
-        case BuiltinType::kPack4x8unorm:
+        case BuiltinType::kPack4X8Unorm:
             return GLSLstd450PackUnorm4x8;
-        case BuiltinType::kPack2x16snorm:
+        case BuiltinType::kPack2X16Snorm:
             return GLSLstd450PackSnorm2x16;
-        case BuiltinType::kPack2x16unorm:
+        case BuiltinType::kPack2X16Unorm:
             return GLSLstd450PackUnorm2x16;
-        case BuiltinType::kPack2x16float:
+        case BuiltinType::kPack2X16Float:
             return GLSLstd450PackHalf2x16;
         case BuiltinType::kPow:
             return GLSLstd450Pow;
@@ -221,15 +221,15 @@ uint32_t builtin_to_glsl_method(const sem::Builtin* builtin) {
             return GLSLstd450Tanh;
         case BuiltinType::kTrunc:
             return GLSLstd450Trunc;
-        case BuiltinType::kUnpack4x8snorm:
+        case BuiltinType::kUnpack4X8Snorm:
             return GLSLstd450UnpackSnorm4x8;
-        case BuiltinType::kUnpack4x8unorm:
+        case BuiltinType::kUnpack4X8Unorm:
             return GLSLstd450UnpackUnorm4x8;
-        case BuiltinType::kUnpack2x16snorm:
+        case BuiltinType::kUnpack2X16Snorm:
             return GLSLstd450UnpackSnorm2x16;
-        case BuiltinType::kUnpack2x16unorm:
+        case BuiltinType::kUnpack2X16Unorm:
             return GLSLstd450UnpackUnorm2x16;
-        case BuiltinType::kUnpack2x16float:
+        case BuiltinType::kUnpack2X16Float:
             return GLSLstd450UnpackHalf2x16;
         default:
             break;
@@ -477,8 +477,8 @@ bool Builder::GenerateEntryPoint(const ast::Function* func, uint32_t id) {
     for (const auto* var : func_sem->TransitivelyReferencedGlobals()) {
         // For SPIR-V 1.3 we only output Input/output variables. If we update to
         // SPIR-V 1.4 or later this should be all variables.
-        if (var->StorageClass() != ast::StorageClass::kIn &&
-            var->StorageClass() != ast::StorageClass::kOut) {
+        if (var->AddressSpace() != ast::AddressSpace::kIn &&
+            var->AddressSpace() != ast::AddressSpace::kOut) {
             continue;
         }
 
@@ -506,13 +506,17 @@ bool Builder::GenerateExecutionModes(const ast::Function* func, uint32_t id) {
     } else if (func->PipelineStage() == ast::PipelineStage::kCompute) {
         auto& wgsize = func_sem->WorkgroupSize();
 
-        // SubstituteOverride replaced all overrides with constants.
-        uint32_t x = wgsize[0].value;
-        uint32_t y = wgsize[1].value;
-        uint32_t z = wgsize[2].value;
-        push_execution_mode(spv::Op::OpExecutionMode,
-                            {Operand(id), U32Operand(SpvExecutionModeLocalSize), Operand(x),
-                             Operand(y), Operand(z)});
+        // Check if the workgroup_size uses pipeline-overridable constants.
+        if (!wgsize[0].has_value() || !wgsize[1].has_value() || !wgsize[2].has_value()) {
+            error_ =
+                "override-expressions should have been removed with the SubstituteOverride "
+                "transform";
+            return false;
+        }
+        push_execution_mode(
+            spv::Op::OpExecutionMode,
+            {Operand(id), U32Operand(SpvExecutionModeLocalSize),  //
+             Operand(wgsize[0].value()), Operand(wgsize[1].value()), Operand(wgsize[2].value())});
     }
 
     for (auto builtin : func_sem->TransitivelyReferencedBuiltinVariables()) {
@@ -675,7 +679,7 @@ bool Builder::GenerateFunctionVariable(const ast::Variable* v) {
 
     auto result = result_op();
     auto var_id = std::get<uint32_t>(result);
-    auto sc = ast::StorageClass::kFunction;
+    auto sc = ast::AddressSpace::kFunction;
     auto* type = sem->Type();
     auto type_id = GenerateTypeIfNeeded(type);
     if (type_id == 0) {
@@ -691,7 +695,7 @@ bool Builder::GenerateFunctionVariable(const ast::Variable* v) {
         return 0;
     }
     push_function_var(
-        {Operand(type_id), result, U32Operand(ConvertStorageClass(sc)), Operand(null_id)});
+        {Operand(type_id), result, U32Operand(ConvertAddressSpace(sc)), Operand(null_id)});
 
     if (v->constructor) {
         if (!GenerateStore(var_id, init_id)) {
@@ -734,8 +738,8 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
     auto result = result_op();
     auto var_id = std::get<uint32_t>(result);
 
-    auto sc = sem->StorageClass() == ast::StorageClass::kNone ? ast::StorageClass::kPrivate
-                                                              : sem->StorageClass();
+    auto sc = sem->AddressSpace() == ast::AddressSpace::kNone ? ast::AddressSpace::kPrivate
+                                                              : sem->AddressSpace();
 
     auto type_id = GenerateTypeIfNeeded(sem->Type());
     if (type_id == 0) {
@@ -744,7 +748,7 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
 
     push_debug(spv::Op::OpName, {Operand(var_id), Operand(builder_.Symbols().NameFor(v->symbol))});
 
-    OperandList ops = {Operand(type_id), result, U32Operand(ConvertStorageClass(sc))};
+    OperandList ops = {Operand(type_id), result, U32Operand(ConvertAddressSpace(sc))};
 
     if (v->constructor) {
         ops.push_back(Operand(init_id));
@@ -773,10 +777,10 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
             // If we're a Workgroup variable, and the
             // VK_KHR_zero_initialize_workgroup_memory extension is enabled, we should
             // also zero-initialize.
-            if (sem->StorageClass() == ast::StorageClass::kPrivate ||
-                sem->StorageClass() == ast::StorageClass::kOut ||
+            if (sem->AddressSpace() == ast::AddressSpace::kPrivate ||
+                sem->AddressSpace() == ast::AddressSpace::kOut ||
                 (zero_initialize_workgroup_memory_ &&
-                 sem->StorageClass() == ast::StorageClass::kWorkgroup)) {
+                 sem->AddressSpace() == ast::AddressSpace::kWorkgroup)) {
                 init_id = GenerateConstantNullIfNeeded(type);
                 if (init_id == 0) {
                     return 0;
@@ -794,7 +798,7 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
             [&](const ast::BuiltinAttribute* builtin) {
                 push_annot(spv::Op::OpDecorate,
                            {Operand(var_id), U32Operand(SpvDecorationBuiltIn),
-                            U32Operand(ConvertBuiltin(builtin->builtin, sem->StorageClass()))});
+                            U32Operand(ConvertBuiltin(builtin->builtin, sem->AddressSpace()))});
                 return true;
             },
             [&](const ast::LocationAttribute*) {
@@ -1672,11 +1676,18 @@ uint32_t Builder::GenerateConstantIfNeeded(const sem::Constant* constant) {
         },
         [&](const sem::Vector* v) { return composite(v->Width()); },
         [&](const sem::Matrix* m) { return composite(m->columns()); },
-        [&](const sem::Array* a) { return composite(a->Count()); },
+        [&](const sem::Array* a) {
+            auto count = a->ConstantCount();
+            if (!count) {
+                error_ = sem::Array::kErrExpectedConstantCount;
+                return static_cast<uint32_t>(0);
+            }
+            return composite(count.value());
+        },
         [&](const sem::Struct* s) { return composite(s->Members().size()); },
         [&](Default) {
             error_ = "unhandled constant type: " + builder_.FriendlyName(ty);
-            return false;
+            return 0;
         });
 }
 
@@ -1864,10 +1875,10 @@ uint32_t Builder::GenerateShortCircuitBinaryExpression(const ast::BinaryExpressi
 uint32_t Builder::GenerateSplat(uint32_t scalar_id, const sem::Type* vec_type) {
     // Create a new vector to splat scalar into
     auto splat_vector = result_op();
-    auto* splat_vector_type = builder_.create<sem::Pointer>(vec_type, ast::StorageClass::kFunction,
+    auto* splat_vector_type = builder_.create<sem::Pointer>(vec_type, ast::AddressSpace::kFunction,
                                                             ast::Access::kReadWrite);
     push_function_var({Operand(GenerateTypeIfNeeded(splat_vector_type)), splat_vector,
-                       U32Operand(ConvertStorageClass(ast::StorageClass::kFunction)),
+                       U32Operand(ConvertAddressSpace(ast::AddressSpace::kFunction)),
                        Operand(GenerateConstantNullIfNeeded(vec_type))});
 
     // Splat scalar into vector
@@ -3030,21 +3041,21 @@ bool Builder::GenerateAtomicBuiltin(const sem::Call* call,
                                     Operand result_id) {
     auto is_value_signed = [&] { return builtin->Parameters()[1]->Type()->Is<sem::I32>(); };
 
-    auto storage_class = builtin->Parameters()[0]->Type()->As<sem::Pointer>()->StorageClass();
+    auto address_space = builtin->Parameters()[0]->Type()->As<sem::Pointer>()->AddressSpace();
 
     uint32_t memory_id = 0;
-    switch (builtin->Parameters()[0]->Type()->As<sem::Pointer>()->StorageClass()) {
-        case ast::StorageClass::kWorkgroup:
+    switch (builtin->Parameters()[0]->Type()->As<sem::Pointer>()->AddressSpace()) {
+        case ast::AddressSpace::kWorkgroup:
             memory_id = GenerateConstantIfNeeded(
                 ScalarConstant::U32(static_cast<uint32_t>(spv::Scope::Workgroup)));
             break;
-        case ast::StorageClass::kStorage:
+        case ast::AddressSpace::kStorage:
             memory_id = GenerateConstantIfNeeded(
                 ScalarConstant::U32(static_cast<uint32_t>(spv::Scope::Device)));
             break;
         default:
             TINT_UNREACHABLE(Writer, builder_.Diagnostics())
-                << "unhandled atomic storage class " << storage_class;
+                << "unhandled atomic address space " << address_space;
             return false;
     }
     if (memory_id == 0) {
@@ -3673,11 +3684,11 @@ uint32_t Builder::GenerateTypeIfNeeded(const sem::Type* type) {
     // references are not legal in WGSL, so only considering the top-level type is
     // fine.
     if (auto* ptr = type->As<sem::Pointer>()) {
-        type =
-            builder_.create<sem::Pointer>(ptr->StoreType(), ptr->StorageClass(), ast::kReadWrite);
+        type = builder_.create<sem::Pointer>(ptr->StoreType(), ptr->AddressSpace(),
+                                             ast::Access::kReadWrite);
     } else if (auto* ref = type->As<sem::Reference>()) {
-        type =
-            builder_.create<sem::Pointer>(ref->StoreType(), ref->StorageClass(), ast::kReadWrite);
+        type = builder_.create<sem::Pointer>(ref->StoreType(), ref->AddressSpace(),
+                                             ast::Access::kReadWrite);
     }
 
     return utils::GetOrCreate(type_to_id_, type, [&]() -> uint32_t {
@@ -3848,17 +3859,23 @@ bool Builder::GenerateTextureType(const sem::Texture* texture, const Operand& re
     return true;
 }
 
-bool Builder::GenerateArrayType(const sem::Array* ary, const Operand& result) {
-    auto elem_type = GenerateTypeIfNeeded(ary->ElemType());
+bool Builder::GenerateArrayType(const sem::Array* arr, const Operand& result) {
+    auto elem_type = GenerateTypeIfNeeded(arr->ElemType());
     if (elem_type == 0) {
         return false;
     }
 
     auto result_id = std::get<uint32_t>(result);
-    if (ary->IsRuntimeSized()) {
+    if (arr->IsRuntimeSized()) {
         push_type(spv::Op::OpTypeRuntimeArray, {result, Operand(elem_type)});
     } else {
-        auto len_id = GenerateConstantIfNeeded(ScalarConstant::U32(ary->Count()));
+        auto count = arr->ConstantCount();
+        if (!count) {
+            error_ = sem::Array::kErrExpectedConstantCount;
+            return static_cast<uint32_t>(0);
+        }
+
+        auto len_id = GenerateConstantIfNeeded(ScalarConstant::U32(count.value()));
         if (len_id == 0) {
             return false;
         }
@@ -3867,7 +3884,7 @@ bool Builder::GenerateArrayType(const sem::Array* ary, const Operand& result) {
     }
 
     push_annot(spv::Op::OpDecorate,
-               {Operand(result_id), U32Operand(SpvDecorationArrayStride), Operand(ary->Stride())});
+               {Operand(result_id), U32Operand(SpvDecorationArrayStride), Operand(arr->Stride())});
     return true;
 }
 
@@ -3888,9 +3905,9 @@ bool Builder::GeneratePointerType(const sem::Pointer* ptr, const Operand& result
         return false;
     }
 
-    auto stg_class = ConvertStorageClass(ptr->StorageClass());
+    auto stg_class = ConvertAddressSpace(ptr->AddressSpace());
     if (stg_class == SpvStorageClassMax) {
-        error_ = "invalid storage class for pointer";
+        error_ = "invalid address space for pointer";
         return false;
     }
 
@@ -3905,9 +3922,9 @@ bool Builder::GenerateReferenceType(const sem::Reference* ref, const Operand& re
         return false;
     }
 
-    auto stg_class = ConvertStorageClass(ref->StorageClass());
+    auto stg_class = ConvertAddressSpace(ref->AddressSpace());
     if (stg_class == SpvStorageClassMax) {
-        error_ = "invalid storage class for reference";
+        error_ = "invalid address space for reference";
         return false;
     }
 
@@ -3990,43 +4007,43 @@ bool Builder::GenerateVectorType(const sem::Vector* vec, const Operand& result) 
     return true;
 }
 
-SpvStorageClass Builder::ConvertStorageClass(ast::StorageClass klass) const {
+SpvStorageClass Builder::ConvertAddressSpace(ast::AddressSpace klass) const {
     switch (klass) {
-        case ast::StorageClass::kInvalid:
+        case ast::AddressSpace::kUndefined:
             return SpvStorageClassMax;
-        case ast::StorageClass::kIn:
+        case ast::AddressSpace::kIn:
             return SpvStorageClassInput;
-        case ast::StorageClass::kOut:
+        case ast::AddressSpace::kOut:
             return SpvStorageClassOutput;
-        case ast::StorageClass::kUniform:
+        case ast::AddressSpace::kUniform:
             return SpvStorageClassUniform;
-        case ast::StorageClass::kWorkgroup:
+        case ast::AddressSpace::kWorkgroup:
             return SpvStorageClassWorkgroup;
-        case ast::StorageClass::kPushConstant:
+        case ast::AddressSpace::kPushConstant:
             return SpvStorageClassPushConstant;
-        case ast::StorageClass::kHandle:
+        case ast::AddressSpace::kHandle:
             return SpvStorageClassUniformConstant;
-        case ast::StorageClass::kStorage:
+        case ast::AddressSpace::kStorage:
             return SpvStorageClassStorageBuffer;
-        case ast::StorageClass::kPrivate:
+        case ast::AddressSpace::kPrivate:
             return SpvStorageClassPrivate;
-        case ast::StorageClass::kFunction:
+        case ast::AddressSpace::kFunction:
             return SpvStorageClassFunction;
-        case ast::StorageClass::kNone:
+        case ast::AddressSpace::kNone:
             break;
     }
     return SpvStorageClassMax;
 }
 
-SpvBuiltIn Builder::ConvertBuiltin(ast::BuiltinValue builtin, ast::StorageClass storage) {
+SpvBuiltIn Builder::ConvertBuiltin(ast::BuiltinValue builtin, ast::AddressSpace storage) {
     switch (builtin) {
         case ast::BuiltinValue::kPosition:
-            if (storage == ast::StorageClass::kIn) {
+            if (storage == ast::AddressSpace::kIn) {
                 return SpvBuiltInFragCoord;
-            } else if (storage == ast::StorageClass::kOut) {
+            } else if (storage == ast::AddressSpace::kOut) {
                 return SpvBuiltInPosition;
             } else {
-                TINT_ICE(Writer, builder_.Diagnostics()) << "invalid storage class for builtin";
+                TINT_ICE(Writer, builder_.Diagnostics()) << "invalid address space for builtin";
                 break;
             }
         case ast::BuiltinValue::kVertexIndex:
@@ -4054,7 +4071,7 @@ SpvBuiltIn Builder::ConvertBuiltin(ast::BuiltinValue builtin, ast::StorageClass 
             return SpvBuiltInSampleId;
         case ast::BuiltinValue::kSampleMask:
             return SpvBuiltInSampleMask;
-        case ast::BuiltinValue::kInvalid:
+        case ast::BuiltinValue::kUndefined:
             break;
     }
     return SpvBuiltInMax;
@@ -4071,6 +4088,7 @@ void Builder::AddInterpolationDecorations(uint32_t id,
             push_annot(spv::Op::OpDecorate, {Operand(id), U32Operand(SpvDecorationFlat)});
             break;
         case ast::InterpolationType::kPerspective:
+        case ast::InterpolationType::kUndefined:
             break;
     }
     switch (sampling) {
@@ -4082,7 +4100,7 @@ void Builder::AddInterpolationDecorations(uint32_t id,
             push_annot(spv::Op::OpDecorate, {Operand(id), U32Operand(SpvDecorationSample)});
             break;
         case ast::InterpolationSampling::kCenter:
-        case ast::InterpolationSampling::kNone:
+        case ast::InterpolationSampling::kUndefined:
             break;
     }
 }
@@ -4124,7 +4142,7 @@ SpvImageFormat Builder::convert_texel_format_to_spv(const ast::TexelFormat forma
             return SpvImageFormatRgba32i;
         case ast::TexelFormat::kRgba32Float:
             return SpvImageFormatRgba32f;
-        case ast::TexelFormat::kInvalid:
+        case ast::TexelFormat::kUndefined:
             return SpvImageFormatUnknown;
     }
     return SpvImageFormatUnknown;

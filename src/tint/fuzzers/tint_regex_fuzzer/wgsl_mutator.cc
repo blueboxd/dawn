@@ -416,7 +416,7 @@ std::string WgslMutator::ChooseRandomReplacementForOperator(const std::string& e
         "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="};
     std::vector<std::string> expression_operators{"+",  "-",  "*", "/",  "%",  "&&", "||",
                                                   "&",  "|",  "^", "<<", ">>", "<",  ">",
-                                                  "<=", ">=", "!", "!=", "~"};
+                                                  "<=", ">=", "!", "==", "!=", "~"};
     std::vector<std::string> increment_operators{"++", "--"};
     for (auto operators : {assignment_operators, expression_operators, increment_operators}) {
         auto it = std::find(operators.begin(), operators.end(), existing_operator);
@@ -463,14 +463,20 @@ std::optional<std::pair<uint32_t, uint32_t>> WgslMutator::FindOperatorOccurrence
         // case where search has reached the end of the code string.
         char first_character = wgsl_code[current_index];
         char second_character =
-            current_index == wgsl_code.size() - 1 ? '\0' : wgsl_code[current_index + 1];
+            current_index + 1 == wgsl_code.size() ? '\0' : wgsl_code[current_index + 1];
         char third_character =
-            current_index >= wgsl_code.size() - 2 ? '\0' : wgsl_code[current_index + 2];
+            current_index + 2 >= wgsl_code.size() ? '\0' : wgsl_code[current_index + 2];
 
         // This uses the extracted characters to match for the various WGSL operators.
         switch (first_character) {
             case '!':
             case '^':
+            case '*':
+            case '/':
+            case '%':
+            case '=':
+                // The above cases are all stand-alone operators, and if followed by '=' are also
+                // operators.
                 switch (second_character) {
                     case '=':
                         return {{current_index, 2}};
@@ -481,26 +487,15 @@ std::optional<std::pair<uint32_t, uint32_t>> WgslMutator::FindOperatorOccurrence
             case '&':
             case '+':
             case '-':
+                // The above cases are all stand-alone operators, and if repeated or followed by '='
+                // are also operators.
                 if (second_character == first_character || second_character == '=') {
-                    return {{current_index, 2}};
-                }
-                return {{current_index, 1}};
-            case '*':
-            case '/':
-            case '%':
-                switch (second_character) {
-                    case '=':
-                        return {{current_index, 2}};
-                    default:
-                        return {{current_index, 1}};
-                }
-            case '=':
-                if (second_character == '=') {
                     return {{current_index, 2}};
                 }
                 return {{current_index, 1}};
             case '<':
             case '>':
+                // The following caters for '<', '<=', '<<', '<<=', '>', '>=', '>>' and '>>='.
                 if (second_character == '=') {
                     return {{current_index, 2}};
                 }

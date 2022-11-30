@@ -182,8 +182,8 @@ set(TINT_LIB_SRCS
   ast/statement.h
   ast/static_assert.cc
   ast/static_assert.h
-  ast/storage_class.cc
-  ast/storage_class.h
+  ast/address_space.cc
+  ast/address_space.h
   ast/storage_texture.cc
   ast/storage_texture.h
   ast/stride_attribute.cc
@@ -394,6 +394,8 @@ set(TINT_LIB_SRCS
   transform/builtin_polyfill.h
   transform/calculate_array_length.cc
   transform/calculate_array_length.h
+  transform/clamp_frag_depth.cc
+  transform/clamp_frag_depth.h
   transform/canonicalize_entry_point_io.cc
   transform/canonicalize_entry_point_io.h
   transform/combine_samplers.cc
@@ -410,14 +412,10 @@ set(TINT_LIB_SRCS
   transform/expand_compound_assignment.h
   transform/first_index_offset.cc
   transform/first_index_offset.h
-  transform/fold_trivial_single_use_lets.cc
-  transform/fold_trivial_single_use_lets.h
   transform/for_loop_to_loop.cc
   transform/for_loop_to_loop.h
   transform/localize_struct_array_assignment.cc
   transform/localize_struct_array_assignment.h
-  transform/loop_to_for_loop.cc
-  transform/loop_to_for_loop.h
   transform/manager.cc
   transform/manager.h
   transform/module_scope_var_to_entry_point_param.cc
@@ -488,6 +486,7 @@ set(TINT_LIB_SRCS
   utils/map.h
   utils/math.h
   utils/scoped_assignment.h
+  utils/string.cc
   utils/string.h
   utils/unique_allocator.h
   utils/unique_vector.h
@@ -751,7 +750,7 @@ if(TINT_BUILD_TESTS)
     ast/sampler_test.cc
     ast/stage_attribute_test.cc
     ast/static_assert_test.cc
-    ast/storage_class_test.cc
+    ast/address_space_test.cc
     ast/storage_texture_test.cc
     ast/stride_attribute_test.cc
     ast/struct_member_align_attribute_test.cc
@@ -818,11 +817,11 @@ if(TINT_BUILD_TESTS)
     resolver/side_effects_test.cc
     resolver/static_assert_test.cc
     resolver/source_variable_test.cc
-    resolver/storage_class_layout_validation_test.cc
-    resolver/storage_class_validation_test.cc
+    resolver/address_space_layout_validation_test.cc
+    resolver/address_space_validation_test.cc
     resolver/struct_layout_test.cc
     resolver/struct_pipeline_stage_use_test.cc
-    resolver/struct_storage_class_use_test.cc
+    resolver/struct_address_space_use_test.cc
     resolver/type_constructor_validation_test.cc
     resolver/type_validation_test.cc
     resolver/validation_test.cc
@@ -996,7 +995,7 @@ if(TINT_BUILD_TESTS)
       reader/wgsl/parser_impl_singular_expression_test.cc
       reader/wgsl/parser_impl_statement_test.cc
       reader/wgsl/parser_impl_statements_test.cc
-      reader/wgsl/parser_impl_storage_class_test.cc
+      reader/wgsl/parser_impl_address_space_test.cc
       reader/wgsl/parser_impl_storage_texture_test.cc
       reader/wgsl/parser_impl_struct_body_decl_test.cc
       reader/wgsl/parser_impl_struct_decl_test.cc
@@ -1109,6 +1108,7 @@ if(TINT_BUILD_TESTS)
       transform/binding_remapper_test.cc
       transform/builtin_polyfill_test.cc
       transform/calculate_array_length_test.cc
+      transform/clamp_frag_depth_test.cc
       transform/canonicalize_entry_point_io_test.cc
       transform/combine_samplers_test.cc
       transform/decompose_memory_access_test.cc
@@ -1117,11 +1117,9 @@ if(TINT_BUILD_TESTS)
       transform/disable_uniformity_analysis_test.cc
       transform/expand_compound_assignment_test.cc
       transform/first_index_offset_test.cc
-      transform/fold_trivial_single_use_lets_test.cc
       transform/for_loop_to_loop_test.cc
       transform/expand_compound_assignment.cc
       transform/localize_struct_array_assignment_test.cc
-      transform/loop_to_for_loop_test.cc
       transform/module_scope_var_to_entry_point_param_test.cc
       transform/multiplanar_external_texture_test.cc
       transform/num_workgroups_from_uniform_test.cc
@@ -1136,6 +1134,7 @@ if(TINT_BUILD_TESTS)
       transform/simplify_pointers_test.cc
       transform/single_entry_point_test.cc
       transform/spirv_atomic_test.cc
+      transform/std140_exhaustive_test.cc
       transform/std140_test.cc
       transform/substitute_override_test.cc
       transform/test_helper.h
@@ -1306,7 +1305,7 @@ if(TINT_BUILD_BENCHMARKS)
   set(TINT_BENCHMARK_SRC
     "castable_bench.cc"
     "ast/extension_bench.cc"
-    "ast/storage_class_bench.cc"
+    "ast/address_space_bench.cc"
     "ast/texel_format_bench.cc"
     "bench/benchmark.cc"
     "reader/wgsl/parser_bench.cc"

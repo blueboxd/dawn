@@ -604,6 +604,9 @@ TEST_P(TextureZeroInitTest, IndependentDepthStencilLoadAfterDiscard) {
     // on some Intel drivers.
     DAWN_SUPPRESS_TEST_IF(IsMetal() && IsIntel());
 
+    // TODO(dawn:1549) Fails on Qualcomm-based Android devices.
+    DAWN_SUPPRESS_TEST_IF(IsAndroid() && IsQualcomm());
+
     wgpu::TextureDescriptor depthStencilDescriptor = CreateTextureDescriptor(
         1, 1, wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc,
         kDepthStencilFormat);
@@ -766,6 +769,9 @@ TEST_P(TextureZeroInitTest, IndependentDepthStencilCopyAfterDiscard) {
 
     // TODO(enga): Figure out why this fails on Metal Intel.
     DAWN_SUPPRESS_TEST_IF(IsMetal() && IsIntel());
+
+    // TODO(dawn:1549) Fails on Qualcomm-based Android devices.
+    DAWN_SUPPRESS_TEST_IF(IsAndroid() && IsQualcomm());
 
     wgpu::TextureDescriptor depthStencilDescriptor = CreateTextureDescriptor(
         1, 1, wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc,
@@ -1701,6 +1707,24 @@ TEST_P(TextureZeroInitTest, WriteTextureHalfAtMipLevel) {
     // second half should be cleared
     EXPECT_TEXTURE_EQ(expectedZeros.data(), texture, {kMipSize / 2, 0}, {kMipSize / 2, kMipSize},
                       kMipLevel);
+}
+
+// Test that error textures are always considered uninitialized.
+TEST_P(TextureZeroInitTest, ErrorTextureIsUninitialized) {
+    wgpu::TextureDescriptor descriptor =
+        CreateTextureDescriptor(1, 1, wgpu::TextureUsage::CopyDst, kColorFormat);
+
+    // Test CreateErrorTexture.
+    wgpu::Texture texture = device.CreateErrorTexture(&descriptor);
+    EXPECT_FALSE(dawn::native::IsTextureSubresourceInitialized(texture.Get(), 0, 1, 0, 1));
+
+    // Test CreateTexture with an error descriptor.
+    if (!HasToggleEnabled("skip_validation")) {
+        descriptor = CreateTextureDescriptor(1, 1, wgpu::TextureUsage::CopyDst,
+                                             static_cast<wgpu::TextureFormat>(-4));
+        ASSERT_DEVICE_ERROR(texture = device.CreateTexture(&descriptor));
+        EXPECT_FALSE(dawn::native::IsTextureSubresourceInitialized(texture.Get(), 0, 1, 0, 1));
+    }
 }
 
 DAWN_INSTANTIATE_TEST(TextureZeroInitTest,

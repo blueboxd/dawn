@@ -278,12 +278,12 @@ class ParserImpl {
         /// Constructor
         /// @param source_in variable declaration source
         /// @param name_in variable name
-        /// @param storage_class_in variable storage class
+        /// @param address_space_in variable address space
         /// @param access_in variable access control
         /// @param type_in variable type
         VarDeclInfo(Source source_in,
                     std::string name_in,
-                    ast::StorageClass storage_class_in,
+                    ast::AddressSpace address_space_in,
                     ast::Access access_in,
                     const ast::Type* type_in);
         /// Destructor
@@ -293,8 +293,8 @@ class ParserImpl {
         Source source;
         /// Variable name
         std::string name;
-        /// Variable storage class
-        ast::StorageClass storage_class = ast::StorageClass::kNone;
+        /// Variable address space
+        ast::AddressSpace address_space = ast::AddressSpace::kNone;
         /// Variable access control
         ast::Access access = ast::Access::kUndefined;
         /// Variable type
@@ -303,8 +303,8 @@ class ParserImpl {
 
     /// VariableQualifier contains the parsed information for a variable qualifier
     struct VariableQualifier {
-        /// The variable's storage class
-        ast::StorageClass storage_class = ast::StorageClass::kNone;
+        /// The variable's address space
+        ast::AddressSpace address_space = ast::AddressSpace::kNone;
         /// The variable's access control
         ast::Access access = ast::Access::kUndefined;
     };
@@ -427,8 +427,8 @@ class ParserImpl {
     /// @param use a description of what was being parsed if an error was raised.
     /// @param allow_inferred allow the identifier to be parsed without a type
     /// @returns the parsed identifier, and possibly type, or empty otherwise
-    Expect<TypedIdentifier> expect_ident_with_optional_type_decl(std::string_view use,
-                                                                 bool allow_inferred);
+    Expect<TypedIdentifier> expect_ident_with_optional_type_specifier(std::string_view use,
+                                                                      bool allow_inferred);
     /// Parses a `ident` or a `variable_ident_decl` grammar element, erroring on parse failure.
     /// @param use a description of what was being parsed if an error was raised.
     /// @returns the identifier or empty otherwise.
@@ -436,7 +436,7 @@ class ParserImpl {
     /// Parses a `variable_ident_decl` grammar element, erroring on parse failure.
     /// @param use a description of what was being parsed if an error was raised.
     /// @returns the identifier and type parsed or empty otherwise
-    Expect<TypedIdentifier> expect_ident_with_type_decl(std::string_view use);
+    Expect<TypedIdentifier> expect_ident_with_type_specifier(std::string_view use);
     /// Parses a `variable_qualifier` grammar element
     /// @returns the variable qualifier information
     Maybe<VariableQualifier> variable_qualifier();
@@ -452,16 +452,16 @@ class ParserImpl {
     /// Parses a `mat_prefix` grammar element
     /// @returns the matrix dimensions or nullptr
     Maybe<MatrixDimensions> mat_prefix();
-    /// Parses a `type_decl_without_ident` grammar element
+    /// Parses a `type_specifier_without_ident` grammar element
     /// @returns the parsed Type or nullptr if none matched.
-    Maybe<const ast::Type*> type_decl_without_ident();
-    /// Parses a `type_decl` grammar element
+    Maybe<const ast::Type*> type_specifier_without_ident();
+    /// Parses a `type_specifier` grammar element
     /// @returns the parsed Type or nullptr if none matched.
-    Maybe<const ast::Type*> type_decl();
+    Maybe<const ast::Type*> type_specifier();
     /// Parses an `address_space` grammar element, erroring on parse failure.
     /// @param use a description of what was being parsed if an error was raised.
-    /// @returns the address space or StorageClass::kNone if none matched
-    Expect<ast::StorageClass> expect_address_space(std::string_view use);
+    /// @returns the address space or ast::AddressSpace::kNone if none matched
+    Expect<ast::AddressSpace> expect_address_space(std::string_view use);
     /// Parses a `struct_decl` grammar element.
     /// @returns the struct type or nullptr on error
     Maybe<const ast::Struct*> struct_decl();
@@ -861,11 +861,24 @@ class ParserImpl {
     /// Used to ensure that all attributes are consumed.
     bool expect_attributes_consumed(utils::VectorRef<const ast::Attribute*> list);
 
-    Expect<const ast::Type*> expect_type_decl_pointer(const Source& s);
-    Expect<const ast::Type*> expect_type_decl_atomic(const Source& s);
-    Expect<const ast::Type*> expect_type_decl_vector(const Source& s, uint32_t count);
-    Expect<const ast::Type*> expect_type_decl_array(const Source& s);
-    Expect<const ast::Type*> expect_type_decl_matrix(const Source& s, const MatrixDimensions& dims);
+    Expect<const ast::Type*> expect_type_specifier_pointer(const Source& s);
+    Expect<const ast::Type*> expect_type_specifier_atomic(const Source& s);
+    Expect<const ast::Type*> expect_type_specifier_vector(const Source& s, uint32_t count);
+    Expect<const ast::Type*> expect_type_specifier_array(const Source& s);
+    Expect<const ast::Type*> expect_type_specifier_matrix(const Source& s,
+                                                          const MatrixDimensions& dims);
+
+    /// Parses the given enum, providing sensible error messages if the next token does not match
+    /// any of the enum values.
+    /// @param name the name of the enumerator
+    /// @param parse the optimized function used to parse the enum
+    /// @param strings the list of possible strings in the enum
+    /// @param use an optional description of what was being parsed if an error was raised.
+    template <typename ENUM, size_t N>
+    Expect<ENUM> expect_enum(std::string_view name,
+                             ENUM (*parse)(std::string_view str),
+                             const char* const (&strings)[N],
+                             std::string_view use = "");
 
     Expect<const ast::Type*> expect_type(std::string_view use);
 

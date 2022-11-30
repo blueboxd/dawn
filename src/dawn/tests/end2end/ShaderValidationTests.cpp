@@ -37,17 +37,6 @@ override z: u32 = 1u;
 })");
     }
 
-    wgpu::ShaderModule SetUpShaderWithZeroDefaultValueConstants() {
-        return utils::CreateShaderModule(device, R"(
-override x: u32 = 0u;
-override y: u32 = 0u;
-override z: u32 = 0u;
-
-@compute @workgroup_size(x, y, z) fn main() {
-    _ = 0u;
-})");
-    }
-
     wgpu::ShaderModule SetUpShaderWithOutOfLimitsDefaultValueConstants() {
         return utils::CreateShaderModule(device, R"(
 override x: u32 = 1u;
@@ -237,12 +226,6 @@ TEST_P(WorkgroupSizeValidationTest, OverridesWithValidDefault) {
     }
 }
 
-// Test workgroup size validation with zero as the overrides default values.
-TEST_P(WorkgroupSizeValidationTest, OverridesWithZeroDefault) {
-    // Error: zero is detected as invalid at shader creation time
-    ASSERT_DEVICE_ERROR(SetUpShaderWithZeroDefaultValueConstants());
-}
-
 // Test workgroup size validation with out-of-limits overrides default values.
 TEST_P(WorkgroupSizeValidationTest, OverridesWithOutOfLimitsDefault) {
     wgpu::ShaderModule module = SetUpShaderWithOutOfLimitsDefaultValueConstants();
@@ -347,8 +330,7 @@ TEST_P(WorkgroupSizeValidationTest, ValidationAfterOverride) {
 
 // Test workgroup size validation after being overrided with invalid values (storage size limits
 // validation).
-// TODO(tint:1660): re-enable after override can be used as array size.
-TEST_P(WorkgroupSizeValidationTest, DISABLED_ValidationAfterOverrideStorageSize) {
+TEST_P(WorkgroupSizeValidationTest, ValidationAfterOverrideStorageSize) {
     wgpu::Limits supportedLimits = GetSupportedLimits().limits;
 
     constexpr uint32_t kVec4Size = 16;
@@ -364,11 +346,11 @@ TEST_P(WorkgroupSizeValidationTest, DISABLED_ValidationAfterOverrideStorageSize)
         ss << "override b: u32;";
         if (vec4_count > 0) {
             ss << "var<workgroup> vec4_data: array<vec4<f32>, a>;";
-            body << "_ = vec4_data;";
+            body << "_ = vec4_data[0];";
         }
         if (mat4_count > 0) {
             ss << "var<workgroup> mat4_data: array<mat4x4<f32>, b>;";
-            body << "_ = mat4_data;";
+            body << "_ = mat4_data[0];";
         }
         ss << "@compute @workgroup_size(1) fn main() { " << body.str() << " }";
 

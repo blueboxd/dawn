@@ -89,7 +89,7 @@ static utils::Vector<const ast::Attribute*, 2> createAttributes(const Source& so
                                                                 AttributeKind kind) {
     switch (kind) {
         case AttributeKind::kAlign:
-            return {builder.MemberAlign(source, 4_u)};
+            return {builder.MemberAlign(source, 4_i)};
         case AttributeKind::kBinding:
             return {builder.Binding(source, 1_a)};
         case AttributeKind::kBuiltin:
@@ -627,8 +627,8 @@ TEST_F(StructMemberAttributeTest, DuplicateAttribute) {
     Structure("mystruct", utils::Vector{
                               Member("a", ty.i32(),
                                      utils::Vector{
-                                         MemberAlign(Source{{12, 34}}, 4_u),
-                                         MemberAlign(Source{{56, 78}}, 8_u),
+                                         MemberAlign(Source{{12, 34}}, 4_i),
+                                         MemberAlign(Source{{56, 78}}, 8_i),
                                      }),
                           });
     EXPECT_FALSE(r()->Resolve());
@@ -657,6 +657,90 @@ TEST_F(StructMemberAttributeTest, InvariantAttributeWithoutPosition) {
     EXPECT_EQ(r()->error(),
               "12:34 error: invariant attribute must only be applied to a "
               "position builtin");
+}
+
+TEST_F(StructMemberAttributeTest, Align_Attribute_Const) {
+    GlobalConst("val", ty.i32(), Expr(1_i));
+
+    Structure("mystruct", utils::Vector{Member("a", ty.f32(), utils::Vector{MemberAlign("val")})});
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(StructMemberAttributeTest, Align_Attribute_ConstNegative) {
+    GlobalConst("val", ty.i32(), Expr(-2_i));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: 'align' value must be a positive, power-of-two integer)");
+}
+
+TEST_F(StructMemberAttributeTest, Align_Attribute_ConstPowerOfTwo) {
+    GlobalConst("val", ty.i32(), Expr(3_i));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: 'align' value must be a positive, power-of-two integer)");
+}
+
+TEST_F(StructMemberAttributeTest, Align_Attribute_ConstF32) {
+    GlobalConst("val", ty.f32(), Expr(1.23_f));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'align' must be an i32 or u32 value)");
+}
+
+TEST_F(StructMemberAttributeTest, Align_Attribute_ConstU32) {
+    GlobalConst("val", ty.u32(), Expr(2_u));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
+    EXPECT_TRUE(r()->Resolve());
+}
+
+TEST_F(StructMemberAttributeTest, Align_Attribute_ConstAInt) {
+    GlobalConst("val", Expr(2_a));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(StructMemberAttributeTest, Align_Attribute_ConstAFloat) {
+    GlobalConst("val", Expr(2.0_a));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: 'align' must be an i32 or u32 value)");
+}
+
+TEST_F(StructMemberAttributeTest, Align_Attribute_Var) {
+    GlobalVar(Source{{1, 2}}, "val", ty.f32(), ast::AddressSpace::kPrivate, ast::Access::kUndefined,
+              Expr(1.23_f));
+
+    Structure(Source{{6, 4}}, "mystruct",
+              utils::Vector{Member(Source{{12, 5}}, "a", ty.f32(),
+                                   utils::Vector{MemberAlign(Expr(Source{{12, 35}}, "val"))})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:35 error: var 'val' cannot be referenced at module-scope
+1:2 note: var 'val' declared here)");
+}
+
+TEST_F(StructMemberAttributeTest, Align_Attribute_Override) {
+    Override("val", ty.f32(), Expr(1.23_f));
+
+    Structure("mystruct", utils::Vector{Member(
+                              "a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, "val")})});
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(error: @align requires a const-expression, but expression is an override-expression)");
 }
 
 }  // namespace StructAndStructMemberTests
@@ -703,7 +787,7 @@ TEST_P(VariableAttributeTest, IsValid) {
     if (IsBindingAttribute(params.kind)) {
         GlobalVar("a", ty.sampler(ast::SamplerKind::kSampler), attrs);
     } else {
-        GlobalVar("a", ty.f32(), ast::StorageClass::kPrivate, attrs);
+        GlobalVar("a", ty.f32(), ast::AddressSpace::kPrivate, attrs);
     }
 
     if (params.should_pass) {
@@ -874,7 +958,7 @@ TEST_P(ArrayStrideTest, All) {
                              create<ast::StrideAttribute>(Source{{12, 34}}, params.stride),
                          });
 
-    GlobalVar("myarray", arr, ast::StorageClass::kPrivate);
+    GlobalVar("myarray", arr, ast::AddressSpace::kPrivate);
 
     if (params.should_pass) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -957,7 +1041,7 @@ TEST_F(ArrayStrideTest, DuplicateAttribute) {
                              create<ast::StrideAttribute>(Source{{56, 78}}, 4u),
                          });
 
-    GlobalVar("myarray", arr, ast::StorageClass::kPrivate);
+    GlobalVar("myarray", arr, ast::AddressSpace::kPrivate);
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
@@ -976,7 +1060,7 @@ TEST_F(ResourceAttributeTest, UniformBufferMissingBinding) {
     auto* s = Structure("S", utils::Vector{
                                  Member("x", ty.i32()),
                              });
-    GlobalVar(Source{{12, 34}}, "G", ty.Of(s), ast::StorageClass::kUniform);
+    GlobalVar(Source{{12, 34}}, "G", ty.Of(s), ast::AddressSpace::kUniform);
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
@@ -987,7 +1071,7 @@ TEST_F(ResourceAttributeTest, StorageBufferMissingBinding) {
     auto* s = Structure("S", utils::Vector{
                                  Member("x", ty.i32()),
                              });
-    GlobalVar(Source{{12, 34}}, "G", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead);
+    GlobalVar(Source{{12, 34}}, "G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead);
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
@@ -1073,7 +1157,7 @@ TEST_F(ResourceAttributeTest, BindingPointUsedTwiceByDifferentEntryPoints) {
 }
 
 TEST_F(ResourceAttributeTest, BindingPointOnNonResource) {
-    GlobalVar(Source{{12, 34}}, "G", ty.f32(), ast::StorageClass::kPrivate, Binding(1_a),
+    GlobalVar(Source{{12, 34}}, "G", ty.f32(), ast::AddressSpace::kPrivate, Binding(1_a),
               Group(2_a));
 
     EXPECT_FALSE(r()->Resolve());
@@ -1304,16 +1388,16 @@ INSTANTIATE_TEST_SUITE_P(
     ResolverAttributeValidationTest,
     InterpolateParameterTest,
     testing::Values(
-        Params{ast::InterpolationType::kPerspective, ast::InterpolationSampling::kNone, true},
+        Params{ast::InterpolationType::kPerspective, ast::InterpolationSampling::kUndefined, true},
         Params{ast::InterpolationType::kPerspective, ast::InterpolationSampling::kCenter, true},
         Params{ast::InterpolationType::kPerspective, ast::InterpolationSampling::kCentroid, true},
         Params{ast::InterpolationType::kPerspective, ast::InterpolationSampling::kSample, true},
-        Params{ast::InterpolationType::kLinear, ast::InterpolationSampling::kNone, true},
+        Params{ast::InterpolationType::kLinear, ast::InterpolationSampling::kUndefined, true},
         Params{ast::InterpolationType::kLinear, ast::InterpolationSampling::kCenter, true},
         Params{ast::InterpolationType::kLinear, ast::InterpolationSampling::kCentroid, true},
         Params{ast::InterpolationType::kLinear, ast::InterpolationSampling::kSample, true},
         // flat interpolation must not have a sampling type
-        Params{ast::InterpolationType::kFlat, ast::InterpolationSampling::kNone, true},
+        Params{ast::InterpolationType::kFlat, ast::InterpolationSampling::kUndefined, true},
         Params{ast::InterpolationType::kFlat, ast::InterpolationSampling::kCenter, false},
         Params{ast::InterpolationType::kFlat, ast::InterpolationSampling::kCentroid, false},
         Params{ast::InterpolationType::kFlat, ast::InterpolationSampling::kSample, false}));
@@ -1351,7 +1435,7 @@ TEST_F(InterpolateTest, VertexOutput_Integer_MissingFlatInterpolation) {
     EXPECT_EQ(
         r()->error(),
         R"(12:34 error: integral user-defined vertex outputs must have a flat interpolation attribute
-note: while analysing entry point 'main')");
+note: while analyzing entry point 'main')");
 }
 
 TEST_F(InterpolateTest, MissingLocationAttribute_Parameter) {
@@ -1361,7 +1445,7 @@ TEST_F(InterpolateTest, MissingLocationAttribute_Parameter) {
                    utils::Vector{
                        Builtin(ast::BuiltinValue::kPosition),
                        Interpolate(Source{{12, 34}}, ast::InterpolationType::kFlat,
-                                   ast::InterpolationSampling::kNone),
+                                   ast::InterpolationSampling::kUndefined),
                    }),
          },
          ty.void_(), utils::Empty,
@@ -1385,7 +1469,7 @@ TEST_F(InterpolateTest, MissingLocationAttribute_ReturnType) {
          utils::Vector{
              Builtin(ast::BuiltinValue::kPosition),
              Interpolate(Source{{12, 34}}, ast::InterpolationType::kFlat,
-                         ast::InterpolationSampling::kNone),
+                         ast::InterpolationSampling::kUndefined),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -1398,7 +1482,7 @@ TEST_F(InterpolateTest, MissingLocationAttribute_Struct) {
               utils::Vector{
                   Member("a", ty.f32(),
                          utils::Vector{Interpolate(Source{{12, 34}}, ast::InterpolationType::kFlat,
-                                                   ast::InterpolationSampling::kNone)}),
+                                                   ast::InterpolationSampling::kUndefined)}),
               });
 
     EXPECT_FALSE(r()->Resolve());

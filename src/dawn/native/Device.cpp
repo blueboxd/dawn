@@ -338,7 +338,7 @@ void DeviceBase::DestroyObjects() {
     // can destroy the frontend cache.
 
     // clang-format off
-        static constexpr std::array<ObjectType, 19> kObjectTypeDependencyOrder = {
+        static constexpr std::array<ObjectType, 18> kObjectTypeDependencyOrder = {
             ObjectType::ComputePassEncoder,
             ObjectType::RenderPassEncoder,
             ObjectType::RenderBundleEncoder,
@@ -353,26 +353,15 @@ void DeviceBase::DestroyObjects() {
             ObjectType::BindGroupLayout,
             ObjectType::ShaderModule,
             ObjectType::ExternalTexture,
-            ObjectType::TextureView,
-            ObjectType::Texture,
+            ObjectType::Texture,  // Note that Textures own the TextureViews.
             ObjectType::QuerySet,
             ObjectType::Sampler,
             ObjectType::Buffer,
         };
     // clang-format on
 
-    // We first move all objects out from the tracking list into a separate list so that we can
-    // avoid locking the same mutex twice. We can then iterate across the separate list to call
-    // the actual destroy function.
-    LinkedList<ApiObjectBase> objects;
     for (ObjectType type : kObjectTypeDependencyOrder) {
-        ApiObjectList& objList = mObjectLists[type];
-        const std::lock_guard<std::mutex> lock(objList.mutex);
-        objList.objects.MoveInto(&objects);
-    }
-    while (!objects.empty()) {
-        // The destroy call should also remove the object from the list.
-        objects.head()->value()->Destroy();
+        mObjectLists[type].Destroy();
     }
 }
 
@@ -685,14 +674,8 @@ bool DeviceBase::IsLost() const {
     return mState != State::Alive;
 }
 
-void DeviceBase::TrackObject(ApiObjectBase* object) {
-    ApiObjectList& objectList = mObjectLists[object->GetType()];
-    std::lock_guard<std::mutex> lock(objectList.mutex);
-    object->InsertBefore(objectList.objects.head());
-}
-
-std::mutex* DeviceBase::GetObjectListMutex(ObjectType type) {
-    return &mObjectLists[type].mutex;
+ApiObjectList* DeviceBase::GetObjectTrackingList(ObjectType type) {
+    return &mObjectLists[type];
 }
 
 AdapterBase* DeviceBase::GetAdapter() const {
@@ -1328,12 +1311,15 @@ bool DeviceBase::HasFeature(Feature feature) const {
 
 void DeviceBase::SetWGSLExtensionAllowList() {
     // Set the WGSL extensions allow list based on device's enabled features and other
-    // propority.
+    // properties.
     if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalDp4a)) {
         mWGSLExtensionAllowList.insert("chromium_experimental_dp4a");
     }
     if (mEnabledFeatures.IsEnabled(Feature::ShaderF16)) {
         mWGSLExtensionAllowList.insert("f16");
+    }
+    if (!IsToggleEnabled(Toggle::DisallowUnsafeAPIs)) {
+        mWGSLExtensionAllowList.insert("chromium_disable_uniformity_analysis");
     }
 }
 
@@ -1446,6 +1432,14 @@ ResultOrError<Ref<BufferBase>> DeviceBase::CreateBuffer(const BufferDescriptor* 
     DAWN_TRY(ValidateIsAlive());
     if (IsValidationEnabled()) {
         DAWN_TRY_CONTEXT(ValidateBufferDescriptor(this, descriptor), "validating %s", descriptor);
+
+        // TODO(dawn:1525): Change to validation error after the deprecation period.
+        if (descriptor->size > mLimits.v1.maxBufferSize) {
+            std::string warning =
+                absl::StrFormat("Buffer size (%u) exceeds the max buffer size limit (%u).",
+                                descriptor->size, mLimits.v1.maxBufferSize);
+            EmitDeprecationWarning(warning.c_str());
+        }
     }
 
     Ref<BufferBase> buffer;

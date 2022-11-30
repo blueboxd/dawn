@@ -193,6 +193,13 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
 
 Device::~Device() {
     Destroy();
+
+    // Close the handle here instead of in DestroyImpl. The handle is returned from
+    // ExternalImageDXGI, so it needs to live as long as the Device ref does, even if the device
+    // state is destroyed.
+    if (mFenceHandle != nullptr) {
+        ::CloseHandle(mFenceHandle);
+    }
 }
 
 ID3D12Device* Device::GetD3D12Device() const {
@@ -338,8 +345,8 @@ MaybeError Device::TickImpl() {
     mUsedComObjectRefs.ClearUpTo(completedSerial);
 
     if (mPendingCommands.IsOpen()) {
-        // CommandRecordingContext::ExecuteCommandList() calls NextSerial().
         DAWN_TRY(ExecutePendingCommandContext());
+        DAWN_TRY(NextSerial());
     }
 
     DAWN_TRY(CheckDebugLayerAndGenerateErrors());
@@ -541,8 +548,11 @@ void Device::DeallocateMemory(ResourceHeapAllocation& allocation) {
 ResultOrError<ResourceHeapAllocation> Device::AllocateMemory(
     D3D12_HEAP_TYPE heapType,
     const D3D12_RESOURCE_DESC& resourceDescriptor,
-    D3D12_RESOURCE_STATES initialUsage) {
-    return mResourceAllocatorManager->AllocateMemory(heapType, resourceDescriptor, initialUsage);
+    D3D12_RESOURCE_STATES initialUsage,
+    uint32_t formatBytesPerBlock) {
+    // formatBytesPerBlock is needed only for color non-compressed formats for a workaround.
+    return mResourceAllocatorManager->AllocateMemory(heapType, resourceDescriptor, initialUsage,
+                                                     formatBytesPerBlock);
 }
 
 std::unique_ptr<ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
@@ -687,10 +697,10 @@ void Device::InitTogglesFromDriver() {
     // on the platforms where UnrestrictedBufferTextureCopyPitchSupported is true.
     SetToggle(Toggle::D3D12SplitBufferTextureCopyForRowsPerImagePaddings, true);
 
-    // This workaround is only needed on Intel Gen12LP with driver prior to 30.0.101.1960.
+    // This workaround is only needed on Intel Gen12LP with driver prior to 30.0.101.1692.
     // See http://crbug.com/dawn/949 for more information.
     if (gpu_info::IsIntelGen12LP(vendorId, deviceId)) {
-        const gpu_info::D3DDriverVersion version = {30, 0, 101, 1960};
+        const gpu_info::D3DDriverVersion version = {30, 0, 101, 1692};
         if (gpu_info::CompareD3DDriverVersion(vendorId, ToBackend(GetAdapter())->GetDriverVersion(),
                                               version) == -1) {
             SetToggle(Toggle::D3D12AllocateExtraMemoryFor2DArrayTexture, true);

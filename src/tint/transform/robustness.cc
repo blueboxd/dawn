@@ -38,8 +38,8 @@ struct Robustness::State {
     /// The clone context
     CloneContext& ctx;
 
-    /// Set of storage classes to not apply the transform to
-    std::unordered_set<ast::StorageClass> omitted_classes;
+    /// Set of address spacees to not apply the transform to
+    std::unordered_set<ast::AddressSpace> omitted_classes;
 
     /// Applies the transformation state to `ctx`.
     void Transform() {
@@ -57,7 +57,7 @@ struct Robustness::State {
         auto* ret_type = sem->Type();
 
         auto* ref = ret_type->As<sem::Reference>();
-        if (ref && omitted_classes.count(ref->StorageClass()) != 0) {
+        if (ref && omitted_classes.count(ref->AddressSpace()) != 0) {
             return nullptr;
         }
 
@@ -99,14 +99,21 @@ struct Robustness::State {
                     // Must clamp, even if the index is constant.
                     auto* arr_ptr = b.AddressOf(ctx.Clone(expr->object));
                     max = b.Sub(b.Call("arrayLength", arr_ptr), 1_u);
-                } else {
+                } else if (auto count = arr->ConstantCount()) {
                     if (sem->Index()->ConstantValue()) {
                         // Index and size is constant.
                         // Validation will have rejected any OOB accesses.
                         return nullptr;
                     }
-                    max = b.Expr(u32(arr->Count() - 1u));
+                    max = b.Expr(u32(count.value() - 1u));
+                } else {
+                    // Note: Don't be tempted to use the array override variable as an expression
+                    // here, the name might be shadowed!
+                    ctx.dst->Diagnostics().add_error(diag::System::Transform,
+                                                     sem::Array::kErrExpectedConstantCount);
+                    return nullptr;
                 }
+
                 return b.Call("min", idx(), max);
             },
             [&](Default) {
@@ -222,14 +229,14 @@ void Robustness::Run(CloneContext& ctx, const DataMap& inputs, DataMap&) const {
         cfg = *cfg_data;
     }
 
-    std::unordered_set<ast::StorageClass> omitted_classes;
+    std::unordered_set<ast::AddressSpace> omitted_classes;
     for (auto sc : cfg.omitted_classes) {
         switch (sc) {
-            case StorageClass::kUniform:
-                omitted_classes.insert(ast::StorageClass::kUniform);
+            case AddressSpace::kUniform:
+                omitted_classes.insert(ast::AddressSpace::kUniform);
                 break;
-            case StorageClass::kStorage:
-                omitted_classes.insert(ast::StorageClass::kStorage);
+            case AddressSpace::kStorage:
+                omitted_classes.insert(ast::AddressSpace::kStorage);
                 break;
         }
     }

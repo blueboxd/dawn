@@ -778,6 +778,9 @@ TEST_P(DepthSamplingTest, CompareFunctionsRender) {
     // Initialization via renderPass loadOp doesn't work on Mac Intel.
     DAWN_SUPPRESS_TEST_IF(IsMetal() && IsIntel());
 
+    // TODO(dawn:1549) Fails on Qualcomm-based Android devices.
+    DAWN_SUPPRESS_TEST_IF(IsAndroid() && IsQualcomm());
+
     wgpu::TextureFormat format = GetParam().mTextureFormat;
     // Test does not account for precision issues when comparison testing Depth16Unorm.
     DAWN_TEST_UNSUPPORTED_IF(format == wgpu::TextureFormat::Depth16Unorm);

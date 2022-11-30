@@ -667,6 +667,10 @@ bool DawnTestBase::IsAMD() const {
     return gpu_info::IsAMD(mParam.adapterProperties.vendorID);
 }
 
+bool DawnTestBase::IsApple() const {
+    return gpu_info::IsApple(mParam.adapterProperties.vendorID);
+}
+
 bool DawnTestBase::IsARM() const {
     return gpu_info::IsARM(mParam.adapterProperties.vendorID);
 }
@@ -696,9 +700,21 @@ bool DawnTestBase::IsANGLE() const {
     return !mParam.adapterProperties.adapterName.find("ANGLE");
 }
 
+bool DawnTestBase::IsANGLESwiftShader() const {
+    return !mParam.adapterProperties.adapterName.find("ANGLE") &&
+           (mParam.adapterProperties.adapterName.find("SwiftShader") != std::string::npos);
+}
+
 bool DawnTestBase::IsWARP() const {
     return gpu_info::IsMicrosoftWARP(mParam.adapterProperties.vendorID,
                                      mParam.adapterProperties.deviceID);
+}
+
+bool DawnTestBase::IsIntelGen12() const {
+    return gpu_info::IsIntelGen12LP(mParam.adapterProperties.vendorID,
+                                    mParam.adapterProperties.deviceID) ||
+           gpu_info::IsIntelGen12HP(mParam.adapterProperties.vendorID,
+                                    mParam.adapterProperties.deviceID);
 }
 
 bool DawnTestBase::IsWindows() const {
@@ -726,6 +742,14 @@ bool DawnTestBase::IsMacOS(int32_t majorVersion, int32_t minorVersion) const {
     GetMacOSVersion(&majorVersionOut, &minorVersionOut);
     return (majorVersion != -1 && majorVersion == majorVersionOut) &&
            (minorVersion != -1 && minorVersion == minorVersionOut);
+#else
+    return false;
+#endif
+}
+
+bool DawnTestBase::IsAndroid() const {
+#if DAWN_PLATFORM_IS(ANDROID)
+    return true;
 #else
     return false;
 #endif
@@ -1091,7 +1115,7 @@ std::ostringstream& DawnTestBase::ExpectSampledFloatDataImpl(wgpu::TextureView t
                                                              uint32_t sampleCount,
                                                              detail::Expectation* expectation) {
     std::ostringstream shaderSource;
-    shaderSource << "let width : u32 = " << width << "u;\n";
+    shaderSource << "const width : u32 = " << width << "u;\n";
     shaderSource << "@group(0) @binding(0) var tex : " << wgslTextureType << ";\n";
     shaderSource << R"(
         struct Result {
@@ -1099,8 +1123,8 @@ std::ostringstream& DawnTestBase::ExpectSampledFloatDataImpl(wgpu::TextureView t
         }
         @group(0) @binding(1) var<storage, read_write> result : Result;
     )";
-    shaderSource << "let componentCount : u32 = " << componentCount << "u;\n";
-    shaderSource << "let sampleCount : u32 = " << sampleCount << "u;\n";
+    shaderSource << "const componentCount : u32 = " << componentCount << "u;\n";
+    shaderSource << "const sampleCount : u32 = " << sampleCount << "u;\n";
 
     shaderSource << "fn doTextureLoad(t: " << wgslTextureType
                  << ", coord: vec2<i32>, sample: u32, component: u32) -> f32";
@@ -1553,6 +1577,20 @@ testing::AssertionResult CheckImpl(const T& expected, const U& actual, const T& 
     ASSERT(tolerance == T{});
     if (expected != actual) {
         return testing::AssertionFailure() << expected << ", actual " << actual;
+    }
+    return testing::AssertionSuccess();
+}
+
+template <>
+testing::AssertionResult CheckImpl<utils::RGBA8>(const utils::RGBA8& expected,
+                                                 const utils::RGBA8& actual,
+                                                 const utils::RGBA8& tolerance) {
+    if (abs(expected.r - actual.r) > tolerance.r || abs(expected.g - actual.g) > tolerance.g ||
+        abs(expected.b - actual.b) > tolerance.b || abs(expected.a - actual.a) > tolerance.a) {
+        return tolerance == utils::RGBA8{}
+                   ? testing::AssertionFailure() << expected << ", actual " << actual
+                   : testing::AssertionFailure()
+                         << "within " << tolerance << " of " << expected << ", actual " << actual;
     }
     return testing::AssertionSuccess();
 }

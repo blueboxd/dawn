@@ -172,14 +172,14 @@ class ProgramBuilder {
         ~VarOptions();
 
         const ast::Type* type = nullptr;
-        ast::StorageClass storage = ast::StorageClass::kNone;
+        ast::AddressSpace address_space = ast::AddressSpace::kNone;
         ast::Access access = ast::Access::kUndefined;
         const ast::Expression* constructor = nullptr;
         utils::Vector<const ast::Attribute*, 4> attributes;
 
       private:
         void Set(const ast::Type* t) { type = t; }
-        void Set(ast::StorageClass sc) { storage = sc; }
+        void Set(ast::AddressSpace addr_space) { address_space = addr_space; }
         void Set(ast::Access ac) { access = ac; }
         void Set(const ast::Expression* c) { constructor = c; }
         void Set(utils::VectorRef<const ast::Attribute*> l) { attributes = std::move(l); }
@@ -478,11 +478,6 @@ class ProgramBuilder {
     /// returned`Type` will also be destructed.
     /// Types are unique (de-aliased), and so calling create() for the same `T`
     /// and arguments will return the same pointer.
-    /// @warning Use this method to acquire a type only if all of its type
-    /// information is provided in the constructor arguments `args`.<br>
-    /// If the type requires additional configuration after construction that
-    /// affect its fundamental type, build the type with `std::make_unique`, make
-    /// any necessary alterations and then call unique_type() instead.
     /// @param args the arguments to pass to the type constructor
     /// @returns the de-aliased type pointer
     template <typename T, typename... ARGS>
@@ -902,45 +897,45 @@ class ProgramBuilder {
         }
 
         /// @param type the type of the pointer
-        /// @param storage_class the storage class of the pointer
+        /// @param address_space the address space of the pointer
         /// @param access the optional access control of the pointer
-        /// @return the pointer to `type` with the given ast::StorageClass
+        /// @return the pointer to `type` with the given ast::AddressSpace
         const ast::Pointer* pointer(const ast::Type* type,
-                                    ast::StorageClass storage_class,
+                                    ast::AddressSpace address_space,
                                     ast::Access access = ast::Access::kUndefined) const {
-            return builder->create<ast::Pointer>(type, storage_class, access);
+            return builder->create<ast::Pointer>(type, address_space, access);
         }
 
         /// @param source the Source of the node
         /// @param type the type of the pointer
-        /// @param storage_class the storage class of the pointer
+        /// @param address_space the address space of the pointer
         /// @param access the optional access control of the pointer
-        /// @return the pointer to `type` with the given ast::StorageClass
+        /// @return the pointer to `type` with the given ast::AddressSpace
         const ast::Pointer* pointer(const Source& source,
                                     const ast::Type* type,
-                                    ast::StorageClass storage_class,
+                                    ast::AddressSpace address_space,
                                     ast::Access access = ast::Access::kUndefined) const {
-            return builder->create<ast::Pointer>(source, type, storage_class, access);
+            return builder->create<ast::Pointer>(source, type, address_space, access);
         }
 
-        /// @param storage_class the storage class of the pointer
+        /// @param address_space the address space of the pointer
         /// @param access the optional access control of the pointer
-        /// @return the pointer to type `T` with the given ast::StorageClass.
+        /// @return the pointer to type `T` with the given ast::AddressSpace.
         template <typename T>
-        const ast::Pointer* pointer(ast::StorageClass storage_class,
+        const ast::Pointer* pointer(ast::AddressSpace address_space,
                                     ast::Access access = ast::Access::kUndefined) const {
-            return pointer(Of<T>(), storage_class, access);
+            return pointer(Of<T>(), address_space, access);
         }
 
         /// @param source the Source of the node
-        /// @param storage_class the storage class of the pointer
+        /// @param address_space the address space of the pointer
         /// @param access the optional access control of the pointer
-        /// @return the pointer to type `T` with the given ast::StorageClass.
+        /// @return the pointer to type `T` with the given ast::AddressSpace.
         template <typename T>
         const ast::Pointer* pointer(const Source& source,
-                                    ast::StorageClass storage_class,
+                                    ast::AddressSpace address_space,
                                     ast::Access access = ast::Access::kUndefined) const {
-            return pointer(source, Of<T>(), storage_class, access);
+            return pointer(source, Of<T>(), address_space, access);
         }
 
         /// @param source the Source of the node
@@ -1651,7 +1646,7 @@ class ProgramBuilder {
     /// @param options the extra options passed to the ast::Var constructor
     /// Can be any of the following, in any order:
     ///   * ast::Type*          - specifies the variable type
-    ///   * ast::StorageClass   - specifies the variable storage class
+    ///   * ast::AddressSpace   - specifies the variable address space
     ///   * ast::Access         - specifies the variable's access control
     ///   * ast::Expression*    - specifies the variable's initializer expression
     ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
@@ -1661,8 +1656,8 @@ class ProgramBuilder {
     template <typename NAME, typename... OPTIONS, typename = DisableIfSource<NAME>>
     const ast::Var* Var(NAME&& name, OPTIONS&&... options) {
         VarOptions opts(std::forward<OPTIONS>(options)...);
-        return create<ast::Var>(Sym(std::forward<NAME>(name)), opts.type, opts.storage, opts.access,
-                                opts.constructor, std::move(opts.attributes));
+        return create<ast::Var>(Sym(std::forward<NAME>(name)), opts.type, opts.address_space,
+                                opts.access, opts.constructor, std::move(opts.attributes));
     }
 
     /// @param source the variable source
@@ -1670,17 +1665,18 @@ class ProgramBuilder {
     /// @param options the extra options passed to the ast::Var constructor
     /// Can be any of the following, in any order:
     ///   * ast::Type*          - specifies the variable type
-    ///   * ast::StorageClass   - specifies the variable storage class
+    ///   * ast::AddressSpace   - specifies the variable address space
     ///   * ast::Access         - specifies the variable's access control
     ///   * ast::Expression*    - specifies the variable's initializer expression
     ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
     /// Note that non-repeatable arguments of the same type will use the last argument's value.
-    /// @returns a `ast::Var` with the given name, storage and type
+    /// @returns a `ast::Var` with the given name, address_space and type
     template <typename NAME, typename... OPTIONS>
     const ast::Var* Var(const Source& source, NAME&& name, OPTIONS&&... options) {
         VarOptions opts(std::forward<OPTIONS>(options)...);
-        return create<ast::Var>(source, Sym(std::forward<NAME>(name)), opts.type, opts.storage,
-                                opts.access, opts.constructor, std::move(opts.attributes));
+        return create<ast::Var>(source, Sym(std::forward<NAME>(name)), opts.type,
+                                opts.address_space, opts.access, opts.constructor,
+                                std::move(opts.attributes));
     }
 
     /// @param name the variable name
@@ -1773,7 +1769,7 @@ class ProgramBuilder {
     /// @param options the extra options passed to the ast::Var constructor
     /// Can be any of the following, in any order:
     ///   * ast::Type*          - specifies the variable type
-    ///   * ast::StorageClass   - specifies the variable storage class
+    ///   * ast::AddressSpace   - specifies the variable address space
     ///   * ast::Access         - specifies the variable's access control
     ///   * ast::Expression*    - specifies the variable's initializer expression
     ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
@@ -1792,7 +1788,7 @@ class ProgramBuilder {
     /// @param options the extra options passed to the ast::Var constructor
     /// Can be any of the following, in any order:
     ///   * ast::Type*          - specifies the variable type
-    ///   * ast::StorageClass   - specifies the variable storage class
+    ///   * ast::AddressSpace   - specifies the variable address space
     ///   * ast::Access         - specifies the variable's access control
     ///   * ast::Expression*    - specifies the variable's initializer expression
     ///   * ast::Attribute*    - specifies the variable's attributes (repeatable, or vector)
@@ -2123,6 +2119,17 @@ class ProgramBuilder {
     const ast::BinaryExpression* Shl(LHS&& lhs, RHS&& rhs) {
         return create<ast::BinaryExpression>(
             ast::BinaryOp::kShiftLeft, Expr(std::forward<LHS>(lhs)), Expr(std::forward<RHS>(rhs)));
+    }
+
+    /// @param source the source information
+    /// @param lhs the left hand argument to the bit shift left operation
+    /// @param rhs the right hand argument to the bit shift left operation
+    /// @returns a `ast::BinaryExpression` bit shifting left `lhs` by `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* Shl(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, ast::BinaryOp::kShiftLeft,
+                                             Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
     }
 
     /// @param lhs the left hand argument to the xor operation
@@ -2902,7 +2909,7 @@ class ProgramBuilder {
     const ast::InterpolateAttribute* Interpolate(
         const Source& source,
         ast::InterpolationType type,
-        ast::InterpolationSampling sampling = ast::InterpolationSampling::kNone) {
+        ast::InterpolationSampling sampling = ast::InterpolationSampling::kUndefined) {
         return create<ast::InterpolateAttribute>(source, type, sampling);
     }
 
@@ -2912,7 +2919,7 @@ class ProgramBuilder {
     /// @returns the interpolate attribute pointer
     const ast::InterpolateAttribute* Interpolate(
         ast::InterpolationType type,
-        ast::InterpolationSampling sampling = ast::InterpolationSampling::kNone) {
+        ast::InterpolationSampling sampling = ast::InterpolationSampling::kUndefined) {
         return create<ast::InterpolateAttribute>(source_, type, sampling);
     }
 

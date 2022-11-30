@@ -117,14 +117,45 @@ std::tuple<InterpolationType, InterpolationSampling> CalculateInterpolationData(
         return {InterpolationType::kPerspective, InterpolationSampling::kCenter};
     }
 
-    auto interpolation_type = interpolation_attribute->type;
-    auto sampling = interpolation_attribute->sampling;
-    if (interpolation_type != ast::InterpolationType::kFlat &&
-        sampling == ast::InterpolationSampling::kNone) {
-        sampling = ast::InterpolationSampling::kCenter;
+    auto ast_interpolation_type = interpolation_attribute->type;
+    auto ast_sampling_type = interpolation_attribute->sampling;
+    if (ast_interpolation_type != ast::InterpolationType::kFlat &&
+        ast_sampling_type == ast::InterpolationSampling::kUndefined) {
+        ast_sampling_type = ast::InterpolationSampling::kCenter;
     }
-    return {ASTToInspectorInterpolationType(interpolation_type),
-            ASTToInspectorInterpolationSampling(sampling)};
+
+    auto interpolation_type = InterpolationType::kUnknown;
+    switch (ast_interpolation_type) {
+        case ast::InterpolationType::kPerspective:
+            interpolation_type = InterpolationType::kPerspective;
+            break;
+        case ast::InterpolationType::kLinear:
+            interpolation_type = InterpolationType::kLinear;
+            break;
+        case ast::InterpolationType::kFlat:
+            interpolation_type = InterpolationType::kFlat;
+            break;
+        case ast::InterpolationType::kUndefined:
+            break;
+    }
+
+    auto sampling_type = InterpolationSampling::kUnknown;
+    switch (ast_sampling_type) {
+        case ast::InterpolationSampling::kUndefined:
+            sampling_type = InterpolationSampling::kNone;
+            break;
+        case ast::InterpolationSampling::kCenter:
+            sampling_type = InterpolationSampling::kCenter;
+            break;
+        case ast::InterpolationSampling::kCentroid:
+            sampling_type = InterpolationSampling::kCentroid;
+            break;
+        case ast::InterpolationSampling::kSample:
+            sampling_type = InterpolationSampling::kSample;
+            break;
+    }
+
+    return {interpolation_type, sampling_type};
 }
 
 }  // namespace
@@ -148,9 +179,9 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
             entry_point.stage = PipelineStage::kCompute;
 
             auto wgsize = sem->WorkgroupSize();
-            if (!wgsize[0].overridable_const && !wgsize[1].overridable_const &&
-                !wgsize[2].overridable_const) {
-                entry_point.workgroup_size = {wgsize[0].value, wgsize[1].value, wgsize[2].value};
+            if (wgsize[0].has_value() && wgsize[1].has_value() && wgsize[2].has_value()) {
+                entry_point.workgroup_size = {wgsize[0].value(), wgsize[1].value(),
+                                              wgsize[2].value()};
             }
             break;
         }
@@ -192,6 +223,8 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
 
         entry_point.output_sample_mask_used = ContainsBuiltin(
             ast::BuiltinValue::kSampleMask, sem->ReturnType(), func->return_type_attributes);
+        entry_point.frag_depth_used = ContainsBuiltin(
+            ast::BuiltinValue::kFragDepth, sem->ReturnType(), func->return_type_attributes);
     }
 
     for (auto* var : sem->TransitivelyReferencedGlobals()) {
@@ -565,7 +598,7 @@ uint32_t Inspector::GetWorkgroupStorageSize(const std::string& entry_point) {
     uint32_t total_size = 0;
     auto* func_sem = program_->Sem().Get(func);
     for (const sem::Variable* var : func_sem->TransitivelyReferencedGlobals()) {
-        if (var->StorageClass() == ast::StorageClass::kWorkgroup) {
+        if (var->AddressSpace() == ast::AddressSpace::kWorkgroup) {
             auto* ty = var->Type()->UnwrapRef();
             uint32_t align = ty->Align();
             uint32_t size = ty->Size();
@@ -849,19 +882,18 @@ void Inspector::GenerateSamplerTargets() {
         auto* t = c->args[static_cast<size_t>(texture_index)];
         auto* s = c->args[static_cast<size_t>(sampler_index)];
 
-        GetOriginatingResources(
-            std::array<const ast::Expression*, 2>{t, s},
-            [&](std::array<const sem::GlobalVariable*, 2> globals) {
-                auto texture_binding_point = globals[0]->BindingPoint();
-                auto sampler_binding_point = globals[1]->BindingPoint();
+        GetOriginatingResources(std::array<const ast::Expression*, 2>{t, s},
+                                [&](std::array<const sem::GlobalVariable*, 2> globals) {
+                                    auto texture_binding_point = globals[0]->BindingPoint();
+                                    auto sampler_binding_point = globals[1]->BindingPoint();
 
-                for (auto* entry_point : entry_points) {
-                    const auto& ep_name =
-                        program_->Symbols().NameFor(entry_point->Declaration()->symbol);
-                    (*sampler_targets_)[ep_name].Add(
-                        {sampler_binding_point, texture_binding_point});
-                }
-            });
+                                    for (auto* entry_point : entry_points) {
+                                        const auto& ep_name = program_->Symbols().NameFor(
+                                            entry_point->Declaration()->symbol);
+                                        (*sampler_targets_)[ep_name].Add(
+                                            {sampler_binding_point, texture_binding_point});
+                                    }
+                                });
     }
 }
 
