@@ -535,11 +535,11 @@ list(APPEND TINT_LIB_SRCS
   writer/writer.h
 )
 
-tint_generated(ast/access)
+tint_generated(ast/access BENCH TEST)
 tint_generated(ast/address_space BENCH TEST)
 tint_generated(ast/builtin_value BENCH TEST)
 tint_generated(ast/extension BENCH TEST)
-tint_generated(ast/interpolate_attribute)
+tint_generated(ast/interpolate_attribute BENCH TEST)
 tint_generated(ast/texel_format BENCH TEST)
 tint_generated(resolver/init_conv_intrinsic)
 tint_generated(sem/builtin_type)
@@ -650,6 +650,8 @@ endif()
 
 if(${TINT_BUILD_IR})
   list(APPEND TINT_LIB_SRCS
+    ir/binary.cc
+    ir/binary.h
     ir/block.cc
     ir/block.h
     ir/builder.cc
@@ -807,7 +809,6 @@ if(TINT_BUILD_TESTS)
     ast/increment_decrement_statement_test.cc
     ast/index_accessor_expression_test.cc
     ast/int_literal_expression_test.cc
-    ast/interpolate_attribute_test.cc
     ast/invariant_attribute_test.cc
     ast/location_attribute_test.cc
     ast/loop_statement_test.cc
@@ -1344,9 +1345,9 @@ if(TINT_BUILD_TESTS)
 
   if (${TINT_BUILD_IR})
     list(APPEND TINT_TEST_SRCS
+      ir/binary_test.cc
       ir/builder_impl_test.cc
       ir/constant_test.cc
-      ir/instruction_test.cc
       ir/temp_test.cc
       ir/test_helper.h
     )
