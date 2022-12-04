@@ -132,17 +132,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@db67df60f8c8020017c36b2dd446bc3d86614ffe',
+    'url': '{chromium_git}/angle/angle@b36e337e8d9400e95de54fe231988caca6575cc9',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@72c25a855bb39040cd6d085da341b05fd5e8ac56',
+    'url': '{swiftshader_git}/SwiftShader@e6a3153888f05abf61e2d9b840910284163a0cc7',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@af77d06fcb684bf7c3308a00d9f9d19e44a1bcf7',
+    'url': '{chromium_git}/vulkan-deps@63dc6101459edc0d463b570ebda1db02bf4a8a39',
     'condition': 'dawn_standalone',
   },
 
@@ -172,7 +172,7 @@ deps = {
     'condition': 'dawn_node',
   },
   'third_party/gpuweb': {
-    'url': '{github_git}/gpuweb/gpuweb.git@3c4734b09c68eb800b15da5e9ecefeca735fa7df',
+    'url': '{github_git}/gpuweb/gpuweb.git@0f5fc665a0d5b281e8119f0201e9067b05cf7927',
     'condition': 'dawn_node',
   },
 

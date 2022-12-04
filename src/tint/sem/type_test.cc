@@ -45,10 +45,12 @@ struct TypeTest : public TestHelper {
     const sem::Reference* ref_u32 =
         create<Reference>(u32, ast::AddressSpace::kPrivate, ast::Access::kReadWrite);
     const sem::Struct* str_f32 = create<Struct>(nullptr,
+                                                Source{},
                                                 Sym("str_f32"),
                                                 StructMemberList{
                                                     create<StructMember>(
                                                         /* declaration */ nullptr,
+                                                        /* source */ Source{},
                                                         /* name */ Sym("x"),
                                                         /* type */ f32,
                                                         /* index */ 0u,
@@ -61,10 +63,12 @@ struct TypeTest : public TestHelper {
                                                 /* size*/ 4u,
                                                 /* size_no_padding*/ 4u);
     const sem::Struct* str_f16 = create<Struct>(nullptr,
+                                                Source{},
                                                 Sym("str_f16"),
                                                 StructMemberList{
                                                     create<StructMember>(
                                                         /* declaration */ nullptr,
+                                                        /* source */ Source{},
                                                         /* name */ Sym("x"),
                                                         /* type */ f16,
                                                         /* index */ 0u,
@@ -77,10 +81,12 @@ struct TypeTest : public TestHelper {
                                                 /* size*/ 4u,
                                                 /* size_no_padding*/ 4u);
     sem::Struct* str_af = create<Struct>(nullptr,
+                                         Source{},
                                          Sym("str_af"),
                                          StructMemberList{
                                              create<StructMember>(
                                                  /* declaration */ nullptr,
+                                                 /* source */ Source{},
                                                  /* name */ Sym("x"),
                                                  /* type */ af,
                                                  /* index */ 0u,
@@ -94,63 +100,63 @@ struct TypeTest : public TestHelper {
                                          /* size_no_padding*/ 4u);
     const sem::Array* arr_i32 = create<Array>(
         /* element */ i32,
-        /* count */ ConstantArrayCount{5u},
+        /* count */ create<ConstantArrayCount>(5u),
         /* align */ 4u,
         /* size */ 5u * 4u,
         /* stride */ 5u * 4u,
         /* implicit_stride */ 5u * 4u);
     const sem::Array* arr_ai = create<Array>(
         /* element */ ai,
-        /* count */ ConstantArrayCount{5u},
+        /* count */ create<ConstantArrayCount>(5u),
         /* align */ 4u,
         /* size */ 5u * 4u,
         /* stride */ 5u * 4u,
         /* implicit_stride */ 5u * 4u);
     const sem::Array* arr_vec3_i32 = create<Array>(
         /* element */ vec3_i32,
-        /* count */ ConstantArrayCount{5u},
+        /* count */ create<ConstantArrayCount>(5u),
         /* align */ 16u,
         /* size */ 5u * 16u,
         /* stride */ 5u * 16u,
         /* implicit_stride */ 5u * 16u);
     const sem::Array* arr_vec3_ai = create<Array>(
         /* element */ vec3_ai,
-        /* count */ ConstantArrayCount{5u},
+        /* count */ create<ConstantArrayCount>(5u),
         /* align */ 16u,
         /* size */ 5u * 16u,
         /* stride */ 5u * 16u,
         /* implicit_stride */ 5u * 16u);
     const sem::Array* arr_mat4x3_f16 = create<Array>(
         /* element */ mat4x3_f16,
-        /* count */ ConstantArrayCount{5u},
+        /* count */ create<ConstantArrayCount>(5u),
         /* align */ 32u,
         /* size */ 5u * 32u,
         /* stride */ 5u * 32u,
         /* implicit_stride */ 5u * 32u);
     const sem::Array* arr_mat4x3_f32 = create<Array>(
         /* element */ mat4x3_f32,
-        /* count */ ConstantArrayCount{5u},
+        /* count */ create<ConstantArrayCount>(5u),
         /* align */ 64u,
         /* size */ 5u * 64u,
         /* stride */ 5u * 64u,
         /* implicit_stride */ 5u * 64u);
     const sem::Array* arr_mat4x3_af = create<Array>(
         /* element */ mat4x3_af,
-        /* count */ ConstantArrayCount{5u},
+        /* count */ create<ConstantArrayCount>(5u),
         /* align */ 64u,
         /* size */ 5u * 64u,
         /* stride */ 5u * 64u,
         /* implicit_stride */ 5u * 64u);
     const sem::Array* arr_str_f16 = create<Array>(
         /* element */ str_f16,
-        /* count */ ConstantArrayCount{5u},
+        /* count */ create<ConstantArrayCount>(5u),
         /* align */ 4u,
         /* size */ 5u * 4u,
         /* stride */ 5u * 4u,
         /* implicit_stride */ 5u * 4u);
     const sem::Array* arr_str_af = create<Array>(
         /* element */ str_af,
-        /* count */ ConstantArrayCount{5u},
+        /* count */ create<ConstantArrayCount>(5u),
         /* align */ 4u,
         /* size */ 5u * 4u,
         /* stride */ 5u * 4u,

@@ -523,7 +523,7 @@ bool match_array(MatchState&, const sem::Type* ty, const sem::Type*& T) {
     }
 
     if (auto* a = ty->As<sem::Array>()) {
-        if (a->IsRuntimeSized()) {
+        if (a->Count()->Is<sem::RuntimeArrayCount>()) {
             T = a->ElemType();
             return true;
         }
@@ -532,12 +532,13 @@ bool match_array(MatchState&, const sem::Type* ty, const sem::Type*& T) {
 }
 
 const sem::Array* build_array(MatchState& state, const sem::Type* el) {
-    return state.builder.create<sem::Array>(el,
-                                            /* count */ sem::RuntimeArrayCount{},
-                                            /* align */ 0u,
-                                            /* size */ 0u,
-                                            /* stride */ 0u,
-                                            /* stride_implicit */ 0u);
+    return state.builder.create<sem::Array>(
+        el,
+        /* count */ state.builder.create<sem::RuntimeArrayCount>(),
+        /* align */ 0u,
+        /* size */ 0u,
+        /* stride */ 0u,
+        /* stride_implicit */ 0u);
 }
 
 bool match_ptr(MatchState&, const sem::Type* ty, Number& S, const sem::Type*& T, Number& A) {
@@ -809,6 +810,7 @@ sem::Struct* build_struct(ProgramBuilder& b,
         max_align = std::max(max_align, align);
         members.emplace_back(b.create<sem::StructMember>(
             /* declaration */ nullptr,
+            /* source */ Source{},
             /* name */ b.Sym(m.name),
             /* type */ m.type,
             /* index */ static_cast<uint32_t>(members.size()),
@@ -822,6 +824,7 @@ sem::Struct* build_struct(ProgramBuilder& b,
     uint32_t size_with_padding = utils::RoundUp(max_align, offset);
     return b.create<sem::Struct>(
         /* declaration */ nullptr,
+        /* source */ Source{},
         /* name */ b.Sym(name),
         /* members */ members,
         /* align */ max_align,

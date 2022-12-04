@@ -52,6 +52,7 @@ TypeFlags FlagsFrom(const StructMemberList& members) {
 }  // namespace
 
 Struct::Struct(const ast::Struct* declaration,
+               tint::Source source,
                Symbol name,
                StructMemberList members,
                uint32_t align,
@@ -59,6 +60,7 @@ Struct::Struct(const ast::Struct* declaration,
                uint32_t size_no_padding)
     : Base(FlagsFrom(members)),
       declaration_(declaration),
+      source_(source),
       name_(name),
       members_(std::move(members)),
       align_(align),
@@ -80,7 +82,7 @@ bool Struct::Equals(const sem::Type& other) const {
 
 const StructMember* Struct::FindMember(Symbol name) const {
     for (auto* member : members_) {
-        if (member->Declaration()->symbol == name) {
+        if (member->Name() == name) {
             return member;
         }
     }
@@ -102,9 +104,7 @@ std::string Struct::FriendlyName(const SymbolTable& symbols) const {
 std::string Struct::Layout(const tint::SymbolTable& symbols) const {
     std::stringstream ss;
 
-    auto member_name_of = [&](const sem::StructMember* sm) {
-        return symbols.NameFor(sm->Declaration()->symbol);
-    };
+    auto member_name_of = [&](const sem::StructMember* sm) { return symbols.NameFor(sm->Name()); };
 
     if (Members().empty()) {
         return {};
@@ -168,6 +168,7 @@ std::string Struct::Layout(const tint::SymbolTable& symbols) const {
 }
 
 StructMember::StructMember(const ast::StructMember* declaration,
+                           tint::Source source,
                            Symbol name,
                            const sem::Type* type,
                            uint32_t index,
@@ -176,6 +177,7 @@ StructMember::StructMember(const ast::StructMember* declaration,
                            uint32_t size,
                            std::optional<uint32_t> location)
     : declaration_(declaration),
+      source_(source),
       name_(name),
       type_(type),
       index_(index),

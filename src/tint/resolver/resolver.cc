@@ -51,6 +51,7 @@
 #include "src/tint/ast/vector.h"
 #include "src/tint/ast/while_statement.h"
 #include "src/tint/ast/workgroup_attribute.h"
+#include "src/tint/resolver/type_alias.h"
 #include "src/tint/resolver/uniformity.h"
 #include "src/tint/sem/abstract_float.h"
 #include "src/tint/sem/abstract_int.h"
@@ -329,12 +330,15 @@ sem::Type* Resolver::Type(const ast::Type* ty) {
                     AddNote("'" + name + "' declared here", func->Declaration()->source);
                     return nullptr;
                 },
-                [&](Default) {
+                [&](Default) -> sem::Type* {
                     if (auto* tn = ty->As<ast::TypeName>()) {
                         if (IsBuiltin(tn->name)) {
                             auto name = builder_->Symbols().NameFor(tn->name);
                             AddError("cannot use builtin '" + name + "' as type", ty->source);
                             return nullptr;
+                        }
+                        if (auto* t = BuiltinTypeAlias(tn->name)) {
+                            return t;
                         }
                     }
                     TINT_UNREACHABLE(Resolver, diagnostics_)
@@ -913,11 +917,14 @@ sem::GlobalVariable* Resolver::GlobalVariable(const ast::Variable* v) {
 
     // Track the pipeline-overridable constants that are transitively referenced by this variable.
     for (auto* var : transitively_referenced_overrides) {
-        sem->AddTransitivelyReferencedOverride(var);
+        builder_->Sem().AddTransitivelyReferencedOverride(sem, var);
     }
     if (auto* arr = sem->Type()->UnwrapRef()->As<sem::Array>()) {
-        for (auto* var : arr->TransitivelyReferencedOverrides()) {
-            sem->AddTransitivelyReferencedOverride(var);
+        auto* refs = builder_->Sem().TransitivelyReferencedOverrides(arr);
+        if (refs) {
+            for (auto* var : *refs) {
+                builder_->Sem().AddTransitivelyReferencedOverride(sem, var);
+            }
         }
     }
 
@@ -2136,8 +2143,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             [&](const ast::Array* a) -> sem::Call* {
                 Mark(a);
                 // array element type must be inferred if it was not specified.
-                sem::ArrayCount el_count =
-                    sem::ConstantArrayCount{static_cast<uint32_t>(args.Length())};
+                const sem::ArrayCount* el_count = nullptr;
                 const sem::Type* el_ty = nullptr;
                 if (a->type) {
                     el_ty = Type(a->type);
@@ -2148,14 +2154,15 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                         AddError("cannot construct a runtime-sized array", expr->source);
                         return nullptr;
                     }
-                    if (auto count = ArrayCount(a->count)) {
-                        el_count = count.Get();
-                    } else {
+                    el_count = ArrayCount(a->count);
+                    if (!el_count) {
                         return nullptr;
                     }
                     // Note: validation later will detect any mismatches between explicit array
                     // size and number of initializer expressions.
                 } else {
+                    el_count = builder_->create<sem::ConstantArrayCount>(
+                        static_cast<uint32_t>(args.Length()));
                     auto arg_tys =
                         utils::Transform(args, [](auto* arg) { return arg->Type()->UnwrapRef(); });
                     el_ty = sem::Type::Common(arg_tys);
@@ -2228,11 +2235,13 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             },
             [&](Default) -> sem::Call* {
                 auto name = builder_->Symbols().NameFor(ident->symbol);
-                auto builtin_type = sem::ParseBuiltinType(name);
-                if (builtin_type != sem::BuiltinType::kNone) {
+                if (auto* alias = BuiltinTypeAlias(ident->symbol)) {
+                    return ty_init_or_conv(alias);
+                }
+                if (auto builtin_type = sem::ParseBuiltinType(name);
+                    builtin_type != sem::BuiltinType::kNone) {
                     return BuiltinCall(expr, builtin_type, args);
                 }
-
                 TINT_ICE(Resolver, diagnostics_)
                     << expr->source << " unhandled CallExpression target:\n"
                     << "resolved: " << (resolved ? resolved->TypeInfo().name : "<null>") << "\n"
@@ -2326,6 +2335,40 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
     }
 
     return call;
+}
+
+sem::Type* Resolver::BuiltinTypeAlias(Symbol sym) const {
+    auto name = builder_->Symbols().NameFor(sym);
+    auto& b = *builder_;
+    switch (ParseTypeAlias(name)) {
+        case TypeAlias::kVec2F:
+            return b.create<sem::Vector>(b.create<sem::F32>(), 2u);
+        case TypeAlias::kVec3F:
+            return b.create<sem::Vector>(b.create<sem::F32>(), 3u);
+        case TypeAlias::kVec4F:
+            return b.create<sem::Vector>(b.create<sem::F32>(), 4u);
+        case TypeAlias::kVec2H:
+            return b.create<sem::Vector>(b.create<sem::F16>(), 2u);
+        case TypeAlias::kVec3H:
+            return b.create<sem::Vector>(b.create<sem::F16>(), 3u);
+        case TypeAlias::kVec4H:
+            return b.create<sem::Vector>(b.create<sem::F16>(), 4u);
+        case TypeAlias::kVec2I:
+            return b.create<sem::Vector>(b.create<sem::I32>(), 2u);
+        case TypeAlias::kVec3I:
+            return b.create<sem::Vector>(b.create<sem::I32>(), 3u);
+        case TypeAlias::kVec4I:
+            return b.create<sem::Vector>(b.create<sem::I32>(), 4u);
+        case TypeAlias::kVec2U:
+            return b.create<sem::Vector>(b.create<sem::U32>(), 2u);
+        case TypeAlias::kVec3U:
+            return b.create<sem::Vector>(b.create<sem::U32>(), 3u);
+        case TypeAlias::kVec4U:
+            return b.create<sem::Vector>(b.create<sem::U32>(), 4u);
+        case TypeAlias::kUndefined:
+            break;
+    }
+    return nullptr;
 }
 
 void Resolver::CollectTextureSamplerPairs(const sem::Builtin* builtin,
@@ -2513,8 +2556,11 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
         if (current_function_) {
             if (global) {
                 current_function_->AddDirectlyReferencedGlobal(global);
-                for (auto* var : global->TransitivelyReferencedOverrides()) {
-                    current_function_->AddTransitivelyReferencedGlobal(var);
+                auto* refs = builder_->Sem().TransitivelyReferencedOverrides(global);
+                if (refs) {
+                    for (auto* var : *refs) {
+                        current_function_->AddTransitivelyReferencedGlobal(var);
+                    }
                 }
             }
         } else if (variable->Declaration()->Is<ast::Override>()) {
@@ -2522,8 +2568,11 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
                 // Track the reference to this pipeline-overridable constant and any other
                 // pipeline-overridable constants that it references.
                 resolved_overrides_->Add(global);
-                for (auto* var : global->TransitivelyReferencedOverrides()) {
-                    resolved_overrides_->Add(var);
+                auto* refs = builder_->Sem().TransitivelyReferencedOverrides(global);
+                if (refs) {
+                    for (auto* var : *refs) {
+                        resolved_overrides_->Add(var);
+                    }
                 }
             }
         } else if (variable->Declaration()->Is<ast::Var>()) {
@@ -2550,7 +2599,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
         return nullptr;
     }
 
-    if (resolved->Is<sem::Type>()) {
+    if (resolved->Is<sem::Type>() || BuiltinTypeAlias(symbol)) {
         AddError("missing '(' for type initializer or cast", expr->source.End());
         return nullptr;
     }
@@ -2887,15 +2936,16 @@ sem::Array* Resolver::Array(const ast::Array* arr) {
         return nullptr;
     }
 
-    sem::ArrayCount el_count = sem::RuntimeArrayCount{};
+    const sem::ArrayCount* el_count = nullptr;
 
     // Evaluate the constant array count expression.
     if (auto* count_expr = arr->count) {
-        if (auto count = ArrayCount(count_expr)) {
-            el_count = count.Get();
-        } else {
+        el_count = ArrayCount(count_expr);
+        if (!el_count) {
             return nullptr;
         }
+    } else {
+        el_count = builder_->create<sem::RuntimeArrayCount>();
     }
 
     auto* out = Array(arr->type->source,                              //
@@ -2916,17 +2966,17 @@ sem::Array* Resolver::Array(const ast::Array* arr) {
     // Track the pipeline-overridable constants that are transitively referenced by this array
     // type.
     for (auto* var : transitively_referenced_overrides) {
-        out->AddTransitivelyReferencedOverride(var);
+        builder_->Sem().AddTransitivelyReferencedOverride(out, var);
     }
 
     return out;
 }
 
-utils::Result<sem::ArrayCount> Resolver::ArrayCount(const ast::Expression* count_expr) {
+const sem::ArrayCount* Resolver::ArrayCount(const ast::Expression* count_expr) {
     // Evaluate the constant array count expression.
     const auto* count_sem = Materialize(Expression(count_expr));
     if (!count_sem) {
-        return utils::Failure;
+        return nullptr;
     }
 
     if (count_sem->Stage() == sem::EvaluationStage::kOverride) {
@@ -2934,34 +2984,34 @@ utils::Result<sem::ArrayCount> Resolver::ArrayCount(const ast::Expression* count
         // Is the count a named 'override'?
         if (auto* user = count_sem->UnwrapMaterialize()->As<sem::VariableUser>()) {
             if (auto* global = user->Variable()->As<sem::GlobalVariable>()) {
-                return sem::ArrayCount{sem::NamedOverrideArrayCount{global}};
+                return builder_->create<sem::NamedOverrideArrayCount>(global);
             }
         }
-        return sem::ArrayCount{sem::UnnamedOverrideArrayCount{count_sem}};
+        return builder_->create<sem::UnnamedOverrideArrayCount>(count_sem);
     }
 
     auto* count_val = count_sem->ConstantValue();
     if (!count_val) {
         AddError("array count must evaluate to a constant integer expression or override variable",
                  count_expr->source);
-        return utils::Failure;
+        return nullptr;
     }
 
     if (auto* ty = count_val->Type(); !ty->is_integer_scalar()) {
         AddError("array count must evaluate to a constant integer expression, but is type '" +
                      builder_->FriendlyName(ty) + "'",
                  count_expr->source);
-        return utils::Failure;
+        return nullptr;
     }
 
     int64_t count = count_val->As<AInt>();
     if (count < 1) {
         AddError("array count (" + std::to_string(count) + ") must be greater than 0",
                  count_expr->source);
-        return utils::Failure;
+        return nullptr;
     }
 
-    return sem::ArrayCount{sem::ConstantArrayCount{static_cast<uint32_t>(count)}};
+    return builder_->create<sem::ConstantArrayCount>(static_cast<uint32_t>(count));
 }
 
 bool Resolver::ArrayAttributes(utils::VectorRef<const ast::Attribute*> attributes,
@@ -2997,7 +3047,7 @@ bool Resolver::ArrayAttributes(utils::VectorRef<const ast::Attribute*> attribute
 sem::Array* Resolver::Array(const Source& el_source,
                             const Source& count_source,
                             const sem::Type* el_ty,
-                            sem::ArrayCount el_count,
+                            const sem::ArrayCount* el_count,
                             uint32_t explicit_stride) {
     uint32_t el_align = el_ty->Align();
     uint32_t el_size = el_ty->Size();
@@ -3005,7 +3055,7 @@ sem::Array* Resolver::Array(const Source& el_source,
     uint64_t stride = explicit_stride ? explicit_stride : implicit_stride;
     uint64_t size = 0;
 
-    if (auto const_count = std::get_if<sem::ConstantArrayCount>(&el_count)) {
+    if (auto const_count = el_count->As<sem::ConstantArrayCount>()) {
         size = const_count->value * stride;
         if (size > std::numeric_limits<uint32_t>::max()) {
             std::stringstream msg;
@@ -3014,7 +3064,7 @@ sem::Array* Resolver::Array(const Source& el_source,
             AddError(msg.str(), count_source);
             return nullptr;
         }
-    } else if (std::holds_alternative<sem::RuntimeArrayCount>(el_count)) {
+    } else if (el_count->Is<sem::RuntimeArrayCount>()) {
         size = stride;
     }
     auto* out = builder_->create<sem::Array>(el_ty, el_count, el_align, static_cast<uint32_t>(size),
@@ -3124,7 +3174,6 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                         AddError("offsets must be in ascending order", o->source);
                         return false;
                     }
-                    align = 1;
                     has_offset_attr = true;
                     return true;
                 },
@@ -3225,7 +3274,7 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
         }
 
         auto* sem_member = builder_->create<sem::StructMember>(
-            member, member->symbol, type, static_cast<uint32_t>(sem_members.size()),
+            member, member->source, member->symbol, type, static_cast<uint32_t>(sem_members.size()),
             static_cast<uint32_t>(offset), static_cast<uint32_t>(align),
             static_cast<uint32_t>(size), location);
         builder_->Sem().Add(member, sem_member);
@@ -3250,13 +3299,13 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
     }
 
     auto* out = builder_->create<sem::Struct>(
-        str, str->name, sem_members, static_cast<uint32_t>(struct_align),
+        str, str->source, str->name, sem_members, static_cast<uint32_t>(struct_align),
         static_cast<uint32_t>(struct_size), static_cast<uint32_t>(size_no_padding));
 
     for (size_t i = 0; i < sem_members.size(); i++) {
         auto* mem_type = sem_members[i]->Type();
         if (mem_type->Is<sem::Atomic>()) {
-            atomic_composite_info_.Add(out, &sem_members[i]->Declaration()->source);
+            atomic_composite_info_.Add(out, &sem_members[i]->Source());
             break;
         } else {
             if (auto found = atomic_composite_info_.Get(mem_type)) {
@@ -3580,8 +3629,8 @@ bool Resolver::ApplyAddressSpaceUsageToType(ast::AddressSpace address_space,
                                               decl->type->source)) {
                 std::stringstream err;
                 err << "while analyzing structure member " << sem_.TypeNameOf(str) << "."
-                    << builder_->Symbols().NameFor(decl->symbol);
-                AddNote(err.str(), decl->source);
+                    << builder_->Symbols().NameFor(member->Name());
+                AddNote(err.str(), member->Source());
                 return false;
             }
         }
@@ -3590,7 +3639,7 @@ bool Resolver::ApplyAddressSpaceUsageToType(ast::AddressSpace address_space,
 
     if (auto* arr = ty->As<sem::Array>()) {
         if (address_space != ast::AddressSpace::kStorage) {
-            if (arr->IsRuntimeSized()) {
+            if (arr->Count()->Is<sem::RuntimeArrayCount>()) {
                 AddError("runtime-sized arrays can only be used in the <storage> address space",
                          usage);
                 return false;

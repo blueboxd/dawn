@@ -69,8 +69,8 @@ TEST_F(CreateASTTypeForTest, Vector) {
 
 TEST_F(CreateASTTypeForTest, ArrayImplicitStride) {
     auto* arr = create([](ProgramBuilder& b) {
-        return b.create<sem::Array>(b.create<sem::F32>(), sem::ConstantArrayCount{2u}, 4u, 4u, 32u,
-                                    32u);
+        return b.create<sem::Array>(b.create<sem::F32>(), b.create<sem::ConstantArrayCount>(2u), 4u,
+                                    4u, 32u, 32u);
     });
     ASSERT_TRUE(arr->Is<ast::Array>());
     ASSERT_TRUE(arr->As<ast::Array>()->type->Is<ast::F32>());
@@ -83,8 +83,8 @@ TEST_F(CreateASTTypeForTest, ArrayImplicitStride) {
 
 TEST_F(CreateASTTypeForTest, ArrayNonImplicitStride) {
     auto* arr = create([](ProgramBuilder& b) {
-        return b.create<sem::Array>(b.create<sem::F32>(), sem::ConstantArrayCount{2u}, 4u, 4u, 64u,
-                                    32u);
+        return b.create<sem::Array>(b.create<sem::F32>(), b.create<sem::ConstantArrayCount>(2u), 4u,
+                                    4u, 64u, 32u);
     });
     ASSERT_TRUE(arr->Is<ast::Array>());
     ASSERT_TRUE(arr->As<ast::Array>()->type->Is<ast::F32>());
@@ -122,8 +122,8 @@ TEST_F(CreateASTTypeForTest, AliasedArrayWithComplexOverrideLength) {
 TEST_F(CreateASTTypeForTest, Struct) {
     auto* str = create([](ProgramBuilder& b) {
         auto* decl = b.Structure("S", {});
-        return b.create<sem::Struct>(decl, decl->name, sem::StructMemberList{}, 4u /* align */,
-                                     4u /* size */, 4u /* size_no_padding */);
+        return b.create<sem::Struct>(decl, decl->source, decl->name, sem::StructMemberList{},
+                                     4u /* align */, 4u /* size */, 4u /* size_no_padding */);
     });
     ASSERT_TRUE(str->Is<ast::TypeName>());
     EXPECT_EQ(ast_type_builder.Symbols().NameFor(str->As<ast::TypeName>()->name), "S");

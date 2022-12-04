@@ -194,7 +194,7 @@ bool Validator::IsFixedFootprint(const sem::Type* type) const {
         [&](const sem::Matrix*) { return true; },  //
         [&](const sem::Atomic*) { return true; },
         [&](const sem::Array* arr) {
-            return !arr->IsRuntimeSized() && IsFixedFootprint(arr->ElemType());
+            return !arr->Count()->Is<sem::RuntimeArrayCount>() && IsFixedFootprint(arr->ElemType());
         },
         [&](const sem::Struct* str) {
             for (auto* member : str->Members()) {
@@ -413,7 +413,7 @@ bool Validator::AddressSpaceLayout(const sem::Type* store_ty,
     };
 
     auto member_name_of = [this](const sem::StructMember* sm) {
-        return symbols_.NameFor(sm->Declaration()->symbol);
+        return symbols_.NameFor(sm->Name());
     };
 
     // Only validate the [type + address space] once
@@ -446,8 +446,7 @@ bool Validator::AddressSpaceLayout(const sem::Type* store_ty,
 
             // Recurse into the member type.
             if (!AddressSpaceLayout(m->Type(), address_space, m->Declaration()->type->source)) {
-                AddNote("see layout of struct:\n" + str->Layout(symbols_),
-                        str->Declaration()->source);
+                AddNote("see layout of struct:\n" + str->Layout(symbols_), str->Source());
                 note_usage();
                 return false;
             }
@@ -461,14 +460,13 @@ bool Validator::AddressSpaceLayout(const sem::Type* store_ty,
                              " bytes, but '" + member_name_of(m) + "' is currently at offset " +
                              std::to_string(m->Offset()) + ". Consider setting @align(" +
                              std::to_string(required_align) + ") on this member",
-                         m->Declaration()->source);
+                         m->Source());
 
-                AddNote("see layout of struct:\n" + str->Layout(symbols_),
-                        str->Declaration()->source);
+                AddNote("see layout of struct:\n" + str->Layout(symbols_), str->Source());
 
                 if (auto* member_str = m->Type()->As<sem::Struct>()) {
                     AddNote("and layout of struct member:\n" + member_str->Layout(symbols_),
-                            member_str->Declaration()->source);
+                            member_str->Source());
                 }
 
                 note_usage();
@@ -488,15 +486,14 @@ bool Validator::AddressSpaceLayout(const sem::Type* store_ty,
                             std::to_string(prev_to_curr_offset) + " bytes between '" +
                             member_name_of(prev_member) + "' and '" + member_name_of(m) +
                             "'. Consider setting @align(16) on this member",
-                        m->Declaration()->source);
+                        m->Source());
 
-                    AddNote("see layout of struct:\n" + str->Layout(symbols_),
-                            str->Declaration()->source);
+                    AddNote("see layout of struct:\n" + str->Layout(symbols_), str->Source());
 
                     auto* prev_member_str = prev_member->Type()->As<sem::Struct>();
                     AddNote("and layout of previous member struct:\n" +
                                 prev_member_str->Layout(symbols_),
-                            prev_member_str->Declaration()->source);
+                            prev_member_str->Source());
                     note_usage();
                     return false;
                 }
@@ -1228,8 +1225,8 @@ bool Validator::EntryPoint(const sem::Function* func, ast::PipelineStage stage) 
         if (auto* str = ty->As<sem::Struct>()) {
             for (auto* member : str->Members()) {
                 if (!validate_entry_point_attributes_inner(
-                        member->Declaration()->attributes, member->Type(),
-                        member->Declaration()->source, param_or_ret,
+                        member->Declaration()->attributes, member->Type(), member->Source(),
+                        param_or_ret,
                         /*is_struct_member*/ true, member->Location())) {
                     AddNote("while analyzing entry point '" + symbols_.NameFor(decl->symbol) + "'",
                             decl->source);
@@ -1766,12 +1763,13 @@ bool Validator::ArrayInitializer(const ast::CallExpression* ctor,
         }
     }
 
-    if (array_type->IsRuntimeSized()) {
+    auto* c = array_type->Count();
+    if (c->Is<sem::RuntimeArrayCount>()) {
         AddError("cannot construct a runtime-sized array", ctor->source);
         return false;
     }
 
-    if (array_type->IsOverrideSized()) {
+    if (c->IsAnyOf<sem::NamedOverrideArrayCount, sem::UnnamedOverrideArrayCount>()) {
         AddError("cannot construct an array that has an override-expression count", ctor->source);
         return false;
     }
@@ -1781,7 +1779,12 @@ bool Validator::ArrayInitializer(const ast::CallExpression* ctor,
         return false;
     }
 
-    const auto count = std::get<sem::ConstantArrayCount>(array_type->Count()).value;
+    if (!c->Is<sem::ConstantArrayCount>()) {
+        TINT_ICE(Resolver, diagnostics_) << "Invalid ArrayCount found";
+        return false;
+    }
+
+    const auto count = c->As<sem::ConstantArrayCount>()->value;
     if (!values.IsEmpty() && (values.Length() != count)) {
         std::string fm = values.Length() < count ? "few" : "many";
         AddError("array initializer has too " + fm + " elements: expected " +
@@ -2017,17 +2020,17 @@ bool Validator::Alias(const ast::Alias*) const {
 
 bool Validator::Structure(const sem::Struct* str, ast::PipelineStage stage) const {
     if (str->Members().empty()) {
-        AddError("structures must have at least one member", str->Declaration()->source);
+        AddError("structures must have at least one member", str->Source());
         return false;
     }
 
     utils::Hashset<uint32_t, 8> locations;
     for (auto* member : str->Members()) {
         if (auto* r = member->Type()->As<sem::Array>()) {
-            if (r->IsRuntimeSized()) {
+            if (r->Count()->Is<sem::RuntimeArrayCount>()) {
                 if (member != str->Members().back()) {
                     AddError("runtime arrays may only appear as the last member of a struct",
-                             member->Declaration()->source);
+                             member->Source());
                     return false;
                 }
             }
@@ -2039,7 +2042,7 @@ bool Validator::Structure(const sem::Struct* str, ast::PipelineStage stage) cons
         } else if (!IsFixedFootprint(member->Type())) {
             AddError(
                 "a struct that contains a runtime array cannot be nested inside another struct",
-                member->Declaration()->source);
+                member->Source());
             return false;
         }
 
@@ -2058,7 +2061,7 @@ bool Validator::Structure(const sem::Struct* str, ast::PipelineStage stage) cons
                     has_location = true;
                     TINT_ASSERT(Resolver, member->Location().has_value());
                     if (!LocationAttribute(location, member->Location().value(), member->Type(),
-                                           locations, stage, member->Declaration()->source)) {
+                                           locations, stage, member->Source())) {
                         return false;
                     }
                     return true;
@@ -2396,7 +2399,7 @@ bool Validator::IsValidationEnabled(utils::VectorRef<const ast::Attribute*> attr
 
 bool Validator::IsArrayWithOverrideCount(const sem::Type* ty) const {
     if (auto* arr = ty->UnwrapRef()->As<sem::Array>()) {
-        if (arr->IsOverrideSized()) {
+        if (arr->Count()->IsAnyOf<sem::NamedOverrideArrayCount, sem::UnnamedOverrideArrayCount>()) {
             return true;
         }
     }

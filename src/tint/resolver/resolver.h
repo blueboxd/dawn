@@ -273,7 +273,7 @@ class Resolver {
     /// Resolves and validates the expression used as the count parameter of an array.
     /// @param count_expr the expression used as the second template parameter to an array<>.
     /// @returns the number of elements in the array.
-    utils::Result<sem::ArrayCount> ArrayCount(const ast::Expression* count_expr);
+    const sem::ArrayCount* ArrayCount(const ast::Expression* count_expr);
 
     /// Resolves and validates the attributes on an array.
     /// @param attributes the attributes on the array type.
@@ -296,7 +296,7 @@ class Resolver {
     sem::Array* Array(const Source& el_source,
                       const Source& count_source,
                       const sem::Type* el_ty,
-                      sem::ArrayCount el_count,
+                      const sem::ArrayCount* el_count,
                       uint32_t explicit_stride);
 
     /// Builds and returns the semantic information for the alias `alias`.
@@ -384,6 +384,7 @@ class Resolver {
     /// Set the shadowing information on variable declarations.
     /// @note this method must only be called after all semantic nodes are built.
     void SetShadows();
+
     /// StatementScope() does the following:
     /// * Creates the AST -> SEM mapping.
     /// * Assigns `sem` to #current_statement_
@@ -414,6 +415,9 @@ class Resolver {
 
     /// @returns true if the symbol is the name of a builtin function.
     bool IsBuiltin(Symbol) const;
+
+    /// @returns the builtin type alias for the given symbol
+    sem::Type* BuiltinTypeAlias(Symbol) const;
 
     // ArrayInitializerSig represents a unique array initializer signature.
     // It is a tuple of the array type, number of arguments provided and earliest evaluation stage.
