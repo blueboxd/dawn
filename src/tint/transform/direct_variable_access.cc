@@ -45,7 +45,7 @@ struct AccessRoot {
     /// The pointer-unwrapped type of the *transformed* variable.
     /// This may be different for pointers in 'private' and 'function' address space, as the pointer
     /// parameter type is to the *base object* instead of the input pointer type.
-    tint::sem::Type const* type = nullptr;
+    tint::type::Type const* type = nullptr;
     /// The originating module-scope variable ('private', 'storage', 'uniform', 'workgroup'),
     /// function-scope variable ('function'), or pointer parameter in the source program.
     tint::sem::Variable const* variable = nullptr;
@@ -228,7 +228,8 @@ struct DirectVariableAccess::State {
         // will have the pointer parameters replaced with an array of u32s, used to perform the
         // pointer indexing in the variant.
         // Function call pointer arguments are replaced with an array of these dynamic indices.
-        for (auto* decl : utils::Reverse(sem.Module()->DependencyOrderedDeclarations())) {
+        auto decls = sem.Module()->DependencyOrderedDeclarations();
+        for (auto* decl : utils::Reverse(decls)) {
             if (auto* fn = sem.Get<sem::Function>(decl)) {
                 auto* fn_info = FnInfoFor(fn);
                 ProcessFunction(fn, fn_info);

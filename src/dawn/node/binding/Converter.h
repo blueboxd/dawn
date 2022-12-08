@@ -69,6 +69,8 @@ using ImplOf = typename ImplOfTraits<T>::type;
 class Converter {
   public:
     explicit Converter(Napi::Env e) : env(e) {}
+    Converter(Napi::Env e, wgpu::Device extensionDevice)
+        : env(e), device(std::move(extensionDevice)) {}
     ~Converter();
 
     // Conversion function. Converts the interop type IN to the Dawn type OUT.
@@ -268,6 +270,12 @@ class Converter {
 
     [[nodiscard]] bool Convert(interop::GPUQueryType& out, wgpu::QueryType in);
 
+    // The two conversion methods don't generate an error when false is returned. That
+    // responsibility is left to the caller if it is needed (it isn't always needed, see
+    // https://gpuweb.github.io/gpuweb/#gpu-supportedfeatures)
+    [[nodiscard]] bool Convert(wgpu::FeatureName& out, interop::GPUFeatureName in);
+    [[nodiscard]] bool Convert(interop::GPUFeatureName& out, wgpu::FeatureName in);
+
     // std::string to C string
     inline bool Convert(const char*& out, const std::string& in) {
         out = in.c_str();
@@ -408,6 +416,9 @@ class Converter {
     }
 
     Napi::Env env;
+    wgpu::Device device = nullptr;
+
+    bool HasFeature(wgpu::FeatureName feature);
 
     // Allocate() allocates and constructs an array of 'n' elements, and returns a pointer to
     // the first element. The array is freed when the Converter is destructed.

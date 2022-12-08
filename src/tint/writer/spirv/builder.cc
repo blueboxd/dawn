@@ -89,7 +89,7 @@ uint32_t pipeline_stage_to_execution_model(ast::PipelineStage stage) {
 /// one or more levels of an arrays inside of `type`.
 /// @param type the given type, which must not be null
 /// @returns the nested matrix type, or nullptr if none
-const sem::Matrix* GetNestedMatrixType(const sem::Type* type) {
+const sem::Matrix* GetNestedMatrixType(const type::Type* type) {
     while (auto* arr = type->As<sem::Array>()) {
         type = arr->ElemType();
     }
@@ -117,7 +117,7 @@ uint32_t builtin_to_glsl_method(const sem::Builtin* builtin) {
         case BuiltinType::kClamp:
             if (builtin->ReturnType()->is_float_scalar_or_vector()) {
                 return GLSLstd450NClamp;
-            } else if (builtin->ReturnType()->is_unsigned_scalar_or_vector()) {
+            } else if (builtin->ReturnType()->is_unsigned_integer_scalar_or_vector()) {
                 return GLSLstd450UClamp;
             } else {
                 return GLSLstd450SClamp;
@@ -161,7 +161,7 @@ uint32_t builtin_to_glsl_method(const sem::Builtin* builtin) {
         case BuiltinType::kMax:
             if (builtin->ReturnType()->is_float_scalar_or_vector()) {
                 return GLSLstd450NMax;
-            } else if (builtin->ReturnType()->is_unsigned_scalar_or_vector()) {
+            } else if (builtin->ReturnType()->is_unsigned_integer_scalar_or_vector()) {
                 return GLSLstd450UMax;
             } else {
                 return GLSLstd450SMax;
@@ -169,7 +169,7 @@ uint32_t builtin_to_glsl_method(const sem::Builtin* builtin) {
         case BuiltinType::kMin:
             if (builtin->ReturnType()->is_float_scalar_or_vector()) {
                 return GLSLstd450NMin;
-            } else if (builtin->ReturnType()->is_unsigned_scalar_or_vector()) {
+            } else if (builtin->ReturnType()->is_unsigned_integer_scalar_or_vector()) {
                 return GLSLstd450UMin;
             } else {
                 return GLSLstd450SMin;
@@ -201,7 +201,11 @@ uint32_t builtin_to_glsl_method(const sem::Builtin* builtin) {
         case BuiltinType::kRound:
             return GLSLstd450RoundEven;
         case BuiltinType::kSign:
-            return GLSLstd450FSign;
+            if (builtin->ReturnType()->is_signed_integer_scalar_or_vector()) {
+                return GLSLstd450SSign;
+            } else {
+                return GLSLstd450FSign;
+            }
         case BuiltinType::kSin:
             return GLSLstd450Sin;
         case BuiltinType::kSinh:
@@ -235,7 +239,7 @@ uint32_t builtin_to_glsl_method(const sem::Builtin* builtin) {
 }
 
 /// @return the vector element type if ty is a vector, otherwise return ty.
-const sem::Type* ElementTypeOf(const sem::Type* ty) {
+const type::Type* ElementTypeOf(const type::Type* ty) {
     if (auto* v = ty->As<sem::Vector>()) {
         return v->type();
     }
@@ -1153,7 +1157,7 @@ uint32_t Builder::GenerateExpressionWithLoadIfNeeded(const ast::Expression* expr
     return 0;
 }
 
-uint32_t Builder::GenerateLoadIfNeeded(const sem::Type* type, uint32_t id) {
+uint32_t Builder::GenerateLoadIfNeeded(const type::Type* type, uint32_t id) {
     if (auto* ref = type->As<sem::Reference>()) {
         type = ref->StoreType();
     } else {
@@ -1442,7 +1446,7 @@ uint32_t Builder::GenerateTypeInitializerOrConversion(const sem::Call* call,
     });
 }
 
-uint32_t Builder::GenerateCastOrCopyOrPassthrough(const sem::Type* to_type,
+uint32_t Builder::GenerateCastOrCopyOrPassthrough(const type::Type* to_type,
                                                   const ast::Expression* from_expr,
                                                   bool is_global_init) {
     // This should not happen as we rely on constant folding to obviate
@@ -1454,7 +1458,7 @@ uint32_t Builder::GenerateCastOrCopyOrPassthrough(const sem::Type* to_type,
         return 0;
     }
 
-    auto elem_type_of = [](const sem::Type* t) -> const sem::Type* {
+    auto elem_type_of = [](const type::Type* t) -> const type::Type* {
         if (t->is_scalar()) {
             return t;
         }
@@ -1706,7 +1710,7 @@ uint32_t Builder::GenerateConstantIfNeeded(const sem::Constant* constant) {
             }
             return composite(count.value());
         },
-        [&](const sem::Struct* s) { return composite(s->Members().size()); },
+        [&](const sem::Struct* s) { return composite(s->Members().Length()); },
         [&](Default) {
             error_ = "unhandled constant type: " + builder_.FriendlyName(ty);
             return 0;
@@ -1784,7 +1788,7 @@ uint32_t Builder::GenerateConstantIfNeeded(const ScalarConstant& constant) {
     return result_id;
 }
 
-uint32_t Builder::GenerateConstantNullIfNeeded(const sem::Type* type) {
+uint32_t Builder::GenerateConstantNullIfNeeded(const type::Type* type) {
     auto type_id = GenerateTypeIfNeeded(type);
     if (type_id == 0) {
         return 0;
@@ -1894,7 +1898,7 @@ uint32_t Builder::GenerateShortCircuitBinaryExpression(const ast::BinaryExpressi
     return result_id;
 }
 
-uint32_t Builder::GenerateSplat(uint32_t scalar_id, const sem::Type* vec_type) {
+uint32_t Builder::GenerateSplat(uint32_t scalar_id, const type::Type* vec_type) {
     // Create a new vector to splat scalar into
     auto splat_vector = result_op();
     auto* splat_vector_type = builder_.create<sem::Pointer>(vec_type, ast::AddressSpace::kFunction,
@@ -2052,7 +2056,7 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
     bool lhs_is_float_or_vec = lhs_type->is_float_scalar_or_vector();
     bool lhs_is_bool_or_vec = lhs_type->is_bool_scalar_or_vector();
     bool lhs_is_integer_or_vec = lhs_type->is_integer_scalar_or_vector();
-    bool lhs_is_unsigned = lhs_type->is_unsigned_scalar_or_vector();
+    bool lhs_is_unsigned = lhs_type->is_unsigned_integer_scalar_or_vector();
 
     spv::Op op = spv::Op::OpNop;
     if (expr->IsAnd()) {
@@ -2187,7 +2191,7 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
         }
     } else if (expr->IsShiftLeft()) {
         op = spv::Op::OpShiftLeftLogical;
-    } else if (expr->IsShiftRight() && lhs_type->is_signed_scalar_or_vector()) {
+    } else if (expr->IsShiftRight() && lhs_type->is_signed_integer_scalar_or_vector()) {
         // A shift right with a signed LHS is an arithmetic shift.
         op = spv::Op::OpShiftRightArithmetic;
     } else if (expr->IsShiftRight()) {
@@ -2458,7 +2462,7 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::Builtin*
             op = spv::Op::OpDPdyFine;
             break;
         case BuiltinType::kExtractBits:
-            op = builtin->Parameters()[0]->Type()->is_unsigned_scalar_or_vector()
+            op = builtin->Parameters()[0]->Type()->is_unsigned_integer_scalar_or_vector()
                      ? spv::Op::OpBitFieldUExtract
                      : spv::Op::OpBitFieldSExtract;
             break;
@@ -2543,7 +2547,7 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::Builtin*
             op = spv::Op::OpTranspose;
             break;
         case BuiltinType::kAbs:
-            if (builtin->ReturnType()->is_unsigned_scalar_or_vector()) {
+            if (builtin->ReturnType()->is_unsigned_integer_scalar_or_vector()) {
                 // abs() only operates on *signed* integers.
                 // This is a no-op for unsigned integers.
                 return get_arg_as_value_id(0);
@@ -3269,7 +3273,7 @@ bool Builder::GenerateAtomicBuiltin(const sem::Call* call,
     }
 }
 
-uint32_t Builder::GenerateSampledImage(const sem::Type* texture_type,
+uint32_t Builder::GenerateSampledImage(const type::Type* texture_type,
                                        Operand texture_operand,
                                        Operand sampler_operand) {
     // DepthTexture is always declared as SampledTexture.
@@ -3625,7 +3629,7 @@ bool Builder::GenerateVariableDeclStatement(const ast::VariableDeclStatement* st
     return GenerateFunctionVariable(stmt->variable);
 }
 
-uint32_t Builder::GenerateTypeIfNeeded(const sem::Type* type) {
+uint32_t Builder::GenerateTypeIfNeeded(const type::Type* type) {
     if (type == nullptr) {
         error_ = "attempting to generate type from null type";
         return 0;
@@ -3839,7 +3843,7 @@ bool Builder::GenerateArrayType(const sem::Array* arr, const Operand& result) {
     }
 
     auto result_id = std::get<uint32_t>(result);
-    if (arr->Count()->Is<sem::RuntimeArrayCount>()) {
+    if (arr->Count()->Is<type::RuntimeArrayCount>()) {
         push_type(spv::Op::OpTypeRuntimeArray, {result, Operand(elem_type)});
     } else {
         auto count = arr->ConstantCount();
@@ -3922,7 +3926,7 @@ bool Builder::GenerateStructType(const sem::Struct* struct_type, const Operand& 
         push_annot(spv::Op::OpDecorate, {Operand(struct_id), U32Operand(SpvDecorationBlock)});
     }
 
-    for (uint32_t i = 0; i < struct_type->Members().size(); ++i) {
+    for (uint32_t i = 0; i < struct_type->Members().Length(); ++i) {
         auto mem_id = GenerateStructMember(struct_id, i, struct_type->Members()[i]);
         if (mem_id == 0) {
             return false;

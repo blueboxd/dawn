@@ -67,6 +67,7 @@
 #include "src/tint/transform/manager.h"
 #include "src/tint/transform/module_scope_var_to_entry_point_param.h"
 #include "src/tint/transform/packed_vec3.h"
+#include "src/tint/transform/preserve_padding.h"
 #include "src/tint/transform/promote_initializers_to_let.h"
 #include "src/tint/transform/promote_side_effects_to_decl.h"
 #include "src/tint/transform/remove_phonies.h"
@@ -131,8 +132,8 @@ class ScopedBitCast {
   public:
     ScopedBitCast(GeneratorImpl* generator,
                   std::ostream& stream,
-                  const sem::Type* curr_type,
-                  const sem::Type* target_type)
+                  const type::Type* curr_type,
+                  const type::Type* target_type)
         : s(stream) {
         auto* target_vec_type = target_type->As<sem::Vector>();
 
@@ -180,6 +181,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         polyfills.first_trailing_bit = true;
         polyfills.insert_bits = transform::BuiltinPolyfill::Level::kClampParameters;
         polyfills.int_div_mod = true;
+        polyfills.sign_int = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         data.Add<transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<transform::BuiltinPolyfill>();
@@ -218,6 +220,8 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(new_bindings_map);
     }
     manager.Add<transform::MultiplanarExternalTexture>();
+
+    manager.Add<transform::PreservePadding>();
 
     manager.Add<transform::Unshadow>();
 
@@ -344,7 +348,7 @@ bool GeneratorImpl::Generate() {
     return true;
 }
 
-bool GeneratorImpl::EmitTypeDecl(const sem::Type* ty) {
+bool GeneratorImpl::EmitTypeDecl(const type::Type* ty) {
     if (auto* str = ty->As<sem::Struct>()) {
         if (!EmitStructType(current_buffer_, str)) {
             return false;
@@ -488,7 +492,7 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
         return true;
     };
 
-    auto signed_type_of = [&](const sem::Type* ty) -> const sem::Type* {
+    auto signed_type_of = [&](const type::Type* ty) -> const type::Type* {
         if (ty->is_integer_scalar()) {
             return builder_.create<sem::I32>();
         } else if (auto* v = ty->As<sem::Vector>()) {
@@ -497,7 +501,7 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
         return {};
     };
 
-    auto unsigned_type_of = [&](const sem::Type* ty) -> const sem::Type* {
+    auto unsigned_type_of = [&](const type::Type* ty) -> const type::Type* {
         if (ty->is_integer_scalar()) {
             return builder_.create<sem::U32>();
         } else if (auto* v = ty->As<sem::Vector>()) {
@@ -525,7 +529,8 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
 
     // Handle +/-/* of signed values
     if ((expr->IsAdd() || expr->IsSubtract() || expr->IsMultiply()) &&
-        lhs_type->is_signed_scalar_or_vector() && rhs_type->is_signed_scalar_or_vector()) {
+        lhs_type->is_signed_integer_scalar_or_vector() &&
+        rhs_type->is_signed_integer_scalar_or_vector()) {
         // If lhs or rhs is a vector, use that type (support implicit scalar to
         // vector promotion)
         auto* target_type = lhs_type->Is<sem::Vector>()
@@ -558,7 +563,7 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
     // TODO(crbug.com/tint/1077): This may not be necessary. The MSL spec
     // seems to imply that left shifting a signed value is treated the same as
     // left shifting an unsigned value, but we need to make sure.
-    if (expr->IsShiftLeft() && lhs_type->is_signed_scalar_or_vector()) {
+    if (expr->IsShiftLeft() && lhs_type->is_signed_integer_scalar_or_vector()) {
         // Shift left: discards top bits, so convert first operand to unsigned
         // first, then convert result back to signed
         ScopedBitCast outer_int_cast(this, out, lhs_type, signed_type_of(lhs_type));
@@ -1604,7 +1609,7 @@ bool GeneratorImpl::EmitContinue(const ast::ContinueStatement*) {
     return true;
 }
 
-bool GeneratorImpl::EmitZeroValue(std::ostream& out, const sem::Type* type) {
+bool GeneratorImpl::EmitZeroValue(std::ostream& out, const type::Type* type) {
     return Switch(
         type,
         [&](const sem::Bool*) {
@@ -1758,8 +1763,8 @@ bool GeneratorImpl::EmitConstant(std::ostream& out, const sem::Constant* constan
                 return true;
             }
 
-            auto& members = s->Members();
-            for (size_t i = 0; i < members.size(); i++) {
+            auto members = s->Members();
+            for (size_t i = 0; i < members.Length(); i++) {
                 if (i > 0) {
                     out << ", ";
                 }
@@ -2509,7 +2514,7 @@ bool GeneratorImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
 }
 
 bool GeneratorImpl::EmitType(std::ostream& out,
-                             const sem::Type* type,
+                             const type::Type* type,
                              const std::string& name,
                              bool* name_printed /* = nullptr */) {
     if (name_printed) {
@@ -2537,7 +2542,7 @@ bool GeneratorImpl::EmitType(std::ostream& out,
                 return false;
             }
             out << ", ";
-            if (arr->Count()->Is<sem::RuntimeArrayCount>()) {
+            if (arr->Count()->Is<type::RuntimeArrayCount>()) {
                 out << "1";
             } else {
                 auto count = arr->ConstantCount();
@@ -2714,7 +2719,7 @@ bool GeneratorImpl::EmitType(std::ostream& out,
 }
 
 bool GeneratorImpl::EmitTypeAndName(std::ostream& out,
-                                    const sem::Type* type,
+                                    const type::Type* type,
                                     const std::string& name) {
     bool name_printed = false;
     if (!EmitType(out, type, name, &name_printed)) {
@@ -2915,7 +2920,7 @@ bool GeneratorImpl::EmitUnaryOp(std::ostream& out, const ast::UnaryOpExpression*
     // Handle `-e` when `e` is signed, so that we ensure that if `e` is the
     // largest negative value, it returns `e`.
     auto* expr_type = TypeOf(expr->expr)->UnwrapRef();
-    if (expr->op == ast::UnaryOp::kNegation && expr_type->is_signed_scalar_or_vector()) {
+    if (expr->op == ast::UnaryOp::kNegation && expr_type->is_signed_integer_scalar_or_vector()) {
         auto fn = utils::GetOrCreate(unary_minus_funcs_, expr_type, [&]() -> std::string {
             // e.g.:
             // int tint_unary_minus(const int v) {
@@ -3074,7 +3079,7 @@ bool GeneratorImpl::EmitLet(const ast::Let* let) {
     return true;
 }
 
-GeneratorImpl::SizeAndAlign GeneratorImpl::MslPackedTypeSizeAndAlign(const sem::Type* ty) {
+GeneratorImpl::SizeAndAlign GeneratorImpl::MslPackedTypeSizeAndAlign(const type::Type* ty) {
     return Switch(
         ty,
 
@@ -3165,7 +3170,7 @@ GeneratorImpl::SizeAndAlign GeneratorImpl::MslPackedTypeSizeAndAlign(const sem::
                     << "arrays with explicit strides should not exist past the SPIR-V reader";
                 return SizeAndAlign{};
             }
-            if (arr->Count()->Is<sem::RuntimeArrayCount>()) {
+            if (arr->Count()->Is<type::RuntimeArrayCount>()) {
                 return SizeAndAlign{arr->Stride(), arr->Align()};
             }
             if (auto count = arr->ConstantCount()) {

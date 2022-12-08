@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "gtest/gtest.h"
+#include "gmock/gmock.h"
+
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/disable_validation_attribute.h"
 #include "src/tint/ast/id_attribute.h"
@@ -33,16 +34,13 @@ using namespace tint::number_suffixes;  // NOLINT
 namespace tint::inspector {
 namespace {
 
-// All the tests that descend from InspectorBuilder are expected to define their
-// test state via building up the AST through InspectorBuilder and then generate
-// the program with ::Build.
-// The returned Inspector from ::Build can then be used to test expecations.
+// All the tests that descend from InspectorBuilder are expected to define their test state via
+// building up the AST through InspectorBuilder and then generate the program with ::Build. The
+// returned Inspector from ::Build can then be used to test expectations.
 //
-// All the tests that descend from InspectorRunner are expected to define their
-// test state via a WGSL shader, which will be parsed to generate a Program and
-// Inspector in ::Initialize.
-// The returned Inspector from ::Initialize can then be used to test
-// expecations.
+// All the tests that descend from InspectorRunner are expected to define their test state via a
+// WGSL shader, which will be parsed to generate a Program and Inspector in ::Initialize. The
+// returned Inspector from ::Initialize can then be used to test expectations.
 
 class InspectorGetEntryPointTest : public InspectorBuilder, public testing::Test {};
 
@@ -289,6 +287,10 @@ TEST_P(InspectorGetEntryPointComponentAndCompositionTest, Test) {
     std::tie(component, composition) = GetParam();
     std::function<const ast::Type*()> tint_type = GetTypeFunction(component, composition);
 
+    if (component == ComponentType::kF16) {
+        Enable(ast::Extension::kF16);
+    }
+
     auto* in_var = Param("in_var", tint_type(),
                          utils::Vector{
                              Location(0_u),
@@ -325,9 +327,10 @@ TEST_P(InspectorGetEntryPointComponentAndCompositionTest, Test) {
 }
 INSTANTIATE_TEST_SUITE_P(InspectorGetEntryPointTest,
                          InspectorGetEntryPointComponentAndCompositionTest,
-                         testing::Combine(testing::Values(ComponentType::kFloat,
-                                                          ComponentType::kSInt,
-                                                          ComponentType::kUInt),
+                         testing::Combine(testing::Values(ComponentType::kF32,
+                                                          ComponentType::kI32,
+                                                          ComponentType::kU32,
+                                                          ComponentType::kF16),
                                           testing::Values(CompositionType::kScalar,
                                                           CompositionType::kVec2,
                                                           CompositionType::kVec3,
@@ -371,23 +374,23 @@ TEST_F(InspectorGetEntryPointTest, MultipleInOutVariables) {
     EXPECT_TRUE(result[0].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].input_variables[0].location_attribute);
     EXPECT_EQ(InterpolationType::kFlat, result[0].input_variables[0].interpolation_type);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[0].component_type);
     EXPECT_EQ("in_var1", result[0].input_variables[1].name);
     EXPECT_TRUE(result[0].input_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].input_variables[1].location_attribute);
     EXPECT_EQ(InterpolationType::kFlat, result[0].input_variables[1].interpolation_type);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[1].component_type);
     EXPECT_EQ("in_var4", result[0].input_variables[2].name);
     EXPECT_TRUE(result[0].input_variables[2].has_location_attribute);
     EXPECT_EQ(4u, result[0].input_variables[2].location_attribute);
     EXPECT_EQ(InterpolationType::kFlat, result[0].input_variables[2].interpolation_type);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[2].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[2].component_type);
 
     ASSERT_EQ(1u, result[0].output_variables.size());
     EXPECT_EQ("<retval>", result[0].output_variables[0].name);
     EXPECT_TRUE(result[0].output_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[0].component_type);
 }
 
 TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutVariables) {
@@ -435,26 +438,26 @@ TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutVariables) {
     EXPECT_TRUE(result[0].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].input_variables[0].location_attribute);
     EXPECT_EQ(InterpolationType::kFlat, result[0].input_variables[0].interpolation_type);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[0].component_type);
 
     ASSERT_EQ(1u, result[0].output_variables.size());
     EXPECT_EQ("<retval>", result[0].output_variables[0].name);
     EXPECT_TRUE(result[0].output_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[0].component_type);
 
     ASSERT_EQ(1u, result[1].input_variables.size());
     EXPECT_EQ("in_var_bar", result[1].input_variables[0].name);
     EXPECT_TRUE(result[1].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[1].input_variables[0].location_attribute);
     EXPECT_EQ(InterpolationType::kFlat, result[1].input_variables[0].interpolation_type);
-    EXPECT_EQ(ComponentType::kUInt, result[1].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[1].input_variables[0].component_type);
 
     ASSERT_EQ(1u, result[1].output_variables.size());
     EXPECT_EQ("<retval>", result[1].output_variables[0].name);
     EXPECT_TRUE(result[1].output_variables[0].has_location_attribute);
     EXPECT_EQ(1u, result[1].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[1].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[1].output_variables[0].component_type);
 }
 
 TEST_F(InspectorGetEntryPointTest, BuiltInsNotStageVariables) {
@@ -487,7 +490,7 @@ TEST_F(InspectorGetEntryPointTest, BuiltInsNotStageVariables) {
     EXPECT_EQ("in_var1", result[0].input_variables[0].name);
     EXPECT_TRUE(result[0].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].input_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kFloat, result[0].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kF32, result[0].input_variables[0].component_type);
 
     ASSERT_EQ(0u, result[0].output_variables.size());
 }
@@ -519,21 +522,21 @@ TEST_F(InspectorGetEntryPointTest, InOutStruct) {
     EXPECT_EQ("param.a", result[0].input_variables[0].name);
     EXPECT_TRUE(result[0].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].input_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[0].component_type);
     EXPECT_EQ("param.b", result[0].input_variables[1].name);
     EXPECT_TRUE(result[0].input_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].input_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[1].component_type);
 
     ASSERT_EQ(2u, result[0].output_variables.size());
     EXPECT_EQ("<retval>.a", result[0].output_variables[0].name);
     EXPECT_TRUE(result[0].output_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[0].component_type);
     EXPECT_EQ("<retval>.b", result[0].output_variables[1].name);
     EXPECT_TRUE(result[0].output_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].output_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[1].component_type);
 }
 
 TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutSharedStruct) {
@@ -565,21 +568,21 @@ TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutSharedStruct) {
     EXPECT_EQ("<retval>.a", result[0].output_variables[0].name);
     EXPECT_TRUE(result[0].output_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[0].component_type);
     EXPECT_EQ("<retval>.b", result[0].output_variables[1].name);
     EXPECT_TRUE(result[0].output_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].output_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[1].component_type);
 
     ASSERT_EQ(2u, result[1].input_variables.size());
     EXPECT_EQ("param.a", result[1].input_variables[0].name);
     EXPECT_TRUE(result[1].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[1].input_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[1].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[1].input_variables[0].component_type);
     EXPECT_EQ("param.b", result[1].input_variables[1].name);
     EXPECT_TRUE(result[1].input_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[1].input_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[1].input_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[1].input_variables[1].component_type);
 
     ASSERT_EQ(0u, result[1].output_variables.size());
 }
@@ -617,33 +620,33 @@ TEST_F(InspectorGetEntryPointTest, MixInOutVariablesAndStruct) {
     EXPECT_EQ("param_a.a", result[0].input_variables[0].name);
     EXPECT_TRUE(result[0].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].input_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[0].component_type);
     EXPECT_EQ("param_a.b", result[0].input_variables[1].name);
     EXPECT_TRUE(result[0].input_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].input_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[1].component_type);
     EXPECT_EQ("param_b.a", result[0].input_variables[2].name);
     EXPECT_TRUE(result[0].input_variables[2].has_location_attribute);
     EXPECT_EQ(2u, result[0].input_variables[2].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[2].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[2].component_type);
     EXPECT_EQ("param_c", result[0].input_variables[3].name);
     EXPECT_TRUE(result[0].input_variables[3].has_location_attribute);
     EXPECT_EQ(3u, result[0].input_variables[3].location_attribute);
-    EXPECT_EQ(ComponentType::kFloat, result[0].input_variables[3].component_type);
+    EXPECT_EQ(ComponentType::kF32, result[0].input_variables[3].component_type);
     EXPECT_EQ("param_d", result[0].input_variables[4].name);
     EXPECT_TRUE(result[0].input_variables[4].has_location_attribute);
     EXPECT_EQ(4u, result[0].input_variables[4].location_attribute);
-    EXPECT_EQ(ComponentType::kFloat, result[0].input_variables[4].component_type);
+    EXPECT_EQ(ComponentType::kF32, result[0].input_variables[4].component_type);
 
     ASSERT_EQ(2u, result[0].output_variables.size());
     EXPECT_EQ("<retval>.a", result[0].output_variables[0].name);
     EXPECT_TRUE(result[0].output_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[0].component_type);
     EXPECT_EQ("<retval>.b", result[0].output_variables[1].name);
     EXPECT_TRUE(result[0].output_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].output_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[1].component_type);
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideUnreferenced) {
@@ -3202,7 +3205,7 @@ fn main(@location(0) fragUV: vec2<f32>,
 })";
 
     Inspector& inspector = Initialize(shader);
-    auto result = inspector.GetSamplerTextureUses("foo");
+    inspector.GetSamplerTextureUses("foo");
     ASSERT_TRUE(inspector.has_error()) << inspector.error();
 }
 
@@ -3224,7 +3227,8 @@ fn main(@location(0) fragUV: vec2<f32>,
     auto result_1 = inspector.GetSamplerTextureUses("main");
     ASSERT_FALSE(inspector.has_error()) << inspector.error();
 
-    EXPECT_EQ(result_0, result_1);
+    EXPECT_EQ((utils::Vector<tint::sem::SamplerTexturePair, 4>(result_0)),
+              (utils::Vector<tint::sem::SamplerTexturePair, 4>(result_1)));
 }
 
 TEST_F(InspectorGetSamplerTextureUsesTest, BothIndirect) {
@@ -3641,7 +3645,7 @@ fn main(@location(0) fragUV: vec2<f32>,
 })";
 
     Inspector& inspector = Initialize(shader);
-    auto result = inspector.GetSamplerTextureUses("main");
+    inspector.GetSamplerTextureUses("main");
 }
 
 }  // namespace

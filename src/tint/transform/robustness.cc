@@ -106,7 +106,7 @@ struct Robustness::State {
             },
             [&](const sem::Array* arr) -> const ast::Expression* {
                 const ast::Expression* max = nullptr;
-                if (arr->Count()->Is<sem::RuntimeArrayCount>()) {
+                if (arr->Count()->Is<type::RuntimeArrayCount>()) {
                     // Size is unknown until runtime.
                     // Must clamp, even if the index is constant.
                     auto* arr_ptr = b.AddressOf(ctx.Clone(expr->object));
@@ -176,7 +176,7 @@ struct Robustness::State {
         auto* coords_arg = expr->args[static_cast<size_t>(coords_idx)];
         auto* coords_ty = builtin->Parameters()[static_cast<size_t>(coords_idx)]->Type();
 
-        auto width_of = [&](const sem::Type* ty) {
+        auto width_of = [&](const type::Type* ty) {
             if (auto* vec = ty->As<sem::Vector>()) {
                 return vec->Width();
             }
@@ -241,7 +241,7 @@ struct Robustness::State {
 
             // texture_dims is u32 or vecN<u32>
             const auto* unsigned_max = b.Sub(texture_dims, scalar_or_vec(b.Expr(1_a), width));
-            if (target_ty->is_signed_scalar_or_vector()) {
+            if (target_ty->is_signed_integer_scalar_or_vector()) {
                 const auto* zero = scalar_or_vec(b.Expr(0_a), width);
                 const auto* signed_max = cast_to_signed(unsigned_max, width);
                 ctx.Replace(coords_arg, b.Call("clamp", ctx.Clone(coords_arg), zero, signed_max));

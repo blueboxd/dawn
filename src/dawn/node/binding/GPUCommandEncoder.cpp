@@ -31,12 +31,13 @@ namespace wgpu::binding {
 ////////////////////////////////////////////////////////////////////////////////
 // wgpu::bindings::GPUCommandEncoder
 ////////////////////////////////////////////////////////////////////////////////
-GPUCommandEncoder::GPUCommandEncoder(wgpu::CommandEncoder enc) : enc_(std::move(enc)) {}
+GPUCommandEncoder::GPUCommandEncoder(wgpu::Device device, wgpu::CommandEncoder enc)
+    : device_(std::move(device)), enc_(std::move(enc)) {}
 
 interop::Interface<interop::GPURenderPassEncoder> GPUCommandEncoder::beginRenderPass(
     Napi::Env env,
     interop::GPURenderPassDescriptor descriptor) {
-    Converter conv(env);
+    Converter conv(env, device_);
 
     wgpu::RenderPassDescriptor desc{};
     wgpu::RenderPassDescriptorMaxDrawCount maxDrawCountDesc{};
@@ -172,6 +173,12 @@ void GPUCommandEncoder::insertDebugMarker(Napi::Env, std::string markerLabel) {
 void GPUCommandEncoder::writeTimestamp(Napi::Env env,
                                        interop::Interface<interop::GPUQuerySet> querySet,
                                        interop::GPUSize32 queryIndex) {
+    if (!device_.HasFeature(wgpu::FeatureName::TimestampQuery)) {
+        Napi::TypeError::New(env, "timestamp-query feature is not enabled.")
+            .ThrowAsJavaScriptException();
+        return;
+    }
+
     Converter conv(env);
 
     wgpu::QuerySet q{};

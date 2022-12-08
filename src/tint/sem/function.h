@@ -57,7 +57,7 @@ class Function final : public Castable<Function, CallTarget> {
     /// @param return_location the location value for the return, if provided
     /// @param parameters the parameters to the function
     Function(const ast::Function* declaration,
-             Type* return_type,
+             type::Type* return_type,
              std::optional<uint32_t> return_location,
              utils::VectorRef<Parameter*> parameters);
 
@@ -135,9 +135,7 @@ class Function final : public Castable<Function, CallTarget> {
 
     /// @returns the list of texture/sampler pairs that this function uses
     /// (directly or indirectly).
-    const utils::Vector<VariablePair, 8>& TextureSamplerPairs() const {
-        return texture_sampler_pairs_;
-    }
+    utils::VectorRef<VariablePair> TextureSamplerPairs() const { return texture_sampler_pairs_; }
 
     /// @returns the list of direct calls to functions / builtins made by this
     /// function

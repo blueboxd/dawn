@@ -458,10 +458,8 @@ libtint_source_set("libtint_core_all_src") {
     "sem/storage_texture.h",
     "sem/switch_statement.h",
     "sem/texture.h",
-    "sem/type.h",
     "sem/type_conversion.h",
     "sem/type_initializer.h",
-    "sem/type_manager.h",
     "sem/type_mappings.h",
     "sem/u32.h",
     "sem/vector.h",
@@ -529,6 +527,8 @@ libtint_source_set("libtint_core_all_src") {
     "transform/packed_vec3.h",
     "transform/pad_structs.cc",
     "transform/pad_structs.h",
+    "transform/preserve_padding.cc",
+    "transform/preserve_padding.h",
     "transform/promote_initializers_to_let.cc",
     "transform/promote_initializers_to_let.h",
     "transform/promote_side_effects_to_decl.cc",
@@ -575,6 +575,10 @@ libtint_source_set("libtint_core_all_src") {
     "transform/while_to_loop.h",
     "transform/zero_init_workgroup_memory.cc",
     "transform/zero_init_workgroup_memory.h",
+    "type/array_count.h",
+    "type/node.h",
+    "type/type.h",
+    "type/type_manager.h",
     "utils/bitcast.h",
     "utils/bitset.h",
     "utils/block_allocator.h",
@@ -714,14 +718,10 @@ libtint_source_set("libtint_sem_src") {
     "sem/switch_statement.h",
     "sem/texture.cc",
     "sem/texture.h",
-    "sem/type.cc",
-    "sem/type.h",
     "sem/type_conversion.cc",
     "sem/type_conversion.h",
     "sem/type_initializer.cc",
     "sem/type_initializer.h",
-    "sem/type_manager.cc",
-    "sem/type_manager.h",
     "sem/type_mappings.h",
     "sem/u32.cc",
     "sem/u32.h",
@@ -737,10 +737,26 @@ libtint_source_set("libtint_sem_src") {
   public_deps = [ ":libtint_core_all_src" ]
 }
 
+libtint_source_set("libtint_type_src") {
+  sources = [
+    "type/array_count.cc",
+    "type/array_count.h",
+    "type/node.cc",
+    "type/node.h",
+    "type/type.cc",
+    "type/type.h",
+    "type/type_manager.cc",
+    "type/type_manager.h",
+  ]
+
+  public_deps = [ ":libtint_core_all_src" ]
+}
+
 libtint_source_set("libtint_core_src") {
   public_deps = [
     ":libtint_core_all_src",
     ":libtint_sem_src",
+    ":libtint_type_src",
   ]
 }
 
@@ -1206,10 +1222,15 @@ if (tint_build_unittests) {
       "sem/storage_texture_test.cc",
       "sem/struct_test.cc",
       "sem/texture_test.cc",
-      "sem/type_manager_test.cc",
-      "sem/type_test.cc",
       "sem/u32_test.cc",
       "sem/vector_test.cc",
+    ]
+  }
+
+  tint_unittests_source_set("tint_unittests_type_src") {
+    sources = [
+      "type/type_manager_test.cc",
+      "type/type_test.cc",
     ]
   }
 
@@ -1244,6 +1265,7 @@ if (tint_build_unittests) {
       "transform/num_workgroups_from_uniform_test.cc",
       "transform/packed_vec3_test.cc",
       "transform/pad_structs_test.cc",
+      "transform/preserve_padding_test.cc",
       "transform/promote_initializers_to_let_test.cc",
       "transform/promote_side_effects_to_decl_test.cc",
       "transform/remove_continue_in_switch_test.cc",
@@ -1687,6 +1709,7 @@ if (tint_build_unittests) {
       ":tint_unittests_sem_src",
       ":tint_unittests_text_src",
       ":tint_unittests_transform_src",
+      ":tint_unittests_type_src",
       ":tint_unittests_utils_src",
       ":tint_unittests_writer_src",
     ]
