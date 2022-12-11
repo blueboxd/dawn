@@ -23,19 +23,20 @@
 #include <utility>
 
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/abstract_float.h"
-#include "src/tint/sem/abstract_int.h"
-#include "src/tint/sem/array.h"
-#include "src/tint/sem/bool.h"
 #include "src/tint/sem/constant.h"
-#include "src/tint/sem/f16.h"
-#include "src/tint/sem/f32.h"
-#include "src/tint/sem/i32.h"
-#include "src/tint/sem/matrix.h"
 #include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/type_initializer.h"
-#include "src/tint/sem/u32.h"
-#include "src/tint/sem/vector.h"
+#include "src/tint/type/abstract_float.h"
+#include "src/tint/type/abstract_int.h"
+#include "src/tint/type/array.h"
+#include "src/tint/type/bool.h"
+#include "src/tint/type/f16.h"
+#include "src/tint/type/f32.h"
+#include "src/tint/type/i32.h"
+#include "src/tint/type/matrix.h"
+#include "src/tint/type/struct.h"
+#include "src/tint/type/u32.h"
+#include "src/tint/type/vector.h"
 #include "src/tint/utils/bitcast.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/map.h"
@@ -59,8 +60,8 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_iu32(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const sem::I32*) { return f(cs->template As<i32>()...); },
-        [&](const sem::U32*) { return f(cs->template As<u32>()...); });
+        [&](const type::I32*) { return f(cs->template As<i32>()...); },
+        [&](const type::U32*) { return f(cs->template As<u32>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -69,9 +70,9 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_ia_iu32(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const sem::AbstractInt*) { return f(cs->template As<AInt>()...); },
-        [&](const sem::I32*) { return f(cs->template As<i32>()...); },
-        [&](const sem::U32*) { return f(cs->template As<u32>()...); });
+        [&](const type::AbstractInt*) { return f(cs->template As<AInt>()...); },
+        [&](const type::I32*) { return f(cs->template As<i32>()...); },
+        [&](const type::U32*) { return f(cs->template As<u32>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -80,10 +81,10 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_ia_iu32_bool(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const sem::AbstractInt*) { return f(cs->template As<AInt>()...); },
-        [&](const sem::I32*) { return f(cs->template As<i32>()...); },
-        [&](const sem::U32*) { return f(cs->template As<u32>()...); },
-        [&](const sem::Bool*) { return f(cs->template As<bool>()...); });
+        [&](const type::AbstractInt*) { return f(cs->template As<AInt>()...); },
+        [&](const type::I32*) { return f(cs->template As<i32>()...); },
+        [&](const type::U32*) { return f(cs->template As<u32>()...); },
+        [&](const type::Bool*) { return f(cs->template As<bool>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -92,11 +93,11 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_fia_fi32_f16(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const sem::AbstractInt*) { return f(cs->template As<AInt>()...); },
-        [&](const sem::AbstractFloat*) { return f(cs->template As<AFloat>()...); },
-        [&](const sem::F32*) { return f(cs->template As<f32>()...); },
-        [&](const sem::I32*) { return f(cs->template As<i32>()...); },
-        [&](const sem::F16*) { return f(cs->template As<f16>()...); });
+        [&](const type::AbstractInt*) { return f(cs->template As<AInt>()...); },
+        [&](const type::AbstractFloat*) { return f(cs->template As<AFloat>()...); },
+        [&](const type::F32*) { return f(cs->template As<f32>()...); },
+        [&](const type::I32*) { return f(cs->template As<i32>()...); },
+        [&](const type::F16*) { return f(cs->template As<f16>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -105,12 +106,12 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_fia_fiu32_f16(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const sem::AbstractInt*) { return f(cs->template As<AInt>()...); },
-        [&](const sem::AbstractFloat*) { return f(cs->template As<AFloat>()...); },
-        [&](const sem::F32*) { return f(cs->template As<f32>()...); },
-        [&](const sem::I32*) { return f(cs->template As<i32>()...); },
-        [&](const sem::U32*) { return f(cs->template As<u32>()...); },
-        [&](const sem::F16*) { return f(cs->template As<f16>()...); });
+        [&](const type::AbstractInt*) { return f(cs->template As<AInt>()...); },
+        [&](const type::AbstractFloat*) { return f(cs->template As<AFloat>()...); },
+        [&](const type::F32*) { return f(cs->template As<f32>()...); },
+        [&](const type::I32*) { return f(cs->template As<i32>()...); },
+        [&](const type::U32*) { return f(cs->template As<u32>()...); },
+        [&](const type::F16*) { return f(cs->template As<f16>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -119,13 +120,13 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_fia_fiu32_f16_bool(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const sem::AbstractInt*) { return f(cs->template As<AInt>()...); },
-        [&](const sem::AbstractFloat*) { return f(cs->template As<AFloat>()...); },
-        [&](const sem::F32*) { return f(cs->template As<f32>()...); },
-        [&](const sem::I32*) { return f(cs->template As<i32>()...); },
-        [&](const sem::U32*) { return f(cs->template As<u32>()...); },
-        [&](const sem::F16*) { return f(cs->template As<f16>()...); },
-        [&](const sem::Bool*) { return f(cs->template As<bool>()...); });
+        [&](const type::AbstractInt*) { return f(cs->template As<AInt>()...); },
+        [&](const type::AbstractFloat*) { return f(cs->template As<AFloat>()...); },
+        [&](const type::F32*) { return f(cs->template As<f32>()...); },
+        [&](const type::I32*) { return f(cs->template As<i32>()...); },
+        [&](const type::U32*) { return f(cs->template As<u32>()...); },
+        [&](const type::F16*) { return f(cs->template As<f16>()...); },
+        [&](const type::Bool*) { return f(cs->template As<bool>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -134,9 +135,9 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_fa_f32_f16(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const sem::AbstractFloat*) { return f(cs->template As<AFloat>()...); },
-        [&](const sem::F32*) { return f(cs->template As<f32>()...); },
-        [&](const sem::F16*) { return f(cs->template As<f16>()...); });
+        [&](const type::AbstractFloat*) { return f(cs->template As<AFloat>()...); },
+        [&](const type::F32*) { return f(cs->template As<f32>()...); },
+        [&](const type::F16*) { return f(cs->template As<f16>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -148,7 +149,7 @@ auto Dispatch_bool(F&& f, CONSTANTS&&... cs) {
 
 /// ZeroTypeDispatch is a helper for calling the function `f`, passing a single zero-value argument
 /// of the C++ type that corresponds to the type::Type `type`. For example, calling
-/// `ZeroTypeDispatch()` with a type of `sem::I32*` will call the function f with a single argument
+/// `ZeroTypeDispatch()` with a type of `type::I32*` will call the function f with a single argument
 /// of `i32(0)`.
 /// @returns the value returned by calling `f`.
 /// @note `type` must be a scalar or abstract numeric type. Other types will not call `f`, and will
@@ -156,14 +157,14 @@ auto Dispatch_bool(F&& f, CONSTANTS&&... cs) {
 template <typename F>
 auto ZeroTypeDispatch(const type::Type* type, F&& f) {
     return Switch(
-        type,                                                     //
-        [&](const sem::AbstractInt*) { return f(AInt(0)); },      //
-        [&](const sem::AbstractFloat*) { return f(AFloat(0)); },  //
-        [&](const sem::I32*) { return f(i32(0)); },               //
-        [&](const sem::U32*) { return f(u32(0)); },               //
-        [&](const sem::F32*) { return f(f32(0)); },               //
-        [&](const sem::F16*) { return f(f16(0)); },               //
-        [&](const sem::Bool*) { return f(static_cast<bool>(0)); });
+        type,                                                      //
+        [&](const type::AbstractInt*) { return f(AInt(0)); },      //
+        [&](const type::AbstractFloat*) { return f(AFloat(0)); },  //
+        [&](const type::I32*) { return f(i32(0)); },               //
+        [&](const type::U32*) { return f(u32(0)); },               //
+        [&](const type::F32*) { return f(f32(0)); },               //
+        [&](const type::F16*) { return f(f16(0)); },               //
+        [&](const type::Bool*) { return f(static_cast<bool>(0)); });
 }
 
 /// @returns `value` if `T` is not a Number, otherwise ValueOf returns the inner value of the
@@ -415,7 +416,7 @@ struct Composite : ImplConstant {
         utils::Vector<const sem::Constant*, 4> conv_els;
         conv_els.Reserve(elements.Length());
         std::function<const type::Type*(size_t idx)> target_el_ty;
-        if (auto* str = target_ty->As<sem::Struct>()) {
+        if (auto* str = target_ty->As<type::StructBase>()) {
             if (str->Members().Length() != elements.Length()) {
                 TINT_ICE(Resolver, builder.Diagnostics())
                     << "const-eval conversion of structure has mismatched element counts";
@@ -477,15 +478,15 @@ ImplResult CreateElement(ProgramBuilder& builder, const Source& source, const ty
 const ImplConstant* ZeroValue(ProgramBuilder& builder, const type::Type* type) {
     return Switch(
         type,  //
-        [&](const sem::Vector* v) -> const ImplConstant* {
+        [&](const type::Vector* v) -> const ImplConstant* {
             auto* zero_el = ZeroValue(builder, v->type());
             return builder.create<Splat>(type, zero_el, v->Width());
         },
-        [&](const sem::Matrix* m) -> const ImplConstant* {
+        [&](const type::Matrix* m) -> const ImplConstant* {
             auto* zero_el = ZeroValue(builder, m->ColumnType());
             return builder.create<Splat>(type, zero_el, m->columns());
         },
-        [&](const sem::Array* a) -> const ImplConstant* {
+        [&](const type::Array* a) -> const ImplConstant* {
             if (auto n = a->ConstantCount()) {
                 if (auto* zero_el = ZeroValue(builder, a->ElemType())) {
                     return builder.create<Splat>(type, zero_el, n.value());
@@ -493,7 +494,7 @@ const ImplConstant* ZeroValue(ProgramBuilder& builder, const type::Type* type) {
             }
             return nullptr;
         },
-        [&](const sem::Struct* s) -> const ImplConstant* {
+        [&](const type::StructBase* s) -> const ImplConstant* {
             utils::Hashmap<const type::Type*, const ImplConstant*, 8> zero_by_type;
             utils::Vector<const sem::Constant*, 4> zeros;
             zeros.Reserve(s->Members().Length());
@@ -530,7 +531,7 @@ bool Equal(const sem::Constant* a, const sem::Constant* b) {
     }
     return Switch(
         a->Type(),  //
-        [&](const sem::Vector* vec) {
+        [&](const type::Vector* vec) {
             for (size_t i = 0; i < vec->Width(); i++) {
                 if (!Equal(a->Index(i), b->Index(i))) {
                     return false;
@@ -538,7 +539,7 @@ bool Equal(const sem::Constant* a, const sem::Constant* b) {
             }
             return true;
         },
-        [&](const sem::Matrix* mat) {
+        [&](const type::Matrix* mat) {
             for (size_t i = 0; i < mat->columns(); i++) {
                 if (!Equal(a->Index(i), b->Index(i))) {
                     return false;
@@ -546,7 +547,7 @@ bool Equal(const sem::Constant* a, const sem::Constant* b) {
             }
             return true;
         },
-        [&](const sem::Array* arr) {
+        [&](const type::Array* arr) {
             if (auto count = arr->ConstantCount()) {
                 for (size_t i = 0; i < count; i++) {
                     if (!Equal(a->Index(i), b->Index(i))) {
@@ -1181,7 +1182,7 @@ auto ConstEval::Dot4Func(const Source& source, const type::Type* elem_ty) {
 ConstEval::Result ConstEval::Dot(const Source& source,
                                  const sem::Constant* v1,
                                  const sem::Constant* v2) {
-    auto* vec_ty = v1->Type()->As<sem::Vector>();
+    auto* vec_ty = v1->Type()->As<type::Vector>();
     TINT_ASSERT(Resolver, vec_ty);
     auto* elem_ty = vec_ty->type();
     switch (vec_ty->Width()) {
@@ -1208,7 +1209,7 @@ ConstEval::Result ConstEval::Dot(const Source& source,
 ConstEval::Result ConstEval::Length(const Source& source,
                                     const type::Type* ty,
                                     const sem::Constant* c0) {
-    auto* vec_ty = c0->Type()->As<sem::Vector>();
+    auto* vec_ty = c0->Type()->As<type::Vector>();
     // Evaluates to the absolute value of e if T is scalar.
     if (vec_ty == nullptr) {
         auto create = [&](auto e) {
@@ -1358,7 +1359,7 @@ ConstEval::Result ConstEval::VecSplat(const type::Type* ty,
                                       utils::VectorRef<const sem::Constant*> args,
                                       const Source&) {
     if (auto* arg = args[0]) {
-        return builder.create<Splat>(ty, arg, static_cast<const sem::Vector*>(ty)->Width());
+        return builder.create<Splat>(ty, arg, static_cast<const type::Vector*>(ty)->Width());
     }
     return nullptr;
 }
@@ -1379,7 +1380,7 @@ ConstEval::Result ConstEval::VecInitM(const type::Type* ty,
             return nullptr;
         }
         auto* arg_ty = arg->Type();
-        if (auto* arg_vec = arg_ty->As<sem::Vector>()) {
+        if (auto* arg_vec = arg_ty->As<type::Vector>()) {
             // Extract out vector elements.
             for (uint32_t j = 0; j < arg_vec->Width(); j++) {
                 auto* el = val->Index(j);
@@ -1398,7 +1399,7 @@ ConstEval::Result ConstEval::VecInitM(const type::Type* ty,
 ConstEval::Result ConstEval::MatInitS(const type::Type* ty,
                                       utils::VectorRef<const sem::Constant*> args,
                                       const Source&) {
-    auto* m = static_cast<const sem::Matrix*>(ty);
+    auto* m = static_cast<const type::Matrix*>(ty);
 
     utils::Vector<const sem::Constant*, 4> els;
     for (uint32_t c = 0; c < m->columns(); c++) {
@@ -1448,7 +1449,7 @@ ConstEval::Result ConstEval::Index(const sem::Expression* obj_expr,
 }
 
 ConstEval::Result ConstEval::MemberAccess(const sem::Expression* obj_expr,
-                                          const sem::StructMember* member) {
+                                          const type::StructMemberBase* member) {
     auto obj_val = obj_expr->ConstantValue();
     if (!obj_val) {
         return nullptr;
@@ -1550,8 +1551,8 @@ ConstEval::Result ConstEval::OpMultiply(const type::Type* ty,
 ConstEval::Result ConstEval::OpMultiplyMatVec(const type::Type* ty,
                                               utils::VectorRef<const sem::Constant*> args,
                                               const Source& source) {
-    auto* mat_ty = args[0]->Type()->As<sem::Matrix>();
-    auto* vec_ty = args[1]->Type()->As<sem::Vector>();
+    auto* mat_ty = args[0]->Type()->As<type::Matrix>();
+    auto* vec_ty = args[1]->Type()->As<type::Vector>();
     auto* elem_ty = vec_ty->type();
 
     auto dot = [&](const sem::Constant* m, size_t row, const sem::Constant* v) {
@@ -1600,8 +1601,8 @@ ConstEval::Result ConstEval::OpMultiplyMatVec(const type::Type* ty,
 ConstEval::Result ConstEval::OpMultiplyVecMat(const type::Type* ty,
                                               utils::VectorRef<const sem::Constant*> args,
                                               const Source& source) {
-    auto* vec_ty = args[0]->Type()->As<sem::Vector>();
-    auto* mat_ty = args[1]->Type()->As<sem::Matrix>();
+    auto* vec_ty = args[0]->Type()->As<type::Vector>();
+    auto* mat_ty = args[1]->Type()->As<type::Matrix>();
     auto* elem_ty = vec_ty->type();
 
     auto dot = [&](const sem::Constant* v, const sem::Constant* m, size_t col) {
@@ -1653,8 +1654,8 @@ ConstEval::Result ConstEval::OpMultiplyMatMat(const type::Type* ty,
                                               const Source& source) {
     auto* mat1 = args[0];
     auto* mat2 = args[1];
-    auto* mat1_ty = mat1->Type()->As<sem::Matrix>();
-    auto* mat2_ty = mat2->Type()->As<sem::Matrix>();
+    auto* mat1_ty = mat1->Type()->As<type::Matrix>();
+    auto* mat2_ty = mat2->Type()->As<type::Matrix>();
     auto* elem_ty = mat1_ty->type();
 
     auto dot = [&](const sem::Constant* m1, size_t row, const sem::Constant* m2, size_t col) {
@@ -1706,7 +1707,7 @@ ConstEval::Result ConstEval::OpMultiplyMatMat(const type::Type* ty,
         }
 
         // Add column vector to matrix
-        auto* col_vec_ty = ty->As<sem::Matrix>()->ColumnType();
+        auto* col_vec_ty = ty->As<type::Matrix>()->ColumnType();
         result_mat.Push(CreateComposite(builder, col_vec_ty, col_vec));
     }
     return CreateComposite(builder, ty, result_mat);
@@ -1954,7 +1955,7 @@ ConstEval::Result ConstEval::OpShiftLeft(const type::Type* ty,
         return Dispatch_ia_iu32(create, c0, c1);
     };
 
-    if (!type::Type::DeepestElementOf(args[1]->Type())->Is<sem::U32>()) {
+    if (!type::Type::DeepestElementOf(args[1]->Type())->Is<type::U32>()) {
         TINT_ICE(Resolver, builder.Diagnostics())
             << "Element type of rhs of ShiftLeft must be a u32";
         return utils::Failure;
@@ -2019,7 +2020,7 @@ ConstEval::Result ConstEval::OpShiftRight(const type::Type* ty,
         return Dispatch_ia_iu32(create, c0, c1);
     };
 
-    if (!type::Type::DeepestElementOf(args[1]->Type())->Is<sem::U32>()) {
+    if (!type::Type::DeepestElementOf(args[1]->Type())->Is<type::U32>()) {
         TINT_ICE(Resolver, builder.Diagnostics())
             << "Element type of rhs of ShiftLeft must be a u32";
         return utils::Failure;
@@ -2283,7 +2284,7 @@ ConstEval::Result ConstEval::cross(const type::Type* ty,
                                    const Source& source) {
     auto* u = args[0];
     auto* v = args[1];
-    auto* elem_ty = u->Type()->As<sem::Vector>()->type();
+    auto* elem_ty = u->Type()->As<type::Vector>()->type();
 
     // cross product of a v3 is the determinant of the 3x3 matrix:
     //
@@ -2352,7 +2353,7 @@ ConstEval::Result ConstEval::determinant(const type::Type* ty,
                                          const Source& source) {
     auto calculate = [&]() -> ConstEval::Result {
         auto* m = args[0];
-        auto* mat_ty = m->Type()->As<sem::Matrix>();
+        auto* mat_ty = m->Type()->As<type::Matrix>();
         auto me = [&](size_t r, size_t c) { return m->Index(c)->Index(r); };
         switch (mat_ty->rows()) {
             case 2:
@@ -2647,23 +2648,23 @@ ConstEval::Result ConstEval::frexp(const type::Type* ty,
         double fract = std::frexp(s->As<AFloat>(), &exp);
         return Switch(
             s->Type(),
-            [&](const sem::F32*) {
+            [&](const type::F32*) {
                 return FractExp{
-                    CreateElement(builder, source, builder.create<sem::F32>(), f32(fract)),
-                    CreateElement(builder, source, builder.create<sem::I32>(), i32(exp)),
+                    CreateElement(builder, source, builder.create<type::F32>(), f32(fract)),
+                    CreateElement(builder, source, builder.create<type::I32>(), i32(exp)),
                 };
             },
-            [&](const sem::F16*) {
+            [&](const type::F16*) {
                 return FractExp{
-                    CreateElement(builder, source, builder.create<sem::F16>(), f16(fract)),
-                    CreateElement(builder, source, builder.create<sem::I32>(), i32(exp)),
+                    CreateElement(builder, source, builder.create<type::F16>(), f16(fract)),
+                    CreateElement(builder, source, builder.create<type::I32>(), i32(exp)),
                 };
             },
-            [&](const sem::AbstractFloat*) {
+            [&](const type::AbstractFloat*) {
                 return FractExp{
-                    CreateElement(builder, source, builder.create<sem::AbstractFloat>(),
+                    CreateElement(builder, source, builder.create<type::AbstractFloat>(),
                                   AFloat(fract)),
-                    CreateElement(builder, source, builder.create<sem::AbstractInt>(), AInt(exp)),
+                    CreateElement(builder, source, builder.create<type::AbstractInt>(), AInt(exp)),
                 };
             },
             [&](Default) {
@@ -2674,7 +2675,7 @@ ConstEval::Result ConstEval::frexp(const type::Type* ty,
             });
     };
 
-    if (auto* vec = arg->Type()->As<sem::Vector>()) {
+    if (auto* vec = arg->Type()->As<type::Vector>()) {
         utils::Vector<const sem::Constant*, 4> fract_els;
         utils::Vector<const sem::Constant*, 4> exp_els;
         for (uint32_t i = 0; i < vec->Width(); i++) {
@@ -2685,8 +2686,8 @@ ConstEval::Result ConstEval::frexp(const type::Type* ty,
             fract_els.Push(fe.fract.Get());
             exp_els.Push(fe.exp.Get());
         }
-        auto fract_ty = builder.create<sem::Vector>(fract_els[0]->Type(), vec->Width());
-        auto exp_ty = builder.create<sem::Vector>(exp_els[0]->Type(), vec->Width());
+        auto fract_ty = builder.create<type::Vector>(fract_els[0]->Type(), vec->Width());
+        auto exp_ty = builder.create<type::Vector>(exp_els[0]->Type(), vec->Width());
         return CreateComposite(builder, ty,
                                utils::Vector<const sem::Constant*, 2>{
                                    CreateComposite(builder, fract_ty, std::move(fract_els)),
@@ -3044,7 +3045,7 @@ ConstEval::Result ConstEval::reflect(const type::Type* ty,
         // e1 - 2 * dot(e2, e1) * e2.
         auto* e1 = args[0];
         auto* e2 = args[1];
-        auto* vec_ty = ty->As<sem::Vector>();
+        auto* vec_ty = ty->As<type::Vector>();
         auto* el_ty = vec_ty->type();
 
         // dot(e2, e1)
@@ -3082,7 +3083,7 @@ ConstEval::Result ConstEval::reflect(const type::Type* ty,
 ConstEval::Result ConstEval::refract(const type::Type* ty,
                                      utils::VectorRef<const sem::Constant*> args,
                                      const Source& source) {
-    auto* vec_ty = ty->As<sem::Vector>();
+    auto* vec_ty = ty->As<type::Vector>();
     auto* el_ty = vec_ty->type();
 
     auto compute_k = [&](auto e3, auto dot_e2_e1) -> ConstEval::Result {
@@ -3436,9 +3437,9 @@ ConstEval::Result ConstEval::transpose(const type::Type* ty,
                                        utils::VectorRef<const sem::Constant*> args,
                                        const Source&) {
     auto* m = args[0];
-    auto* mat_ty = m->Type()->As<sem::Matrix>();
+    auto* mat_ty = m->Type()->As<type::Matrix>();
     auto me = [&](size_t r, size_t c) { return m->Index(c)->Index(r); };
-    auto* result_mat_ty = ty->As<sem::Matrix>();
+    auto* result_mat_ty = ty->As<type::Matrix>();
 
     // Produce column vectors from each row
     utils::Vector<const sem::Constant*, 4> result_mat;

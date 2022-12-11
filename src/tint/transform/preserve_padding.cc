@@ -18,8 +18,8 @@
 #include <utility>
 
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/reference.h"
 #include "src/tint/sem/struct.h"
+#include "src/tint/type/reference.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/vector.h"
 
@@ -53,7 +53,7 @@ struct PreservePadding::State {
                         // Ignore phony assignment.
                         return;
                     }
-                    if (ty->As<sem::Reference>()->AddressSpace() != ast::AddressSpace::kStorage) {
+                    if (ty->As<type::Reference>()->AddressSpace() != ast::AddressSpace::kStorage) {
                         // We only care about assignments that write to variables in the storage
                         // address space, as nothing else is host-visible.
                         return;
@@ -132,7 +132,7 @@ struct PreservePadding::State {
 
         return Switch(
             ty,  //
-            [&](const sem::Array* arr) {
+            [&](const type::Array* arr) {
                 // Call a helper function that uses a loop to assigns each element separately.
                 return call_helper([&]() {
                     utils::Vector<const ast::Statement*, 8> body;
@@ -171,7 +171,7 @@ struct PreservePadding::State {
     bool HasPadding(const type::Type* ty) {
         return Switch(
             ty,  //
-            [&](const sem::Array* arr) {
+            [&](const type::Array* arr) {
                 auto* elem_ty = arr->ElemType();
                 if (elem_ty->Size() % elem_ty->Align() > 0) {
                     return true;

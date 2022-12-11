@@ -36,7 +36,7 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/scope_stack.h"
 #include "src/tint/sem/builtin.h"
-#include "src/tint/sem/storage_texture.h"
+#include "src/tint/type/storage_texture.h"
 #include "src/tint/writer/spirv/function.h"
 #include "src/tint/writer/spirv/scalar_constant.h"
 
@@ -44,10 +44,12 @@
 namespace tint::sem {
 class Call;
 class Constant;
-class Reference;
 class TypeInitializer;
 class TypeConversion;
 }  // namespace tint::sem
+namespace tint::type {
+class Reference;
+}  // namespace tint::type
 
 namespace tint::writer::spirv {
 
@@ -473,27 +475,27 @@ class Builder {
     /// @param texture the texture to generate
     /// @param result the result operand
     /// @returns true if the texture was successfully generated
-    bool GenerateTextureType(const sem::Texture* texture, const Operand& result);
+    bool GenerateTextureType(const type::Texture* texture, const Operand& result);
     /// Generates an array type declaration
     /// @param ary the array to generate
     /// @param result the result operand
     /// @returns true if the array was successfully generated
-    bool GenerateArrayType(const sem::Array* ary, const Operand& result);
+    bool GenerateArrayType(const type::Array* ary, const Operand& result);
     /// Generates a matrix type declaration
     /// @param mat the matrix to generate
     /// @param result the result operand
     /// @returns true if the matrix was successfully generated
-    bool GenerateMatrixType(const sem::Matrix* mat, const Operand& result);
+    bool GenerateMatrixType(const type::Matrix* mat, const Operand& result);
     /// Generates a pointer type declaration
     /// @param ptr the pointer type to generate
     /// @param result the result operand
     /// @returns true if the pointer was successfully generated
-    bool GeneratePointerType(const sem::Pointer* ptr, const Operand& result);
+    bool GeneratePointerType(const type::Pointer* ptr, const Operand& result);
     /// Generates a reference type declaration
     /// @param ref the reference type to generate
     /// @param result the result operand
     /// @returns true if the reference was successfully generated
-    bool GenerateReferenceType(const sem::Reference* ref, const Operand& result);
+    bool GenerateReferenceType(const type::Reference* ref, const Operand& result);
     /// Generates a vector type declaration
     /// @param struct_type the vector to generate
     /// @param result the result operand
@@ -515,7 +517,7 @@ class Builder {
     /// @param vec the vector to generate
     /// @param result the result operand
     /// @returns true if the vector was successfully generated
-    bool GenerateVectorType(const sem::Vector* vec, const Operand& result);
+    bool GenerateVectorType(const type::Vector* vec, const Operand& result);
 
     /// Generates instructions to splat `scalar_id` into a vector of type
     /// `vec_type`
@@ -532,7 +534,7 @@ class Builder {
     /// @returns id of the result matrix
     uint32_t GenerateMatrixAddOrSub(uint32_t lhs_id,
                                     uint32_t rhs_id,
-                                    const sem::Matrix* type,
+                                    const type::Matrix* type,
                                     spv::Op op);
 
     /// Converts TexelFormat to SPIR-V and pushes an appropriate capability.
@@ -573,7 +575,7 @@ class Builder {
     /// @param type the type of the vector to generate
     /// @param value_id the ID of the scalar value to splat
     /// @returns the ID on success or 0 on failure
-    uint32_t GenerateConstantVectorSplatIfNeeded(const sem::Vector* type, uint32_t value_id);
+    uint32_t GenerateConstantVectorSplatIfNeeded(const type::Vector* type, uint32_t value_id);
 
     /// Registers the semantic variable to the given SPIR-V ID
     /// @param var the semantic variable

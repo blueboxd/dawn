@@ -23,8 +23,8 @@
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/expression.h"
 #include "src/tint/sem/index_accessor_expression.h"
-#include "src/tint/sem/reference.h"
 #include "src/tint/sem/statement.h"
+#include "src/tint/type/reference.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Robustness);
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Robustness::Config);
@@ -70,7 +70,7 @@ struct Robustness::State {
         auto* sem = src->Sem().Get(expr)->UnwrapMaterialize()->As<sem::IndexAccessorExpression>();
         auto* ret_type = sem->Type();
 
-        auto* ref = ret_type->As<sem::Reference>();
+        auto* ref = ret_type->As<type::Reference>();
         if (ref && omitted_address_spaces.count(ref->AddressSpace()) != 0) {
             return nullptr;
         }
@@ -86,7 +86,7 @@ struct Robustness::State {
 
         auto* clamped_idx = Switch(
             sem->Object()->Type()->UnwrapRef(),  //
-            [&](const sem::Vector* vec) -> const ast::Expression* {
+            [&](const type::Vector* vec) -> const ast::Expression* {
                 if (sem->Index()->ConstantValue()) {
                     // Index and size is constant.
                     // Validation will have rejected any OOB accesses.
@@ -95,7 +95,7 @@ struct Robustness::State {
 
                 return b.Call("min", idx(), u32(vec->Width() - 1u));
             },
-            [&](const sem::Matrix* mat) -> const ast::Expression* {
+            [&](const type::Matrix* mat) -> const ast::Expression* {
                 if (sem->Index()->ConstantValue()) {
                     // Index and size is constant.
                     // Validation will have rejected any OOB accesses.
@@ -104,7 +104,7 @@ struct Robustness::State {
 
                 return b.Call("min", idx(), u32(mat->columns() - 1u));
             },
-            [&](const sem::Array* arr) -> const ast::Expression* {
+            [&](const type::Array* arr) -> const ast::Expression* {
                 const ast::Expression* max = nullptr;
                 if (arr->Count()->Is<type::RuntimeArrayCount>()) {
                     // Size is unknown until runtime.
@@ -122,7 +122,7 @@ struct Robustness::State {
                     // Note: Don't be tempted to use the array override variable as an expression
                     // here, the name might be shadowed!
                     b.Diagnostics().add_error(diag::System::Transform,
-                                              sem::Array::kErrExpectedConstantCount);
+                                              type::Array::kErrExpectedConstantCount);
                     return nullptr;
                 }
 
@@ -177,7 +177,7 @@ struct Robustness::State {
         auto* coords_ty = builtin->Parameters()[static_cast<size_t>(coords_idx)]->Type();
 
         auto width_of = [&](const type::Type* ty) {
-            if (auto* vec = ty->As<sem::Vector>()) {
+            if (auto* vec = ty->As<type::Vector>()) {
                 return vec->Width();
             }
             return 1u;

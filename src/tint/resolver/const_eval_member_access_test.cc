@@ -65,7 +65,7 @@ TEST_F(ResolverConstEvalTest, MemberAccess) {
     EXPECT_TRUE(i2->ConstantValue()->AllEqual());
     EXPECT_FALSE(i2->ConstantValue()->AnyZero());
     EXPECT_FALSE(i2->ConstantValue()->AllZero());
-    EXPECT_TRUE(i2->ConstantValue()->Type()->Is<sem::U32>());
+    EXPECT_TRUE(i2->ConstantValue()->Type()->Is<type::U32>());
     EXPECT_EQ(i2->ConstantValue()->As<u32>(), 2_u);
 }
 
@@ -79,11 +79,11 @@ TEST_F(ResolverConstEvalTest, Matrix_AFloat_Construct_From_AInt_Vectors) {
 
     auto* sem = Sem().Get(c);
     ASSERT_NE(sem, nullptr);
-    EXPECT_TRUE(sem->Type()->Is<sem::Matrix>());
+    EXPECT_TRUE(sem->Type()->Is<type::Matrix>());
     auto* cv = sem->ConstantValue();
     EXPECT_TYPE(cv->Type(), sem->Type());
-    EXPECT_TRUE(cv->Index(0)->Type()->Is<sem::Vector>());
-    EXPECT_TRUE(cv->Index(0)->Index(0)->Type()->Is<sem::AbstractFloat>());
+    EXPECT_TRUE(cv->Index(0)->Type()->Is<type::Vector>());
+    EXPECT_TRUE(cv->Index(0)->Index(0)->Type()->Is<type::AbstractFloat>());
     EXPECT_FALSE(cv->AllEqual());
     EXPECT_FALSE(cv->AnyZero());
     EXPECT_FALSE(cv->AllZero());

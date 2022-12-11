@@ -28,27 +28,27 @@
 #include "src/tint/ast/module.h"
 #include "src/tint/ast/override.h"
 #include "src/tint/ast/var.h"
-#include "src/tint/sem/array.h"
-#include "src/tint/sem/bool.h"
 #include "src/tint/sem/call.h"
-#include "src/tint/sem/depth_multisampled_texture.h"
-#include "src/tint/sem/depth_texture.h"
-#include "src/tint/sem/external_texture.h"
-#include "src/tint/sem/f16.h"
-#include "src/tint/sem/f32.h"
 #include "src/tint/sem/function.h"
-#include "src/tint/sem/i32.h"
-#include "src/tint/sem/matrix.h"
 #include "src/tint/sem/module.h"
-#include "src/tint/sem/multisampled_texture.h"
-#include "src/tint/sem/sampled_texture.h"
 #include "src/tint/sem/statement.h"
-#include "src/tint/sem/storage_texture.h"
 #include "src/tint/sem/struct.h"
-#include "src/tint/sem/u32.h"
 #include "src/tint/sem/variable.h"
-#include "src/tint/sem/vector.h"
-#include "src/tint/sem/void.h"
+#include "src/tint/type/array.h"
+#include "src/tint/type/bool.h"
+#include "src/tint/type/depth_multisampled_texture.h"
+#include "src/tint/type/depth_texture.h"
+#include "src/tint/type/external_texture.h"
+#include "src/tint/type/f16.h"
+#include "src/tint/type/f32.h"
+#include "src/tint/type/i32.h"
+#include "src/tint/type/matrix.h"
+#include "src/tint/type/multisampled_texture.h"
+#include "src/tint/type/sampled_texture.h"
+#include "src/tint/type/storage_texture.h"
+#include "src/tint/type/u32.h"
+#include "src/tint/type/vector.h"
+#include "src/tint/type/void.h"
 #include "src/tint/utils/math.h"
 #include "src/tint/utils/string.h"
 #include "src/tint/utils/unique_vector.h"
@@ -75,10 +75,10 @@ std::tuple<ComponentType, CompositionType> CalculateComponentAndComposition(
 
     ComponentType componentType = Switch(
         type::Type::DeepestElementOf(type),  //
-        [&](const sem::F32*) { return ComponentType::kF32; },
-        [&](const sem::F16*) { return ComponentType::kF16; },
-        [&](const sem::I32*) { return ComponentType::kI32; },
-        [&](const sem::U32*) { return ComponentType::kU32; },
+        [&](const type::F32*) { return ComponentType::kF32; },
+        [&](const type::F16*) { return ComponentType::kF16; },
+        [&](const type::I32*) { return ComponentType::kI32; },
+        [&](const type::U32*) { return ComponentType::kU32; },
         [&](Default) {
             tint::diag::List diagnostics;
             TINT_UNREACHABLE(Inspector, diagnostics) << "unhandled component type";
@@ -86,7 +86,7 @@ std::tuple<ComponentType, CompositionType> CalculateComponentAndComposition(
         });
 
     CompositionType compositionType;
-    if (auto* vec = type->As<sem::Vector>()) {
+    if (auto* vec = type->As<type::Vector>()) {
         switch (vec->Width()) {
             case 2: {
                 compositionType = CompositionType::kVec2;
@@ -226,7 +226,7 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
             ast::BuiltinValue::kNumWorkgroups, param->Type(), param->Declaration()->attributes);
     }
 
-    if (!sem->ReturnType()->Is<sem::Void>()) {
+    if (!sem->ReturnType()->Is<type::Void>()) {
         AddEntryPointInOutVariables("<retval>", sem->ReturnType(), func->return_type_attributes,
                                     sem->ReturnLocation(), entry_point.output_variables);
 
@@ -314,10 +314,10 @@ std::map<OverrideId, Scalar> Inspector::GetOverrideDefaultValues() {
             if (auto* value = global->Initializer()->ConstantValue()) {
                 result[override_id] = Switch(
                     value->Type(),  //
-                    [&](const sem::I32*) { return Scalar(value->As<i32>()); },
-                    [&](const sem::U32*) { return Scalar(value->As<u32>()); },
-                    [&](const sem::F32*) { return Scalar(value->As<f32>()); },
-                    [&](const sem::Bool*) { return Scalar(value->As<bool>()); });
+                    [&](const type::I32*) { return Scalar(value->As<i32>()); },
+                    [&](const type::U32*) { return Scalar(value->As<u32>()); },
+                    [&](const type::F32*) { return Scalar(value->As<f32>()); },
+                    [&](const type::Bool*) { return Scalar(value->As<bool>()); });
                 continue;
             }
         }
@@ -513,7 +513,7 @@ std::vector<ResourceBinding> Inspector::GetTextureResourceBindings(
         entry.bind_group = binding_info.group;
         entry.binding = binding_info.binding;
 
-        auto* tex = var->Type()->UnwrapRef()->As<sem::Texture>();
+        auto* tex = var->Type()->UnwrapRef()->As<type::Texture>();
         entry.dim = TypeTextureDimensionToResourceBindingTextureDimension(tex->dim());
 
         result.push_back(entry);
@@ -524,19 +524,19 @@ std::vector<ResourceBinding> Inspector::GetTextureResourceBindings(
 
 std::vector<ResourceBinding> Inspector::GetDepthTextureResourceBindings(
     const std::string& entry_point) {
-    return GetTextureResourceBindings(entry_point, &TypeInfo::Of<sem::DepthTexture>(),
+    return GetTextureResourceBindings(entry_point, &TypeInfo::Of<type::DepthTexture>(),
                                       ResourceBinding::ResourceType::kDepthTexture);
 }
 
 std::vector<ResourceBinding> Inspector::GetDepthMultisampledTextureResourceBindings(
     const std::string& entry_point) {
-    return GetTextureResourceBindings(entry_point, &TypeInfo::Of<sem::DepthMultisampledTexture>(),
+    return GetTextureResourceBindings(entry_point, &TypeInfo::Of<type::DepthMultisampledTexture>(),
                                       ResourceBinding::ResourceType::kDepthMultisampledTexture);
 }
 
 std::vector<ResourceBinding> Inspector::GetExternalTextureResourceBindings(
     const std::string& entry_point) {
-    return GetTextureResourceBindings(entry_point, &TypeInfo::Of<sem::ExternalTexture>(),
+    return GetTextureResourceBindings(entry_point, &TypeInfo::Of<type::ExternalTexture>(),
                                       ResourceBinding::ResourceType::kExternalTexture);
 }
 
@@ -766,14 +766,14 @@ std::vector<ResourceBinding> Inspector::GetSampledTextureResourceBindingsImpl(
         entry.bind_group = binding_info.group;
         entry.binding = binding_info.binding;
 
-        auto* texture_type = var->Type()->UnwrapRef()->As<sem::Texture>();
+        auto* texture_type = var->Type()->UnwrapRef()->As<type::Texture>();
         entry.dim = TypeTextureDimensionToResourceBindingTextureDimension(texture_type->dim());
 
         const type::Type* base_type = nullptr;
         if (multisampled_only) {
-            base_type = texture_type->As<sem::MultisampledTexture>()->type();
+            base_type = texture_type->As<type::MultisampledTexture>()->type();
         } else {
-            base_type = texture_type->As<sem::SampledTexture>()->type();
+            base_type = texture_type->As<type::SampledTexture>()->type();
         }
         entry.sampled_kind = BaseTypeToSampledKind(base_type);
 
@@ -792,11 +792,11 @@ std::vector<ResourceBinding> Inspector::GetStorageTextureResourceBindingsImpl(
 
     auto* func_sem = program_->Sem().Get(func);
     std::vector<ResourceBinding> result;
-    for (auto& ref : func_sem->TransitivelyReferencedVariablesOfType<sem::StorageTexture>()) {
+    for (auto& ref : func_sem->TransitivelyReferencedVariablesOfType<type::StorageTexture>()) {
         auto* var = ref.first;
         auto binding_info = ref.second;
 
-        auto* texture_type = var->Type()->UnwrapRef()->As<sem::StorageTexture>();
+        auto* texture_type = var->Type()->UnwrapRef()->As<type::StorageTexture>();
 
         ResourceBinding entry;
         entry.resource_type = ResourceBinding::ResourceType::kWriteOnlyStorageTexture;

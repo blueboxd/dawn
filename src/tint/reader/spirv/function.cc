@@ -33,9 +33,9 @@
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/sem/builtin_type.h"
-#include "src/tint/sem/depth_texture.h"
-#include "src/tint/sem/sampled_texture.h"
 #include "src/tint/transform/spirv_atomic.h"
+#include "src/tint/type/depth_texture.h"
+#include "src/tint/type/sampled_texture.h"
 #include "src/tint/utils/hashmap.h"
 #include "src/tint/utils/hashset.h"
 
@@ -386,6 +386,7 @@ std::string GetGlslStd450FuncName(uint32_t ext_opcode) {
         case GLSLstd450Pow:
             return "pow";
         case GLSLstd450FSign:
+        case GLSLstd450SSign:
             return "sign";
         case GLSLstd450Radians:
             return "radians";
@@ -426,8 +427,6 @@ std::string GetGlslStd450FuncName(uint32_t ext_opcode) {
         default:
             // TODO(dneto) - The following are not implemented.
             // They are grouped semantically, as in GLSL.std.450.h.
-
-        case GLSLstd450SSign:
 
         case GLSLstd450Asinh:
         case GLSLstd450Acosh:

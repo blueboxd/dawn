@@ -20,20 +20,20 @@
 
 #include "src/tint/ast/binary_expression.h"
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/abstract_float.h"
-#include "src/tint/sem/abstract_int.h"
-#include "src/tint/sem/abstract_numeric.h"
-#include "src/tint/sem/atomic.h"
-#include "src/tint/sem/depth_multisampled_texture.h"
-#include "src/tint/sem/depth_texture.h"
 #include "src/tint/sem/evaluation_stage.h"
-#include "src/tint/sem/external_texture.h"
-#include "src/tint/sem/multisampled_texture.h"
 #include "src/tint/sem/pipeline_stage_set.h"
-#include "src/tint/sem/sampled_texture.h"
-#include "src/tint/sem/storage_texture.h"
 #include "src/tint/sem/type_conversion.h"
 #include "src/tint/sem/type_initializer.h"
+#include "src/tint/type/abstract_float.h"
+#include "src/tint/type/abstract_int.h"
+#include "src/tint/type/abstract_numeric.h"
+#include "src/tint/type/atomic.h"
+#include "src/tint/type/depth_multisampled_texture.h"
+#include "src/tint/type/depth_texture.h"
+#include "src/tint/type/external_texture.h"
+#include "src/tint/type/multisampled_texture.h"
+#include "src/tint/type/sampled_texture.h"
+#include "src/tint/type/storage_texture.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/hashmap.h"
 #include "src/tint/utils/math.h"
@@ -349,61 +349,61 @@ enum class OverloadFlag {
 using OverloadFlags = utils::EnumSet<OverloadFlag>;
 
 bool match_bool(MatchState&, const type::Type* ty) {
-    return ty->IsAnyOf<Any, sem::Bool>();
+    return ty->IsAnyOf<Any, type::Bool>();
 }
 
-const sem::AbstractFloat* build_fa(MatchState& state) {
-    return state.builder.create<sem::AbstractFloat>();
+const type::AbstractFloat* build_fa(MatchState& state) {
+    return state.builder.create<type::AbstractFloat>();
 }
 
 bool match_fa(MatchState& state, const type::Type* ty) {
     return (state.earliest_eval_stage == sem::EvaluationStage::kConstant) &&
-           ty->IsAnyOf<Any, sem::AbstractNumeric>();
+           ty->IsAnyOf<Any, type::AbstractNumeric>();
 }
 
-const sem::AbstractInt* build_ia(MatchState& state) {
-    return state.builder.create<sem::AbstractInt>();
+const type::AbstractInt* build_ia(MatchState& state) {
+    return state.builder.create<type::AbstractInt>();
 }
 
 bool match_ia(MatchState& state, const type::Type* ty) {
     return (state.earliest_eval_stage == sem::EvaluationStage::kConstant) &&
-           ty->IsAnyOf<Any, sem::AbstractInt>();
+           ty->IsAnyOf<Any, type::AbstractInt>();
 }
 
-const sem::Bool* build_bool(MatchState& state) {
-    return state.builder.create<sem::Bool>();
+const type::Bool* build_bool(MatchState& state) {
+    return state.builder.create<type::Bool>();
 }
 
-const sem::F16* build_f16(MatchState& state) {
-    return state.builder.create<sem::F16>();
+const type::F16* build_f16(MatchState& state) {
+    return state.builder.create<type::F16>();
 }
 
 bool match_f16(MatchState&, const type::Type* ty) {
-    return ty->IsAnyOf<Any, sem::F16, sem::AbstractNumeric>();
+    return ty->IsAnyOf<Any, type::F16, type::AbstractNumeric>();
 }
 
-const sem::F32* build_f32(MatchState& state) {
-    return state.builder.create<sem::F32>();
+const type::F32* build_f32(MatchState& state) {
+    return state.builder.create<type::F32>();
 }
 
 bool match_f32(MatchState&, const type::Type* ty) {
-    return ty->IsAnyOf<Any, sem::F32, sem::AbstractNumeric>();
+    return ty->IsAnyOf<Any, type::F32, type::AbstractNumeric>();
 }
 
-const sem::I32* build_i32(MatchState& state) {
-    return state.builder.create<sem::I32>();
+const type::I32* build_i32(MatchState& state) {
+    return state.builder.create<type::I32>();
 }
 
 bool match_i32(MatchState&, const type::Type* ty) {
-    return ty->IsAnyOf<Any, sem::I32, sem::AbstractInt>();
+    return ty->IsAnyOf<Any, type::I32, type::AbstractInt>();
 }
 
-const sem::U32* build_u32(MatchState& state) {
-    return state.builder.create<sem::U32>();
+const type::U32* build_u32(MatchState& state) {
+    return state.builder.create<type::U32>();
 }
 
 bool match_u32(MatchState&, const type::Type* ty) {
-    return ty->IsAnyOf<Any, sem::U32, sem::AbstractInt>();
+    return ty->IsAnyOf<Any, type::U32, type::AbstractInt>();
 }
 
 bool match_vec(MatchState&, const type::Type* ty, Number& N, const type::Type*& T) {
@@ -413,7 +413,7 @@ bool match_vec(MatchState&, const type::Type* ty, Number& N, const type::Type*& 
         return true;
     }
 
-    if (auto* v = ty->As<sem::Vector>()) {
+    if (auto* v = ty->As<type::Vector>()) {
         N = v->Width();
         T = v->type();
         return true;
@@ -428,7 +428,7 @@ bool match_vec(MatchState&, const type::Type* ty, const type::Type*& T) {
         return true;
     }
 
-    if (auto* v = ty->As<sem::Vector>()) {
+    if (auto* v = ty->As<type::Vector>()) {
         if (v->Width() == N) {
             T = v->type();
             return true;
@@ -437,13 +437,13 @@ bool match_vec(MatchState&, const type::Type* ty, const type::Type*& T) {
     return false;
 }
 
-const sem::Vector* build_vec(MatchState& state, Number N, const type::Type* el) {
-    return state.builder.create<sem::Vector>(el, N.Value());
+const type::Vector* build_vec(MatchState& state, Number N, const type::Type* el) {
+    return state.builder.create<type::Vector>(el, N.Value());
 }
 
 template <uint32_t N>
-const sem::Vector* build_vec(MatchState& state, const type::Type* el) {
-    return state.builder.create<sem::Vector>(el, N);
+const type::Vector* build_vec(MatchState& state, const type::Type* el) {
+    return state.builder.create<type::Vector>(el, N);
 }
 
 constexpr auto match_vec2 = match_vec<2>;
@@ -461,7 +461,7 @@ bool match_mat(MatchState&, const type::Type* ty, Number& M, Number& N, const ty
         T = ty;
         return true;
     }
-    if (auto* m = ty->As<sem::Matrix>()) {
+    if (auto* m = ty->As<type::Matrix>()) {
         M = m->columns();
         N = m->ColumnType()->Width();
         T = m->type();
@@ -476,7 +476,7 @@ bool match_mat(MatchState&, const type::Type* ty, const type::Type*& T) {
         T = ty;
         return true;
     }
-    if (auto* m = ty->As<sem::Matrix>()) {
+    if (auto* m = ty->As<type::Matrix>()) {
         if (m->columns() == C && m->rows() == R) {
             T = m->type();
             return true;
@@ -485,15 +485,15 @@ bool match_mat(MatchState&, const type::Type* ty, const type::Type*& T) {
     return false;
 }
 
-const sem::Matrix* build_mat(MatchState& state, Number C, Number R, const type::Type* T) {
-    auto* column_type = state.builder.create<sem::Vector>(T, R.Value());
-    return state.builder.create<sem::Matrix>(column_type, C.Value());
+const type::Matrix* build_mat(MatchState& state, Number C, Number R, const type::Type* T) {
+    auto* column_type = state.builder.create<type::Vector>(T, R.Value());
+    return state.builder.create<type::Matrix>(column_type, C.Value());
 }
 
 template <uint32_t C, uint32_t R>
-const sem::Matrix* build_mat(MatchState& state, const type::Type* T) {
-    auto* column_type = state.builder.create<sem::Vector>(T, R);
-    return state.builder.create<sem::Matrix>(column_type, C);
+const type::Matrix* build_mat(MatchState& state, const type::Type* T) {
+    auto* column_type = state.builder.create<type::Vector>(T, R);
+    return state.builder.create<type::Matrix>(column_type, C);
 }
 
 constexpr auto build_mat2x2 = build_mat<2, 2>;
@@ -522,7 +522,7 @@ bool match_array(MatchState&, const type::Type* ty, const type::Type*& T) {
         return true;
     }
 
-    if (auto* a = ty->As<sem::Array>()) {
+    if (auto* a = ty->As<type::Array>()) {
         if (a->Count()->Is<type::RuntimeArrayCount>()) {
             T = a->ElemType();
             return true;
@@ -531,8 +531,8 @@ bool match_array(MatchState&, const type::Type* ty, const type::Type*& T) {
     return false;
 }
 
-const sem::Array* build_array(MatchState& state, const type::Type* el) {
-    return state.builder.create<sem::Array>(
+const type::Array* build_array(MatchState& state, const type::Type* el) {
+    return state.builder.create<type::Array>(
         el,
         /* count */ state.builder.create<type::RuntimeArrayCount>(),
         /* align */ 0u,
@@ -549,7 +549,7 @@ bool match_ptr(MatchState&, const type::Type* ty, Number& S, const type::Type*& 
         return true;
     }
 
-    if (auto* p = ty->As<sem::Pointer>()) {
+    if (auto* p = ty->As<type::Pointer>()) {
         S = Number(static_cast<uint32_t>(p->AddressSpace()));
         T = p->StoreType();
         A = Number(static_cast<uint32_t>(p->Access()));
@@ -558,9 +558,9 @@ bool match_ptr(MatchState&, const type::Type* ty, Number& S, const type::Type*& 
     return false;
 }
 
-const sem::Pointer* build_ptr(MatchState& state, Number S, const type::Type* T, Number& A) {
-    return state.builder.create<sem::Pointer>(T, static_cast<ast::AddressSpace>(S.Value()),
-                                              static_cast<ast::Access>(A.Value()));
+const type::Pointer* build_ptr(MatchState& state, Number S, const type::Type* T, Number& A) {
+    return state.builder.create<type::Pointer>(T, static_cast<ast::AddressSpace>(S.Value()),
+                                               static_cast<ast::Access>(A.Value()));
 }
 
 bool match_atomic(MatchState&, const type::Type* ty, const type::Type*& T) {
@@ -569,26 +569,26 @@ bool match_atomic(MatchState&, const type::Type* ty, const type::Type*& T) {
         return true;
     }
 
-    if (auto* a = ty->As<sem::Atomic>()) {
+    if (auto* a = ty->As<type::Atomic>()) {
         T = a->Type();
         return true;
     }
     return false;
 }
 
-const sem::Atomic* build_atomic(MatchState& state, const type::Type* T) {
-    return state.builder.create<sem::Atomic>(T);
+const type::Atomic* build_atomic(MatchState& state, const type::Type* T) {
+    return state.builder.create<type::Atomic>(T);
 }
 
 bool match_sampler(MatchState&, const type::Type* ty) {
     if (ty->Is<Any>()) {
         return true;
     }
-    return ty->Is([](const sem::Sampler* s) { return s->kind() == ast::SamplerKind::kSampler; });
+    return ty->Is([](const type::Sampler* s) { return s->kind() == ast::SamplerKind::kSampler; });
 }
 
-const sem::Sampler* build_sampler(MatchState& state) {
-    return state.builder.create<sem::Sampler>(ast::SamplerKind::kSampler);
+const type::Sampler* build_sampler(MatchState& state) {
+    return state.builder.create<type::Sampler>(ast::SamplerKind::kSampler);
 }
 
 bool match_sampler_comparison(MatchState&, const type::Type* ty) {
@@ -596,11 +596,11 @@ bool match_sampler_comparison(MatchState&, const type::Type* ty) {
         return true;
     }
     return ty->Is(
-        [](const sem::Sampler* s) { return s->kind() == ast::SamplerKind::kComparisonSampler; });
+        [](const type::Sampler* s) { return s->kind() == ast::SamplerKind::kComparisonSampler; });
 }
 
-const sem::Sampler* build_sampler_comparison(MatchState& state) {
-    return state.builder.create<sem::Sampler>(ast::SamplerKind::kComparisonSampler);
+const type::Sampler* build_sampler_comparison(MatchState& state) {
+    return state.builder.create<type::Sampler>(ast::SamplerKind::kComparisonSampler);
 }
 
 bool match_texture(MatchState&,
@@ -611,7 +611,7 @@ bool match_texture(MatchState&,
         T = ty;
         return true;
     }
-    if (auto* v = ty->As<sem::SampledTexture>()) {
+    if (auto* v = ty->As<type::SampledTexture>()) {
         if (v->dim() == dim) {
             T = v->type();
             return true;
@@ -622,14 +622,14 @@ bool match_texture(MatchState&,
 
 #define JOIN(a, b) a##b
 
-#define DECLARE_SAMPLED_TEXTURE(suffix, dim)                                       \
-    bool JOIN(match_texture_, suffix)(MatchState & state, const type::Type* ty,    \
-                                      const type::Type*& T) {                      \
-        return match_texture(state, ty, dim, T);                                   \
-    }                                                                              \
-    const sem::SampledTexture* JOIN(build_texture_, suffix)(MatchState & state,    \
-                                                            const type::Type* T) { \
-        return state.builder.create<sem::SampledTexture>(dim, T);                  \
+#define DECLARE_SAMPLED_TEXTURE(suffix, dim)                                        \
+    bool JOIN(match_texture_, suffix)(MatchState & state, const type::Type* ty,     \
+                                      const type::Type*& T) {                       \
+        return match_texture(state, ty, dim, T);                                    \
+    }                                                                               \
+    const type::SampledTexture* JOIN(build_texture_, suffix)(MatchState & state,    \
+                                                             const type::Type* T) { \
+        return state.builder.create<type::SampledTexture>(dim, T);                  \
     }
 
 DECLARE_SAMPLED_TEXTURE(1d, ast::TextureDimension::k1d)
@@ -648,7 +648,7 @@ bool match_texture_multisampled(MatchState&,
         T = ty;
         return true;
     }
-    if (auto* v = ty->As<sem::MultisampledTexture>()) {
+    if (auto* v = ty->As<type::MultisampledTexture>()) {
         if (v->dim() == dim) {
             T = v->type();
             return true;
@@ -662,9 +662,9 @@ bool match_texture_multisampled(MatchState&,
                                                    const type::Type*& T) {                   \
         return match_texture_multisampled(state, ty, dim, T);                                \
     }                                                                                        \
-    const sem::MultisampledTexture* JOIN(build_texture_multisampled_, suffix)(               \
+    const type::MultisampledTexture* JOIN(build_texture_multisampled_, suffix)(              \
         MatchState & state, const type::Type* T) {                                           \
-        return state.builder.create<sem::MultisampledTexture>(dim, T);                       \
+        return state.builder.create<type::MultisampledTexture>(dim, T);                      \
     }
 
 DECLARE_MULTISAMPLED_TEXTURE(2d, ast::TextureDimension::k2d)
@@ -674,15 +674,15 @@ bool match_texture_depth(MatchState&, const type::Type* ty, ast::TextureDimensio
     if (ty->Is<Any>()) {
         return true;
     }
-    return ty->Is([&](const sem::DepthTexture* t) { return t->dim() == dim; });
+    return ty->Is([&](const type::DepthTexture* t) { return t->dim() == dim; });
 }
 
 #define DECLARE_DEPTH_TEXTURE(suffix, dim)                                              \
     bool JOIN(match_texture_depth_, suffix)(MatchState & state, const type::Type* ty) { \
         return match_texture_depth(state, ty, dim);                                     \
     }                                                                                   \
-    const sem::DepthTexture* JOIN(build_texture_depth_, suffix)(MatchState & state) {   \
-        return state.builder.create<sem::DepthTexture>(dim);                            \
+    const type::DepthTexture* JOIN(build_texture_depth_, suffix)(MatchState & state) {  \
+        return state.builder.create<type::DepthTexture>(dim);                           \
     }
 
 DECLARE_DEPTH_TEXTURE(2d, ast::TextureDimension::k2d)
@@ -695,13 +695,13 @@ bool match_texture_depth_multisampled_2d(MatchState&, const type::Type* ty) {
     if (ty->Is<Any>()) {
         return true;
     }
-    return ty->Is([&](const sem::DepthMultisampledTexture* t) {
+    return ty->Is([&](const type::DepthMultisampledTexture* t) {
         return t->dim() == ast::TextureDimension::k2d;
     });
 }
 
-sem::DepthMultisampledTexture* build_texture_depth_multisampled_2d(MatchState& state) {
-    return state.builder.create<sem::DepthMultisampledTexture>(ast::TextureDimension::k2d);
+type::DepthMultisampledTexture* build_texture_depth_multisampled_2d(MatchState& state) {
+    return state.builder.create<type::DepthMultisampledTexture>(ast::TextureDimension::k2d);
 }
 
 bool match_texture_storage(MatchState&,
@@ -714,7 +714,7 @@ bool match_texture_storage(MatchState&,
         A = Number::any;
         return true;
     }
-    if (auto* v = ty->As<sem::StorageTexture>()) {
+    if (auto* v = ty->As<type::StorageTexture>()) {
         if (v->dim() == dim) {
             F = Number(static_cast<uint32_t>(v->texel_format()));
             A = Number(static_cast<uint32_t>(v->access()));
@@ -729,12 +729,12 @@ bool match_texture_storage(MatchState&,
                                               Number& A) {                                         \
         return match_texture_storage(state, ty, dim, F, A);                                        \
     }                                                                                              \
-    const sem::StorageTexture* JOIN(build_texture_storage_, suffix)(MatchState & state, Number F,  \
-                                                                    Number A) {                    \
+    const type::StorageTexture* JOIN(build_texture_storage_, suffix)(MatchState & state, Number F, \
+                                                                     Number A) {                   \
         auto format = static_cast<TexelFormat>(F.Value());                                         \
         auto access = static_cast<Access>(A.Value());                                              \
-        auto* T = sem::StorageTexture::SubtypeFor(format, state.builder.Types());                  \
-        return state.builder.create<sem::StorageTexture>(dim, format, access, T);                  \
+        auto* T = type::StorageTexture::SubtypeFor(format, state.builder.Types());                 \
+        return state.builder.create<type::StorageTexture>(dim, format, access, T);                 \
     }
 
 DECLARE_STORAGE_TEXTURE(1d, ast::TextureDimension::k1d)
@@ -744,11 +744,11 @@ DECLARE_STORAGE_TEXTURE(3d, ast::TextureDimension::k3d)
 #undef DECLARE_STORAGE_TEXTURE
 
 bool match_texture_external(MatchState&, const type::Type* ty) {
-    return ty->IsAnyOf<Any, sem::ExternalTexture>();
+    return ty->IsAnyOf<Any, type::ExternalTexture>();
 }
 
-const sem::ExternalTexture* build_texture_external(MatchState& state) {
-    return state.builder.create<sem::ExternalTexture>();
+const type::ExternalTexture* build_texture_external(MatchState& state) {
+    return state.builder.create<type::ExternalTexture>();
 }
 
 // Builtin types starting with a _ prefix cannot be declared in WGSL, so they
@@ -834,19 +834,19 @@ sem::Struct* build_struct(ProgramBuilder& b,
 
 const sem::Struct* build_modf_result(MatchState& state, const type::Type* el) {
     auto build_f32 = [&] {
-        auto* ty = state.builder.create<sem::F32>();
+        auto* ty = state.builder.create<type::F32>();
         return build_struct(state.builder, "__modf_result_f32", {{"fract", ty}, {"whole", ty}});
     };
     auto build_f16 = [&] {
-        auto* ty = state.builder.create<sem::F16>();
+        auto* ty = state.builder.create<type::F16>();
         return build_struct(state.builder, "__modf_result_f16", {{"fract", ty}, {"whole", ty}});
     };
 
     return Switch(
-        el,                                            //
-        [&](const sem::F32*) { return build_f32(); },  //
-        [&](const sem::F16*) { return build_f16(); },  //
-        [&](const sem::AbstractFloat*) {
+        el,                                             //
+        [&](const type::F32*) { return build_f32(); },  //
+        [&](const type::F16*) { return build_f16(); },  //
+        [&](const type::AbstractFloat*) {
             auto* abstract = build_struct(state.builder, "__modf_result_abstract",
                                           {{"fract", el}, {"whole", el}});
             abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
@@ -862,20 +862,22 @@ const sem::Struct* build_modf_result(MatchState& state, const type::Type* el) {
 const sem::Struct* build_modf_result_vec(MatchState& state, Number& n, const type::Type* el) {
     auto prefix = "__modf_result_vec" + std::to_string(n.Value());
     auto build_f32 = [&] {
-        auto* vec = state.builder.create<sem::Vector>(state.builder.create<sem::F32>(), n.Value());
+        auto* vec =
+            state.builder.create<type::Vector>(state.builder.create<type::F32>(), n.Value());
         return build_struct(state.builder, prefix + "_f32", {{"fract", vec}, {"whole", vec}});
     };
     auto build_f16 = [&] {
-        auto* vec = state.builder.create<sem::Vector>(state.builder.create<sem::F16>(), n.Value());
+        auto* vec =
+            state.builder.create<type::Vector>(state.builder.create<type::F16>(), n.Value());
         return build_struct(state.builder, prefix + "_f16", {{"fract", vec}, {"whole", vec}});
     };
 
     return Switch(
-        el,                                            //
-        [&](const sem::F32*) { return build_f32(); },  //
-        [&](const sem::F16*) { return build_f16(); },  //
-        [&](const sem::AbstractFloat*) {
-            auto* vec = state.builder.create<sem::Vector>(el, n.Value());
+        el,                                             //
+        [&](const type::F32*) { return build_f32(); },  //
+        [&](const type::F16*) { return build_f16(); },  //
+        [&](const type::AbstractFloat*) {
+            auto* vec = state.builder.create<type::Vector>(el, n.Value());
             auto* abstract =
                 build_struct(state.builder, prefix + "_abstract", {{"fract", vec}, {"whole", vec}});
             abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
@@ -890,22 +892,22 @@ const sem::Struct* build_modf_result_vec(MatchState& state, Number& n, const typ
 
 const sem::Struct* build_frexp_result(MatchState& state, const type::Type* el) {
     auto build_f32 = [&] {
-        auto* f = state.builder.create<sem::F32>();
-        auto* i = state.builder.create<sem::I32>();
+        auto* f = state.builder.create<type::F32>();
+        auto* i = state.builder.create<type::I32>();
         return build_struct(state.builder, "__frexp_result_f32", {{"fract", f}, {"exp", i}});
     };
     auto build_f16 = [&] {
-        auto* f = state.builder.create<sem::F16>();
-        auto* i = state.builder.create<sem::I32>();
+        auto* f = state.builder.create<type::F16>();
+        auto* i = state.builder.create<type::I32>();
         return build_struct(state.builder, "__frexp_result_f16", {{"fract", f}, {"exp", i}});
     };
 
     return Switch(
-        el,                                            //
-        [&](const sem::F32*) { return build_f32(); },  //
-        [&](const sem::F16*) { return build_f16(); },  //
-        [&](const sem::AbstractFloat*) {
-            auto* i = state.builder.create<sem::AbstractInt>();
+        el,                                             //
+        [&](const type::F32*) { return build_f32(); },  //
+        [&](const type::F16*) { return build_f16(); },  //
+        [&](const type::AbstractFloat*) {
+            auto* i = state.builder.create<type::AbstractInt>();
             auto* abstract =
                 build_struct(state.builder, "__frexp_result_abstract", {{"fract", el}, {"exp", i}});
             abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
@@ -921,24 +923,24 @@ const sem::Struct* build_frexp_result(MatchState& state, const type::Type* el) {
 const sem::Struct* build_frexp_result_vec(MatchState& state, Number& n, const type::Type* el) {
     auto prefix = "__frexp_result_vec" + std::to_string(n.Value());
     auto build_f32 = [&] {
-        auto* f = state.builder.create<sem::Vector>(state.builder.create<sem::F32>(), n.Value());
-        auto* e = state.builder.create<sem::Vector>(state.builder.create<sem::I32>(), n.Value());
+        auto* f = state.builder.create<type::Vector>(state.builder.create<type::F32>(), n.Value());
+        auto* e = state.builder.create<type::Vector>(state.builder.create<type::I32>(), n.Value());
         return build_struct(state.builder, prefix + "_f32", {{"fract", f}, {"exp", e}});
     };
     auto build_f16 = [&] {
-        auto* f = state.builder.create<sem::Vector>(state.builder.create<sem::F16>(), n.Value());
-        auto* e = state.builder.create<sem::Vector>(state.builder.create<sem::I32>(), n.Value());
+        auto* f = state.builder.create<type::Vector>(state.builder.create<type::F16>(), n.Value());
+        auto* e = state.builder.create<type::Vector>(state.builder.create<type::I32>(), n.Value());
         return build_struct(state.builder, prefix + "_f16", {{"fract", f}, {"exp", e}});
     };
 
     return Switch(
-        el,                                            //
-        [&](const sem::F32*) { return build_f32(); },  //
-        [&](const sem::F16*) { return build_f16(); },  //
-        [&](const sem::AbstractFloat*) {
-            auto* f = state.builder.create<sem::Vector>(el, n.Value());
-            auto* e = state.builder.create<sem::Vector>(state.builder.create<sem::AbstractInt>(),
-                                                        n.Value());
+        el,                                             //
+        [&](const type::F32*) { return build_f32(); },  //
+        [&](const type::F16*) { return build_f16(); },  //
+        [&](const type::AbstractFloat*) {
+            auto* f = state.builder.create<type::Vector>(el, n.Value());
+            auto* e = state.builder.create<type::Vector>(state.builder.create<type::AbstractInt>(),
+                                                         n.Value());
             auto* abstract =
                 build_struct(state.builder, prefix + "_abstract", {{"fract", f}, {"exp", e}});
             abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
@@ -956,7 +958,7 @@ const sem::Struct* build_atomic_compare_exchange_result(MatchState& state, const
         state.builder,
         "__atomic_compare_exchange_result" + ty->FriendlyName(state.builder.Symbols()),
         {{"old_value", const_cast<type::Type*>(ty)},
-         {"exchanged", state.builder.create<sem::Bool>()}});
+         {"exchanged", state.builder.create<type::Bool>()}});
 }
 
 /// ParameterInfo describes a parameter
@@ -1549,7 +1551,7 @@ IntrinsicPrototype Impl::MatchIntrinsic(const IntrinsicInfo& intrinsic,
             return {};
         }
     } else {
-        return_type = builder.create<sem::Void>();
+        return_type = builder.create<type::Void>();
     }
 
     return IntrinsicPrototype{match.overload, return_type, std::move(match.parameters)};

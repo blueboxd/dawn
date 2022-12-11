@@ -26,12 +26,12 @@
 #include "gtest/gtest.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/resolver/resolver.h"
-#include "src/tint/sem/abstract_float.h"
-#include "src/tint/sem/abstract_int.h"
 #include "src/tint/sem/expression.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/traits.h"
+#include "src/tint/type/abstract_float.h"
+#include "src/tint/type/abstract_int.h"
 #include "src/tint/utils/vector.h"
 
 namespace tint::resolver {
@@ -232,7 +232,7 @@ struct DataType<bool> {
     static inline const ast::Type* AST(ProgramBuilder& b) { return b.ty.bool_(); }
     /// @param b the ProgramBuilder
     /// @return the semantic bool type
-    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<sem::Bool>(); }
+    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::Bool>(); }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 with the boolean value to init with
     /// @return a new AST expression of the bool type
@@ -263,7 +263,7 @@ struct DataType<i32> {
     static inline const ast::Type* AST(ProgramBuilder& b) { return b.ty.i32(); }
     /// @param b the ProgramBuilder
     /// @return the semantic i32 type
-    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<sem::I32>(); }
+    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::I32>(); }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 with the i32 value to init with
     /// @return a new AST i32 literal value expression
@@ -294,7 +294,7 @@ struct DataType<u32> {
     static inline const ast::Type* AST(ProgramBuilder& b) { return b.ty.u32(); }
     /// @param b the ProgramBuilder
     /// @return the semantic u32 type
-    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<sem::U32>(); }
+    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::U32>(); }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 with the u32 value to init with
     /// @return a new AST u32 literal value expression
@@ -325,7 +325,7 @@ struct DataType<f32> {
     static inline const ast::Type* AST(ProgramBuilder& b) { return b.ty.f32(); }
     /// @param b the ProgramBuilder
     /// @return the semantic f32 type
-    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<sem::F32>(); }
+    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::F32>(); }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 with the f32 value to init with
     /// @return a new AST f32 literal value expression
@@ -356,7 +356,7 @@ struct DataType<f16> {
     static inline const ast::Type* AST(ProgramBuilder& b) { return b.ty.f16(); }
     /// @param b the ProgramBuilder
     /// @return the semantic f16 type
-    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<sem::F16>(); }
+    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::F16>(); }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 with the f16 value to init with
     /// @return a new AST f16 literal value expression
@@ -387,7 +387,7 @@ struct DataType<AFloat> {
     /// @param b the ProgramBuilder
     /// @return the semantic abstract-float type
     static inline const type::Type* Sem(ProgramBuilder& b) {
-        return b.create<sem::AbstractFloat>();
+        return b.create<type::AbstractFloat>();
     }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 with the abstract-float value to init with
@@ -418,7 +418,7 @@ struct DataType<AInt> {
     static inline const ast::Type* AST(ProgramBuilder&) { return nullptr; }
     /// @param b the ProgramBuilder
     /// @return the semantic abstract-int type
-    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<sem::AbstractInt>(); }
+    static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::AbstractInt>(); }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 with the abstract-int value to init with
     /// @return a new AST abstract-int literal value expression
@@ -452,7 +452,7 @@ struct DataType<vec<N, T>> {
     /// @param b the ProgramBuilder
     /// @return the semantic vector type
     static inline const type::Type* Sem(ProgramBuilder& b) {
-        return b.create<sem::Vector>(DataType<T>::Sem(b), N);
+        return b.create<type::Vector>(DataType<T>::Sem(b), N);
     }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 or N with values of type T to initialize with
@@ -500,8 +500,8 @@ struct DataType<mat<N, M, T>> {
     /// @param b the ProgramBuilder
     /// @return the semantic matrix type
     static inline const type::Type* Sem(ProgramBuilder& b) {
-        auto* column_type = b.create<sem::Vector>(DataType<T>::Sem(b), M);
-        return b.create<sem::Matrix>(column_type, N);
+        auto* column_type = b.create<type::Vector>(DataType<T>::Sem(b), M);
+        return b.create<type::Matrix>(column_type, N);
     }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 or N*M with values of type T to initialize with
@@ -616,8 +616,8 @@ struct DataType<ptr<T>> {
     /// @param b the ProgramBuilder
     /// @return the semantic aliased type
     static inline const type::Type* Sem(ProgramBuilder& b) {
-        return b.create<sem::Pointer>(DataType<T>::Sem(b), ast::AddressSpace::kPrivate,
-                                      ast::Access::kReadWrite);
+        return b.create<type::Pointer>(DataType<T>::Sem(b), ast::AddressSpace::kPrivate,
+                                       ast::Access::kReadWrite);
     }
 
     /// @param b the ProgramBuilder
@@ -667,7 +667,7 @@ struct DataType<array<N, T>> {
         } else {
             count = b.create<type::ConstantArrayCount>(N);
         }
-        return b.create<sem::Array>(
+        return b.create<type::Array>(
             /* element */ el,
             /* count */ count,
             /* align */ el->Align(),

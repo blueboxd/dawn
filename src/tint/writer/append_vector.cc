@@ -36,7 +36,7 @@ struct VectorInitializerInfo {
 VectorInitializerInfo AsVectorInitializer(const sem::Expression* expr) {
     if (auto* call = expr->As<sem::Call>()) {
         if (auto* ctor = call->Target()->As<sem::TypeInitializer>()) {
-            if (ctor->ReturnType()->Is<sem::Vector>()) {
+            if (ctor->ReturnType()->Is<type::Vector>()) {
                 return {call, ctor};
             }
         }
@@ -46,13 +46,13 @@ VectorInitializerInfo AsVectorInitializer(const sem::Expression* expr) {
 
 const sem::Expression* Zero(ProgramBuilder& b, const type::Type* ty, const sem::Statement* stmt) {
     const ast::Expression* expr = nullptr;
-    if (ty->Is<sem::I32>()) {
+    if (ty->Is<type::I32>()) {
         expr = b.Expr(0_i);
-    } else if (ty->Is<sem::U32>()) {
+    } else if (ty->Is<type::U32>()) {
         expr = b.Expr(0_u);
-    } else if (ty->Is<sem::F32>()) {
+    } else if (ty->Is<type::F32>()) {
         expr = b.Expr(0_f);
-    } else if (ty->Is<sem::Bool>()) {
+    } else if (ty->Is<type::Bool>()) {
         expr = b.Expr(false);
     } else {
         TINT_UNREACHABLE(Writer, b.Diagnostics())
@@ -76,7 +76,7 @@ const sem::Call* AppendVector(ProgramBuilder* b,
     auto* vector_sem = b->Sem().Get(vector_ast);
     auto* scalar_sem = b->Sem().Get(scalar_ast);
     auto* vector_ty = vector_sem->Type()->UnwrapRef();
-    if (auto* vec = vector_ty->As<sem::Vector>()) {
+    if (auto* vec = vector_ty->As<type::Vector>()) {
         packed_size = vec->Width() + 1;
         packed_el_sem_ty = vec->type();
     } else {
@@ -85,13 +85,13 @@ const sem::Call* AppendVector(ProgramBuilder* b,
     }
 
     const ast::Type* packed_el_ast_ty = nullptr;
-    if (packed_el_sem_ty->Is<sem::I32>()) {
+    if (packed_el_sem_ty->Is<type::I32>()) {
         packed_el_ast_ty = b->create<ast::I32>();
-    } else if (packed_el_sem_ty->Is<sem::U32>()) {
+    } else if (packed_el_sem_ty->Is<type::U32>()) {
         packed_el_ast_ty = b->create<ast::U32>();
-    } else if (packed_el_sem_ty->Is<sem::F32>()) {
+    } else if (packed_el_sem_ty->Is<type::F32>()) {
         packed_el_ast_ty = b->create<ast::F32>();
-    } else if (packed_el_sem_ty->Is<sem::Bool>()) {
+    } else if (packed_el_sem_ty->Is<type::Bool>()) {
         packed_el_ast_ty = b->create<ast::Bool>();
     } else {
         TINT_UNREACHABLE(Writer, b->Diagnostics())
@@ -101,7 +101,7 @@ const sem::Call* AppendVector(ProgramBuilder* b,
     auto* statement = vector_sem->Stmt();
 
     auto* packed_ast_ty = b->create<ast::Vector>(packed_el_ast_ty, packed_size);
-    auto* packed_sem_ty = b->create<sem::Vector>(packed_el_sem_ty, packed_size);
+    auto* packed_sem_ty = b->create<type::Vector>(packed_el_sem_ty, packed_size);
 
     // If the coordinates are already passed in a vector initializer, with only
     // scalar components supplied, extract the elements into the new vector

@@ -14,7 +14,7 @@
 
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
-#include "src/tint/sem/reference.h"
+#include "src/tint/type/reference.h"
 
 #include "gmock/gmock.h"
 
@@ -68,21 +68,21 @@ TEST_F(ResolverVariableTest, LocalVar_NoInitializer) {
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
     // `var` declarations are always of reference type
-    ASSERT_TRUE(TypeOf(i)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(u)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(f)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(h)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(b)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(s)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(a)->Is<sem::Reference>());
+    ASSERT_TRUE(TypeOf(i)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(u)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(f)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(h)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(b)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(s)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(a)->Is<type::Reference>());
 
-    EXPECT_TRUE(TypeOf(i)->As<sem::Reference>()->StoreType()->Is<sem::I32>());
-    EXPECT_TRUE(TypeOf(u)->As<sem::Reference>()->StoreType()->Is<sem::U32>());
-    EXPECT_TRUE(TypeOf(f)->As<sem::Reference>()->StoreType()->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(h)->As<sem::Reference>()->StoreType()->Is<sem::F16>());
-    EXPECT_TRUE(TypeOf(b)->As<sem::Reference>()->StoreType()->Is<sem::Bool>());
-    EXPECT_TRUE(TypeOf(s)->As<sem::Reference>()->StoreType()->Is<sem::Struct>());
-    EXPECT_TRUE(TypeOf(a)->As<sem::Reference>()->StoreType()->Is<sem::Struct>());
+    EXPECT_TRUE(TypeOf(i)->As<type::Reference>()->StoreType()->Is<type::I32>());
+    EXPECT_TRUE(TypeOf(u)->As<type::Reference>()->StoreType()->Is<type::U32>());
+    EXPECT_TRUE(TypeOf(f)->As<type::Reference>()->StoreType()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(h)->As<type::Reference>()->StoreType()->Is<type::F16>());
+    EXPECT_TRUE(TypeOf(b)->As<type::Reference>()->StoreType()->Is<type::Bool>());
+    EXPECT_TRUE(TypeOf(s)->As<type::Reference>()->StoreType()->Is<sem::Struct>());
+    EXPECT_TRUE(TypeOf(a)->As<type::Reference>()->StoreType()->Is<sem::Struct>());
 
     EXPECT_EQ(Sem().Get(i)->Initializer(), nullptr);
     EXPECT_EQ(Sem().Get(u)->Initializer(), nullptr);
@@ -141,28 +141,28 @@ TEST_F(ResolverVariableTest, LocalVar_WithInitializer) {
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
     // `var` declarations are always of reference type
-    ASSERT_TRUE(TypeOf(i)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(u)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(f)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(h)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(b)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(s)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(a)->Is<sem::Reference>());
+    ASSERT_TRUE(TypeOf(i)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(u)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(f)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(h)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(b)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(s)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(a)->Is<type::Reference>());
 
-    EXPECT_EQ(TypeOf(i)->As<sem::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(u)->As<sem::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(f)->As<sem::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(b)->As<sem::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(s)->As<sem::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(a)->As<sem::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(i)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(u)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(f)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(b)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(s)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(a)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
 
-    EXPECT_TRUE(TypeOf(i)->As<sem::Reference>()->StoreType()->Is<sem::I32>());
-    EXPECT_TRUE(TypeOf(u)->As<sem::Reference>()->StoreType()->Is<sem::U32>());
-    EXPECT_TRUE(TypeOf(f)->As<sem::Reference>()->StoreType()->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(h)->As<sem::Reference>()->StoreType()->Is<sem::F16>());
-    EXPECT_TRUE(TypeOf(b)->As<sem::Reference>()->StoreType()->Is<sem::Bool>());
-    EXPECT_TRUE(TypeOf(s)->As<sem::Reference>()->StoreType()->Is<sem::Struct>());
-    EXPECT_TRUE(TypeOf(a)->As<sem::Reference>()->StoreType()->Is<sem::Struct>());
+    EXPECT_TRUE(TypeOf(i)->As<type::Reference>()->StoreType()->Is<type::I32>());
+    EXPECT_TRUE(TypeOf(u)->As<type::Reference>()->StoreType()->Is<type::U32>());
+    EXPECT_TRUE(TypeOf(f)->As<type::Reference>()->StoreType()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(h)->As<type::Reference>()->StoreType()->Is<type::F16>());
+    EXPECT_TRUE(TypeOf(b)->As<type::Reference>()->StoreType()->Is<type::Bool>());
+    EXPECT_TRUE(TypeOf(s)->As<type::Reference>()->StoreType()->Is<sem::Struct>());
+    EXPECT_TRUE(TypeOf(a)->As<type::Reference>()->StoreType()->Is<sem::Struct>());
 
     EXPECT_EQ(Sem().Get(i)->Initializer()->Declaration(), i_c);
     EXPECT_EQ(Sem().Get(u)->Initializer()->Declaration(), u_c);
@@ -437,15 +437,15 @@ TEST_F(ResolverVariableTest, LocalLet) {
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
     // `let` declarations are always of the storage type
-    ASSERT_TRUE(TypeOf(i)->Is<sem::I32>());
-    ASSERT_TRUE(TypeOf(u)->Is<sem::U32>());
-    ASSERT_TRUE(TypeOf(f)->Is<sem::F32>());
-    ASSERT_TRUE(TypeOf(h)->Is<sem::F16>());
-    ASSERT_TRUE(TypeOf(b)->Is<sem::Bool>());
+    ASSERT_TRUE(TypeOf(i)->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(u)->Is<type::U32>());
+    ASSERT_TRUE(TypeOf(f)->Is<type::F32>());
+    ASSERT_TRUE(TypeOf(h)->Is<type::F16>());
+    ASSERT_TRUE(TypeOf(b)->Is<type::Bool>());
     ASSERT_TRUE(TypeOf(s)->Is<sem::Struct>());
     ASSERT_TRUE(TypeOf(a)->Is<sem::Struct>());
-    ASSERT_TRUE(TypeOf(p)->Is<sem::Pointer>());
-    ASSERT_TRUE(TypeOf(p)->As<sem::Pointer>()->StoreType()->Is<sem::I32>());
+    ASSERT_TRUE(TypeOf(p)->Is<type::Pointer>());
+    ASSERT_TRUE(TypeOf(p)->As<type::Pointer>()->StoreType()->Is<type::I32>());
 
     EXPECT_EQ(Sem().Get(i)->Initializer()->Declaration(), i_c);
     EXPECT_EQ(Sem().Get(u)->Initializer()->Declaration(), u_c);
@@ -480,11 +480,11 @@ TEST_F(ResolverVariableTest, LocalLet_InheritsAccessFromOriginatingVariable) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(expr)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(ptr)->Is<sem::Pointer>());
+    ASSERT_TRUE(TypeOf(expr)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(ptr)->Is<type::Pointer>());
 
-    EXPECT_EQ(TypeOf(expr)->As<sem::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(ptr)->As<sem::Pointer>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(expr)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(ptr)->As<type::Pointer>()->Access(), ast::Access::kReadWrite);
 }
 
 TEST_F(ResolverVariableTest, LocalLet_ShadowsAlias) {
@@ -913,13 +913,13 @@ TEST_F(ResolverVariableTest, LocalConst_ExplicitType_Decls) {
     EXPECT_EQ(Sem().Get(c_mf32)->Declaration(), c_mf32);
     EXPECT_EQ(Sem().Get(c_s)->Declaration(), c_s);
 
-    ASSERT_TRUE(TypeOf(c_i32)->Is<sem::I32>());
-    ASSERT_TRUE(TypeOf(c_u32)->Is<sem::U32>());
-    ASSERT_TRUE(TypeOf(c_f32)->Is<sem::F32>());
-    ASSERT_TRUE(TypeOf(c_vi32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vu32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vf32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_mf32)->Is<sem::Matrix>());
+    ASSERT_TRUE(TypeOf(c_i32)->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(c_u32)->Is<type::U32>());
+    ASSERT_TRUE(TypeOf(c_f32)->Is<type::F32>());
+    ASSERT_TRUE(TypeOf(c_vi32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vu32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vf32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_mf32)->Is<type::Matrix>());
     ASSERT_TRUE(TypeOf(c_s)->Is<sem::Struct>());
 
     EXPECT_TRUE(Sem().Get(c_i32)->ConstantValue()->AllZero());
@@ -971,18 +971,18 @@ TEST_F(ResolverVariableTest, LocalConst_ImplicitType_Decls) {
     EXPECT_EQ(Sem().Get(c_maf32)->Declaration(), c_maf32);
     EXPECT_EQ(Sem().Get(c_s)->Declaration(), c_s);
 
-    ASSERT_TRUE(TypeOf(c_i32)->Is<sem::I32>());
-    ASSERT_TRUE(TypeOf(c_u32)->Is<sem::U32>());
-    ASSERT_TRUE(TypeOf(c_f32)->Is<sem::F32>());
-    ASSERT_TRUE(TypeOf(c_ai)->Is<sem::AbstractInt>());
-    ASSERT_TRUE(TypeOf(c_af)->Is<sem::AbstractFloat>());
-    ASSERT_TRUE(TypeOf(c_vi32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vu32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vf32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vai)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vaf)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_mf32)->Is<sem::Matrix>());
-    ASSERT_TRUE(TypeOf(c_maf32)->Is<sem::Matrix>());
+    ASSERT_TRUE(TypeOf(c_i32)->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(c_u32)->Is<type::U32>());
+    ASSERT_TRUE(TypeOf(c_f32)->Is<type::F32>());
+    ASSERT_TRUE(TypeOf(c_ai)->Is<type::AbstractInt>());
+    ASSERT_TRUE(TypeOf(c_af)->Is<type::AbstractFloat>());
+    ASSERT_TRUE(TypeOf(c_vi32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vu32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vf32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vai)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vaf)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_mf32)->Is<type::Matrix>());
+    ASSERT_TRUE(TypeOf(c_maf32)->Is<type::Matrix>());
     ASSERT_TRUE(TypeOf(c_s)->Is<sem::Struct>());
 
     EXPECT_TRUE(Sem().Get(c_i32)->ConstantValue()->AllZero());
@@ -1009,7 +1009,7 @@ TEST_F(ResolverVariableTest, LocalConst_PropagateConstValue) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(c)->Is<sem::I32>());
+    ASSERT_TRUE(TypeOf(c)->Is<type::I32>());
 
     EXPECT_EQ(Sem().Get(c)->ConstantValue()->As<i32>(), 42_i);
 }
@@ -1021,7 +1021,7 @@ TEST_F(ResolverVariableTest, LocalConst_ConstEval) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(c)->Is<sem::I32>());
+    ASSERT_TRUE(TypeOf(c)->Is<type::I32>());
 
     EXPECT_EQ(Sem().Get(c)->ConstantValue()->As<i32>(), 3_i);
 }
@@ -1044,17 +1044,17 @@ TEST_F(ResolverVariableTest, GlobalVar_AddressSpace) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(private_)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(workgroup)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(uniform)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(storage)->Is<sem::Reference>());
-    ASSERT_TRUE(TypeOf(handle)->Is<sem::Reference>());
+    ASSERT_TRUE(TypeOf(private_)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(workgroup)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(uniform)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(storage)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(handle)->Is<type::Reference>());
 
-    EXPECT_EQ(TypeOf(private_)->As<sem::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(workgroup)->As<sem::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(uniform)->As<sem::Reference>()->Access(), ast::Access::kRead);
-    EXPECT_EQ(TypeOf(storage)->As<sem::Reference>()->Access(), ast::Access::kRead);
-    EXPECT_EQ(TypeOf(handle)->As<sem::Reference>()->Access(), ast::Access::kRead);
+    EXPECT_EQ(TypeOf(private_)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(workgroup)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(uniform)->As<type::Reference>()->Access(), ast::Access::kRead);
+    EXPECT_EQ(TypeOf(storage)->As<type::Reference>()->Access(), ast::Access::kRead);
+    EXPECT_EQ(TypeOf(handle)->As<type::Reference>()->Access(), ast::Access::kRead);
 }
 
 TEST_F(ResolverVariableTest, GlobalVar_ExplicitAddressSpace) {
@@ -1066,9 +1066,9 @@ TEST_F(ResolverVariableTest, GlobalVar_ExplicitAddressSpace) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(storage)->Is<sem::Reference>());
+    ASSERT_TRUE(TypeOf(storage)->Is<type::Reference>());
 
-    EXPECT_EQ(TypeOf(storage)->As<sem::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(storage)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1093,13 +1093,13 @@ TEST_F(ResolverVariableTest, GlobalConst_ExplicitType_Decls) {
     EXPECT_EQ(Sem().Get(c_vf32)->Declaration(), c_vf32);
     EXPECT_EQ(Sem().Get(c_mf32)->Declaration(), c_mf32);
 
-    ASSERT_TRUE(TypeOf(c_i32)->Is<sem::I32>());
-    ASSERT_TRUE(TypeOf(c_u32)->Is<sem::U32>());
-    ASSERT_TRUE(TypeOf(c_f32)->Is<sem::F32>());
-    ASSERT_TRUE(TypeOf(c_vi32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vu32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vf32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_mf32)->Is<sem::Matrix>());
+    ASSERT_TRUE(TypeOf(c_i32)->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(c_u32)->Is<type::U32>());
+    ASSERT_TRUE(TypeOf(c_f32)->Is<type::F32>());
+    ASSERT_TRUE(TypeOf(c_vi32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vu32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vf32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_mf32)->Is<type::Matrix>());
 
     EXPECT_TRUE(Sem().Get(c_i32)->ConstantValue()->AllZero());
     EXPECT_TRUE(Sem().Get(c_u32)->ConstantValue()->AllZero());
@@ -1142,18 +1142,18 @@ TEST_F(ResolverVariableTest, GlobalConst_ImplicitType_Decls) {
     EXPECT_EQ(Sem().Get(c_mf32)->Declaration(), c_mf32);
     EXPECT_EQ(Sem().Get(c_maf32)->Declaration(), c_maf32);
 
-    ASSERT_TRUE(TypeOf(c_i32)->Is<sem::I32>());
-    ASSERT_TRUE(TypeOf(c_u32)->Is<sem::U32>());
-    ASSERT_TRUE(TypeOf(c_f32)->Is<sem::F32>());
-    ASSERT_TRUE(TypeOf(c_ai)->Is<sem::AbstractInt>());
-    ASSERT_TRUE(TypeOf(c_af)->Is<sem::AbstractFloat>());
-    ASSERT_TRUE(TypeOf(c_vi32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vu32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vf32)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vai)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_vaf)->Is<sem::Vector>());
-    ASSERT_TRUE(TypeOf(c_mf32)->Is<sem::Matrix>());
-    ASSERT_TRUE(TypeOf(c_maf32)->Is<sem::Matrix>());
+    ASSERT_TRUE(TypeOf(c_i32)->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(c_u32)->Is<type::U32>());
+    ASSERT_TRUE(TypeOf(c_f32)->Is<type::F32>());
+    ASSERT_TRUE(TypeOf(c_ai)->Is<type::AbstractInt>());
+    ASSERT_TRUE(TypeOf(c_af)->Is<type::AbstractFloat>());
+    ASSERT_TRUE(TypeOf(c_vi32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vu32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vf32)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vai)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vaf)->Is<type::Vector>());
+    ASSERT_TRUE(TypeOf(c_mf32)->Is<type::Matrix>());
+    ASSERT_TRUE(TypeOf(c_maf32)->Is<type::Matrix>());
 
     EXPECT_TRUE(Sem().Get(c_i32)->ConstantValue()->AllZero());
     EXPECT_TRUE(Sem().Get(c_u32)->ConstantValue()->AllZero());
@@ -1176,7 +1176,7 @@ TEST_F(ResolverVariableTest, GlobalConst_PropagateConstValue) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(c)->Is<sem::I32>());
+    ASSERT_TRUE(TypeOf(c)->Is<type::I32>());
 
     EXPECT_EQ(Sem().Get(c)->ConstantValue()->As<i32>(), 42_i);
 }
@@ -1186,7 +1186,7 @@ TEST_F(ResolverVariableTest, GlobalConst_ConstEval) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(c)->Is<sem::I32>());
+    ASSERT_TRUE(TypeOf(c)->Is<type::I32>());
 
     EXPECT_EQ(Sem().Get(c)->ConstantValue()->As<i32>(), 3_i);
 }

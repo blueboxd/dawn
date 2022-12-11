@@ -90,24 +90,24 @@
 #include "src/tint/number.h"
 #include "src/tint/program.h"
 #include "src/tint/program_id.h"
-#include "src/tint/sem/array.h"
 #include "src/tint/sem/array_count.h"
-#include "src/tint/sem/bool.h"
 #include "src/tint/sem/constant.h"
-#include "src/tint/sem/depth_texture.h"
-#include "src/tint/sem/external_texture.h"
-#include "src/tint/sem/f16.h"
-#include "src/tint/sem/f32.h"
-#include "src/tint/sem/i32.h"
-#include "src/tint/sem/matrix.h"
-#include "src/tint/sem/multisampled_texture.h"
-#include "src/tint/sem/pointer.h"
-#include "src/tint/sem/sampled_texture.h"
-#include "src/tint/sem/storage_texture.h"
 #include "src/tint/sem/struct.h"
-#include "src/tint/sem/u32.h"
-#include "src/tint/sem/vector.h"
-#include "src/tint/sem/void.h"
+#include "src/tint/type/array.h"
+#include "src/tint/type/bool.h"
+#include "src/tint/type/depth_texture.h"
+#include "src/tint/type/external_texture.h"
+#include "src/tint/type/f16.h"
+#include "src/tint/type/f32.h"
+#include "src/tint/type/i32.h"
+#include "src/tint/type/matrix.h"
+#include "src/tint/type/multisampled_texture.h"
+#include "src/tint/type/pointer.h"
+#include "src/tint/type/sampled_texture.h"
+#include "src/tint/type/storage_texture.h"
+#include "src/tint/type/u32.h"
+#include "src/tint/type/vector.h"
+#include "src/tint/type/void.h"
 
 #ifdef CURRENTLY_IN_TINT_PUBLIC_HEADER
 #error "internal tint header being #included from tint.h"
@@ -299,13 +299,13 @@ class ProgramBuilder {
     ProgramID ID() const { return id_; }
 
     /// @returns a reference to the program's types
-    type::TypeManager& Types() {
+    type::Manager& Types() {
         AssertNotMoved();
         return types_;
     }
 
     /// @returns a reference to the program's types
-    const type::TypeManager& Types() const {
+    const type::Manager& Types() const {
         AssertNotMoved();
         return types_;
     }
@@ -497,7 +497,7 @@ class ProgramBuilder {
     /// @returns the de-aliased array count pointer
     template <typename T, typename... ARGS>
     traits::EnableIf<traits::IsTypeOrDerived<T, type::ArrayCount> ||
-                         traits::IsTypeOrDerived<T, sem::StructMemberBase>,
+                         traits::IsTypeOrDerived<T, type::StructMemberBase>,
                      T>*
     create(ARGS&&... args) {
         AssertNotMoved();
@@ -3247,7 +3247,7 @@ class ProgramBuilder {
   private:
     ProgramID id_;
     ast::NodeID last_ast_node_id_ = ast::NodeID{static_cast<decltype(ast::NodeID::value)>(0) - 1};
-    type::TypeManager types_;
+    type::Manager types_;
     ASTNodeAllocator ast_nodes_;
     SemNodeAllocator sem_nodes_;
     ConstantAllocator constant_nodes_;

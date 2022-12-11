@@ -22,10 +22,10 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
-#include "src/tint/sem/reference.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/transform/simplify_pointers.h"
+#include "src/tint/type/reference.h"
 #include "src/tint/utils/scoped_assignment.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::LocalizeStructArrayAssignment);
@@ -157,7 +157,7 @@ struct LocalizeStructArrayAssignment::State {
                     // Indexing a member access expr?
                     if (auto* ma = ia->object->As<ast::MemberAccessorExpression>()) {
                         // That accesses an array?
-                        if (src->TypeOf(ma)->UnwrapRef()->Is<sem::Array>()) {
+                        if (src->TypeOf(ma)->UnwrapRef()->Is<type::Array>()) {
                             result = true;
                             return ast::TraverseAction::Stop;
                         }
@@ -183,9 +183,9 @@ struct LocalizeStructArrayAssignment::State {
         }
 
         auto* type = root_ident->Type();
-        if (auto* ref = type->As<sem::Reference>()) {
+        if (auto* ref = type->As<type::Reference>()) {
             return {ref->StoreType(), ref->AddressSpace()};
-        } else if (auto* ptr = type->As<sem::Pointer>()) {
+        } else if (auto* ptr = type->As<type::Pointer>()) {
             return {ptr->StoreType(), ptr->AddressSpace()};
         }
 

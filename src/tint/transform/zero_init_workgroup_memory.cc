@@ -22,9 +22,9 @@
 
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/atomic.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/type/atomic.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/unique_vector.h"
 
@@ -303,7 +303,7 @@ struct ZeroInitWorkgroupMemory::State {
             return true;
         }
 
-        if (auto* atomic = ty->As<sem::Atomic>()) {
+        if (auto* atomic = ty->As<type::Atomic>()) {
             auto* zero_init = b.Construct(CreateASTTypeFor(ctx, atomic->Type()));
             auto expr = get_expr(1u);
             if (!expr) {
@@ -333,7 +333,7 @@ struct ZeroInitWorkgroupMemory::State {
             return true;
         }
 
-        if (auto* arr = ty->As<sem::Array>()) {
+        if (auto* arr = ty->As<type::Array>()) {
             auto get_el = [&](uint32_t num_values) {
                 // num_values is the number of values to zero for the element type.
                 // The number of iterations required to zero the array and its elements is:
@@ -343,7 +343,7 @@ struct ZeroInitWorkgroupMemory::State {
                 auto count = arr->ConstantCount();
                 if (!count) {
                     ctx.dst->Diagnostics().add_error(diag::System::Transform,
-                                                     sem::Array::kErrExpectedConstantCount);
+                                                     type::Array::kErrExpectedConstantCount);
                     return Expression{};  // error
                 }
                 auto modulo = num_values * count.value();
@@ -411,7 +411,7 @@ struct ZeroInitWorkgroupMemory::State {
             // Constant value could not be found. Build expression instead.
             workgroup_size_expr = [this, expr, size = workgroup_size_expr] {
                 auto* e = ctx.Clone(expr);
-                if (ctx.src->TypeOf(expr)->UnwrapRef()->Is<sem::I32>()) {
+                if (ctx.src->TypeOf(expr)->UnwrapRef()->Is<type::I32>()) {
                     e = b.Construct<u32>(e);
                 }
                 return size ? b.Mul(size(), e) : e;
@@ -439,7 +439,7 @@ struct ZeroInitWorkgroupMemory::State {
     /// sub-initializations.
     /// @param ty the type to inspect
     bool CanTriviallyZero(const type::Type* ty) {
-        if (ty->Is<sem::Atomic>()) {
+        if (ty->Is<type::Atomic>()) {
             return false;
         }
         if (auto* str = ty->As<sem::Struct>()) {
@@ -449,7 +449,7 @@ struct ZeroInitWorkgroupMemory::State {
                 }
             }
         }
-        if (ty->Is<sem::Array>()) {
+        if (ty->Is<type::Array>()) {
             return false;
         }
         // True for all other storable types

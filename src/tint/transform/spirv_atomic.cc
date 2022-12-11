@@ -25,8 +25,8 @@
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/index_accessor_expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
-#include "src/tint/sem/reference.h"
 #include "src/tint/sem/statement.h"
+#include "src/tint/type/reference.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/unique_vector.h"
 
@@ -121,10 +121,6 @@ struct SpirvAtomic::State {
         // If we need to change structure members, then fork them.
         if (!forked_structs.empty()) {
             ctx.ReplaceAll([&](const ast::Struct* str) {
-                // Always emit the original structure. This allows unrelated usage of the structure
-                // to continue working.
-                // auto* original = ctx.CloneWithoutTransform(str);
-
                 // Is `str` a structure we need to fork?
                 if (auto it = forked_structs.find(str); it != forked_structs.end()) {
                     const auto& forked = it->second;
@@ -144,8 +140,6 @@ struct SpirvAtomic::State {
                     }
                     b.Structure(forked.name, std::move(members));
                 }
-
-                // return original;
                 return nullptr;
             });
         }
@@ -201,10 +195,10 @@ struct SpirvAtomic::State {
     const ast::Type* AtomicTypeFor(const type::Type* ty) {
         return Switch(
             ty,  //
-            [&](const sem::I32*) { return b.ty.atomic(CreateASTTypeFor(ctx, ty)); },
-            [&](const sem::U32*) { return b.ty.atomic(CreateASTTypeFor(ctx, ty)); },
+            [&](const type::I32*) { return b.ty.atomic(CreateASTTypeFor(ctx, ty)); },
+            [&](const type::U32*) { return b.ty.atomic(CreateASTTypeFor(ctx, ty)); },
             [&](const sem::Struct* str) { return b.ty.type_name(Fork(str->Declaration()).name); },
-            [&](const sem::Array* arr) -> const ast::Type* {
+            [&](const type::Array* arr) -> const ast::Type* {
                 if (arr->Count()->Is<type::RuntimeArrayCount>()) {
                     return b.ty.array(AtomicTypeFor(arr->ElemType()));
                 }
@@ -218,11 +212,11 @@ struct SpirvAtomic::State {
                 }
                 return b.ty.array(AtomicTypeFor(arr->ElemType()), u32(count.value()));
             },
-            [&](const sem::Pointer* ptr) {
+            [&](const type::Pointer* ptr) {
                 return b.ty.pointer(AtomicTypeFor(ptr->StoreType()), ptr->AddressSpace(),
                                     ptr->Access());
             },
-            [&](const sem::Reference* ref) { return AtomicTypeFor(ref->StoreType()); },
+            [&](const type::Reference* ref) { return AtomicTypeFor(ref->StoreType()); },
             [&](Default) {
                 TINT_ICE(Transform, b.Diagnostics())
                     << "unhandled type: " << ty->FriendlyName(ctx.src->Symbols());
@@ -233,7 +227,7 @@ struct SpirvAtomic::State {
     void ReplaceLoadsAndStores() {
         // Returns true if 'e' is a reference to an atomic variable or struct member
         auto is_ref_to_atomic_var = [&](const sem::Expression* e) {
-            if (tint::Is<sem::Reference>(e->Type()) && e->RootIdentifier() &&
+            if (tint::Is<type::Reference>(e->Type()) && e->RootIdentifier() &&
                 (atomic_variables.count(e->RootIdentifier()) != 0)) {
                 // If it's a struct member, make sure it's one we marked as atomic
                 if (auto* ma = e->As<sem::StructMemberAccess>()) {

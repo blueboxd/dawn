@@ -26,14 +26,14 @@
 #include "src/tint/ast/type_name.h"
 #include "src/tint/ast/unary_op.h"
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/array.h"
-#include "src/tint/sem/atomic.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/member_accessor_expression.h"
-#include "src/tint/sem/reference.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/type/array.h"
+#include "src/tint/type/atomic.h"
+#include "src/tint/type/reference.h"
 #include "src/tint/utils/block_allocator.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/map.h"
@@ -76,7 +76,7 @@ struct OffsetExpr : Offset {
     const ast::Expression* Build(CloneContext& ctx) const override {
         auto* type = ctx.src->Sem().Get(expr)->Type()->UnwrapRef();
         auto* res = ctx.Clone(expr);
-        if (!type->Is<sem::U32>()) {
+        if (!type->Is<type::U32>()) {
             res = ctx.dst->Construct<u32>(res);
         }
         return res;
@@ -141,74 +141,74 @@ struct AtomicKey {
 };
 
 bool IntrinsicDataTypeFor(const type::Type* ty, DecomposeMemoryAccess::Intrinsic::DataType& out) {
-    if (ty->Is<sem::I32>()) {
+    if (ty->Is<type::I32>()) {
         out = DecomposeMemoryAccess::Intrinsic::DataType::kI32;
         return true;
     }
-    if (ty->Is<sem::U32>()) {
+    if (ty->Is<type::U32>()) {
         out = DecomposeMemoryAccess::Intrinsic::DataType::kU32;
         return true;
     }
-    if (ty->Is<sem::F32>()) {
+    if (ty->Is<type::F32>()) {
         out = DecomposeMemoryAccess::Intrinsic::DataType::kF32;
         return true;
     }
-    if (ty->Is<sem::F16>()) {
+    if (ty->Is<type::F16>()) {
         out = DecomposeMemoryAccess::Intrinsic::DataType::kF16;
         return true;
     }
-    if (auto* vec = ty->As<sem::Vector>()) {
+    if (auto* vec = ty->As<type::Vector>()) {
         switch (vec->Width()) {
             case 2:
-                if (vec->type()->Is<sem::I32>()) {
+                if (vec->type()->Is<type::I32>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec2I32;
                     return true;
                 }
-                if (vec->type()->Is<sem::U32>()) {
+                if (vec->type()->Is<type::U32>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec2U32;
                     return true;
                 }
-                if (vec->type()->Is<sem::F32>()) {
+                if (vec->type()->Is<type::F32>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec2F32;
                     return true;
                 }
-                if (vec->type()->Is<sem::F16>()) {
+                if (vec->type()->Is<type::F16>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec2F16;
                     return true;
                 }
                 break;
             case 3:
-                if (vec->type()->Is<sem::I32>()) {
+                if (vec->type()->Is<type::I32>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec3I32;
                     return true;
                 }
-                if (vec->type()->Is<sem::U32>()) {
+                if (vec->type()->Is<type::U32>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec3U32;
                     return true;
                 }
-                if (vec->type()->Is<sem::F32>()) {
+                if (vec->type()->Is<type::F32>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec3F32;
                     return true;
                 }
-                if (vec->type()->Is<sem::F16>()) {
+                if (vec->type()->Is<type::F16>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec3F16;
                     return true;
                 }
                 break;
             case 4:
-                if (vec->type()->Is<sem::I32>()) {
+                if (vec->type()->Is<type::I32>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec4I32;
                     return true;
                 }
-                if (vec->type()->Is<sem::U32>()) {
+                if (vec->type()->Is<type::U32>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec4U32;
                     return true;
                 }
-                if (vec->type()->Is<sem::F32>()) {
+                if (vec->type()->Is<type::F32>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec4F32;
                     return true;
                 }
-                if (vec->type()->Is<sem::F16>()) {
+                if (vec->type()->Is<type::F16>()) {
                     out = DecomposeMemoryAccess::Intrinsic::DataType::kVec4F16;
                     return true;
                 }
@@ -490,7 +490,7 @@ struct DecomposeMemoryAccess::State {
                         },
                         utils::Empty);
                     b.AST().AddFunction(func);
-                } else if (auto* arr_ty = el_ty->As<sem::Array>()) {
+                } else if (auto* arr_ty = el_ty->As<type::Array>()) {
                     // fn load_func(buffer : buf_ty, offset : u32) -> array<T, N> {
                     //   var arr : array<T, N>;
                     //   for (var i = 0u; i < array_count; i = i + 1) {
@@ -529,7 +529,7 @@ struct DecomposeMemoryAccess::State {
                            });
                 } else {
                     utils::Vector<const ast::Expression*, 8> values;
-                    if (auto* mat_ty = el_ty->As<sem::Matrix>()) {
+                    if (auto* mat_ty = el_ty->As<type::Matrix>()) {
                         auto* vec_ty = mat_ty->ColumnType();
                         Symbol load = LoadFunc(buf_ty, vec_ty, var_user);
                         for (uint32_t i = 0; i < mat_ty->columns(); i++) {
@@ -592,7 +592,7 @@ struct DecomposeMemoryAccess::State {
                 } else {
                     auto body = Switch<utils::Vector<const ast::Statement*, 8>>(
                         el_ty,  //
-                        [&](const sem::Array* arr_ty) {
+                        [&](const type::Array* arr_ty) {
                             // fn store_func(buffer : buf_ty, offset : u32, value : el_ty) {
                             //   var array = value; // No dynamic indexing on constant arrays
                             //   for (var i = 0u; i < array_count; i = i + 1) {
@@ -629,7 +629,7 @@ struct DecomposeMemoryAccess::State {
 
                             return utils::Vector{b.Decl(array), for_loop};
                         },
-                        [&](const sem::Matrix* mat_ty) {
+                        [&](const type::Matrix* mat_ty) {
                             auto* vec_ty = mat_ty->ColumnType();
                             Symbol store = StoreFunc(buf_ty, vec_ty, var_user);
                             utils::Vector<const ast::Statement*, 4> stmts;
@@ -901,7 +901,7 @@ Transform::ApplyResult DecomposeMemoryAccess::Apply(const Program* src,
             if (auto* swizzle = accessor_sem->As<sem::Swizzle>()) {
                 if (swizzle->Indices().Length() == 1) {
                     if (auto access = state.TakeAccess(accessor->structure)) {
-                        auto* vec_ty = access.type->As<sem::Vector>();
+                        auto* vec_ty = access.type->As<type::Vector>();
                         auto* offset = state.Mul(vec_ty->type()->Size(), swizzle->Indices()[0u]);
                         state.AddAccess(accessor, {
                                                       access.var,
@@ -928,7 +928,7 @@ Transform::ApplyResult DecomposeMemoryAccess::Apply(const Program* src,
         if (auto* accessor = node->As<ast::IndexAccessorExpression>()) {
             if (auto access = state.TakeAccess(accessor->object)) {
                 // X[Y]
-                if (auto* arr = access.type->As<sem::Array>()) {
+                if (auto* arr = access.type->As<type::Array>()) {
                     auto* offset = state.Mul(arr->Stride(), accessor->index);
                     state.AddAccess(accessor, {
                                                   access.var,
@@ -937,7 +937,7 @@ Transform::ApplyResult DecomposeMemoryAccess::Apply(const Program* src,
                                               });
                     continue;
                 }
-                if (auto* vec_ty = access.type->As<sem::Vector>()) {
+                if (auto* vec_ty = access.type->As<type::Vector>()) {
                     auto* offset = state.Mul(vec_ty->type()->Size(), accessor->index);
                     state.AddAccess(accessor, {
                                                   access.var,
@@ -946,7 +946,7 @@ Transform::ApplyResult DecomposeMemoryAccess::Apply(const Program* src,
                                               });
                     continue;
                 }
-                if (auto* mat_ty = access.type->As<sem::Matrix>()) {
+                if (auto* mat_ty = access.type->As<type::Matrix>()) {
                     auto* offset = state.Mul(mat_ty->ColumnStride(), accessor->index);
                     state.AddAccess(accessor, {
                                                   access.var,
@@ -994,7 +994,7 @@ Transform::ApplyResult DecomposeMemoryAccess::Apply(const Program* src,
                             auto* buf = access.var->Declaration();
                             auto* offset = access.offset->Build(ctx);
                             auto* buf_ty = access.var->Type()->UnwrapRef();
-                            auto* el_ty = access.type->UnwrapRef()->As<sem::Atomic>()->Type();
+                            auto* el_ty = access.type->UnwrapRef()->As<type::Atomic>()->Type();
                             Symbol func = state.AtomicFunc(buf_ty, el_ty, builtin,
                                                            access.var->As<sem::VariableUser>());
 

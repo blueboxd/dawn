@@ -49,7 +49,6 @@ class WhileStatement;
 }  // namespace tint::ast
 namespace tint::sem {
 class Array;
-class Atomic;
 class BlockStatement;
 class BreakIfStatement;
 class Builtin;
@@ -64,6 +63,9 @@ class SwitchStatement;
 class TypeInitializer;
 class WhileStatement;
 }  // namespace tint::sem
+namespace tint::type {
+class Atomic;
+}  // namespace tint::type
 
 namespace tint::resolver {
 
@@ -152,7 +154,7 @@ class Validator {
     /// @param el_source the source of the array element, or the array if the array does not have a
     ///        locally-declared element AST node.
     /// @returns true on success, false otherwise.
-    bool Array(const sem::Array* arr, const Source& el_source) const;
+    bool Array(const type::Array* arr, const Source& el_source) const;
 
     /// Validates an array stride attribute
     /// @param attr the stride attribute to validate
@@ -167,13 +169,13 @@ class Validator {
     /// @param a the atomic ast node
     /// @param s the atomic sem node
     /// @returns true on success, false otherwise.
-    bool Atomic(const ast::Atomic* a, const sem::Atomic* s) const;
+    bool Atomic(const ast::Atomic* a, const type::Atomic* s) const;
 
     /// Validates a pointer type
     /// @param a the pointer ast node
     /// @param s the pointer sem node
     /// @returns true on success, false otherwise.
-    bool Pointer(const ast::Pointer* a, const sem::Pointer* s) const;
+    bool Pointer(const ast::Pointer* a, const type::Pointer* s) const;
 
     /// Validates an assignment
     /// @param a the assignment statement
@@ -328,7 +330,7 @@ class Validator {
     /// @param ty the matrix to validate
     /// @param source the source of the matrix
     /// @returns true on success, false otherwise
-    bool Matrix(const sem::Matrix* ty, const Source& source) const;
+    bool Matrix(const type::Matrix* ty, const Source& source) const;
 
     /// Validates a function parameter
     /// @param func the function the variable is for
@@ -361,13 +363,13 @@ class Validator {
     /// @param t the texture to validate
     /// @param source the source of the texture
     /// @returns true on success, false otherwise
-    bool SampledTexture(const sem::SampledTexture* t, const Source& source) const;
+    bool SampledTexture(const type::SampledTexture* t, const Source& source) const;
 
     /// Validates a multisampled texture
     /// @param t the texture to validate
     /// @param source the source of the texture
     /// @returns true on success, false otherwise
-    bool MultisampledTexture(const sem::MultisampledTexture* t, const Source& source) const;
+    bool MultisampledTexture(const type::MultisampledTexture* t, const Source& source) const;
 
     /// Validates a structure
     /// @param str the structure to validate
@@ -424,13 +426,13 @@ class Validator {
     /// @param ty the vector to validate
     /// @param source the source of the vector
     /// @returns true on success, false otherwise
-    bool Vector(const sem::Vector* ty, const Source& source) const;
+    bool Vector(const type::Vector* ty, const Source& source) const;
 
     /// Validates an array initializer
     /// @param ctor the call expresion to validate
     /// @param arr_type the type of the array
     /// @returns true on success, false otherwise
-    bool ArrayInitializer(const ast::CallExpression* ctor, const sem::Array* arr_type) const;
+    bool ArrayInitializer(const ast::CallExpression* ctor, const type::Array* arr_type) const;
 
     /// Validates a texture builtin function
     /// @param call the builtin call to validate

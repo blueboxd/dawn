@@ -18,13 +18,13 @@
 #include <string>
 
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/atomic.h"
 #include "src/tint/sem/block_statement.h"
-#include "src/tint/sem/depth_multisampled_texture.h"
 #include "src/tint/sem/for_loop_statement.h"
-#include "src/tint/sem/reference.h"
-#include "src/tint/sem/sampler.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/type/atomic.h"
+#include "src/tint/type/depth_multisampled_texture.h"
+#include "src/tint/type/reference.h"
+#include "src/tint/type/sampler.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Transform);
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Data);
@@ -74,33 +74,33 @@ void Transform::RemoveStatement(CloneContext& ctx, const ast::Statement* stmt) {
 }
 
 const ast::Type* Transform::CreateASTTypeFor(CloneContext& ctx, const type::Type* ty) {
-    if (ty->Is<sem::Void>()) {
+    if (ty->Is<type::Void>()) {
         return ctx.dst->create<ast::Void>();
     }
-    if (ty->Is<sem::I32>()) {
+    if (ty->Is<type::I32>()) {
         return ctx.dst->create<ast::I32>();
     }
-    if (ty->Is<sem::U32>()) {
+    if (ty->Is<type::U32>()) {
         return ctx.dst->create<ast::U32>();
     }
-    if (ty->Is<sem::F16>()) {
+    if (ty->Is<type::F16>()) {
         return ctx.dst->create<ast::F16>();
     }
-    if (ty->Is<sem::F32>()) {
+    if (ty->Is<type::F32>()) {
         return ctx.dst->create<ast::F32>();
     }
-    if (ty->Is<sem::Bool>()) {
+    if (ty->Is<type::Bool>()) {
         return ctx.dst->create<ast::Bool>();
     }
-    if (auto* m = ty->As<sem::Matrix>()) {
+    if (auto* m = ty->As<type::Matrix>()) {
         auto* el = CreateASTTypeFor(ctx, m->type());
         return ctx.dst->create<ast::Matrix>(el, m->rows(), m->columns());
     }
-    if (auto* v = ty->As<sem::Vector>()) {
+    if (auto* v = ty->As<type::Vector>()) {
         auto* el = CreateASTTypeFor(ctx, v->type());
         return ctx.dst->create<ast::Vector>(el, v->Width());
     }
-    if (auto* a = ty->As<sem::Array>()) {
+    if (auto* a = ty->As<type::Array>()) {
         auto* el = CreateASTTypeFor(ctx, a->ElemType());
         utils::Vector<const ast::Attribute*, 1> attrs;
         if (!a->IsStrideImplicit()) {
@@ -133,39 +133,39 @@ const ast::Type* Transform::CreateASTTypeFor(CloneContext& ctx, const type::Type
         if (auto count = a->ConstantCount()) {
             return ctx.dst->ty.array(el, u32(count.value()), std::move(attrs));
         }
-        TINT_ICE(Transform, ctx.dst->Diagnostics()) << sem::Array::kErrExpectedConstantCount;
+        TINT_ICE(Transform, ctx.dst->Diagnostics()) << type::Array::kErrExpectedConstantCount;
         return ctx.dst->ty.array(el, u32(1), std::move(attrs));
     }
     if (auto* s = ty->As<sem::Struct>()) {
         return ctx.dst->create<ast::TypeName>(ctx.Clone(s->Declaration()->name));
     }
-    if (auto* s = ty->As<sem::Reference>()) {
+    if (auto* s = ty->As<type::Reference>()) {
         return CreateASTTypeFor(ctx, s->StoreType());
     }
-    if (auto* a = ty->As<sem::Atomic>()) {
+    if (auto* a = ty->As<type::Atomic>()) {
         return ctx.dst->create<ast::Atomic>(CreateASTTypeFor(ctx, a->Type()));
     }
-    if (auto* t = ty->As<sem::DepthTexture>()) {
+    if (auto* t = ty->As<type::DepthTexture>()) {
         return ctx.dst->create<ast::DepthTexture>(t->dim());
     }
-    if (auto* t = ty->As<sem::DepthMultisampledTexture>()) {
+    if (auto* t = ty->As<type::DepthMultisampledTexture>()) {
         return ctx.dst->create<ast::DepthMultisampledTexture>(t->dim());
     }
-    if (ty->Is<sem::ExternalTexture>()) {
+    if (ty->Is<type::ExternalTexture>()) {
         return ctx.dst->create<ast::ExternalTexture>();
     }
-    if (auto* t = ty->As<sem::MultisampledTexture>()) {
+    if (auto* t = ty->As<type::MultisampledTexture>()) {
         return ctx.dst->create<ast::MultisampledTexture>(t->dim(),
                                                          CreateASTTypeFor(ctx, t->type()));
     }
-    if (auto* t = ty->As<sem::SampledTexture>()) {
+    if (auto* t = ty->As<type::SampledTexture>()) {
         return ctx.dst->create<ast::SampledTexture>(t->dim(), CreateASTTypeFor(ctx, t->type()));
     }
-    if (auto* t = ty->As<sem::StorageTexture>()) {
+    if (auto* t = ty->As<type::StorageTexture>()) {
         return ctx.dst->create<ast::StorageTexture>(t->dim(), t->texel_format(),
                                                     CreateASTTypeFor(ctx, t->type()), t->access());
     }
-    if (auto* s = ty->As<sem::Sampler>()) {
+    if (auto* s = ty->As<type::Sampler>()) {
         return ctx.dst->create<ast::Sampler>(s->kind());
     }
     TINT_UNREACHABLE(Transform, ctx.dst->Diagnostics())
