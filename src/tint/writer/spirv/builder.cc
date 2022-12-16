@@ -22,9 +22,9 @@
 #include "src/tint/ast/id_attribute.h"
 #include "src/tint/ast/internal_attribute.h"
 #include "src/tint/ast/traverse_expressions.h"
+#include "src/tint/constant/value.h"
 #include "src/tint/sem/builtin.h"
 #include "src/tint/sem/call.h"
-#include "src/tint/sem/constant.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/materialize.h"
 #include "src/tint/sem/member_accessor_expression.h"
@@ -905,7 +905,7 @@ bool Builder::GenerateIndexAccessor(const ast::IndexAccessorExpression* expr, Ac
                                     Operand(result_type_id),
                                     extract,
                                     Operand(info->source_id),
-                                    Operand(idx_constval->As<uint32_t>()),
+                                    Operand(idx_constval->ValueAs<u32>()),
                                 })) {
             return false;
         }
@@ -1641,7 +1641,7 @@ uint32_t Builder::GenerateLiteralIfNeeded(const ast::LiteralExpression* lit) {
     return GenerateConstantIfNeeded(constant);
 }
 
-uint32_t Builder::GenerateConstantIfNeeded(const sem::Constant* constant) {
+uint32_t Builder::GenerateConstantIfNeeded(const constant::Value* constant) {
     if (constant->AllZero()) {
         return GenerateConstantNullIfNeeded(constant->Type());
     }
@@ -1681,23 +1681,23 @@ uint32_t Builder::GenerateConstantIfNeeded(const sem::Constant* constant) {
     return Switch(
         ty,  //
         [&](const type::Bool*) {
-            bool val = constant->As<bool>();
+            bool val = constant->ValueAs<bool>();
             return GenerateConstantIfNeeded(ScalarConstant::Bool(val));
         },
         [&](const type::F32*) {
-            auto val = constant->As<f32>();
+            auto val = constant->ValueAs<f32>();
             return GenerateConstantIfNeeded(ScalarConstant::F32(val.value));
         },
         [&](const type::F16*) {
-            auto val = constant->As<f16>();
+            auto val = constant->ValueAs<f16>();
             return GenerateConstantIfNeeded(ScalarConstant::F16(val.value));
         },
         [&](const type::I32*) {
-            auto val = constant->As<i32>();
+            auto val = constant->ValueAs<i32>();
             return GenerateConstantIfNeeded(ScalarConstant::I32(val.value));
         },
         [&](const type::U32*) {
-            auto val = constant->As<u32>();
+            auto val = constant->ValueAs<u32>();
             return GenerateConstantIfNeeded(ScalarConstant::U32(val.value));
         },
         [&](const type::Vector* v) { return composite(v->Width()); },
@@ -3451,7 +3451,7 @@ bool Builder::GenerateSwitchStatement(const ast::SwitchStatement* stmt) {
                 continue;
             }
 
-            params.push_back(Operand(selector->Value()->As<uint32_t>()));
+            params.push_back(Operand(selector->Value()->ValueAs<u32>()));
             params.push_back(Operand(block_id));
         }
     }

@@ -27,10 +27,10 @@
 #include "src/tint/ast/internal_attribute.h"
 #include "src/tint/ast/interpolate_attribute.h"
 #include "src/tint/ast/variable_decl_statement.h"
+#include "src/tint/constant/value.h"
 #include "src/tint/debug.h"
 #include "src/tint/sem/block_statement.h"
 #include "src/tint/sem/call.h"
-#include "src/tint/sem/constant.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/module.h"
@@ -1117,7 +1117,7 @@ bool GeneratorImpl::EmitUniformBufferAccess(
 
     if (auto* val = offset_arg->ConstantValue()) {
         TINT_ASSERT(Writer, val->Type()->Is<type::U32>());
-        scalar_offset_bytes = static_cast<uint32_t>(std::get<AInt>(val->Value()));
+        scalar_offset_bytes = static_cast<uint32_t>(val->ValueAs<AInt>());
         scalar_offset_index = scalar_offset_bytes / 4;  // bytes -> scalar index
         scalar_offset_constant = true;
     }
@@ -2495,7 +2495,7 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
         case sem::BuiltinType::kTextureGather:
             out << ".Gather";
             if (builtin->Parameters()[0]->Usage() == sem::ParameterUsage::kComponent) {
-                switch (call->Arguments()[0]->ConstantValue()->As<AInt>()) {
+                switch (call->Arguments()[0]->ConstantValue()->ValueAs<AInt>()) {
                     case 0:
                         out << "Red";
                         break;
@@ -3263,31 +3263,31 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
 }
 
 bool GeneratorImpl::EmitConstant(std::ostream& out,
-                                 const sem::Constant* constant,
+                                 const constant::Value* constant,
                                  bool is_variable_initializer) {
     return Switch(
         constant->Type(),  //
         [&](const type::Bool*) {
-            out << (constant->As<AInt>() ? "true" : "false");
+            out << (constant->ValueAs<AInt>() ? "true" : "false");
             return true;
         },
         [&](const type::F32*) {
-            PrintF32(out, constant->As<float>());
+            PrintF32(out, constant->ValueAs<f32>());
             return true;
         },
         [&](const type::F16*) {
             // emit a f16 scalar with explicit float16_t type declaration.
             out << "float16_t(";
-            PrintF16(out, constant->As<float>());
+            PrintF16(out, constant->ValueAs<f16>());
             out << ")";
             return true;
         },
         [&](const type::I32*) {
-            out << constant->As<AInt>();
+            out << constant->ValueAs<AInt>();
             return true;
         },
         [&](const type::U32*) {
-            out << constant->As<AInt>() << "u";
+            out << constant->ValueAs<AInt>() << "u";
             return true;
         },
         [&](const type::Vector* v) {

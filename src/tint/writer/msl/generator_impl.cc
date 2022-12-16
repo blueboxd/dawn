@@ -31,8 +31,8 @@
 #include "src/tint/ast/module.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/ast/void.h"
+#include "src/tint/constant/value.h"
 #include "src/tint/sem/call.h"
-#include "src/tint/sem/constant.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/module.h"
@@ -1264,7 +1264,7 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
                     break;  // Other texture dimensions don't have an offset
             }
         }
-        auto c = component->ConstantValue()->As<AInt>();
+        auto c = component->ConstantValue()->ValueAs<AInt>();
         switch (c.value) {
             case 0:
                 out << "component::x";
@@ -1658,27 +1658,27 @@ bool GeneratorImpl::EmitZeroValue(std::ostream& out, const type::Type* type) {
         });
 }
 
-bool GeneratorImpl::EmitConstant(std::ostream& out, const sem::Constant* constant) {
+bool GeneratorImpl::EmitConstant(std::ostream& out, const constant::Value* constant) {
     return Switch(
         constant->Type(),  //
         [&](const type::Bool*) {
-            out << (constant->As<AInt>() ? "true" : "false");
+            out << (constant->ValueAs<AInt>() ? "true" : "false");
             return true;
         },
         [&](const type::F32*) {
-            PrintF32(out, constant->As<float>());
+            PrintF32(out, constant->ValueAs<f32>());
             return true;
         },
         [&](const type::F16*) {
-            PrintF16(out, constant->As<float>());
+            PrintF16(out, constant->ValueAs<f16>());
             return true;
         },
         [&](const type::I32*) {
-            PrintI32(out, constant->As<int32_t>());
+            PrintI32(out, constant->ValueAs<i32>());
             return true;
         },
         [&](const type::U32*) {
-            out << constant->As<AInt>() << "u";
+            out << constant->ValueAs<AInt>() << "u";
             return true;
         },
         [&](const type::Vector* v) {

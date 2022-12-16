@@ -1318,6 +1318,9 @@ bool Validator::EntryPoint(const sem::Function* func, ast::PipelineStage stage) 
 bool Validator::EvaluationStage(const sem::Expression* expr,
                                 sem::EvaluationStage latest_stage,
                                 std::string_view constraint) const {
+    if (expr->Stage() == sem::EvaluationStage::kNotEvaluated) {
+        return true;
+    }
     if (expr->Stage() > latest_stage) {
         auto stage_name = [](sem::EvaluationStage stage) -> std::string {
             switch (stage) {
@@ -1327,6 +1330,8 @@ bool Validator::EvaluationStage(const sem::Expression* expr,
                     return "an override-expression";
                 case sem::EvaluationStage::kConstant:
                     return "a const-expression";
+                case sem::EvaluationStage::kNotEvaluated:
+                    return "an unevaluated expression";
             }
             return "<unknown>";
         };
@@ -1568,7 +1573,7 @@ bool Validator::TextureBuiltinFunction(const sem::Call* call) const {
         if (auto values = arg->ConstantValue()) {
             if (auto* vector = values->Type()->As<type::Vector>()) {
                 for (size_t i = 0; i < vector->Width(); i++) {
-                    auto value = values->Index(i)->As<AInt>();
+                    auto value = values->Index(i)->ValueAs<AInt>();
                     if (value < min || value > max) {
                         AddError("each component of the " + name + " argument must be at least " +
                                      std::to_string(min) + " and at most " + std::to_string(max) +
@@ -1579,7 +1584,7 @@ bool Validator::TextureBuiltinFunction(const sem::Call* call) const {
                     }
                 }
             } else {
-                auto value = values->As<AInt>();
+                auto value = values->ValueAs<AInt>();
                 if (value < min || value > max) {
                     AddError("the " + name + " argument must be at least " + std::to_string(min) +
                                  " and at most " + std::to_string(max) + ". " + name + " is " +
@@ -1617,6 +1622,15 @@ bool Validator::RequiredExtensionForBuiltinFunction(const sem::Call* call) const
         return false;
     }
 
+    return true;
+}
+
+bool Validator::CheckF16Enabled(const Source& source) const {
+    // Validate if f16 type is allowed.
+    if (!enabled_extensions_.Contains(ast::Extension::kF16)) {
+        AddError("f16 type used without 'f16' extension enabled", source);
+        return false;
+    }
     return true;
 }
 
@@ -2225,7 +2239,7 @@ bool Validator::SwitchStatement(const ast::SwitchStatement* s) {
                 return false;
             }
 
-            auto value = selector->Value()->As<uint32_t>();
+            auto value = selector->Value()->ValueAs<u32>();
             if (auto added = selectors.Add(value, selector->Declaration()->source); !added) {
                 AddError("duplicate switch case '" +
                              (decl_ty->IsAnyOf<type::I32, type::AbstractNumeric>()

@@ -78,13 +78,7 @@ crbug.com/dawn/1487 [ intel-gen-9 win10 ] webgpu:api,operation,resource_init,tex
 # Skipped instead of just Crash because of the number of failures
 # KEEP
 ################################################################################
-crbug.com/1234041 [ linux ] webgpu:api,validation,queue,copyToTexture,CopyExternalImageToTexture:* [ Skip ]
 crbug.com/1236130 [ linux ] webgpu:web_platform,canvas,readbackFromWebGPUCanvas:* [ Skip ]
-crbug.com/1309194 [ linux ] webgpu:web_platform,copyToTexture,ImageBitmap:from_canvas:* [ Skip ]
-crbug.com/1309194 [ linux webgpu-adapter-default ] webgpu:web_platform,copyToTexture,canvas:color_space_conversion:* [ Skip ]
-crbug.com/1309194 [ linux ] webgpu:web_platform,copyToTexture,canvas:copy_contents_from_2d_context_canvas:* [ Skip ]
-crbug.com/1309194 [ linux ] webgpu:web_platform,copyToTexture,canvas:copy_contents_from_gl_context_canvas:* [ Skip ]
-crbug.com/1309194 [ linux ] webgpu:web_platform,copyToTexture,canvas:copy_contents_from_gpu_context_canvas:* [ Skip ]
 
 # Limit value changed. gpuweb#3648
 webgpu:api,validation,query_set,create:count:type="occlusion" [ Failure ]
@@ -450,6 +444,7 @@ crbug.com/dawn/1599 [ webgpu-adapter-swiftshader ] webgpu:web_platform,copyToTex
 
 ################################################################################
 # commandEncoder validation tests need updates in CTS
+# KEEP
 ################################################################################
 crbug.com/dawn/1602 webgpu:api,validation,encoding,beginComputePass:* [ Skip ]
 crbug.com/dawn/1602 webgpu:api,validation,encoding,beginRenderPass:* [ Skip ]
@@ -459,6 +454,15 @@ crbug.com/dawn/1602 webgpu:api,validation,render_pass,render_pass_descriptor:* [
 crbug.com/dawn/1602 webgpu:api,validation,render_pass,resolve:resolve_attachment:* [ Skip ]
 crbug.com/dawn/1602 webgpu:api,validation,render_pass,storeOp:* [ Skip ]
 crbug.com/dawn/1602 webgpu:api,validation,resource_usages,texture,in_render_misc:subresources,set_bind_group_on_same_index_depth_stencil_texture:* [ Skip ]
+################################################################################
+
+################################################################################
+# Buffer.MapAsync pending map error tests need updates in CTS
+################################################################################
+crbug.com/dawn/1613 webgpu:api,validation,buffer,mapping:getMappedRange,state,mappingPending:* [ Failure ]
+crbug.com/dawn/1613 webgpu:api,validation,buffer,mapping:mapAsync,state,mappingPending:* [ Failure ]
+crbug.com/dawn/1613 worker_webgpu:api,validation,buffer,mapping:getMappedRange,state,mappingPending:* [ Failure ]
+crbug.com/dawn/1613 worker_webgpu:api,validation,buffer,mapping:mapAsync,state,mappingPending:* [ Failure ]
 ################################################################################
 
 ################################################################################
@@ -479,8 +483,6 @@ crbug.com/dawn/0000 [ dawn-no-backend-validation nvidia-0x2184 target-cpu-32 win
 crbug.com/dawn/0000 [ dawn-no-backend-validation nvidia-0x2184 target-cpu-64 win10 ] worker_webgpu:api,validation,buffer,mapping:mapAsync,offsetAndSizeOOB: [ RetryOnFailure ]
 
 # New failures. Please triage:
-crbug.com/dawn/0000 [ target-cpu-32 ] webgpu:api,operation,buffers,map_oom:mapAsync:oom=true;size=137438953472 [ Failure ]
-crbug.com/dawn/0000 [ target-cpu-32 ] webgpu:api,operation,buffers,map_oom:mapAsync:oom=true;size=9007199254740984 [ Failure ]
 crbug.com/dawn/0000 webgpu:api,operation,shader_module,compilation_info:line_number_and_position:valid=false;name="carriage-return" [ Failure ]
 crbug.com/dawn/0000 webgpu:api,validation,createBindGroupLayout:multisampled_validation:viewDimension="2d" [ Failure ]
 crbug.com/dawn/0000 webgpu:api,validation,createBindGroupLayout:multisampled_validation:viewDimension="_undef_" [ Failure ]

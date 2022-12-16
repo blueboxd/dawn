@@ -208,12 +208,7 @@ type::Type* Resolver::Type(const ast::Type* ty) {
         [&](const ast::I32*) { return builder_->create<type::I32>(); },
         [&](const ast::U32*) { return builder_->create<type::U32>(); },
         [&](const ast::F16* t) -> type::F16* {
-            // Validate if f16 type is allowed.
-            if (!enabled_extensions_.Contains(ast::Extension::kF16)) {
-                AddError("f16 used without 'f16' extension enabled", t->source);
-                return nullptr;
-            }
-            return builder_->create<type::F16>();
+            return validator_.CheckF16Enabled(t->source) ? builder_->create<type::F16>() : nullptr;
         },
         [&](const ast::F32*) { return builder_->create<type::F32>(); },
         [&](const ast::Vector* t) -> type::Vector* {
@@ -337,9 +332,7 @@ type::Type* Resolver::Type(const ast::Type* ty) {
                             AddError("cannot use builtin '" + name + "' as type", ty->source);
                             return nullptr;
                         }
-                        if (auto* t = BuiltinTypeAlias(tn->name)) {
-                            return t;
-                        }
+                        return ShortName(tn->name, tn->source);
                     }
                     TINT_UNREACHABLE(Resolver, diagnostics_)
                         << "Unhandled resolved type '"
@@ -487,7 +480,7 @@ sem::Variable* Resolver::Override(const ast::Override* v) {
         }
 
         auto const_value = materialized->ConstantValue();
-        auto value = const_value->As<AInt>();
+        auto value = const_value->ValueAs<AInt>();
         if (value < 0) {
             AddError("@id value must be non-negative", id_attr->source);
             return nullptr;
@@ -667,7 +660,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
                 }
 
                 auto const_value = materialized->ConstantValue();
-                auto value = const_value->As<AInt>();
+                auto value = const_value->ValueAs<AInt>();
                 if (value < 0) {
                     AddError("@binding value must be non-negative", attr->source);
                     return nullptr;
@@ -691,7 +684,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
                 }
 
                 auto const_value = materialized->ConstantValue();
-                auto value = const_value->As<AInt>();
+                auto value = const_value->ValueAs<AInt>();
                 if (value < 0) {
                     AddError("@group value must be non-negative", attr->source);
                     return nullptr;
@@ -769,7 +762,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
             if (!materialized) {
                 return nullptr;
             }
-            binding_point.binding = materialized->ConstantValue()->As<uint32_t>();
+            binding_point.binding = materialized->ConstantValue()->ValueAs<u32>();
         }
         {
             ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@group value"};
@@ -780,7 +773,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
             if (!materialized) {
                 return nullptr;
             }
-            binding_point.group = materialized->ConstantValue()->As<uint32_t>();
+            binding_point.group = materialized->ConstantValue()->ValueAs<u32>();
         }
     }
 
@@ -815,7 +808,7 @@ utils::Result<uint32_t> Resolver::LocationAttribute(const ast::LocationAttribute
     }
 
     auto const_value = materialized->ConstantValue();
-    auto value = const_value->As<AInt>();
+    auto value = const_value->ValueAs<AInt>();
     if (value < 0) {
         AddError("@location value must be non-negative", attr->source);
         return utils::Failure;
@@ -953,7 +946,7 @@ sem::Statement* Resolver::StaticAssert(const ast::StaticAssert* assertion) {
             assertion->condition->source);
         return nullptr;
     }
-    if (!cond->As<bool>()) {
+    if (!cond->ValueAs<bool>()) {
         AddError("static assertion failed", assertion->source);
         return nullptr;
     }
@@ -1188,11 +1181,11 @@ bool Resolver::WorkgroupSize(const ast::Function* func) {
             return false;
         }
         if (auto* value = materialized->ConstantValue()) {
-            if (value->As<AInt>() < 1) {
+            if (value->ValueAs<AInt>() < 1) {
                 AddError("workgroup_size argument must be at least 1", values[i]->source);
                 return false;
             }
-            ws[i] = value->As<uint32_t>();
+            ws[i] = value->ValueAs<u32>();
         } else {
             ws[i] = std::nullopt;
         }
@@ -1285,7 +1278,7 @@ sem::CaseStatement* Resolver::CaseStatement(const ast::CaseStatement* stmt, cons
             ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "case selector"};
             TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
 
-            const sem::Constant* const_value = nullptr;
+            const constant::Value* const_value = nullptr;
             if (!sel->IsDefault()) {
                 // The sem statement was created in the switch when attempting to determine the
                 // common type.
@@ -1510,6 +1503,11 @@ sem::Expression* Resolver::Expression(const ast::Expression* root) {
                     failed = true;
                     return ast::TraverseAction::Stop;
                 }
+                if (auto* binary = expr->As<ast::BinaryExpression>();
+                    binary && binary->IsLogical()) {
+                    // Store potential const-eval short-circuit pair
+                    logical_binary_lhs_to_parent_.Add(binary->lhs, binary);
+                }
                 sorted.Push(expr);
                 return ast::TraverseAction::Descend;
             })) {
@@ -1567,6 +1565,26 @@ sem::Expression* Resolver::Expression(const ast::Expression* root) {
         builder_->Sem().Add(expr, sem_expr);
         if (expr == root) {
             return sem_expr;
+        }
+
+        // If we just processed the lhs of a constexpr logical binary expression, mark the rhs for
+        // short-circuiting.
+        if (sem_expr->ConstantValue()) {
+            if (auto binary = logical_binary_lhs_to_parent_.Find(expr)) {
+                const bool lhs_is_true = sem_expr->ConstantValue()->ValueAs<bool>();
+                if (((*binary)->IsLogicalAnd() && !lhs_is_true) ||
+                    ((*binary)->IsLogicalOr() && lhs_is_true)) {
+                    // Mark entire expression tree to not const-evaluate
+                    auto r = ast::TraverseExpressions(  //
+                        (*binary)->rhs, diagnostics_, [&](const ast::Expression* e) {
+                            skip_const_eval_.Add(e);
+                            return ast::TraverseAction::Descend;
+                        });
+                    if (!r) {
+                        return nullptr;
+                    }
+                }
+            }
         }
     }
 
@@ -1779,27 +1797,32 @@ const sem::Expression* Resolver::Materialize(const sem::Expression* expr,
         return nullptr;
     }
 
-    auto expr_val = expr->ConstantValue();
-    if (!expr_val) {
-        TINT_ICE(Resolver, builder_->Diagnostics())
-            << decl->source << "Materialize(" << decl->TypeInfo().name
-            << ") called on expression with no constant value";
-        return nullptr;
+    const constant::Value* materialized_val = nullptr;
+    if (!skip_const_eval_.Contains(decl)) {
+        auto expr_val = expr->ConstantValue();
+        if (!expr_val) {
+            TINT_ICE(Resolver, builder_->Diagnostics())
+                << decl->source << "Materialize(" << decl->TypeInfo().name
+                << ") called on expression with no constant value";
+            return nullptr;
+        }
+
+        auto val = const_eval_.Convert(concrete_ty, expr_val, decl->source);
+        if (!val) {
+            // Convert() has already failed and raised an diagnostic error.
+            return nullptr;
+        }
+        materialized_val = val.Get();
+        if (!materialized_val) {
+            TINT_ICE(Resolver, builder_->Diagnostics())
+                << decl->source << "ConvertValue(" << builder_->FriendlyName(expr_val->Type())
+                << " -> " << builder_->FriendlyName(concrete_ty) << ") returned invalid value";
+            return nullptr;
+        }
     }
 
-    auto materialized_val = const_eval_.Convert(concrete_ty, expr_val, decl->source);
-    if (!materialized_val) {
-        // ConvertValue() has already failed and raised an diagnostic error.
-        return nullptr;
-    }
-
-    if (!materialized_val.Get()) {
-        TINT_ICE(Resolver, builder_->Diagnostics())
-            << decl->source << "ConvertValue(" << builder_->FriendlyName(expr_val->Type()) << " -> "
-            << builder_->FriendlyName(concrete_ty) << ") returned invalid value";
-        return nullptr;
-    }
-    auto* m = builder_->create<sem::Materialize>(expr, current_statement_, materialized_val.Get());
+    auto* m =
+        builder_->create<sem::Materialize>(expr, current_statement_, concrete_ty, materialized_val);
     m->Behaviors() = expr->Behaviors();
     builder_->Sem().Replace(decl, m);
     return m;
@@ -1826,7 +1849,9 @@ bool Resolver::ShouldMaterializeArgument(const type::Type* parameter_ty) const {
     return param_el_ty && !param_el_ty->Is<type::AbstractNumeric>();
 }
 
-bool Resolver::Convert(const sem::Constant*& c, const type::Type* target_ty, const Source& source) {
+bool Resolver::Convert(const constant::Value*& c,
+                       const type::Type* target_ty,
+                       const Source& source) {
     auto r = const_eval_.Convert(target_ty, c, source);
     if (!r) {
         return false;
@@ -1836,7 +1861,7 @@ bool Resolver::Convert(const sem::Constant*& c, const type::Type* target_ty, con
 }
 
 template <size_t N>
-utils::Result<utils::Vector<const sem::Constant*, N>> Resolver::ConvertArguments(
+utils::Result<utils::Vector<const constant::Value*, N>> Resolver::ConvertArguments(
     const utils::Vector<const sem::Expression*, N>& args,
     const sem::CallTarget* target) {
     auto const_args = utils::Transform(args, [](auto* arg) { return arg->ConstantValue(); });
@@ -1894,12 +1919,16 @@ sem::Expression* Resolver::IndexAccessor(const ast::IndexAccessorExpression* exp
         ty = builder_->create<type::Reference>(ty, ref->AddressSpace(), ref->Access());
     }
 
+    const constant::Value* val = nullptr;
     auto stage = sem::EarliestStage(obj->Stage(), idx->Stage());
-    const sem::Constant* val = nullptr;
-    if (auto r = const_eval_.Index(obj, idx)) {
-        val = r.Get();
+    if (stage == sem::EvaluationStage::kConstant && skip_const_eval_.Contains(expr)) {
+        stage = sem::EvaluationStage::kNotEvaluated;
     } else {
-        return nullptr;
+        if (auto r = const_eval_.Index(obj, idx)) {
+            val = r.Get();
+        } else {
+            return nullptr;
+        }
     }
     bool has_side_effects = idx->HasSideEffects() || obj->HasSideEffects();
     auto* sem = builder_->create<sem::IndexAccessorExpression>(
@@ -1921,7 +1950,8 @@ sem::Expression* Resolver::Bitcast(const ast::BitcastExpression* expr) {
 
     RegisterLoadIfNeeded(inner);
 
-    const sem::Constant* val = nullptr;
+    const constant::Value* val = nullptr;
+    // TODO(crbug.com/tint/1582): short circuit 'expr' once const eval of Bitcast is implemented.
     if (auto r = const_eval_.Bitcast(ty, inner)) {
         val = r.Get();
     } else {
@@ -1981,8 +2011,12 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
         if (!MaybeMaterializeArguments(args, ctor_or_conv.target)) {
             return nullptr;
         }
-        const sem::Constant* value = nullptr;
+
+        const constant::Value* value = nullptr;
         auto stage = sem::EarliestStage(ctor_or_conv.target->Stage(), args_stage);
+        if (stage == sem::EvaluationStage::kConstant && skip_const_eval_.Contains(expr)) {
+            stage = sem::EvaluationStage::kNotEvaluated;
+        }
         if (stage == sem::EvaluationStage::kConstant) {
             auto const_args = ConvertArguments(args, ctor_or_conv.target);
             if (!const_args) {
@@ -2007,8 +2041,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             return nullptr;
         }
 
-        auto stage = args_stage;               // The evaluation stage of the call
-        const sem::Constant* value = nullptr;  // The constant value for the call
+        auto stage = args_stage;                    // The evaluation stage of the call
+        const constant::Value* value = nullptr;     // The constant value for the call
         if (stage == sem::EvaluationStage::kConstant) {
             if (auto r = const_eval_.ArrayOrStructInit(ty, args)) {
                 value = r.Get();
@@ -2042,7 +2076,11 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             },
             [&](const type::I32*) { return ct_init_or_conv(InitConvIntrinsic::kI32, nullptr); },
             [&](const type::U32*) { return ct_init_or_conv(InitConvIntrinsic::kU32, nullptr); },
-            [&](const type::F16*) { return ct_init_or_conv(InitConvIntrinsic::kF16, nullptr); },
+            [&](const type::F16*) {
+                return validator_.CheckF16Enabled(expr->source)
+                           ? ct_init_or_conv(InitConvIntrinsic::kF16, nullptr)
+                           : nullptr;
+            },
             [&](const type::F32*) { return ct_init_or_conv(InitConvIntrinsic::kF32, nullptr); },
             [&](const type::Bool*) { return ct_init_or_conv(InitConvIntrinsic::kBool, nullptr); },
             [&](const type::Array* arr) -> sem::Call* {
@@ -2244,17 +2282,13 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             },
             [&](Default) -> sem::Call* {
                 auto name = builder_->Symbols().NameFor(ident->symbol);
-                if (auto* alias = BuiltinTypeAlias(ident->symbol)) {
-                    return ty_init_or_conv(alias);
-                }
                 if (auto builtin_type = sem::ParseBuiltinType(name);
                     builtin_type != sem::BuiltinType::kNone) {
                     return BuiltinCall(expr, builtin_type, args);
                 }
-                TINT_ICE(Resolver, diagnostics_)
-                    << expr->source << " unhandled CallExpression target:\n"
-                    << "resolved: " << (resolved ? resolved->TypeInfo().name : "<null>") << "\n"
-                    << "name: " << builder_->Symbols().NameFor(ident->symbol);
+                if (auto* alias = ShortName(ident->symbol, ident->source)) {
+                    return ty_init_or_conv(alias);
+                }
                 return nullptr;
             });
     }
@@ -2302,13 +2336,17 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
 
     // If the builtin is @const, and all arguments have constant values, evaluate the builtin
     // now.
+    const constant::Value* value = nullptr;
     auto stage = sem::EarliestStage(arg_stage, builtin.sem->Stage());
-    const sem::Constant* value = nullptr;
+    if (stage == sem::EvaluationStage::kConstant && skip_const_eval_.Contains(expr)) {
+        stage = sem::EvaluationStage::kNotEvaluated;
+    }
     if (stage == sem::EvaluationStage::kConstant) {
         auto const_args = ConvertArguments(args, builtin.sem);
         if (!const_args) {
             return nullptr;
         }
+
         if (auto r = (const_eval_.*builtin.const_eval_fn)(builtin.sem->ReturnType(),
                                                           const_args.Get(), expr->source)) {
             value = r.Get();
@@ -2346,22 +2384,70 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
     return call;
 }
 
-type::Type* Resolver::BuiltinTypeAlias(Symbol sym) const {
+type::Type* Resolver::ShortName(Symbol sym, const Source& source) const {
     auto name = builder_->Symbols().NameFor(sym);
     auto& b = *builder_;
+    auto vec_f32 = [&](uint32_t n) { return b.create<type::Vector>(b.create<type::F32>(), n); };
+    auto vec_f16 = [&](uint32_t n) { return b.create<type::Vector>(b.create<type::F16>(), n); };
+
     switch (type::ParseShortName(name)) {
+        case type::ShortName::kMat2X2F:
+            return b.create<type::Matrix>(vec_f32(2u), 2u);
+        case type::ShortName::kMat2X3F:
+            return b.create<type::Matrix>(vec_f32(3u), 2u);
+        case type::ShortName::kMat2X4F:
+            return b.create<type::Matrix>(vec_f32(4u), 2u);
+        case type::ShortName::kMat3X2F:
+            return b.create<type::Matrix>(vec_f32(2u), 3u);
+        case type::ShortName::kMat3X3F:
+            return b.create<type::Matrix>(vec_f32(3u), 3u);
+        case type::ShortName::kMat3X4F:
+            return b.create<type::Matrix>(vec_f32(4u), 3u);
+        case type::ShortName::kMat4X2F:
+            return b.create<type::Matrix>(vec_f32(2u), 4u);
+        case type::ShortName::kMat4X3F:
+            return b.create<type::Matrix>(vec_f32(3u), 4u);
+        case type::ShortName::kMat4X4F:
+            return b.create<type::Matrix>(vec_f32(4u), 4u);
+        case type::ShortName::kMat2X2H:
+            return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(2u), 2u)
+                                                      : nullptr;
+        case type::ShortName::kMat2X3H:
+            return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(3u), 2u)
+                                                      : nullptr;
+        case type::ShortName::kMat2X4H:
+            return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(4u), 2u)
+                                                      : nullptr;
+        case type::ShortName::kMat3X2H:
+            return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(2u), 3u)
+                                                      : nullptr;
+        case type::ShortName::kMat3X3H:
+            return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(3u), 3u)
+                                                      : nullptr;
+        case type::ShortName::kMat3X4H:
+            return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(4u), 3u)
+                                                      : nullptr;
+        case type::ShortName::kMat4X2H:
+            return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(2u), 4u)
+                                                      : nullptr;
+        case type::ShortName::kMat4X3H:
+            return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(3u), 4u)
+                                                      : nullptr;
+        case type::ShortName::kMat4X4H:
+            return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(4u), 4u)
+                                                      : nullptr;
         case type::ShortName::kVec2F:
-            return b.create<type::Vector>(b.create<type::F32>(), 2u);
+            return vec_f32(2u);
         case type::ShortName::kVec3F:
-            return b.create<type::Vector>(b.create<type::F32>(), 3u);
+            return vec_f32(3u);
         case type::ShortName::kVec4F:
-            return b.create<type::Vector>(b.create<type::F32>(), 4u);
+            return vec_f32(4u);
         case type::ShortName::kVec2H:
-            return b.create<type::Vector>(b.create<type::F16>(), 2u);
+            return validator_.CheckF16Enabled(source) ? vec_f16(2u) : nullptr;
         case type::ShortName::kVec3H:
-            return b.create<type::Vector>(b.create<type::F16>(), 3u);
+            return validator_.CheckF16Enabled(source) ? vec_f16(3u) : nullptr;
         case type::ShortName::kVec4H:
-            return b.create<type::Vector>(b.create<type::F16>(), 4u);
+            return validator_.CheckF16Enabled(source) ? vec_f16(4u) : nullptr;
         case type::ShortName::kVec2I:
             return b.create<type::Vector>(b.create<type::I32>(), 2u);
         case type::ShortName::kVec3I:
@@ -2377,6 +2463,8 @@ type::Type* Resolver::BuiltinTypeAlias(Symbol sym) const {
         case type::ShortName::kUndefined:
             break;
     }
+
+    TINT_ICE(Resolver, diagnostics_) << source << " unhandled type short name '" << name << "'";
     return nullptr;
 }
 
@@ -2489,6 +2577,8 @@ sem::Expression* Resolver::Literal(const ast::LiteralExpression* literal) {
                 case ast::IntLiteralExpression::Suffix::kU:
                     return builder_->create<type::U32>();
             }
+            TINT_UNREACHABLE(Resolver, builder_->Diagnostics())
+                << "Unhandled integer literal suffix: " << i->suffix;
             return nullptr;
         },
         [&](const ast::FloatLiteralExpression* f) -> type::Type* {
@@ -2498,25 +2588,26 @@ sem::Expression* Resolver::Literal(const ast::LiteralExpression* literal) {
                 case ast::FloatLiteralExpression::Suffix::kF:
                     return builder_->create<type::F32>();
                 case ast::FloatLiteralExpression::Suffix::kH:
-                    return builder_->create<type::F16>();
+                    return validator_.CheckF16Enabled(literal->source)
+                               ? builder_->create<type::F16>()
+                               : nullptr;
             }
+            TINT_UNREACHABLE(Resolver, builder_->Diagnostics())
+                << "Unhandled float literal suffix: " << f->suffix;
             return nullptr;
         },
         [&](const ast::BoolLiteralExpression*) { return builder_->create<type::Bool>(); },
-        [&](Default) { return nullptr; });
+        [&](Default) {
+            TINT_UNREACHABLE(Resolver, builder_->Diagnostics())
+                << "Unhandled literal type: " << literal->TypeInfo().name;
+            return nullptr;
+        });
 
     if (ty == nullptr) {
-        TINT_UNREACHABLE(Resolver, builder_->Diagnostics())
-            << "Unhandled literal type: " << literal->TypeInfo().name;
         return nullptr;
     }
 
-    if ((ty->Is<type::F16>()) && (!enabled_extensions_.Contains(tint::ast::Extension::kF16))) {
-        AddError("f16 literal used without 'f16' extension enabled", literal->source);
-        return nullptr;
-    }
-
-    const sem::Constant* val = nullptr;
+    const constant::Value* val = nullptr;
     if (auto r = const_eval_.Literal(ty, literal)) {
         val = r.Get();
     } else {
@@ -2784,22 +2875,28 @@ sem::Expression* Resolver::Binary(const ast::BinaryExpression* expr) {
     RegisterLoadIfNeeded(lhs);
     RegisterLoadIfNeeded(rhs);
 
-    const sem::Constant* value = nullptr;
+    const constant::Value* value = nullptr;
     if (stage == sem::EvaluationStage::kConstant) {
         if (op.const_eval_fn) {
-            auto const_args = utils::Vector{lhs->ConstantValue(), rhs->ConstantValue()};
-            // Implicit conversion (e.g. AInt -> AFloat)
-            if (!Convert(const_args[0], op.lhs, lhs->Declaration()->source)) {
-                return nullptr;
-            }
-            if (!Convert(const_args[1], op.rhs, rhs->Declaration()->source)) {
-                return nullptr;
-            }
-
-            if (auto r = (const_eval_.*op.const_eval_fn)(op.result, const_args, expr->source)) {
-                value = r.Get();
+            if (skip_const_eval_.Contains(expr)) {
+                stage = sem::EvaluationStage::kNotEvaluated;
+            } else if (skip_const_eval_.Contains(expr->rhs)) {
+                // Only the rhs should be short-circuited, use the lhs value
+                value = lhs->ConstantValue();
             } else {
-                return nullptr;
+                auto const_args = utils::Vector{lhs->ConstantValue(), rhs->ConstantValue()};
+                // Implicit conversion (e.g. AInt -> AFloat)
+                if (!Convert(const_args[0], op.lhs, lhs->Declaration()->source)) {
+                    return nullptr;
+                }
+                if (!Convert(const_args[1], op.rhs, rhs->Declaration()->source)) {
+                    return nullptr;
+                }
+                if (auto r = (const_eval_.*op.const_eval_fn)(op.result, const_args, expr->source)) {
+                    value = r.Get();
+                } else {
+                    return nullptr;
+                }
             }
         } else {
             stage = sem::EvaluationStage::kRuntime;
@@ -2823,7 +2920,7 @@ sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
 
     const type::Type* ty = nullptr;
     const sem::Variable* root_ident = nullptr;
-    const sem::Constant* value = nullptr;
+    const constant::Value* value = nullptr;
     auto stage = sem::EvaluationStage::kRuntime;
 
     switch (unary->op) {
@@ -3013,7 +3110,7 @@ const type::ArrayCount* Resolver::ArrayCount(const ast::Expression* count_expr) 
         return nullptr;
     }
 
-    int64_t count = count_val->As<AInt>();
+    int64_t count = count_val->ValueAs<AInt>();
     if (count < 1) {
         AddError("array count (" + std::to_string(count) + ") must be greater than 0",
                  count_expr->source);
@@ -3110,11 +3207,11 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
     sem_members.Reserve(str->members.Length());
 
     // Calculate the effective size and alignment of each field, and the overall size of the
-    // structure. For size, use the size attribute if provided, otherwise use the default size for
-    // the type. For alignment, use the alignment attribute if provided, otherwise use the default
-    // alignment for the member type. Diagnostic errors are raised if a basic rule is violated.
-    // Validation of storage-class rules requires analyzing the actual variable usage of the
-    // structure, and so is performed as part of the variable validation.
+    // structure. For size, use the size attribute if provided, otherwise use the default size
+    // for the type. For alignment, use the alignment attribute if provided, otherwise use the
+    // default alignment for the member type. Diagnostic errors are raised if a basic rule is
+    // violated. Validation of storage-class rules requires analyzing the actual variable usage
+    // of the structure, and so is performed as part of the variable validation.
     uint64_t struct_size = 0;
     uint64_t struct_align = 1;
     utils::Hashmap<Symbol, const ast::StructMember*, 8> member_map;
@@ -3173,7 +3270,7 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                         AddError("@offset must be constant expression", o->expr->source);
                         return false;
                     }
-                    offset = const_value->As<uint64_t>();
+                    offset = const_value->ValueAs<uint64_t>();
 
                     if (offset < struct_size) {
                         AddError("offsets must be in ascending order", o->source);
@@ -3200,7 +3297,7 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                         AddError("@align must be constant expression", a->source);
                         return false;
                     }
-                    auto value = const_value->As<AInt>();
+                    auto value = const_value->ValueAs<AInt>();
 
                     if (value <= 0 || !utils::IsPowerOfTwo(value)) {
                         AddError("@align value must be a positive, power-of-two integer",
@@ -3230,13 +3327,13 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                         return false;
                     }
                     {
-                        auto value = const_value->As<AInt>();
+                        auto value = const_value->ValueAs<AInt>();
                         if (value <= 0) {
                             AddError("@size must be a positive integer", s->source);
                             return false;
                         }
                     }
-                    auto value = const_value->As<uint64_t>();
+                    auto value = const_value->ValueAs<uint64_t>();
                     if (value < size) {
                         AddError("@size must be at least as big as the type's size (" +
                                      std::to_string(size) + ")",

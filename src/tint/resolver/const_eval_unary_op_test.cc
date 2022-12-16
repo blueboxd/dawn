@@ -57,7 +57,7 @@ TEST_P(ResolverConstEvalUnaryOpTest, Test) {
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem = Sem().Get(expr);
-    const sem::Constant* value = sem->ConstantValue();
+    const constant::Value* value = sem->ConstantValue();
     ASSERT_NE(value, nullptr);
     EXPECT_TYPE(value->Type(), sem->Type());
 
@@ -159,7 +159,7 @@ TEST_F(ResolverConstEvalTest, UnaryNegateLowestAbstract) {
     (void)c;
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(c);
-    EXPECT_EQ(sem->ConstantValue()->As<AInt>(), 9223372036854775808_a);
+    EXPECT_EQ(sem->ConstantValue()->ValueAs<AInt>(), 9223372036854775808_a);
 }
 
 INSTANTIATE_TEST_SUITE_P(Not,

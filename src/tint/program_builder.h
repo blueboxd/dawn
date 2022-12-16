@@ -87,11 +87,13 @@
 #include "src/tint/ast/void.h"
 #include "src/tint/ast/while_statement.h"
 #include "src/tint/ast/workgroup_attribute.h"
+#include "src/tint/constant/composite.h"
+#include "src/tint/constant/splat.h"
+#include "src/tint/constant/value.h"
 #include "src/tint/number.h"
 #include "src/tint/program.h"
 #include "src/tint/program_id.h"
 #include "src/tint/sem/array_count.h"
-#include "src/tint/sem/constant.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/type/array.h"
 #include "src/tint/type/bool.h"
@@ -265,8 +267,8 @@ class ProgramBuilder {
     /// SemNodeAllocator is an alias to BlockAllocator<sem::Node>
     using SemNodeAllocator = utils::BlockAllocator<sem::Node>;
 
-    /// ConstantAllocator is an alias to BlockAllocator<sem::Constant>
-    using ConstantAllocator = utils::BlockAllocator<sem::Constant>;
+    /// ConstantAllocator is an alias to BlockAllocator<constant::Value>
+    using ConstantAllocator = utils::BlockAllocator<constant::Value>;
 
     /// Constructor
     ProgramBuilder();
@@ -465,14 +467,76 @@ class ProgramBuilder {
         return sem_nodes_.Create<T>(std::forward<ARGS>(args)...);
     }
 
-    /// Creates a new sem::Constant owned by the ProgramBuilder.
+    /// Creates a new constant::Value owned by the ProgramBuilder.
     /// When the ProgramBuilder is destructed, the sem::Node will also be destructed.
     /// @param args the arguments to pass to the constructor
     /// @returns the node pointer
     template <typename T, typename... ARGS>
-    traits::EnableIf<traits::IsTypeOrDerived<T, sem::Constant>, T>* create(ARGS&&... args) {
+    traits::EnableIf<traits::IsTypeOrDerived<T, constant::Value> &&
+                         !traits::IsTypeOrDerived<T, constant::Composite> &&
+                         !traits::IsTypeOrDerived<T, constant::Splat>,
+                     T>*
+    create(ARGS&&... args) {
         AssertNotMoved();
         return constant_nodes_.Create<T>(std::forward<ARGS>(args)...);
+    }
+
+    /// Constructs a constant of a vector, matrix or array type.
+    ///
+    /// Examines the element values and will return either a constant::Composite or a
+    /// constant::Splat, depending on the element types and values.
+    ///
+    /// @param type the composite type
+    /// @param elements the composite elements
+    /// @returns the node pointer
+    template <typename T>
+    traits::EnableIf<traits::IsTypeOrDerived<T, constant::Composite> ||
+                         traits::IsTypeOrDerived<T, constant::Splat>,
+                     const constant::Value>*
+    create(const type::Type* type, utils::VectorRef<const constant::Value*> elements) {
+        AssertNotMoved();
+        if (elements.IsEmpty()) {
+            return nullptr;
+        }
+
+        bool any_zero = false;
+        bool all_zero = true;
+        bool all_equal = true;
+        auto* first = elements.Front();
+        for (auto* el : elements) {
+            if (!el) {
+                return nullptr;
+            }
+            if (!any_zero && el->AnyZero()) {
+                any_zero = true;
+            }
+            if (all_zero && !el->AllZero()) {
+                all_zero = false;
+            }
+            if (all_equal && el != first) {
+                if (!el->Equal(first)) {
+                    all_equal = false;
+                }
+            }
+        }
+        if (all_equal) {
+            return create<constant::Splat>(type, elements[0], elements.Length());
+        }
+
+        return constant_nodes_.Create<constant::Composite>(type, std::move(elements), all_zero,
+                                                           any_zero);
+    }
+
+    /// Constructs a splat constant.
+    /// @param type the splat type
+    /// @param element the splat element
+    /// @param n the number of elements
+    /// @returns the node pointer
+    template <typename T>
+    traits::EnableIf<traits::IsTypeOrDerived<T, constant::Splat>, const constant::Splat>*
+    create(const type::Type* type, const constant::Value* element, size_t n) {
+        AssertNotMoved();
+        return constant_nodes_.Create<constant::Splat>(type, element, n);
     }
 
     /// Creates a new type::Type owned by the ProgramBuilder.
@@ -497,7 +561,7 @@ class ProgramBuilder {
     /// @returns the de-aliased array count pointer
     template <typename T, typename... ARGS>
     traits::EnableIf<traits::IsTypeOrDerived<T, type::ArrayCount> ||
-                         traits::IsTypeOrDerived<T, type::StructMemberBase>,
+                         traits::IsTypeOrDerived<T, type::StructMember>,
                      T>*
     create(ARGS&&... args) {
         AssertNotMoved();
@@ -1977,6 +2041,16 @@ class ProgramBuilder {
         return create<ast::UnaryOpExpression>(ast::UnaryOp::kNot, Expr(std::forward<EXPR>(expr)));
     }
 
+    /// @param source the source information
+    /// @param expr the expression to perform a unary not on
+    /// @return an ast::UnaryOpExpression that is the unary not of the input
+    /// expression
+    template <typename EXPR>
+    const ast::UnaryOpExpression* Not(const Source& source, EXPR&& expr) {
+        return create<ast::UnaryOpExpression>(source, ast::UnaryOp::kNot,
+                                              Expr(std::forward<EXPR>(expr)));
+    }
+
     /// @param expr the expression to perform a unary complement on
     /// @return an ast::UnaryOpExpression that is the unary complement of the
     /// input expression
@@ -2121,6 +2195,17 @@ class ProgramBuilder {
                                              Expr(std::forward<RHS>(rhs)));
     }
 
+    /// @param source the source information
+    /// @param lhs the left hand argument to the division operation
+    /// @param rhs the right hand argument to the division operation
+    /// @returns a `ast::BinaryExpression` dividing `lhs` by `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* Div(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, ast::BinaryOp::kDivide,
+                                             Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
+    }
+
     /// @param lhs the left hand argument to the modulo operation
     /// @param rhs the right hand argument to the modulo operation
     /// @returns a `ast::BinaryExpression` applying modulo of `lhs` by `rhs`
@@ -2177,6 +2262,17 @@ class ProgramBuilder {
             ast::BinaryOp::kLogicalAnd, Expr(std::forward<LHS>(lhs)), Expr(std::forward<RHS>(rhs)));
     }
 
+    /// @param source the source information
+    /// @param lhs the left hand argument to the logical and operation
+    /// @param rhs the right hand argument to the logical and operation
+    /// @returns a `ast::BinaryExpression` of `lhs` && `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* LogicalAnd(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, ast::BinaryOp::kLogicalAnd,
+                                             Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
+    }
+
     /// @param lhs the left hand argument to the logical or operation
     /// @param rhs the right hand argument to the logical or operation
     /// @returns a `ast::BinaryExpression` of `lhs` || `rhs`
@@ -2184,6 +2280,17 @@ class ProgramBuilder {
     const ast::BinaryExpression* LogicalOr(LHS&& lhs, RHS&& rhs) {
         return create<ast::BinaryExpression>(
             ast::BinaryOp::kLogicalOr, Expr(std::forward<LHS>(lhs)), Expr(std::forward<RHS>(rhs)));
+    }
+
+    /// @param source the source information
+    /// @param lhs the left hand argument to the logical or operation
+    /// @param rhs the right hand argument to the logical or operation
+    /// @returns a `ast::BinaryExpression` of `lhs` || `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* LogicalOr(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, ast::BinaryOp::kLogicalOr,
+                                             Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
     }
 
     /// @param lhs the left hand argument to the greater than operation
@@ -2231,6 +2338,17 @@ class ProgramBuilder {
     template <typename LHS, typename RHS>
     const ast::BinaryExpression* Equal(LHS&& lhs, RHS&& rhs) {
         return create<ast::BinaryExpression>(ast::BinaryOp::kEqual, Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
+    }
+
+    /// @param source the source information
+    /// @param lhs the left hand argument to the equal expression
+    /// @param rhs the right hand argument to the equal expression
+    /// @returns a `ast::BinaryExpression` comparing `lhs` equal to `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* Equal(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, ast::BinaryOp::kEqual,
+                                             Expr(std::forward<LHS>(lhs)),
                                              Expr(std::forward<RHS>(rhs)));
     }
 

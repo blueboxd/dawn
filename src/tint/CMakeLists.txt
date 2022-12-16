@@ -254,6 +254,16 @@ list(APPEND TINT_LIB_SRCS
   castable.h
   clone_context.cc
   clone_context.h
+  constant/composite.cc
+  constant/composite.h
+  constant/scalar.cc
+  constant/scalar.h
+  constant/splat.cc
+  constant/splat.h
+  constant/node.cc
+  constant/node.h
+  constant/value.cc
+  constant/value.h
   demangler.cc
   demangler.h
   inspector/entry_point.cc
@@ -306,8 +316,6 @@ list(APPEND TINT_LIB_SRCS
   sem/call_target.h
   sem/call.cc
   sem/call.h
-  sem/constant.cc
-  sem/constant.h
   sem/evaluation_stage.h
   sem/expression.cc
   sem/expression.h
@@ -320,6 +328,8 @@ list(APPEND TINT_LIB_SRCS
   sem/index_accessor_expression.h
   sem/info.cc
   sem/info.h
+  sem/load.cc
+  sem/load.h
   sem/loop_statement.cc
   sem/loop_statement.h
   sem/materialize.cc
@@ -893,6 +903,7 @@ if(TINT_BUILD_TESTS)
     resolver/dependency_graph_test.cc
     resolver/entry_point_validation_test.cc
     resolver/evaluation_stage_test.cc
+    resolver/f16_extension_test.cc
     resolver/function_validation_test.cc
     resolver/host_shareable_validation_test.cc
     resolver/increment_decrement_validation_test.cc

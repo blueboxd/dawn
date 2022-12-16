@@ -111,8 +111,27 @@ enum interpolation_sampling {
   sample
 }
 
-// https://www.w3.org/TR/WGSL/#vector-types
 enum short_name {
+  // https://www.w3.org/TR/WGSL/#matrix-types
+  mat2x2f
+  mat2x2h
+  mat2x3f
+  mat2x3h
+  mat2x4f
+  mat2x4h
+  mat3x2f
+  mat3x2h
+  mat3x3f
+  mat3x3h
+  mat3x4f
+  mat3x4h
+  mat4x2f
+  mat4x2h
+  mat4x3f
+  mat4x3h
+  mat4x4f
+  mat4x4h
+  // https://www.w3.org/TR/WGSL/#vector-types
   vec2f
   vec2h
   vec2i
@@ -494,8 +513,8 @@ fn dot4U8Packed(u32, u32) -> u32
 @const fn floor<N: num, T: fa_f32_f16>(@test_value(1.5) vec<N, T>) -> vec<N, T>
 @const fn fma<T: fa_f32_f16>(T, T, T) -> T
 @const fn fma<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
-fn fract<T: f32_f16>(T) -> T
-fn fract<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn fract<T: fa_f32_f16>(@test_value(1.25) T) -> T
+@const fn fract<N: num, T: fa_f32_f16>(@test_value(1.25) vec<N, T>) -> vec<N, T>
 @const fn frexp<T: fa_f32_f16>(T) -> __frexp_result<T>
 @const fn frexp<N: num, T: fa_f32_f16>(vec<N, T>) -> __frexp_result_vec<N, T>
 @stage("fragment") fn fwidth(f32) -> f32
@@ -520,9 +539,9 @@ fn ldexp<N: num, T: f32_f16>(vec<N, T>, vec<N, i32>) -> vec<N, T>
 @const fn max<N: num, T: fia_fiu32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
 @const fn min<T: fia_fiu32_f16>(T, T) -> T
 @const fn min<N: num, T: fia_fiu32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
-fn mix<T: f32_f16>(T, T, T) -> T
-fn mix<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
-fn mix<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, T) -> vec<N, T>
+@const fn mix<T: fa_f32_f16>(T, T, T) -> T
+@const fn mix<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
+@const fn mix<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>, T) -> vec<N, T>
 @const fn modf<T: fa_f32_f16>(@test_value(-1.5) T) -> __modf_result<T>
 @const fn modf<N: num, T: fa_f32_f16>(@test_value(-1.5) vec<N, T>) -> __modf_result_vec<N, T>
 @const fn normalize<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
@@ -531,8 +550,8 @@ fn mix<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, T) -> vec<N, T>
 @const fn pack2x16unorm(vec2<f32>) -> u32
 @const fn pack4x8snorm(vec4<f32>) -> u32
 @const fn pack4x8unorm(vec4<f32>) -> u32
-fn pow<T: f32_f16>(T, T) -> T
-fn pow<N: num, T: f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
+@const fn pow<T: fa_f32_f16>(T, T) -> T
+@const fn pow<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
 @const fn quantizeToF16(f32) -> f32
 @const fn quantizeToF16<N: num>(vec<N, f32>) -> vec<N, f32>
 @const fn radians<T: fa_f32_f16>(T) -> T

@@ -39,7 +39,19 @@ using vec4 = builder::vec4<T>;
 template <typename T>
 using mat2x2 = builder::mat2x2<T>;
 template <typename T>
+using mat2x3 = builder::mat2x3<T>;
+template <typename T>
+using mat2x4 = builder::mat2x4<T>;
+template <typename T>
+using mat3x2 = builder::mat3x2<T>;
+template <typename T>
 using mat3x3 = builder::mat3x3<T>;
+template <typename T>
+using mat3x4 = builder::mat3x4<T>;
+template <typename T>
+using mat4x2 = builder::mat4x2<T>;
+template <typename T>
+using mat4x3 = builder::mat4x3<T>;
 template <typename T>
 using mat4x4 = builder::mat4x4<T>;
 template <int N, typename T>
@@ -893,24 +905,6 @@ TEST_F(ResolverTypeValidationTest, BuiltinAsType) {
     EXPECT_EQ(r()->error(), "error: cannot use builtin 'max' as type");
 }
 
-TEST_F(ResolverTypeValidationTest, F16TypeUsedWithExtension) {
-    // enable f16;
-    // var<private> v : f16;
-    Enable(ast::Extension::kF16);
-
-    GlobalVar("v", ty.f16(), ast::AddressSpace::kPrivate);
-
-    EXPECT_TRUE(r()->Resolve()) << r()->error();
-}
-
-TEST_F(ResolverTypeValidationTest, F16TypeUsedWithoutExtension) {
-    // var<private> v : f16;
-    GlobalVar("v", ty.f16(), ast::AddressSpace::kPrivate);
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "error: f16 used without 'f16' extension enabled");
-}
-
 namespace GetCanonicalTests {
 struct Params {
     builder::ast_type_func_ptr create_ast_type;
@@ -1259,6 +1253,7 @@ constexpr Params ParamsFor(uint32_t columns, uint32_t rows) {
 
 using ValidMatrixTypes = ResolverTestWithParam<Params>;
 TEST_P(ValidMatrixTypes, Okay) {
+    // enable f16;
     // var a : matNxM<EL_TY>;
     auto& params = GetParam();
 
@@ -1297,6 +1292,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverTypeValidationTest,
 
 using InvalidMatrixElementTypes = ResolverTestWithParam<Params>;
 TEST_P(InvalidMatrixElementTypes, InvalidElementType) {
+    // enable f16;
     // var a : matNxM<EL_TY>;
     auto& params = GetParam();
 
@@ -1339,6 +1335,7 @@ constexpr Params ParamsFor(uint32_t width) {
 
 using ValidVectorTypes = ResolverTestWithParam<Params>;
 TEST_P(ValidVectorTypes, Okay) {
+    // enable f16;
     // var a : vecN<EL_TY>;
     auto& params = GetParam();
 
@@ -1372,6 +1369,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverTypeValidationTest,
 
 using InvalidVectorElementTypes = ResolverTestWithParam<Params>;
 TEST_P(InvalidVectorElementTypes, InvalidElementType) {
+    // enable f16;
     // var a : vecN<EL_TY>;
     auto& params = GetParam();
 
@@ -1408,6 +1406,7 @@ constexpr Params Case(const char* alias) {
 
 using BuiltinTypeAliasTest = ResolverTestWithParam<Params>;
 TEST_P(BuiltinTypeAliasTest, CheckEquivalent) {
+    // enable f16;
     // var aliased : vecTN;
     // var explicit : vecN<T>;
     // explicit = aliased;
@@ -1421,6 +1420,7 @@ TEST_P(BuiltinTypeAliasTest, CheckEquivalent) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 TEST_P(BuiltinTypeAliasTest, Construct) {
+    // enable f16;
     // var v : vecN<T> = vecTN();
     auto& params = GetParam();
 
@@ -1431,7 +1431,25 @@ TEST_P(BuiltinTypeAliasTest, Construct) {
 }
 INSTANTIATE_TEST_SUITE_P(ResolverTypeValidationTest,
                          BuiltinTypeAliasTest,
-                         testing::Values(Case<vec2<f32>>("vec2f"),
+                         testing::Values(Case<mat2x2<f32>>("mat2x2f"),
+                                         Case<mat2x3<f32>>("mat2x3f"),
+                                         Case<mat2x4<f32>>("mat2x4f"),
+                                         Case<mat3x2<f32>>("mat3x2f"),
+                                         Case<mat3x3<f32>>("mat3x3f"),
+                                         Case<mat3x4<f32>>("mat3x4f"),
+                                         Case<mat4x2<f32>>("mat4x2f"),
+                                         Case<mat4x3<f32>>("mat4x3f"),
+                                         Case<mat4x4<f32>>("mat4x4f"),
+                                         Case<mat2x2<f16>>("mat2x2h"),
+                                         Case<mat2x3<f16>>("mat2x3h"),
+                                         Case<mat2x4<f16>>("mat2x4h"),
+                                         Case<mat3x2<f16>>("mat3x2h"),
+                                         Case<mat3x3<f16>>("mat3x3h"),
+                                         Case<mat3x4<f16>>("mat3x4h"),
+                                         Case<mat4x2<f16>>("mat4x2h"),
+                                         Case<mat4x3<f16>>("mat4x3h"),
+                                         Case<mat4x4<f16>>("mat4x4h"),
+                                         Case<vec2<f32>>("vec2f"),
                                          Case<vec3<f32>>("vec3f"),
                                          Case<vec4<f32>>("vec4f"),
                                          Case<vec2<f16>>("vec2h"),

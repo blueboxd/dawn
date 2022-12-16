@@ -1271,6 +1271,7 @@
             {"name": "max inter stage shader components", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max inter stage shader variables", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max color attachments", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
+            {"name": "max color attachment bytes per sample", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute workgroup storage size", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute invocations per workgroup", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute workgroup size x", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
@@ -1376,6 +1377,16 @@
             {"value": 3, "name": "rotate 270 degrees"}
         ]
     },
+    "external texture visible rect" :{
+        "category": "structure",
+        "tags": ["dawn"],
+        "members": [
+            {"name": "x", "type": "float", "default": "0.0"},
+            {"name": "y", "type": "float", "default": "0.0"},
+            {"name": "width", "type": "float", "default": "1.0"},
+            {"name": "height", "type": "float", "default": "1.0"}
+        ]
+    },
     "external texture descriptor": {
         "category": "structure",
         "extensible": "in",
@@ -1396,7 +1407,8 @@
             {"name": "gamut conversion matrix", "type": "float", "annotation": "const*",
                 "length": 9},
             {"name": "flip y", "type": "bool", "default": "false"},
-            {"name": "rotation", "type": "external texture rotation", "default": "rotate 0 degrees"}
+            {"name": "rotation", "type": "external texture rotation", "default": "rotate 0 degrees"},
+            {"name": "visible rect", "type": "external texture visible rect"}
         ]
     },
     "feature name": {
