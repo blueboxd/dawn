@@ -49,7 +49,8 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "a texture, we first resolve into a temporarily 2D texture with only one mipmap level and "
       "one array layer, and copy the result of MSAA resolve into the true resolve target. This "
       "workaround is enabled by default on the Metal drivers that have bugs when setting non-zero "
-      "resolveLevel or resolveSlice.",
+      "resolveLevel or resolveSlice. It is also enabled by default on Qualcomm Vulkan drivers, "
+      "which have similar bugs.",
       "https://crbug.com/dawn/56"}},
     {Toggle::LazyClearResourceOnFirstUse,
      {"lazy_clear_resource_on_first_use",
@@ -332,6 +333,22 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "This toggle is off by default. It is expected to turn on or get removed when WebGPU V1 "
       "ships and stays stable.",
       "https://crbug.com/dawn/1563"}},
+    {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
+     {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
+      "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "
+      "target. If there are multiple color targets, all but the last one will use a sample mask "
+      "of zero.",
+      "https://crbug.com/dawn/1462"}},
+    {Toggle::NoWorkaroundIndirectBaseVertexNotApplied,
+     {"no_workaround_indirect_base_vertex_not_applied",
+      "MacOS Intel < Gen9 has a bug where indirect base vertex is not applied for "
+      "drawIndexedIndirect. Draws are done as if it is always zero.",
+      "https://crbug.com/dawn/966"}},
+    {Toggle::NoWorkaroundDstAlphaBlendDoesNotWork,
+     {"no_workaround_dst_alpha_blend_does_not_work",
+      "Using D3D12_BLEND_DEST_ALPHA as blend factor doesn't work correctly on the D3D12 backend "
+      "using Intel Gen9 or Gen9.5 GPUs.",
+      "https://crbug.com/dawn/1579"}},
     // Comment to separate the }} so it is clearer what to copy-paste to add a toggle.
 }};
 }  // anonymous namespace

@@ -71,6 +71,17 @@ auto Dispatch_iu32(F&& f, CONSTANTS&&... cs) {
 /// Helper that calls `f` passing in the value of all `cs`.
 /// Calls `f` with all constants cast to the type of the first `cs` argument.
 template <typename F, typename... CONSTANTS>
+auto Dispatch_fiu32(F&& f, CONSTANTS&&... cs) {
+    return Switch(
+        First(cs...)->Type(),  //
+        [&](const type::F32*) { return f(cs->template ValueAs<f32>()...); },
+        [&](const type::I32*) { return f(cs->template ValueAs<i32>()...); },
+        [&](const type::U32*) { return f(cs->template ValueAs<u32>()...); });
+}
+
+/// Helper that calls `f` passing in the value of all `cs`.
+/// Calls `f` with all constants cast to the type of the first `cs` argument.
+template <typename F, typename... CONSTANTS>
 auto Dispatch_ia_iu32(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
@@ -1319,9 +1330,30 @@ ConstEval::Result ConstEval::Swizzle(const type::Type* ty,
     return builder.create<constant::Composite>(ty, std::move(values));
 }
 
-ConstEval::Result ConstEval::Bitcast(const type::Type*, const sem::Expression*) {
-    // TODO(crbug.com/tint/1581): Implement @const intrinsics
-    return nullptr;
+ConstEval::Result ConstEval::Bitcast(const type::Type* ty,
+                                     const constant::Value* value,
+                                     const Source& source) {
+    auto* el_ty = type::Type::DeepestElementOf(ty);
+    auto transform = [&](const constant::Value* c0) {
+        auto create = [&](auto e) {
+            return Switch(
+                el_ty,
+                [&](const type::U32*) {  //
+                    auto r = utils::Bitcast<u32>(e);
+                    return CreateScalar(builder, source, el_ty, r);
+                },
+                [&](const type::I32*) {  //
+                    auto r = utils::Bitcast<i32>(e);
+                    return CreateScalar(builder, source, el_ty, r);
+                },
+                [&](const type::F32*) {  //
+                    auto r = utils::Bitcast<f32>(e);
+                    return CreateScalar(builder, source, el_ty, r);
+                });
+        };
+        return Dispatch_fiu32(create, c0);
+    };
+    return TransformElements(builder, ty, transform, value);
 }
 
 ConstEval::Result ConstEval::OpComplement(const type::Type* ty,
@@ -2649,6 +2681,48 @@ ConstEval::Result ConstEval::inverseSqrt(const type::Type* ty,
             return CreateScalar(builder, source, c0->Type(), div.Get());
         };
         return Dispatch_fa_f32_f16(create, c0);
+    };
+
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::ldexp(const type::Type* ty,
+                                   utils::VectorRef<const constant::Value*> args,
+                                   const Source& source) {
+    auto transform = [&](const constant::Value* c1, size_t index) {
+        auto create = [&](auto e1) -> ConstEval::Result {
+            using E1Type = decltype(e1);
+            // If e1 is AFloat, then e2 is AInt, otherwise it's i32
+            using E2Type = std::conditional_t<std::is_same_v<E1Type, AFloat>, AInt, i32>;
+
+            E2Type e2;
+            auto* c2 = args[1];
+            if (c2->Type()->Is<type::Vector>()) {
+                e2 = c2->Index(index)->ValueAs<E2Type>();
+            } else {
+                e2 = c2->ValueAs<E2Type>();
+            }
+
+            E2Type bias;
+            if constexpr (std::is_same_v<E1Type, f16>) {
+                bias = 15;
+            } else if constexpr (std::is_same_v<E1Type, f32>) {
+                bias = 127;
+            } else {
+                bias = 1023;
+            }
+
+            if (e2 > bias + 1) {
+                AddError("e2 must be less than or equal to " + std::to_string(bias + 1), source);
+                return utils::Failure;
+            }
+
+            auto target_ty = type::Type::DeepestElementOf(ty);
+
+            auto r = std::ldexp(e1, static_cast<int>(e2));
+            return CreateScalar(builder, source, target_ty, E1Type{r});
+        };
+        return Dispatch_fa_f32_f16(create, c1);
     };
 
     return TransformElements(builder, ty, transform, args[0]);

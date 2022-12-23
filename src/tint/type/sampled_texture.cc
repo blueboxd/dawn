@@ -22,19 +22,13 @@ TINT_INSTANTIATE_TYPEINFO(tint::type::SampledTexture);
 namespace tint::type {
 
 SampledTexture::SampledTexture(ast::TextureDimension dim, const Type* type)
-    : Base(dim), type_(type) {
+    : Base(utils::Hash(TypeInfo::Of<SampledTexture>().full_hashcode, dim, type), dim), type_(type) {
     TINT_ASSERT(Type, type_);
 }
 
-SampledTexture::SampledTexture(SampledTexture&&) = default;
-
 SampledTexture::~SampledTexture() = default;
 
-size_t SampledTexture::Hash() const {
-    return utils::Hash(TypeInfo::Of<SampledTexture>().full_hashcode, dim(), type_);
-}
-
-bool SampledTexture::Equals(const Type& other) const {
+bool SampledTexture::Equals(const UniqueNode& other) const {
     if (auto* o = other.As<SampledTexture>()) {
         return o->dim() == dim() && o->type_ == type_;
     }

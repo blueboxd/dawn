@@ -32,16 +32,12 @@ class Pointer final : public Castable<Pointer, Type> {
     /// @param access the resolved access control of the reference
     Pointer(const Type* subtype, ast::AddressSpace address_space, ast::Access access);
 
-    /// Move constructor
-    Pointer(Pointer&&);
+    /// Destructor
     ~Pointer() override;
 
-    /// @returns a hash of the type.
-    size_t Hash() const override;
-
-    /// @param other the other type to compare against
-    /// @returns true if the this type is equal to the given type
-    bool Equals(const Type& other) const override;
+    /// @param other the other node to compare against
+    /// @returns true if the this type is equal to @p other
+    bool Equals(const UniqueNode& other) const override;
 
     /// @returns the pointee type
     const Type* StoreType() const { return subtype_; }

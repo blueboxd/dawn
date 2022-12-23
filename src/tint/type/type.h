@@ -18,7 +18,7 @@
 #include <functional>
 #include <string>
 
-#include "src/tint/type/node.h"
+#include "src/tint/type/unique_node.h"
 #include "src/tint/utils/enum_set.h"
 #include "src/tint/utils/vector.h"
 
@@ -46,17 +46,10 @@ enum Flag {
 using Flags = utils::EnumSet<Flag>;
 
 /// Base class for a type in the system
-class Type : public Castable<Type, Node> {
+class Type : public Castable<Type, UniqueNode> {
   public:
-    /// Move constructor
-    Type(Type&&);
+    /// Destructor
     ~Type() override;
-
-    /// @returns a hash of the type.
-    virtual size_t Hash() const = 0;
-
-    /// @returns true if the this type is equal to the given type
-    virtual bool Equals(const Type&) const = 0;
 
     /// @param symbols the program's symbol table
     /// @returns the name for this type that closely resembles how it would be
@@ -193,8 +186,9 @@ class Type : public Castable<Type, Node> {
 
   protected:
     /// Constructor
+    /// @param hash the immutable hash for the node
     /// @param flags the flags of this type
-    explicit Type(type::Flags flags);
+    Type(size_t hash, type::Flags flags);
 
     /// The flags of this type.
     const type::Flags flags_;
@@ -209,7 +203,7 @@ template <>
 struct hash<tint::type::Type> {
     /// @param type the type to obtain a hash from
     /// @returns the hash of the type
-    size_t operator()(const tint::type::Type& type) const { return type.Hash(); }
+    size_t operator()(const tint::type::Type& type) const { return type.unique_hash; }
 };
 
 /// std::equal_to specialization for tint::type::Type

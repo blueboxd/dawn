@@ -33,16 +33,13 @@ class Matrix final : public Castable<Matrix, Type> {
     /// @param column_type the type of a column of the matrix
     /// @param columns the number of columns in the matrix
     Matrix(const Vector* column_type, uint32_t columns);
-    /// Move constructor
-    Matrix(Matrix&&);
+
+    /// Destructor
     ~Matrix() override;
 
-    /// @returns a hash of the type.
-    size_t Hash() const override;
-
-    /// @param other the other type to compare against
-    /// @returns true if the this type is equal to the given type
-    bool Equals(const Type& other) const override;
+    /// @param other the other node to compare against
+    /// @returns true if the this type is equal to @p other
+    bool Equals(const UniqueNode& other) const override;
 
     /// @returns the type of the matrix
     const Type* type() const { return subtype_; }
