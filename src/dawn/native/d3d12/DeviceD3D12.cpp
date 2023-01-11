@@ -86,7 +86,7 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
         CheckHRESULT(mD3d12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCommandQueue)),
                      "D3D12 create command queue"));
 
-    if (HasFeature(Feature::TimestampQuery) &&
+    if ((HasFeature(Feature::TimestampQuery) || HasFeature(Feature::TimestampQueryInsidePasses)) &&
         !IsToggleEnabled(Toggle::DisableTimestampQueryConversion)) {
         // Get GPU timestamp counter frequency (in ticks/second). This fails if the specified
         // command queue doesn't support timestamps. D3D12_COMMAND_LIST_TYPE_DIRECT queues
@@ -235,7 +235,9 @@ ComPtr<IDXGIFactory4> Device::GetFactory() const {
 }
 
 MaybeError Device::ApplyUseDxcToggle() {
-    if (!ToBackend(GetAdapter())->GetBackend()->GetFunctions()->IsDXCAvailable()) {
+    // Require DXC version 1.4 or higher to enable using DXC, as DXC 1.2 have some known issues when
+    // compiling Tint generated HLSL program. Please refer to crbug.com/tint/1719.
+    if (!ToBackend(GetAdapter())->GetBackend()->IsDXCAvailable(1, 4)) {
         ForceSetToggle(Toggle::UseDXC, false);
     }
 
@@ -272,11 +274,15 @@ ResidencyManager* Device::GetResidencyManager() const {
     return mResidencyManager.get();
 }
 
-ResultOrError<CommandRecordingContext*> Device::GetPendingCommandContext() {
+ResultOrError<CommandRecordingContext*> Device::GetPendingCommandContext(
+    Device::SubmitMode submitMode) {
     // Callers of GetPendingCommandList do so to record commands. Only reserve a command
     // allocator when it is needed so we don't submit empty command lists
     if (!mPendingCommands.IsOpen()) {
         DAWN_TRY(mPendingCommands.Open(mD3d12Device.Get(), mCommandAllocatorManager.get()));
+    }
+    if (submitMode == Device::SubmitMode::Normal) {
+        mPendingCommands.SetNeedsSubmit();
     }
     return &mPendingCommands;
 }
@@ -307,9 +313,9 @@ MaybeError Device::ClearBufferToZero(CommandRecordingContext* commandContext,
 
         memset(uploadHandle.mappedBuffer, 0u, kZeroBufferSize);
 
-        CopyFromStagingToBufferImpl(commandContext, uploadHandle.stagingBuffer,
-                                    uploadHandle.startOffset, mZeroBuffer.Get(), 0,
-                                    kZeroBufferSize);
+        CopyFromStagingToBufferHelper(commandContext, uploadHandle.stagingBuffer,
+                                      uploadHandle.startOffset, mZeroBuffer.Get(), 0,
+                                      kZeroBufferSize);
 
         mZeroBuffer->SetIsDataInitialized();
     }
@@ -344,7 +350,7 @@ MaybeError Device::TickImpl() {
     mDepthStencilViewAllocator->Tick(completedSerial);
     mUsedComObjectRefs.ClearUpTo(completedSerial);
 
-    if (mPendingCommands.IsOpen()) {
+    if (mPendingCommands.IsOpen() && mPendingCommands.NeedsSubmit()) {
         DAWN_TRY(ExecutePendingCommandContext());
         DAWN_TRY(NextSerial());
     }
@@ -396,6 +402,16 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
 
 void Device::ReferenceUntilUnused(ComPtr<IUnknown> object) {
     mUsedComObjectRefs.Enqueue(object, GetPendingCommandSerial());
+}
+
+bool Device::HasPendingCommands() const {
+    return mPendingCommands.NeedsSubmit();
+}
+
+void Device::ForceEventualFlushOfCommands() {
+    if (mPendingCommands.IsOpen()) {
+        mPendingCommands.SetNeedsSubmit();
+    }
 }
 
 MaybeError Device::ExecutePendingCommandContext() {
@@ -478,13 +494,13 @@ ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(si
     return std::move(stagingBuffer);
 }
 
-MaybeError Device::CopyFromStagingToBuffer(StagingBufferBase* source,
-                                           uint64_t sourceOffset,
-                                           BufferBase* destination,
-                                           uint64_t destinationOffset,
-                                           uint64_t size) {
+MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
+                                               uint64_t sourceOffset,
+                                               BufferBase* destination,
+                                               uint64_t destinationOffset,
+                                               uint64_t size) {
     CommandRecordingContext* commandRecordingContext;
-    DAWN_TRY_ASSIGN(commandRecordingContext, GetPendingCommandContext());
+    DAWN_TRY_ASSIGN(commandRecordingContext, GetPendingCommandContext(Device::SubmitMode::Passive));
 
     Buffer* dstBuffer = ToBackend(destination);
 
@@ -493,18 +509,18 @@ MaybeError Device::CopyFromStagingToBuffer(StagingBufferBase* source,
                                  commandRecordingContext, destinationOffset, size));
     DAWN_UNUSED(cleared);
 
-    CopyFromStagingToBufferImpl(commandRecordingContext, source, sourceOffset, destination,
-                                destinationOffset, size);
+    CopyFromStagingToBufferHelper(commandRecordingContext, source, sourceOffset, destination,
+                                  destinationOffset, size);
 
     return {};
 }
 
-void Device::CopyFromStagingToBufferImpl(CommandRecordingContext* commandContext,
-                                         StagingBufferBase* source,
-                                         uint64_t sourceOffset,
-                                         BufferBase* destination,
-                                         uint64_t destinationOffset,
-                                         uint64_t size) {
+void Device::CopyFromStagingToBufferHelper(CommandRecordingContext* commandContext,
+                                           StagingBufferBase* source,
+                                           uint64_t sourceOffset,
+                                           BufferBase* destination,
+                                           uint64_t destinationOffset,
+                                           uint64_t size) {
     ASSERT(commandContext != nullptr);
     Buffer* dstBuffer = ToBackend(destination);
     StagingBuffer* srcBuffer = ToBackend(source);
@@ -515,12 +531,12 @@ void Device::CopyFromStagingToBufferImpl(CommandRecordingContext* commandContext
                                                        sourceOffset, size);
 }
 
-MaybeError Device::CopyFromStagingToTexture(const StagingBufferBase* source,
-                                            const TextureDataLayout& src,
-                                            TextureCopy* dst,
-                                            const Extent3D& copySizePixels) {
+MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+                                                const TextureDataLayout& src,
+                                                TextureCopy* dst,
+                                                const Extent3D& copySizePixels) {
     CommandRecordingContext* commandContext;
-    DAWN_TRY_ASSIGN(commandContext, GetPendingCommandContext());
+    DAWN_TRY_ASSIGN(commandContext, GetPendingCommandContext(Device::SubmitMode::Passive));
     Texture* texture = ToBackend(dst->texture.Get());
 
     SubresourceRange range = GetSubresourcesAffectedByCopy(*dst, copySizePixels);
@@ -672,8 +688,13 @@ void Device::InitTogglesFromDriver() {
     // Currently this workaround is only needed on Intel Gen9, Gen9.5 and Gen11 GPUs.
     // See http://crbug.com/1161355 for more information.
     if (gpu_info::IsIntelGen9(vendorId, deviceId) || gpu_info::IsIntelGen11(vendorId, deviceId)) {
-        SetToggle(Toggle::UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
-                  true);
+        constexpr gpu_info::D3DDriverVersion kFixedDriverVersion = {31, 0, 101, 2114};
+        if (gpu_info::CompareD3DDriverVersion(vendorId, ToBackend(GetAdapter())->GetDriverVersion(),
+                                              kFixedDriverVersion) < 0) {
+            SetToggle(
+                Toggle::UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
+                true);
+        }
     }
 
     // Currently this workaround is only needed on Intel Gen9, Gen9.5 and Gen12 GPUs.
@@ -700,9 +721,9 @@ void Device::InitTogglesFromDriver() {
     // This workaround is only needed on Intel Gen12LP with driver prior to 30.0.101.1692.
     // See http://crbug.com/dawn/949 for more information.
     if (gpu_info::IsIntelGen12LP(vendorId, deviceId)) {
-        const gpu_info::D3DDriverVersion version = {30, 0, 101, 1692};
+        constexpr gpu_info::D3DDriverVersion kFixedDriverVersion = {30, 0, 101, 1692};
         if (gpu_info::CompareD3DDriverVersion(vendorId, ToBackend(GetAdapter())->GetDriverVersion(),
-                                              version) == -1) {
+                                              kFixedDriverVersion) == -1) {
             SetToggle(Toggle::D3D12AllocateExtraMemoryFor2DArrayTexture, true);
         }
     }

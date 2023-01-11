@@ -23,6 +23,7 @@
 
 #include "src/tint/ast/access.h"
 #include "src/tint/ast/address_space.h"
+#include "src/tint/ast/parameter.h"
 #include "src/tint/sem/binding_point.h"
 #include "src/tint/sem/expression.h"
 #include "src/tint/sem/parameter_usage.h"
@@ -80,13 +81,13 @@ class Variable : public Castable<Variable, Node> {
     /// @return the constant value of this expression
     const Constant* ConstantValue() const { return constant_value_; }
 
-    /// @returns the variable constructor expression, or nullptr if the variable
+    /// @returns the variable initializer expression, or nullptr if the variable
     /// does not have one.
-    const Expression* Constructor() const { return constructor_; }
+    const Expression* Initializer() const { return initializer_; }
 
-    /// Sets the variable constructor expression.
-    /// @param constructor the constructor expression to assign to this variable.
-    void SetConstructor(const Expression* constructor) { constructor_ = constructor; }
+    /// Sets the variable initializer expression.
+    /// @param initializer the initializer expression to assign to this variable.
+    void SetInitializer(const Expression* initializer) { initializer_ = initializer; }
 
     /// @returns the expressions that use the variable
     const std::vector<const VariableUser*>& Users() const { return users_; }
@@ -101,7 +102,7 @@ class Variable : public Castable<Variable, Node> {
     const ast::AddressSpace address_space_;
     const ast::Access access_;
     const Constant* constant_value_;
-    const Expression* constructor_ = nullptr;
+    const Expression* initializer_ = nullptr;
     std::vector<const VariableUser*> users_;
 };
 
@@ -211,6 +212,11 @@ class Parameter final : public Castable<Parameter, Variable> {
 
     /// Destructor
     ~Parameter() override;
+
+    /// @returns the AST declaration node
+    const ast::Parameter* Declaration() const {
+        return static_cast<const ast::Parameter*>(Variable::Declaration());
+    }
 
     /// @return the index of the parmeter in the function
     uint32_t Index() const { return index_; }

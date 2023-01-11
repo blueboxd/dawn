@@ -23,11 +23,12 @@ namespace {
 using HlslGeneratorImplTest_Loop = TestHelper;
 
 TEST_F(HlslGeneratorImplTest_Loop, Emit_Loop) {
-    auto* body = Block(create<ast::DiscardStatement>());
+    auto* body = Block(Break());
     auto* continuing = Block();
     auto* l = Loop(body, continuing);
 
-    WrapInFunction(l);
+    Func("F", utils::Empty, ty.void_(), utils::Vector{l},
+         utils::Vector{Stage(ast::PipelineStage::kFragment)});
 
     GeneratorImpl& gen = Build();
 
@@ -35,7 +36,7 @@ TEST_F(HlslGeneratorImplTest_Loop, Emit_Loop) {
 
     ASSERT_TRUE(gen.EmitStatement(l)) << gen.error();
     EXPECT_EQ(gen.result(), R"(  while (true) {
-    discard;
+    break;
   }
 )");
 }
@@ -43,11 +44,12 @@ TEST_F(HlslGeneratorImplTest_Loop, Emit_Loop) {
 TEST_F(HlslGeneratorImplTest_Loop, Emit_LoopWithContinuing) {
     Func("a_statement", {}, ty.void_(), {});
 
-    auto* body = Block(create<ast::DiscardStatement>());
+    auto* body = Block(Break());
     auto* continuing = Block(CallStmt(Call("a_statement")));
     auto* l = Loop(body, continuing);
 
-    WrapInFunction(l);
+    Func("F", utils::Empty, ty.void_(), utils::Vector{l},
+         utils::Vector{Stage(ast::PipelineStage::kFragment)});
 
     GeneratorImpl& gen = Build();
 
@@ -55,9 +57,34 @@ TEST_F(HlslGeneratorImplTest_Loop, Emit_LoopWithContinuing) {
 
     ASSERT_TRUE(gen.EmitStatement(l)) << gen.error();
     EXPECT_EQ(gen.result(), R"(  while (true) {
-    discard;
+    break;
     {
       a_statement();
+    }
+  }
+)");
+}
+
+TEST_F(HlslGeneratorImplTest_Loop, Emit_LoopWithContinuing_BreakIf) {
+    Func("a_statement", {}, ty.void_(), {});
+
+    auto* body = Block(Break());
+    auto* continuing = Block(CallStmt(Call("a_statement")), BreakIf(true));
+    auto* l = Loop(body, continuing);
+
+    Func("F", utils::Empty, ty.void_(), utils::Vector{l},
+         utils::Vector{Stage(ast::PipelineStage::kFragment)});
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(l)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  while (true) {
+    break;
+    {
+      a_statement();
+      if (true) { break; }
     }
   }
 )");
@@ -69,7 +96,7 @@ TEST_F(HlslGeneratorImplTest_Loop, Emit_LoopNestedWithContinuing) {
     GlobalVar("lhs", ty.f32(), ast::AddressSpace::kPrivate);
     GlobalVar("rhs", ty.f32(), ast::AddressSpace::kPrivate);
 
-    auto* body = Block(create<ast::DiscardStatement>());
+    auto* body = Block(Break());
     auto* continuing = Block(CallStmt(Call("a_statement")));
     auto* inner = Loop(body, continuing);
 
@@ -78,10 +105,12 @@ TEST_F(HlslGeneratorImplTest_Loop, Emit_LoopNestedWithContinuing) {
     auto* lhs = Expr("lhs");
     auto* rhs = Expr("rhs");
 
-    continuing = Block(Assign(lhs, rhs));
+    continuing = Block(Assign(lhs, rhs), BreakIf(true));
 
     auto* outer = Loop(body, continuing);
-    WrapInFunction(outer);
+
+    Func("F", utils::Empty, ty.void_(), utils::Vector{outer},
+         utils::Vector{Stage(ast::PipelineStage::kFragment)});
 
     GeneratorImpl& gen = Build();
 
@@ -90,13 +119,14 @@ TEST_F(HlslGeneratorImplTest_Loop, Emit_LoopNestedWithContinuing) {
     ASSERT_TRUE(gen.EmitStatement(outer)) << gen.error();
     EXPECT_EQ(gen.result(), R"(  while (true) {
     while (true) {
-      discard;
+      break;
       {
         a_statement();
       }
     }
     {
       lhs = rhs;
+      if (true) { break; }
     }
   }
 )");

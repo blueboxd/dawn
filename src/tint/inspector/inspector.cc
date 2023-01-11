@@ -29,6 +29,7 @@
 #include "src/tint/ast/override.h"
 #include "src/tint/ast/var.h"
 #include "src/tint/sem/array.h"
+#include "src/tint/sem/bool.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/depth_multisampled_texture.h"
 #include "src/tint/sem/depth_texture.h"
@@ -251,7 +252,7 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
                 TINT_UNREACHABLE(Inspector, diagnostics_);
             }
 
-            override.is_initialized = global->Declaration()->constructor;
+            override.is_initialized = global->Declaration()->initializer;
             override.is_id_specified =
                 ast::HasAttribute<ast::IdAttribute>(global->Declaration()->attributes);
 
@@ -301,40 +302,19 @@ std::map<OverrideId, Scalar> Inspector::GetOverrideDefaultValues() {
             continue;
         }
 
-        if (!var->constructor) {
-            result[override_id] = Scalar();
-            continue;
-        }
-
-        auto* literal = var->constructor->As<ast::LiteralExpression>();
-        if (!literal) {
-            // This is invalid WGSL, but handling gracefully.
-            result[override_id] = Scalar();
-            continue;
-        }
-
-        if (auto* l = literal->As<ast::BoolLiteralExpression>()) {
-            result[override_id] = Scalar(l->value);
-            continue;
-        }
-
-        if (auto* l = literal->As<ast::IntLiteralExpression>()) {
-            switch (l->suffix) {
-                case ast::IntLiteralExpression::Suffix::kNone:
-                case ast::IntLiteralExpression::Suffix::kI:
-                    result[override_id] = Scalar(static_cast<int32_t>(l->value));
-                    continue;
-                case ast::IntLiteralExpression::Suffix::kU:
-                    result[override_id] = Scalar(static_cast<uint32_t>(l->value));
-                    continue;
+        if (global->Initializer()) {
+            if (auto* value = global->Initializer()->ConstantValue()) {
+                result[override_id] = Switch(
+                    value->Type(),  //
+                    [&](const sem::I32*) { return Scalar(value->As<i32>()); },
+                    [&](const sem::U32*) { return Scalar(value->As<u32>()); },
+                    [&](const sem::F32*) { return Scalar(value->As<f32>()); },
+                    [&](const sem::Bool*) { return Scalar(value->As<bool>()); });
+                continue;
             }
         }
 
-        if (auto* l = literal->As<ast::FloatLiteralExpression>()) {
-            result[override_id] = Scalar(static_cast<float>(l->value));
-            continue;
-        }
-
+        // No const-expression initializer for the override
         result[override_id] = Scalar();
     }
 
@@ -912,10 +892,10 @@ void Inspector::GetOriginatingResources(std::array<const ast::Expression*, N> ex
     utils::UniqueVector<const ast::CallExpression*, 8> callsites;
 
     for (size_t i = 0; i < N; i++) {
-        const sem::Variable* source_var = sem.Get(exprs[i])->SourceVariable();
-        if (auto* global = source_var->As<sem::GlobalVariable>()) {
+        const sem::Variable* root_ident = sem.Get(exprs[i])->RootIdentifier();
+        if (auto* global = root_ident->As<sem::GlobalVariable>()) {
             globals[i] = global;
-        } else if (auto* param = source_var->As<sem::Parameter>()) {
+        } else if (auto* param = root_ident->As<sem::Parameter>()) {
             auto* func = tint::As<sem::Function>(param->Owner());
             if (func->CallSites().empty()) {
                 // One or more of the expressions is a parameter, but this function

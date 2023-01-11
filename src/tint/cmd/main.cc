@@ -26,7 +26,7 @@
 #if TINT_BUILD_GLSL_WRITER
 #include "StandAlone/ResourceLimits.h"
 #include "glslang/Public/ShaderLang.h"
-#endif
+#endif  // TINT_BUILD_GLSL_WRITER
 
 #if TINT_BUILD_SPV_READER
 #include "spirv-tools/libspirv.hpp"
@@ -38,6 +38,11 @@
 #include "src/tint/utils/transform.h"
 #include "src/tint/val/val.h"
 #include "tint/tint.h"
+
+#if TINT_BUILD_IR
+#include "src/tint/ir/debug.h"
+#include "src/tint/ir/module.h"
+#endif  // TINT_BUILD_IR
 
 namespace {
 
@@ -85,6 +90,8 @@ struct Options {
     bool emit_single_entry_point = false;
     std::string ep_name;
 
+    bool rename_all = false;
+
     std::vector<std::string> transforms;
 
     std::string fxc_path;
@@ -92,6 +99,10 @@ struct Options {
     std::string xcrun_path;
     std::unordered_map<std::string, double> overrides;
     std::optional<tint::sem::BindingPoint> hlsl_root_constant_binding_point;
+
+#if TINT_BUILD_IR
+    bool dump_ir_graph = false;
+#endif  // TINT_BUILD_IR
 };
 
 const char kUsage[] = R"(Usage: tint [options] <input-file>
@@ -131,6 +142,7 @@ ${transforms}
   --xcrun                   -- Path to xcrun executable, used to validate MSL output.
                                When specified, automatically enables MSL validation
   --overrides               -- Override values as IDENTIFIER=VALUE, comma-separated.
+  --rename-all              -- Renames all symbols.
 )";
 
 Format parse_format(const std::string& fmt) {
@@ -433,6 +445,10 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
                 return false;
             }
             opts->dxc_path = args[i];
+#if TINT_BUILD_IR
+        } else if (arg == "--dump-ir-graph") {
+            opts->dump_ir_graph = true;
+#endif  // TINT_BUILD_IR
         } else if (arg == "--xcrun") {
             ++i;
             if (i >= args.size()) {
@@ -451,6 +467,9 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
                 auto parts = split_on_equal(o);
                 opts->overrides.insert({parts[0], std::stod(parts[1])});
             }
+        } else if (arg == "--rename-all") {
+            ++i;
+            opts->rename_all = true;
         } else if (arg == "--hlsl-root-constant-binding-point") {
             ++i;
             if (i >= args.size()) {
@@ -1069,6 +1088,55 @@ int main(int argc, const char** argv) {
              m.Add<tint::transform::SubstituteOverride>();
              return true;
          }},
+        {"multiplaner_external_texture",
+         [](tint::inspector::Inspector& inspector, tint::transform::Manager& m,
+            tint::transform::DataMap& i) {
+             using MET = tint::transform::MultiplanarExternalTexture;
+
+             // Generate the MultiplanarExternalTexture::NewBindingPoints by finding two free
+             // binding points. We may wish to expose these binding points via a command line flag
+             // in the future.
+
+             // Set of all the group-0 bindings in use.
+             std::unordered_set<uint32_t> group0_bindings_in_use;
+             auto allocate_binding = [&] {
+                 for (uint32_t idx = 0;; idx++) {
+                     auto binding = tint::transform::BindingPoint{0u, idx};
+                     if (group0_bindings_in_use.emplace(idx).second) {
+                         return binding;
+                     }
+                 }
+             };
+             // Populate group0_bindings_in_use with the existing bindings across all entry points.
+             for (auto ep : inspector.GetEntryPoints()) {
+                 for (auto binding : inspector.GetResourceBindings(ep.name)) {
+                     if (binding.bind_group == 0) {
+                         group0_bindings_in_use.emplace(binding.binding);
+                     }
+                 }
+             }
+             // Allocate new binding points for the external texture's planes and parameters.
+             MET::BindingsMap met_bindings;
+             for (auto ep : inspector.GetEntryPoints()) {
+                 for (auto ext_tex : inspector.GetExternalTextureResourceBindings(ep.name)) {
+                     auto binding = tint::transform::BindingPoint{
+                         ext_tex.bind_group,
+                         ext_tex.binding,
+                     };
+                     if (met_bindings.count(binding)) {
+                         continue;
+                     }
+                     met_bindings.emplace(binding, MET::BindingPoints{
+                                                       /* plane_1 */ allocate_binding(),
+                                                       /* params */ allocate_binding(),
+                                                   });
+                 }
+             }
+
+             i.Add<MET::NewBindingPoints>(std::move(met_bindings));
+             m.Add<MET>();
+             return true;
+         }},
     };
     auto transform_names = [&] {
         std::stringstream names;
@@ -1080,6 +1148,11 @@ int main(int argc, const char** argv) {
 
     if (options.show_help) {
         std::string usage = tint::utils::ReplaceAll(kUsage, "${transforms}", transform_names());
+#if TINT_BUILD_IR
+        usage +=
+            "  --dump-ir-graph           -- Writes the IR graph to 'tint.dot' as a dot graph\n";
+#endif  // TINT_BUILD_IR
+
         std::cout << usage << std::endl;
         return 0;
     }
@@ -1198,6 +1271,19 @@ int main(int argc, const char** argv) {
         return 1;
     }
 
+#if TINT_BUILD_IR
+    if (options.dump_ir_graph) {
+        auto result = tint::ir::Module::FromProgram(program.get());
+        if (!result) {
+            std::cerr << "Failed to build IR from program: " << result.Failure() << std::endl;
+        } else {
+            auto mod = result.Move();
+            auto graph = tint::ir::Debug::AsDotGraph(&mod);
+            WriteFile("tint.dot", "w", graph);
+        }
+    }
+#endif  // TINT_BUILD_IR
+
     tint::inspector::Inspector inspector(program.get());
 
     if (options.dump_inspector_bindings) {
@@ -1235,50 +1321,13 @@ int main(int argc, const char** argv) {
     tint::transform::Manager transform_manager;
     tint::transform::DataMap transform_inputs;
 
-    // If overrides are provided, add the SubstituteOverride transform.
-    if (!options.overrides.empty()) {
-        for (auto& t : transforms) {
-            if (t.name == std::string("substitute_override")) {
-                if (!t.make(inspector, transform_manager, transform_inputs)) {
-                    return 1;
-                }
-                break;
-            }
-        }
-    }
-
-    for (const auto& name : options.transforms) {
-        // TODO(dsinclair): The vertex pulling transform requires setup code to
-        // be run that needs user input. Should we find a way to support that here
-        // maybe through a provided file?
-
-        bool found = false;
-        for (auto& t : transforms) {
-            if (t.name == name) {
-                if (!t.make(inspector, transform_manager, transform_inputs)) {
-                    return 1;
-                }
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            std::cerr << "Unknown transform: " << name << std::endl;
-            std::cerr << "Available transforms: " << std::endl << transform_names();
-            return 1;
-        }
-    }
-
-    if (options.emit_single_entry_point) {
-        transform_manager.append(std::make_unique<tint::transform::SingleEntryPoint>());
-        transform_inputs.Add<tint::transform::SingleEntryPoint::Config>(options.ep_name);
-    }
-
+    // Renaming must always come first
     switch (options.format) {
         case Format::kMsl: {
 #if TINT_BUILD_MSL_WRITER
             transform_inputs.Add<tint::transform::Renamer::Config>(
-                tint::transform::Renamer::Target::kMslKeywords,
+                options.rename_all ? tint::transform::Renamer::Target::kAll
+                                   : tint::transform::Renamer::Target::kMslKeywords,
                 /* preserve_unicode */ false);
             transform_manager.Add<tint::transform::Renamer>();
 #endif  // TINT_BUILD_MSL_WRITER
@@ -1286,20 +1335,63 @@ int main(int argc, const char** argv) {
         }
 #if TINT_BUILD_GLSL_WRITER
         case Format::kGlsl: {
+            transform_inputs.Add<tint::transform::Renamer::Config>(
+                options.rename_all ? tint::transform::Renamer::Target::kAll
+                                   : tint::transform::Renamer::Target::kGlslKeywords,
+                /* preserve_unicode */ false);
+            transform_manager.Add<tint::transform::Renamer>();
             break;
         }
 #endif  // TINT_BUILD_GLSL_WRITER
         case Format::kHlsl: {
 #if TINT_BUILD_HLSL_WRITER
             transform_inputs.Add<tint::transform::Renamer::Config>(
-                tint::transform::Renamer::Target::kHlslKeywords,
+                options.rename_all ? tint::transform::Renamer::Target::kAll
+                                   : tint::transform::Renamer::Target::kHlslKeywords,
                 /* preserve_unicode */ false);
             transform_manager.Add<tint::transform::Renamer>();
 #endif  // TINT_BUILD_HLSL_WRITER
             break;
         }
-        default:
+        default: {
+            if (options.rename_all) {
+                transform_manager.Add<tint::transform::Renamer>();
+            }
             break;
+        }
+    }
+
+    auto enable_transform = [&](std::string_view name) {
+        for (auto& t : transforms) {
+            if (t.name == name) {
+                return t.make(inspector, transform_manager, transform_inputs);
+            }
+        }
+
+        std::cerr << "Unknown transform: " << name << std::endl;
+        std::cerr << "Available transforms: " << std::endl << transform_names();
+        return false;
+    };
+
+    // If overrides are provided, add the SubstituteOverride transform.
+    if (!options.overrides.empty()) {
+        if (!enable_transform("substitute_override")) {
+            return 1;
+        }
+    }
+
+    for (const auto& name : options.transforms) {
+        // TODO(dsinclair): The vertex pulling transform requires setup code to
+        // be run that needs user input. Should we find a way to support that here
+        // maybe through a provided file?
+        if (!enable_transform(name)) {
+            return 1;
+        }
+    }
+
+    if (options.emit_single_entry_point) {
+        transform_manager.append(std::make_unique<tint::transform::SingleEntryPoint>());
+        transform_inputs.Add<tint::transform::SingleEntryPoint::Config>(options.ep_name);
     }
 
     auto out = transform_manager.Run(program.get(), std::move(transform_inputs));

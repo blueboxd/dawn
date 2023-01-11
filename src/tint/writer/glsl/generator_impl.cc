@@ -43,8 +43,9 @@
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/storage_texture.h"
 #include "src/tint/sem/struct.h"
-#include "src/tint/sem/type_constructor.h"
+#include "src/tint/sem/switch_statement.h"
 #include "src/tint/sem/type_conversion.h"
+#include "src/tint/sem/type_initializer.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/transform/add_block_attribute.h"
 #include "src/tint/transform/add_empty_entry_point.h"
@@ -53,6 +54,7 @@
 #include "src/tint/transform/canonicalize_entry_point_io.h"
 #include "src/tint/transform/combine_samplers.h"
 #include "src/tint/transform/decompose_memory_access.h"
+#include "src/tint/transform/demote_to_helper.h"
 #include "src/tint/transform/disable_uniformity_analysis.h"
 #include "src/tint/transform/expand_compound_assignment.h"
 #include "src/tint/transform/manager.h"
@@ -65,7 +67,6 @@
 #include "src/tint/transform/single_entry_point.h"
 #include "src/tint/transform/std140.h"
 #include "src/tint/transform/unshadow.h"
-#include "src/tint/transform/unwind_discard_functions.h"
 #include "src/tint/transform/zero_init_workgroup_memory.h"
 #include "src/tint/utils/defer.h"
 #include "src/tint/utils/map.h"
@@ -181,16 +182,21 @@ SanitizedResult Sanitize(const Program* in,
 
     manager.Add<transform::DisableUniformityAnalysis>();
 
+    // ExpandCompoundAssignment must come before BuiltinPolyfill
+    manager.Add<transform::ExpandCompoundAssignment>();
+
     {  // Builtin polyfills
         transform::BuiltinPolyfill::Builtins polyfills;
         polyfills.acosh = transform::BuiltinPolyfill::Level::kRangeCheck;
         polyfills.atanh = transform::BuiltinPolyfill::Level::kRangeCheck;
+        polyfills.bitshift_modulo = true;
         polyfills.count_leading_zeros = true;
         polyfills.count_trailing_zeros = true;
         polyfills.extract_bits = transform::BuiltinPolyfill::Level::kClampParameters;
         polyfills.first_leading_bit = true;
         polyfills.first_trailing_bit = true;
         polyfills.insert_bits = transform::BuiltinPolyfill::Level::kClampParameters;
+        polyfills.int_div_mod = true;
         polyfills.saturate = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         data.Add<transform::BuiltinPolyfill::Config>(polyfills);
@@ -212,10 +218,11 @@ SanitizedResult Sanitize(const Program* in,
         manager.Add<transform::ZeroInitWorkgroupMemory>();
     }
     manager.Add<transform::CanonicalizeEntryPointIO>();
-    manager.Add<transform::ExpandCompoundAssignment>();
     manager.Add<transform::PromoteSideEffectsToDecl>();
     manager.Add<transform::PadStructs>();
-    manager.Add<transform::UnwindDiscardFunctions>();
+
+    // DemoteToHelper must come after PromoteSideEffectsToDecl and ExpandCompoundAssignment.
+    manager.Add<transform::DemoteToHelper>();
 
     manager.Add<transform::RemovePhonies>();
 
@@ -711,6 +718,16 @@ bool GeneratorImpl::EmitBreak(const ast::BreakStatement*) {
     return true;
 }
 
+bool GeneratorImpl::EmitBreakIf(const ast::BreakIfStatement* b) {
+    auto out = line();
+    out << "if (";
+    if (!EmitExpression(out, b->condition)) {
+        return false;
+    }
+    out << ") { break; }";
+    return true;
+}
+
 bool GeneratorImpl::EmitCall(std::ostream& out, const ast::CallExpression* expr) {
     auto* call = builder_.Sem().Get<sem::Call>(expr);
     auto* target = call->Target();
@@ -724,8 +741,8 @@ bool GeneratorImpl::EmitCall(std::ostream& out, const ast::CallExpression* expr)
     if (auto* cast = target->As<sem::TypeConversion>()) {
         return EmitTypeConversion(out, call, cast);
     }
-    if (auto* ctor = target->As<sem::TypeConstructor>()) {
-        return EmitTypeConstructor(out, call, ctor);
+    if (auto* ctor = target->As<sem::TypeInitializer>()) {
+        return EmitTypeInitializer(out, call, ctor);
     }
     TINT_ICE(Writer, diagnostics_) << "unhandled call target: " << target->TypeInfo().name;
     return false;
@@ -784,6 +801,9 @@ bool GeneratorImpl::EmitBuiltinCall(std::ostream& out,
     }
     if (builtin->Type() == sem::BuiltinType::kRadians) {
         return EmitRadiansCall(out, expr, builtin);
+    }
+    if (builtin->Type() == sem::BuiltinType::kQuantizeToF16) {
+        return EmitQuantizeToF16Call(out, expr, builtin);
     }
     if (builtin->Type() == sem::BuiltinType::kArrayLength) {
         return EmitArrayLength(out, expr);
@@ -851,12 +871,12 @@ bool GeneratorImpl::EmitTypeConversion(std::ostream& out,
     return true;
 }
 
-bool GeneratorImpl::EmitTypeConstructor(std::ostream& out,
+bool GeneratorImpl::EmitTypeInitializer(std::ostream& out,
                                         const sem::Call* call,
-                                        const sem::TypeConstructor* ctor) {
+                                        const sem::TypeInitializer* ctor) {
     auto* type = ctor->ReturnType();
 
-    // If the type constructor is empty then we need to construct with the zero
+    // If the type initializer is empty then we need to construct with the zero
     // value for all components.
     if (call->Arguments().IsEmpty()) {
         return EmitZeroValue(out, type);
@@ -1276,6 +1296,38 @@ bool GeneratorImpl::EmitRadiansCall(std::ostream& out,
                              });
 }
 
+bool GeneratorImpl::EmitQuantizeToF16Call(std::ostream& out,
+                                          const ast::CallExpression* expr,
+                                          const sem::Builtin* builtin) {
+    // Emulate by casting to f16 and back again.
+    return CallBuiltinHelper(
+        out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
+            const auto v = params[0];
+            if (auto* vec = builtin->ReturnType()->As<sem::Vector>()) {
+                switch (vec->Width()) {
+                    case 2: {
+                        line(b) << "return unpackHalf2x16(packHalf2x16(" << v << "));";
+                        return true;
+                    }
+                    case 3: {
+                        line(b) << "return vec3(";
+                        line(b) << "  unpackHalf2x16(packHalf2x16(" << v << ".xy)),";
+                        line(b) << "  unpackHalf2x16(packHalf2x16(" << v << ".zz)).x);";
+                        return true;
+                    }
+                    default: {
+                        line(b) << "return vec4(";
+                        line(b) << "  unpackHalf2x16(packHalf2x16(" << v << ".xy)),";
+                        line(b) << "  unpackHalf2x16(packHalf2x16(" << v << ".zw)));";
+                        return true;
+                    }
+                }
+            }
+            line(b) << "return unpackHalf2x16(packHalf2x16(vec2(" << v << "))).x;";
+            return true;
+        });
+}
+
 bool GeneratorImpl::EmitBarrierCall(std::ostream& out, const sem::Builtin* builtin) {
     // TODO(crbug.com/tint/661): Combine sequential barriers to a single
     // instruction.
@@ -1324,8 +1376,44 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
 
     auto* texture_type = TypeOf(texture)->UnwrapRef()->As<sem::Texture>();
 
+    auto emit_signed_int_type = [&](const sem::Type* ty) {
+        uint32_t width = 0;
+        sem::Type::ElementOf(ty, &width);
+        if (width > 1) {
+            out << "ivec" << width;
+        } else {
+            out << "int";
+        }
+    };
+
+    auto emit_unsigned_int_type = [&](const sem::Type* ty) {
+        uint32_t width = 0;
+        sem::Type::ElementOf(ty, &width);
+        if (width > 1) {
+            out << "uvec" << width;
+        } else {
+            out << "uint";
+        }
+    };
+
+    auto emit_expr_as_signed = [&](const ast::Expression* e) {
+        auto* ty = TypeOf(e)->UnwrapRef();
+        if (!ty->is_unsigned_scalar_or_vector()) {
+            return EmitExpression(out, e);
+        }
+        emit_signed_int_type(ty);
+        ScopedParen sp(out);
+        return EmitExpression(out, e);
+    };
+
     switch (builtin->Type()) {
         case sem::BuiltinType::kTextureDimensions: {
+            // textureDimensions() returns an unsigned scalar / vector in WGSL.
+            // textureSize() / imageSize() returns a signed scalar / vector in GLSL.
+            // Cast.
+            emit_unsigned_int_type(call->Type());
+            ScopedParen sp(out);
+
             if (texture_type->Is<sem::StorageTexture>()) {
                 out << "imageSize(";
             } else {
@@ -1342,7 +1430,7 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
                 !texture_type->Is<sem::DepthMultisampledTexture>()) {
                 out << ", ";
                 if (auto* level_arg = arg(Usage::kLevel)) {
-                    if (!EmitExpression(out, level_arg)) {
+                    if (!emit_expr_as_signed(level_arg)) {
                         return false;
                     }
                 } else {
@@ -1359,6 +1447,12 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
             return true;
         }
         case sem::BuiltinType::kTextureNumLayers: {
+            // textureNumLayers() returns an unsigned scalar in WGSL.
+            // textureSize() / imageSize() returns a signed scalar / vector in GLSL.
+            // Cast.
+            out << "uint";
+            ScopedParen sp(out);
+
             if (texture_type->Is<sem::StorageTexture>()) {
                 out << "imageSize(";
             } else {
@@ -1376,7 +1470,7 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
                 !texture_type->Is<sem::DepthMultisampledTexture>()) {
                 out << ", ";
                 if (auto* level_arg = arg(Usage::kLevel)) {
-                    if (!EmitExpression(out, level_arg)) {
+                    if (!emit_expr_as_signed(level_arg)) {
                         return false;
                     }
                 } else {
@@ -1387,6 +1481,12 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
             return true;
         }
         case sem::BuiltinType::kTextureNumLevels: {
+            // textureNumLevels() returns an unsigned scalar in WGSL.
+            // textureQueryLevels() returns a signed scalar in GLSL.
+            // Cast.
+            out << "uint";
+            ScopedParen sp(out);
+
             out << "textureQueryLevels(";
             if (!EmitExpression(out, texture)) {
                 return false;
@@ -1395,6 +1495,12 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
             return true;
         }
         case sem::BuiltinType::kTextureNumSamples: {
+            // textureNumSamples() returns an unsigned scalar in WGSL.
+            // textureSamples() returns a signed scalar in GLSL.
+            // Cast.
+            out << "uint";
+            ScopedParen sp(out);
+
             out << "textureSamples(";
             if (!EmitExpression(out, texture)) {
                 return false;
@@ -1490,12 +1596,11 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
         param_coords = AppendVector(&builder_, param_coords, depth_ref)->Declaration();
     }
 
-    if (!EmitExpression(out, param_coords)) {
+    if (!emit_expr_as_signed(param_coords)) {
         return false;
     }
 
-    for (auto usage :
-         {Usage::kLevel, Usage::kDdx, Usage::kDdy, Usage::kSampleIndex, Usage::kValue}) {
+    for (auto usage : {Usage::kLevel, Usage::kDdx, Usage::kDdy, Usage::kSampleIndex}) {
         if (auto* e = arg(usage)) {
             out << ", ";
             if (usage == Usage::kLevel && is_depth) {
@@ -1506,9 +1611,16 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
                     return false;
                 }
                 out << ")";
-            } else if (!EmitExpression(out, e)) {
+            } else if (!emit_expr_as_signed(e)) {
                 return false;
             }
+        }
+    }
+
+    if (auto* e = arg(Usage::kValue)) {
+        out << ", ";
+        if (!EmitExpression(out, e)) {
+            return false;
         }
     }
 
@@ -1532,7 +1644,7 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
     for (auto usage : {Usage::kOffset, Usage::kComponent, Usage::kBias}) {
         if (auto* e = arg(usage)) {
             out << ", ";
-            if (!EmitExpression(out, e)) {
+            if (!emit_expr_as_signed(e)) {
                 return false;
             }
         }
@@ -1686,19 +1798,21 @@ std::string GeneratorImpl::generate_builtin_name(const sem::Builtin* builtin) {
 }
 
 bool GeneratorImpl::EmitCase(const ast::CaseStatement* stmt) {
-    if (stmt->IsDefault()) {
-        line() << "default: {";
-    } else {
-        for (auto* selector : stmt->selectors) {
-            auto out = line();
+    auto* sem = builder_.Sem().Get<sem::CaseStatement>(stmt);
+    for (auto* selector : sem->Selectors()) {
+        auto out = line();
+
+        if (selector->IsDefault()) {
+            out << "default";
+        } else {
             out << "case ";
-            if (!EmitLiteral(out, selector)) {
+            if (!EmitConstant(out, selector->Value())) {
                 return false;
             }
-            out << ":";
-            if (selector == stmt->selectors.Back()) {
-                out << " {";
-            }
+        }
+        out << ":";
+        if (selector == sem->Selectors().back()) {
+            out << " {";
         }
     }
 
@@ -1971,8 +2085,8 @@ bool GeneratorImpl::EmitPrivateVariable(const sem::Variable* var) {
     }
 
     out << " = ";
-    if (auto* constructor = decl->constructor) {
-        if (!EmitExpression(out, constructor)) {
+    if (auto* initializer = decl->initializer) {
+        if (!EmitExpression(out, initializer)) {
             return false;
         }
     } else {
@@ -1997,9 +2111,9 @@ bool GeneratorImpl::EmitWorkgroupVariable(const sem::Variable* var) {
         return false;
     }
 
-    if (auto* constructor = decl->constructor) {
+    if (auto* initializer = decl->initializer) {
         out << " = ";
-        if (!EmitExpression(out, constructor)) {
+        if (!EmitExpression(out, initializer)) {
             return false;
         }
     }
@@ -2030,9 +2144,9 @@ bool GeneratorImpl::EmitIOVariable(const sem::GlobalVariable* var) {
         return false;
     }
 
-    if (auto* constructor = decl->constructor) {
+    if (auto* initializer = decl->initializer) {
         out << " = ";
-        if (!EmitExpression(out, constructor)) {
+        if (!EmitExpression(out, initializer)) {
             return false;
         }
     }
@@ -2613,6 +2727,7 @@ bool GeneratorImpl::EmitStatement(const ast::Statement* stmt) {
         [&](const ast::AssignmentStatement* a) { return EmitAssign(a); },
         [&](const ast::BlockStatement* b) { return EmitBlock(b); },
         [&](const ast::BreakStatement* b) { return EmitBreak(b); },
+        [&](const ast::BreakIfStatement* b) { return EmitBreakIf(b); },
         [&](const ast::CallStatement* c) {
             auto out = line();
             if (!EmitCall(out, c->expr)) {
@@ -2952,8 +3067,8 @@ bool GeneratorImpl::EmitVar(const ast::Var* var) {
 
     out << " = ";
 
-    if (var->constructor) {
-        if (!EmitExpression(out, var->constructor)) {
+    if (var->initializer) {
+        if (!EmitExpression(out, var->initializer)) {
             return false;
         }
     } else {
@@ -2979,7 +3094,7 @@ bool GeneratorImpl::EmitLet(const ast::Let* let) {
 
     out << " = ";
 
-    if (!EmitExpression(out, let->constructor)) {
+    if (!EmitExpression(out, let->initializer)) {
         return false;
     }
 
@@ -2999,7 +3114,7 @@ bool GeneratorImpl::EmitProgramConstVariable(const ast::Variable* var) {
         return false;
     }
     out << " = ";
-    if (!EmitExpression(out, var->constructor)) {
+    if (!EmitExpression(out, var->initializer)) {
         return false;
     }
     out << ";";

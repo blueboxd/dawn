@@ -1,7 +1,7 @@
 ; SPIR-V
 ; Version: 1.3
 ; Generator: Google Tint Compiler; 0
-; Bound: 166
+; Bound: 167
 ; Schema: 0
                OpCapability Shader
                OpCapability ImageQuery
@@ -115,8 +115,8 @@
          %45 = OpConstantNull %v3float
     %v2float = OpTypeVector %float 2
          %65 = OpTypeFunction %v4float %11 %11 %24 %v2float %ExternalTextureParams
+     %v2uint = OpTypeVector %uint 2
         %int = OpTypeInt 32 1
-      %v2int = OpTypeVector %int 2
          %78 = OpConstantNull %int
   %float_0_5 = OpConstant %float 0.5
          %80 = OpConstantComposite %v2float %float_0_5 %float_0_5
@@ -128,10 +128,11 @@
         %119 = OpConstantNull %uint
        %void = OpTypeVoid
         %137 = OpTypeFunction %void
+        %141 = OpConstantComposite %v2float %float_1 %float_1
      %uint_0 = OpConstant %uint 0
 %_ptr_Uniform_ExternalTextureParams = OpTypePointer Uniform %ExternalTextureParams
 %_ptr_Function_v4float = OpTypePointer Function %v4float
-        %153 = OpTypeFunction %v4float
+        %154 = OpTypeFunction %v4float
 %gammaCorrection = OpFunction %v3float None %25
           %v = OpFunctionParameter %v3float
      %params = OpFunctionParameter %GammaTransferParams
@@ -178,14 +179,14 @@
          %85 = OpVariable %_ptr_Function_v2float Function %87
          %94 = OpVariable %_ptr_Function_v2float Function %87
       %color = OpVariable %_ptr_Function_v3float Function %45
-         %75 = OpImageQuerySizeLod %v2int %plane0 %78
-         %74 = OpConvertSToF %v2float %75
+         %75 = OpImageQuerySizeLod %v2uint %plane0 %78
+         %74 = OpConvertUToF %v2float %75
          %81 = OpFDiv %v2float %80 %74
          %88 = OpCompositeConstruct %v2float %float_1 %float_1
          %84 = OpFSub %v2float %88 %81
          %82 = OpExtInst %v2float %31 NClamp %coord %81 %84
-         %90 = OpImageQuerySizeLod %v2int %plane1 %78
-         %89 = OpConvertSToF %v2float %90
+         %90 = OpImageQuerySizeLod %v2uint %plane1 %78
+         %89 = OpConvertUToF %v2float %90
          %91 = OpFDiv %v2float %80 %89
          %95 = OpCompositeConstruct %v2float %float_1 %float_1
          %93 = OpFSub %v2float %95 %91
@@ -245,36 +246,36 @@
         %140 = OpLabel
       %arg_2 = OpVariable %_ptr_Function_v2float Function %87
         %res = OpVariable %_ptr_Function_v4float Function %5
-               OpStore %arg_2 %87
-        %143 = OpLoad %11 %arg_0
-        %144 = OpLoad %11 %ext_tex_plane_1
-        %145 = OpLoad %24 %arg_1
-        %146 = OpLoad %v2float %arg_2
-        %149 = OpAccessChain %_ptr_Uniform_ExternalTextureParams %ext_tex_params %uint_0
-        %150 = OpLoad %ExternalTextureParams %149
-        %142 = OpFunctionCall %v4float %textureSampleExternal %143 %144 %145 %146 %150
-               OpStore %res %142
+               OpStore %arg_2 %141
+        %144 = OpLoad %11 %arg_0
+        %145 = OpLoad %11 %ext_tex_plane_1
+        %146 = OpLoad %24 %arg_1
+        %147 = OpLoad %v2float %arg_2
+        %150 = OpAccessChain %_ptr_Uniform_ExternalTextureParams %ext_tex_params %uint_0
+        %151 = OpLoad %ExternalTextureParams %150
+        %143 = OpFunctionCall %v4float %textureSampleExternal %144 %145 %146 %147 %151
+               OpStore %res %143
                OpReturn
                OpFunctionEnd
-%vertex_main_inner = OpFunction %v4float None %153
-        %155 = OpLabel
-        %156 = OpFunctionCall %void %textureSampleBaseClampToEdge_7c04e6
+%vertex_main_inner = OpFunction %v4float None %154
+        %156 = OpLabel
+        %157 = OpFunctionCall %void %textureSampleBaseClampToEdge_7c04e6
                OpReturnValue %5
                OpFunctionEnd
 %vertex_main = OpFunction %void None %137
-        %158 = OpLabel
-        %159 = OpFunctionCall %v4float %vertex_main_inner
-               OpStore %value %159
+        %159 = OpLabel
+        %160 = OpFunctionCall %v4float %vertex_main_inner
+               OpStore %value %160
                OpStore %vertex_point_size %float_1
                OpReturn
                OpFunctionEnd
 %fragment_main = OpFunction %void None %137
-        %161 = OpLabel
-        %162 = OpFunctionCall %void %textureSampleBaseClampToEdge_7c04e6
+        %162 = OpLabel
+        %163 = OpFunctionCall %void %textureSampleBaseClampToEdge_7c04e6
                OpReturn
                OpFunctionEnd
 %compute_main = OpFunction %void None %137
-        %164 = OpLabel
-        %165 = OpFunctionCall %void %textureSampleBaseClampToEdge_7c04e6
+        %165 = OpLabel
+        %166 = OpFunctionCall %void %textureSampleBaseClampToEdge_7c04e6
                OpReturn
                OpFunctionEnd

@@ -61,12 +61,10 @@ inline std::ostream& operator<<(std::ostream& out, BuiltinData data) {
 }
 
 TEST_F(ResolverBuiltinTest, ModuleScopeUsage) {
-    GlobalConst("c", ty.f32(), Call(Source{{12, 34}}, "abs", 1._f));
+    GlobalConst("c", ty.f32(), Call(Source{{12, 34}}, "dpdy", 1._f));
 
     EXPECT_FALSE(r()->Resolve());
 
-    // TODO(crbug.com/tint/1581): Once 'abs' is implemented as @const, this will no longer be an
-    // error.
     EXPECT_EQ(
         r()->error(),
         R"(12:34 error: const initializer requires a const-expression, but expression is a runtime-expression)");
@@ -278,7 +276,12 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, Error_NoParams) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Scalar_f32) {
     auto param = GetParam();
 
-    auto* call = Call(param.name, 1_f);
+    auto val = 0.5_f;
+    if (param.name == std::string("acosh")) {
+        val = 1.0_f;
+    }
+
+    auto* call = Call(param.name, val);
     WrapInFunction(call);
 
     if (param.args_number == 1u) {
@@ -299,7 +302,10 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Scalar_f32) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Vector_f32) {
     auto param = GetParam();
 
-    auto* call = Call(param.name, vec3<f32>(1_f, 1_f, 3_f));
+    auto val = param.name == std::string("acosh") ? vec3<f32>(1.0_f, 2.0_f, 3.0_f)
+                                                  : vec3<f32>(0.5_f, 0.5_f, 0.8_f);
+
+    auto* call = Call(param.name, val);
     WrapInFunction(call);
 
     if (param.args_number == 1u) {
@@ -464,7 +470,12 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Scalar_f16) {
 
     Enable(ast::Extension::kF16);
 
-    auto* call = Call(param.name, 1_h);
+    auto val = 0.5_h;
+    if (param.name == std::string("acosh")) {
+        val = 1.0_h;
+    }
+
+    auto* call = Call(param.name, val);
     WrapInFunction(call);
 
     if (param.args_number == 1u) {
@@ -487,7 +498,10 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Vector_f16) {
 
     Enable(ast::Extension::kF16);
 
-    auto* call = Call(param.name, vec3<f16>(1_h, 1_h, 3_h));
+    auto val = param.name == std::string("acosh") ? vec3<f16>(1.0_h, 2.0_h, 3.0_h)
+                                                  : vec3<f16>(0.5_h, 0.5_h, 0.8_h);
+
+    auto* call = Call(param.name, val);
     WrapInFunction(call);
 
     if (param.args_number == 1u) {
@@ -750,7 +764,7 @@ TEST_F(ResolverBuiltinFloatTest, Cross_Error_NoArgs) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to cross()
 
 1 candidate function:
-  cross(vec3<T>, vec3<T>) -> vec3<T>  where: T is f32 or f16
+  cross(vec3<T>, vec3<T>) -> vec3<T>  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -763,7 +777,7 @@ TEST_F(ResolverBuiltinFloatTest, Cross_Error_Scalar) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to cross(f32, f32)
 
 1 candidate function:
-  cross(vec3<T>, vec3<T>) -> vec3<T>  where: T is f32 or f16
+  cross(vec3<T>, vec3<T>) -> vec3<T>  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -777,7 +791,7 @@ TEST_F(ResolverBuiltinFloatTest, Cross_Error_Vec3Int) {
               R"(error: no matching call to cross(vec3<i32>, vec3<i32>)
 
 1 candidate function:
-  cross(vec3<T>, vec3<T>) -> vec3<T>  where: T is f32 or f16
+  cross(vec3<T>, vec3<T>) -> vec3<T>  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -792,7 +806,7 @@ TEST_F(ResolverBuiltinFloatTest, Cross_Error_Vec4) {
               R"(error: no matching call to cross(vec4<f32>, vec4<f32>)
 
 1 candidate function:
-  cross(vec3<T>, vec3<T>) -> vec3<T>  where: T is f32 or f16
+  cross(vec3<T>, vec3<T>) -> vec3<T>  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -808,7 +822,7 @@ TEST_F(ResolverBuiltinFloatTest, Cross_Error_TooManyParams) {
               R"(error: no matching call to cross(vec3<f32>, vec3<f32>, vec3<f32>)
 
 1 candidate function:
-  cross(vec3<T>, vec3<T>) -> vec3<T>  where: T is f32 or f16
+  cross(vec3<T>, vec3<T>) -> vec3<T>  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -2416,17 +2430,17 @@ static const char* expected_texture_overload(ast::builtin::test::ValidTextureOve
         case ValidTextureOverload::kSampleCompareDepthCubeArrayF32:
             return R"(textureSampleCompare(texture, sampler, coords, array_index, depth_ref))";
         case ValidTextureOverload::kSampleCompareLevelDepth2dF32:
-            return R"(textureSampleCompare(texture, sampler, coords, depth_ref))";
+            return R"(textureSampleCompareLevel(texture, sampler, coords, depth_ref))";
         case ValidTextureOverload::kSampleCompareLevelDepth2dOffsetF32:
-            return R"(textureSampleCompare(texture, sampler, coords, depth_ref, offset))";
+            return R"(textureSampleCompareLevel(texture, sampler, coords, depth_ref, offset))";
         case ValidTextureOverload::kSampleCompareLevelDepth2dArrayF32:
-            return R"(textureSampleCompare(texture, sampler, coords, array_index, depth_ref))";
+            return R"(textureSampleCompareLevel(texture, sampler, coords, array_index, depth_ref))";
         case ValidTextureOverload::kSampleCompareLevelDepth2dArrayOffsetF32:
-            return R"(textureSampleCompare(texture, sampler, coords, array_index, depth_ref, offset))";
+            return R"(textureSampleCompareLevel(texture, sampler, coords, array_index, depth_ref, offset))";
         case ValidTextureOverload::kSampleCompareLevelDepthCubeF32:
-            return R"(textureSampleCompare(texture, sampler, coords, depth_ref))";
+            return R"(textureSampleCompareLevel(texture, sampler, coords, depth_ref))";
         case ValidTextureOverload::kSampleCompareLevelDepthCubeArrayF32:
-            return R"(textureSampleCompare(texture, sampler, coords, array_index, depth_ref))";
+            return R"(textureSampleCompareLevel(texture, sampler, coords, array_index, depth_ref))";
         case ValidTextureOverload::kLoad1dLevelF32:
         case ValidTextureOverload::kLoad1dLevelU32:
         case ValidTextureOverload::kLoad1dLevelI32:
@@ -2478,7 +2492,7 @@ TEST_P(ResolverBuiltinTest_Texture, Call) {
             default:
                 FAIL() << "invalid texture dimensions: " << param.texture_dimension;
             case ast::TextureDimension::k1d:
-                EXPECT_TRUE(TypeOf(call)->Is<sem::I32>());
+                EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
                 break;
             case ast::TextureDimension::k2d:
             case ast::TextureDimension::k2dArray:
@@ -2487,23 +2501,23 @@ TEST_P(ResolverBuiltinTest_Texture, Call) {
                 auto* vec = As<sem::Vector>(TypeOf(call));
                 ASSERT_NE(vec, nullptr);
                 EXPECT_EQ(vec->Width(), 2u);
-                EXPECT_TRUE(vec->type()->Is<sem::I32>());
+                EXPECT_TRUE(vec->type()->Is<sem::U32>());
                 break;
             }
             case ast::TextureDimension::k3d: {
                 auto* vec = As<sem::Vector>(TypeOf(call));
                 ASSERT_NE(vec, nullptr);
                 EXPECT_EQ(vec->Width(), 3u);
-                EXPECT_TRUE(vec->type()->Is<sem::I32>());
+                EXPECT_TRUE(vec->type()->Is<sem::U32>());
                 break;
             }
         }
     } else if (std::string(param.function) == "textureNumLayers") {
-        EXPECT_TRUE(TypeOf(call)->Is<sem::I32>());
+        EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
     } else if (std::string(param.function) == "textureNumLevels") {
-        EXPECT_TRUE(TypeOf(call)->Is<sem::I32>());
+        EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
     } else if (std::string(param.function) == "textureNumSamples") {
-        EXPECT_TRUE(TypeOf(call)->Is<sem::I32>());
+        EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
     } else if (std::string(param.function) == "textureStore") {
         EXPECT_TRUE(TypeOf(call)->Is<sem::Void>());
     } else if (std::string(param.function) == "textureGather") {

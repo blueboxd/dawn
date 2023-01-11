@@ -68,10 +68,10 @@ class ConstEval {
     // Constant value evaluation methods, to be called directly from Resolver
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
-    /// @param ty the target type - must be an array or constructor
+    /// @param ty the target type - must be an array or initializer
     /// @param args the input arguments
     /// @return the constructed value, or null if the value cannot be calculated
-    Result ArrayOrStructCtor(const sem::Type* ty, utils::VectorRef<const sem::Expression*> args);
+    Result ArrayOrStructInit(const sem::Type* ty, utils::VectorRef<const sem::Expression*> args);
 
     /// @param ty the target type
     /// @param expr the input expression
@@ -122,7 +122,7 @@ class ConstEval {
                 utils::VectorRef<const sem::Constant*> args,
                 const Source& source);
 
-    /// Zero value type constructor
+    /// Zero value type initializer
     /// @param ty the result type
     /// @param args the input arguments (no arguments provided)
     /// @param source the source location of the conversion
@@ -131,7 +131,7 @@ class ConstEval {
                 utils::VectorRef<const sem::Constant*> args,
                 const Source& source);
 
-    /// Identity value type constructor
+    /// Identity value type initializer
     /// @param ty the result type
     /// @param args the input arguments
     /// @param source the source location of the conversion
@@ -140,7 +140,7 @@ class ConstEval {
                     utils::VectorRef<const sem::Constant*> args,
                     const Source& source);
 
-    /// Vector splat constructor
+    /// Vector splat initializer
     /// @param ty the vector type
     /// @param args the input arguments
     /// @param source the source location of the conversion
@@ -149,39 +149,39 @@ class ConstEval {
                     utils::VectorRef<const sem::Constant*> args,
                     const Source& source);
 
-    /// Vector constructor using scalars
+    /// Vector initializer using scalars
     /// @param ty the vector type
     /// @param args the input arguments
     /// @param source the source location of the conversion
     /// @return the constructed value, or null if the value cannot be calculated
-    Result VecCtorS(const sem::Type* ty,
+    Result VecInitS(const sem::Type* ty,
                     utils::VectorRef<const sem::Constant*> args,
                     const Source& source);
 
-    /// Vector constructor using a mix of scalars and smaller vectors
+    /// Vector initializer using a mix of scalars and smaller vectors
     /// @param ty the vector type
     /// @param args the input arguments
     /// @param source the source location of the conversion
     /// @return the constructed value, or null if the value cannot be calculated
-    Result VecCtorM(const sem::Type* ty,
+    Result VecInitM(const sem::Type* ty,
                     utils::VectorRef<const sem::Constant*> args,
                     const Source& source);
 
-    /// Matrix constructor using scalar values
+    /// Matrix initializer using scalar values
     /// @param ty the matrix type
     /// @param args the input arguments
     /// @param source the source location of the conversion
     /// @return the constructed value, or null if the value cannot be calculated
-    Result MatCtorS(const sem::Type* ty,
+    Result MatInitS(const sem::Type* ty,
                     utils::VectorRef<const sem::Constant*> args,
                     const Source& source);
 
-    /// Matrix constructor using column vectors
+    /// Matrix initializer using column vectors
     /// @param ty the matrix type
     /// @param args the input arguments
     /// @param source the source location of the conversion
     /// @return the constructed value, or null if the value cannot be calculated
-    Result MatCtorV(const sem::Type* ty,
+    Result MatInitV(const sem::Type* ty,
                     utils::VectorRef<const sem::Constant*> args,
                     const Source& source);
 
@@ -377,6 +377,87 @@ class ConstEval {
     // Builtins
     ////////////////////////////////////////////////////////////////////////////
 
+    /// abs builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result abs(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// acos builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result acos(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
+    /// acosh builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result acosh(const sem::Type* ty,
+                 utils::VectorRef<const sem::Constant*> args,
+                 const Source& source);
+
+    /// all builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result all(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// any builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result any(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// asin builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result asin(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
+    /// asinh builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result asinh(const sem::Type* ty,
+                 utils::VectorRef<const sem::Constant*> args,
+                 const Source& source);
+
+    /// atan builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result atan(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
+    /// atanh builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result atanh(const sem::Type* ty,
+                 utils::VectorRef<const sem::Constant*> args,
+                 const Source& source);
+
     /// atan2 builtin
     /// @param ty the expression type
     /// @param args the input arguments
@@ -386,6 +467,15 @@ class ConstEval {
                  utils::VectorRef<const sem::Constant*> args,
                  const Source& source);
 
+    /// ceil builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result ceil(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
     /// clamp builtin
     /// @param ty the expression type
     /// @param args the input arguments
@@ -394,6 +484,168 @@ class ConstEval {
     Result clamp(const sem::Type* ty,
                  utils::VectorRef<const sem::Constant*> args,
                  const Source& source);
+
+    /// cos builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result cos(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// cosh builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result cosh(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
+    /// countLeadingZeros builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result countLeadingZeros(const sem::Type* ty,
+                             utils::VectorRef<const sem::Constant*> args,
+                             const Source& source);
+
+    /// countOneBits builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result countOneBits(const sem::Type* ty,
+                        utils::VectorRef<const sem::Constant*> args,
+                        const Source& source);
+
+    /// countTrailingZeros builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result countTrailingZeros(const sem::Type* ty,
+                              utils::VectorRef<const sem::Constant*> args,
+                              const Source& source);
+
+    /// cross builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result cross(const sem::Type* ty,
+                 utils::VectorRef<const sem::Constant*> args,
+                 const Source& source);
+
+    /// extractBits builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result extractBits(const sem::Type* ty,
+                       utils::VectorRef<const sem::Constant*> args,
+                       const Source& source);
+
+    /// firstLeadingBit builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result firstLeadingBit(const sem::Type* ty,
+                           utils::VectorRef<const sem::Constant*> args,
+                           const Source& source);
+
+    /// firstTrailingBit builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result firstTrailingBit(const sem::Type* ty,
+                            utils::VectorRef<const sem::Constant*> args,
+                            const Source& source);
+
+    /// floor builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result floor(const sem::Type* ty,
+                 utils::VectorRef<const sem::Constant*> args,
+                 const Source& source);
+
+    /// insertBits builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result insertBits(const sem::Type* ty,
+                      utils::VectorRef<const sem::Constant*> args,
+                      const Source& source);
+
+    /// pack2x16float builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result pack2x16float(const sem::Type* ty,
+                         utils::VectorRef<const sem::Constant*> args,
+                         const Source& source);
+
+    /// pack2x16snorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result pack2x16snorm(const sem::Type* ty,
+                         utils::VectorRef<const sem::Constant*> args,
+                         const Source& source);
+
+    /// pack2x16unorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result pack2x16unorm(const sem::Type* ty,
+                         utils::VectorRef<const sem::Constant*> args,
+                         const Source& source);
+
+    /// pack4x8snorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result pack4x8snorm(const sem::Type* ty,
+                        utils::VectorRef<const sem::Constant*> args,
+                        const Source& source);
+
+    /// pack4x8unorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result pack4x8unorm(const sem::Type* ty,
+                        utils::VectorRef<const sem::Constant*> args,
+                        const Source& source);
+
+    /// reverseBits builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result reverseBits(const sem::Type* ty,
+                       utils::VectorRef<const sem::Constant*> args,
+                       const Source& source);
+
+    /// saturate builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result saturate(const sem::Type* ty,
+                    utils::VectorRef<const sem::Constant*> args,
+                    const Source& source);
 
     /// select builtin with single bool third arg
     /// @param ty the expression type
@@ -413,6 +665,114 @@ class ConstEval {
                           utils::VectorRef<const sem::Constant*> args,
                           const Source& source);
 
+    /// sign builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result sign(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
+    /// sin builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result sin(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// sinh builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result sinh(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
+    /// step builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result step(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
+    /// tan builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result tan(const sem::Type* ty,
+               utils::VectorRef<const sem::Constant*> args,
+               const Source& source);
+
+    /// tanh builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result tanh(const sem::Type* ty,
+                utils::VectorRef<const sem::Constant*> args,
+                const Source& source);
+
+    /// unpack2x16float builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result unpack2x16float(const sem::Type* ty,
+                           utils::VectorRef<const sem::Constant*> args,
+                           const Source& source);
+
+    /// unpack2x16snorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result unpack2x16snorm(const sem::Type* ty,
+                           utils::VectorRef<const sem::Constant*> args,
+                           const Source& source);
+
+    /// unpack2x16unorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result unpack2x16unorm(const sem::Type* ty,
+                           utils::VectorRef<const sem::Constant*> args,
+                           const Source& source);
+
+    /// unpack4x8snorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result unpack4x8snorm(const sem::Type* ty,
+                          utils::VectorRef<const sem::Constant*> args,
+                          const Source& source);
+
+    /// unpack4x8unorm builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result unpack4x8unorm(const sem::Type* ty,
+                          utils::VectorRef<const sem::Constant*> args,
+                          const Source& source);
+
+    /// quantizeToF16 builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location of the conversion
+    /// @return the result value, or null if the value cannot be calculated
+    Result quantizeToF16(const sem::Type* ty,
+                         utils::VectorRef<const sem::Constant*> args,
+                         const Source& source);
+
   private:
     /// Adds the given error message to the diagnostics
     void AddError(const std::string& msg, const Source& source) const;
@@ -426,6 +786,13 @@ class ConstEval {
     /// @returns the result number on success, or logs an error and returns Failure
     template <typename NumberT>
     utils::Result<NumberT> Add(NumberT a, NumberT b);
+
+    /// Subtracts two Number<T>s
+    /// @param a the lhs number
+    /// @param b the rhs number
+    /// @returns the result number on success, or logs an error and returns Failure
+    template <typename NumberT>
+    utils::Result<NumberT> Sub(NumberT a, NumberT b);
 
     /// Multiplies two Number<T>s
     /// @param a the lhs number
@@ -479,11 +846,33 @@ class ConstEval {
                                 NumberT b3,
                                 NumberT b4);
 
+    /// Returns the determinant of the 2x2 matrix [(a1, a2), (b1, b2)]
+    /// @param a1 component 1 of the first column vector
+    /// @param a2 component 2 of the first column vector
+    /// @param b1 component 1 of the second column vector
+    /// @param b2 component 2 of the second column vector
+    template <typename NumberT>
+    utils::Result<NumberT> Det2(NumberT a1, NumberT a2, NumberT b1, NumberT b2);
+
+    /// Clamps e between low and high
+    /// @param e the number to clamp
+    /// @param low the lower bound
+    /// @param high the upper bound
+    /// @returns the result number on success, or logs an error and returns Failure
+    template <typename NumberT>
+    utils::Result<NumberT> Clamp(NumberT e, NumberT low, NumberT high);
+
     /// Returns a callable that calls Add, and creates a Constant with its result of type `elem_ty`
     /// if successful, or returns Failure otherwise.
     /// @param elem_ty the element type of the Constant to create on success
     /// @returns the callable function
     auto AddFunc(const sem::Type* elem_ty);
+
+    /// Returns a callable that calls Sub, and creates a Constant with its result of type `elem_ty`
+    /// if successful, or returns Failure otherwise.
+    /// @param elem_ty the element type of the Constant to create on success
+    /// @returns the callable function
+    auto SubFunc(const sem::Type* elem_ty);
 
     /// Returns a callable that calls Mul, and creates a Constant with its result of type `elem_ty`
     /// if successful, or returns Failure otherwise.
@@ -508,6 +897,18 @@ class ConstEval {
     /// @param elem_ty the element type of the Constant to create on success
     /// @returns the callable function
     auto Dot4Func(const sem::Type* elem_ty);
+
+    /// Returns a callable that calls Det2, and creates a Constant with its result of type `elem_ty`
+    /// if successful, or returns Failure otherwise.
+    /// @param elem_ty the element type of the Constant to create on success
+    /// @returns the callable function
+    auto Det2Func(const sem::Type* elem_ty);
+
+    /// Returns a callable that calls Clamp, and creates a Constant with its result of type
+    /// `elem_ty` if successful, or returns Failure otherwise.
+    /// @param elem_ty the element type of the Constant to create on success
+    /// @returns the callable function
+    auto ClampFunc(const sem::Type* elem_ty);
 
     ProgramBuilder& builder;
     const Source* current_source = nullptr;

@@ -18,7 +18,12 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::AbstractNumeric);
 
 namespace tint::sem {
 
-AbstractNumeric::AbstractNumeric() = default;
+AbstractNumeric::AbstractNumeric()
+    : Base(TypeFlags{
+          Flag::kConstructable,
+          Flag::kCreationFixedFootprint,
+          Flag::kFixedFootprint,
+      }) {}
 AbstractNumeric::AbstractNumeric(AbstractNumeric&&) = default;
 AbstractNumeric::~AbstractNumeric() = default;
 
@@ -28,10 +33,6 @@ uint32_t AbstractNumeric::Size() const {
 
 uint32_t AbstractNumeric::Align() const {
     return 0;
-}
-
-bool AbstractNumeric::IsConstructible() const {
-    return true;
 }
 
 }  // namespace tint::sem

@@ -177,7 +177,7 @@ TEST_F(ResolverValidationTest, Expr_DontCall_Type) {
     WrapInFunction(Expr(Source{{{3, 3}, {3, 8}}}, "T"));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "3:8 error: missing '(' for type constructor or cast");
+    EXPECT_EQ(r()->error(), "3:8 error: missing '(' for type initializer or cast");
 }
 
 TEST_F(ResolverValidationTest, AssignmentStmt_InvalidLHS_BuiltinFunctionName) {
@@ -766,69 +766,17 @@ TEST_F(ResolverTest, Stmt_Loop_DiscardInContinuing_Direct) {
     // loop  {
     //   continuing {
     //     discard;
+    //     breakif true;
     //   }
     // }
 
-    WrapInFunction(Loop(  // loop
-        Block(),          //   loop block
-        Block(            //   loop continuing block
-            Discard(Source{{12, 34}}))));
+    Func("my_func", utils::Empty, ty.void_(),
+         utils::Vector{Loop(  // loop
+             Block(),         //   loop block
+             Block(           //   loop continuing block
+                 Discard(Source{{12, 34}}), BreakIf(true)))});
 
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: continuing blocks must not contain a discard statement)");
-}
-
-TEST_F(ResolverTest, Stmt_Loop_DiscardInContinuing_Indirect) {
-    // loop {
-    //   if (false) { break; }
-    //   continuing {
-    //     loop { discard; }
-    //   }
-    // }
-
-    WrapInFunction(Loop(                   // outer loop
-        Block(If(false, Block(Break()))),  //   outer loop block
-        Block(Source{{56, 78}},            //   outer loop continuing block
-              Loop(                        //     inner loop
-                  Block(                   //       inner loop block
-                      Discard(Source{{12, 34}}))))));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: continuing blocks must not contain a discard statement
-56:78 note: see continuing block here)");
-}
-
-TEST_F(ResolverTest, Stmt_Loop_DiscardInContinuing_Indirect_ViaCall) {
-    // fn MayDiscard() { if (true) { discard; } }
-    // fn F() { MayDiscard(); }
-    // loop {
-    //   continuing {
-    //     loop { F(); }
-    //   }
-    // }
-
-    Func("MayDiscard", utils::Empty, ty.void_(),
-         utils::Vector{
-             If(true, Block(Discard())),
-         });
-    Func("SomeFunc", utils::Empty, ty.void_(),
-         utils::Vector{
-             CallStmt(Call("MayDiscard")),
-         });
-
-    WrapInFunction(Loop(         // outer loop
-        Block(),                 //   outer loop block
-        Block(Source{{56, 78}},  //   outer loop continuing block
-              Loop(              //     inner loop
-                  Block(         //       inner loop block
-                      CallStmt(Call(Source{{12, 34}}, "SomeFunc")))))));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: cannot call a function that may discard inside a continuing block
-56:78 note: see continuing block here)");
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverTest, Stmt_Loop_ContinueInContinuing_Direct) {
@@ -870,6 +818,75 @@ TEST_F(ResolverTest, Stmt_Loop_ContinueInContinuing_Indirect) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
+TEST_F(ResolverValidationTest, Stmt_Loop_Continuing_BreakIf) {
+    // loop  {
+    //     continuing {
+    //         break if true;
+    //     }
+    // }
+
+    auto* body = Block();
+    auto* continuing = Block(BreakIf(true));
+    auto* loop_stmt = Loop(body, continuing);
+    WrapInFunction(loop_stmt);
+
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverValidationTest, Stmt_Loop_Continuing_BreakIf_Not_Last) {
+    // loop  {
+    //     var z : i32;
+    //     continuing {
+    //         break if true;
+    //         z = 2i;
+    //     }
+    // }
+
+    auto* body = Block(Decl(Var("z", ty.i32())));
+    auto* continuing =
+        Block(Source{{10, 9}}, BreakIf(Source{{12, 23}}, true), Assign(Expr("z"), 2_i));
+    auto* loop_stmt = Loop(body, continuing);
+    WrapInFunction(loop_stmt);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:23 error: break-if must be last statement in a continuing block
+10:9 note: see continuing block here)");
+}
+
+TEST_F(ResolverValidationTest, Stmt_Loop_Continuing_BreakIf_Duplicate) {
+    // loop  {
+    //     continuing {
+    //         break if true;
+    //         break if false;
+    //     }
+    // }
+
+    auto* body = Block();
+    auto* continuing = Block(Source{{10, 9}}, BreakIf(Source{{12, 23}}, true), BreakIf(false));
+    auto* loop_stmt = Loop(body, continuing);
+    WrapInFunction(loop_stmt);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:23 error: break-if must be last statement in a continuing block
+10:9 note: see continuing block here)");
+}
+
+TEST_F(ResolverValidationTest, Stmt_Loop_Continuing_BreakIf_NonBool) {
+    // loop  {
+    //     continuing {
+    //         break if 1i;
+    //     }
+    // }
+
+    auto* body = Block();
+    auto* continuing = Block(BreakIf(Expr(Source{{12, 23}}, 1_i)));
+    auto* loop_stmt = Loop(body, continuing);
+    WrapInFunction(loop_stmt);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:23 error: break-if statement condition must be bool, got i32)");
+}
+
 TEST_F(ResolverTest, Stmt_ForLoop_ReturnInContinuing_Direct) {
     // for(;; return) {
     //   break;
@@ -904,55 +921,11 @@ TEST_F(ResolverTest, Stmt_ForLoop_DiscardInContinuing_Direct) {
     //   break;
     // }
 
-    WrapInFunction(For(nullptr, nullptr, Discard(Source{{12, 34}}),  //
-                       Block(Break())));
+    Func("my_func", utils::Empty, ty.void_(),
+         utils::Vector{For(nullptr, nullptr, Discard(Source{{12, 34}}),  //
+                           Block(Break()))});
 
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: continuing blocks must not contain a discard statement)");
-}
-
-TEST_F(ResolverTest, Stmt_ForLoop_DiscardInContinuing_Indirect) {
-    // for(;; loop { discard }) {
-    //   break;
-    // }
-
-    WrapInFunction(For(nullptr, nullptr,
-                       Loop(Source{{56, 78}},                   //
-                            Block(Discard(Source{{12, 34}}))),  //
-                       Block(Break())));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: continuing blocks must not contain a discard statement
-56:78 note: see continuing block here)");
-}
-
-TEST_F(ResolverTest, Stmt_ForLoop_DiscardInContinuing_Indirect_ViaCall) {
-    // fn MayDiscard() { if (true) { discard; } }
-    // fn F() { MayDiscard(); }
-    // for(;; loop { F() }) {
-    //   break;
-    // }
-
-    Func("MayDiscard", utils::Empty, ty.void_(),
-         utils::Vector{
-             If(true, Block(Discard())),
-         });
-    Func("F", utils::Empty, ty.void_(),
-         utils::Vector{
-             CallStmt(Call("MayDiscard")),
-         });
-
-    WrapInFunction(For(nullptr, nullptr,
-                       Loop(Source{{56, 78}},                               //
-                            Block(CallStmt(Call(Source{{12, 34}}, "F")))),  //
-                       Block(Break())));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: cannot call a function that may discard inside a continuing block
-56:78 note: see continuing block here)");
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverTest, Stmt_ForLoop_ContinueInContinuing_Direct) {
@@ -1039,11 +1012,11 @@ TEST_F(ResolverValidationTest, Stmt_BreakInLoop) {
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInSwitch) {
-    WrapInFunction(Loop(Block(Switch(Expr(1_i),             //
-                                     Case(Expr(1_i),        //
-                                          Block(Break())),  //
-                                     DefaultCase()),        //
-                              Break())));                   //
+    WrapInFunction(Loop(Block(Switch(Expr(1_i),               //
+                                     Case(CaseSelector(1_i),  //
+                                          Block(Break())),    //
+                                     DefaultCase()),          //
+                              Break())));                     //
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
@@ -1055,6 +1028,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfTrueInContinuing) {
                                                   // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_TRUE(r()->Resolve()) << r()->error();
+    EXPECT_EQ(r()->error(),
+              "12:34 warning: use of deprecated language feature: `break` must not be used to exit "
+              "from a continuing block. Use `break-if` instead.");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInIfElseInContinuing) {
@@ -1066,6 +1042,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfElseInContinuing) {
                                              // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_TRUE(r()->Resolve()) << r()->error();
+    EXPECT_EQ(r()->error(),
+              "12:34 warning: use of deprecated language feature: `break` must not be used to exit "
+              "from a continuing block. Use `break-if` instead.");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInContinuing) {
@@ -1075,6 +1054,8 @@ TEST_F(ResolverValidationTest, Stmt_BreakInContinuing) {
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
+              "12:34 warning: use of deprecated language feature: `break` must not be used to exit "
+              "from a continuing block. Use `break-if` instead.\n"
               "12:34 error: break statement in a continuing block must be the single "
               "statement of an if statement's true or false block, and that if "
               "statement must be the last statement of the continuing block\n"
@@ -1092,6 +1073,8 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfInIfInContinuing) {
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
+              "12:34 warning: use of deprecated language feature: `break` must not be used to exit "
+              "from a continuing block. Use `break-if` instead.\n"
               "12:34 error: break statement in a continuing block must be the single "
               "statement of an if statement's true or false block, and that if "
               "statement must be the last statement of the continuing block\n"
@@ -1109,6 +1092,8 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfTrueMultipleStmtsInContinuing) {
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
+              "12:34 warning: use of deprecated language feature: `break` must not be used to exit "
+              "from a continuing block. Use `break-if` instead.\n"
               "12:34 error: break statement in a continuing block must be the single "
               "statement of an if statement's true or false block, and that if "
               "statement must be the last statement of the continuing block\n"
@@ -1126,6 +1111,8 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfElseMultipleStmtsInContinuing) {
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
+              "12:34 warning: use of deprecated language feature: `break` must not be used to exit "
+              "from a continuing block. Use `break-if` instead.\n"
               "12:34 error: break statement in a continuing block must be the single "
               "statement of an if statement's true or false block, and that if "
               "statement must be the last statement of the continuing block\n"
@@ -1142,6 +1129,8 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfElseIfInContinuing) {
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
+              "12:34 warning: use of deprecated language feature: `break` must not be used to exit "
+              "from a continuing block. Use `break-if` instead.\n"
               "12:34 error: break statement in a continuing block must be the single "
               "statement of an if statement's true or false block, and that if "
               "statement must be the last statement of the continuing block\n"
@@ -1159,6 +1148,8 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfNonEmptyElseInContinuing) {
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
+              "12:34 warning: use of deprecated language feature: `break` must not be used to exit "
+              "from a continuing block. Use `break-if` instead.\n"
               "12:34 error: break statement in a continuing block must be the single "
               "statement of an if statement's true or false block, and that if "
               "statement must be the last statement of the continuing block\n"
@@ -1176,6 +1167,8 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfElseNonEmptyTrueInContinuing) {
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
+              "12:34 warning: use of deprecated language feature: `break` must not be used to exit "
+              "from a continuing block. Use `break-if` instead.\n"
               "12:34 error: break statement in a continuing block must be the single "
               "statement of an if statement's true or false block, and that if "
               "statement must be the last statement of the continuing block\n"
@@ -1192,6 +1185,8 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfInContinuingNotLast) {
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
+              "12:34 warning: use of deprecated language feature: `break` must not be used to exit "
+              "from a continuing block. Use `break-if` instead.\n"
               "12:34 error: break statement in a continuing block must be the single "
               "statement of an if statement's true or false block, and that if "
               "statement must be the last statement of the continuing block\n"
@@ -1243,7 +1238,7 @@ TEST_F(ResolverValidationTest, NegativeStructMemberAlignAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: 'align' value must be a positive, power-of-two integer");
+    EXPECT_EQ(r()->error(), "12:34 error: @align value must be a positive, power-of-two integer");
 }
 
 TEST_F(ResolverValidationTest, NonPOTStructMemberAlignAttribute) {
@@ -1252,7 +1247,7 @@ TEST_F(ResolverValidationTest, NonPOTStructMemberAlignAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: 'align' value must be a positive, power-of-two integer");
+    EXPECT_EQ(r()->error(), "12:34 error: @align value must be a positive, power-of-two integer");
 }
 
 TEST_F(ResolverValidationTest, ZeroStructMemberAlignAttribute) {
@@ -1261,16 +1256,16 @@ TEST_F(ResolverValidationTest, ZeroStructMemberAlignAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: 'align' value must be a positive, power-of-two integer");
+    EXPECT_EQ(r()->error(), "12:34 error: @align value must be a positive, power-of-two integer");
 }
 
 TEST_F(ResolverValidationTest, ZeroStructMemberSizeAttribute) {
     Structure("S", utils::Vector{
-                       Member("a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, 0_a)}),
+                       Member("a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, 1_a)}),
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: size must be at least as big as the type's size (4)");
+    EXPECT_EQ(r()->error(), "12:34 error: @size must be at least as big as the type's size (4)");
 }
 
 TEST_F(ResolverValidationTest, OffsetAndSizeAttribute) {
@@ -1280,9 +1275,7 @@ TEST_F(ResolverValidationTest, OffsetAndSizeAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: offset attributes cannot be used with align or size "
-              "attributes");
+    EXPECT_EQ(r()->error(), "12:34 error: @offset cannot be used with @align or @size");
 }
 
 TEST_F(ResolverValidationTest, OffsetAndAlignAttribute) {
@@ -1292,9 +1285,7 @@ TEST_F(ResolverValidationTest, OffsetAndAlignAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: offset attributes cannot be used with align or size "
-              "attributes");
+    EXPECT_EQ(r()->error(), "12:34 error: @offset cannot be used with @align or @size");
 }
 
 TEST_F(ResolverValidationTest, OffsetAndAlignAndSizeAttribute) {
@@ -1304,12 +1295,10 @@ TEST_F(ResolverValidationTest, OffsetAndAlignAndSizeAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: offset attributes cannot be used with align or size "
-              "attributes");
+    EXPECT_EQ(r()->error(), "12:34 error: @offset cannot be used with @align or @size");
 }
 
-TEST_F(ResolverTest, Expr_Constructor_Cast_Pointer) {
+TEST_F(ResolverTest, Expr_Initializer_Cast_Pointer) {
     auto* vf = Var("vf", ty.f32());
     auto* c =
         Construct(Source{{12, 34}}, ty.pointer<i32>(ast::AddressSpace::kFunction), ExprList(vf));
@@ -1318,6 +1307,27 @@ TEST_F(ResolverTest, Expr_Constructor_Cast_Pointer) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "12:34 error: type is not constructible");
+}
+
+TEST_F(ResolverTest, I32_Overflow) {
+    GlobalVar("v", ty.i32(), ast::AddressSpace::kPrivate, Expr(Source{{12, 24}}, 2147483648_a));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:24 error: value 2147483648 cannot be represented as 'i32'");
+}
+
+TEST_F(ResolverTest, I32_Underflow) {
+    GlobalVar("v", ty.i32(), ast::AddressSpace::kPrivate, Expr(Source{{12, 24}}, -2147483649_a));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:24 error: value -2147483649 cannot be represented as 'i32'");
+}
+
+TEST_F(ResolverTest, U32_Overflow) {
+    GlobalVar("v", ty.u32(), ast::AddressSpace::kPrivate, Expr(Source{{12, 24}}, 4294967296_a));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:24 error: value 4294967296 cannot be represented as 'u32'");
 }
 
 }  // namespace

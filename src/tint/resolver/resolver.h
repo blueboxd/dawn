@@ -18,8 +18,6 @@
 #include <memory>
 #include <string>
 #include <tuple>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -69,7 +67,7 @@ class LoopStatement;
 class Statement;
 class StructMember;
 class SwitchStatement;
-class TypeConstructor;
+class TypeInitializer;
 class WhileStatement;
 }  // namespace tint::sem
 
@@ -208,8 +206,9 @@ class Resolver {
     sem::Statement* AssignmentStatement(const ast::AssignmentStatement*);
     sem::BlockStatement* BlockStatement(const ast::BlockStatement*);
     sem::Statement* BreakStatement(const ast::BreakStatement*);
+    sem::Statement* BreakIfStatement(const ast::BreakIfStatement*);
     sem::Statement* CallStatement(const ast::CallStatement*);
-    sem::CaseStatement* CaseStatement(const ast::CaseStatement*);
+    sem::CaseStatement* CaseStatement(const ast::CaseStatement*, const sem::Type*);
     sem::Statement* CompoundAssignmentStatement(const ast::CompoundAssignmentStatement*);
     sem::Statement* ContinueStatement(const ast::ContinueStatement*);
     sem::Statement* DiscardStatement(const ast::DiscardStatement*);
@@ -348,6 +347,10 @@ class Resolver {
     /// @param index the index of the parameter
     sem::Parameter* Parameter(const ast::Parameter* param, uint32_t index);
 
+    /// @returns the location value for a `@location` attribute, validating the value's range and
+    /// type.
+    utils::Result<uint32_t> LocationAttribute(const ast::LocationAttribute* attr);
+
     /// Records the address space usage for the given type, and any transient
     /// dependencies of the type. Validates that the type can be used for the
     /// given address space, erroring if it cannot.
@@ -375,11 +378,9 @@ class Resolver {
     /// * Assigns `sem` to #current_statement_
     /// * Assigns `sem` to #current_compound_statement_ if `sem` derives from
     ///   sem::CompoundStatement.
-    /// * Assigns `sem` to #current_block_ if `sem` derives from
-    ///   sem::BlockStatement.
     /// * Then calls `callback`.
-    /// * Before returning #current_statement_, #current_compound_statement_, and
-    ///   #current_block_ are restored to their original values.
+    /// * Before returning #current_statement_ and #current_compound_statement_ are restored to
+    /// their original values.
     /// @returns `sem` if `callback` returns true, otherwise `nullptr`.
     template <typename SEM, typename F>
     SEM* StatementScope(const ast::Statement* ast, SEM* sem, F&& callback);
@@ -403,15 +404,15 @@ class Resolver {
     /// @returns true if the symbol is the name of a builtin function.
     bool IsBuiltin(Symbol) const;
 
-    // ArrayConstructorSig represents a unique array constructor signature.
+    // ArrayInitializerSig represents a unique array initializer signature.
     // It is a tuple of the array type, number of arguments provided and earliest evaluation stage.
-    using ArrayConstructorSig =
+    using ArrayInitializerSig =
         utils::UnorderedKeyWrapper<std::tuple<const sem::Array*, size_t, sem::EvaluationStage>>;
 
-    // StructConstructorSig represents a unique structure constructor signature.
+    // StructInitializerSig represents a unique structure initializer signature.
     // It is a tuple of the structure type, number of arguments provided and earliest evaluation
     // stage.
-    using StructConstructorSig =
+    using StructInitializerSig =
         utils::UnorderedKeyWrapper<std::tuple<const sem::Struct*, size_t, sem::EvaluationStage>>;
 
     /// ExprEvalStageConstraint describes a constraint on when expressions can be evaluated.
@@ -431,17 +432,17 @@ class Resolver {
     SemHelper sem_;
     Validator validator_;
     ast::Extensions enabled_extensions_;
-    std::vector<sem::Function*> entry_points_;
-    std::unordered_map<const sem::Type*, const Source&> atomic_composite_info_;
+    utils::Vector<sem::Function*, 8> entry_points_;
+    utils::Hashmap<const sem::Type*, const Source*, 8> atomic_composite_info_;
     utils::Bitset<0> marked_;
     ExprEvalStageConstraint expr_eval_stage_constraint_;
-    std::unordered_map<OverrideId, const sem::Variable*> override_ids_;
-    std::unordered_map<ArrayConstructorSig, sem::CallTarget*> array_ctors_;
-    std::unordered_map<StructConstructorSig, sem::CallTarget*> struct_ctors_;
+    utils::Hashmap<OverrideId, const sem::Variable*, 8> override_ids_;
+    utils::Hashmap<ArrayInitializerSig, sem::CallTarget*, 8> array_inits_;
+    utils::Hashmap<StructInitializerSig, sem::CallTarget*, 8> struct_inits_;
     sem::Function* current_function_ = nullptr;
     sem::Statement* current_statement_ = nullptr;
     sem::CompoundStatement* current_compound_statement_ = nullptr;
-    sem::BlockStatement* current_block_ = nullptr;
+    uint32_t current_scoping_depth_ = 0;
 };
 
 }  // namespace tint::resolver

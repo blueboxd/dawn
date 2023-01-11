@@ -23,7 +23,11 @@ using MultiplanarExternalTextureTest = TransformTest;
 TEST_F(MultiplanarExternalTextureTest, ShouldRunEmptyModule) {
     auto* src = R"()";
 
-    EXPECT_FALSE(ShouldRun<MultiplanarExternalTexture>(src));
+    DataMap data;
+    data.Add<MultiplanarExternalTexture::NewBindingPoints>(
+        MultiplanarExternalTexture::BindingsMap{{{0, 0}, {{0, 1}, {0, 2}}}});
+
+    EXPECT_FALSE(ShouldRun<MultiplanarExternalTexture>(src, data));
 }
 
 TEST_F(MultiplanarExternalTextureTest, ShouldRunHasExternalTextureAlias) {
@@ -31,14 +35,22 @@ TEST_F(MultiplanarExternalTextureTest, ShouldRunHasExternalTextureAlias) {
 type ET = texture_external;
 )";
 
-    EXPECT_TRUE(ShouldRun<MultiplanarExternalTexture>(src));
+    DataMap data;
+    data.Add<MultiplanarExternalTexture::NewBindingPoints>(
+        MultiplanarExternalTexture::BindingsMap{{{0, 0}, {{0, 1}, {0, 2}}}});
+
+    EXPECT_TRUE(ShouldRun<MultiplanarExternalTexture>(src, data));
 }
 TEST_F(MultiplanarExternalTextureTest, ShouldRunHasExternalTextureGlobal) {
     auto* src = R"(
 @group(0) @binding(0) var ext_tex : texture_external;
 )";
 
-    EXPECT_TRUE(ShouldRun<MultiplanarExternalTexture>(src));
+    DataMap data;
+    data.Add<MultiplanarExternalTexture::NewBindingPoints>(
+        MultiplanarExternalTexture::BindingsMap{{{0, 0}, {{0, 1}, {0, 2}}}});
+
+    EXPECT_TRUE(ShouldRun<MultiplanarExternalTexture>(src, data));
 }
 
 TEST_F(MultiplanarExternalTextureTest, ShouldRunHasExternalTextureParam) {
@@ -46,7 +58,11 @@ TEST_F(MultiplanarExternalTextureTest, ShouldRunHasExternalTextureParam) {
 fn f(ext_tex : texture_external) {}
 )";
 
-    EXPECT_TRUE(ShouldRun<MultiplanarExternalTexture>(src));
+    DataMap data;
+    data.Add<MultiplanarExternalTexture::NewBindingPoints>(
+        MultiplanarExternalTexture::BindingsMap{{{0, 0}, {{0, 1}, {0, 2}}}});
+
+    EXPECT_TRUE(ShouldRun<MultiplanarExternalTexture>(src, data));
 }
 
 // Running the transform without passing in data for the new bindings should result in an error.
@@ -138,7 +154,7 @@ TEST_F(MultiplanarExternalTextureTest, Dimensions) {
 
 @fragment
 fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
-  var dim : vec2<i32>;
+  var dim : vec2<u32>;
   dim = textureDimensions(ext_tex);
   return vec4<f32>(0.0, 0.0, 0.0, 0.0);
 }
@@ -173,7 +189,7 @@ struct ExternalTextureParams {
 
 @fragment
 fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
-  var dim : vec2<i32>;
+  var dim : vec2<u32>;
   dim = textureDimensions(ext_tex);
   return vec4<f32>(0.0, 0.0, 0.0, 0.0);
 }
@@ -191,7 +207,7 @@ TEST_F(MultiplanarExternalTextureTest, Dimensions_OutOfOrder) {
     auto* src = R"(
 @fragment
 fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
-  var dim : vec2<i32>;
+  var dim : vec2<u32>;
   dim = textureDimensions(ext_tex);
   return vec4<f32>(0.0, 0.0, 0.0, 0.0);
 }
@@ -226,7 +242,7 @@ struct ExternalTextureParams {
 
 @fragment
 fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
-  var dim : vec2<i32>;
+  var dim : vec2<u32>;
   dim = textureDimensions(ext_tex);
   return vec4<f32>(0.0, 0.0, 0.0, 0.0);
 }
@@ -291,17 +307,17 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, coord, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, coord, 0.0f).r, textureSampleLevel(plane1, smp, coord, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, coord, 0).r, textureSampleLevel(plane1, smp, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 @fragment
@@ -373,17 +389,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 @fragment
@@ -445,17 +461,17 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, coord, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, coord, 0.0f).r, textureSampleLevel(plane1, smp, coord, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, coord, 0).r, textureSampleLevel(plane1, smp, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 @fragment
@@ -527,17 +543,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 @fragment
@@ -564,7 +580,9 @@ TEST_F(MultiplanarExternalTextureTest, BasicTextureLoad) {
 
 @fragment
 fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
-  return textureLoad(ext_tex, vec2<i32>(1, 1));
+  var val_signed = textureLoad(ext_tex, vec2<i32>(1));
+  var val_unsigned = textureLoad(ext_tex, vec2<u32>(1));
+  return val_signed + val_unsigned;
 }
 )";
 
@@ -604,22 +622,39 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 
 fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<i32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureLoad(plane0, coord, 0i).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0i).r, textureLoad(plane1, coord, 0i).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
+}
+
+fn textureLoadExternal_1(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<u32>, params : ExternalTextureParams) -> vec4<f32> {
+  var color : vec3<f32>;
+  if ((params.numPlanes == 1)) {
+    color = textureLoad(plane0, coord, 0).rgb;
+  } else {
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
+  }
+  if ((params.doYuvToRgbConversionOnly == 0)) {
+    color = gammaCorrection(color, params.gammaDecodeParams);
+    color = (params.gamutConversionMatrix * color);
+    color = gammaCorrection(color, params.gammaEncodeParams);
+  }
+  return vec4<f32>(color, 1);
 }
 
 @fragment
 fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
-  return textureLoadExternal(ext_tex, ext_tex_plane_1, vec2<i32>(1, 1), ext_tex_params);
+  var val_signed = textureLoadExternal(ext_tex, ext_tex_plane_1, vec2<i32>(1), ext_tex_params);
+  var val_unsigned = textureLoadExternal_1(ext_tex, ext_tex_plane_1, vec2<u32>(1), ext_tex_params);
+  return (val_signed + val_unsigned);
 }
 )";
 
@@ -635,7 +670,9 @@ TEST_F(MultiplanarExternalTextureTest, BasicTextureLoad_OutOfOrder) {
     auto* src = R"(
 @fragment
 fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
-  return textureLoad(ext_tex, vec2<i32>(1, 1));
+  var val_signed = textureLoad(ext_tex, vec2<i32>(1));
+  var val_unsigned = textureLoad(ext_tex, vec2<u32>(1));
+  return val_signed + val_unsigned;
 }
 
 @group(0) @binding(0) var ext_tex : texture_external;
@@ -675,22 +712,39 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 
 fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<i32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureLoad(plane0, coord, 0i).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0i).r, textureLoad(plane1, coord, 0i).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
+}
+
+fn textureLoadExternal_1(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<u32>, params : ExternalTextureParams) -> vec4<f32> {
+  var color : vec3<f32>;
+  if ((params.numPlanes == 1)) {
+    color = textureLoad(plane0, coord, 0).rgb;
+  } else {
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
+  }
+  if ((params.doYuvToRgbConversionOnly == 0)) {
+    color = gammaCorrection(color, params.gammaDecodeParams);
+    color = (params.gamutConversionMatrix * color);
+    color = gammaCorrection(color, params.gammaEncodeParams);
+  }
+  return vec4<f32>(color, 1);
 }
 
 @fragment
 fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
-  return textureLoadExternal(ext_tex, ext_tex_plane_1, vec2<i32>(1, 1), ext_tex_params);
+  var val_signed = textureLoadExternal(ext_tex, ext_tex_plane_1, vec2<i32>(1), ext_tex_params);
+  var val_unsigned = textureLoadExternal_1(ext_tex, ext_tex_plane_1, vec2<u32>(1), ext_tex_params);
+  return (val_signed + val_unsigned);
 }
 
 @group(0) @binding(0) var ext_tex : texture_2d<f32>;
@@ -753,32 +807,32 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, coord, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, coord, 0.0f).r, textureSampleLevel(plane1, smp, coord, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, coord, 0).r, textureSampleLevel(plane1, smp, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<i32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureLoad(plane0, coord, 0i).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0i).r, textureLoad(plane1, coord, 0i).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 @fragment
@@ -850,32 +904,32 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<i32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureLoad(plane0, coord, 0i).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0i).r, textureLoad(plane1, coord, 0i).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 @fragment
@@ -937,32 +991,32 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, coord, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, coord, 0.0f).r, textureSampleLevel(plane1, smp, coord, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, coord, 0).r, textureSampleLevel(plane1, smp, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<i32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureLoad(plane0, coord, 0i).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0i).r, textureLoad(plane1, coord, 0i).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 @fragment
@@ -1034,32 +1088,32 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<i32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureLoad(plane0, coord, 0i).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0i).r, textureLoad(plane1, coord, 0i).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 @fragment
@@ -1150,17 +1204,17 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, coord, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, coord, 0.0f).r, textureSampleLevel(plane1, smp, coord, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, coord, 0).r, textureSampleLevel(plane1, smp, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 @fragment
@@ -1260,17 +1314,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 @fragment
@@ -1347,17 +1401,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
@@ -1443,17 +1497,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
@@ -1529,17 +1583,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn f(s : sampler, t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams) {
@@ -1626,17 +1680,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_2 : texture_2d<f32>, ext_tex_params_2 : ExternalTextureParams, s : sampler, t2 : texture_2d<f32>, ext_tex_plane_1_3 : texture_2d<f32>, ext_tex_params_3 : ExternalTextureParams) {
@@ -1733,17 +1787,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_2 : texture_2d<f32>, ext_tex_params_2 : ExternalTextureParams, s : sampler, t2 : texture_2d<f32>, ext_tex_plane_1_3 : texture_2d<f32>, ext_tex_params_3 : ExternalTextureParams) {
@@ -1827,17 +1881,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn nested(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
@@ -1926,17 +1980,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn nested(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
@@ -1968,7 +2022,7 @@ fn main() {
 // even if there's no external texture declared at module scope.
 TEST_F(MultiplanarExternalTextureTest, ExternalTexturePassedAsParamWithoutGlobalDecl) {
     auto* src = R"(
-fn f(ext_tex : texture_external) -> vec2<i32> {
+fn f(ext_tex : texture_external) -> vec2<u32> {
   return textureDimensions(ext_tex);
 }
 )";
@@ -1994,7 +2048,7 @@ struct ExternalTextureParams {
   gamutConversionMatrix : mat3x3<f32>,
 }
 
-fn f(ext_tex : texture_2d<f32>, ext_tex_plane_1 : texture_2d<f32>, ext_tex_params : ExternalTextureParams) -> vec2<i32> {
+fn f(ext_tex : texture_2d<f32>, ext_tex_plane_1 : texture_2d<f32>, ext_tex_params : ExternalTextureParams) -> vec2<u32> {
   return textureDimensions(ext_tex);
 }
 )";
@@ -2066,17 +2120,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
@@ -2163,17 +2217,17 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
   let plane1_half_texel = (vec2<f32>(0.5) / plane1_dims);
   let plane1_clamped = clamp(coord, plane1_half_texel, (1 - plane1_half_texel));
   var color : vec3<f32>;
-  if ((params.numPlanes == 1u)) {
-    color = textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).rgb;
+  if ((params.numPlanes == 1)) {
+    color = textureSampleLevel(plane0, smp, plane0_clamped, 0).rgb;
   } else {
-    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0.0f).r, textureSampleLevel(plane1, smp, plane1_clamped, 0.0f).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureSampleLevel(plane0, smp, plane0_clamped, 0).r, textureSampleLevel(plane1, smp, plane1_clamped, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
-  if ((params.doYuvToRgbConversionOnly == 0u)) {
+  if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
     color = (params.gamutConversionMatrix * color);
     color = gammaCorrection(color, params.gammaEncodeParams);
   }
-  return vec4<f32>(color, 1.0f);
+  return vec4<f32>(color, 1);
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {

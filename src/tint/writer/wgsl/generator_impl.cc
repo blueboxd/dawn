@@ -50,6 +50,7 @@
 #include "src/tint/ast/void.h"
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/sem/struct.h"
+#include "src/tint/sem/switch_statement.h"
 #include "src/tint/utils/math.h"
 #include "src/tint/utils/scoped_assignment.h"
 #include "src/tint/writer/float_to_string.h"
@@ -701,9 +702,9 @@ bool GeneratorImpl::EmitVariable(std::ostream& out, const ast::Variable* v) {
         }
     }
 
-    if (v->constructor != nullptr) {
+    if (v->initializer != nullptr) {
         out << " = ";
-        if (!EmitExpression(out, v->constructor)) {
+        if (!EmitExpression(out, v->initializer)) {
             return false;
         }
     }
@@ -957,6 +958,7 @@ bool GeneratorImpl::EmitStatement(const ast::Statement* stmt) {
         [&](const ast::AssignmentStatement* a) { return EmitAssign(a); },
         [&](const ast::BlockStatement* b) { return EmitBlock(b); },
         [&](const ast::BreakStatement* b) { return EmitBreak(b); },
+        [&](const ast::BreakIfStatement* b) { return EmitBreakIf(b); },
         [&](const ast::CallStatement* c) {
             auto out = line();
             if (!EmitCall(out, c->expr)) {
@@ -1022,27 +1024,40 @@ bool GeneratorImpl::EmitBreak(const ast::BreakStatement*) {
     return true;
 }
 
+bool GeneratorImpl::EmitBreakIf(const ast::BreakIfStatement* b) {
+    auto out = line();
+
+    out << "break if ";
+    if (!EmitExpression(out, b->condition)) {
+        return false;
+    }
+    out << ";";
+    return true;
+}
+
 bool GeneratorImpl::EmitCase(const ast::CaseStatement* stmt) {
-    if (stmt->IsDefault()) {
+    if (stmt->selectors.Length() == 1 && stmt->ContainsDefault()) {
         line() << "default: {";
     } else {
         auto out = line();
         out << "case ";
 
         bool first = true;
-        for (auto* selector : stmt->selectors) {
+        for (auto* sel : stmt->selectors) {
             if (!first) {
                 out << ", ";
             }
 
             first = false;
-            if (!EmitLiteral(out, selector)) {
+
+            if (sel->IsDefault()) {
+                out << "default";
+            } else if (!EmitExpression(out, sel->expr)) {
                 return false;
             }
         }
         out << ": {";
     }
-
     if (!EmitStatementsWithIndent(stmt->body->statements)) {
         return false;
     }

@@ -112,7 +112,7 @@ TEST_F(ResolverTest, Stmt_Case) {
 
     auto* assign = Assign(lhs, rhs);
     auto* block = Block(assign);
-    auto* sel = Expr(3_i);
+    auto* sel = CaseSelector(3_i);
     auto* cse = Case(sel, block);
     auto* def = DefaultCase();
     auto* cond_var = Var("c", ty.i32());
@@ -132,9 +132,15 @@ TEST_F(ResolverTest, Stmt_Case) {
     ASSERT_EQ(sem->Cases().size(), 2u);
     EXPECT_EQ(sem->Cases()[0]->Declaration(), cse);
     ASSERT_EQ(sem->Cases()[0]->Selectors().size(), 1u);
-    EXPECT_EQ(sem->Cases()[0]->Selectors()[0]->Declaration(), sel);
-    EXPECT_EQ(sem->Cases()[1]->Declaration(), def);
-    EXPECT_EQ(sem->Cases()[1]->Selectors().size(), 0u);
+    EXPECT_EQ(sem->Cases()[1]->Selectors().size(), 1u);
+}
+
+TEST_F(ResolverTest, Stmt_Case_AddressOf_Invalid) {
+    auto* cond_var = Var("i", ty.i32());
+    WrapInFunction(cond_var, Switch("i", Case(CaseSelector(AddressOf(1_a)), Block())));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "error: cannot take the address of expression");
 }
 
 TEST_F(ResolverTest, Stmt_Block) {
@@ -209,7 +215,8 @@ TEST_F(ResolverTest, Stmt_Loop) {
     auto* continuing_lhs = Expr("v");
     auto* continuing_rhs = Expr(2.3_f);
 
-    auto* continuing = Block(Assign(continuing_lhs, continuing_rhs));
+    auto* break_if = BreakIf(false);
+    auto* continuing = Block(Assign(continuing_lhs, continuing_rhs), break_if);
     auto* stmt = Loop(body, continuing);
     WrapInFunction(v, stmt);
 
@@ -227,6 +234,7 @@ TEST_F(ResolverTest, Stmt_Loop) {
     EXPECT_EQ(BlockOf(body_rhs), body);
     EXPECT_EQ(BlockOf(continuing_lhs), continuing);
     EXPECT_EQ(BlockOf(continuing_rhs), continuing);
+    EXPECT_EQ(BlockOf(break_if), continuing);
 }
 
 TEST_F(ResolverTest, Stmt_Return) {
@@ -253,7 +261,7 @@ TEST_F(ResolverTest, Stmt_Switch) {
     auto* lhs = Expr("v");
     auto* rhs = Expr(2.3_f);
     auto* case_block = Block(Assign(lhs, rhs));
-    auto* stmt = Switch(Expr(2_i), Case(Expr(3_i), case_block), DefaultCase());
+    auto* stmt = Switch(Expr(2_i), Case(CaseSelector(3_i), case_block), DefaultCase());
     WrapInFunction(v, stmt);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -289,7 +297,7 @@ TEST_F(ResolverTest, Stmt_Call) {
 
 TEST_F(ResolverTest, Stmt_VariableDecl) {
     auto* var = Var("my_var", ty.i32(), Expr(2_i));
-    auto* init = var->constructor;
+    auto* init = var->initializer;
 
     auto* decl = Decl(var);
     WrapInFunction(decl);
@@ -303,7 +311,7 @@ TEST_F(ResolverTest, Stmt_VariableDecl) {
 TEST_F(ResolverTest, Stmt_VariableDecl_Alias) {
     auto* my_int = Alias("MyInt", ty.i32());
     auto* var = Var("my_var", ty.Of(my_int), Expr(2_i));
-    auto* init = var->constructor;
+    auto* init = var->initializer;
 
     auto* decl = Decl(var);
     WrapInFunction(decl);
@@ -337,24 +345,24 @@ TEST_F(ResolverTest, Stmt_VariableDecl_OuterScopeAfterInnerScope) {
 
     // Declare i32 "foo" inside a block
     auto* foo_i32 = Var("foo", ty.i32(), Expr(2_i));
-    auto* foo_i32_init = foo_i32->constructor;
+    auto* foo_i32_init = foo_i32->initializer;
     auto* foo_i32_decl = Decl(foo_i32);
 
     // Reference "foo" inside the block
     auto* bar_i32 = Var("bar", ty.i32(), Expr("foo"));
-    auto* bar_i32_init = bar_i32->constructor;
+    auto* bar_i32_init = bar_i32->initializer;
     auto* bar_i32_decl = Decl(bar_i32);
 
     auto* inner = Block(foo_i32_decl, bar_i32_decl);
 
     // Declare f32 "foo" at function scope
     auto* foo_f32 = Var("foo", ty.f32(), Expr(2_f));
-    auto* foo_f32_init = foo_f32->constructor;
+    auto* foo_f32_init = foo_f32->initializer;
     auto* foo_f32_decl = Decl(foo_f32);
 
     // Reference "foo" at function scope
     auto* bar_f32 = Var("bar", ty.f32(), Expr("foo"));
-    auto* bar_f32_init = bar_f32->constructor;
+    auto* bar_f32_init = bar_f32->initializer;
     auto* bar_f32_decl = Decl(bar_f32);
 
     Func("func", utils::Empty, ty.void_(), utils::Vector{inner, foo_f32_decl, bar_f32_decl});
@@ -372,12 +380,12 @@ TEST_F(ResolverTest, Stmt_VariableDecl_OuterScopeAfterInnerScope) {
     EXPECT_EQ(StmtOf(bar_i32_init), bar_i32_decl);
     EXPECT_EQ(StmtOf(foo_f32_init), foo_f32_decl);
     EXPECT_EQ(StmtOf(bar_f32_init), bar_f32_decl);
-    EXPECT_TRUE(CheckVarUsers(foo_i32, utils::Vector{bar_i32->constructor}));
-    EXPECT_TRUE(CheckVarUsers(foo_f32, utils::Vector{bar_f32->constructor}));
-    ASSERT_NE(VarOf(bar_i32->constructor), nullptr);
-    EXPECT_EQ(VarOf(bar_i32->constructor)->Declaration(), foo_i32);
-    ASSERT_NE(VarOf(bar_f32->constructor), nullptr);
-    EXPECT_EQ(VarOf(bar_f32->constructor)->Declaration(), foo_f32);
+    EXPECT_TRUE(CheckVarUsers(foo_i32, utils::Vector{bar_i32->initializer}));
+    EXPECT_TRUE(CheckVarUsers(foo_f32, utils::Vector{bar_f32->initializer}));
+    ASSERT_NE(VarOf(bar_i32->initializer), nullptr);
+    EXPECT_EQ(VarOf(bar_i32->initializer)->Declaration(), foo_i32);
+    ASSERT_NE(VarOf(bar_f32->initializer), nullptr);
+    EXPECT_EQ(VarOf(bar_f32->initializer)->Declaration(), foo_f32);
 }
 
 TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScopeAfterFunctionScope) {
@@ -391,18 +399,18 @@ TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScopeAfterFunctionScope) {
 
     // Declare i32 "foo" inside a function
     auto* fn_i32 = Var("foo", ty.i32(), Expr(2_i));
-    auto* fn_i32_init = fn_i32->constructor;
+    auto* fn_i32_init = fn_i32->initializer;
     auto* fn_i32_decl = Decl(fn_i32);
     Func("func_i32", utils::Empty, ty.void_(), utils::Vector{fn_i32_decl});
 
     // Declare f32 "foo" at module scope
     auto* mod_f32 = Var("foo", ty.f32(), ast::AddressSpace::kPrivate, Expr(2_f));
-    auto* mod_init = mod_f32->constructor;
+    auto* mod_init = mod_f32->initializer;
     AST().AddGlobalVariable(mod_f32);
 
     // Reference "foo" in another function
     auto* fn_f32 = Var("bar", ty.f32(), Expr("foo"));
-    auto* fn_f32_init = fn_f32->constructor;
+    auto* fn_f32_init = fn_f32->initializer;
     auto* fn_f32_decl = Decl(fn_f32);
     Func("func_f32", utils::Empty, ty.void_(), utils::Vector{fn_f32_decl});
 
@@ -417,9 +425,9 @@ TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScopeAfterFunctionScope) {
     EXPECT_EQ(StmtOf(mod_init), nullptr);
     EXPECT_EQ(StmtOf(fn_f32_init), fn_f32_decl);
     EXPECT_TRUE(CheckVarUsers(fn_i32, utils::Empty));
-    EXPECT_TRUE(CheckVarUsers(mod_f32, utils::Vector{fn_f32->constructor}));
-    ASSERT_NE(VarOf(fn_f32->constructor), nullptr);
-    EXPECT_EQ(VarOf(fn_f32->constructor)->Declaration(), mod_f32);
+    EXPECT_TRUE(CheckVarUsers(mod_f32, utils::Vector{fn_f32->initializer}));
+    ASSERT_NE(VarOf(fn_f32->initializer), nullptr);
+    EXPECT_EQ(VarOf(fn_f32->initializer)->Declaration(), mod_f32);
 }
 
 TEST_F(ResolverTest, ArraySize_UnsignedLiteral) {
@@ -478,8 +486,8 @@ TEST_F(ResolverTest, ArraySize_SignedConst) {
     EXPECT_EQ(ary->Count(), sem::ConstantArrayCount{10u});
 }
 
-TEST_F(ResolverTest, ArraySize_Override) {
-    // override size = 0;
+TEST_F(ResolverTest, ArraySize_NamedOverride) {
+    // override size = 10i;
     // var<workgroup> a : array<f32, size>;
     auto* override = Override("size", Expr(10_i));
     auto* a = GlobalVar("a", ty.array(ty.f32(), Expr("size")), ast::AddressSpace::kWorkgroup);
@@ -492,11 +500,11 @@ TEST_F(ResolverTest, ArraySize_Override) {
     auto* ary = ref->StoreType()->As<sem::Array>();
     auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
     ASSERT_NE(sem_override, nullptr);
-    EXPECT_EQ(ary->Count(), sem::OverrideArrayCount{sem_override});
+    EXPECT_EQ(ary->Count(), sem::NamedOverrideArrayCount{sem_override});
 }
 
-TEST_F(ResolverTest, ArraySize_Override_Equivalence) {
-    // override size = 0;
+TEST_F(ResolverTest, ArraySize_NamedOverride_Equivalence) {
+    // override size = 10i;
     // var<workgroup> a : array<f32, size>;
     // var<workgroup> b : array<f32, size>;
     auto* override = Override("size", Expr(10_i));
@@ -517,9 +525,56 @@ TEST_F(ResolverTest, ArraySize_Override_Equivalence) {
 
     auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
     ASSERT_NE(sem_override, nullptr);
-    EXPECT_EQ(ary_a->Count(), sem::OverrideArrayCount{sem_override});
-    EXPECT_EQ(ary_b->Count(), sem::OverrideArrayCount{sem_override});
+    EXPECT_EQ(ary_a->Count(), sem::NamedOverrideArrayCount{sem_override});
+    EXPECT_EQ(ary_b->Count(), sem::NamedOverrideArrayCount{sem_override});
     EXPECT_EQ(ary_a, ary_b);
+}
+
+TEST_F(ResolverTest, ArraySize_UnnamedOverride) {
+    // override size = 10i;
+    // var<workgroup> a : array<f32, size*2>;
+    auto* override = Override("size", Expr(10_i));
+    auto* cnt = Mul("size", 2_a);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), cnt), ast::AddressSpace::kWorkgroup);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    ASSERT_NE(TypeOf(a), nullptr);
+    auto* ref = TypeOf(a)->As<sem::Reference>();
+    ASSERT_NE(ref, nullptr);
+    auto* ary = ref->StoreType()->As<sem::Array>();
+    auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
+    ASSERT_NE(sem_override, nullptr);
+    EXPECT_EQ(ary->Count(), sem::UnnamedOverrideArrayCount{Sem().Get(cnt)});
+}
+
+TEST_F(ResolverTest, ArraySize_UnamedOverride_Equivalence) {
+    // override size = 10i;
+    // var<workgroup> a : array<f32, size>;
+    // var<workgroup> b : array<f32, size>;
+    auto* override = Override("size", Expr(10_i));
+    auto* a_cnt = Mul("size", 2_a);
+    auto* b_cnt = Mul("size", 2_a);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), a_cnt), ast::AddressSpace::kWorkgroup);
+    auto* b = GlobalVar("b", ty.array(ty.f32(), b_cnt), ast::AddressSpace::kWorkgroup);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    ASSERT_NE(TypeOf(a), nullptr);
+    auto* ref_a = TypeOf(a)->As<sem::Reference>();
+    ASSERT_NE(ref_a, nullptr);
+    auto* ary_a = ref_a->StoreType()->As<sem::Array>();
+
+    ASSERT_NE(TypeOf(b), nullptr);
+    auto* ref_b = TypeOf(b)->As<sem::Reference>();
+    ASSERT_NE(ref_b, nullptr);
+    auto* ary_b = ref_b->StoreType()->As<sem::Array>();
+
+    auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
+    ASSERT_NE(sem_override, nullptr);
+    EXPECT_EQ(ary_a->Count(), sem::UnnamedOverrideArrayCount{Sem().Get(a_cnt)});
+    EXPECT_EQ(ary_b->Count(), sem::UnnamedOverrideArrayCount{Sem().Get(b_cnt)});
+    EXPECT_NE(ary_a, ary_b);
 }
 
 TEST_F(ResolverTest, Expr_Bitcast) {
@@ -597,7 +652,7 @@ TEST_F(ResolverTest, Expr_Cast) {
     EXPECT_TRUE(TypeOf(cast)->Is<sem::F32>());
 }
 
-TEST_F(ResolverTest, Expr_Constructor_Scalar) {
+TEST_F(ResolverTest, Expr_Initializer_Scalar) {
     auto* s = Expr(1_f);
     WrapInFunction(s);
 
@@ -607,7 +662,7 @@ TEST_F(ResolverTest, Expr_Constructor_Scalar) {
     EXPECT_TRUE(TypeOf(s)->Is<sem::F32>());
 }
 
-TEST_F(ResolverTest, Expr_Constructor_Type_Vec2) {
+TEST_F(ResolverTest, Expr_Initializer_Type_Vec2) {
     auto* tc = vec2<f32>(1_f, 1_f);
     WrapInFunction(tc);
 
@@ -619,7 +674,7 @@ TEST_F(ResolverTest, Expr_Constructor_Type_Vec2) {
     EXPECT_EQ(TypeOf(tc)->As<sem::Vector>()->Width(), 2u);
 }
 
-TEST_F(ResolverTest, Expr_Constructor_Type_Vec3) {
+TEST_F(ResolverTest, Expr_Initializer_Type_Vec3) {
     auto* tc = vec3<f32>(1_f, 1_f, 1_f);
     WrapInFunction(tc);
 
@@ -631,7 +686,7 @@ TEST_F(ResolverTest, Expr_Constructor_Type_Vec3) {
     EXPECT_EQ(TypeOf(tc)->As<sem::Vector>()->Width(), 3u);
 }
 
-TEST_F(ResolverTest, Expr_Constructor_Type_Vec4) {
+TEST_F(ResolverTest, Expr_Initializer_Type_Vec4) {
     auto* tc = vec4<f32>(1_f, 1_f, 1_f, 1_f);
     WrapInFunction(tc);
 
@@ -2322,6 +2377,48 @@ TEST_F(ResolverTest, Literal_F16WithExtension) {
 
     EXPECT_TRUE(r()->Resolve());
 }
+
+// Windows debug builds have significantly smaller stack than other builds, and these tests will
+// stack overflow.
+#if !defined(NDEBUG)
+
+TEST_F(ResolverTest, ScopeDepth_NestedBlocks) {
+    const ast::Statement* stmt = Return();
+    for (size_t i = 0; i < 150; i++) {
+        stmt = Block(Source{{i, 1}}, stmt);
+    }
+    WrapInFunction(stmt);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "23:1 error: statement nesting depth / chaining length exceeds limit of 127");
+}
+
+TEST_F(ResolverTest, ScopeDepth_NestedIf) {
+    const ast::Statement* stmt = Return();
+    for (size_t i = 0; i < 150; i++) {
+        stmt = If(Source{{i, 1}}, false, Block(Source{{i, 2}}, stmt));
+    }
+    WrapInFunction(stmt);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "86:1 error: statement nesting depth / chaining length exceeds limit of 127");
+}
+
+TEST_F(ResolverTest, ScopeDepth_IfElseChain) {
+    const ast::Statement* stmt = nullptr;
+    for (size_t i = 0; i < 150; i++) {
+        stmt = If(Source{{i, 1}}, false, Block(Source{{i, 2}}), Else(stmt));
+    }
+    WrapInFunction(stmt);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "24:2 error: statement nesting depth / chaining length exceeds limit of 127");
+}
+
+#endif  // !defined(NDEBUG)
 
 }  // namespace
 }  // namespace tint::resolver

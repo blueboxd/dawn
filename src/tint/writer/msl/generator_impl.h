@@ -48,7 +48,7 @@ namespace tint::sem {
 class Call;
 class Constant;
 class Builtin;
-class TypeConstructor;
+class TypeInitializer;
 class TypeConversion;
 }  // namespace tint::sem
 
@@ -129,6 +129,10 @@ class GeneratorImpl : public TextGenerator {
     /// @param stmt the statement to emit
     /// @returns true if the statement was emitted successfully
     bool EmitBreak(const ast::BreakStatement* stmt);
+    /// Handles a break-if statement
+    /// @param stmt the statement to emit
+    /// @returns true if the statement was emitted successfully
+    bool EmitBreakIf(const ast::BreakIfStatement* stmt);
     /// Handles generating a call expression
     /// @param out the output of the expression stream
     /// @param expr the call expression
@@ -148,14 +152,14 @@ class GeneratorImpl : public TextGenerator {
     bool EmitTypeConversion(std::ostream& out,
                             const sem::Call* call,
                             const sem::TypeConversion* conv);
-    /// Handles generating a type constructor
+    /// Handles generating a type initializer
     /// @param out the output of the expression stream
     /// @param call the call expression
-    /// @param ctor the type constructor
-    /// @returns true if the constructor is emitted
-    bool EmitTypeConstructor(std::ostream& out,
+    /// @param ctor the type initializer
+    /// @returns true if the initializer is emitted
+    bool EmitTypeInitializer(std::ostream& out,
                              const sem::Call* call,
-                             const sem::TypeConstructor* ctor);
+                             const sem::TypeInitializer* ctor);
     /// Handles generating a function call
     /// @param out the output of the expression stream
     /// @param call the call expression
@@ -324,14 +328,6 @@ class GeneratorImpl : public TextGenerator {
     /// @param sc the address space to generate
     /// @returns true if the address space is emitted
     bool EmitAddressSpace(std::ostream& out, ast::AddressSpace sc);
-    /// Handles generating an MSL-packed storage type.
-    /// If the type does not have a packed form, the standard non-packed form is
-    /// emitted.
-    /// @param out the output of the type stream
-    /// @param type the type to generate
-    /// @param name the name of the variable, only used for array emission
-    /// @returns true if the type is emitted
-    bool EmitPackedType(std::ostream& out, const sem::Type* type, const std::string& name);
     /// Handles generating a struct declaration
     /// @param buffer the text buffer that the type declaration will be written to
     /// @param str the struct to generate
@@ -427,8 +423,8 @@ class GeneratorImpl : public TextGenerator {
     /// Non-empty only if an invariant attribute has been generated.
     std::string invariant_define_name_;
 
-    /// True if matrix-packed_vector operator overloads have been generated.
-    bool matrix_packed_vector_overloads_ = false;
+    /// The generated name for the packed vec3 type.
+    std::string packed_vec3_ty_;
 
     /// Unique name of the tint_array<T, N> template.
     /// Non-empty only if the template has been generated.

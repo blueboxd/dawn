@@ -21,6 +21,7 @@
 
 #include "dawn/common/Alloc.h"
 #include "dawn/common/Assert.h"
+#include "dawn/native/CallbackTaskManager.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/DynamicUploader.h"
@@ -34,15 +35,20 @@
 namespace dawn::native {
 
 namespace {
-struct MapRequestTask : QueueBase::TaskInFlight {
-    MapRequestTask(Ref<BufferBase> buffer, MapRequestID id) : buffer(std::move(buffer)), id(id) {}
-    void Finish(dawn::platform::Platform* platform, ExecutionSerial serial) override {
-        TRACE_EVENT1(platform, General, "Buffer::TaskInFlight::Finished", "serial",
-                     uint64_t(serial));
+struct MapRequestTask : TrackTaskCallback {
+    MapRequestTask(dawn::platform::Platform* platform, Ref<BufferBase> buffer, MapRequestID id)
+        : TrackTaskCallback(platform), buffer(std::move(buffer)), id(id) {}
+    void Finish() override {
+        ASSERT(mSerial != kMaxExecutionSerial);
+        TRACE_EVENT1(mPlatform, General, "Buffer::TaskInFlight::Finished", "serial",
+                     uint64_t(mSerial));
         buffer->OnMapRequestCompleted(id, WGPUBufferMapAsyncStatus_Success);
     }
     void HandleDeviceLoss() override {
         buffer->OnMapRequestCompleted(id, WGPUBufferMapAsyncStatus_DeviceLost);
+    }
+    void HandleShutDown() override {
+        buffer->OnMapRequestCompleted(id, WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
     }
     ~MapRequestTask() override = default;
 
@@ -353,10 +359,11 @@ void BufferBase::APIMapAsync(wgpu::MapMode mode,
         CallMapCallback(mLastMapID, WGPUBufferMapAsyncStatus_DeviceLost);
         return;
     }
-    std::unique_ptr<MapRequestTask> request = std::make_unique<MapRequestTask>(this, mLastMapID);
+    std::unique_ptr<MapRequestTask> request =
+        std::make_unique<MapRequestTask>(GetDevice()->GetPlatform(), this, mLastMapID);
     TRACE_EVENT1(GetDevice()->GetPlatform(), General, "Buffer::APIMapAsync", "serial",
                  uint64_t(GetDevice()->GetPendingCommandSerial()));
-    GetDevice()->GetQueue()->TrackTask(std::move(request), GetDevice()->GetPendingCommandSerial());
+    GetDevice()->GetQueue()->TrackTask(std::move(request));
 }
 
 void* BufferBase::APIGetMappedRange(size_t offset, size_t size) {
@@ -532,19 +539,7 @@ bool BufferBase::CanGetMappedRange(bool writable, size_t offset, size_t size) co
 
 MaybeError BufferBase::ValidateUnmap() const {
     DAWN_TRY(GetDevice()->ValidateIsAlive());
-
-    switch (mState) {
-        case BufferState::Mapped:
-        case BufferState::MappedAtCreation:
-            // A buffer may be in the Mapped state if it was created with mappedAtCreation
-            // even if it did not have a mappable usage.
-            return {};
-        case BufferState::Unmapped:
-            return DAWN_VALIDATION_ERROR("%s is unmapped.", this);
-        case BufferState::Destroyed:
-            return DAWN_VALIDATION_ERROR("%s is destroyed.", this);
-    }
-    UNREACHABLE();
+    return {};
 }
 
 void BufferBase::OnMapRequestCompleted(MapRequestID mapID, WGPUBufferMapAsyncStatus status) {

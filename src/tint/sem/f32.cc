@@ -20,7 +20,12 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::F32);
 
 namespace tint::sem {
 
-F32::F32() = default;
+F32::F32()
+    : Base(TypeFlags{
+          Flag::kConstructable,
+          Flag::kCreationFixedFootprint,
+          Flag::kFixedFootprint,
+      }) {}
 
 F32::F32(F32&&) = default;
 
@@ -36,10 +41,6 @@ bool F32::Equals(const Type& other) const {
 
 std::string F32::FriendlyName(const SymbolTable&) const {
     return "f32";
-}
-
-bool F32::IsConstructible() const {
-    return true;
 }
 
 uint32_t F32::Size() const {

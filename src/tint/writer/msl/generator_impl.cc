@@ -52,8 +52,9 @@
 #include "src/tint/sem/sampled_texture.h"
 #include "src/tint/sem/storage_texture.h"
 #include "src/tint/sem/struct.h"
-#include "src/tint/sem/type_constructor.h"
+#include "src/tint/sem/switch_statement.h"
 #include "src/tint/sem/type_conversion.h"
+#include "src/tint/sem/type_initializer.h"
 #include "src/tint/sem/u32.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/sem/vector.h"
@@ -61,21 +62,23 @@
 #include "src/tint/transform/array_length_from_uniform.h"
 #include "src/tint/transform/builtin_polyfill.h"
 #include "src/tint/transform/canonicalize_entry_point_io.h"
+#include "src/tint/transform/demote_to_helper.h"
 #include "src/tint/transform/disable_uniformity_analysis.h"
 #include "src/tint/transform/expand_compound_assignment.h"
 #include "src/tint/transform/manager.h"
 #include "src/tint/transform/module_scope_var_to_entry_point_param.h"
+#include "src/tint/transform/packed_vec3.h"
 #include "src/tint/transform/promote_initializers_to_let.h"
 #include "src/tint/transform/promote_side_effects_to_decl.h"
 #include "src/tint/transform/remove_phonies.h"
 #include "src/tint/transform/simplify_pointers.h"
 #include "src/tint/transform/unshadow.h"
-#include "src/tint/transform/unwind_discard_functions.h"
-#include "src/tint/transform/vectorize_scalar_matrix_constructors.h"
+#include "src/tint/transform/vectorize_scalar_matrix_initializers.h"
 #include "src/tint/transform/zero_init_workgroup_memory.h"
 #include "src/tint/utils/defer.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/scoped_assignment.h"
+#include "src/tint/writer/check_supported_extensions.h"
 #include "src/tint/writer/float_to_string.h"
 #include "src/tint/writer/generate_external_texture_bindings.h"
 
@@ -152,32 +155,6 @@ class ScopedBitCast {
     std::ostream& s;
 };
 
-class ScopedCast {
-  public:
-    ScopedCast(GeneratorImpl* generator,
-               std::ostream& stream,
-               const sem::Type* curr_type,
-               const sem::Type* target_type)
-        : s(stream) {
-        auto* target_vec_type = target_type->As<sem::Vector>();
-
-        // If we need to promote from scalar to vector, cast the scalar to the
-        // vector element type.
-        if (curr_type->is_scalar() && target_vec_type) {
-            target_type = target_vec_type->type();
-        }
-
-        // Cast
-        generator->EmitType(s, target_type, "");
-        s << "(";
-    }
-
-    ~ScopedCast() { s << ")"; }
-
-  private:
-    std::ostream& s;
-};
-
 }  // namespace
 
 SanitizedResult::SanitizedResult() = default;
@@ -190,14 +167,20 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
 
     manager.Add<transform::DisableUniformityAnalysis>();
 
+    // ExpandCompoundAssignment must come before BuiltinPolyfill
+    manager.Add<transform::ExpandCompoundAssignment>();
+
     {  // Builtin polyfills
         transform::BuiltinPolyfill::Builtins polyfills;
         polyfills.acosh = transform::BuiltinPolyfill::Level::kRangeCheck;
         polyfills.atanh = transform::BuiltinPolyfill::Level::kRangeCheck;
+        polyfills.bitshift_modulo = true;  // crbug.com/tint/1543
+        polyfills.clamp_int = true;
         polyfills.extract_bits = transform::BuiltinPolyfill::Level::kClampParameters;
         polyfills.first_leading_bit = true;
         polyfills.first_trailing_bit = true;
         polyfills.insert_bits = transform::BuiltinPolyfill::Level::kClampParameters;
+        polyfills.int_div_mod = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         data.Add<transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<transform::BuiltinPolyfill>();
@@ -245,18 +228,21 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         manager.Add<transform::ZeroInitWorkgroupMemory>();
     }
     manager.Add<transform::CanonicalizeEntryPointIO>();
-    manager.Add<transform::ExpandCompoundAssignment>();
     manager.Add<transform::PromoteSideEffectsToDecl>();
-    manager.Add<transform::UnwindDiscardFunctions>();
     manager.Add<transform::PromoteInitializersToLet>();
 
-    manager.Add<transform::VectorizeScalarMatrixConstructors>();
+    // DemoteToHelper must come after PromoteSideEffectsToDecl and ExpandCompoundAssignment.
+    // TODO(crbug.com/tint/1752): This is only necessary for Metal versions older than 2.3.
+    manager.Add<transform::DemoteToHelper>();
+
+    manager.Add<transform::VectorizeScalarMatrixInitializers>();
     manager.Add<transform::RemovePhonies>();
     manager.Add<transform::SimplifyPointers>();
     // ArrayLengthFromUniform must come after SimplifyPointers, as
     // it assumes that the form of the array length argument is &var.array.
     manager.Add<transform::ArrayLengthFromUniform>();
     manager.Add<transform::ModuleScopeVarToEntryPointParam>();
+    manager.Add<transform::PackedVec3>();
     data.Add<transform::ArrayLengthFromUniform::Config>(std::move(array_length_from_uniform_cfg));
     data.Add<transform::CanonicalizeEntryPointIO::Config>(std::move(entry_point_io_cfg));
     auto out = manager.Run(in, data);
@@ -278,6 +264,15 @@ GeneratorImpl::GeneratorImpl(const Program* program) : TextGenerator(program) {}
 GeneratorImpl::~GeneratorImpl() = default;
 
 bool GeneratorImpl::Generate() {
+    if (!CheckSupportedExtensions("MSL", program_->AST(), diagnostics_,
+                                  utils::Vector{
+                                      ast::Extension::kChromiumDisableUniformityAnalysis,
+                                      ast::Extension::kChromiumExperimentalPushConstant,
+                                      ast::Extension::kF16,
+                                  })) {
+        return false;
+    }
+
     line() << "#include <metal_stdlib>";
     line();
     line() << "using namespace metal;";
@@ -543,18 +538,8 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
         ScopedParen sp(out);
         {
             ScopedBitCast lhs_uint_cast(this, out, lhs_type, unsigned_type_of(target_type));
-
-            // In case the type is packed, cast to our own type in order to remove the packing.
-            // Otherwise, this just casts to itself.
-            if (lhs_type->is_signed_integer_vector()) {
-                ScopedCast lhs_self_cast(this, out, lhs_type, lhs_type);
-                if (!EmitExpression(out, expr->lhs)) {
-                    return false;
-                }
-            } else {
-                if (!EmitExpression(out, expr->lhs)) {
-                    return false;
-                }
+            if (!EmitExpression(out, expr->lhs)) {
+                return false;
             }
         }
         if (!emit_op()) {
@@ -562,18 +547,8 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
         }
         {
             ScopedBitCast rhs_uint_cast(this, out, rhs_type, unsigned_type_of(target_type));
-
-            // In case the type is packed, cast to our own type in order to remove the packing.
-            // Otherwise, this just casts to itself.
-            if (rhs_type->is_signed_integer_vector()) {
-                ScopedCast rhs_self_cast(this, out, rhs_type, rhs_type);
-                if (!EmitExpression(out, expr->rhs)) {
-                    return false;
-                }
-            } else {
-                if (!EmitExpression(out, expr->rhs)) {
-                    return false;
-                }
+            if (!EmitExpression(out, expr->rhs)) {
+                return false;
             }
         }
         return true;
@@ -590,18 +565,8 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
         ScopedParen sp(out);
         {
             ScopedBitCast lhs_uint_cast(this, out, lhs_type, unsigned_type_of(lhs_type));
-
-            // In case the type is packed, cast to our own type in order to remove the packing.
-            // Otherwise, this just casts to itself.
-            if (lhs_type->is_signed_integer_vector()) {
-                ScopedCast lhs_self_cast(this, out, lhs_type, lhs_type);
-                if (!EmitExpression(out, expr->lhs)) {
-                    return false;
-                }
-            } else {
-                if (!EmitExpression(out, expr->lhs)) {
-                    return false;
-                }
+            if (!EmitExpression(out, expr->lhs)) {
+                return false;
             }
         }
         if (!emit_op()) {
@@ -649,6 +614,16 @@ bool GeneratorImpl::EmitBreak(const ast::BreakStatement*) {
     return true;
 }
 
+bool GeneratorImpl::EmitBreakIf(const ast::BreakIfStatement* b) {
+    auto out = line();
+    out << "if (";
+    if (!EmitExpression(out, b->condition)) {
+        return false;
+    }
+    out << ") { break; }";
+    return true;
+}
+
 bool GeneratorImpl::EmitCall(std::ostream& out, const ast::CallExpression* expr) {
     auto* call = program_->Sem().Get<sem::Call>(expr);
     auto* target = call->Target();
@@ -656,7 +631,7 @@ bool GeneratorImpl::EmitCall(std::ostream& out, const ast::CallExpression* expr)
         target, [&](const sem::Function* func) { return EmitFunctionCall(out, call, func); },
         [&](const sem::Builtin* builtin) { return EmitBuiltinCall(out, call, builtin); },
         [&](const sem::TypeConversion* conv) { return EmitTypeConversion(out, call, conv); },
-        [&](const sem::TypeConstructor* ctor) { return EmitTypeConstructor(out, call, ctor); },
+        [&](const sem::TypeInitializer* ctor) { return EmitTypeInitializer(out, call, ctor); },
         [&](Default) {
             TINT_ICE(Writer, diagnostics_) << "unhandled call target: " << target->TypeInfo().name;
             return false;
@@ -717,6 +692,18 @@ bool GeneratorImpl::EmitBuiltinCall(std::ostream& out,
             } else {
                 out << "float2(as_type<half2>(";
             }
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << "))";
+            return true;
+        }
+        case sem::BuiltinType::kQuantizeToF16: {
+            std::string width = "";
+            if (auto* vec = builtin->ReturnType()->As<sem::Vector>()) {
+                width = std::to_string(vec->Width());
+            }
+            out << "float" << width << "(half" << width << "(";
             if (!EmitExpression(out, expr->args[0])) {
                 return false;
             }
@@ -803,9 +790,9 @@ bool GeneratorImpl::EmitTypeConversion(std::ostream& out,
     return true;
 }
 
-bool GeneratorImpl::EmitTypeConstructor(std::ostream& out,
+bool GeneratorImpl::EmitTypeInitializer(std::ostream& out,
                                         const sem::Call* call,
-                                        const sem::TypeConstructor* ctor) {
+                                        const sem::TypeInitializer* ctor) {
     auto* type = ctor->ReturnType();
 
     const char* terminator = ")";
@@ -1071,9 +1058,7 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
             };
 
             if (dims.size() == 1) {
-                out << "int(";
                 get_dim(dims[0]);
-                out << ")";
             } else {
                 EmitType(out, TypeOf(expr)->UnwrapRef(), "");
                 out << "(";
@@ -1088,27 +1073,24 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
             return true;
         }
         case sem::BuiltinType::kTextureNumLayers: {
-            out << "int(";
             if (!texture_expr()) {
                 return false;
             }
-            out << ".get_array_size())";
+            out << ".get_array_size()";
             return true;
         }
         case sem::BuiltinType::kTextureNumLevels: {
-            out << "int(";
             if (!texture_expr()) {
                 return false;
             }
-            out << ".get_num_mip_levels())";
+            out << ".get_num_mip_levels()";
             return true;
         }
         case sem::BuiltinType::kTextureNumSamples: {
-            out << "int(";
             if (!texture_expr()) {
                 return false;
             }
-            out << ".get_num_samples())";
+            out << ".get_num_samples()";
             return true;
         }
         default:
@@ -1578,19 +1560,21 @@ std::string GeneratorImpl::generate_builtin_name(const sem::Builtin* builtin) {
 }
 
 bool GeneratorImpl::EmitCase(const ast::CaseStatement* stmt) {
-    if (stmt->IsDefault()) {
-        line() << "default: {";
-    } else {
-        for (auto* selector : stmt->selectors) {
-            auto out = line();
+    auto* sem = builder_.Sem().Get<sem::CaseStatement>(stmt);
+    for (auto* selector : sem->Selectors()) {
+        auto out = line();
+
+        if (selector->IsDefault()) {
+            out << "default";
+        } else {
             out << "case ";
-            if (!EmitLiteral(out, selector)) {
+            if (!EmitConstant(out, selector->Value())) {
                 return false;
             }
-            out << ":";
-            if (selector == stmt->selectors.Back()) {
-                out << " {";
-            }
+        }
+        out << ":";
+        if (selector == sem->Selectors().back()) {
+            out << " {";
         }
     }
 
@@ -2420,6 +2404,9 @@ bool GeneratorImpl::EmitStatement(const ast::Statement* stmt) {
         [&](const ast::BreakStatement* b) {  //
             return EmitBreak(b);
         },
+        [&](const ast::BreakIfStatement* b) {  //
+            return EmitBreakIf(b);
+        },
         [&](const ast::CallStatement* c) {  //
             auto out = line();
             if (!EmitCall(out, c->expr)) {  //
@@ -2759,41 +2746,6 @@ bool GeneratorImpl::EmitAddressSpace(std::ostream& out, ast::AddressSpace sc) {
     return false;
 }
 
-bool GeneratorImpl::EmitPackedType(std::ostream& out,
-                                   const sem::Type* type,
-                                   const std::string& name) {
-    auto* vec = type->As<sem::Vector>();
-    if (vec && vec->Width() == 3) {
-        out << "packed_";
-        if (!EmitType(out, vec, "")) {
-            return false;
-        }
-
-        if (vec->is_float_vector() && !matrix_packed_vector_overloads_) {
-            // Overload operators for matrix-vector arithmetic where the vector
-            // operand is packed, as these overloads to not exist in the metal
-            // namespace.
-            TextBuffer b;
-            TINT_DEFER(helpers_.Append(b));
-            line(&b) << R"(template<typename T, int N, int M>
-inline vec<T, M> operator*(matrix<T, N, M> lhs, packed_vec<T, N> rhs) {
-  return lhs * vec<T, N>(rhs);
-}
-
-template<typename T, int N, int M>
-inline vec<T, N> operator*(packed_vec<T, M> lhs, matrix<T, N, M> rhs) {
-  return vec<T, M>(lhs) * rhs;
-}
-)";
-            matrix_packed_vector_overloads_ = true;
-        }
-
-        return true;
-    }
-
-    return EmitType(out, type, name);
-}
-
 bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
     line(b) << "struct " << StructName(str) << " {";
 
@@ -2840,14 +2792,15 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
             }
 
             add_byte_offset_comment(out, msl_offset);
+        }
 
-            if (!EmitPackedType(out, mem->Type(), mem_name)) {
-                return false;
+        if (auto* decl = mem->Declaration()) {
+            if (ast::HasAttribute<transform::PackedVec3::Attribute>(decl->attributes)) {
+                out << "packed_";
             }
-        } else {
-            if (!EmitType(out, mem->Type(), mem_name)) {
-                return false;
-            }
+        }
+        if (!EmitType(out, mem->Type(), mem_name)) {
+            return false;
         }
 
         auto* ty = mem->Type();
@@ -2913,6 +2866,7 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
                     [&](const ast::StructMemberOffsetAttribute*) { return true; },
                     [&](const ast::StructMemberAlignAttribute*) { return true; },
                     [&](const ast::StructMemberSizeAttribute*) { return true; },
+                    [&](const transform::PackedVec3::Attribute*) { return true; },
                     [&](Default) {
                         TINT_ICE(Writer, diagnostics_)
                             << "unhandled struct member attribute: " << attr->Name();
@@ -3061,9 +3015,9 @@ bool GeneratorImpl::EmitVar(const ast::Var* var) {
         out << " " << name;
     }
 
-    if (var->constructor != nullptr) {
+    if (var->initializer != nullptr) {
         out << " = ";
-        if (!EmitExpression(out, var->constructor)) {
+        if (!EmitExpression(out, var->initializer)) {
             return false;
         }
     } else if (sem->AddressSpace() == ast::AddressSpace::kPrivate ||
@@ -3112,7 +3066,7 @@ bool GeneratorImpl::EmitLet(const ast::Let* let) {
     }
 
     out << " = ";
-    if (!EmitExpression(out, let->constructor)) {
+    if (!EmitExpression(out, let->initializer)) {
         return false;
     }
     out << ";";

@@ -38,6 +38,15 @@ using WorkgroupParameterMemberList = utils::Vector<const ast::StructMember*, 8>;
 // The name of the struct member for arrays that are wrapped in structures.
 const char* kWrappedArrayMemberName = "arr";
 
+bool ShouldRun(const Program* program) {
+    for (auto* decl : program->AST().GlobalDeclarations()) {
+        if (decl->Is<ast::Variable>()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Returns `true` if `type` is or contains a matrix type.
 bool ContainsMatrix(const sem::Type* type) {
     type = type->UnwrapRef();
@@ -56,7 +65,7 @@ bool ContainsMatrix(const sem::Type* type) {
 }
 }  // namespace
 
-/// State holds the current transform state.
+/// PIMPL state for the transform
 struct ModuleScopeVarToEntryPointParam::State {
     /// The clone context.
     CloneContext& ctx;
@@ -187,8 +196,8 @@ struct ModuleScopeVarToEntryPointParam::State {
                 // scope. Disable address space validation on this variable.
                 auto* disable_validation =
                     ctx.dst->Disable(ast::DisabledValidation::kIgnoreAddressSpace);
-                auto* constructor = ctx.Clone(var->Declaration()->constructor);
-                auto* local_var = ctx.dst->Var(new_var_symbol, store_type(), sc, constructor,
+                auto* initializer = ctx.Clone(var->Declaration()->initializer);
+                auto* local_var = ctx.dst->Var(new_var_symbol, store_type(), sc, initializer,
                                                utils::Vector{disable_validation});
                 ctx.InsertFront(func->body->statements, ctx.dst->Decl(local_var));
 
@@ -400,10 +409,10 @@ struct ModuleScopeVarToEntryPointParam::State {
                     // Redeclare the variable at function scope.
                     auto* disable_validation =
                         ctx.dst->Disable(ast::DisabledValidation::kIgnoreAddressSpace);
-                    auto* constructor = ctx.Clone(var->Declaration()->constructor);
+                    auto* initializer = ctx.Clone(var->Declaration()->initializer);
                     auto* local_var = ctx.dst->Var(new_var_symbol,
                                                    CreateASTTypeFor(ctx, var->Type()->UnwrapRef()),
-                                                   ast::AddressSpace::kPrivate, constructor,
+                                                   ast::AddressSpace::kPrivate, initializer,
                                                    utils::Vector{disable_validation});
                     ctx.InsertFront(func_ast->body->statements, ctx.dst->Decl(local_var));
                     local_private_vars_.insert(var);
@@ -432,10 +441,12 @@ struct ModuleScopeVarToEntryPointParam::State {
                     ctx.dst->Structure(ctx.dst->Sym(), std::move(workgroup_parameter_members));
                 auto* param_type =
                     ctx.dst->ty.pointer(ctx.dst->ty.Of(str), ast::AddressSpace::kWorkgroup);
-                auto* disable_validation =
-                    ctx.dst->Disable(ast::DisabledValidation::kEntryPointParameter);
-                auto* param = ctx.dst->Param(workgroup_param(), param_type,
-                                             utils::Vector{disable_validation});
+                auto* param = ctx.dst->Param(
+                    workgroup_param(), param_type,
+                    utils::Vector{
+                        ctx.dst->Disable(ast::DisabledValidation::kEntryPointParameter),
+                        ctx.dst->Disable(ast::DisabledValidation::kIgnoreAddressSpace),
+                    });
                 ctx.InsertFront(func_ast->params, param);
             }
 
@@ -501,19 +512,20 @@ ModuleScopeVarToEntryPointParam::ModuleScopeVarToEntryPointParam() = default;
 
 ModuleScopeVarToEntryPointParam::~ModuleScopeVarToEntryPointParam() = default;
 
-bool ModuleScopeVarToEntryPointParam::ShouldRun(const Program* program, const DataMap&) const {
-    for (auto* decl : program->AST().GlobalDeclarations()) {
-        if (decl->Is<ast::Variable>()) {
-            return true;
-        }
+Transform::ApplyResult ModuleScopeVarToEntryPointParam::Apply(const Program* src,
+                                                              const DataMap&,
+                                                              DataMap&) const {
+    if (!ShouldRun(src)) {
+        return SkipTransform;
     }
-    return false;
-}
 
-void ModuleScopeVarToEntryPointParam::Run(CloneContext& ctx, const DataMap&, DataMap&) const {
+    ProgramBuilder b;
+    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
     State state{ctx};
     state.Process();
+
     ctx.Clone();
+    return Program(std::move(b));
 }
 
 }  // namespace tint::transform

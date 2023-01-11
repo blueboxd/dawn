@@ -66,8 +66,8 @@ namespace tint::reader::spirv {
 
 /// The binary representation of a SPIR-V decoration enum followed by its
 /// operands, if any.
-/// Example:   { SpvDecorationBlock }
-/// Example:   { SpvDecorationArrayStride, 16 }
+/// Example:   { spv::Decoration::Block }
+/// Example:   { spv::Decoration::ArrayStride, 16 }
 using Decoration = std::vector<uint32_t>;
 
 /// DecorationList is a list of decorations
@@ -338,13 +338,13 @@ class ParserImpl : Reader {
     /// Returns true when the given instruction is an extended instruction
     /// for GLSL.std.450.
     /// @param inst a SPIR-V instruction
-    /// @returns true if its an SpvOpExtInst for GLSL.std.450
+    /// @returns true if its an spv::Op::ExtInst for GLSL.std.450
     bool IsGlslExtendedInstruction(const spvtools::opt::Instruction& inst) const;
 
     /// Returns true when the given instruction is an extended instruction
     /// from an ignored extended instruction set.
     /// @param inst a SPIR-V instruction
-    /// @returns true if its an SpvOpExtInst for an ignored extended instruction
+    /// @returns true if its an spv::Op::ExtInst for an ignored extended instruction
     bool IsIgnoredExtendedInstruction(const spvtools::opt::Instruction& inst) const;
 
     /// Registers user names for SPIR-V objects, from OpName, and OpMemberName.
@@ -427,32 +427,32 @@ class ParserImpl : Reader {
     /// @param id the SPIR-V result ID
     /// @param address_space the address space, which cannot be ast::AddressSpace::kNone
     /// @param storage_type the storage type of the variable
-    /// @param constructor the variable constructor
+    /// @param initializer the variable initializer
     /// @param decorations the variable decorations
     /// @returns a new Variable node, or null in the ignorable variable case and
     /// in the error case
     ast::Var* MakeVar(uint32_t id,
                       ast::AddressSpace address_space,
                       const Type* storage_type,
-                      const ast::Expression* constructor,
+                      const ast::Expression* initializer,
                       AttributeList decorations);
 
     /// Creates an AST 'let' node for a SPIR-V ID, including any attached decorations,.
     /// @param id the SPIR-V result ID
     /// @param type the type of the variable
-    /// @param constructor the variable constructor
+    /// @param initializer the variable initializer
     /// @returns the AST 'let' node
-    ast::Let* MakeLet(uint32_t id, const Type* type, const ast::Expression* constructor);
+    ast::Let* MakeLet(uint32_t id, const Type* type, const ast::Expression* initializer);
 
     /// Creates an AST 'override' node for a SPIR-V ID, including any attached decorations.
     /// @param id the SPIR-V result ID
     /// @param type the type of the variable
-    /// @param constructor the variable constructor
+    /// @param initializer the variable initializer
     /// @param decorations the variable decorations
     /// @returns the AST 'override' node
     ast::Override* MakeOverride(uint32_t id,
                                 const Type* type,
-                                const ast::Expression* constructor,
+                                const ast::Expression* initializer,
                                 AttributeList decorations);
 
     /// Creates an AST parameter node for a SPIR-V ID, including any attached decorations, unless
@@ -585,7 +585,7 @@ class ParserImpl : Reader {
         /// class class.
         uint32_t pointer_type_id = 0;
         /// The SPIR-V address space.
-        SpvStorageClass storage_class = SpvStorageClassOutput;
+        spv::StorageClass storage_class = spv::StorageClass::Output;
         /// The ID of the type of a pointer to the Position member.
         uint32_t position_member_pointer_type_id = 0;
         /// The ID of the gl_PerVertex variable, if it was declared.
@@ -642,20 +642,21 @@ class ParserImpl : Reader {
 
     /// Returns the SPIR-V type for the sampler or image type for the given
     /// variable in UniformConstant address space, or function parameter pointing
-    /// into the UniformConstant address space .  Returns null and emits an
-    /// error on failure.
-    /// @param var the OpVariable instruction or OpFunctionParameter
+    /// into the UniformConstant address space, or image or sampler type.
+    /// Returns null and emits an error on failure.
+    /// @param mem_obj_decl the OpVariable instruction or OpFunctionParameter
     /// @returns the Tint AST type for the sampler or texture, or null on error
-    const spvtools::opt::Instruction* GetSpirvTypeForHandleMemoryObjectDeclaration(
-        const spvtools::opt::Instruction& var);
+    const spvtools::opt::Instruction* GetSpirvTypeForHandleOrHandleMemoryObjectDeclaration(
+        const spvtools::opt::Instruction& mem_obj_decl);
 
     /// Returns the AST type for the pointer-to-sampler or pointer-to-texture type
-    /// for the given variable in UniformConstant address space.  Returns null and
+    /// for the given variable in UniformConstant address space or function
+    /// parameter of type pointer-to-UniformConstant.  Returns null and
     /// emits an error on failure.
-    /// @param var the OpVariable instruction
+    /// @param mem_obj_decl the OpVariable instruction
     /// @returns the Tint AST type for the poiner-to-{sampler|texture} or null on
     /// error
-    const Pointer* GetTypeForHandleVar(const spvtools::opt::Instruction& var);
+    const Pointer* GetTypeForHandleMemObjDecl(const spvtools::opt::Instruction& mem_obj_decl);
 
     /// Returns the AST variable for the SPIR-V ID of a module-scope variable,
     /// or null if there isn't one.
@@ -690,7 +691,7 @@ class ParserImpl : Reader {
     const spvtools::opt::Instruction* GetInstructionForTest(uint32_t id) const;
 
     /// A map of SPIR-V identifiers to builtins
-    using BuiltInsMap = std::unordered_map<uint32_t, SpvBuiltIn>;
+    using BuiltInsMap = std::unordered_map<uint32_t, spv::BuiltIn>;
 
     /// @returns a map of builtins that should be handled specially by code
     /// generation. Either the builtin does not exist in WGSL, or a type
@@ -699,7 +700,7 @@ class ParserImpl : Reader {
 
     /// @param builtin the SPIR-V builtin variable kind
     /// @returns the SPIR-V ID for the variable defining the given builtin, or 0
-    uint32_t IdForSpecialBuiltIn(SpvBuiltIn builtin) const {
+    uint32_t IdForSpecialBuiltIn(spv::BuiltIn builtin) const {
         // Do a linear search.
         for (const auto& entry : special_builtins_) {
             if (entry.second == builtin) {
@@ -780,7 +781,7 @@ class ParserImpl : Reader {
                                uint32_t* array_stride);
 
     /// Creates a new `ast::Node` owned by the ProgramBuilder.
-    /// @param args the arguments to pass to the type constructor
+    /// @param args the arguments to pass to the type initializer
     /// @returns the node pointer
     template <typename T, typename... ARGS>
     T* create(ARGS&&... args) {

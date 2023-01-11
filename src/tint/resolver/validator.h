@@ -17,16 +17,15 @@
 
 #include <set>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
-#include <vector>
 
 #include "src/tint/ast/pipeline_stage.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/resolver/sem_helper.h"
 #include "src/tint/sem/evaluation_stage.h"
 #include "src/tint/source.h"
+#include "src/tint/utils/hashmap.h"
+#include "src/tint/utils/vector.h"
 
 // Forward declarations
 namespace tint::ast {
@@ -51,6 +50,7 @@ namespace tint::sem {
 class Array;
 class Atomic;
 class BlockStatement;
+class BreakIfStatement;
 class Builtin;
 class Call;
 class CaseStatement;
@@ -60,7 +60,7 @@ class LoopStatement;
 class Materialize;
 class Statement;
 class SwitchStatement;
-class TypeConstructor;
+class TypeInitializer;
 class WhileStatement;
 }  // namespace tint::sem
 
@@ -115,12 +115,12 @@ class Validator {
     /// Validates pipeline stages
     /// @param entry_points the entry points to the module
     /// @returns true on success, false otherwise.
-    bool PipelineStages(const std::vector<sem::Function*>& entry_points) const;
+    bool PipelineStages(const utils::VectorRef<sem::Function*> entry_points) const;
 
     /// Validates push_constant variables
     /// @param entry_points the entry points to the module
     /// @returns true on success, false otherwise.
-    bool PushConstants(const std::vector<sem::Function*>& entry_points) const;
+    bool PushConstants(const utils::VectorRef<sem::Function*> entry_points) const;
 
     /// Validates aliases
     /// @param alias the alias to validate
@@ -155,7 +155,7 @@ class Validator {
     /// @returns true on success, false otherwise.
     bool AtomicVariable(
         const sem::Variable* var,
-        std::unordered_map<const sem::Type*, const Source&> atomic_composite_info) const;
+        const utils::Hashmap<const sem::Type*, const Source*, 8>& atomic_composite_info) const;
 
     /// Validates an assignment
     /// @param a the assignment statement
@@ -197,12 +197,6 @@ class Validator {
     /// @param current_statement the current statement being resolved
     /// @returns true on success, false otherwise
     bool Call(const sem::Call* call, sem::Statement* current_statement) const;
-
-    /// Validates a discard statement
-    /// @param stmt the statement to validate
-    /// @param current_statement the current statement being resolved
-    /// @returns true on success, false otherwise
-    bool DiscardStatement(const sem::Statement* stmt, sem::Statement* current_statement) const;
 
     /// Validates an entry point
     /// @param func the entry point function to validate
@@ -253,8 +247,15 @@ class Validator {
     /// @returns true on success, false otherwise
     bool GlobalVariable(
         const sem::GlobalVariable* var,
-        const std::unordered_map<OverrideId, const sem::Variable*>& override_id,
-        const std::unordered_map<const sem::Type*, const Source&>& atomic_composite_info) const;
+        const utils::Hashmap<OverrideId, const sem::Variable*, 8>& override_id,
+        const utils::Hashmap<const sem::Type*, const Source*, 8>& atomic_composite_info) const;
+
+    /// Validates a break-if statement
+    /// @param stmt the statement to validate
+    /// @param current_statement the current statement being resolved
+    /// @returns true on success, false otherwise
+    bool BreakIfStatement(const sem::BreakIfStatement* stmt,
+                          sem::Statement* current_statement) const;
 
     /// Validates an if statement
     /// @param stmt the statement to validate
@@ -295,7 +296,7 @@ class Validator {
     bool LocationAttribute(const ast::LocationAttribute* loc_attr,
                            uint32_t location,
                            const sem::Type* type,
-                           std::unordered_set<uint32_t>& locations,
+                           utils::Hashset<uint32_t, 8>& locations,
                            ast::PipelineStage stage,
                            const Source& source,
                            const bool is_input = false) const;
@@ -363,11 +364,11 @@ class Validator {
     /// @returns true on success, false otherwise.
     bool Structure(const sem::Struct* str, ast::PipelineStage stage) const;
 
-    /// Validates a structure constructor
+    /// Validates a structure initializer
     /// @param ctor the call expression to validate
     /// @param struct_type the type of the structure
     /// @returns true on success, false otherwise
-    bool StructureConstructor(const ast::CallExpression* ctor,
+    bool StructureInitializer(const ast::CallExpression* ctor,
                               const sem::Struct* struct_type) const;
 
     /// Validates a switch statement
@@ -390,7 +391,7 @@ class Validator {
     /// @param override_id the set of override ids in the module
     /// @returns true on success, false otherwise.
     bool Override(const sem::GlobalVariable* v,
-                  const std::unordered_map<OverrideId, const sem::Variable*>& override_id) const;
+                  const utils::Hashmap<OverrideId, const sem::Variable*, 8>& override_id) const;
 
     /// Validates a 'const' variable declaration
     /// @param v the variable to validate
@@ -414,11 +415,11 @@ class Validator {
     /// @returns true on success, false otherwise
     bool Vector(const sem::Vector* ty, const Source& source) const;
 
-    /// Validates an array constructor
+    /// Validates an array initializer
     /// @param ctor the call expresion to validate
     /// @param arr_type the type of the array
     /// @returns true on success, false otherwise
-    bool ArrayConstructor(const ast::CallExpression* ctor, const sem::Array* arr_type) const;
+    bool ArrayInitializer(const ast::CallExpression* ctor, const sem::Array* arr_type) const;
 
     /// Validates a texture builtin function
     /// @param call the builtin call to validate

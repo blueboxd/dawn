@@ -124,6 +124,9 @@ struct Number : NumberBase<Number<T>> {
     /// type is the underlying type of the Number
     using type = T;
 
+    /// Number of bits in the number.
+    static constexpr size_t kNumBits = sizeof(T) * 8;
+
     /// Highest finite representable value of this type.
     static constexpr type kHighestValue = std::numeric_limits<type>::max();
 
@@ -187,6 +190,9 @@ struct Number<detail::NumberKindF16> : NumberBase<Number<detail::NumberKindF16>>
     /// C++ does not have a native float16 type, so we use a 32-bit float instead.
     using type = float;
 
+    /// Number of bits in the number.
+    static constexpr size_t kNumBits = 16;
+
     /// Highest finite representable value of this type.
     static constexpr type kHighestValue = 65504.0f;  // 2¹⁵ × (1 + 1023/1024)
 
@@ -236,6 +242,11 @@ struct Number<detail::NumberKindF16> : NumberBase<Number<detail::NumberKindF16>>
     /// returned value will be 0x7c00u. If the input value is negative infinity, the returned value
     /// will be 0xfc00u.
     uint16_t BitsRepresentation() const;
+
+    /// Creates an f16 value from the uint16_t bit representation.
+    /// @param bits the bits to convert from
+    /// @returns the binary16 value based off the provided bit pattern.
+    static Number<detail::NumberKindF16> FromBits(uint16_t bits);
 
     /// @param value the input float32 value
     /// @returns the float32 value quantized to the smaller float16 value, through truncation of the

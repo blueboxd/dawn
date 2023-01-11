@@ -24,6 +24,36 @@ function(tint_spvtools_compile_options TARGET)
   )
 endfunction()
 
+set(TINT_LIB_SRCS)
+set(TINT_BENCHMARK_SRCS)
+set(TINT_TEST_SRCS)
+
+# Add a generated file set into the build.
+#
+# Params:
+#  TARGET - the target name to add (without extension)
+#  BENCH  - set if the target has a benchmark file
+#  TEST   - set if the target has a test file
+#
+function(tint_generated TARGET)
+  cmake_parse_arguments(PARSE_ARGV 0 TINT_GEN "BENCH;TEST" "" "")
+
+   list(APPEND TINT_LIB_SRCS
+      ${TARGET}.cc
+      ${TARGET}.h
+    )
+    set(TINT_LIB_SRCS ${TINT_LIB_SRCS} PARENT_SCOPE)
+
+    if(${TINT_GEN_BENCH})
+        list(APPEND TINT_BENCHMARK_SRCS ${TARGET}_bench.cc)
+        set(TINT_BENCHMARK_SRCS ${TINT_BENCHMARK_SRCS} PARENT_SCOPE)
+    endif()
+    if(${TINT_GEN_TEST})
+        list(APPEND TINT_TEST_SRCS ${TARGET}_test.cc)
+        set(TINT_TEST_SRCS ${TINT_TEST_SRCS} PARENT_SCOPE)
+    endif()
+endfunction()
+
 ## Tint diagnostic utilities. Used by libtint and tint_utils_io.
 add_library(tint_diagnostic_utils
   debug.cc
@@ -46,10 +76,8 @@ if (TINT_ENABLE_BREAK_IN_DEBUGGER)
     PROPERTIES COMPILE_DEFINITIONS "TINT_ENABLE_BREAK_IN_DEBUGGER=1" )
 endif()
 
-set(TINT_LIB_SRCS
+list(APPEND TINT_LIB_SRCS
   ../../include/tint/tint.h
-  ast/access.cc
-  ast/access.h
   ast/alias.cc
   ast/alias.h
   ast/array.cc
@@ -73,16 +101,18 @@ set(TINT_LIB_SRCS
   ast/bool_literal_expression.h
   ast/bool.cc
   ast/bool.h
+  ast/break_if_statement.cc
+  ast/break_if_statement.h
   ast/break_statement.cc
   ast/break_statement.h
   ast/builtin_attribute.cc
   ast/builtin_attribute.h
-  ast/builtin_value.cc
-  ast/builtin_value.h
   ast/call_expression.cc
   ast/call_expression.h
   ast/call_statement.cc
   ast/call_statement.h
+  ast/case_selector.cc
+  ast/case_selector.h
   ast/case_statement.cc
   ast/case_statement.h
   ast/compound_assignment_statement.cc
@@ -103,8 +133,6 @@ set(TINT_LIB_SRCS
   ast/enable.h
   ast/expression.cc
   ast/expression.h
-  ast/extension.cc
-  ast/extension.h
   ast/external_texture.cc
   ast/external_texture.h
   ast/f16.cc
@@ -137,8 +165,6 @@ set(TINT_LIB_SRCS
   ast/int_literal_expression.h
   ast/internal_attribute.cc
   ast/internal_attribute.h
-  ast/interpolate_attribute.cc
-  ast/interpolate_attribute.h
   ast/invariant_attribute.cc
   ast/invariant_attribute.h
   ast/let.cc
@@ -182,8 +208,6 @@ set(TINT_LIB_SRCS
   ast/statement.h
   ast/static_assert.cc
   ast/static_assert.h
-  ast/address_space.cc
-  ast/address_space.h
   ast/storage_texture.cc
   ast/storage_texture.h
   ast/stride_attribute.cc
@@ -200,8 +224,6 @@ set(TINT_LIB_SRCS
   ast/struct.h
   ast/switch_statement.cc
   ast/switch_statement.h
-  ast/texel_format.cc
-  ast/texel_format.h
   ast/texture.cc
   ast/texture.h
   ast/traverse_expressions.h
@@ -257,8 +279,6 @@ set(TINT_LIB_SRCS
   reader/reader.h
   resolver/const_eval.cc
   resolver/const_eval.h
-  resolver/ctor_conv_intrinsic.cc
-  resolver/ctor_conv_intrinsic.h
   resolver/dependency_graph.cc
   resolver/dependency_graph.h
   resolver/intrinsic_table.cc
@@ -290,8 +310,8 @@ set(TINT_LIB_SRCS
   sem/block_statement.h
   sem/bool.cc
   sem/bool.h
-  sem/builtin_type.cc
-  sem/builtin_type.h
+  sem/break_if_statement.cc
+  sem/break_if_statement.h
   sem/builtin.cc
   sem/builtin.h
   sem/call_target.cc
@@ -337,8 +357,6 @@ set(TINT_LIB_SRCS
   sem/multisampled_texture.h
   sem/node.cc
   sem/node.h
-  sem/parameter_usage.cc
-  sem/parameter_usage.h
   sem/pipeline_stage_set.h
   sem/pointer.cc
   sem/pointer.h
@@ -357,8 +375,8 @@ set(TINT_LIB_SRCS
   sem/switch_statement.h
   sem/texture.cc
   sem/texture.h
-  sem/type_constructor.cc
-  sem/type_constructor.h
+  sem/type_initializer.cc
+  sem/type_initializer.h
   sem/type_conversion.cc
   sem/type_conversion.h
   sem/type_manager.cc
@@ -379,6 +397,7 @@ set(TINT_LIB_SRCS
   symbol_table.h
   symbol.cc
   symbol.h
+  tint.cc
   text/unicode.cc
   text/unicode.h
   traits.h
@@ -406,6 +425,8 @@ set(TINT_LIB_SRCS
   transform/decompose_strided_array.h
   transform/decompose_strided_matrix.cc
   transform/decompose_strided_matrix.h
+  transform/demote_to_helper.cc
+  transform/demote_to_helper.h
   transform/disable_uniformity_analysis.cc
   transform/disable_uniformity_analysis.h
   transform/expand_compound_assignment.cc
@@ -418,12 +439,16 @@ set(TINT_LIB_SRCS
   transform/localize_struct_array_assignment.h
   transform/manager.cc
   transform/manager.h
+  transform/merge_return.cc
+  transform/merge_return.h
   transform/module_scope_var_to_entry_point_param.cc
   transform/module_scope_var_to_entry_point_param.h
   transform/multiplanar_external_texture.cc
   transform/multiplanar_external_texture.h
   transform/num_workgroups_from_uniform.cc
   transform/num_workgroups_from_uniform.h
+  transform/packed_vec3.cc
+  transform/packed_vec3.h
   transform/pad_structs.cc
   transform/pad_structs.h
   transform/promote_initializers_to_let.cc
@@ -454,8 +479,6 @@ set(TINT_LIB_SRCS
   transform/transform.h
   transform/unshadow.cc
   transform/unshadow.h
-  transform/unwind_discard_functions.cc
-  transform/unwind_discard_functions.h
   transform/utils/get_insertion_point.cc
   transform/utils/get_insertion_point.h
   transform/utils/hoist_to_decl_before.cc
@@ -464,8 +487,8 @@ set(TINT_LIB_SRCS
   transform/var_for_dynamic_index.h
   transform/vectorize_matrix_conversions.cc
   transform/vectorize_matrix_conversions.h
-  transform/vectorize_scalar_matrix_constructors.cc
-  transform/vectorize_scalar_matrix_constructors.h
+  transform/vectorize_scalar_matrix_initializers.cc
+  transform/vectorize_scalar_matrix_initializers.h
   transform/vertex_pulling.cc
   transform/vertex_pulling.h
   transform/while_to_loop.cc
@@ -481,6 +504,7 @@ set(TINT_LIB_SRCS
   utils/enum_set.h
   utils/foreach_macro.h
   utils/hash.h
+  utils/hashmap_base.h
   utils/hashmap.h
   utils/hashset.h
   utils/map.h
@@ -495,6 +519,8 @@ set(TINT_LIB_SRCS
   writer/append_vector.h
   writer/array_length_from_uniform_options.cc
   writer/array_length_from_uniform_options.h
+  writer/check_supported_extensions.cc
+  writer/check_supported_extensions.h
   writer/flatten_bindings.cc
   writer/flatten_bindings.h
   writer/float_to_string.cc
@@ -508,6 +534,16 @@ set(TINT_LIB_SRCS
   writer/writer.cc
   writer/writer.h
 )
+
+tint_generated(ast/access)
+tint_generated(ast/address_space BENCH TEST)
+tint_generated(ast/builtin_value BENCH TEST)
+tint_generated(ast/extension BENCH TEST)
+tint_generated(ast/interpolate_attribute)
+tint_generated(ast/texel_format BENCH TEST)
+tint_generated(resolver/init_conv_intrinsic)
+tint_generated(sem/builtin_type)
+tint_generated(sem/parameter_usage)
 
 if(UNIX)
   list(APPEND TINT_LIB_SRCS diagnostic/printer_linux.cc)
@@ -612,6 +648,33 @@ if(${TINT_BUILD_HLSL_WRITER})
   )
 endif()
 
+if(${TINT_BUILD_IR})
+  list(APPEND TINT_LIB_SRCS
+    ir/block.cc
+    ir/block.h
+    ir/builder.cc
+    ir/builder.h
+    ir/builder_impl.cc
+    ir/builder_impl.h
+    ir/debug.cc
+    ir/debug.h
+    ir/flow_node.cc
+    ir/flow_node.h
+    ir/function.cc
+    ir/function.h
+    ir/if.cc
+    ir/if.h
+    ir/loop.cc
+    ir/loop.h
+    ir/module.cc
+    ir/module.h
+    ir/switch.cc
+    ir/switch.h
+    ir/terminator.cc
+    ir/terminator.h
+  )
+endif()
+
 if(MSVC)
   list(APPEND TINT_LIB_SRCS
     tint.natvis
@@ -689,11 +752,12 @@ if(${TINT_BUILD_SPV_READER} OR ${TINT_BUILD_SPV_WRITER})
   endif()
 endif()
 
+
 ################################################################################
 # Tests
 ################################################################################
 if(TINT_BUILD_TESTS)
-  set(TINT_TEST_SRCS
+  list(APPEND TINT_TEST_SRCS
     ast/alias_test.cc
     ast/array_test.cc
     ast/assignment_statement_test.cc
@@ -704,13 +768,14 @@ if(TINT_BUILD_TESTS)
     ast/block_statement_test.cc
     ast/bool_literal_expression_test.cc
     ast/bool_test.cc
+    ast/break_if_statement_test.cc
     ast/break_statement_test.cc
     ast/builtin_attribute_test.cc
     ast/builtin_texture_helper_test.cc
     ast/builtin_texture_helper_test.h
-    ast/builtin_value_test.cc
     ast/call_expression_test.cc
     ast/call_statement_test.cc
+    ast/case_selector_test.cc
     ast/case_statement_test.cc
     ast/compound_assignment_statement_test.cc
     ast/continue_statement_test.cc
@@ -718,7 +783,6 @@ if(TINT_BUILD_TESTS)
     ast/depth_texture_test.cc
     ast/discard_statement_test.cc
     ast/enable_test.cc
-    ast/extension_test.cc
     ast/external_texture_test.cc
     ast/f16_test.cc
     ast/f32_test.cc
@@ -750,7 +814,6 @@ if(TINT_BUILD_TESTS)
     ast/sampler_test.cc
     ast/stage_attribute_test.cc
     ast/static_assert_test.cc
-    ast/address_space_test.cc
     ast/storage_texture_test.cc
     ast/stride_attribute_test.cc
     ast/struct_member_align_attribute_test.cc
@@ -760,7 +823,6 @@ if(TINT_BUILD_TESTS)
     ast/struct_test.cc
     ast/switch_statement_test.cc
     ast/test_helper.h
-    ast/texel_format_test.cc
     ast/texture_test.cc
     ast/traverse_expressions_test.cc
     ast/u32_test.cc
@@ -794,7 +856,14 @@ if(TINT_BUILD_TESTS)
     resolver/call_validation_test.cc
     resolver/compound_assignment_validation_test.cc
     resolver/compound_statement_test.cc
-    resolver/const_eval_test.cc
+    resolver/const_eval_binary_op_test.cc
+    resolver/const_eval_builtin_test.cc
+    resolver/const_eval_construction_test.cc
+    resolver/const_eval_conversion_test.cc
+    resolver/const_eval_indexing_test.cc
+    resolver/const_eval_member_access_test.cc
+    resolver/const_eval_test.h
+    resolver/const_eval_unary_op_test.cc
     resolver/control_block_validation_test.cc
     resolver/dependency_graph_test.cc
     resolver/entry_point_validation_test.cc
@@ -816,19 +885,20 @@ if(TINT_BUILD_TESTS)
     resolver/resolver_test.cc
     resolver/side_effects_test.cc
     resolver/static_assert_test.cc
-    resolver/source_variable_test.cc
+    resolver/root_identifier_test.cc
     resolver/address_space_layout_validation_test.cc
     resolver/address_space_validation_test.cc
     resolver/struct_layout_test.cc
     resolver/struct_pipeline_stage_use_test.cc
     resolver/struct_address_space_use_test.cc
-    resolver/type_constructor_validation_test.cc
+    resolver/type_initializer_validation_test.cc
     resolver/type_validation_test.cc
     resolver/validation_test.cc
     resolver/validator_is_storeable_test.cc
     resolver/variable_test.cc
     resolver/variable_validation_test.cc
     scope_stack_test.cc
+    sem/array_test.cc
     sem/atomic.cc
     sem/bool_test.cc
     sem/builtin_test.cc
@@ -845,9 +915,8 @@ if(TINT_BUILD_TESTS)
     sem/reference_test.cc
     sem/sampled_texture_test.cc
     sem/sampler_test.cc
-    sem/sem_array_test.cc
-    sem/sem_struct_test.cc
     sem/storage_texture_test.cc
+    sem/struct_test.cc
     sem/texture_test.cc
     sem/type_manager_test.cc
     sem/type_test.cc
@@ -882,6 +951,7 @@ if(TINT_BUILD_TESTS)
     utils/unique_vector_test.cc
     utils/vector_test.cc
     writer/append_vector_test.cc
+    writer/check_supported_extensions_test.cc
     writer/flatten_bindings_test.cc
     writer/float_to_string_test.cc
     writer/generate_external_texture_bindings_test.cc
@@ -985,7 +1055,6 @@ if(TINT_BUILD_TESTS)
       reader/wgsl/parser_impl_multiplicative_expression_test.cc
       reader/wgsl/parser_impl_param_list_test.cc
       reader/wgsl/parser_impl_paren_expression_test.cc
-      reader/wgsl/parser_impl_pipeline_stage_test.cc
       reader/wgsl/parser_impl_primary_expression_test.cc
       reader/wgsl/parser_impl_relational_expression_test.cc
       reader/wgsl/parser_impl_reserved_keyword_test.cc
@@ -1037,7 +1106,7 @@ if(TINT_BUILD_TESTS)
       writer/spirv/builder_builtin_test.cc
       writer/spirv/builder_builtin_texture_test.cc
       writer/spirv/builder_call_test.cc
-      writer/spirv/builder_constructor_expression_test.cc
+      writer/spirv/builder_initializer_expression_test.cc
       writer/spirv/builder_discard_test.cc
       writer/spirv/builder_entry_point_test.cc
       writer/spirv/builder_format_conversion_test.cc
@@ -1077,7 +1146,7 @@ if(TINT_BUILD_TESTS)
       writer/wgsl/generator_impl_call_test.cc
       writer/wgsl/generator_impl_case_test.cc
       writer/wgsl/generator_impl_cast_test.cc
-      writer/wgsl/generator_impl_constructor_test.cc
+      writer/wgsl/generator_impl_initializer_test.cc
       writer/wgsl/generator_impl_continue_test.cc
       writer/wgsl/generator_impl_discard_test.cc
       writer/wgsl/generator_impl_enable_test.cc
@@ -1114,15 +1183,18 @@ if(TINT_BUILD_TESTS)
       transform/decompose_memory_access_test.cc
       transform/decompose_strided_array_test.cc
       transform/decompose_strided_matrix_test.cc
+      transform/demote_to_helper_test.cc
       transform/disable_uniformity_analysis_test.cc
       transform/expand_compound_assignment_test.cc
       transform/first_index_offset_test.cc
       transform/for_loop_to_loop_test.cc
-      transform/expand_compound_assignment.cc
+      transform/expand_compound_assignment_test.cc
       transform/localize_struct_array_assignment_test.cc
+      transform/merge_return_test.cc
       transform/module_scope_var_to_entry_point_param_test.cc
       transform/multiplanar_external_texture_test.cc
       transform/num_workgroups_from_uniform_test.cc
+      transform/packed_vec3_test.cc
       transform/pad_structs_test.cc
       transform/promote_initializers_to_let_test.cc
       transform/promote_side_effects_to_decl_test.cc
@@ -1139,10 +1211,9 @@ if(TINT_BUILD_TESTS)
       transform/substitute_override_test.cc
       transform/test_helper.h
       transform/unshadow_test.cc
-      transform/unwind_discard_functions_test.cc
       transform/var_for_dynamic_index_test.cc
       transform/vectorize_matrix_conversions_test.cc
-      transform/vectorize_scalar_matrix_constructors_test.cc
+      transform/vectorize_scalar_matrix_initializers_test.cc
       transform/vertex_pulling_test.cc
       transform/while_to_loop_test.cc
       transform/zero_init_workgroup_memory_test.cc
@@ -1164,7 +1235,7 @@ if(TINT_BUILD_TESTS)
       writer/msl/generator_impl_call_test.cc
       writer/msl/generator_impl_case_test.cc
       writer/msl/generator_impl_cast_test.cc
-      writer/msl/generator_impl_constructor_test.cc
+      writer/msl/generator_impl_initializer_test.cc
       writer/msl/generator_impl_continue_test.cc
       writer/msl/generator_impl_discard_test.cc
       writer/msl/generator_impl_function_test.cc
@@ -1199,7 +1270,7 @@ if(TINT_BUILD_TESTS)
       writer/glsl/generator_impl_call_test.cc
       writer/glsl/generator_impl_case_test.cc
       writer/glsl/generator_impl_cast_test.cc
-      writer/glsl/generator_impl_constructor_test.cc
+      writer/glsl/generator_impl_initializer_test.cc
       writer/glsl/generator_impl_continue_test.cc
       writer/glsl/generator_impl_discard_test.cc
       writer/glsl/generator_impl_function_test.cc
@@ -1236,7 +1307,7 @@ if(TINT_BUILD_TESTS)
       writer/hlsl/generator_impl_call_test.cc
       writer/hlsl/generator_impl_case_test.cc
       writer/hlsl/generator_impl_cast_test.cc
-      writer/hlsl/generator_impl_constructor_test.cc
+      writer/hlsl/generator_impl_initializer_test.cc
       writer/hlsl/generator_impl_continue_test.cc
       writer/hlsl/generator_impl_discard_test.cc
       writer/hlsl/generator_impl_function_test.cc
@@ -1259,6 +1330,13 @@ if(TINT_BUILD_TESTS)
     )
   endif()
 
+  if (${TINT_BUILD_IR})
+    list(APPEND TINT_TEST_SRCS
+      ir/builder_impl_test.cc
+      ir/test_helper.h
+    )
+  endif()
+
   if (${TINT_BUILD_FUZZERS})
     list(APPEND TINT_TEST_SRCS
       fuzzers/mersenne_twister_engine.cc
@@ -1274,7 +1352,15 @@ if(TINT_BUILD_TESTS)
   add_executable(tint_unittests ${TINT_TEST_SRCS})
   set_target_properties(${target} PROPERTIES FOLDER "Tests")
 
-  if(NOT MSVC)
+  if(MSVC)
+    # TODO(crbug.com/tint/1749): MSVC debug builds can suffer from stack
+    # overflows when resolving deeply nested expression chains or statements.
+    # Production builds neither use MSVC nor debug, so just bump the stack size
+    # for this build combination.
+    if (IS_DEBUG_BUILD)
+      target_link_options(tint_unittests PRIVATE "/STACK:4194304") # 4MB, default is 1MB
+    endif()
+  else()
     target_compile_options(tint_unittests PRIVATE
       -Wno-global-constructors
       -Wno-weak-vtables
@@ -1302,32 +1388,29 @@ if(TINT_BUILD_BENCHMARKS)
     message(FATAL_ERROR "TINT_BUILD_BENCHMARKS requires TINT_BUILD_WGSL_READER")
   endif()
 
-  set(TINT_BENCHMARK_SRC
+  list(APPEND TINT_BENCHMARK_SRCS
     "castable_bench.cc"
-    "ast/extension_bench.cc"
-    "ast/address_space_bench.cc"
-    "ast/texel_format_bench.cc"
     "bench/benchmark.cc"
     "reader/wgsl/parser_bench.cc"
   )
 
   if (${TINT_BUILD_GLSL_WRITER})
-    list(APPEND TINT_BENCHMARK_SRC writer/glsl/generator_bench.cc)
+    list(APPEND TINT_BENCHMARK_SRCS writer/glsl/generator_bench.cc)
   endif()
   if (${TINT_BUILD_HLSL_WRITER})
-    list(APPEND TINT_BENCHMARK_SRC writer/hlsl/generator_bench.cc)
+    list(APPEND TINT_BENCHMARK_SRCS writer/hlsl/generator_bench.cc)
   endif()
   if (${TINT_BUILD_MSL_WRITER})
-    list(APPEND TINT_BENCHMARK_SRC writer/msl/generator_bench.cc)
+    list(APPEND TINT_BENCHMARK_SRCS writer/msl/generator_bench.cc)
   endif()
   if (${TINT_BUILD_SPV_WRITER})
-    list(APPEND TINT_BENCHMARK_SRC writer/spirv/generator_bench.cc)
+    list(APPEND TINT_BENCHMARK_SRCS writer/spirv/generator_bench.cc)
   endif()
   if (${TINT_BUILD_WGSL_WRITER})
-    list(APPEND TINT_BENCHMARK_SRC writer/wgsl/generator_bench.cc)
+    list(APPEND TINT_BENCHMARK_SRCS writer/wgsl/generator_bench.cc)
   endif()
 
-  add_executable(tint-benchmark ${TINT_BENCHMARK_SRC})
+  add_executable(tint-benchmark ${TINT_BENCHMARK_SRCS})
   set_target_properties(${target} PROPERTIES FOLDER "Benchmarks")
 
   tint_core_compile_options(tint-benchmark)

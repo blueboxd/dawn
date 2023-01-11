@@ -50,7 +50,7 @@ func (l *lexer) lex() error {
 			return nil
 		case ' ', '\t':
 			l.next()
-		case '\n':
+		case '\r', '\n':
 			l.next()
 		case '@':
 			l.tok(1, tok.Attr)
@@ -93,18 +93,45 @@ func (l *lexer) lex() error {
 			case l.match("/", tok.Divide):
 			case l.match(".", tok.Dot):
 			case l.match("->", tok.Arrow):
-			case l.match("-", tok.Minus):
 			case l.match("fn", tok.Function):
 			case l.match("op", tok.Operator):
 			case l.match("enum", tok.Enum):
 			case l.match("type", tok.Type):
-			case l.match("ctor", tok.Constructor):
+			case l.match("init", tok.Initializer):
 			case l.match("conv", tok.Converter):
 			case l.match("match", tok.Match):
 			case unicode.IsLetter(l.peek(0)) || l.peek(0) == '_':
 				l.tok(l.count(alphaNumericOrUnderscore), tok.Identifier)
-			case unicode.IsNumber(l.peek(0)):
-				l.tok(l.count(unicode.IsNumber), tok.Integer)
+			case unicode.IsNumber(l.peek(0)) || l.peek(0) == '-':
+				isFloat := false
+				isNegative := false
+				isFirst := true
+				pred := func(r rune) bool {
+					if isFirst && r == '-' {
+						isNegative = true
+						isFirst = false
+						return true
+					}
+					isFirst = false
+
+					if unicode.IsNumber(r) {
+						return true
+					}
+
+					if !isFloat && r == '.' {
+						isFloat = true
+						return true
+					}
+					return false
+				}
+				n := l.count(pred)
+				if isNegative && n == 1 {
+					l.tok(1, tok.Minus)
+				} else if isFloat {
+					l.tok(n, tok.Float)
+				} else {
+					l.tok(n, tok.Integer)
+				}
 			case l.match("&&", tok.AndAnd):
 			case l.match("&", tok.And):
 			case l.match("||", tok.OrOr):

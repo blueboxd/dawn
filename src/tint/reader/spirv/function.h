@@ -956,17 +956,15 @@ class FunctionEmitter {
     ExpressionList MakeCoordinateOperandsForImageAccess(
         const spvtools::opt::Instruction& image_access);
 
-    /// Returns the given value as an I32.  If it's already an I32 then this
-    /// return the given value.  Otherwise, wrap the value in a TypeConstructor
-    /// expression.
+    /// Returns the given value as an i32. If it's already an i32 then simply returns @p value.
+    /// Otherwise, wrap the value in a TypeInitializer expression.
     /// @param value the value to pass through or convert
-    /// @returns the value as an I32 value.
+    /// @returns the value as an i32 value.
     TypedExpression ToI32(TypedExpression value);
 
-    /// Returns the given value as a signed integer type of the same shape
-    /// if the value is unsigned scalar or vector, by wrapping the value
-    /// with a TypeConstructor expression.  Returns the value itself if the
-    /// value otherwise.
+    /// Returns the given value as a signed integer type of the same shape if the value is unsigned
+    /// scalar or vector, by wrapping the value with a TypeInitializer expression.  Returns the
+    /// value itself if the value was already signed.
     /// @param value the value to pass through or convert
     /// @returns the value itself, or converted to signed integral
     TypedExpression ToSignedIfUnsigned(TypedExpression value);
@@ -1277,7 +1275,7 @@ class FunctionEmitter {
     TypedExpression Dereference(TypedExpression expr);
 
     /// Creates a new `ast::Node` owned by the ProgramBuilder.
-    /// @param args the arguments to pass to the type constructor
+    /// @param args the arguments to pass to the type initializer
     /// @returns the node pointer
     template <typename T, typename... ARGS>
     T* create(ARGS&&... args) const {
