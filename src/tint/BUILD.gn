@@ -366,6 +366,7 @@ libtint_source_set("libtint_core_all_src") {
     "castable.h",
     "clone_context.cc",
     "clone_context.h",
+    "constant/clone_context.h",
     "constant/composite.h",
     "constant/node.h",
     "constant/scalar.h",
@@ -534,6 +535,8 @@ libtint_source_set("libtint_core_all_src") {
     "transform/std140.h",
     "transform/substitute_override.cc",
     "transform/substitute_override.h",
+    "transform/texture_1d_to_2d.cc",
+    "transform/texture_1d_to_2d.h",
     "transform/transform.cc",
     "transform/transform.h",
     "transform/truncate_interstage_variables.cc",
@@ -563,6 +566,7 @@ libtint_source_set("libtint_core_all_src") {
     "type/array_count.h",
     "type/atomic.h",
     "type/bool.h",
+    "type/clone_context.h",
     "type/depth_multisampled_texture.h",
     "type/depth_texture.h",
     "type/external_texture.h",
@@ -628,8 +632,8 @@ libtint_source_set("libtint_core_all_src") {
     "writer/writer.h",
   ]
 
-  if (is_linux) {
-    sources += [ "diagnostic/printer_linux.cc" ]
+  if (is_linux || is_mac) {
+    sources += [ "diagnostic/printer_posix.cc" ]
   } else if (is_win) {
     sources += [ "diagnostic/printer_windows.cc" ]
   } else {
@@ -715,6 +719,7 @@ libtint_source_set("libtint_type_src") {
     "type/atomic.h",
     "type/bool.cc",
     "type/bool.h",
+    "type/clone_context.h",
     "type/depth_multisampled_texture.cc",
     "type/depth_multisampled_texture.h",
     "type/depth_texture.cc",
@@ -768,6 +773,7 @@ libtint_source_set("libtint_type_src") {
 
 libtint_source_set("libtint_constant_src") {
   sources = [
+    "constant/clone_context.h",
     "constant/composite.cc",
     "constant/composite.h",
     "constant/node.cc",
@@ -1240,6 +1246,14 @@ if (tint_build_unittests) {
     ]
   }
 
+  tint_unittests_source_set("tint_unittests_constant_src") {
+    sources = [
+      "constant/composite_test.cc",
+      "constant/scalar_test.cc",
+      "constant/splat_test.cc",
+    ]
+  }
+
   tint_unittests_source_set("tint_unittests_type_src") {
     sources = [
       "type/array_test.cc",
@@ -1316,6 +1330,7 @@ if (tint_build_unittests) {
       "transform/std140_test.cc",
       "transform/substitute_override_test.cc",
       "transform/test_helper.h",
+      "transform/texture_1d_to_2d_test.cc",
       "transform/transform_test.cc",
       "transform/truncate_interstage_variables_test.cc",
       "transform/unshadow_test.cc",
@@ -1736,6 +1751,7 @@ if (tint_build_unittests) {
       ":libtint_wgsl_reader_src",
       ":libtint_wgsl_writer_src",
       ":tint_unittests_ast_src",
+      ":tint_unittests_constant_src",
       ":tint_unittests_core_src",
       ":tint_unittests_diagnostic_src",
       ":tint_unittests_inspector_src",

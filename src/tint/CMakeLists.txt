@@ -254,6 +254,7 @@ list(APPEND TINT_LIB_SRCS
   castable.h
   clone_context.cc
   clone_context.h
+  constant/clone_context.h
   constant/composite.cc
   constant/composite.h
   constant/scalar.cc
@@ -440,6 +441,8 @@ list(APPEND TINT_LIB_SRCS
   transform/std140.h
   transform/substitute_override.cc
   transform/substitute_override.h
+  transform/texture_1d_to_2d.cc
+  transform/texture_1d_to_2d.h
   transform/transform.cc
   transform/transform.h
   transform/truncate_interstage_variables.cc
@@ -476,6 +479,7 @@ list(APPEND TINT_LIB_SRCS
   type/atomic.h
   type/bool.cc
   type/bool.h
+  type/clone_context.h
   type/depth_multisampled_texture.cc
   type/depth_multisampled_texture.h
   type/depth_texture.cc
@@ -572,7 +576,7 @@ tint_generated(sem/parameter_usage)
 tint_generated(type/short_name BENCH TEST)
 
 if(UNIX)
-  list(APPEND TINT_LIB_SRCS diagnostic/printer_linux.cc)
+  list(APPEND TINT_LIB_SRCS diagnostic/printer_posix.cc)
 elseif(WIN32)
   list(APPEND TINT_LIB_SRCS diagnostic/printer_windows.cc)
 else()
@@ -872,6 +876,9 @@ if(TINT_BUILD_TESTS)
     ast/workgroup_attribute_test.cc
     castable_test.cc
     clone_context_test.cc
+    constant/composite_test.cc
+    constant/scalar_test.cc
+    constant/splat_test.cc
     debug_test.cc
     demangler_test.cc
     diagnostic/diagnostic_test.cc
@@ -951,7 +958,7 @@ if(TINT_BUILD_TESTS)
     traits_test.cc
     transform/transform_test.cc
     type/array_test.cc
-    type/atomic.cc
+    type/atomic_test.cc
     type/bool_test.cc
     type/depth_multisampled_texture_test.cc
     type/depth_texture_test.cc
@@ -1256,6 +1263,7 @@ if(TINT_BUILD_TESTS)
       transform/std140_test.cc
       transform/substitute_override_test.cc
       transform/test_helper.h
+      transform/texture_1d_to_2d_test.cc
       transform/truncate_interstage_variables_test.cc
       transform/unshadow_test.cc
       transform/var_for_dynamic_index_test.cc

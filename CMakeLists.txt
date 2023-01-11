@@ -318,6 +318,9 @@ function(common_compile_options TARGET)
     target_compile_options(${TARGET} PRIVATE
       -fno-exceptions
       -fno-rtti
+
+      -Wno-deprecated-builtins
+      -Wno-unknown-warning-option
     )
 
     if (${DAWN_ENABLE_MSAN})
@@ -340,6 +343,7 @@ function(common_compile_options TARGET)
   endif()
 
   if (DAWN_EMIT_COVERAGE)
+    target_compile_definitions(${TARGET} PRIVATE "DAWN_EMIT_COVERAGE")
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
         target_compile_options(${TARGET} PRIVATE "--coverage")
         target_link_options(${TARGET} PRIVATE "gcov")
@@ -540,6 +544,7 @@ function(tint_default_compile_options TARGET)
     -Wno-return-std-move-in-c++11
     -Wno-unknown-warning-option
     -Wno-undefined-var-template
+    -Wno-unsafe-buffer-usage
     -Wno-used-but-marked-unused
     -Weverything
   )

@@ -60,6 +60,7 @@
 #include "src/tint/transform/simplify_pointers.h"
 #include "src/tint/transform/single_entry_point.h"
 #include "src/tint/transform/std140.h"
+#include "src/tint/transform/texture_1d_to_2d.h"
 #include "src/tint/transform/unshadow.h"
 #include "src/tint/transform/zero_init_workgroup_memory.h"
 #include "src/tint/type/array.h"
@@ -200,6 +201,7 @@ SanitizedResult Sanitize(const Program* in,
         polyfills.int_div_mod = true;
         polyfills.saturate = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
+        polyfills.workgroup_uniform_load = true;
         data.Add<transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<transform::BuiltinPolyfill>();
     }
@@ -251,6 +253,8 @@ SanitizedResult Sanitize(const Program* in,
 
     // Std140 must come after PromoteSideEffectsToDecl and before SimplifyPointers.
     manager.Add<transform::Std140>();
+
+    manager.Add<transform::Texture1DTo2D>();
 
     manager.Add<transform::SimplifyPointers>();
 

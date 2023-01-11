@@ -63,6 +63,7 @@ class Any final : public Castable<Any, type::Type> {
     // Stub implementations for type::Type conformance.
     bool Equals(const type::UniqueNode&) const override { return false; }
     std::string FriendlyName(const SymbolTable&) const override { return "<any>"; }
+    type::Type* Clone(type::CloneContext&) const override { return nullptr; }
 };
 
 /// Number is an 32 bit unsigned integer, which can be in one of three states:
@@ -356,7 +357,7 @@ const type::AbstractFloat* build_fa(MatchState& state) {
 }
 
 bool match_fa(MatchState& state, const type::Type* ty) {
-    return (state.earliest_eval_stage == sem::EvaluationStage::kConstant) &&
+    return (state.earliest_eval_stage <= sem::EvaluationStage::kConstant) &&
            ty->IsAnyOf<Any, type::AbstractNumeric>();
 }
 
@@ -365,7 +366,7 @@ const type::AbstractInt* build_ia(MatchState& state) {
 }
 
 bool match_ia(MatchState& state, const type::Type* ty) {
-    return (state.earliest_eval_stage == sem::EvaluationStage::kConstant) &&
+    return (state.earliest_eval_stage <= sem::EvaluationStage::kConstant) &&
            ty->IsAnyOf<Any, type::AbstractInt>();
 }
 
