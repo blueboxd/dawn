@@ -174,14 +174,18 @@ GPUDevice::~GPUDevice() {
     // lost_promise_ is left hanging. We'll also not clean up any GPU objects before terminating the
     // process, which is not a good idea.
     if (!destroyed_) {
-        destroy(env_);
+        lost_promise_.Discard();
+        device_.Destroy();
+        destroyed_ = true;
     }
 }
 
 interop::Interface<interop::GPUSupportedFeatures> GPUDevice::getFeatures(Napi::Env env) {
     size_t count = device_.EnumerateFeatures(nullptr);
     std::vector<wgpu::FeatureName> features(count);
-    device_.EnumerateFeatures(&features[0]);
+    if (count > 0) {
+        device_.EnumerateFeatures(features.data());
+    }
     return interop::GPUSupportedFeatures::Create<GPUSupportedFeatures>(env, env,
                                                                        std::move(features));
 }
