@@ -260,6 +260,8 @@ void Device::InitTogglesFromDriver() {
 #if DAWN_PLATFORM_IS(MACOS)
     if (gpu_info::IsIntel(vendorId)) {
         SetToggle(Toggle::UseTempTextureInStencilTextureToBufferCopy, true);
+        SetToggle(Toggle::MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats,
+                  true);
 
         if ([NSProcessInfo.processInfo
                 isOperatingSystemAtLeastVersion:NSOperatingSystemVersion{12, 0, 0}]) {
@@ -478,11 +480,12 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
             GetPendingCommandContext(DeviceBase::SubmitMode::Passive), destinationOffset, size);
 
     id<MTLBuffer> uploadBuffer = ToBackend(source)->GetMTLBuffer();
-    id<MTLBuffer> buffer = ToBackend(destination)->GetMTLBuffer();
+    Buffer* buffer = ToBackend(destination);
+    buffer->TrackUsage();
     [GetPendingCommandContext(DeviceBase::SubmitMode::Passive)->EnsureBlit()
            copyFromBuffer:uploadBuffer
              sourceOffset:sourceOffset
-                 toBuffer:buffer
+                 toBuffer:buffer->GetMTLBuffer()
         destinationOffset:destinationOffset
                      size:size];
     return {};

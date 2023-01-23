@@ -1,6 +1,6 @@
 {{- /*
 --------------------------------------------------------------------------------
-Template file for use with tools/src/cmd/gen to generate texel_format.cc
+Template file for use with tools/src/cmd/gen to generate texel_format_test.cc
 
 See:
 * tools/src/cmd/gen for structures used by this template
@@ -11,12 +11,17 @@ See:
 {{- Import "src/tint/templates/enums.tmpl.inc" -}}
 {{- $enum := (Sem.Enum "texel_format") -}}
 
-#include "src/tint/ast/texel_format.h"
+#include "src/tint/type/texel_format.h"
 
-namespace tint::ast {
+#include <string>
 
-{{ Eval "ParseEnum" $enum}}
+#include "src/tint/type/test_helper.h"
+#include "src/tint/utils/string.h"
 
-{{ Eval "EnumOStream" $enum}}
+namespace tint::type {
+namespace {
 
-}  // namespace tint::ast
+{{ Eval "TestParsePrintEnum" $enum}}
+
+}  // namespace
+}  // namespace tint::type
