@@ -230,6 +230,8 @@ libtint_source_set("libtint_core_all_src") {
     "ast/depth_multisampled_texture.h",
     "ast/depth_texture.cc",
     "ast/depth_texture.h",
+    "ast/diagnostic_control.cc",
+    "ast/diagnostic_control.h",
     "ast/disable_validation_attribute.cc",
     "ast/disable_validation_attribute.h",
     "ast/discard_statement.cc",
@@ -448,8 +450,6 @@ libtint_source_set("libtint_core_all_src") {
     "symbol.h",
     "symbol_table.cc",
     "symbol_table.h",
-    "text/unicode.cc",
-    "text/unicode.h",
     "tint.cc",
     "traits.h",
     "type/abstract_float.h",
@@ -476,6 +476,7 @@ libtint_source_set("libtint_core_all_src") {
     "type/reference.h",
     "type/sampled_texture.h",
     "type/sampler.h",
+    "type/sampler_kind.h",
     "type/short_name.h",
     "type/storage_texture.h",
     "type/struct.h",
@@ -518,6 +519,15 @@ libtint_source_set("libtint_core_all_src") {
   } else {
     sources += [ "diagnostic/printer_other.cc" ]
   }
+
+  deps = [ ":libtint_text_src" ]
+}
+
+libtint_source_set("libtint_text_src") {
+  sources = [
+    "text/unicode.cc",
+    "text/unicode.h",
+  ]
 }
 
 libtint_source_set("libtint_transform_src") {
@@ -625,7 +635,10 @@ libtint_source_set("libtint_transform_src") {
     "transform/zero_init_workgroup_memory.cc",
     "transform/zero_init_workgroup_memory.h",
   ]
-  deps = [ ":libtint_core_all_src" ]
+  deps = [
+    ":libtint_core_all_src",
+    ":libtint_text_src",
+  ]
 }
 
 libtint_source_set("libtint_sem_src") {
@@ -739,6 +752,8 @@ libtint_source_set("libtint_type_src") {
     "type/sampled_texture.h",
     "type/sampler.cc",
     "type/sampler.h",
+    "type/sampler_kind.cc",
+    "type/sampler_kind.h",
     "type/short_name.cc",
     "type/short_name.h",
     "type/storage_texture.cc",
@@ -788,6 +803,7 @@ libtint_source_set("libtint_core_src") {
     ":libtint_constant_src",
     ":libtint_core_all_src",
     ":libtint_sem_src",
+    ":libtint_text_src",
     ":libtint_transform_src",
     ":libtint_type_src",
     ":libtint_writer_src",
@@ -906,6 +922,7 @@ libtint_source_set("libtint_wgsl_reader_src") {
   deps = [
     ":libtint_core_all_src",
     ":libtint_reader_src",
+    ":libtint_text_src",
   ]
 }
 
@@ -1163,6 +1180,7 @@ if (tint_build_unittests) {
       "ast/case_statement_test.cc",
       "ast/compound_assignment_statement_test.cc",
       "ast/continue_statement_test.cc",
+      "ast/diagnostic_control_test.cc",
       "ast/discard_statement_test.cc",
       "ast/enable_test.cc",
       "ast/extension_test.cc",
@@ -1353,6 +1371,7 @@ if (tint_build_unittests) {
 
   tint_unittests_source_set("tint_unittests_text_src") {
     sources = [ "text/unicode_test.cc" ]
+    deps = [ ":libtint_text_src" ]
   }
 
   tint_unittests_source_set("tint_unittests_transform_src") {

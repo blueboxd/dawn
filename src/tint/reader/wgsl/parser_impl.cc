@@ -790,11 +790,11 @@ Maybe<const ast::Type*> ParserImpl::texture_and_sampler_types() {
 Maybe<const ast::Type*> ParserImpl::sampler_type() {
     Source source;
     if (match(Token::Type::kSampler, &source)) {
-        return builder_.ty.sampler(source, ast::SamplerKind::kSampler);
+        return builder_.ty.sampler(source, type::SamplerKind::kSampler);
     }
 
     if (match(Token::Type::kComparisonSampler, &source)) {
-        return builder_.ty.sampler(source, ast::SamplerKind::kComparisonSampler);
+        return builder_.ty.sampler(source, type::SamplerKind::kComparisonSampler);
     }
 
     return Failure::kNoMatch;
@@ -1008,13 +1008,18 @@ Maybe<ParserImpl::VariableQualifier> ParserImpl::variable_qualifier() {
 }
 
 // type_alias_decl
-//   : TYPE IDENT EQUAL type_specifier
+//   : ALIAS IDENT EQUAL type_specifier
 Maybe<const ast::Alias*> ParserImpl::type_alias_decl() {
-    if (!peek_is(Token::Type::kType)) {
+    Source source;
+    if (match(Token::Type::kAlias, &source)) {
+        // matched.
+    } else if (match(Token::Type::kType, &source)) {
+        // TODO(crbug.com/tint/1812): DEPRECATED
+        deprecated(source, "'type' has been renamed to 'alias'");
+    } else {
         return Failure::kNoMatch;
     }
 
-    auto& t = next();
     const char* use = "type alias";
 
     auto name = expect_ident(use);
@@ -1034,7 +1039,7 @@ Maybe<const ast::Alias*> ParserImpl::type_alias_decl() {
         return add_error(peek(), "invalid type alias");
     }
 
-    return builder_.ty.alias(make_source_range_from(t.source()), name.value, type.value);
+    return builder_.ty.alias(make_source_range_from(source), name.value, type.value);
 }
 
 // vec_prefix
