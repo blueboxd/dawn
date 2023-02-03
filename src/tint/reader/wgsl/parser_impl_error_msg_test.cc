@@ -129,9 +129,9 @@ fn f() { x = bitcast(y); }
 
 TEST_F(ParserImplErrorTest, BitcastExprMissingGreaterThan) {
     EXPECT("fn f() { x = bitcast<u32(y); }",
-           R"(test.wgsl:1:25 error: expected '>' for bitcast expression
+           R"(test.wgsl:1:21 error: missing closing '>' for bitcast expression
 fn f() { x = bitcast<u32(y); }
-                        ^
+                    ^
 )");
 }
 
@@ -311,46 +311,130 @@ fn f() { for (var i : i32 = 0; i < 8; i=i+1) {
 )");
 }
 
-TEST_F(ParserImplErrorTest, FunctionDeclStaticAssertMissingCondThenEOF) {
-    EXPECT("fn f() { static_assert }", R"(test.wgsl:1:24 error: unable to parse condition expression
-fn f() { static_assert }
-                       ^
-)");
-}
-
-TEST_F(ParserImplErrorTest, FunctionDeclStaticAssertMissingCondThenSemicolon) {
-    EXPECT("fn f() { static_assert; }",
-           R"(test.wgsl:1:23 error: unable to parse condition expression
-fn f() { static_assert; }
+TEST_F(ParserImplErrorTest, FunctionDeclConstAssertMissingCondThenEOF) {
+    EXPECT("fn f() { const_assert }", R"(test.wgsl:1:23 error: unable to parse condition expression
+fn f() { const_assert }
                       ^
 )");
 }
 
-TEST_F(ParserImplErrorTest, FunctionDeclStaticAssertMissingCondThenLet) {
-    EXPECT("fn f() { static_assert\nlet x = 0; }",
+TEST_F(ParserImplErrorTest, FunctionDeclConstAssertMissingCondThenSemicolon) {
+    EXPECT("fn f() { const_assert; }",
+           R"(test.wgsl:1:22 error: unable to parse condition expression
+fn f() { const_assert; }
+                     ^
+)");
+}
+
+TEST_F(ParserImplErrorTest, FunctionDeclConstAssertMissingCondThenLet) {
+    EXPECT("fn f() { const_assert\nlet x = 0; }",
            R"(test.wgsl:2:1 error: unable to parse condition expression
 let x = 0; }
 ^^^
 )");
 }
 
-TEST_F(ParserImplErrorTest, FunctionDeclStaticAssertMissingLParen) {
-    EXPECT("fn f() { static_assert true);", R"(test.wgsl:1:28 error: expected ';' for statement
+TEST_F(ParserImplErrorTest, FunctionDeclConstAssertMissingLParen) {
+    EXPECT("fn f() { const_assert true);", R"(test.wgsl:1:27 error: expected ';' for statement
+fn f() { const_assert true);
+                          ^
+)");
+}
+
+TEST_F(ParserImplErrorTest, FunctionDeclConstAssertMissingRParen) {
+    EXPECT("fn f() { const_assert (true;", R"(test.wgsl:1:28 error: expected ')'
+fn f() { const_assert (true;
+                           ^
+)");
+}
+
+TEST_F(ParserImplErrorTest, FunctionDeclConstAssertMissingSemicolon) {
+    EXPECT("fn f() { const_assert true }",
+           R"(test.wgsl:1:28 error: expected ';' for statement
+fn f() { const_assert true }
+                           ^
+)");
+}
+
+// TODO(crbug.com/tint/1807)
+TEST_F(ParserImplErrorTest, DEPRECATED_FunctionDeclStaticAssertMissingCondThenEOF) {
+    EXPECT(
+        "fn f() { static_assert }",
+        R"(test.wgsl:1:10 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+fn f() { static_assert }
+         ^^^^^^^^^^^^^
+
+test.wgsl:1:24 error: unable to parse condition expression
+fn f() { static_assert }
+                       ^
+)");
+}
+
+// TODO(crbug.com/tint/1807)
+TEST_F(ParserImplErrorTest, DEPRECATED_FunctionDeclStaticAssertMissingCondThenSemicolon) {
+    EXPECT(
+        "fn f() { static_assert; }",
+        R"(test.wgsl:1:10 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+fn f() { static_assert; }
+         ^^^^^^^^^^^^^
+
+test.wgsl:1:23 error: unable to parse condition expression
+fn f() { static_assert; }
+                      ^
+)");
+}
+
+// TODO(crbug.com/tint/1807)
+TEST_F(ParserImplErrorTest, DEPRECATED_FunctionDeclStaticAssertMissingCondThenLet) {
+    EXPECT(
+        "fn f() { static_assert\nlet x = 0; }",
+        R"(test.wgsl:1:10 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+fn f() { static_assert
+         ^^^^^^^^^^^^^
+
+test.wgsl:2:1 error: unable to parse condition expression
+let x = 0; }
+^^^
+)");
+}
+
+// TODO(crbug.com/tint/1807)
+TEST_F(ParserImplErrorTest, DEPRECATED_FunctionDeclStaticAssertMissingLParen) {
+    EXPECT(
+        "fn f() { static_assert true);",
+        R"(test.wgsl:1:10 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+fn f() { static_assert true);
+         ^^^^^^^^^^^^^
+
+test.wgsl:1:28 error: expected ';' for statement
 fn f() { static_assert true);
                            ^
 )");
 }
 
-TEST_F(ParserImplErrorTest, FunctionDeclStaticAssertMissingRParen) {
-    EXPECT("fn f() { static_assert (true;", R"(test.wgsl:1:29 error: expected ')'
+// TODO(crbug.com/tint/1807)
+TEST_F(ParserImplErrorTest, DEPRECATED_FunctionDeclStaticAssertMissingRParen) {
+    EXPECT(
+        "fn f() { static_assert (true;",
+        R"(test.wgsl:1:10 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+fn f() { static_assert (true;
+         ^^^^^^^^^^^^^
+
+test.wgsl:1:29 error: expected ')'
 fn f() { static_assert (true;
                             ^
 )");
 }
 
-TEST_F(ParserImplErrorTest, FunctionDeclStaticAssertMissingSemicolon) {
-    EXPECT("fn f() { static_assert true }",
-           R"(test.wgsl:1:29 error: expected ';' for statement
+// TODO(crbug.com/tint/1807)
+TEST_F(ParserImplErrorTest, DEPRECATED_FunctionDeclStaticAssertMissingSemicolon) {
+    EXPECT(
+        "fn f() { static_assert true }",
+        R"(test.wgsl:1:10 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+fn f() { static_assert true }
+         ^^^^^^^^^^^^^
+
+test.wgsl:1:29 error: expected ';' for statement
 fn f() { static_assert true }
                             ^
 )");
@@ -405,7 +489,7 @@ fn f( {}
 }
 
 TEST_F(ParserImplErrorTest, FunctionDeclMissingArrow) {
-    EXPECT("fn f() f32 {}", R"(test.wgsl:1:8 error: expected '{'
+    EXPECT("fn f() f32 {}", R"(test.wgsl:1:8 error: expected '{' for function body
 fn f() f32 {}
        ^^^
 )");
@@ -442,14 +526,14 @@ fn f(x : i32, ,) {}
 }
 
 TEST_F(ParserImplErrorTest, FunctionDeclMissingLBrace) {
-    EXPECT("fn f() }", R"(test.wgsl:1:8 error: expected '{'
+    EXPECT("fn f() }", R"(test.wgsl:1:8 error: expected '{' for function body
 fn f() }
        ^
 )");
 }
 
 TEST_F(ParserImplErrorTest, FunctionDeclMissingRBrace) {
-    EXPECT("fn f() {", R"(test.wgsl:1:9 error: expected '}'
+    EXPECT("fn f() {", R"(test.wgsl:1:9 error: expected '}' for function body
 fn f() {
         ^
 )");
@@ -457,9 +541,9 @@ fn f() {
 
 TEST_F(ParserImplErrorTest, FunctionScopeUnusedDecl) {
     EXPECT("fn f(a:i32)->i32{return a;@size(1)}",
-           R"(test.wgsl:1:27 error: expected '}'
+           R"(test.wgsl:1:28 error: unexpected attributes
 fn f(a:i32)->i32{return a;@size(1)}
-                          ^
+                           ^^^^
 )");
 }
 
@@ -584,9 +668,9 @@ var x : texture_1d;
 
 TEST_F(ParserImplErrorTest, GlobalDeclSampledTextureMissingGreaterThan) {
     EXPECT("var x : texture_1d<f32;",
-           R"(test.wgsl:1:23 error: expected '>' for sampled texture type
+           R"(test.wgsl:1:19 error: missing closing '>' for sampled texture type
 var x : texture_1d<f32;
-                      ^
+                  ^
 )");
 }
 
@@ -608,9 +692,9 @@ var x : texture_multisampled_2d;
 
 TEST_F(ParserImplErrorTest, GlobalDeclMultisampledTextureMissingGreaterThan) {
     EXPECT("var x : texture_multisampled_2d<f32;",
-           R"(test.wgsl:1:36 error: expected '>' for multisampled texture type
+           R"(test.wgsl:1:32 error: missing closing '>' for multisampled texture type
 var x : texture_multisampled_2d<f32;
-                                   ^
+                               ^
 )");
 }
 
@@ -622,46 +706,124 @@ var x : texture_multisampled_2d<1>;
 )");
 }
 
-TEST_F(ParserImplErrorTest, GlobalDeclStaticAssertMissingCondThenEOF) {
-    EXPECT("static_assert", R"(test.wgsl:1:14 error: unable to parse condition expression
-static_assert
-             ^
+TEST_F(ParserImplErrorTest, GlobalDeclConstAssertMissingCondThenEOF) {
+    EXPECT("const_assert", R"(test.wgsl:1:13 error: unable to parse condition expression
+const_assert
+            ^
 )");
 }
 
-TEST_F(ParserImplErrorTest, GlobalDeclStaticAssertMissingCondThenSemicolon) {
-    EXPECT("static_assert;", R"(test.wgsl:1:14 error: unable to parse condition expression
-static_assert;
-             ^
+TEST_F(ParserImplErrorTest, GlobalDeclConstAssertMissingCondThenSemicolon) {
+    EXPECT("const_assert;", R"(test.wgsl:1:13 error: unable to parse condition expression
+const_assert;
+            ^
 )");
 }
 
-TEST_F(ParserImplErrorTest, GlobalDeclStaticAssertMissingCondThenAlias) {
-    EXPECT("static_assert\ntype T = i32;",
+TEST_F(ParserImplErrorTest, GlobalDeclConstAssertMissingCondThenAlias) {
+    EXPECT("const_assert\ntype T = i32;",
            R"(test.wgsl:2:1 error: unable to parse condition expression
 type T = i32;
 ^^^^
 )");
 }
 
-TEST_F(ParserImplErrorTest, GlobalDeclStaticAssertMissingLParen) {
-    EXPECT("static_assert true);",
-           R"(test.wgsl:1:19 error: expected ';' for static assertion declaration
+TEST_F(ParserImplErrorTest, GlobalDeclConstAssertMissingLParen) {
+    EXPECT("const_assert true);",
+           R"(test.wgsl:1:18 error: expected ';' for const assertion declaration
+const_assert true);
+                 ^
+)");
+}
+
+TEST_F(ParserImplErrorTest, GlobalDeclConstAssertMissingRParen) {
+    EXPECT("const_assert (true;", R"(test.wgsl:1:19 error: expected ')'
+const_assert (true;
+                  ^
+)");
+}
+
+TEST_F(ParserImplErrorTest, GlobalDeclConstAssertMissingSemicolon) {
+    EXPECT("const_assert true const_assert true;",
+           R"(test.wgsl:1:19 error: expected ';' for const assertion declaration
+const_assert true const_assert true;
+                  ^^^^^^^^^^^^
+)");
+}
+
+// TODO(crbug.com/tint/1807): DEPRECATED
+TEST_F(ParserImplErrorTest, DEPRECATED_GlobalDeclStaticAssertMissingCondThenEOF) {
+    EXPECT("const_assert", R"(test.wgsl:1:13 error: unable to parse condition expression
+const_assert
+            ^
+)");
+}
+
+// TODO(crbug.com/tint/1807): DEPRECATED
+TEST_F(ParserImplErrorTest, DEPRECATED_GlobalDeclStaticAssertMissingCondThenSemicolon) {
+    EXPECT(
+        "static_assert;",
+        R"(test.wgsl:1:1 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+static_assert;
+^^^^^^^^^^^^^
+
+test.wgsl:1:14 error: unable to parse condition expression
+static_assert;
+             ^
+)");
+}
+
+// TODO(crbug.com/tint/1807): DEPRECATED
+TEST_F(ParserImplErrorTest, DEPRECATED_GlobalDeclStaticAssertMissingCondThenAlias) {
+    EXPECT(
+        "static_assert\ntype T = i32;",
+        R"(test.wgsl:1:1 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+static_assert
+^^^^^^^^^^^^^
+
+test.wgsl:2:1 error: unable to parse condition expression
+type T = i32;
+^^^^
+)");
+}
+
+// TODO(crbug.com/tint/1807): DEPRECATED
+TEST_F(ParserImplErrorTest, DEPRECATED_GlobalDeclStaticAssertMissingLParen) {
+    EXPECT(
+        "static_assert true);",
+        R"(test.wgsl:1:1 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+static_assert true);
+^^^^^^^^^^^^^
+
+test.wgsl:1:19 error: expected ';' for const assertion declaration
 static_assert true);
                   ^
 )");
 }
 
-TEST_F(ParserImplErrorTest, GlobalDeclStaticAssertMissingRParen) {
-    EXPECT("static_assert (true;", R"(test.wgsl:1:20 error: expected ')'
+// TODO(crbug.com/tint/1807): DEPRECATED
+TEST_F(ParserImplErrorTest, DEPRECATED_GlobalDeclStaticAssertMissingRParen) {
+    EXPECT(
+        "static_assert (true;",
+        R"(test.wgsl:1:1 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+static_assert (true;
+^^^^^^^^^^^^^
+
+test.wgsl:1:20 error: expected ')'
 static_assert (true;
                    ^
 )");
 }
 
-TEST_F(ParserImplErrorTest, GlobalDeclStaticAssertMissingSemicolon) {
-    EXPECT("static_assert true static_assert true;",
-           R"(test.wgsl:1:20 error: expected ';' for static assertion declaration
+// TODO(crbug.com/tint/1807): DEPRECATED
+TEST_F(ParserImplErrorTest, DEPRECATED_GlobalDeclStaticAssertMissingSemicolon) {
+    EXPECT(
+        "static_assert true static_assert true;",
+        R"(test.wgsl:1:1 warning: use of deprecated language feature: 'static_assert' has been renamed to 'const_assert'
+static_assert true static_assert true;
+^^^^^^^^^^^^^
+
+test.wgsl:1:20 error: expected ';' for const assertion declaration
 static_assert true static_assert true;
                    ^^^^^^^^^^^^^
 )");
@@ -677,9 +839,9 @@ var x : texture_storage_2d;
 
 TEST_F(ParserImplErrorTest, GlobalDeclStorageTextureMissingGreaterThan) {
     EXPECT("var x : texture_storage_2d<r32uint, read;",
-           R"(test.wgsl:1:41 error: expected '>' for storage texture type
+           R"(test.wgsl:1:27 error: missing closing '>' for storage texture type
 var x : texture_storage_2d<r32uint, read;
-                                        ^
+                          ^
 )");
 }
 
@@ -831,9 +993,9 @@ type meow = f32
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarArrayMissingGreaterThan) {
     EXPECT("var i : array<u32, 3;",
-           R"(test.wgsl:1:21 error: expected '>' for array declaration
+           R"(test.wgsl:1:14 error: missing closing '>' for array declaration
 var i : array<u32, 3;
-                    ^
+             ^
 )");
 }
 
@@ -948,7 +1110,8 @@ Possible values: 'frag_depth', 'front_facing', 'global_invocation_id', 'instance
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarAttrBuiltinInvalidValue) {
     EXPECT("@builtin(frag_d3pth) var i : i32;",
-           R"(test.wgsl:1:10 error: expected builtin. Did you mean 'frag_depth'?
+           R"(test.wgsl:1:10 error: expected builtin
+Did you mean 'frag_depth'?
 Possible values: 'frag_depth', 'front_facing', 'global_invocation_id', 'instance_index', 'local_invocation_id', 'local_invocation_index', 'num_workgroups', 'position', 'sample_index', 'sample_mask', 'vertex_index', 'workgroup_id'
 @builtin(frag_d3pth) var i : i32;
          ^^^^^^^^^^
@@ -1012,9 +1175,9 @@ var ^ : mat4x4;
 }
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarMatrixMissingGreaterThan) {
-    EXPECT("var i : mat4x4<u32;", R"(test.wgsl:1:19 error: expected '>' for matrix
+    EXPECT("var i : mat4x4<u32;", R"(test.wgsl:1:15 error: missing closing '>' for matrix
 var i : mat4x4<u32;
-                  ^
+              ^
 )");
 }
 
@@ -1043,9 +1206,9 @@ var i : ptr;
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarPtrMissingGreaterThan) {
     EXPECT("var i : ptr<private, u32;",
-           R"(test.wgsl:1:25 error: expected '>' for ptr declaration
+           R"(test.wgsl:1:12 error: missing closing '>' for ptr declaration
 var i : ptr<private, u32;
-                        ^
+           ^
 )");
 }
 
@@ -1084,9 +1247,9 @@ var i : atomic;
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarAtomicMissingGreaterThan) {
     EXPECT("var i : atomic<u32 x;",
-           R"(test.wgsl:1:20 error: expected '>' for atomic declaration
+           R"(test.wgsl:1:15 error: missing closing '>' for atomic declaration
 var i : atomic<u32 x;
-                   ^
+              ^
 )");
 }
 
@@ -1108,9 +1271,9 @@ var<private i : i32
 }
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarVectorMissingGreaterThan) {
-    EXPECT("var i : vec3<u32;", R"(test.wgsl:1:17 error: expected '>' for vector
+    EXPECT("var i : vec3<u32;", R"(test.wgsl:1:13 error: missing closing '>' for vector
 var i : vec3<u32;
-                ^
+            ^
 )");
 }
 

@@ -37,9 +37,11 @@
 #include "src/tint/ast/case_statement.h"
 #include "src/tint/ast/compound_assignment_statement.h"
 #include "src/tint/ast/const.h"
+#include "src/tint/ast/const_assert.h"
 #include "src/tint/ast/continue_statement.h"
 #include "src/tint/ast/depth_multisampled_texture.h"
 #include "src/tint/ast/depth_texture.h"
+#include "src/tint/ast/diagnostic_attribute.h"
 #include "src/tint/ast/diagnostic_control.h"
 #include "src/tint/ast/disable_validation_attribute.h"
 #include "src/tint/ast/discard_statement.h"
@@ -52,6 +54,7 @@
 #include "src/tint/ast/for_loop_statement.h"
 #include "src/tint/ast/i32.h"
 #include "src/tint/ast/id_attribute.h"
+#include "src/tint/ast/identifier.h"
 #include "src/tint/ast/if_statement.h"
 #include "src/tint/ast/increment_decrement_statement.h"
 #include "src/tint/ast/index_accessor_expression.h"
@@ -72,7 +75,6 @@
 #include "src/tint/ast/sampled_texture.h"
 #include "src/tint/ast/sampler.h"
 #include "src/tint/ast/stage_attribute.h"
-#include "src/tint/ast/static_assert.h"
 #include "src/tint/ast/storage_texture.h"
 #include "src/tint/ast/stride_attribute.h"
 #include "src/tint/ast/struct_member_align_attribute.h"
@@ -1146,6 +1148,27 @@ class ProgramBuilder {
     /// @return `sym`
     Symbol Sym(Symbol sym) { return sym; }
 
+    /// @param source the source information
+    /// @param identifier the identifier symbol
+    /// @return an ast::Identifier with the given symbol
+    template <typename IDENTIFIER>
+    const ast::Identifier* Ident(const Source& source, IDENTIFIER&& identifier) {
+        return create<ast::Identifier>(source, Sym(std::forward<IDENTIFIER>(identifier)));
+    }
+
+    /// @param identifier the identifier symbol
+    /// @return an ast::Identifier with the given symbol
+    template <typename IDENTIFIER>
+    const ast::Identifier* Ident(IDENTIFIER&& identifier) {
+        if constexpr (traits::IsTypeOrDerived<
+                          std::decay_t<std::remove_pointer_t<std::decay_t<IDENTIFIER>>>,
+                          ast::Identifier>) {
+            return identifier;  // Pass-through
+        } else {
+            return create<ast::Identifier>(Sym(std::forward<IDENTIFIER>(identifier)));
+        }
+    }
+
     /// @param expr the expression
     /// @return expr
     template <typename T>
@@ -1161,52 +1184,52 @@ class ProgramBuilder {
     /// @param symbol the identifier symbol
     /// @return an ast::IdentifierExpression with the given symbol
     const ast::IdentifierExpression* Expr(const Source& source, Symbol symbol) {
-        return create<ast::IdentifierExpression>(source, symbol);
+        return create<ast::IdentifierExpression>(source, Ident(source, symbol));
     }
 
     /// @param symbol the identifier symbol
     /// @return an ast::IdentifierExpression with the given symbol
     const ast::IdentifierExpression* Expr(Symbol symbol) {
-        return create<ast::IdentifierExpression>(symbol);
-    }
-
-    /// @param source the source information
-    /// @param variable the AST variable
-    /// @return an ast::IdentifierExpression with the variable's symbol
-    const ast::IdentifierExpression* Expr(const Source& source, const ast::Variable* variable) {
-        return create<ast::IdentifierExpression>(source, variable->symbol);
-    }
-
-    /// @param variable the AST variable
-    /// @return an ast::IdentifierExpression with the variable's symbol
-    const ast::IdentifierExpression* Expr(const ast::Variable* variable) {
-        return create<ast::IdentifierExpression>(variable->symbol);
+        return create<ast::IdentifierExpression>(Ident(symbol));
     }
 
     /// @param source the source information
     /// @param name the identifier name
     /// @return an ast::IdentifierExpression with the given name
     const ast::IdentifierExpression* Expr(const Source& source, const char* name) {
-        return create<ast::IdentifierExpression>(source, Symbols().Register(name));
+        return create<ast::IdentifierExpression>(source, Ident(source, name));
     }
 
     /// @param name the identifier name
     /// @return an ast::IdentifierExpression with the given name
     const ast::IdentifierExpression* Expr(const char* name) {
-        return create<ast::IdentifierExpression>(Symbols().Register(name));
+        return create<ast::IdentifierExpression>(Ident(name));
     }
 
     /// @param source the source information
     /// @param name the identifier name
     /// @return an ast::IdentifierExpression with the given name
     const ast::IdentifierExpression* Expr(const Source& source, const std::string& name) {
-        return create<ast::IdentifierExpression>(source, Symbols().Register(name));
+        return create<ast::IdentifierExpression>(source, Ident(source, name));
     }
 
     /// @param name the identifier name
     /// @return an ast::IdentifierExpression with the given name
     const ast::IdentifierExpression* Expr(const std::string& name) {
-        return create<ast::IdentifierExpression>(Symbols().Register(name));
+        return create<ast::IdentifierExpression>(Ident(name));
+    }
+
+    /// @param source the source information
+    /// @param variable the AST variable
+    /// @return an ast::IdentifierExpression with the variable's symbol
+    const ast::IdentifierExpression* Expr(const Source& source, const ast::Variable* variable) {
+        return create<ast::IdentifierExpression>(source, Ident(source, variable->symbol));
+    }
+
+    /// @param variable the AST variable
+    /// @return an ast::IdentifierExpression with the variable's symbol
+    const ast::IdentifierExpression* Expr(const ast::Variable* variable) {
+        return create<ast::IdentifierExpression>(Ident(variable->symbol));
     }
 
     /// @param source the source information
@@ -1926,38 +1949,38 @@ class ProgramBuilder {
 
     /// @param source the source information
     /// @param condition the assertion condition
-    /// @returns a new `ast::StaticAssert`, which is automatically registered as a global statement
+    /// @returns a new `ast::ConstAssert`, which is automatically registered as a global statement
     /// with the ast::Module.
     template <typename EXPR>
-    const ast::StaticAssert* GlobalStaticAssert(const Source& source, EXPR&& condition) {
-        auto* sa = StaticAssert(source, std::forward<EXPR>(condition));
-        AST().AddStaticAssert(sa);
+    const ast::ConstAssert* GlobalConstAssert(const Source& source, EXPR&& condition) {
+        auto* sa = ConstAssert(source, std::forward<EXPR>(condition));
+        AST().AddConstAssert(sa);
         return sa;
     }
 
     /// @param condition the assertion condition
-    /// @returns a new `ast::StaticAssert`, which is automatically registered as a global statement
+    /// @returns a new `ast::ConstAssert`, which is automatically registered as a global statement
     /// with the ast::Module.
     template <typename EXPR, typename = DisableIfSource<EXPR>>
-    const ast::StaticAssert* GlobalStaticAssert(EXPR&& condition) {
-        auto* sa = StaticAssert(std::forward<EXPR>(condition));
-        AST().AddStaticAssert(sa);
+    const ast::ConstAssert* GlobalConstAssert(EXPR&& condition) {
+        auto* sa = ConstAssert(std::forward<EXPR>(condition));
+        AST().AddConstAssert(sa);
         return sa;
     }
 
     /// @param source the source information
     /// @param condition the assertion condition
-    /// @returns a new `ast::StaticAssert` with the given assertion condition
+    /// @returns a new `ast::ConstAssert` with the given assertion condition
     template <typename EXPR>
-    const ast::StaticAssert* StaticAssert(const Source& source, EXPR&& condition) {
-        return create<ast::StaticAssert>(source, Expr(std::forward<EXPR>(condition)));
+    const ast::ConstAssert* ConstAssert(const Source& source, EXPR&& condition) {
+        return create<ast::ConstAssert>(source, Expr(std::forward<EXPR>(condition)));
     }
 
     /// @param condition the assertion condition
-    /// @returns a new `ast::StaticAssert` with the given assertion condition
+    /// @returns a new `ast::ConstAssert` with the given assertion condition
     template <typename EXPR, typename = DisableIfSource<EXPR>>
-    const ast::StaticAssert* StaticAssert(EXPR&& condition) {
-        return create<ast::StaticAssert>(Expr(std::forward<EXPR>(condition)));
+    const ast::ConstAssert* ConstAssert(EXPR&& condition) {
+        return create<ast::ConstAssert>(Expr(std::forward<EXPR>(condition)));
     }
 
     /// @param source the source information
@@ -2037,7 +2060,7 @@ class ProgramBuilder {
     /// arguments of `args` converted to `ast::Expression`s using `Expr()`.
     template <typename NAME, typename... ARGS>
     const ast::CallExpression* Call(const Source& source, NAME&& func, ARGS&&... args) {
-        return create<ast::CallExpression>(source, Expr(func),
+        return create<ast::CallExpression>(source, Ident(func),
                                            ExprList(std::forward<ARGS>(args)...));
     }
 
@@ -2047,7 +2070,7 @@ class ProgramBuilder {
     /// arguments of `args` converted to `ast::Expression`s using `Expr()`.
     template <typename NAME, typename... ARGS, typename = DisableIfSource<NAME>>
     const ast::CallExpression* Call(NAME&& func, ARGS&&... args) {
-        return create<ast::CallExpression>(Expr(func), ExprList(std::forward<ARGS>(args)...));
+        return create<ast::CallExpression>(Ident(func), ExprList(std::forward<ARGS>(args)...));
     }
 
     /// @param source the source information
@@ -2351,7 +2374,7 @@ class ProgramBuilder {
                                                         OBJ&& obj,
                                                         IDX&& idx) {
         return create<ast::MemberAccessorExpression>(source, Expr(std::forward<OBJ>(obj)),
-                                                     Expr(std::forward<IDX>(idx)));
+                                                     Ident(std::forward<IDX>(idx)));
     }
 
     /// @param obj the object for the member accessor expression
@@ -2360,7 +2383,7 @@ class ProgramBuilder {
     template <typename OBJ, typename IDX>
     const ast::MemberAccessorExpression* MemberAccessor(OBJ&& obj, IDX&& idx) {
         return create<ast::MemberAccessorExpression>(Expr(std::forward<OBJ>(obj)),
-                                                     Expr(std::forward<IDX>(idx)));
+                                                     Ident(std::forward<IDX>(idx)));
     }
 
     /// Creates a ast::StructMemberOffsetAttribute
@@ -2455,7 +2478,8 @@ class ProgramBuilder {
     /// @param type the function return type
     /// @param body the function body
     /// @param attributes the optional function attributes
-    /// @param return_type_attributes the optional function return type
+    /// @param return_type_attributes the optional function return type attributes
+    /// @param body_attributes the optional function body attributes
     /// attributes
     /// @returns the function pointer
     template <typename NAME>
@@ -2466,11 +2490,12 @@ class ProgramBuilder {
         const ast::Type* type,
         utils::VectorRef<const ast::Statement*> body,
         utils::VectorRef<const ast::Attribute*> attributes = utils::Empty,
-        utils::VectorRef<const ast::Attribute*> return_type_attributes = utils::Empty) {
-        auto* func =
-            create<ast::Function>(source, Sym(std::forward<NAME>(name)), std::move(params), type,
-                                  create<ast::BlockStatement>(std::move(body)),
-                                  std::move(attributes), std::move(return_type_attributes));
+        utils::VectorRef<const ast::Attribute*> return_type_attributes = utils::Empty,
+        utils::VectorRef<const ast::Attribute*> body_attributes = utils::Empty) {
+        auto* func = create<ast::Function>(
+            source, Sym(std::forward<NAME>(name)), std::move(params), type,
+            create<ast::BlockStatement>(std::move(body), std::move(body_attributes)),
+            std::move(attributes), std::move(return_type_attributes));
         AST().AddFunction(func);
         return func;
     }
@@ -2481,7 +2506,8 @@ class ProgramBuilder {
     /// @param type the function return type
     /// @param body the function body
     /// @param attributes the optional function attributes
-    /// @param return_type_attributes the optional function return type
+    /// @param return_type_attributes the optional function return type attributes
+    /// @param body_attributes the optional function body attributes
     /// attributes
     /// @returns the function pointer
     template <typename NAME>
@@ -2491,11 +2517,12 @@ class ProgramBuilder {
         const ast::Type* type,
         utils::VectorRef<const ast::Statement*> body,
         utils::VectorRef<const ast::Attribute*> attributes = utils::Empty,
-        utils::VectorRef<const ast::Attribute*> return_type_attributes = utils::Empty) {
-        auto* func =
-            create<ast::Function>(Sym(std::forward<NAME>(name)), std::move(params), type,
-                                  create<ast::BlockStatement>(std::move(body)),
-                                  std::move(attributes), std::move(return_type_attributes));
+        utils::VectorRef<const ast::Attribute*> return_type_attributes = utils::Empty,
+        utils::VectorRef<const ast::Attribute*> body_attributes = utils::Empty) {
+        auto* func = create<ast::Function>(
+            Sym(std::forward<NAME>(name)), std::move(params), type,
+            create<ast::BlockStatement>(std::move(body), std::move(body_attributes)),
+            std::move(attributes), std::move(return_type_attributes));
         AST().AddFunction(func);
         return func;
     }
@@ -2675,23 +2702,50 @@ class ProgramBuilder {
     /// @param source the source information for the block
     /// @param statements statements of block
     /// @returns the block statement pointer
-    template <typename... Statements>
-    const ast::BlockStatement* Block(const Source& source, Statements&&... statements) {
+    template <typename... STATEMENTS, typename = DisableIfVectorLike<STATEMENTS...>>
+    const ast::BlockStatement* Block(const Source& source, STATEMENTS&&... statements) {
         return create<ast::BlockStatement>(
-            source, utils::Vector<const ast::Statement*, sizeof...(statements)>{
-                        std::forward<Statements>(statements)...,
-                    });
+            source,
+            utils::Vector<const ast::Statement*, sizeof...(statements)>{
+                std::forward<STATEMENTS>(statements)...,
+            },
+            utils::Empty);
     }
 
     /// Creates a ast::BlockStatement with input statements
     /// @param statements statements of block
     /// @returns the block statement pointer
-    template <typename... STATEMENTS, typename = DisableIfSource<STATEMENTS...>>
+    template <typename... STATEMENTS,
+              typename = DisableIfSource<STATEMENTS...>,
+              typename = DisableIfVectorLike<STATEMENTS...>>
     const ast::BlockStatement* Block(STATEMENTS&&... statements) {
         return create<ast::BlockStatement>(
             utils::Vector<const ast::Statement*, sizeof...(statements)>{
                 std::forward<STATEMENTS>(statements)...,
-            });
+            },
+            utils::Empty);
+    }
+
+    /// Creates a ast::BlockStatement with input statements and attributes
+    /// @param source the source information for the block
+    /// @param statements statements of block
+    /// @param attributes the attributes
+    /// @returns the block statement pointer
+    const ast::BlockStatement* Block(
+        const Source& source,
+        utils::VectorRef<const ast::Statement*> statements,
+        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
+        return create<ast::BlockStatement>(source, std::move(statements), std::move(attributes));
+    }
+
+    /// Creates a ast::BlockStatement with input statements and attributes
+    /// @param statements statements of block
+    /// @param attributes the attributes
+    /// @returns the block statement pointer
+    const ast::BlockStatement* Block(
+        utils::VectorRef<const ast::Statement*> statements,
+        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
+        return create<ast::BlockStatement>(std::move(statements), std::move(attributes));
     }
 
     /// A wrapper type for the Else statement used to create If statements.
@@ -3221,24 +3275,78 @@ class ProgramBuilder {
                                                                   validation);
     }
 
+    /// Creates an ast::DiagnosticAttribute
+    /// @param source the source information
+    /// @param severity the diagnostic severity control
+    /// @param rule_name the diagnostic rule name
+    /// @returns the diagnostic attribute pointer
+    template <typename NAME>
+    const ast::DiagnosticAttribute* DiagnosticAttribute(const Source& source,
+                                                        ast::DiagnosticSeverity severity,
+                                                        NAME&& rule_name) {
+        return create<ast::DiagnosticAttribute>(
+            source, DiagnosticControl(source, severity, std::forward<NAME>(rule_name)));
+    }
+
+    /// Creates an ast::DiagnosticAttribute
+    /// @param severity the diagnostic severity control
+    /// @param rule_name the diagnostic rule name
+    /// @returns the diagnostic attribute pointer
+    template <typename NAME>
+    const ast::DiagnosticAttribute* DiagnosticAttribute(ast::DiagnosticSeverity severity,
+                                                        NAME&& rule_name) {
+        return create<ast::DiagnosticAttribute>(
+            source_, DiagnosticControl(source_, severity, std::forward<NAME>(rule_name)));
+    }
+
     /// Creates an ast::DiagnosticControl
     /// @param source the source information
     /// @param severity the diagnostic severity control
     /// @param rule_name the diagnostic rule name
     /// @returns the diagnostic control pointer
+    template <typename NAME>
     const ast::DiagnosticControl* DiagnosticControl(const Source& source,
                                                     ast::DiagnosticSeverity severity,
-                                                    const ast::IdentifierExpression* rule_name) {
-        return create<ast::DiagnosticControl>(source, severity, rule_name);
+                                                    NAME&& rule_name) {
+        return create<ast::DiagnosticControl>(source, severity,
+                                              Ident(std::forward<NAME>(rule_name)));
     }
 
     /// Creates an ast::DiagnosticControl
     /// @param severity the diagnostic severity control
     /// @param rule_name the diagnostic rule name
     /// @returns the diagnostic control pointer
+    template <typename NAME>
     const ast::DiagnosticControl* DiagnosticControl(ast::DiagnosticSeverity severity,
-                                                    const ast::IdentifierExpression* rule_name) {
-        return create<ast::DiagnosticControl>(source_, severity, rule_name);
+                                                    NAME&& rule_name) {
+        return create<ast::DiagnosticControl>(source_, severity,
+                                              Ident(std::forward<NAME>(rule_name)));
+    }
+
+    /// Add a global diagnostic control to the module.
+    /// @param source the source information
+    /// @param severity the diagnostic severity control
+    /// @param rule_name the diagnostic rule name
+    /// @returns the diagnostic control pointer
+    template <typename NAME>
+    const ast::DiagnosticControl* DiagnosticDirective(const Source& source,
+                                                      ast::DiagnosticSeverity severity,
+                                                      NAME&& rule_name) {
+        auto* control = DiagnosticControl(source, severity, Ident(std::forward<NAME>(rule_name)));
+        AST().AddDiagnosticControl(control);
+        return control;
+    }
+
+    /// Add a global diagnostic control to the module.
+    /// @param severity the diagnostic severity control
+    /// @param rule_name the diagnostic rule name
+    /// @returns the diagnostic control pointer
+    template <typename NAME>
+    const ast::DiagnosticControl* DiagnosticDirective(ast::DiagnosticSeverity severity,
+                                                      NAME&& rule_name) {
+        auto* control = DiagnosticControl(source_, severity, Ident(std::forward<NAME>(rule_name)));
+        AST().AddDiagnosticControl(control);
+        return control;
     }
 
     /// Sets the current builder source to `src`

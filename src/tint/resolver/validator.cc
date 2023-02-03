@@ -166,7 +166,13 @@ Validator::Validator(
       sem_(sem),
       enabled_extensions_(enabled_extensions),
       atomic_composite_info_(atomic_composite_info),
-      valid_type_storage_layouts_(valid_type_storage_layouts) {}
+      valid_type_storage_layouts_(valid_type_storage_layouts) {
+    // Set default severities for filterable diagnostic rules.
+    diagnostic_filters_.Set(ast::DiagnosticRule::kDerivativeUniformity,
+                            ast::DiagnosticSeverity::kError);
+    diagnostic_filters_.Set(ast::DiagnosticRule::kChromiumUnreachableCode,
+                            ast::DiagnosticSeverity::kWarning);
+}
 
 Validator::~Validator() = default;
 
@@ -180,6 +186,24 @@ void Validator::AddWarning(const std::string& msg, const Source& source) const {
 
 void Validator::AddNote(const std::string& msg, const Source& source) const {
     diagnostics_.add_note(diag::System::Resolver, msg, source);
+}
+
+bool Validator::AddDiagnostic(ast::DiagnosticRule rule,
+                              const std::string& msg,
+                              const Source& source) const {
+    auto severity = diagnostic_filters_.Get(rule);
+    if (severity != ast::DiagnosticSeverity::kOff) {
+        diag::Diagnostic d{};
+        d.severity = ToSeverity(severity);
+        d.system = diag::System::Resolver;
+        d.source = source;
+        d.message = msg;
+        diagnostics_.add(std::move(d));
+        if (severity == ast::DiagnosticSeverity::kError) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // https://gpuweb.github.io/gpuweb/wgsl/#plain-types-section
@@ -982,7 +1006,8 @@ bool Validator::Function(const sem::Function* func, ast::PipelineStage stage) co
                          attr->source);
                 return false;
             }
-        } else if (!attr->IsAnyOf<ast::StageAttribute, ast::InternalAttribute>()) {
+        } else if (!attr->IsAnyOf<ast::DiagnosticAttribute, ast::StageAttribute,
+                                  ast::InternalAttribute>()) {
             AddError("attribute is not valid for functions", attr->source);
             return false;
         }
@@ -1358,9 +1383,10 @@ bool Validator::EvaluationStage(const sem::Expression* expr,
 bool Validator::Statements(utils::VectorRef<const ast::Statement*> stmts) const {
     for (auto* stmt : stmts) {
         if (!sem_.Get(stmt)->IsReachable()) {
-            /// TODO(https://github.com/gpuweb/gpuweb/issues/2378): This may need to
-            /// become an error.
-            AddWarning("code is unreachable", stmt->source);
+            if (!AddDiagnostic(ast::DiagnosticRule::kChromiumUnreachableCode, "code is unreachable",
+                               stmt->source)) {
+                return false;
+            }
             break;
         }
     }
@@ -2403,11 +2429,42 @@ bool Validator::IncrementDecrementStatement(const ast::IncrementDecrementStateme
 
 bool Validator::NoDuplicateAttributes(utils::VectorRef<const ast::Attribute*> attributes) const {
     utils::Hashmap<const TypeInfo*, Source, 8> seen;
+    utils::Vector<const ast::DiagnosticControl*, 8> diagnostic_controls;
     for (auto* d : attributes) {
-        auto added = seen.Add(&d->TypeInfo(), d->source);
-        if (!added && !d->Is<ast::InternalAttribute>()) {
-            AddError("duplicate " + d->Name() + " attribute", d->source);
-            AddNote("first attribute declared here", *added.value);
+        if (auto* diag = d->As<ast::DiagnosticAttribute>()) {
+            // Allow duplicate diagnostic attributes, and check for conflicts later.
+            diagnostic_controls.Push(diag->control);
+        } else {
+            auto added = seen.Add(&d->TypeInfo(), d->source);
+            if (!added && !d->Is<ast::InternalAttribute>()) {
+                AddError("duplicate " + d->Name() + " attribute", d->source);
+                AddNote("first attribute declared here", *added.value);
+                return false;
+            }
+        }
+    }
+    return DiagnosticControls(diagnostic_controls, "attribute");
+}
+
+bool Validator::DiagnosticControls(utils::VectorRef<const ast::DiagnosticControl*> controls,
+                                   const char* use) const {
+    // Make sure that no two diagnostic controls conflict.
+    // They conflict if the rule name is the same and the severity is different.
+    utils::Hashmap<Symbol, const ast::DiagnosticControl*, 8> diagnostics;
+    for (auto* dc : controls) {
+        auto diag_added = diagnostics.Add(dc->rule_name->symbol, dc);
+        if (!diag_added && (*diag_added.value)->severity != dc->severity) {
+            {
+                std::ostringstream ss;
+                ss << "conflicting diagnostic " << use;
+                AddError(ss.str(), dc->source);
+            }
+            {
+                std::ostringstream ss;
+                ss << "severity of '" << symbols_.NameFor(dc->rule_name->symbol) << "' set to '"
+                   << dc->severity << "' here";
+                AddNote(ss.str(), (*diag_added.value)->source);
+            }
             return false;
         }
     }

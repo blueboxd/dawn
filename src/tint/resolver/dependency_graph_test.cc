@@ -548,7 +548,7 @@ const ast::Node* SymbolTestHelper::Add(SymbolUseKind kind, Symbol symbol, Source
             return node;
         }
         case SymbolUseKind::CallFunction: {
-            auto* node = b.Expr(source, symbol);
+            auto* node = b.Ident(source, symbol);
             statements.Push(b.CallStmt(b.Call(node)));
             return node;
         }
@@ -651,7 +651,8 @@ TEST_F(ResolverDependencyGraphUsedBeforeDeclTest, FuncCall) {
     // fn A() { B(); }
     // fn B() {}
 
-    Func("A", utils::Empty, ty.void_(), utils::Vector{CallStmt(Call(Expr(Source{{12, 34}}, "B")))});
+    Func("A", utils::Empty, ty.void_(),
+         utils::Vector{CallStmt(Call(Ident(Source{{12, 34}}, "B")))});
     Func(Source{{56, 78}}, "B", utils::Empty, ty.void_(), utils::Vector{Return()});
 
     Build();
@@ -812,7 +813,7 @@ TEST_F(ResolverDependencyGraphCyclicRefTest, DirectCall) {
     // fn main() { main(); }
 
     Func(Source{{12, 34}}, "main", utils::Empty, ty.void_(),
-         utils::Vector{CallStmt(Call(Expr(Source{{56, 78}}, "main")))});
+         utils::Vector{CallStmt(Call(Ident(Source{{56, 78}}, "main")))});
 
     Build(R"(12:34 error: cyclic dependency found: 'main' -> 'main'
 56:78 note: function 'main' calls function 'main' here)");
@@ -826,17 +827,17 @@ TEST_F(ResolverDependencyGraphCyclicRefTest, IndirectCall) {
     // 5: fn b() { c(); }
 
     Func(Source{{1, 1}}, "a", utils::Empty, ty.void_(),
-         utils::Vector{CallStmt(Call(Expr(Source{{1, 10}}, "b")))});
+         utils::Vector{CallStmt(Call(Ident(Source{{1, 10}}, "b")))});
     Func(Source{{2, 1}}, "e", utils::Empty, ty.void_(), utils::Empty);
     Func(Source{{3, 1}}, "d", utils::Empty, ty.void_(),
          utils::Vector{
-             CallStmt(Call(Expr(Source{{3, 10}}, "e"))),
-             CallStmt(Call(Expr(Source{{3, 10}}, "b"))),
+             CallStmt(Call(Ident(Source{{3, 10}}, "e"))),
+             CallStmt(Call(Ident(Source{{3, 10}}, "b"))),
          });
     Func(Source{{4, 1}}, "c", utils::Empty, ty.void_(),
-         utils::Vector{CallStmt(Call(Expr(Source{{4, 10}}, "d")))});
+         utils::Vector{CallStmt(Call(Ident(Source{{4, 10}}, "d")))});
     Func(Source{{5, 1}}, "b", utils::Empty, ty.void_(),
-         utils::Vector{CallStmt(Call(Expr(Source{{5, 10}}, "c")))});
+         utils::Vector{CallStmt(Call(Ident(Source{{5, 10}}, "c")))});
 
     Build(R"(5:1 error: cyclic dependency found: 'b' -> 'c' -> 'd' -> 'b'
 5:10 note: function 'b' calls function 'c' here
@@ -1088,18 +1089,19 @@ INSTANTIATE_TEST_SUITE_P(Functions,
                          testing::Combine(testing::ValuesIn(kFuncDeclKinds),
                                           testing::ValuesIn(kFuncUseKinds)));
 
-TEST_F(ResolverDependencyGraphOrderedGlobalsTest, EnableFirst) {
-    // Test that enable nodes always go before any other global declaration.
-    // Although all enable directives in a valid WGSL program must go before any other global
-    // declaration, a transform may produce such a AST tree that has some declarations before enable
-    // nodes. DependencyGraph should deal with these cases.
+TEST_F(ResolverDependencyGraphOrderedGlobalsTest, DirectiveFirst) {
+    // Test that directive nodes always go before any other global declaration.
+    // Although all directives in a valid WGSL program must go before any other global declaration,
+    // a transform may produce such a AST tree that has some declarations before directive nodes.
+    // DependencyGraph should deal with these cases.
     auto* var_1 = GlobalVar("SYMBOL1", ty.i32());
-    auto* enable_1 = Enable(ast::Extension::kF16);
+    auto* enable = Enable(ast::Extension::kF16);
     auto* var_2 = GlobalVar("SYMBOL2", ty.f32());
-    auto* enable_2 = Enable(ast::Extension::kF16);
+    auto* diagnostic = DiagnosticControl(ast::DiagnosticSeverity::kWarning, "foo");
+    AST().AddDiagnosticControl(diagnostic);
 
-    EXPECT_THAT(AST().GlobalDeclarations(), ElementsAre(var_1, enable_1, var_2, enable_2));
-    EXPECT_THAT(Build().ordered_globals, ElementsAre(enable_1, enable_2, var_1, var_2));
+    EXPECT_THAT(AST().GlobalDeclarations(), ElementsAre(var_1, enable, var_2, diagnostic));
+    EXPECT_THAT(Build().ordered_globals, ElementsAre(enable, diagnostic, var_1, var_2));
 }
 }  // namespace ordered_globals
 
@@ -1231,7 +1233,7 @@ TEST_F(ResolverDependencyGraphTraversalTest, SymbolsReached) {
     };
 #define V add_use(value_decl, Expr(value_sym), __LINE__, "V()")
 #define T add_use(type_decl, ty.type_name(type_sym), __LINE__, "T()")
-#define F add_use(func_decl, Expr(func_sym), __LINE__, "F()")
+#define F add_use(func_decl, Ident(func_sym), __LINE__, "F()")
 
     Alias(Sym(), T);
     Structure(Sym(),  //

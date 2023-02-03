@@ -31,7 +31,7 @@ namespace {
 using DiagnosticControlTest = TestHelper;
 
 TEST_F(DiagnosticControlTest, Creation) {
-    auto* name = Expr("foo");
+    auto* name = Ident("foo");
     Source source;
     source.range.begin = Source::Location{20, 2};
     source.range.end = Source::Location{20, 5};
@@ -99,6 +99,58 @@ INSTANTIATE_TEST_SUITE_P(ValidCases, DiagnosticSeverityPrintTest, testing::Value
 }  // namespace parse_print_tests
 
 }  // namespace diagnostic_severity_tests
+
+namespace diagnostic_rule_tests {
+
+namespace parse_print_tests {
+
+struct Case {
+    const char* string;
+    DiagnosticRule value;
+};
+
+inline std::ostream& operator<<(std::ostream& out, Case c) {
+    return out << "'" << std::string(c.string) << "'";
+}
+
+static constexpr Case kValidCases[] = {
+    {"chromium_unreachable_code", DiagnosticRule::kChromiumUnreachableCode},
+    {"derivative_uniformity", DiagnosticRule::kDerivativeUniformity},
+};
+
+static constexpr Case kInvalidCases[] = {
+    {"cXromggum_unreachable_cde", DiagnosticRule::kUndefined},
+    {"chroVium_unruchble_codX", DiagnosticRule::kUndefined},
+    {"chromium_3nreachable_code", DiagnosticRule::kUndefined},
+    {"derivatEve_uniformity", DiagnosticRule::kUndefined},
+    {"deTTPivative_uniformit", DiagnosticRule::kUndefined},
+    {"derivtive_uddxxformity", DiagnosticRule::kUndefined},
+};
+
+using DiagnosticRuleParseTest = testing::TestWithParam<Case>;
+
+TEST_P(DiagnosticRuleParseTest, Parse) {
+    const char* string = GetParam().string;
+    DiagnosticRule expect = GetParam().value;
+    EXPECT_EQ(expect, ParseDiagnosticRule(string));
+}
+
+INSTANTIATE_TEST_SUITE_P(ValidCases, DiagnosticRuleParseTest, testing::ValuesIn(kValidCases));
+INSTANTIATE_TEST_SUITE_P(InvalidCases, DiagnosticRuleParseTest, testing::ValuesIn(kInvalidCases));
+
+using DiagnosticRulePrintTest = testing::TestWithParam<Case>;
+
+TEST_P(DiagnosticRulePrintTest, Print) {
+    DiagnosticRule value = GetParam().value;
+    const char* expect = GetParam().string;
+    EXPECT_EQ(expect, utils::ToString(value));
+}
+
+INSTANTIATE_TEST_SUITE_P(ValidCases, DiagnosticRulePrintTest, testing::ValuesIn(kValidCases));
+
+}  // namespace parse_print_tests
+
+}  // namespace diagnostic_rule_tests
 
 }  // namespace
 }  // namespace tint::ast

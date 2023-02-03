@@ -84,6 +84,8 @@ wgpu::TextureFormat TintImageFormatToTextureFormat(
             return wgpu::TextureFormat::R32Sint;
         case tint::inspector::ResourceBinding::TexelFormat::kR32Float:
             return wgpu::TextureFormat::R32Float;
+        case tint::inspector::ResourceBinding::TexelFormat::kBgra8Unorm:
+            return wgpu::TextureFormat::BGRA8Unorm;
         case tint::inspector::ResourceBinding::TexelFormat::kRgba8Unorm:
             return wgpu::TextureFormat::RGBA8Unorm;
         case tint::inspector::ResourceBinding::TexelFormat::kRgba8Snorm:
@@ -413,8 +415,8 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
                 layoutInfo.texture.multisampled, shaderInfo.texture.multisampled);
 
             // TODO(dawn:563): Provide info about the sample types.
-            DAWN_INVALID_IF((SampleTypeToSampleTypeBit(layoutInfo.texture.sampleType) &
-                             shaderInfo.texture.compatibleSampleTypes) == 0,
+            DAWN_INVALID_IF(!(SampleTypeToSampleTypeBit(layoutInfo.texture.sampleType) &
+                              shaderInfo.texture.compatibleSampleTypes),
                             "The sample type in the shader is not compatible with the "
                             "sample type of the layout.");
 
@@ -722,6 +724,9 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
                 info.storageTexture.format = TintImageFormatToTextureFormat(resource.image_format);
                 info.storageTexture.viewDimension =
                     TintTextureDimensionToTextureViewDimension(resource.dim);
+
+                DAWN_INVALID_IF(info.storageTexture.format == wgpu::TextureFormat::BGRA8Unorm,
+                                "BGRA8Unorm storage textures are not yet supported.");
 
                 break;
             case BindingInfoType::ExternalTexture:

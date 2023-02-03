@@ -1153,7 +1153,7 @@ uint32_t Builder::GenerateIdentifierExpression(const ast::IdentifierExpression* 
             return LookupVariableID(user->Variable());
         }
     }
-    error_ = "identifier '" + builder_.Symbols().NameFor(expr->symbol) +
+    error_ = "identifier '" + builder_.Symbols().NameFor(expr->identifier->symbol) +
              "' does not resolve to a variable";
     return 0;
 }
@@ -2129,7 +2129,7 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
         } else if (lhs_is_unsigned) {
             op = spv::Op::OpUMod;
         } else {
-            op = spv::Op::OpSMod;
+            op = spv::Op::OpSRem;
         }
     } else if (expr->IsMultiply()) {
         if (lhs_type->is_integer_scalar_or_vector()) {
@@ -3614,7 +3614,7 @@ bool Builder::GenerateStatement(const ast::Statement* stmt) {
         [&](const ast::ReturnStatement* r) { return GenerateReturnStatement(r); },
         [&](const ast::SwitchStatement* s) { return GenerateSwitchStatement(s); },
         [&](const ast::VariableDeclStatement* v) { return GenerateVariableDeclStatement(v); },
-        [&](const ast::StaticAssert*) {
+        [&](const ast::ConstAssert*) {
             return true;  // Not emitted
         },
         [&](Default) {

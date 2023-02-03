@@ -250,7 +250,7 @@ bool GeneratorImpl::Generate() {
 
     auto* mod = builder_.Sem().Module();
     for (auto* decl : mod->DependencyOrderedDeclarations()) {
-        if (decl->IsAnyOf<ast::Alias, ast::StaticAssert>()) {
+        if (decl->IsAnyOf<ast::Alias, ast::ConstAssert, ast::DiagnosticControl>()) {
             continue;  // These are not emitted.
         }
 
@@ -1837,7 +1837,7 @@ bool GeneratorImpl::EmitExpression(std::ostream& out, const ast::Expression* exp
 }
 
 bool GeneratorImpl::EmitIdentifier(std::ostream& out, const ast::IdentifierExpression* expr) {
-    out << builder_.Symbols().NameFor(expr->symbol);
+    out << builder_.Symbols().NameFor(expr->identifier->symbol);
     return true;
 }
 
@@ -2796,7 +2796,7 @@ bool GeneratorImpl::EmitStatement(const ast::Statement* stmt) {
                     return false;
                 });
         },
-        [&](const ast::StaticAssert*) {
+        [&](const ast::ConstAssert*) {
             return true;  // Not emitted
         },
         [&](Default) {

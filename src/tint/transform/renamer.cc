@@ -1262,7 +1262,7 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
     CloneContext ctx{&b, src, /* auto_clone_symbols */ false};
 
     // Identifiers that need to keep their symbols preserved.
-    utils::Hashset<const ast::IdentifierExpression*, 8> preserved_identifiers;
+    utils::Hashset<const ast::Identifier*, 8> preserved_identifiers;
     // Type names that need to keep their symbols preserved.
     utils::Hashset<const ast::TypeName*, 8> preserved_type_names;
 
@@ -1312,6 +1312,9 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
                             }
                         });
                 }
+            },
+            [&](const ast::DiagnosticControl* diagnostic) {
+                preserved_identifiers.Add(diagnostic->rule_name);
             },
             [&](const ast::TypeName* type_name) {
                 if (is_type_short_name(type_name->name)) {
@@ -1373,12 +1376,12 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
         return sym_out;
     });
 
-    ctx.ReplaceAll([&](const ast::IdentifierExpression* ident) -> const ast::IdentifierExpression* {
+    ctx.ReplaceAll([&](const ast::Identifier* ident) -> const ast::Identifier* {
         if (preserved_identifiers.Contains(ident)) {
             auto sym_in = ident->symbol;
             auto str = src->Symbols().NameFor(sym_in);
             auto sym_out = b.Symbols().Register(str);
-            return ctx.dst->create<ast::IdentifierExpression>(ctx.Clone(ident->source), sym_out);
+            return ctx.dst->create<ast::Identifier>(ctx.Clone(ident->source), sym_out);
         }
         return nullptr;  // Clone ident. Uses the symbol remapping above.
     });
