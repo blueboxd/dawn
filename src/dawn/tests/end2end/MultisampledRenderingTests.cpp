@@ -191,7 +191,8 @@ class MultisampledRenderingTest : public DawnTest {
 
         utils::RGBA8 expectedColor = ExpectedMSAAColor(inputColor, msaaCoverage);
         EXPECT_TEXTURE_EQ(&expectedColor, resolveTexture, {kMiddleX, kMiddleY, arrayLayer}, {1, 1},
-                          mipmapLevel);
+                          mipmapLevel, wgpu::TextureAspect::All, /* bytesPerRow */ 0,
+                          /* tolerance */ utils::RGBA8(1, 1, 1, 1));
     }
 
     constexpr static uint32_t kWidth = 3;
@@ -328,7 +329,7 @@ TEST_P(MultisampledRenderingTest, MultisampledRenderingWithDepthTest) {
         utils::ComboRenderPassDescriptor renderPass =
             CreateComboRenderPassDescriptorForTest({mMultisampledColorView}, {mResolveView},
                                                    wgpu::LoadOp::Clear, wgpu::LoadOp::Clear, true);
-        std::array<float, 5> kUniformData = {kGreen.r, kGreen.g, kGreen.b, kGreen.a,  // Color
+        std::array<float, 8> kUniformData = {kGreen.r, kGreen.g, kGreen.b, kGreen.a,  // Color
                                              0.2f};                                   // depth
         constexpr uint32_t kSize = sizeof(kUniformData);
         EncodeRenderPassForTest(commandEncoder, renderPass, pipeline, kUniformData.data(), kSize);
@@ -342,7 +343,7 @@ TEST_P(MultisampledRenderingTest, MultisampledRenderingWithDepthTest) {
             {mMultisampledColorView}, {mResolveView}, wgpu::LoadOp::Load, wgpu::LoadOp::Load,
             kTestDepth);
 
-        std::array<float, 5> kUniformData = {kRed.r, kRed.g, kRed.b, kRed.a,  // color
+        std::array<float, 8> kUniformData = {kRed.r, kRed.g, kRed.b, kRed.a,  // color
                                              0.5f};                           // depth
         constexpr uint32_t kSize = sizeof(kUniformData);
         EncodeRenderPassForTest(commandEncoder, renderPass, pipeline, kUniformData.data(), kSize);
@@ -713,7 +714,7 @@ TEST_P(MultisampledRenderingTest, MultisampledRenderingWithDepthTestAndSampleMas
         utils::ComboRenderPassDescriptor renderPass =
             CreateComboRenderPassDescriptorForTest({mMultisampledColorView}, {mResolveView},
                                                    wgpu::LoadOp::Clear, wgpu::LoadOp::Clear, true);
-        std::array<float, 5> kUniformData = {kGreen.r, kGreen.g, kGreen.b, kGreen.a,  // Color
+        std::array<float, 8> kUniformData = {kGreen.r, kGreen.g, kGreen.b, kGreen.a,  // Color
                                              0.2f};                                   // depth
         constexpr uint32_t kSize = sizeof(kUniformData);
         EncodeRenderPassForTest(commandEncoder, renderPass, pipelineGreen, kUniformData.data(),
@@ -728,7 +729,7 @@ TEST_P(MultisampledRenderingTest, MultisampledRenderingWithDepthTestAndSampleMas
             {mMultisampledColorView}, {mResolveView}, wgpu::LoadOp::Load, wgpu::LoadOp::Load,
             kTestDepth);
 
-        std::array<float, 5> kUniformData = {kRed.r, kRed.g, kRed.b, kRed.a,  // color
+        std::array<float, 8> kUniformData = {kRed.r, kRed.g, kRed.b, kRed.a,  // color
                                              0.5f};                           // depth
         constexpr uint32_t kSize = sizeof(kUniformData);
         EncodeRenderPassForTest(commandEncoder, renderPass, pipelineRed, kUniformData.data(),
@@ -966,17 +967,17 @@ TEST_P(MultisampledRenderingTest, ResolveIntoMultipleResolveTargetsWithAlphaToCo
         // using only the first one.
         utils::RGBA8 expectedRed = ExpectedMSAAColor(kRed, kMSAACoverage);
         utils::RGBA8 expectedGreen = ExpectedMSAAColor(kGreen, kMSAACoverage);
-        EXPECT_TEXTURE_EQ(&expectedRed, mResolveTexture, {1, 0}, {1, 1});
-        EXPECT_TEXTURE_EQ(&expectedGreen, resolveTexture2, {1, 0}, {1, 1});
+        EXPECT_TEXTURE_EQ(&expectedRed, mResolveTexture, {1, 0}, {1, 1},
+                          /* level */ 0, wgpu::TextureAspect::All, /* bytesPerRow */ 0,
+                          /* tolerance */ utils::RGBA8(1, 1, 1, 1));
+        EXPECT_TEXTURE_EQ(&expectedGreen, resolveTexture2, {1, 0}, {1, 1},
+                          /* level */ 0, wgpu::TextureAspect::All, /* bytesPerRow */ 0,
+                          /* tolerance */ utils::RGBA8(1, 1, 1, 1));
     }
 }
 
 // Test multisampled rendering with depth test works correctly with alphaToCoverage.
 TEST_P(MultisampledRenderingTest, MultisampledRenderingWithDepthTestAndAlphaToCoverage) {
-    // This test fails because Swiftshader is off-by-one with its ((a+b)/2 + (c+d)/2)/2 fast resolve
-    // algorithm.
-    DAWN_SUPPRESS_TEST_IF(IsSwiftshader() || IsANGLE());
-
     // TODO(dawn:1549) Fails on Qualcomm-based Android devices.
     // TODO(dawn:1550) Fails on ARM-based Android devices.
     DAWN_SUPPRESS_TEST_IF(IsAndroid());
@@ -1002,7 +1003,7 @@ TEST_P(MultisampledRenderingTest, MultisampledRenderingWithDepthTestAndAlphaToCo
         utils::ComboRenderPassDescriptor renderPass = CreateComboRenderPassDescriptorForTest(
             {mMultisampledColorView}, {mResolveView}, wgpu::LoadOp::Clear, wgpu::LoadOp::Clear,
             kTestDepth);
-        std::array<float, 5> kUniformData = {kGreen.r, kGreen.g, kGreen.b, kGreen.a,  // Color
+        std::array<float, 8> kUniformData = {kGreen.r, kGreen.g, kGreen.b, kGreen.a,  // Color
                                              0.2f};                                   // depth
         constexpr uint32_t kSize = sizeof(kUniformData);
         EncodeRenderPassForTest(commandEncoder, renderPass, pipelineGreen, kUniformData.data(),
@@ -1017,7 +1018,7 @@ TEST_P(MultisampledRenderingTest, MultisampledRenderingWithDepthTestAndAlphaToCo
             {mMultisampledColorView}, {mResolveView}, wgpu::LoadOp::Load, wgpu::LoadOp::Load,
             kTestDepth);
 
-        std::array<float, 5> kUniformData = {kRed.r, kRed.g, kRed.b, kRed.a,  // color
+        std::array<float, 8> kUniformData = {kRed.r, kRed.g, kRed.b, kRed.a,  // color
                                              0.5f};                           // depth
         constexpr uint32_t kSize = sizeof(kUniformData);
         EncodeRenderPassForTest(commandEncoder, renderPass, pipelineRed, kUniformData.data(),
@@ -1032,23 +1033,21 @@ TEST_P(MultisampledRenderingTest, MultisampledRenderingWithDepthTestAndAlphaToCo
                                                (kGreen.a + kRed.a) / 2.0};
     utils::RGBA8 expectedColor = ExpectedMSAAColor(kHalfGreenHalfRed, 1.0f);
 
-    EXPECT_TEXTURE_EQ(&expectedColor, mResolveTexture, {1, 0}, {1, 1});
+    EXPECT_TEXTURE_EQ(&expectedColor, mResolveTexture, {1, 0}, {1, 1},
+                      /* level */ 0, wgpu::TextureAspect::All, /* bytesPerRow */ 0,
+                      /* tolerance */ utils::RGBA8(1, 1, 1, 1));
 }
 
 // Test using one multisampled color attachment with resolve target can render correctly
 // with alphaToCoverageEnabled and a sample mask.
 TEST_P(MultisampledRenderingTest, ResolveInto2DTextureWithAlphaToCoverageAndSampleMask) {
-    // This test fails because Swiftshader is off-by-one with its ((a+b)/2 + (c+d)/2)/2 fast resolve
-    // algorithm.
-    DAWN_SUPPRESS_TEST_IF(IsSwiftshader() || IsANGLE());
-
     // TODO(dawn:1550) Fails on ARM-based Android devices.
     DAWN_SUPPRESS_TEST_IF(IsAndroid() && IsARM());
 
-    // TODO(dawn:491): This doesn't work on Metal, because we're using both the shader-output
-    // mask (emulting the sampleMask from RenderPipeline) and alpha-to-coverage at the same
-    // time. See the issue: https://github.com/gpuweb/gpuweb/issues/959.
-    DAWN_SUPPRESS_TEST_IF(IsMetal());
+    // TODO(dawn:491): This doesn't work on non-Apple GPU Metal, because we're using both
+    // the shader-output mask (emulting the sampleMask from RenderPipeline) and alpha-to-coverage
+    // at the same time. See the issue: https://github.com/gpuweb/gpuweb/issues/959.
+    DAWN_SUPPRESS_TEST_IF(IsMetal() && !IsApple());
 
     constexpr bool kTestDepth = false;
     constexpr float kMSAACoverage = 0.50f;
@@ -1079,17 +1078,15 @@ TEST_P(MultisampledRenderingTest, ResolveInto2DTextureWithAlphaToCoverageAndSamp
         queue.Submit(1, &commandBuffer);
 
         utils::RGBA8 expectedColor = ExpectedMSAAColor(kGreen, kMSAACoverage * alpha);
-        EXPECT_TEXTURE_EQ(&expectedColor, mResolveTexture, {1, 0}, {1, 1});
+        EXPECT_TEXTURE_EQ(&expectedColor, mResolveTexture, {1, 0}, {1, 1},
+                          /* level */ 0, wgpu::TextureAspect::All, /* bytesPerRow */ 0,
+                          /* tolerance */ utils::RGBA8(1, 1, 1, 1));
     }
 }
 
 // Test using one multisampled color attachment with resolve target can render correctly
 // with alphaToCoverageEnabled and a rasterization mask.
 TEST_P(MultisampledRenderingTest, ResolveInto2DTextureWithAlphaToCoverageAndRasterizationMask) {
-    // This test fails because Swiftshader is off-by-one with its ((a+b)/2 + (c+d)/2)/2 fast resolve
-    // algorithm.
-    DAWN_SUPPRESS_TEST_IF(IsSwiftshader() || IsANGLE());
-
     // TODO(dawn:1550) Fails on ARM-based Android devices.
     DAWN_SUPPRESS_TEST_IF(IsAndroid() && IsARM());
 

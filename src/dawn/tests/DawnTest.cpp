@@ -387,16 +387,6 @@ void DawnTestEnvironment::SelectPreferredAdapterProperties(const dawn::native::I
                 (properties.backendType == wgpu::BackendType::Null);
         }
 
-#if DAWN_PLATFORM_IS(WINDOWS)
-        if (selected && !mRunSuppressedTests &&
-            properties.backendType == wgpu::BackendType::Vulkan &&
-            gpu_info::IsIntel(properties.vendorID)) {
-            dawn::WarningLog()
-                << "Deselecting Windows Intel Vulkan adapter. See https://crbug.com/1338622.";
-            selected &= false;
-        }
-#endif
-
         // In Windows Remote Desktop sessions we may be able to discover multiple adapters that
         // have the same name and backend type. We will just choose one adapter from them in our
         // tests.
@@ -1607,6 +1597,18 @@ testing::AssertionResult CheckImpl<float>(const float& expected,
     return testing::AssertionSuccess();
 }
 
+template <>
+testing::AssertionResult CheckImpl<uint16_t>(const uint16_t& expected,
+                                             const uint16_t& actual,
+                                             const uint16_t& tolerance) {
+    if (abs(static_cast<int32_t>(expected) - static_cast<int32_t>(actual)) > tolerance) {
+        return tolerance == 0 ? testing::AssertionFailure() << expected << ", actual " << actual
+                              : testing::AssertionFailure() << "within " << tolerance << " of "
+                                                            << expected << ", actual " << actual;
+    }
+    return testing::AssertionSuccess();
+}
+
 // Interpret uint16_t as float16
 // This is mostly for reading float16 output from textures
 template <>
@@ -1624,6 +1626,32 @@ testing::AssertionResult CheckImpl<float, uint16_t>(const float& expected,
 }
 
 }  // namespace
+
+template <typename T>
+ExpectConstant<T>::ExpectConstant(T constant) : mConstant(constant) {}
+
+template <typename T>
+uint32_t ExpectConstant<T>::DataSize() {
+    return sizeof(T);
+}
+
+template <typename T>
+testing::AssertionResult ExpectConstant<T>::Check(const void* data, size_t size) {
+    DAWN_ASSERT(size % DataSize() == 0 && size > 0);
+    const T* actual = static_cast<const T*>(data);
+
+    for (size_t i = 0; i < size / DataSize(); ++i) {
+        if (actual[i] != mConstant) {
+            return testing::AssertionFailure()
+                   << "Expected data[" << i << "] to match constant value " << mConstant
+                   << ", actual " << actual[i] << std::endl;
+        }
+    }
+
+    return testing::AssertionSuccess();
+}
+
+template class ExpectConstant<float>;
 
 template <typename T, typename U>
 testing::AssertionResult ExpectEq<T, U>::Check(const void* data, size_t size) {

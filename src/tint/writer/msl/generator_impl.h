@@ -46,7 +46,6 @@
 // Forward declarations
 namespace tint::sem {
 class Call;
-class Constant;
 class Builtin;
 class TypeInitializer;
 class TypeConversion;
@@ -101,7 +100,7 @@ class GeneratorImpl : public TextGenerator {
     /// Handles generating a declared type
     /// @param ty the declared type to generate
     /// @returns true if the declared type was emitted
-    bool EmitTypeDecl(const sem::Type* ty);
+    bool EmitTypeDecl(const type::Type* ty);
     /// Handles an index accessor expression
     /// @param out the output of the expression stream
     /// @param expr the expression to emit
@@ -260,7 +259,7 @@ class GeneratorImpl : public TextGenerator {
     /// @param out the output stream
     /// @param constant the constant value to emit
     /// @returns true if the constant value was successfully emitted
-    bool EmitConstant(std::ostream& out, const sem::Constant* constant);
+    bool EmitConstant(std::ostream& out, const constant::Value* constant);
     /// Handles a literal
     /// @param out the output of the expression stream
     /// @param lit the literal to emit
@@ -314,7 +313,7 @@ class GeneratorImpl : public TextGenerator {
     /// @param name_printed (optional) if not nullptr and an array was printed
     /// @returns true if the type is emitted
     bool EmitType(std::ostream& out,
-                  const sem::Type* type,
+                  const type::Type* type,
                   const std::string& name,
                   bool* name_printed = nullptr);
     /// Handles generating type and name
@@ -322,23 +321,18 @@ class GeneratorImpl : public TextGenerator {
     /// @param type the type to generate
     /// @param name the name to emit
     /// @returns true if the type is emitted
-    bool EmitTypeAndName(std::ostream& out, const sem::Type* type, const std::string& name);
+    bool EmitTypeAndName(std::ostream& out, const type::Type* type, const std::string& name);
     /// Handles generating a address space
     /// @param out the output of the type stream
     /// @param sc the address space to generate
     /// @returns true if the address space is emitted
     bool EmitAddressSpace(std::ostream& out, ast::AddressSpace sc);
-    /// Handles generating a struct declaration
+    /// Handles generating a struct declaration. If the structure has already been emitted, then
+    /// this function will simply return `true` without emitting anything.
     /// @param buffer the text buffer that the type declaration will be written to
     /// @param str the struct to generate
     /// @returns true if the struct is emitted
     bool EmitStructType(TextBuffer* buffer, const sem::Struct* str);
-    /// Handles generating a structure declaration only the first time called. Subsequent calls are
-    /// a no-op and return true.
-    /// @param buffer the text buffer that the type declaration will be written to
-    /// @param ty the struct to generate
-    /// @returns true if the struct is emitted
-    bool EmitStructTypeOnce(TextBuffer* buffer, const sem::Struct* ty);
     /// Handles a unary op expression
     /// @param out the output of the expression stream
     /// @param expr the expression to emit
@@ -356,7 +350,7 @@ class GeneratorImpl : public TextGenerator {
     /// @param out the output of the expression stream
     /// @param type the type to emit the value for
     /// @returns true if the zero value was successfully emitted.
-    bool EmitZeroValue(std::ostream& out, const sem::Type* type);
+    bool EmitZeroValue(std::ostream& out, const type::Type* type);
 
     /// Handles generating a builtin name
     /// @param builtin the semantic info for the builtin
@@ -409,7 +403,7 @@ class GeneratorImpl : public TextGenerator {
 
     /// @returns the MSL packed type size and alignment in bytes for the given
     /// type.
-    SizeAndAlign MslPackedTypeSizeAndAlign(const sem::Type* ty);
+    SizeAndAlign MslPackedTypeSizeAndAlign(const type::Type* ty);
 
     std::function<bool()> emit_continuing_;
 
@@ -436,7 +430,7 @@ class GeneratorImpl : public TextGenerator {
     std::unordered_map<std::string, std::vector<uint32_t>> workgroup_allocations_;
 
     std::unordered_map<const sem::Builtin*, std::string> builtins_;
-    std::unordered_map<const sem::Type*, std::string> unary_minus_funcs_;
+    std::unordered_map<const type::Type*, std::string> unary_minus_funcs_;
     std::unordered_map<uint32_t, std::string> int_dot_funcs_;
     std::unordered_set<const sem::Struct*> emitted_structs_;
 };

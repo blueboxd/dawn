@@ -17,6 +17,7 @@
 
 #include "src/tint/ir/block.h"
 #include "src/tint/ir/flow_node.h"
+#include "src/tint/ir/value.h"
 
 // Forward declarations
 namespace tint::ast {
@@ -32,7 +33,7 @@ class Switch : public Castable<Switch, FlowNode> {
     /// A case label in the struct
     struct Case {
         /// The case selector for this node
-        const utils::VectorRef<const ast::CaseSelector*> selectors;
+        utils::Vector<const ast::CaseSelector*, 4> selectors;
         /// The start block for the case block.
         Block* start_target;
     };
@@ -50,6 +51,9 @@ class Switch : public Castable<Switch, FlowNode> {
 
     /// The switch case statements
     utils::Vector<Case, 4> cases;
+
+    /// Value holding the condition result
+    const Value* condition = nullptr;
 };
 
 }  // namespace tint::ir

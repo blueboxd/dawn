@@ -22,13 +22,13 @@ namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IRBuilderImplTest = TestHelper;
+using IR_BuilderImplTest = TestHelper;
 
-TEST_F(IRBuilderImplTest, Func) {
+TEST_F(IR_BuilderImplTest, Func) {
     // func -> start -> end
 
     Func("f", utils::Empty, ty.void_(), utils::Empty);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -47,10 +47,10 @@ TEST_F(IRBuilderImplTest, Func) {
     EXPECT_EQ(f->start_target->branch_target, f->end_target);
 }
 
-TEST_F(IRBuilderImplTest, EntryPoint) {
+TEST_F(IR_BuilderImplTest, EntryPoint) {
     Func("f", utils::Empty, ty.void_(), utils::Empty,
          utils::Vector{Stage(ast::PipelineStage::kFragment)});
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -60,7 +60,7 @@ TEST_F(IRBuilderImplTest, EntryPoint) {
     EXPECT_EQ(m.functions[0], m.entry_points[0]);
 }
 
-TEST_F(IRBuilderImplTest, IfStatement) {
+TEST_F(IR_BuilderImplTest, IfStatement) {
     // func -> start -> if -> true block
     //                     -> false block
     //
@@ -70,7 +70,7 @@ TEST_F(IRBuilderImplTest, IfStatement) {
     //
     auto* ast_if = If(true, Block(), Else(Block()));
     WrapInFunction(ast_if);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -79,8 +79,6 @@ TEST_F(IRBuilderImplTest, IfStatement) {
     auto* ir_if = b.FlowNodeForAstNode(ast_if);
     ASSERT_NE(ir_if, nullptr);
     EXPECT_TRUE(ir_if->Is<ir::If>());
-
-    // TODO(dsinclair): check condition
 
     auto* flow = ir_if->As<ir::If>();
     ASSERT_NE(flow->true_target, nullptr);
@@ -101,9 +99,15 @@ TEST_F(IRBuilderImplTest, IfStatement) {
     EXPECT_EQ(flow->true_target->branch_target, flow->merge_target);
     EXPECT_EQ(flow->false_target->branch_target, flow->merge_target);
     EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
+
+    // Check condition
+    ASSERT_TRUE(flow->condition->Is<Constant>());
+    auto* instr = flow->condition->As<Constant>();
+    ASSERT_TRUE(instr->IsBool());
+    EXPECT_TRUE(instr->AsBool());
 }
 
-TEST_F(IRBuilderImplTest, IfStatement_TrueReturns) {
+TEST_F(IR_BuilderImplTest, IfStatement_TrueReturns) {
     // func -> start -> if -> true block
     //                     -> false block
     //
@@ -113,7 +117,7 @@ TEST_F(IRBuilderImplTest, IfStatement_TrueReturns) {
     //
     auto* ast_if = If(true, Block(Return()));
     WrapInFunction(ast_if);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -144,7 +148,7 @@ TEST_F(IRBuilderImplTest, IfStatement_TrueReturns) {
     EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, IfStatement_FalseReturns) {
+TEST_F(IR_BuilderImplTest, IfStatement_FalseReturns) {
     // func -> start -> if -> true block
     //                     -> false block
     //
@@ -154,7 +158,7 @@ TEST_F(IRBuilderImplTest, IfStatement_FalseReturns) {
     //
     auto* ast_if = If(true, Block(), Else(Block(Return())));
     WrapInFunction(ast_if);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -185,7 +189,7 @@ TEST_F(IRBuilderImplTest, IfStatement_FalseReturns) {
     EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, IfStatement_BothReturn) {
+TEST_F(IR_BuilderImplTest, IfStatement_BothReturn) {
     // func -> start -> if -> true block
     //                     -> false block
     //
@@ -195,7 +199,7 @@ TEST_F(IRBuilderImplTest, IfStatement_BothReturn) {
     //
     auto* ast_if = If(true, Block(Return()), Else(Block(Return())));
     WrapInFunction(ast_if);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -225,7 +229,7 @@ TEST_F(IRBuilderImplTest, IfStatement_BothReturn) {
     EXPECT_EQ(flow->false_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, IfStatement_JumpChainToMerge) {
+TEST_F(IR_BuilderImplTest, IfStatement_JumpChainToMerge) {
     // if (true) {
     //   loop {
     //     break;
@@ -246,7 +250,7 @@ TEST_F(IRBuilderImplTest, IfStatement_JumpChainToMerge) {
     auto* ast_loop = Loop(Block(Break()));
     auto* ast_if = If(true, Block(ast_loop));
     WrapInFunction(ast_if);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -282,14 +286,14 @@ TEST_F(IRBuilderImplTest, IfStatement_JumpChainToMerge) {
     EXPECT_EQ(if_flow->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, Loop_WithBreak) {
+TEST_F(IR_BuilderImplTest, Loop_WithBreak) {
     // func -> start -> loop -> loop start -> loop merge -> func end
     //
     //   [continuing] -> loop start
     //
     auto* ast_loop = Loop(Block(Break()));
     WrapInFunction(ast_loop);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -320,7 +324,7 @@ TEST_F(IRBuilderImplTest, Loop_WithBreak) {
     EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, Loop_WithContinue) {
+TEST_F(IR_BuilderImplTest, Loop_WithContinue) {
     // func -> start -> loop -> loop start -> if -> true block
     //                                           -> false block
     //
@@ -333,7 +337,7 @@ TEST_F(IRBuilderImplTest, Loop_WithContinue) {
     auto* ast_if = If(true, Block(Break()));
     auto* ast_loop = Loop(Block(ast_if, Continue()));
     WrapInFunction(ast_loop);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -379,7 +383,7 @@ TEST_F(IRBuilderImplTest, Loop_WithContinue) {
     EXPECT_EQ(loop_flow->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, Loop_WithContinuing_BreakIf) {
+TEST_F(IR_BuilderImplTest, Loop_WithContinuing_BreakIf) {
     // func -> start -> loop -> loop start -> continuing
     //
     //   [loop continuing] -> if -> true branch
@@ -392,7 +396,7 @@ TEST_F(IRBuilderImplTest, Loop_WithContinuing_BreakIf) {
     auto* ast_break_if = BreakIf(true);
     auto* ast_loop = Loop(Block(), Block(ast_break_if));
     WrapInFunction(ast_loop);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -439,7 +443,7 @@ TEST_F(IRBuilderImplTest, Loop_WithContinuing_BreakIf) {
     EXPECT_EQ(loop_flow->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, Loop_WithReturn) {
+TEST_F(IR_BuilderImplTest, Loop_WithReturn) {
     // func -> start -> loop -> loop start -> if -> true block
     //                                           -> false block
     //
@@ -452,7 +456,7 @@ TEST_F(IRBuilderImplTest, Loop_WithReturn) {
     auto* ast_if = If(true, Block(Return()));
     auto* ast_loop = Loop(Block(ast_if, Continue()));
     WrapInFunction(ast_loop);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -497,9 +501,15 @@ TEST_F(IRBuilderImplTest, Loop_WithReturn) {
 
     EXPECT_EQ(func->start_target->branch_target, ir_loop);
     EXPECT_EQ(loop_flow->merge_target->branch_target, nullptr);
+
+    // Check condition
+    ASSERT_TRUE(if_flow->condition->Is<Constant>());
+    auto* instr = if_flow->condition->As<Constant>();
+    ASSERT_TRUE(instr->IsBool());
+    EXPECT_TRUE(instr->AsBool());
 }
 
-TEST_F(IRBuilderImplTest, Loop_WithOnlyReturn) {
+TEST_F(IR_BuilderImplTest, Loop_WithOnlyReturn) {
     // {
     //   loop {
     //     return;
@@ -520,7 +530,7 @@ TEST_F(IRBuilderImplTest, Loop_WithOnlyReturn) {
     // block.
     auto* ast_loop = Loop(Block(Return(), Continue()));
     WrapInFunction(ast_loop, If(true, Block(Return())));
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -551,7 +561,7 @@ TEST_F(IRBuilderImplTest, Loop_WithOnlyReturn) {
     EXPECT_EQ(func->start_target->branch_target, ir_loop);
 }
 
-TEST_F(IRBuilderImplTest, Loop_WithOnlyReturn_ContinuingBreakIf) {
+TEST_F(IR_BuilderImplTest, Loop_WithOnlyReturn_ContinuingBreakIf) {
     // {
     //   loop {
     //     return;
@@ -578,7 +588,7 @@ TEST_F(IRBuilderImplTest, Loop_WithOnlyReturn_ContinuingBreakIf) {
     auto* ast_loop = Loop(Block(Return()), Block(ast_break_if));
     auto* ast_if = If(true, Block(Return()));
     WrapInFunction(Block(ast_loop, ast_if));
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -622,7 +632,7 @@ TEST_F(IRBuilderImplTest, Loop_WithOnlyReturn_ContinuingBreakIf) {
     EXPECT_EQ(func->start_target->branch_target, ir_loop);
 }
 
-TEST_F(IRBuilderImplTest, Loop_WithIf_BothBranchesBreak) {
+TEST_F(IR_BuilderImplTest, Loop_WithIf_BothBranchesBreak) {
     // func -> start -> loop -> loop start -> if -> true branch
     //                                           -> false branch
     //
@@ -635,7 +645,7 @@ TEST_F(IRBuilderImplTest, Loop_WithIf_BothBranchesBreak) {
     auto* ast_if = If(true, Block(Break()), Else(Block(Break())));
     auto* ast_loop = Loop(Block(ast_if, Continue()));
     WrapInFunction(ast_loop);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -684,7 +694,7 @@ TEST_F(IRBuilderImplTest, Loop_WithIf_BothBranchesBreak) {
     EXPECT_EQ(loop_flow->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, Loop_Nested) {
+TEST_F(IR_BuilderImplTest, Loop_Nested) {
     // loop {   // loop_a
     //   loop {  // loop_b
     //      if (true) { break; }  // if_a
@@ -744,7 +754,7 @@ TEST_F(IRBuilderImplTest, Loop_Nested) {
     auto* ast_loop_a = Loop(Block(ast_loop_b, ast_if_d));
 
     WrapInFunction(ast_loop_a);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -879,7 +889,7 @@ TEST_F(IRBuilderImplTest, Loop_Nested) {
     EXPECT_EQ(loop_flow_a->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, While) {
+TEST_F(IR_BuilderImplTest, While) {
     // {
     //   while false {
     //   }
@@ -896,7 +906,7 @@ TEST_F(IRBuilderImplTest, While) {
     //
     auto* ast_while = While(false, Block());
     WrapInFunction(ast_while);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -937,9 +947,15 @@ TEST_F(IRBuilderImplTest, While) {
     EXPECT_EQ(if_flow->merge_target->branch_target, flow->continuing_target);
     EXPECT_EQ(flow->continuing_target->branch_target, flow->start_target);
     EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
+
+    // Check condition
+    ASSERT_TRUE(if_flow->condition->Is<Constant>());
+    auto* instr = if_flow->condition->As<Constant>();
+    ASSERT_TRUE(instr->IsBool());
+    EXPECT_FALSE(instr->AsBool());
 }
 
-TEST_F(IRBuilderImplTest, While_Return) {
+TEST_F(IR_BuilderImplTest, While_Return) {
     // {
     //   while true {
     //     return;
@@ -956,7 +972,7 @@ TEST_F(IRBuilderImplTest, While_Return) {
     //
     auto* ast_while = While(true, Block(Return()));
     WrapInFunction(ast_while);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -1000,7 +1016,7 @@ TEST_F(IRBuilderImplTest, While_Return) {
 }
 
 // TODO(dsinclair): Enable when variable declarations and increment are supported
-TEST_F(IRBuilderImplTest, DISABLED_For) {
+TEST_F(IR_BuilderImplTest, DISABLED_For) {
     // for(var i: 0; i < 10; i++) {
     // }
     //
@@ -1015,7 +1031,7 @@ TEST_F(IRBuilderImplTest, DISABLED_For) {
     //
     auto* ast_for = For(Decl(Var("i", ty.i32())), LessThan("i", 10_a), Increment("i"), Block());
     WrapInFunction(ast_for);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -1056,9 +1072,15 @@ TEST_F(IRBuilderImplTest, DISABLED_For) {
     EXPECT_EQ(if_flow->merge_target->branch_target, flow->continuing_target);
     EXPECT_EQ(flow->continuing_target->branch_target, flow->start_target);
     EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
+
+    // Check condition
+    ASSERT_TRUE(if_flow->condition->Is<Constant>());
+    auto* instr = if_flow->condition->As<Constant>();
+    ASSERT_TRUE(instr->IsBool());
+    EXPECT_FALSE(instr->AsBool());
 }
 
-TEST_F(IRBuilderImplTest, For_NoInitCondOrContinuing) {
+TEST_F(IR_BuilderImplTest, For_NoInitCondOrContinuing) {
     // for (;;) {
     //   break;
     // }
@@ -1067,7 +1089,7 @@ TEST_F(IRBuilderImplTest, For_NoInitCondOrContinuing) {
     //
     auto* ast_for = For(nullptr, nullptr, nullptr, Block(Break()));
     WrapInFunction(ast_for);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -1096,7 +1118,7 @@ TEST_F(IRBuilderImplTest, For_NoInitCondOrContinuing) {
     EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, Switch) {
+TEST_F(IR_BuilderImplTest, Switch) {
     // func -> switch -> case 1
     //                -> case 2
     //                -> default
@@ -1111,7 +1133,7 @@ TEST_F(IRBuilderImplTest, Switch) {
                            Case(utils::Vector{CaseSelector(1_i)}, Block()), DefaultCase(Block())});
 
     WrapInFunction(ast_switch);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -1151,15 +1173,21 @@ TEST_F(IRBuilderImplTest, Switch) {
     EXPECT_EQ(flow->cases[1].start_target->branch_target, flow->merge_target);
     EXPECT_EQ(flow->cases[2].start_target->branch_target, flow->merge_target);
     EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
+
+    // Check condition
+    ASSERT_TRUE(flow->condition->Is<Constant>());
+    auto* instr = flow->condition->As<Constant>();
+    ASSERT_TRUE(instr->IsI32());
+    EXPECT_EQ(1_i, instr->AsI32());
 }
 
-TEST_F(IRBuilderImplTest, Switch_OnlyDefault) {
+TEST_F(IR_BuilderImplTest, Switch_OnlyDefault) {
     // func -> switch -> default -> switch merge -> func end
     //
     auto* ast_switch = Switch(1_i, utils::Vector{DefaultCase(Block())});
 
     WrapInFunction(ast_switch);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -1189,7 +1217,7 @@ TEST_F(IRBuilderImplTest, Switch_OnlyDefault) {
     EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, Switch_WithBreak) {
+TEST_F(IR_BuilderImplTest, Switch_WithBreak) {
     // {
     //   switch(1) {
     //     case 0: {
@@ -1211,7 +1239,7 @@ TEST_F(IRBuilderImplTest, Switch_WithBreak) {
                                                  DefaultCase(Block())});
 
     WrapInFunction(ast_switch);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -1248,7 +1276,7 @@ TEST_F(IRBuilderImplTest, Switch_WithBreak) {
     EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
 }
 
-TEST_F(IRBuilderImplTest, Switch_AllReturn) {
+TEST_F(IR_BuilderImplTest, Switch_AllReturn) {
     // {
     //   switch(1) {
     //     case 0: {
@@ -1275,7 +1303,7 @@ TEST_F(IRBuilderImplTest, Switch_AllReturn) {
     auto* ast_if = If(true, Block(Return()));
 
     WrapInFunction(ast_switch, ast_if);
-    auto& b = Build();
+    auto& b = CreateBuilder();
 
     auto r = b.Build();
     ASSERT_TRUE(r) << b.error();
@@ -1313,63 +1341,286 @@ TEST_F(IRBuilderImplTest, Switch_AllReturn) {
     EXPECT_EQ(flow->merge_target->branch_target, nullptr);
 }
 
-// TODO(crbug.com/tint/1644): Remove when fallthrough is removed.
-TEST_F(IRBuilderImplTest, Switch_Fallthrough) {
-    // func -> switch -> case 1
-    //                -> case 2
-    //                -> default
-    //
-    //   [case 1] -> switch merge
-    //   [case 2] -> default
-    //   [default] -> switch merge
-    //   [switch merge] -> func end
-    //
-    auto* ast_switch =
-        Switch(1_i, utils::Vector{Case(utils::Vector{CaseSelector(0_i)}, Block()),
-                                  Case(utils::Vector{CaseSelector(1_i)}, Block(Fallthrough())),
-                                  DefaultCase(Block())});
+TEST_F(IR_BuilderImplTest, EmitLiteral_Bool_True) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitLiteral(Expr(true));
+    ASSERT_TRUE(r);
 
-    WrapInFunction(ast_switch);
-    auto& b = Build();
+    ASSERT_TRUE(r.Get()->Is<Constant>());
+    auto* val = r.Get()->As<Constant>();
+    EXPECT_TRUE(val->IsBool());
+    EXPECT_TRUE(val->AsBool());
+}
 
-    auto r = b.Build();
-    ASSERT_TRUE(r) << b.error();
-    auto m = r.Move();
+TEST_F(IR_BuilderImplTest, EmitLiteral_Bool_False) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitLiteral(Expr(false));
+    ASSERT_TRUE(r);
 
-    auto* ir_switch = b.FlowNodeForAstNode(ast_switch);
-    ASSERT_NE(ir_switch, nullptr);
-    ASSERT_TRUE(ir_switch->Is<ir::Switch>());
+    ASSERT_TRUE(r.Get()->Is<Constant>());
+    auto* val = r.Get()->As<Constant>();
+    EXPECT_TRUE(val->IsBool());
+    EXPECT_FALSE(val->AsBool());
+}
 
-    auto* flow = ir_switch->As<ir::Switch>();
-    ASSERT_NE(flow->merge_target, nullptr);
-    ASSERT_EQ(3u, flow->cases.Length());
+TEST_F(IR_BuilderImplTest, EmitLiteral_F32) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitLiteral(Expr(1.2_f));
+    ASSERT_TRUE(r);
 
-    ASSERT_EQ(1u, m.functions.Length());
-    auto* func = m.functions[0];
+    ASSERT_TRUE(r.Get()->Is<Constant>());
+    auto* val = r.Get()->As<Constant>();
+    EXPECT_TRUE(val->IsF32());
+    EXPECT_EQ(1.2_f, val->AsF32());
+}
 
-    ASSERT_EQ(1u, flow->cases[0].selectors.Length());
-    ASSERT_TRUE(flow->cases[0].selectors[0]->expr->Is<ast::IntLiteralExpression>());
-    EXPECT_EQ(0_i, flow->cases[0].selectors[0]->expr->As<ast::IntLiteralExpression>()->value);
+TEST_F(IR_BuilderImplTest, EmitLiteral_F16) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitLiteral(Expr(1.2_h));
+    ASSERT_TRUE(r);
 
-    ASSERT_EQ(1u, flow->cases[1].selectors.Length());
-    ASSERT_TRUE(flow->cases[1].selectors[0]->expr->Is<ast::IntLiteralExpression>());
-    EXPECT_EQ(1_i, flow->cases[1].selectors[0]->expr->As<ast::IntLiteralExpression>()->value);
+    ASSERT_TRUE(r.Get()->Is<Constant>());
+    auto* val = r.Get()->As<Constant>();
+    EXPECT_TRUE(val->IsF16());
+    EXPECT_EQ(1.2_h, val->AsF16());
+}
 
-    ASSERT_EQ(1u, flow->cases[2].selectors.Length());
-    EXPECT_TRUE(flow->cases[2].selectors[0]->IsDefault());
+TEST_F(IR_BuilderImplTest, EmitLiteral_I32) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitLiteral(Expr(-2_i));
+    ASSERT_TRUE(r);
 
-    EXPECT_EQ(1u, flow->inbound_branches.Length());
-    EXPECT_EQ(1u, flow->cases[0].start_target->inbound_branches.Length());
-    EXPECT_EQ(1u, flow->cases[1].start_target->inbound_branches.Length());
-    EXPECT_EQ(2u, flow->cases[2].start_target->inbound_branches.Length());
-    EXPECT_EQ(2u, flow->merge_target->inbound_branches.Length());
-    EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
+    ASSERT_TRUE(r.Get()->Is<Constant>());
+    auto* val = r.Get()->As<Constant>();
+    EXPECT_TRUE(val->IsI32());
+    EXPECT_EQ(-2_i, val->AsI32());
+}
 
-    EXPECT_EQ(func->start_target->branch_target, ir_switch);
-    EXPECT_EQ(flow->cases[0].start_target->branch_target, flow->merge_target);
-    EXPECT_EQ(flow->cases[1].start_target->branch_target, flow->cases[2].start_target);
-    EXPECT_EQ(flow->cases[2].start_target->branch_target, flow->merge_target);
-    EXPECT_EQ(flow->merge_target->branch_target, func->end_target);
+TEST_F(IR_BuilderImplTest, EmitLiteral_U32) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitLiteral(Expr(2_u));
+    ASSERT_TRUE(r);
+
+    ASSERT_TRUE(r.Get()->Is<Constant>());
+    auto* val = r.Get()->As<Constant>();
+    EXPECT_TRUE(val->IsU32());
+    EXPECT_EQ(2_u, val->AsU32());
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Add) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(Add(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 + 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Subtract) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(Sub(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 - 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Multiply) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(Mul(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 * 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Div) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(Div(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 / 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Modulo) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(Mod(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 % 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_And) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(And(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 & 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Or) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(Or(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 | 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Xor) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(Xor(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 ^ 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LogicalAnd) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(LogicalAnd(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 && 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LogicalOr) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(LogicalOr(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 || 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Eqaul) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(Equal(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 == 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_NotEqual) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(NotEqual(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 != 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LessThan) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(LessThan(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 < 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_GreaterThan) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(GreaterThan(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 > 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LessThanEqual) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(LessThanEqual(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 <= 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_GreaterThanEqual) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(GreaterThanEqual(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 >= 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_ShiftLeft) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(Shl(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 << 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_ShiftRight) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(Shr(3_u, 4_u));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 >> 4
+)");
+}
+
+TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Compound) {
+    auto& b = CreateEmptyBuilder();
+    auto r = b.EmitExpression(LogicalOr(  //
+        LessThan(1_u, Add(Shr(3_u, 4_u), 9_u)), GreaterThan(2.5_f, Div(6.7_f, Mul(2.3_f, 5.5_f)))));
+    ASSERT_TRUE(r);
+
+    Disassembler d;
+    d.EmitBlockInstructions(b.current_flow_block);
+    EXPECT_EQ(d.AsString(), R"(%1 = 3 >> 4
+%2 = %1 + 9
+%3 = 1 < %2
+%4 = 2.300000 * 5.500000
+%5 = 6.700000 / %4
+%6 = 2.500000 > %5
+%7 = %3 || %6
+)");
 }
 
 }  // namespace

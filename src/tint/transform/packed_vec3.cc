@@ -51,21 +51,14 @@ struct PackedVec3::State {
             if (auto* str = sem.Get<sem::Struct>(decl)) {
                 if (str->IsHostShareable()) {
                     for (auto* member : str->Members()) {
-                        if (auto* vec = member->Type()->As<sem::Vector>()) {
+                        if (auto* vec = member->Type()->As<type::Vector>()) {
                             if (vec->Width() == 3) {
                                 members.Add(member);
 
                                 // Apply the PackedVec3::Attribute to the member
-                                auto* member_decl = member->Declaration();
-                                auto name = ctx.Clone(member_decl->symbol);
-                                auto* type = ctx.Clone(member_decl->type);
-                                utils::Vector<const ast::Attribute*, 4> attrs{
-                                    b.ASTNodes().Create<Attribute>(b.ID(), b.AllocateNodeID()),
-                                };
-                                for (auto* attr : member_decl->attributes) {
-                                    attrs.Push(ctx.Clone(attr));
-                                }
-                                ctx.Replace(member_decl, b.Member(name, type, std::move(attrs)));
+                                ctx.InsertFront(
+                                    member->Declaration()->attributes,
+                                    b.ASTNodes().Create<Attribute>(b.ID(), b.AllocateNodeID()));
                             }
                         }
                     }
@@ -100,7 +93,7 @@ struct PackedVec3::State {
                 [&](const sem::VariableUser* user) {
                     auto* v = user->Variable();
                     if (v->Declaration()->Is<ast::Let>() &&  // if variable is let...
-                        v->Type()->Is<sem::Pointer>() &&     // and let is a pointer...
+                        v->Type()->Is<type::Pointer>() &&    // and let is a pointer...
                         refs.Contains(v->Initializer())) {   // and pointer is to a packed vector...
                         refs.Add(user);  // then propagate tracking to pointer usage
                     }
@@ -128,11 +121,11 @@ struct PackedVec3::State {
         }
 
         // Wrap the load expressions with a cast to the unpacked type.
-        utils::Hashmap<const sem::Vector*, Symbol, 3> unpack_fns;
+        utils::Hashmap<const type::Vector*, Symbol, 3> unpack_fns;
         for (auto* ref : refs) {
             // ref is either a packed vec3 that needs casting, or a pointer to a vec3 which we just
             // leave alone.
-            if (auto* vec_ty = ref->Type()->UnwrapRef()->As<sem::Vector>()) {
+            if (auto* vec_ty = ref->Type()->UnwrapRef()->As<type::Vector>()) {
                 auto* expr = ref->Declaration();
                 ctx.Replace(expr, [this, vec_ty, expr] {  //
                     auto* packed = ctx.CloneWithoutTransform(expr);

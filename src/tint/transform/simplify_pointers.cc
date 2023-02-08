@@ -115,7 +115,7 @@ struct SimplifyPointers::State {
                 auto* var = user->Variable();
                 if (var->Is<sem::LocalVariable>() &&       //
                     var->Declaration()->Is<ast::Let>() &&  //
-                    var->Type()->Is<sem::Pointer>()) {
+                    var->Type()->Is<type::Pointer>()) {
                     op.expr = var->Declaration()->initializer;
                     continue;
                 }
@@ -140,7 +140,7 @@ struct SimplifyPointers::State {
         // variable identifier.
         ctx.ReplaceAll([&](const ast::Expression* expr) -> const ast::Expression* {
             // Look to see if we need to swap this Expression with a saved variable.
-            if (auto* saved_var = saved_vars.Find(expr)) {
+            if (auto saved_var = saved_vars.Find(expr)) {
                 return ctx.dst->Expr(*saved_var);
             }
 
@@ -170,7 +170,7 @@ struct SimplifyPointers::State {
                 }
 
                 auto* var = ctx.src->Sem().Get(let->variable);
-                if (!var->Type()->Is<sem::Pointer>()) {
+                if (!var->Type()->Is<type::Pointer>()) {
                     continue;  // Not a pointer type. Ignore.
                 }
 

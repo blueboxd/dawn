@@ -134,6 +134,8 @@ namespace detail {
 class Expectation;
 class CustomTextureExpectation;
 
+template <typename T>
+class ExpectConstant;
 template <typename T, typename U = T>
 class ExpectEq;
 template <typename T>
@@ -170,8 +172,6 @@ class DawnTestEnvironment : public testing::Environment {
     bool HasBackendTypeFilter() const;
     wgpu::BackendType GetBackendTypeFilter() const;
     const char* GetWireTraceDir() const;
-    GLFWwindow* GetOpenGLWindow() const;
-    GLFWwindow* GetOpenGLESWindow() const;
 
     const std::vector<std::string>& GetEnabledToggles() const;
     const std::vector<std::string>& GetDisabledToggles() const;
@@ -781,6 +781,19 @@ class Expectation {
     // Will be called with the buffer or texture data the expectation should check.
     virtual testing::AssertionResult Check(const void* data, size_t size) = 0;
 };
+
+template <typename T>
+class ExpectConstant : public Expectation {
+  public:
+    explicit ExpectConstant(T constant);
+    uint32_t DataSize();
+    testing::AssertionResult Check(const void* data, size_t size) override;
+
+  private:
+    T mConstant;
+};
+
+extern template class ExpectConstant<float>;
 
 // Expectation that checks the data is equal to some expected values.
 // T - expected value Type

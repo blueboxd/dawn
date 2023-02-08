@@ -19,10 +19,11 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::Materialize);
 namespace tint::sem {
 Materialize::Materialize(const Expression* expr,
                          const Statement* statement,
-                         const Constant* constant)
+                         const type::Type* type,
+                         const constant::Value* constant)
     : Base(/* declaration */ expr->Declaration(),
-           /* type */ constant->Type(),
-           /* stage */ EvaluationStage::kConstant,  // Abstract can only be const-expr
+           /* type */ type,
+           /* stage */ constant ? EvaluationStage::kConstant : EvaluationStage::kNotEvaluated,
            /* statement */ statement,
            /* constant */ constant,
            /* has_side_effects */ false,

@@ -136,6 +136,9 @@ option_if_not_defined(DAWN_ENABLE_SWIFTSHADER "Enables building Swiftshader as p
 
 option_if_not_defined(DAWN_ENABLE_PIC "Build with Position-Independent-Code enabled" OFF)
 
+option_if_not_defined(DAWN_EMIT_COVERAGE "Emit code coverage information" OFF)
+set_if_not_defined(LLVM_SOURCE_DIR "${Dawn_LLVM_SOURCE_DIR}" "Directory to an LLVM source checkout. Required to build turbo-cov")
+
 if (DAWN_ENABLE_OPENGLES OR DAWN_ENABLE_DESKTOP_GL)
   set(TINT_DEFAULT_GLSL ON)
 else()
@@ -166,9 +169,9 @@ option_if_not_defined(TINT_BUILD_AS_OTHER_OS "Override OS detection to force bui
 option_if_not_defined(TINT_BUILD_REMOTE_COMPILE "Build the remote-compile tool for validating shaders on a remote machine" OFF)
 
 option_if_not_defined(TINT_ENABLE_BREAK_IN_DEBUGGER "Enable tint::debugger::Break()" OFF)
-option_if_not_defined(TINT_EMIT_COVERAGE "Emit code coverage information" OFF)
 option_if_not_defined(TINT_CHECK_CHROMIUM_STYLE "Check for [chromium-style] issues during build" OFF)
 option_if_not_defined(TINT_SYMBOL_STORE_DEBUG_NAME "Enable storing of name in tint::ast::Symbol to help debugging the AST" OFF)
+option_if_not_defined(TINT_RANDOMIZE_HASHES "Randomize the hash seed value to detect non-deterministic output" OFF)
 
 # Recommended setting for compability with future abseil releases.
 set(ABSL_PROPAGATE_CXX_STD ON)
@@ -335,6 +338,18 @@ function(common_compile_options TARGET)
   if(MSVC)
       target_compile_options(${TARGET} PUBLIC /utf-8)
   endif()
+
+  if (DAWN_EMIT_COVERAGE)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        target_compile_options(${TARGET} PRIVATE "--coverage")
+        target_link_options(${TARGET} PRIVATE "gcov")
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${TARGET} PRIVATE "-fprofile-instr-generate" "-fcoverage-mapping")
+        target_link_options(${TARGET} PRIVATE "-fprofile-instr-generate" "-fcoverage-mapping")
+    else()
+        message(FATAL_ERROR "Coverage generation not supported for the ${CMAKE_CXX_COMPILER_ID} toolchain")
+    endif()
+  endif(DAWN_EMIT_COVERAGE)
 endfunction()
 
 if (${DAWN_ENABLE_TSAN})
@@ -502,18 +517,6 @@ function(tint_core_compile_options TARGET)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_IR=$<BOOL:${TINT_BUILD_IR}>)
 
   common_compile_options(${TARGET})
-
-  if (TINT_EMIT_COVERAGE)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-        target_compile_options(${TARGET} PRIVATE "--coverage")
-        target_link_options(${TARGET} PRIVATE "gcov")
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        target_compile_options(${TARGET} PRIVATE "-fprofile-instr-generate" "-fcoverage-mapping")
-        target_link_options(${TARGET} PRIVATE "-fprofile-instr-generate" "-fcoverage-mapping")
-    else()
-        message(FATAL_ERROR "Coverage generation not supported for the ${CMAKE_CXX_COMPILER_ID} toolchain")
-    endif()
-  endif(TINT_EMIT_COVERAGE)
 endfunction()
 
 function(tint_default_compile_options TARGET)
@@ -533,6 +536,7 @@ function(tint_default_compile_options TARGET)
     -Wno-c++98-compat
     -Wno-c++98-compat-pedantic
     -Wno-format-pedantic
+    -Wno-poison-system-directories
     -Wno-return-std-move-in-c++11
     -Wno-unknown-warning-option
     -Wno-undefined-var-template
@@ -595,6 +599,15 @@ function(tint_default_compile_options TARGET)
       )
     endif()
   endif()
+
+  if (TINT_RANDOMIZE_HASHES)
+    if(NOT DEFINED TINT_HASH_SEED)
+        string(RANDOM LENGTH 16 ALPHABET "0123456789abcdef" seed)
+        set(TINT_HASH_SEED "0x${seed}" CACHE STRING "Tint hash seed value")
+        message("Using TINT_HASH_SEED: ${TINT_HASH_SEED}")
+    endif()
+    target_compile_definitions(${TARGET} PUBLIC "-DTINT_HASH_SEED=${TINT_HASH_SEED}")
+  endif()
 endfunction()
 
 ################################################################################
@@ -638,7 +651,7 @@ add_custom_target(tint-format
   VERBATIM)
 
 
-if (TINT_EMIT_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+if (DAWN_EMIT_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # Generates a lcov.info file at the project root.
   # This can be used by tools such as VSCode's Coverage Gutters extension to
   # visualize code coverage in the editor.

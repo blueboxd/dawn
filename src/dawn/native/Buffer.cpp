@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <string>
 #include <utility>
 
 #include "dawn/common/Alloc.h"
@@ -96,7 +97,7 @@ class ErrorBuffer final : public BufferBase {
 
 }  // anonymous namespace
 
-MaybeError ValidateBufferDescriptor(DeviceBase*, const BufferDescriptor* descriptor) {
+MaybeError ValidateBufferDescriptor(DeviceBase* device, const BufferDescriptor* descriptor) {
     DAWN_INVALID_IF(descriptor->nextInChain != nullptr, "nextInChain must be nullptr");
     DAWN_TRY(ValidateBufferUsage(descriptor->usage));
 
@@ -123,6 +124,12 @@ MaybeError ValidateBufferDescriptor(DeviceBase*, const BufferDescriptor* descrip
     DAWN_INVALID_IF(descriptor->mappedAtCreation && descriptor->size % 4 != 0,
                     "Buffer is mapped at creation but its size (%u) is not a multiple of 4.",
                     descriptor->size);
+
+    if (descriptor->size > device->GetLimits().v1.maxBufferSize) {
+        DAWN_TRY(DAWN_MAKE_DEPRECATION_ERROR(
+            device, "Buffer size (%u) exceeds the max buffer size limit (%u).", descriptor->size,
+            device->GetLimits().v1.maxBufferSize));
+    }
 
     return {};
 }
@@ -185,7 +192,7 @@ BufferBase::~BufferBase() {
 }
 
 void BufferBase::DestroyImpl() {
-    if (mState == BufferState::Mapped) {
+    if (mState == BufferState::Mapped || mState == BufferState::PendingMap) {
         UnmapInternal(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
     } else if (mState == BufferState::MappedAtCreation) {
         if (mStagingBuffer != nullptr) {
@@ -302,6 +309,8 @@ MaybeError BufferBase::ValidateCanUseOnQueueNow() const {
         case BufferState::Mapped:
         case BufferState::MappedAtCreation:
             return DAWN_VALIDATION_ERROR("%s used in submit while mapped.", this);
+        case BufferState::PendingMap:
+            return DAWN_VALIDATION_ERROR("%s used in submit while pending map.", this);
         case BufferState::Unmapped:
             return {};
     }
@@ -321,6 +330,8 @@ void BufferBase::CallMapCallback(MapRequestID mapID, WGPUBufferMapAsyncStatus st
         } else {
             callback(status, mMapUserdata);
         }
+
+        mMapUserdata = 0;
     }
 }
 
@@ -329,6 +340,15 @@ void BufferBase::APIMapAsync(wgpu::MapMode mode,
                              size_t size,
                              WGPUBufferMapCallback callback,
                              void* userdata) {
+    // Check for an existing pending map first because it just
+    // rejects the callback and doesn't produce a validation error.
+    if (mState == BufferState::PendingMap) {
+        if (callback) {
+            callback(WGPUBufferMapAsyncStatus_Error, userdata);
+        }
+        return;
+    }
+
     // Handle the defaulting of size required by WebGPU, even if in webgpu_cpp.h it is not
     // possible to default the function argument (because there is the callback later in the
     // argument list)
@@ -353,7 +373,7 @@ void BufferBase::APIMapAsync(wgpu::MapMode mode,
     mMapSize = size;
     mMapCallback = callback;
     mMapUserdata = userdata;
-    mState = BufferState::Mapped;
+    mState = BufferState::PendingMap;
 
     if (GetDevice()->ConsumedError(MapAsyncImpl(mode, offset, size))) {
         CallMapCallback(mLastMapID, WGPUBufferMapAsyncStatus_DeviceLost);
@@ -422,20 +442,18 @@ void BufferBase::APIUnmap() {
 }
 
 void BufferBase::Unmap() {
+    if (mState == BufferState::Destroyed) {
+        return;
+    }
     UnmapInternal(WGPUBufferMapAsyncStatus_UnmappedBeforeCallback);
 }
 
 void BufferBase::UnmapInternal(WGPUBufferMapAsyncStatus callbackStatus) {
-    if (mState == BufferState::Mapped) {
-        // A map request can only be called once, so this will fire only if the request wasn't
-        // completed before the Unmap.
-        // Callbacks are not fired if there is no callback registered, so this is correct for
-        // mappedAtCreation = true.
+    if (mState == BufferState::PendingMap) {
         CallMapCallback(mLastMapID, callbackStatus);
         UnmapImpl();
-
-        mMapCallback = nullptr;
-        mMapUserdata = 0;
+    } else if (mState == BufferState::Mapped) {
+        UnmapImpl();
     } else if (mState == BufferState::MappedAtCreation) {
         if (mStagingBuffer != nullptr) {
             GetDevice()->ConsumedError(CopyFromStagingBuffer());
@@ -471,6 +489,8 @@ MaybeError BufferBase::ValidateMapAsync(wgpu::MapMode mode,
         case BufferState::Mapped:
         case BufferState::MappedAtCreation:
             return DAWN_VALIDATION_ERROR("%s is already mapped.", this);
+        case BufferState::PendingMap:
+            UNREACHABLE();
         case BufferState::Destroyed:
             return DAWN_VALIDATION_ERROR("%s is destroyed.", this);
         case BufferState::Unmapped:
@@ -530,6 +550,7 @@ bool BufferBase::CanGetMappedRange(bool writable, size_t offset, size_t size) co
             ASSERT(bool{mMapMode & wgpu::MapMode::Read} ^ bool{mMapMode & wgpu::MapMode::Write});
             return !writable || (mMapMode & wgpu::MapMode::Write);
 
+        case BufferState::PendingMap:
         case BufferState::Unmapped:
         case BufferState::Destroyed:
             return false;
@@ -543,6 +564,10 @@ MaybeError BufferBase::ValidateUnmap() const {
 }
 
 void BufferBase::OnMapRequestCompleted(MapRequestID mapID, WGPUBufferMapAsyncStatus status) {
+    if (mapID == mLastMapID && status == WGPUBufferMapAsyncStatus_Success &&
+        mState == BufferState::PendingMap) {
+        mState = BufferState::Mapped;
+    }
     CallMapCallback(mapID, status);
 }
 

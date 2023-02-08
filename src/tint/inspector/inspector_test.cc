@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "gtest/gtest.h"
+#include "gmock/gmock.h"
+
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/disable_validation_attribute.h"
 #include "src/tint/ast/id_attribute.h"
@@ -21,11 +22,11 @@
 #include "src/tint/inspector/test_inspector_builder.h"
 #include "src/tint/inspector/test_inspector_runner.h"
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/depth_texture.h"
-#include "src/tint/sem/external_texture.h"
-#include "src/tint/sem/multisampled_texture.h"
-#include "src/tint/sem/sampled_texture.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/type/depth_texture.h"
+#include "src/tint/type/external_texture.h"
+#include "src/tint/type/multisampled_texture.h"
+#include "src/tint/type/sampled_texture.h"
 #include "tint/tint.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -33,16 +34,13 @@ using namespace tint::number_suffixes;  // NOLINT
 namespace tint::inspector {
 namespace {
 
-// All the tests that descend from InspectorBuilder are expected to define their
-// test state via building up the AST through InspectorBuilder and then generate
-// the program with ::Build.
-// The returned Inspector from ::Build can then be used to test expecations.
+// All the tests that descend from InspectorBuilder are expected to define their test state via
+// building up the AST through InspectorBuilder and then generate the program with ::Build. The
+// returned Inspector from ::Build can then be used to test expectations.
 //
-// All the tests that descend from InspectorRunner are expected to define their
-// test state via a WGSL shader, which will be parsed to generate a Program and
-// Inspector in ::Initialize.
-// The returned Inspector from ::Initialize can then be used to test
-// expecations.
+// All the tests that descend from InspectorRunner are expected to define their test state via a
+// WGSL shader, which will be parsed to generate a Program and Inspector in ::Initialize. The
+// returned Inspector from ::Initialize can then be used to test expectations.
 
 class InspectorGetEntryPointTest : public InspectorBuilder, public testing::Test {};
 
@@ -289,6 +287,10 @@ TEST_P(InspectorGetEntryPointComponentAndCompositionTest, Test) {
     std::tie(component, composition) = GetParam();
     std::function<const ast::Type*()> tint_type = GetTypeFunction(component, composition);
 
+    if (component == ComponentType::kF16) {
+        Enable(ast::Extension::kF16);
+    }
+
     auto* in_var = Param("in_var", tint_type(),
                          utils::Vector{
                              Location(0_u),
@@ -325,9 +327,10 @@ TEST_P(InspectorGetEntryPointComponentAndCompositionTest, Test) {
 }
 INSTANTIATE_TEST_SUITE_P(InspectorGetEntryPointTest,
                          InspectorGetEntryPointComponentAndCompositionTest,
-                         testing::Combine(testing::Values(ComponentType::kFloat,
-                                                          ComponentType::kSInt,
-                                                          ComponentType::kUInt),
+                         testing::Combine(testing::Values(ComponentType::kF32,
+                                                          ComponentType::kI32,
+                                                          ComponentType::kU32,
+                                                          ComponentType::kF16),
                                           testing::Values(CompositionType::kScalar,
                                                           CompositionType::kVec2,
                                                           CompositionType::kVec3,
@@ -371,23 +374,23 @@ TEST_F(InspectorGetEntryPointTest, MultipleInOutVariables) {
     EXPECT_TRUE(result[0].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].input_variables[0].location_attribute);
     EXPECT_EQ(InterpolationType::kFlat, result[0].input_variables[0].interpolation_type);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[0].component_type);
     EXPECT_EQ("in_var1", result[0].input_variables[1].name);
     EXPECT_TRUE(result[0].input_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].input_variables[1].location_attribute);
     EXPECT_EQ(InterpolationType::kFlat, result[0].input_variables[1].interpolation_type);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[1].component_type);
     EXPECT_EQ("in_var4", result[0].input_variables[2].name);
     EXPECT_TRUE(result[0].input_variables[2].has_location_attribute);
     EXPECT_EQ(4u, result[0].input_variables[2].location_attribute);
     EXPECT_EQ(InterpolationType::kFlat, result[0].input_variables[2].interpolation_type);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[2].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[2].component_type);
 
     ASSERT_EQ(1u, result[0].output_variables.size());
     EXPECT_EQ("<retval>", result[0].output_variables[0].name);
     EXPECT_TRUE(result[0].output_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[0].component_type);
 }
 
 TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutVariables) {
@@ -435,26 +438,26 @@ TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutVariables) {
     EXPECT_TRUE(result[0].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].input_variables[0].location_attribute);
     EXPECT_EQ(InterpolationType::kFlat, result[0].input_variables[0].interpolation_type);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[0].component_type);
 
     ASSERT_EQ(1u, result[0].output_variables.size());
     EXPECT_EQ("<retval>", result[0].output_variables[0].name);
     EXPECT_TRUE(result[0].output_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[0].component_type);
 
     ASSERT_EQ(1u, result[1].input_variables.size());
     EXPECT_EQ("in_var_bar", result[1].input_variables[0].name);
     EXPECT_TRUE(result[1].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[1].input_variables[0].location_attribute);
     EXPECT_EQ(InterpolationType::kFlat, result[1].input_variables[0].interpolation_type);
-    EXPECT_EQ(ComponentType::kUInt, result[1].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[1].input_variables[0].component_type);
 
     ASSERT_EQ(1u, result[1].output_variables.size());
     EXPECT_EQ("<retval>", result[1].output_variables[0].name);
     EXPECT_TRUE(result[1].output_variables[0].has_location_attribute);
     EXPECT_EQ(1u, result[1].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[1].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[1].output_variables[0].component_type);
 }
 
 TEST_F(InspectorGetEntryPointTest, BuiltInsNotStageVariables) {
@@ -487,7 +490,7 @@ TEST_F(InspectorGetEntryPointTest, BuiltInsNotStageVariables) {
     EXPECT_EQ("in_var1", result[0].input_variables[0].name);
     EXPECT_TRUE(result[0].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].input_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kFloat, result[0].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kF32, result[0].input_variables[0].component_type);
 
     ASSERT_EQ(0u, result[0].output_variables.size());
 }
@@ -519,21 +522,21 @@ TEST_F(InspectorGetEntryPointTest, InOutStruct) {
     EXPECT_EQ("param.a", result[0].input_variables[0].name);
     EXPECT_TRUE(result[0].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].input_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[0].component_type);
     EXPECT_EQ("param.b", result[0].input_variables[1].name);
     EXPECT_TRUE(result[0].input_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].input_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[1].component_type);
 
     ASSERT_EQ(2u, result[0].output_variables.size());
     EXPECT_EQ("<retval>.a", result[0].output_variables[0].name);
     EXPECT_TRUE(result[0].output_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[0].component_type);
     EXPECT_EQ("<retval>.b", result[0].output_variables[1].name);
     EXPECT_TRUE(result[0].output_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].output_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[1].component_type);
 }
 
 TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutSharedStruct) {
@@ -565,21 +568,21 @@ TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutSharedStruct) {
     EXPECT_EQ("<retval>.a", result[0].output_variables[0].name);
     EXPECT_TRUE(result[0].output_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[0].component_type);
     EXPECT_EQ("<retval>.b", result[0].output_variables[1].name);
     EXPECT_TRUE(result[0].output_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].output_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[1].component_type);
 
     ASSERT_EQ(2u, result[1].input_variables.size());
     EXPECT_EQ("param.a", result[1].input_variables[0].name);
     EXPECT_TRUE(result[1].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[1].input_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[1].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[1].input_variables[0].component_type);
     EXPECT_EQ("param.b", result[1].input_variables[1].name);
     EXPECT_TRUE(result[1].input_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[1].input_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[1].input_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[1].input_variables[1].component_type);
 
     ASSERT_EQ(0u, result[1].output_variables.size());
 }
@@ -617,33 +620,33 @@ TEST_F(InspectorGetEntryPointTest, MixInOutVariablesAndStruct) {
     EXPECT_EQ("param_a.a", result[0].input_variables[0].name);
     EXPECT_TRUE(result[0].input_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].input_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[0].component_type);
     EXPECT_EQ("param_a.b", result[0].input_variables[1].name);
     EXPECT_TRUE(result[0].input_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].input_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[1].component_type);
     EXPECT_EQ("param_b.a", result[0].input_variables[2].name);
     EXPECT_TRUE(result[0].input_variables[2].has_location_attribute);
     EXPECT_EQ(2u, result[0].input_variables[2].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].input_variables[2].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].input_variables[2].component_type);
     EXPECT_EQ("param_c", result[0].input_variables[3].name);
     EXPECT_TRUE(result[0].input_variables[3].has_location_attribute);
     EXPECT_EQ(3u, result[0].input_variables[3].location_attribute);
-    EXPECT_EQ(ComponentType::kFloat, result[0].input_variables[3].component_type);
+    EXPECT_EQ(ComponentType::kF32, result[0].input_variables[3].component_type);
     EXPECT_EQ("param_d", result[0].input_variables[4].name);
     EXPECT_TRUE(result[0].input_variables[4].has_location_attribute);
     EXPECT_EQ(4u, result[0].input_variables[4].location_attribute);
-    EXPECT_EQ(ComponentType::kFloat, result[0].input_variables[4].component_type);
+    EXPECT_EQ(ComponentType::kF32, result[0].input_variables[4].component_type);
 
     ASSERT_EQ(2u, result[0].output_variables.size());
     EXPECT_EQ("<retval>.a", result[0].output_variables[0].name);
     EXPECT_TRUE(result[0].output_variables[0].has_location_attribute);
     EXPECT_EQ(0u, result[0].output_variables[0].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[0].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[0].component_type);
     EXPECT_EQ("<retval>.b", result[0].output_variables[1].name);
     EXPECT_TRUE(result[0].output_variables[1].has_location_attribute);
     EXPECT_EQ(1u, result[0].output_variables[1].location_attribute);
-    EXPECT_EQ(ComponentType::kUInt, result[0].output_variables[1].component_type);
+    EXPECT_EQ(ComponentType::kU32, result[0].output_variables[1].component_type);
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideUnreferenced) {
@@ -714,6 +717,193 @@ TEST_F(InspectorGetEntryPointTest, OverrideSomeReferenced) {
     ASSERT_EQ(1u, result[0].overrides.size());
     EXPECT_EQ("foo", result[0].overrides[0].name);
     EXPECT_EQ(1, result[0].overrides[0].id.value);
+}
+
+TEST_F(InspectorGetEntryPointTest, OverrideReferencedIndirectly) {
+    Override("foo", ty.f32());
+    Override("bar", ty.f32(), Mul(2_a, "foo"));
+    MakePlainGlobalReferenceBodyFunction("ep_func", "bar", ty.f32(),
+                                         utils::Vector{
+                                             Stage(ast::PipelineStage::kCompute),
+                                             WorkgroupSize(1_i),
+                                         });
+
+    Inspector& inspector = Build();
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    ASSERT_EQ(2u, result[0].overrides.size());
+    EXPECT_EQ("bar", result[0].overrides[0].name);
+    EXPECT_TRUE(result[0].overrides[0].is_initialized);
+    EXPECT_EQ("foo", result[0].overrides[1].name);
+    EXPECT_FALSE(result[0].overrides[1].is_initialized);
+}
+
+TEST_F(InspectorGetEntryPointTest, OverrideReferencedIndirectly_ViaPrivateInitializer) {
+    Override("foo", ty.f32());
+    GlobalVar("bar", ast::AddressSpace::kPrivate, ty.f32(), Mul(2_a, "foo"));
+    MakePlainGlobalReferenceBodyFunction("ep_func", "bar", ty.f32(),
+                                         utils::Vector{
+                                             Stage(ast::PipelineStage::kCompute),
+                                             WorkgroupSize(1_i),
+                                         });
+
+    Inspector& inspector = Build();
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    ASSERT_EQ(1u, result[0].overrides.size());
+    EXPECT_EQ("foo", result[0].overrides[0].name);
+    EXPECT_FALSE(result[0].overrides[0].is_initialized);
+}
+
+TEST_F(InspectorGetEntryPointTest, OverrideReferencedIndirectly_MultipleEntryPoints) {
+    Override("foo1", ty.f32());
+    Override("bar1", ty.f32(), Mul(2_a, "foo1"));
+    MakePlainGlobalReferenceBodyFunction("ep_func1", "bar1", ty.f32(),
+                                         utils::Vector{
+                                             Stage(ast::PipelineStage::kCompute),
+                                             WorkgroupSize(1_i),
+                                         });
+    Override("foo2", ty.f32());
+    Override("bar2", ty.f32(), Mul(2_a, "foo2"));
+    MakePlainGlobalReferenceBodyFunction("ep_func2", "bar2", ty.f32(),
+                                         utils::Vector{
+                                             Stage(ast::PipelineStage::kCompute),
+                                             WorkgroupSize(1_i),
+                                         });
+
+    Inspector& inspector = Build();
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(2u, result.size());
+
+    ASSERT_EQ(2u, result[0].overrides.size());
+    EXPECT_EQ("bar1", result[0].overrides[0].name);
+    EXPECT_TRUE(result[0].overrides[0].is_initialized);
+    EXPECT_EQ("foo1", result[0].overrides[1].name);
+    EXPECT_FALSE(result[0].overrides[1].is_initialized);
+
+    ASSERT_EQ(2u, result[1].overrides.size());
+    EXPECT_EQ("bar2", result[1].overrides[0].name);
+    EXPECT_TRUE(result[1].overrides[0].is_initialized);
+    EXPECT_EQ("foo2", result[1].overrides[1].name);
+    EXPECT_FALSE(result[1].overrides[1].is_initialized);
+}
+
+TEST_F(InspectorGetEntryPointTest, OverrideReferencedByAttribute) {
+    Override("wgsize", ty.u32());
+    MakeEmptyBodyFunction("ep_func", utils::Vector{
+                                         Stage(ast::PipelineStage::kCompute),
+                                         WorkgroupSize("wgsize"),
+                                     });
+
+    Inspector& inspector = Build();
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    ASSERT_EQ(1u, result[0].overrides.size());
+    EXPECT_EQ("wgsize", result[0].overrides[0].name);
+    EXPECT_FALSE(result[0].overrides[0].is_initialized);
+}
+
+TEST_F(InspectorGetEntryPointTest, OverrideReferencedByAttributeIndirectly) {
+    Override("foo", ty.u32());
+    Override("bar", ty.u32(), Mul(2_a, "foo"));
+    MakeEmptyBodyFunction("ep_func", utils::Vector{
+                                         Stage(ast::PipelineStage::kCompute),
+                                         WorkgroupSize(Mul(2_a, Expr("bar"))),
+                                     });
+
+    Inspector& inspector = Build();
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    ASSERT_EQ(2u, result[0].overrides.size());
+    EXPECT_EQ("bar", result[0].overrides[0].name);
+    EXPECT_TRUE(result[0].overrides[0].is_initialized);
+    EXPECT_EQ("foo", result[0].overrides[1].name);
+    EXPECT_FALSE(result[0].overrides[1].is_initialized);
+}
+
+TEST_F(InspectorGetEntryPointTest, OverrideReferencedByArraySize) {
+    Override("size", ty.u32());
+    GlobalVar("v", ast::AddressSpace::kWorkgroup, ty.array(ty.f32(), "size"));
+    Func("ep", utils::Empty, ty.void_(),
+         utils::Vector{
+             Assign(Phony(), IndexAccessor("v", 0_a)),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kCompute),
+             WorkgroupSize(1_i),
+         });
+
+    Inspector& inspector = Build();
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    ASSERT_EQ(1u, result[0].overrides.size());
+    EXPECT_EQ("size", result[0].overrides[0].name);
+    EXPECT_FALSE(result[0].overrides[0].is_initialized);
+}
+
+TEST_F(InspectorGetEntryPointTest, OverrideReferencedByArraySizeIndirectly) {
+    Override("foo", ty.u32());
+    Override("bar", ty.u32(), Mul(2_a, "foo"));
+    GlobalVar("v", ast::AddressSpace::kWorkgroup, ty.array(ty.f32(), Mul(2_a, Expr("bar"))));
+    Func("ep", utils::Empty, ty.void_(),
+         utils::Vector{
+             Assign(Phony(), IndexAccessor("v", 0_a)),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kCompute),
+             WorkgroupSize(1_i),
+         });
+
+    Inspector& inspector = Build();
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    ASSERT_EQ(2u, result[0].overrides.size());
+    EXPECT_EQ("bar", result[0].overrides[0].name);
+    EXPECT_TRUE(result[0].overrides[0].is_initialized);
+    EXPECT_EQ("foo", result[0].overrides[1].name);
+    EXPECT_FALSE(result[0].overrides[1].is_initialized);
+}
+
+TEST_F(InspectorGetEntryPointTest, OverrideReferencedByArraySizeViaAlias) {
+    Override("foo", ty.u32());
+    Override("bar", ty.u32(), Expr("foo"));
+    Alias("MyArray", ty.array(ty.f32(), Mul(2_a, Expr("bar"))));
+    Override("zoo", ty.u32());
+    Alias("MyArrayUnused", ty.array(ty.f32(), Mul(2_a, Expr("zoo"))));
+    GlobalVar("v", ast::AddressSpace::kWorkgroup, ty.type_name("MyArray"));
+    Func("ep", utils::Empty, ty.void_(),
+         utils::Vector{
+             Assign(Phony(), IndexAccessor("v", 0_a)),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kCompute),
+             WorkgroupSize(1_i),
+         });
+
+    Inspector& inspector = Build();
+
+    auto result = inspector.GetEntryPoints();
+
+    ASSERT_EQ(1u, result.size());
+    ASSERT_EQ(2u, result[0].overrides.size());
+    EXPECT_EQ("bar", result[0].overrides[0].name);
+    EXPECT_TRUE(result[0].overrides[0].is_initialized);
+    EXPECT_EQ("foo", result[0].overrides[1].name);
+    EXPECT_FALSE(result[0].overrides[1].is_initialized);
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideTypes) {
@@ -3015,7 +3205,7 @@ fn main(@location(0) fragUV: vec2<f32>,
 })";
 
     Inspector& inspector = Initialize(shader);
-    auto result = inspector.GetSamplerTextureUses("foo");
+    inspector.GetSamplerTextureUses("foo");
     ASSERT_TRUE(inspector.has_error()) << inspector.error();
 }
 
@@ -3037,7 +3227,8 @@ fn main(@location(0) fragUV: vec2<f32>,
     auto result_1 = inspector.GetSamplerTextureUses("main");
     ASSERT_FALSE(inspector.has_error()) << inspector.error();
 
-    EXPECT_EQ(result_0, result_1);
+    EXPECT_EQ((utils::Vector<sem::SamplerTexturePair, 4>(result_0)),
+              (utils::Vector<sem::SamplerTexturePair, 4>(result_1)));
 }
 
 TEST_F(InspectorGetSamplerTextureUsesTest, BothIndirect) {
@@ -3454,7 +3645,7 @@ fn main(@location(0) fragUV: vec2<f32>,
 })";
 
     Inspector& inspector = Initialize(shader);
-    auto result = inspector.GetSamplerTextureUses("main");
+    inspector.GetSamplerTextureUses("main");
 }
 
 }  // namespace

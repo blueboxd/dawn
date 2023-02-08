@@ -43,7 +43,7 @@ TEST_F(ResolverConstEvalTest, MemberAccess) {
     ASSERT_NE(outer, nullptr);
     auto* str = outer->Type()->As<sem::Struct>();
     ASSERT_NE(str, nullptr);
-    EXPECT_EQ(str->Members().size(), 2u);
+    EXPECT_EQ(str->Members().Length(), 2u);
     ASSERT_NE(outer->ConstantValue(), nullptr);
     EXPECT_TYPE(outer->ConstantValue()->Type(), outer->Type());
     EXPECT_FALSE(outer->ConstantValue()->AllEqual());
@@ -56,17 +56,17 @@ TEST_F(ResolverConstEvalTest, MemberAccess) {
     EXPECT_FALSE(o1->ConstantValue()->AnyZero());
     EXPECT_FALSE(o1->ConstantValue()->AllZero());
     EXPECT_TRUE(o1->ConstantValue()->Type()->Is<sem::Struct>());
-    EXPECT_EQ(o1->ConstantValue()->Index(0)->As<i32>(), 1_i);
-    EXPECT_EQ(o1->ConstantValue()->Index(1)->As<u32>(), 2_u);
-    EXPECT_EQ(o1->ConstantValue()->Index(2)->As<f32>(), 3_f);
+    EXPECT_EQ(o1->ConstantValue()->Index(0)->ValueAs<i32>(), 1_i);
+    EXPECT_EQ(o1->ConstantValue()->Index(1)->ValueAs<u32>(), 2_u);
+    EXPECT_EQ(o1->ConstantValue()->Index(2)->ValueAs<f32>(), 3_f);
 
     auto* i2 = Sem().Get(i2_expr);
     ASSERT_NE(i2->ConstantValue(), nullptr);
     EXPECT_TRUE(i2->ConstantValue()->AllEqual());
     EXPECT_FALSE(i2->ConstantValue()->AnyZero());
     EXPECT_FALSE(i2->ConstantValue()->AllZero());
-    EXPECT_TRUE(i2->ConstantValue()->Type()->Is<sem::U32>());
-    EXPECT_EQ(i2->ConstantValue()->As<u32>(), 2_u);
+    EXPECT_TRUE(i2->ConstantValue()->Type()->Is<type::U32>());
+    EXPECT_EQ(i2->ConstantValue()->ValueAs<u32>(), 2_u);
 }
 
 TEST_F(ResolverConstEvalTest, Matrix_AFloat_Construct_From_AInt_Vectors) {
@@ -79,20 +79,20 @@ TEST_F(ResolverConstEvalTest, Matrix_AFloat_Construct_From_AInt_Vectors) {
 
     auto* sem = Sem().Get(c);
     ASSERT_NE(sem, nullptr);
-    EXPECT_TRUE(sem->Type()->Is<sem::Matrix>());
+    EXPECT_TRUE(sem->Type()->Is<type::Matrix>());
     auto* cv = sem->ConstantValue();
     EXPECT_TYPE(cv->Type(), sem->Type());
-    EXPECT_TRUE(cv->Index(0)->Type()->Is<sem::Vector>());
-    EXPECT_TRUE(cv->Index(0)->Index(0)->Type()->Is<sem::AbstractFloat>());
+    EXPECT_TRUE(cv->Index(0)->Type()->Is<type::Vector>());
+    EXPECT_TRUE(cv->Index(0)->Index(0)->Type()->Is<type::AbstractFloat>());
     EXPECT_FALSE(cv->AllEqual());
     EXPECT_FALSE(cv->AnyZero());
     EXPECT_FALSE(cv->AllZero());
     auto* c0 = cv->Index(0);
     auto* c1 = cv->Index(1);
-    EXPECT_EQ(std::get<AFloat>(c0->Index(0)->Value()), 1.0);
-    EXPECT_EQ(std::get<AFloat>(c0->Index(1)->Value()), 2.0);
-    EXPECT_EQ(std::get<AFloat>(c1->Index(0)->Value()), 3.0);
-    EXPECT_EQ(std::get<AFloat>(c1->Index(1)->Value()), 4.0);
+    EXPECT_EQ(c0->Index(0)->ValueAs<AFloat>(), 1.0);
+    EXPECT_EQ(c0->Index(1)->ValueAs<AFloat>(), 2.0);
+    EXPECT_EQ(c1->Index(0)->ValueAs<AFloat>(), 3.0);
+    EXPECT_EQ(c1->Index(1)->ValueAs<AFloat>(), 4.0);
 }
 }  // namespace
 }  // namespace tint::resolver

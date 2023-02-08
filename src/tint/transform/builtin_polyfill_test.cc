@@ -34,11 +34,7 @@ TEST_F(BuiltinPolyfillTest, ShouldRunEmptyModule) {
 TEST_F(BuiltinPolyfillTest, EmptyModule) {
     auto* src = R"()";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src);
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -66,19 +62,14 @@ fn f() {
     EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillAcosh(Level::kFull)));
 }
 
-// TODO(crbug.com/tint/1581): Enable once `acosh` is implemented as @const
-TEST_F(BuiltinPolyfillTest, DISABLED_Acosh_ConstantExpression) {
+TEST_F(BuiltinPolyfillTest, Acosh_ConstantExpression) {
     auto* src = R"(
 fn f() {
   let r : f32 = acosh(1.0);
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillAcosh(Level::kFull));
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillAcosh(Level::kFull)));
 }
 
 TEST_F(BuiltinPolyfillTest, Acosh_Full_f32) {
@@ -207,11 +198,7 @@ fn f() {
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillSinh());
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillSinh()));
 }
 
 TEST_F(BuiltinPolyfillTest, Asinh_f32) {
@@ -287,19 +274,14 @@ fn f() {
     EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillAtanh(Level::kFull)));
 }
 
-// TODO(crbug.com/tint/1581): Enable once `atanh` is implemented as @const
-TEST_F(BuiltinPolyfillTest, DISABLED_Atanh_ConstantExpression) {
+TEST_F(BuiltinPolyfillTest, Atanh_ConstantExpression) {
     auto* src = R"(
 fn f() {
-  let r : f32 = atanh(1.23);
+  let r : f32 = atanh(0.23);
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillAtanh(Level::kFull));
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillAtanh(Level::kFull)));
 }
 
 TEST_F(BuiltinPolyfillTest, Atanh_Full_f32) {
@@ -605,11 +587,7 @@ fn f() {
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillClampInteger());
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillClampInteger()));
 }
 
 TEST_F(BuiltinPolyfillTest, ClampInteger_i32) {
@@ -727,19 +705,14 @@ fn f() {
     EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillCountLeadingZeros()));
 }
 
-// TODO(crbug.com/tint/1581): Enable once `countLeadingZeros` is implemented as @const
-TEST_F(BuiltinPolyfillTest, DISABLED_CountLeadingZeros_ConstantExpression) {
+TEST_F(BuiltinPolyfillTest, CountLeadingZeros_ConstantExpression) {
     auto* src = R"(
 fn f() {
   let r : i32 = countLeadingZeros(15i);
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillCountLeadingZeros());
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillCountLeadingZeros()));
 }
 
 TEST_F(BuiltinPolyfillTest, CountLeadingZeros_i32) {
@@ -905,19 +878,14 @@ fn f() {
     EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillCountTrailingZeros()));
 }
 
-// TODO(crbug.com/tint/1581): Enable once `countTrailingZeros` is implemented as @const
-TEST_F(BuiltinPolyfillTest, DISABLED_CountTrailingZeros_ConstantExpression) {
+TEST_F(BuiltinPolyfillTest, CountTrailingZeros_ConstantExpression) {
     auto* src = R"(
 fn f() {
   let r : i32 = countTrailingZeros(15i);
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillCountTrailingZeros());
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillCountTrailingZeros()));
 }
 
 TEST_F(BuiltinPolyfillTest, CountTrailingZeros_i32) {
@@ -1092,11 +1060,7 @@ fn f() {
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillExtractBits(Level::kFull));
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillExtractBits(Level::kFull)));
 }
 
 TEST_F(BuiltinPolyfillTest, ExtractBits_Full_i32) {
@@ -1113,7 +1077,8 @@ fn tint_extract_bits(v : i32, offset : u32, count : u32) -> i32 {
   let e = min(32u, (s + count));
   let shl = (32u - e);
   let shr = (shl + s);
-  return ((v << shl) >> shr);
+  let shl_result = select(i32(), (v << shl), (shl < 32u));
+  return select(((shl_result >> 31u) >> 1u), (shl_result >> shr), (shr < 32u));
 }
 
 fn f() {
@@ -1141,7 +1106,8 @@ fn tint_extract_bits(v : u32, offset : u32, count : u32) -> u32 {
   let e = min(32u, (s + count));
   let shl = (32u - e);
   let shr = (shl + s);
-  return ((v << shl) >> shr);
+  let shl_result = select(u32(), (v << shl), (shl < 32u));
+  return select(((shl_result >> 31u) >> 1u), (shl_result >> shr), (shr < 32u));
 }
 
 fn f() {
@@ -1169,7 +1135,8 @@ fn tint_extract_bits(v : vec3<i32>, offset : u32, count : u32) -> vec3<i32> {
   let e = min(32u, (s + count));
   let shl = (32u - e);
   let shr = (shl + s);
-  return ((v << vec3<u32>(shl)) >> vec3<u32>(shr));
+  let shl_result = select(vec3<i32>(), (v << vec3<u32>(shl)), (shl < 32u));
+  return select(((shl_result >> vec3<u32>(31u)) >> vec3<u32>(1u)), (shl_result >> vec3<u32>(shr)), (shr < 32u));
 }
 
 fn f() {
@@ -1197,7 +1164,8 @@ fn tint_extract_bits(v : vec3<u32>, offset : u32, count : u32) -> vec3<u32> {
   let e = min(32u, (s + count));
   let shl = (32u - e);
   let shr = (shl + s);
-  return ((v << vec3<u32>(shl)) >> vec3<u32>(shr));
+  let shl_result = select(vec3<u32>(), (v << vec3<u32>(shl)), (shl < 32u));
+  return select(((shl_result >> vec3<u32>(31u)) >> vec3<u32>(1u)), (shl_result >> vec3<u32>(shr)), (shr < 32u));
 }
 
 fn f() {
@@ -1338,19 +1306,14 @@ fn f() {
     EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillFirstLeadingBit()));
 }
 
-// TODO(crbug.com/tint/1581): Enable once `firstLeadingBit` is implemented as @const
-TEST_F(BuiltinPolyfillTest, DISABLED_FirstLeadingBit_ConstantExpression) {
+TEST_F(BuiltinPolyfillTest, FirstLeadingBit_ConstantExpression) {
     auto* src = R"(
 fn f() {
   let r : i32 = firstLeadingBit(15i);
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillFirstLeadingBit());
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillFirstLeadingBit()));
 }
 
 TEST_F(BuiltinPolyfillTest, FirstLeadingBit_i32) {
@@ -1516,19 +1479,14 @@ fn f() {
     EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillFirstTrailingBit()));
 }
 
-// TODO(crbug.com/tint/1581): Enable once `firstTrailingBit` is implemented as @const
-TEST_F(BuiltinPolyfillTest, DISABLED_FirstTrailingBit_ConstantExpression) {
+TEST_F(BuiltinPolyfillTest, FirstTrailingBit_ConstantExpression) {
     auto* src = R"(
 fn f() {
   let r : i32 = firstTrailingBit(15i);
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillFirstTrailingBit());
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillFirstTrailingBit()));
 }
 
 TEST_F(BuiltinPolyfillTest, FirstTrailingBit_i32) {
@@ -1696,20 +1654,14 @@ fn f() {
     EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillInsertBits(Level::kFull)));
 }
 
-// TODO(crbug.com/tint/1581): Enable once `insertBits` is implemented as @const
-TEST_F(BuiltinPolyfillTest, DISABLED_InsertBits_ConstantExpression) {
+TEST_F(BuiltinPolyfillTest, InsertBits_ConstantExpression) {
     auto* src = R"(
 fn f() {
-  let v = 1234i;
-  let r : i32 = insertBits(v, 5678, 5u, 6u);
+  let r : i32 = insertBits(1234i, 5678i, 5u, 6u);
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillInsertBits(Level::kFull));
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillInsertBits(Level::kFull)));
 }
 
 TEST_F(BuiltinPolyfillTest, InsertBits_Full_i32) {
@@ -2719,11 +2671,7 @@ fn f() {
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<BuiltinPolyfill>(src, polyfillSaturate());
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillSaturate()));
 }
 
 TEST_F(BuiltinPolyfillTest, Saturate_f32) {
@@ -2826,6 +2774,99 @@ fn f() {
 )";
 
     auto got = Run<BuiltinPolyfill>(src, polyfillSaturate());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// sign_int
+////////////////////////////////////////////////////////////////////////////////
+DataMap polyfillSignInt() {
+    BuiltinPolyfill::Builtins builtins;
+    builtins.sign_int = true;
+    DataMap data;
+    data.Add<BuiltinPolyfill::Config>(builtins);
+    return data;
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunSign_i32) {
+    auto* src = R"(
+fn f() {
+  let v = 1i;
+  sign(v);
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillSignInt()));
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunSign_f32) {
+    auto* src = R"(
+fn f() {
+  let v = 1f;
+  sign(v);
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillSignInt()));
+}
+
+TEST_F(BuiltinPolyfillTest, SignInt_ConstantExpression) {
+    auto* src = R"(
+fn f() {
+  let r : i32 = sign(1i);
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillSignInt()));
+}
+
+TEST_F(BuiltinPolyfillTest, SignInt_i32) {
+    auto* src = R"(
+fn f() {
+  let v = 1i;
+  let r : i32 = sign(v);
+}
+)";
+
+    auto* expect = R"(
+fn tint_sign(v : i32) -> i32 {
+  return select(select(-1, 1, (v > 0)), 0, (v == 0));
+}
+
+fn f() {
+  let v = 1i;
+  let r : i32 = tint_sign(v);
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillSignInt());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, SignInt_vec3_i32) {
+    auto* src = R"(
+fn f() {
+  let v = 1i;
+  let r : vec3<i32> = sign(vec3<i32>(v));
+}
+)";
+
+    auto* expect = R"(
+fn tint_sign(v : vec3<i32>) -> vec3<i32> {
+  return select(select(vec3(-1), vec3(1), (v > vec3(0))), vec3(0), (v == vec3(0)));
+}
+
+fn f() {
+  let v = 1i;
+  let r : vec3<i32> = tint_sign(vec3<i32>(v));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillSignInt());
 
     EXPECT_EQ(expect, str(got));
 }
@@ -3004,6 +3045,38 @@ fn f() {
 )";
 
     auto got = Run<BuiltinPolyfill>(src, polyfillQuantizeToF16_2d_f32());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Polyfill combinations
+////////////////////////////////////////////////////////////////////////////////
+
+TEST_F(BuiltinPolyfillTest, BitshiftAndModulo) {
+    auto* src = R"(
+fn f(x : i32, y : u32, z : u32) {
+    let l = x << (y % z);
+}
+)";
+
+    auto* expect = R"(
+fn tint_mod(lhs : u32, rhs : u32) -> u32 {
+  return (lhs % select(rhs, 1, (rhs == 0)));
+}
+
+fn f(x : i32, y : u32, z : u32) {
+  let l = (x << (tint_mod(y, z) & 31));
+}
+)";
+
+    BuiltinPolyfill::Builtins builtins;
+    builtins.bitshift_modulo = true;
+    builtins.int_div_mod = true;
+    DataMap data;
+    data.Add<BuiltinPolyfill::Config>(builtins);
+
+    auto got = Run<BuiltinPolyfill>(src, std::move(data));
 
     EXPECT_EQ(expect, str(got));
 }

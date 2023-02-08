@@ -43,7 +43,6 @@
 // Forward declarations
 namespace tint::sem {
 class Call;
-class Constant;
 class Builtin;
 class TypeInitializer;
 class TypeConversion;
@@ -363,7 +362,7 @@ class GeneratorImpl : public TextGenerator {
     /// @param out the output stream
     /// @param constant the constant value to emit
     /// @returns true if the constant value was successfully emitted
-    bool EmitConstant(std::ostream& out, const sem::Constant* constant);
+    bool EmitConstant(std::ostream& out, const constant::Value* constant);
     /// Handles a literal
     /// @param out the output stream
     /// @param lit the literal to emit
@@ -413,7 +412,7 @@ class GeneratorImpl : public TextGenerator {
     /// then the boolean is set to true.
     /// @returns true if the type is emitted
     bool EmitType(std::ostream& out,
-                  const sem::Type* type,
+                  const type::Type* type,
                   ast::AddressSpace address_space,
                   ast::Access access,
                   const std::string& name,
@@ -426,21 +425,16 @@ class GeneratorImpl : public TextGenerator {
     /// @param name the name to emit
     /// @returns true if the type is emitted
     bool EmitTypeAndName(std::ostream& out,
-                         const sem::Type* type,
+                         const type::Type* type,
                          ast::AddressSpace address_space,
                          ast::Access access,
                          const std::string& name);
-    /// Handles generating a structure declaration
+    /// Handles generating a structure declaration. If the structure has already been emitted, then
+    /// this function will simply return `true` without emitting anything.
     /// @param buffer the text buffer that the type declaration will be written to
     /// @param ty the struct to generate
     /// @returns true if the struct is emitted
     bool EmitStructType(TextBuffer* buffer, const sem::Struct* ty);
-    /// Handles generating a structure declaration only the first time called. Subsequent calls are
-    /// a no-op and return true.
-    /// @param buffer the text buffer that the type declaration will be written to
-    /// @param ty the struct to generate
-    /// @returns true if the struct is emitted
-    bool EmitStructTypeOnce(TextBuffer* buffer, const sem::Struct* ty);
     /// Handles generating the members of a structure
     /// @param buffer the text buffer that the struct members will be written to
     /// @param ty the struct to generate
@@ -455,7 +449,7 @@ class GeneratorImpl : public TextGenerator {
     /// @param out the output stream
     /// @param type the type to emit the value for
     /// @returns true if the zero value was successfully emitted.
-    bool EmitZeroValue(std::ostream& out, const sem::Type* type);
+    bool EmitZeroValue(std::ostream& out, const type::Type* type);
     /// Handles generating a 'var' declaration
     /// @param var the variable to generate
     /// @returns true if the variable was emitted
@@ -477,10 +471,10 @@ class GeneratorImpl : public TextGenerator {
     /// @param stage pipeline stage in which this builtin is used
     /// @returns the string name of the builtin or blank on error
     const char* builtin_to_string(ast::BuiltinValue builtin, ast::PipelineStage stage);
-    /// Converts a builtin to a sem::Type appropriate for GLSL.
+    /// Converts a builtin to a type::Type appropriate for GLSL.
     /// @param builtin the builtin to convert
     /// @returns the appropriate semantic type or null on error.
-    sem::Type* builtin_type(ast::BuiltinValue builtin);
+    type::Type* builtin_type(ast::BuiltinValue builtin);
 
   private:
     enum class VarType { kIn, kOut };
@@ -492,7 +486,7 @@ class GeneratorImpl : public TextGenerator {
 
     /// The map key for two semantic types.
     using BinaryOperandType =
-        utils::UnorderedKeyWrapper<std::tuple<const sem::Type*, const sem::Type*>>;
+        utils::UnorderedKeyWrapper<std::tuple<const type::Type*, const type::Type*>>;
 
     /// CallBuiltinHelper will call the builtin helper function, creating it
     /// if it hasn't been built already. If the builtin needs to be built then
@@ -516,13 +510,13 @@ class GeneratorImpl : public TextGenerator {
     /// Create a uint type corresponding to the given bool or bool vector type.
     /// @param type the bool or bool vector type to convert
     /// @returns the corresponding uint type
-    sem::Type* BoolTypeToUint(const sem::Type* type);
+    type::Type* BoolTypeToUint(const type::Type* type);
 
     TextBuffer helpers_;  // Helper functions emitted at the top of the output
     std::function<bool()> emit_continuing_;
     std::unordered_map<const sem::Builtin*, std::string> builtins_;
-    std::unordered_map<const sem::Vector*, std::string> dynamic_vector_write_;
-    std::unordered_map<const sem::Vector*, std::string> int_dot_funcs_;
+    std::unordered_map<const type::Vector*, std::string> dynamic_vector_write_;
+    std::unordered_map<const type::Vector*, std::string> int_dot_funcs_;
     std::unordered_map<BinaryOperandType, std::string> float_modulo_funcs_;
     std::unordered_set<const sem::Struct*> emitted_structs_;
     bool requires_oes_sample_variables_ = false;

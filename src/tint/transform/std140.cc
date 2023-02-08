@@ -128,11 +128,11 @@ struct Std140::State {
     /// @returns true if this transform should be run for the given program
     bool ShouldRun() const {
         // Returns true if the type needs to be forked for std140 usage.
-        auto needs_fork = [&](const sem::Type* ty) {
-            while (auto* arr = ty->As<sem::Array>()) {
+        auto needs_fork = [&](const type::Type* ty) {
+            while (auto* arr = ty->As<type::Array>()) {
                 ty = arr->ElemType();
             }
-            if (auto* mat = ty->As<sem::Matrix>()) {
+            if (auto* mat = ty->As<type::Matrix>()) {
                 if (MatrixNeedsDecomposing(mat)) {
                     return true;
                 }
@@ -218,7 +218,7 @@ struct Std140::State {
     utils::Hashmap<LoadFnKey, Symbol, 8, LoadFnKey::Hasher> load_fns;
 
     /// Map of std140-forked type to converter function name
-    utils::Hashmap<const sem::Type*, Symbol, 8> conv_fns;
+    utils::Hashmap<const type::Type*, Symbol, 8> conv_fns;
 
     // Uniform variables that have been modified to use a std140 type
     utils::Hashset<const sem::Variable*, 8> std140_uniforms;
@@ -241,7 +241,7 @@ struct Std140::State {
     };
 
     // Map of matrix type in src, to decomposed column structure in ctx.dst.
-    utils::Hashmap<const sem::Matrix*, Std140Matrix, 8> std140_mats;
+    utils::Hashmap<const type::Matrix*, Std140Matrix, 8> std140_mats;
 
     /// AccessChain describes a chain of access expressions to uniform buffer variable.
     struct AccessChain {
@@ -253,7 +253,7 @@ struct Std140::State {
         utils::Vector<const sem::Expression*, 8> dynamic_indices;
         /// The type of the std140-decomposed matrix being accessed.
         /// May be nullptr if the chain does not pass through a std140-decomposed matrix.
-        const sem::Matrix* std140_mat_ty = nullptr;
+        const type::Matrix* std140_mat_ty = nullptr;
         /// The index in #indices of the access that resolves to the std140-decomposed matrix.
         /// May hold no value if the chain does not pass through a std140-decomposed matrix.
         std::optional<size_t> std140_mat_idx;
@@ -265,8 +265,10 @@ struct Std140::State {
     };
 
     /// @returns true if the given matrix needs decomposing to column vectors for std140 layout.
-    /// TODO(crbug.com/tint/1502): This may need adjusting for `f16` matrices.
-    static bool MatrixNeedsDecomposing(const sem::Matrix* mat) { return mat->ColumnStride() == 8; }
+    /// Std140 layout require matrix stride to be 16, otherwise decomposing is needed.
+    static bool MatrixNeedsDecomposing(const type::Matrix* mat) {
+        return mat->ColumnStride() != 16;
+    }
 
     /// ForkTypes walks the user-declared types in dependency order, forking structures that are
     /// used as uniform buffers which (transitively) use matrices that need std140 decomposition to
@@ -282,7 +284,7 @@ struct Std140::State {
                 bool fork_std140 = false;
                 utils::Vector<const ast::StructMember*, 8> members;
                 for (auto* member : str->Members()) {
-                    if (auto* mat = member->Type()->As<sem::Matrix>()) {
+                    if (auto* mat = member->Type()->As<type::Matrix>()) {
                         // Is this member a matrix that needs decomposition for std140-layout?
                         if (MatrixNeedsDecomposing(mat)) {
                             // Structure member of matrix type needs decomposition.
@@ -397,16 +399,16 @@ struct Std140::State {
     ///          If the semantic type is not split for std140-layout, then nullptr is returned.
     /// @note will construct new std140 structures to hold decomposed matrices, populating
     ///       #std140_mats.
-    const ast::Type* Std140Type(const sem::Type* ty) {
+    const ast::Type* Std140Type(const type::Type* ty) {
         return Switch(
             ty,  //
             [&](const sem::Struct* str) -> const ast::Type* {
-                if (auto* std140 = std140_structs.Find(str)) {
+                if (auto std140 = std140_structs.Find(str)) {
                     return b.create<ast::TypeName>(*std140);
                 }
                 return nullptr;
             },
-            [&](const sem::Matrix* mat) -> const ast::Type* {
+            [&](const type::Matrix* mat) -> const ast::Type* {
                 if (MatrixNeedsDecomposing(mat)) {
                     auto std140_mat = std140_mats.GetOrCreate(mat, [&] {
                         auto name = b.Symbols().New("mat" + std::to_string(mat->columns()) + "x" +
@@ -424,7 +426,7 @@ struct Std140::State {
                 }
                 return nullptr;
             },
-            [&](const sem::Array* arr) -> const ast::Type* {
+            [&](const type::Array* arr) -> const ast::Type* {
                 if (auto* std140 = Std140Type(arr->ElemType())) {
                     utils::Vector<const ast::Attribute*, 1> attrs;
                     if (!arr->IsStrideImplicit()) {
@@ -453,7 +455,7 @@ struct Std140::State {
     /// @param size the size in bytes of the matrix.
     /// @returns a vector of decomposed matrix column vectors as structure members (in ctx.dst).
     utils::Vector<const ast::StructMember*, 4> DecomposedMatrixStructMembers(
-        const sem::Matrix* mat,
+        const type::Matrix* mat,
         const std::string& name_prefix,
         uint32_t align,
         uint32_t size) {
@@ -474,7 +476,7 @@ struct Std140::State {
                 // natural size for the matrix. This extra padding needs to be
                 // applied to the last column vector.
                 attributes.Push(
-                    b.MemberSize(AInt(size - mat->ColumnType()->Size() * (num_columns - 1))));
+                    b.MemberSize(AInt(size - mat->ColumnType()->Align() * (num_columns - 1))));
             }
 
             // Build the member
@@ -516,7 +518,7 @@ struct Std140::State {
                         access.indices.Push(UniformVariable{});
                         return Action::kStop;
                     }
-                    if (user->Variable()->Type()->Is<sem::Pointer>()) {
+                    if (user->Variable()->Type()->Is<type::Pointer>()) {
                         // Found a pointer. As the root identifier is a uniform buffer variable,
                         // this must be a pointer-let. Continue traversing from the let
                         // initializer.
@@ -533,7 +535,7 @@ struct Std140::State {
                     if (std140_mat_members.Contains(a->Member())) {
                         // Record this on the access.
                         access.std140_mat_idx = access.indices.Length();
-                        access.std140_mat_ty = expr->Type()->UnwrapRef()->As<sem::Matrix>();
+                        access.std140_mat_ty = expr->Type()->UnwrapRef()->As<type::Matrix>();
                     }
                     // Structure member accesses are always statically indexed
                     access.indices.Push(u32(a->Member()->Index()));
@@ -543,7 +545,7 @@ struct Std140::State {
                 [&](const sem::IndexAccessorExpression* a) {
                     // Array, matrix or vector index.
                     if (auto* val = a->Index()->ConstantValue()) {
-                        access.indices.Push(val->As<u32>());
+                        access.indices.Push(val->ValueAs<u32>());
                     } else {
                         access.indices.Push(DynamicIndex{access.dynamic_indices.Length()});
                         access.dynamic_indices.Push(a->Index());
@@ -551,7 +553,7 @@ struct Std140::State {
                     expr = a->Object();
 
                     // Is the object a std140 decomposed matrix?
-                    if (auto* mat = expr->Type()->UnwrapRef()->As<sem::Matrix>()) {
+                    if (auto* mat = expr->Type()->UnwrapRef()->As<type::Matrix>()) {
                         if (std140_mats.Contains(mat)) {
                             // Record this on the access.
                             access.std140_mat_idx = access.indices.Length();
@@ -625,11 +627,11 @@ struct Std140::State {
 
     /// @returns a name suffix for a std140 -> non-std140 conversion function based on the type
     ///          being converted.
-    const std::string ConvertSuffix(const sem::Type* ty) {
+    const std::string ConvertSuffix(const type::Type* ty) {
         return Switch(
             ty,  //
             [&](const sem::Struct* str) { return sym.NameFor(str->Name()); },
-            [&](const sem::Array* arr) {
+            [&](const type::Array* arr) {
                 auto count = arr->ConstantCount();
                 if (!count) {
                     // Non-constant counts should not be possible:
@@ -641,11 +643,12 @@ struct Std140::State {
                 }
                 return "arr" + std::to_string(count.value()) + "_" + ConvertSuffix(arr->ElemType());
             },
-            [&](const sem::Matrix* mat) {
+            [&](const type::Matrix* mat) {
                 return "mat" + std::to_string(mat->columns()) + "x" + std::to_string(mat->rows()) +
                        "_" + ConvertSuffix(mat->type());
             },
-            [&](const sem::F32*) { return "f32"; },
+            [&](const type::F32*) { return "f32"; },  //
+            [&](const type::F16*) { return "f16"; },
             [&](Default) {
                 TINT_ICE(Transform, b.Diagnostics())
                     << "unhandled type for conversion name: " << src->FriendlyName(ty);
@@ -658,7 +661,7 @@ struct Std140::State {
     /// @param chain the access chain from a uniform buffer to the value to load.
     const ast::Expression* LoadWithConvert(const AccessChain& chain) {
         const ast::Expression* expr = nullptr;
-        const sem::Type* ty = nullptr;
+        const type::Type* ty = nullptr;
         auto dynamic_index = [&](size_t idx) {
             return ctx.Clone(chain.dynamic_indices[idx]->Declaration());
         };
@@ -674,7 +677,7 @@ struct Std140::State {
     /// std140-forked type to the type @p ty. If @p expr is not a std140-forked type, then Convert()
     /// will simply return @p expr.
     /// @returns the converted value expression.
-    const ast::Expression* Convert(const sem::Type* ty, const ast::Expression* expr) {
+    const ast::Expression* Convert(const type::Type* ty, const ast::Expression* expr) {
         // Get an existing, or create a new function for converting the std140 type to ty.
         auto fn = conv_fns.GetOrCreate(ty, [&] {
             auto std140_ty = Std140Type(ty);
@@ -695,7 +698,7 @@ struct Std140::State {
                     // call, or by reassembling a std140 matrix from column vector members.
                     utils::Vector<const ast::Expression*, 8> args;
                     for (auto* member : str->Members()) {
-                        if (auto* col_members = std140_mat_members.Find(member)) {
+                        if (auto col_members = std140_mat_members.Find(member)) {
                             // std140 decomposed matrix. Reassemble.
                             auto* mat_ty = CreateASTTypeFor(ctx, member->Type());
                             auto mat_args =
@@ -712,7 +715,7 @@ struct Std140::State {
                     }
                     stmts.Push(b.Return(b.Construct(CreateASTTypeFor(ctx, ty), std::move(args))));
                 },  //
-                [&](const sem::Matrix* mat) {
+                [&](const type::Matrix* mat) {
                     // Reassemble a std140 matrix from the structure of column vector members.
                     if (auto std140_mat = std140_mats.Get(mat)) {
                         utils::Vector<const ast::Expression*, 8> args;
@@ -727,7 +730,7 @@ struct Std140::State {
                             << "failed to find std140 matrix info for: " << src->FriendlyName(ty);
                     }
                 },  //
-                [&](const sem::Array* arr) {
+                [&](const type::Array* arr) {
                     // Converting an array. Create a function var for the converted array, and
                     // loop over the input elements, converting each and assigning the result to
                     // the local array.
@@ -814,7 +817,7 @@ struct Std140::State {
         };
 
         const ast::Expression* expr = nullptr;
-        const sem::Type* ty = nullptr;
+        const type::Type* ty = nullptr;
 
         // Build the expression up to, but not including the matrix member
         auto std140_mat_idx = *chain.std140_mat_idx;
@@ -834,7 +837,7 @@ struct Std140::State {
             auto* mat_member = str->Members()[mat_member_idx];
             auto mat_columns = *std140_mat_members.Get(mat_member);
             expr = b.MemberAccessor(expr, mat_columns[column_idx]->symbol);
-            ty = mat_member->Type()->As<sem::Matrix>()->ColumnType();
+            ty = mat_member->Type()->As<type::Matrix>()->ColumnType();
         } else {
             // Non-structure-member matrix. The columns are decomposed into a new, bespoke std140
             // structure.
@@ -842,8 +845,8 @@ struct Std140::State {
                 BuildAccessExpr(expr, ty, chain, std140_mat_idx, dynamic_index);
             expr = new_expr;
             ty = new_ty;
-            auto* mat = ty->As<sem::Matrix>();
-            auto std140_mat = std140_mats.Get(ty->As<sem::Matrix>());
+            auto* mat = ty->As<type::Matrix>();
+            auto std140_mat = std140_mats.Get(ty->As<type::Matrix>());
             expr = b.MemberAccessor(expr, std140_mat->columns[column_idx]);
             ty = mat->ColumnType();
         }
@@ -888,13 +891,13 @@ struct Std140::State {
         utils::Vector<const ast::CaseStatement*, 4> cases;
 
         // The function return type.
-        const sem::Type* ret_ty = nullptr;
+        const type::Type* ret_ty = nullptr;
 
         // Build switch() cases for each column of the matrix
         auto num_columns = chain.std140_mat_ty->columns();
         for (uint32_t column_idx = 0; column_idx < num_columns; column_idx++) {
             const ast::Expression* expr = nullptr;
-            const sem::Type* ty = nullptr;
+            const type::Type* ty = nullptr;
 
             // Build the expression up to, but not including the matrix
             for (size_t i = 0; i < std140_mat_idx; i++) {
@@ -917,7 +920,7 @@ struct Std140::State {
                 }
                 auto mat_columns = *std140_mat_members.Get(mat_member);
                 expr = b.MemberAccessor(expr, mat_columns[column_idx]->symbol);
-                ty = mat_member->Type()->As<sem::Matrix>()->ColumnType();
+                ty = mat_member->Type()->As<type::Matrix>()->ColumnType();
             } else {
                 // Non-structure-member matrix. The columns are decomposed into a new, bespoke
                 // std140 structure.
@@ -928,8 +931,8 @@ struct Std140::State {
                 if (column_idx == 0) {
                     name += "_" + mat_name + "_p" + std::to_string(column_param_idx);
                 }
-                auto* mat = ty->As<sem::Matrix>();
-                auto std140_mat = std140_mats.Get(ty->As<sem::Matrix>());
+                auto* mat = ty->As<type::Matrix>();
+                auto std140_mat = std140_mats.Get(ty->As<type::Matrix>());
                 expr = b.MemberAccessor(expr, std140_mat->columns[column_idx]);
                 ty = mat->ColumnType();
             }
@@ -984,7 +987,7 @@ struct Std140::State {
         auto dynamic_index = [&](size_t idx) { return b.Expr(dynamic_index_params[idx]->symbol); };
 
         const ast::Expression* expr = nullptr;
-        const sem::Type* ty = nullptr;
+        const type::Type* ty = nullptr;
         std::string name = "load";
 
         // Build the expression up to, but not including the matrix member
@@ -1020,8 +1023,8 @@ struct Std140::State {
             auto [new_expr, new_ty, mat_name] =
                 BuildAccessExpr(expr, ty, chain, std140_mat_idx, dynamic_index);
             expr = new_expr;
-            auto* mat = ty->As<sem::Matrix>();
-            auto std140_mat = std140_mats.Get(ty->As<sem::Matrix>());
+            auto* mat = ty->As<type::Matrix>();
+            auto std140_mat = std140_mats.Get(ty->As<type::Matrix>());
             columns = utils::Transform(std140_mat->columns, [&](auto column_name) {
                 return b.MemberAccessor(b.Deref(let), column_name);
             });
@@ -1047,7 +1050,7 @@ struct Std140::State {
         /// The new, post-access expression
         const ast::Expression* expr;
         /// The type of #expr
-        const sem::Type* type;
+        const type::Type* type;
         /// A name segment which can be used to build sensible names for helper functions
         std::string name;
     };
@@ -1060,7 +1063,7 @@ struct Std140::State {
     /// @returns a ExprTypeName which holds the new expression, new type and a name segment which
     ///          can be used for creating helper function names.
     ExprTypeName BuildAccessExpr(const ast::Expression* lhs,
-                                 const sem::Type* ty,
+                                 const type::Type* ty,
                                  const AccessChain& chain,
                                  size_t index,
                                  std::function<const ast::Expression*(size_t)> dynamic_index) {
@@ -1078,17 +1081,17 @@ struct Std140::State {
             auto name = "p" + std::to_string(dyn_idx->slot);
             return Switch(
                 ty,  //
-                [&](const sem::Array* arr) -> ExprTypeName {
+                [&](const type::Array* arr) -> ExprTypeName {
                     auto* idx = dynamic_index(dyn_idx->slot);
                     auto* expr = b.IndexAccessor(lhs, idx);
                     return {expr, arr->ElemType(), name};
                 },  //
-                [&](const sem::Matrix* mat) -> ExprTypeName {
+                [&](const type::Matrix* mat) -> ExprTypeName {
                     auto* idx = dynamic_index(dyn_idx->slot);
                     auto* expr = b.IndexAccessor(lhs, idx);
                     return {expr, mat->ColumnType(), name};
                 },  //
-                [&](const sem::Vector* vec) -> ExprTypeName {
+                [&](const type::Vector* vec) -> ExprTypeName {
                     auto* idx = dynamic_index(dyn_idx->slot);
                     auto* expr = b.IndexAccessor(lhs, idx);
                     return {expr, vec->type(), name};
@@ -1103,13 +1106,13 @@ struct Std140::State {
             /// The access is a vector swizzle.
             return Switch(
                 ty,  //
-                [&](const sem::Vector* vec) -> ExprTypeName {
+                [&](const type::Vector* vec) -> ExprTypeName {
                     static const char xyzw[] = {'x', 'y', 'z', 'w'};
                     std::string rhs;
                     for (auto el : *swizzle) {
                         rhs += xyzw[el];
                     }
-                    auto swizzle_ty = src->Types().Find<sem::Vector>(
+                    auto swizzle_ty = src->Types().Find<type::Vector>(
                         vec->type(), static_cast<uint32_t>(swizzle->Length()));
                     auto* expr = b.MemberAccessor(lhs, rhs);
                     return {expr, swizzle_ty, rhs};
@@ -1131,15 +1134,15 @@ struct Std140::State {
                 ty = member->Type();
                 return {expr, ty, member_name};
             },  //
-            [&](const sem::Array* arr) -> ExprTypeName {
+            [&](const type::Array* arr) -> ExprTypeName {
                 auto* expr = b.IndexAccessor(lhs, idx);
                 return {expr, arr->ElemType(), std::to_string(idx)};
             },  //
-            [&](const sem::Matrix* mat) -> ExprTypeName {
+            [&](const type::Matrix* mat) -> ExprTypeName {
                 auto* expr = b.IndexAccessor(lhs, idx);
                 return {expr, mat->ColumnType(), std::to_string(idx)};
             },  //
-            [&](const sem::Vector* vec) -> ExprTypeName {
+            [&](const type::Vector* vec) -> ExprTypeName {
                 auto* expr = b.IndexAccessor(lhs, idx);
                 return {expr, vec->type(), std::to_string(idx)};
             },  //

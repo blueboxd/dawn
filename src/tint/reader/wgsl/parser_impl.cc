@@ -25,7 +25,6 @@
 #include "src/tint/ast/continue_statement.h"
 #include "src/tint/ast/discard_statement.h"
 #include "src/tint/ast/external_texture.h"
-#include "src/tint/ast/fallthrough_statement.h"
 #include "src/tint/ast/id_attribute.h"
 #include "src/tint/ast/if_statement.h"
 #include "src/tint/ast/increment_decrement_statement.h"
@@ -40,10 +39,11 @@
 #include "src/tint/ast/vector.h"
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/reader/wgsl/lexer.h"
-#include "src/tint/sem/depth_texture.h"
-#include "src/tint/sem/external_texture.h"
-#include "src/tint/sem/multisampled_texture.h"
-#include "src/tint/sem/sampled_texture.h"
+#include "src/tint/type/depth_texture.h"
+#include "src/tint/type/external_texture.h"
+#include "src/tint/type/multisampled_texture.h"
+#include "src/tint/type/sampled_texture.h"
+#include "src/tint/utils/reverse.h"
 #include "src/tint/utils/string.h"
 
 namespace tint::reader::wgsl {
@@ -88,24 +88,23 @@ bool is_reserved(const Token& t) {
            t == "goto" || t == "groupshared" || t == "handle" || t == "highp" || t == "impl" ||
            t == "implements" || t == "import" || t == "inline" || t == "inout" ||
            t == "instanceof" || t == "interface" || t == "invariant" || t == "layout" ||
-           t == "line" || t == "lineadj" || t == "lowp" || t == "macro" || t == "macro_rules" ||
-           t == "match" || t == "mediump" || t == "meta" || t == "mod" || t == "module" ||
-           t == "move" || t == "mut" || t == "mutable" || t == "namespace" || t == "new" ||
-           t == "nil" || t == "noexcept" || t == "noinline" || t == "nointerpolation" ||
-           t == "noperspective" || t == "null" || t == "nullptr" || t == "of" || t == "operator" ||
-           t == "package" || t == "packoffset" || t == "partition" || t == "pass" || t == "patch" ||
-           t == "pixelfragment" || t == "point" || t == "precise" || t == "precision" ||
-           t == "premerge" || t == "priv" || t == "protected" || t == "pub" || t == "public" ||
-           t == "readonly" || t == "ref" || t == "regardless" || t == "register" ||
-           t == "reinterpret_cast" || t == "requires" || t == "resource" || t == "restrict" ||
-           t == "self" || t == "set" || t == "shared" || t == "signed" || t == "sizeof" ||
-           t == "smooth" || t == "snorm" || t == "static" || t == "static_cast" || t == "std" ||
-           t == "subroutine" || t == "super" || t == "target" || t == "template" || t == "this" ||
-           t == "thread_local" || t == "throw" || t == "trait" || t == "try" || t == "typedef" ||
-           t == "typeid" || t == "typename" || t == "typeof" || t == "union" || t == "unless" ||
-           t == "unorm" || t == "unsafe" || t == "unsized" || t == "use" || t == "using" ||
-           t == "varying" || t == "virtual" || t == "volatile" || t == "wgsl" || t == "where" ||
-           t == "with" || t == "writeonly" || t == "yield";
+           t == "lowp" || t == "macro" || t == "macro_rules" || t == "match" || t == "mediump" ||
+           t == "meta" || t == "mod" || t == "module" || t == "move" || t == "mut" ||
+           t == "mutable" || t == "namespace" || t == "new" || t == "nil" || t == "noexcept" ||
+           t == "noinline" || t == "nointerpolation" || t == "noperspective" || t == "null" ||
+           t == "nullptr" || t == "of" || t == "operator" || t == "package" || t == "packoffset" ||
+           t == "partition" || t == "pass" || t == "patch" || t == "pixelfragment" ||
+           t == "precise" || t == "precision" || t == "premerge" || t == "priv" ||
+           t == "protected" || t == "pub" || t == "public" || t == "readonly" || t == "ref" ||
+           t == "regardless" || t == "register" || t == "reinterpret_cast" || t == "requires" ||
+           t == "resource" || t == "restrict" || t == "self" || t == "set" || t == "shared" ||
+           t == "signed" || t == "sizeof" || t == "smooth" || t == "snorm" || t == "static" ||
+           t == "static_cast" || t == "std" || t == "subroutine" || t == "super" || t == "target" ||
+           t == "template" || t == "this" || t == "thread_local" || t == "throw" || t == "trait" ||
+           t == "try" || t == "typedef" || t == "typeid" || t == "typename" || t == "typeof" ||
+           t == "union" || t == "unless" || t == "unorm" || t == "unsafe" || t == "unsized" ||
+           t == "use" || t == "using" || t == "varying" || t == "virtual" || t == "volatile" ||
+           t == "wgsl" || t == "where" || t == "with" || t == "writeonly" || t == "yield";
 }
 
 /// Enter-exit counters for block token types.
@@ -2189,24 +2188,17 @@ Maybe<const ast::CaseSelector*> ParserImpl::case_selector() {
 // case_body
 //   :
 //   | statement case_body
-//   | FALLTHROUGH SEMICOLON
 Maybe<const ast::BlockStatement*> ParserImpl::case_body() {
     StatementList stmts;
     while (continue_parsing()) {
         Source source;
         if (match(Token::Type::kFallthrough, &source)) {
-            if (!expect("fallthrough statement", Token::Type::kSemicolon)) {
-                return Failure::kErrored;
-            }
-
-            deprecated(source,
-                       "fallthrough is set to be removed from WGSL. "
-                       "Case can accept multiple selectors if the existing case bodies are empty. "
-                       "(e.g. `case 1, 2, 3:`) "
-                       "`default` is a valid case selector value. (e.g. `case 1, default:`)");
-
-            stmts.Push(create<ast::FallthroughStatement>(source));
-            break;
+            return add_error(
+                source,
+                "fallthrough is not premitted in WGSL. "
+                "Case can accept multiple selectors if the existing case bodies are empty. "
+                "(e.g. `case 1, 2, 3:`) "
+                "`default` is a valid case selector value. (e.g. `case 1, default:`)");
         }
 
         auto stmt = statement();
@@ -3236,47 +3228,62 @@ Maybe<const ast::Expression*> ParserImpl::core_lhs_expression() {
 }
 
 // lhs_expression
-//   : ( STAR | AND )* core_lhs_expression component_or_swizzle_specifier?
+//   : core_lhs_expression component_or_swizzle_specifier ?
+//   | AND lhs_expression
+//   | STAR lhs_expression
 Maybe<const ast::Expression*> ParserImpl::lhs_expression() {
-    std::vector<const Token*> prefixes;
-    while (peek_is(Token::Type::kStar) || peek_is(Token::Type::kAnd) ||
-           peek_is(Token::Type::kAndAnd)) {
-        auto& t = next();
-
-        // If an '&&' is provided split into '&' and '&'
-        if (t.Is(Token::Type::kAndAnd)) {
-            split_token(Token::Type::kAnd, Token::Type::kAnd);
-        }
-
-        prefixes.push_back(&t);
-    }
-
     auto core_expr = core_lhs_expression();
     if (core_expr.errored) {
         return Failure::kErrored;
-    } else if (!core_expr.matched) {
-        if (prefixes.empty()) {
-            return Failure::kNoMatch;
-        }
-
-        return add_error(peek(), "missing expression");
+    }
+    if (core_expr.matched) {
+        return component_or_swizzle_specifier(core_expr.value);
     }
 
-    const auto* expr = core_expr.value;
-    for (auto it = prefixes.rbegin(); it != prefixes.rend(); ++it) {
-        auto& t = **it;
-        ast::UnaryOp op = ast::UnaryOp::kAddressOf;
-        if (t.Is(Token::Type::kStar)) {
-            op = ast::UnaryOp::kIndirection;
+    // Gather up all the `*`, `&` and `&&` tokens into a list and create all of the unary ops at
+    // once instead of recursing. This handles the case where the fuzzer decides >8k `*`s would be
+    // fun.
+    struct LHSData {
+        Source source;
+        ast::UnaryOp op;
+    };
+    utils::Vector<LHSData, 4> ops;
+    while (true) {
+        auto& t = peek();
+        if (!t.Is(Token::Type::kAndAnd) && !t.Is(Token::Type::kAnd) && !t.Is(Token::Type::kStar)) {
+            break;
         }
-        expr = create<ast::UnaryOpExpression>(t.source(), op, expr);
+        next();  // consume the peek
+
+        if (t.Is(Token::Type::kAndAnd)) {
+            // The first `&` is consumed as part of the `&&`, so we only push one of the two `&`s.
+            split_token(Token::Type::kAnd, Token::Type::kAnd);
+            ops.Push({t.source(), ast::UnaryOp::kAddressOf});
+        } else if (t.Is(Token::Type::kAnd)) {
+            ops.Push({t.source(), ast::UnaryOp::kAddressOf});
+        } else if (t.Is(Token::Type::kStar)) {
+            ops.Push({t.source(), ast::UnaryOp::kIndirection});
+        }
+    }
+    if (ops.IsEmpty()) {
+        return Failure::kNoMatch;
     }
 
-    auto e = component_or_swizzle_specifier(expr);
-    if (e.errored) {
+    auto& t = peek();
+    auto expr = lhs_expression();
+    if (expr.errored) {
         return Failure::kErrored;
     }
-    return e.value;
+    if (!expr.matched) {
+        return add_error(t, "missing expression");
+    }
+
+    const ast::Expression* ret = expr.value;
+    // Consume the ops in reverse order so we have the correct AST ordering.
+    for (auto& info : utils::Reverse(ops)) {
+        ret = create<ast::UnaryOpExpression>(info.source, info.op, ret);
+    }
+    return ret;
 }
 
 // variable_updating_statement

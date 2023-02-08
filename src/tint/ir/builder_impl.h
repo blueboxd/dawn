@@ -23,6 +23,7 @@
 #include "src/tint/ir/builder.h"
 #include "src/tint/ir/flow_node.h"
 #include "src/tint/ir/module.h"
+#include "src/tint/ir/value.h"
 #include "src/tint/utils/result.h"
 
 // Forward Declarations
@@ -30,6 +31,7 @@ namespace tint {
 class Program;
 }  // namespace tint
 namespace tint::ast {
+class BinaryExpression;
 class BlockStatement;
 class BreakIfStatement;
 class BreakStatement;
@@ -38,6 +40,7 @@ class ForLoopStatement;
 class Function;
 class IfStatement;
 class LoopStatement;
+class LiteralExpression;
 class ReturnStatement;
 class Statement;
 class WhileStatement;
@@ -134,9 +137,40 @@ class BuilderImpl {
     /// @returns true if successful, false otherwise.
     bool EmitBreakIf(const ast::BreakIfStatement* stmt);
 
-    /// Emits a fallthrough statement
+    /// Emits an expression
+    /// @param expr the expression to emit
     /// @returns true if successful, false otherwise
-    bool EmitFallthrough();
+    utils::Result<const Value*> EmitExpression(const ast::Expression* expr);
+
+    /// Emits a variable
+    /// @param var the variable to emit
+    /// @returns true if successful, false otherwise
+    bool EmitVariable(const ast::Variable* var);
+
+    /// Emits a binary expression
+    /// @param expr the binary expression
+    /// @returns the value storing the result if successful, utils::Failure otherwise
+    utils::Result<const Value*> EmitBinary(const ast::BinaryExpression* expr);
+
+    /// Emits a literal expression
+    /// @param lit the literal to emit
+    /// @returns true if successful, false otherwise
+    utils::Result<const Value*> EmitLiteral(const ast::LiteralExpression* lit);
+
+    /// Emits a type
+    /// @param ty the type to emit
+    /// @returns true if successful, false otherwise
+    bool EmitType(const ast::Type* ty);
+
+    /// Emits a set of attributes
+    /// @param attrs the attributes to emit
+    /// @returns true if successful, false otherwise
+    bool EmitAttributes(utils::VectorRef<const ast::Attribute*> attrs);
+
+    /// Emits an attribute
+    /// @param attr the attribute to emit
+    /// @returns true if successful, false otherwise
+    bool EmitAttribute(const ast::Attribute* attr);
 
     /// Retrieve the IR Flow node for a given AST node.
     /// @param n the node to lookup
@@ -151,6 +185,12 @@ class BuilderImpl {
     /// The stack of flow control blocks.
     utils::Vector<FlowNode*, 8> flow_stack;
 
+    /// The IR builder being used by the impl.
+    Builder builder;
+
+    /// The current flow block for expressions
+    Block* current_flow_block = nullptr;
+
   private:
     enum class ControlFlags { kNone, kExcludeSwitch };
 
@@ -159,15 +199,9 @@ class BuilderImpl {
 
     FlowNode* FindEnclosingControl(ControlFlags flags);
 
-    Builder builder_;
-
     diag::List diagnostics_;
 
-    Block* current_flow_block_ = nullptr;
     Function* current_function_ = nullptr;
-
-    // TODO(crbug.com/tint/1644): Remove this when fallthrough is removed.
-    Block* fallthrough_target_ = nullptr;
 
     /// Map from ast nodes to flow nodes, used to retrieve the flow node for a given AST node.
     /// Used for testing purposes.

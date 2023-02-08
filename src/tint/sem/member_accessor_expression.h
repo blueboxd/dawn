@@ -23,7 +23,6 @@ namespace tint::ast {
 class MemberAccessorExpression;
 }  // namespace tint::ast
 namespace tint::sem {
-class Struct;
 class StructMember;
 }  // namespace tint::sem
 
@@ -50,10 +49,10 @@ class MemberAccessorExpression : public Castable<MemberAccessorExpression, Expre
     /// @param has_side_effects whether this expression may have side effects
     /// @param root_ident the (optional) root identifier for this expression
     MemberAccessorExpression(const ast::MemberAccessorExpression* declaration,
-                             const sem::Type* type,
+                             const type::Type* type,
                              EvaluationStage stage,
                              const Statement* statement,
-                             const Constant* constant,
+                             const constant::Value* constant,
                              const Expression* object,
                              bool has_side_effects,
                              const Variable* root_ident = nullptr);
@@ -77,9 +76,9 @@ class StructMemberAccess final : public Castable<StructMemberAccess, MemberAcces
     /// @param has_side_effects whether this expression may have side effects
     /// @param root_ident the (optional) root identifier for this expression
     StructMemberAccess(const ast::MemberAccessorExpression* declaration,
-                       const sem::Type* type,
+                       const type::Type* type,
                        const Statement* statement,
-                       const Constant* constant,
+                       const constant::Value* constant,
                        const Expression* object,
                        const StructMember* member,
                        bool has_side_effects,
@@ -109,9 +108,9 @@ class Swizzle final : public Castable<Swizzle, MemberAccessorExpression> {
     /// @param has_side_effects whether this expression may have side effects
     /// @param root_ident the (optional) root identifier for this expression
     Swizzle(const ast::MemberAccessorExpression* declaration,
-            const sem::Type* type,
+            const type::Type* type,
             const Statement* statement,
-            const Constant* constant,
+            const constant::Value* constant,
             const Expression* object,
             utils::VectorRef<uint32_t> indices,
             bool has_side_effects,

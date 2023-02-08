@@ -51,6 +51,9 @@ enum extension {
   chromium_disable_uniformity_analysis
   // A Chromium-specific extension for push constants
   chromium_experimental_push_constant
+  // A Chromium-specific extension that enables passing of uniform, storage and workgroup
+  // address-spaced pointers as parameters, as well as pointers into sub-objects.
+  chromium_experimental_full_ptr_parameters
 }
 
 // https://gpuweb.github.io/gpuweb/wgsl/#storage-class
@@ -106,6 +109,41 @@ enum interpolation_sampling {
   center
   centroid
   sample
+}
+
+enum short_name {
+  // https://www.w3.org/TR/WGSL/#matrix-types
+  mat2x2f
+  mat2x2h
+  mat2x3f
+  mat2x3h
+  mat2x4f
+  mat2x4h
+  mat3x2f
+  mat3x2h
+  mat3x3f
+  mat3x3h
+  mat3x4f
+  mat3x4h
+  mat4x2f
+  mat4x2h
+  mat4x3f
+  mat4x3h
+  mat4x4f
+  mat4x4h
+  // https://www.w3.org/TR/WGSL/#vector-types
+  vec2f
+  vec2h
+  vec2i
+  vec2u
+  vec3f
+  vec3h
+  vec3i
+  vec3u
+  vec4f
+  vec4h
+  vec4i
+  vec4u
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -440,12 +478,12 @@ fn arrayLength<T, A: access>(ptr<storage, array<T>, A>) -> u32
 @const fn countTrailingZeros<T: iu32>(T) -> T
 @const fn countTrailingZeros<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
 @const fn cross<T: fa_f32_f16>(vec3<T>, vec3<T>) -> vec3<T>
-fn degrees<T: f32_f16>(T) -> T
-fn degrees<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn determinant<N: num, T: f32_f16>(mat<N, N, T>) -> T
-fn distance<T: f32_f16>(T, T) -> T
-fn distance<N: num, T: f32_f16>(vec<N, T>, vec<N, T>) -> T
-fn dot<N: num, T: fiu32_f16>(vec<N, T>, vec<N, T>) -> T
+@const fn degrees<T: fa_f32_f16>(T) -> T
+@const fn degrees<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn determinant<N: num, T: fa_f32_f16>(mat<N, N, T>) -> T
+@const fn distance<T: fa_f32_f16>(T, T) -> T
+@const fn distance<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>) -> T
+@const fn dot<N: num, T: fia_fiu32_f16>(vec<N, T>, vec<N, T>) -> T
 fn dot4I8Packed(u32, u32) -> i32
 fn dot4U8Packed(u32, u32) -> u32
 @stage("fragment") fn dpdx(f32) -> f32
@@ -460,25 +498,25 @@ fn dot4U8Packed(u32, u32) -> u32
 @stage("fragment") fn dpdyCoarse<N: num>(vec<N, f32>) -> vec<N, f32>
 @stage("fragment") fn dpdyFine(f32) -> f32
 @stage("fragment") fn dpdyFine<N: num>(vec<N, f32>) -> vec<N, f32>
-fn exp<T: f32_f16>(T) -> T
-fn exp<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn exp2<T: f32_f16>(T) -> T
-fn exp2<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn exp<T: fa_f32_f16>(T) -> T
+@const fn exp<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn exp2<T: fa_f32_f16>(T) -> T
+@const fn exp2<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
 @const fn extractBits<T: iu32>(T, u32, u32) -> T
 @const fn extractBits<N: num, T: iu32>(vec<N, T>, u32, u32) -> vec<N, T>
-fn faceForward<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
+@const fn faceForward<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
 @const fn firstLeadingBit<T: iu32>(T) -> T
 @const fn firstLeadingBit<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
 @const fn firstTrailingBit<T: iu32>(T) -> T
 @const fn firstTrailingBit<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
 @const fn floor<T: fa_f32_f16>(@test_value(1.5) T) -> T
 @const fn floor<N: num, T: fa_f32_f16>(@test_value(1.5) vec<N, T>) -> vec<N, T>
-fn fma<T: f32_f16>(T, T, T) -> T
-fn fma<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
-fn fract<T: f32_f16>(T) -> T
-fn fract<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn frexp<T: f32_f16>(T) -> __frexp_result<T>
-fn frexp<N: num, T: f32_f16>(vec<N, T>) -> __frexp_result_vec<N, T>
+@const fn fma<T: fa_f32_f16>(T, T, T) -> T
+@const fn fma<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
+@const fn fract<T: fa_f32_f16>(@test_value(1.25) T) -> T
+@const fn fract<N: num, T: fa_f32_f16>(@test_value(1.25) vec<N, T>) -> vec<N, T>
+@const fn frexp<T: fa_f32_f16>(T) -> __frexp_result<T>
+@const fn frexp<N: num, T: fa_f32_f16>(vec<N, T>) -> __frexp_result_vec<N, T>
 @stage("fragment") fn fwidth(f32) -> f32
 @stage("fragment") fn fwidth<N: num>(vec<N, f32>) -> vec<N, f32>
 @stage("fragment") fn fwidthCoarse(f32) -> f32
@@ -487,58 +525,58 @@ fn frexp<N: num, T: f32_f16>(vec<N, T>) -> __frexp_result_vec<N, T>
 @stage("fragment") fn fwidthFine<N: num>(vec<N, f32>) -> vec<N, f32>
 @const fn insertBits<T: iu32>(T, T, u32, u32) -> T
 @const fn insertBits<N: num, T: iu32>(vec<N, T>, vec<N, T>, u32, u32) -> vec<N, T>
-fn inverseSqrt<T: f32_f16>(T) -> T
-fn inverseSqrt<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn inverseSqrt<T: fa_f32_f16>(T) -> T
+@const fn inverseSqrt<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
 fn ldexp<T: f32_f16>(T, i32) -> T
 fn ldexp<N: num, T: f32_f16>(vec<N, T>, vec<N, i32>) -> vec<N, T>
-fn length<T: f32_f16>(T) -> T
-fn length<N: num, T: f32_f16>(vec<N, T>) -> T
-fn log<T: f32_f16>(T) -> T
-fn log<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn log2<T: f32_f16>(T) -> T
-fn log2<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn max<T: fiu32_f16>(T, T) -> T
-fn max<N: num, T: fiu32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
-fn min<T: fiu32_f16>(T, T) -> T
-fn min<N: num, T: fiu32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
-fn mix<T: f32_f16>(T, T, T) -> T
-fn mix<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
-fn mix<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, T) -> vec<N, T>
-fn modf<T: f32_f16>(T) -> __modf_result<T>
-fn modf<N: num, T: f32_f16>(vec<N, T>) -> __modf_result_vec<N, T>
-fn normalize<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn length<T: fa_f32_f16>(@test_value(0.0) T) -> T
+@const fn length<N: num, T: fa_f32_f16>(@test_value(0.0) vec<N, T>) -> T
+@const fn log<T: fa_f32_f16>(T) -> T
+@const fn log<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn log2<T: fa_f32_f16>(T) -> T
+@const fn log2<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn max<T: fia_fiu32_f16>(T, T) -> T
+@const fn max<N: num, T: fia_fiu32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
+@const fn min<T: fia_fiu32_f16>(T, T) -> T
+@const fn min<N: num, T: fia_fiu32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
+@const fn mix<T: fa_f32_f16>(T, T, T) -> T
+@const fn mix<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
+@const fn mix<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>, T) -> vec<N, T>
+@const fn modf<T: fa_f32_f16>(@test_value(-1.5) T) -> __modf_result<T>
+@const fn modf<N: num, T: fa_f32_f16>(@test_value(-1.5) vec<N, T>) -> __modf_result_vec<N, T>
+@const fn normalize<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
 @const fn pack2x16float(vec2<f32>) -> u32
 @const fn pack2x16snorm(vec2<f32>) -> u32
 @const fn pack2x16unorm(vec2<f32>) -> u32
 @const fn pack4x8snorm(vec4<f32>) -> u32
 @const fn pack4x8unorm(vec4<f32>) -> u32
-fn pow<T: f32_f16>(T, T) -> T
-fn pow<N: num, T: f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
+@const fn pow<T: fa_f32_f16>(T, T) -> T
+@const fn pow<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
 @const fn quantizeToF16(f32) -> f32
 @const fn quantizeToF16<N: num>(vec<N, f32>) -> vec<N, f32>
-fn radians<T: f32_f16>(T) -> T
-fn radians<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
-fn reflect<N: num, T: f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
-fn refract<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, T) -> vec<N, T>
+@const fn radians<T: fa_f32_f16>(T) -> T
+@const fn radians<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn reflect<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
+@const fn refract<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>, T) -> vec<N, T>
 @const fn reverseBits<T: iu32>(T) -> T
 @const fn reverseBits<N: num, T: iu32>(vec<N, T>) -> vec<N, T>
-fn round<T: f32_f16>(T) -> T
-fn round<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn round<T: fa_f32_f16>(@test_value(3.4) T) -> T
+@const fn round<N: num, T: fa_f32_f16>(@test_value(3.4) vec<N, T>) -> vec<N, T>
 @const fn saturate<T: fa_f32_f16>(@test_value(2) T) -> T
 @const fn saturate<T: fa_f32_f16, N: num>(@test_value(2) vec<N, T>) -> vec<N, T>
 @const("select_bool") fn select<T: scalar>(T, T, bool) -> T
 @const("select_bool") fn select<T: scalar, N: num>(vec<N, T>, vec<N, T>, bool) -> vec<N, T>
 @const("select_boolvec") fn select<N: num, T: scalar>(vec<N, T>, vec<N, T>, vec<N, bool>) -> vec<N, T>
-@const fn sign<T: fa_f32_f16>(T) -> T
-@const fn sign<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn sign<T: fia_fi32_f16>(T) -> T
+@const fn sign<N: num, T: fia_fi32_f16>(vec<N, T>) -> vec<N, T>
 @const fn sin<T: fa_f32_f16>(T) -> T
 @const fn sin<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
 @const fn sinh<T: fa_f32_f16>(T) -> T
 @const fn sinh<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
-fn smoothstep<T: f32_f16>(T, T, T) -> T
-fn smoothstep<N: num, T: f32_f16>(vec<N, T>, vec<N, T>, vec<N, T>) -> vec<N, T>
-fn sqrt<T: f32_f16>(T) -> T
-fn sqrt<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn smoothstep<T: fa_f32_f16>(@test_value(2) T, @test_value(4) T, @test_value(3) T) -> T
+@const fn smoothstep<N: num, T: fa_f32_f16>(@test_value(2) vec<N, T>, @test_value(4) vec<N, T>, @test_value(3) vec<N, T>) -> vec<N, T>
+@const fn sqrt<T: fa_f32_f16>(T) -> T
+@const fn sqrt<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
 @const fn step<T: fa_f32_f16>(T, T) -> T
 @const fn step<N: num, T: fa_f32_f16>(vec<N, T>, vec<N, T>) -> vec<N, T>
 @stage("compute") fn storageBarrier()
@@ -546,9 +584,9 @@ fn sqrt<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
 @const fn tan<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
 @const fn tanh<T: fa_f32_f16>(T) -> T
 @const fn tanh<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
-fn transpose<M: num, N: num, T: f32_f16>(mat<M, N, T>) -> mat<N, M, T>
-fn trunc<T: f32_f16>(T) -> T
-fn trunc<N: num, T: f32_f16>(vec<N, T>) -> vec<N, T>
+@const fn transpose<M: num, N: num, T: fa_f32_f16>(mat<M, N, T>) -> mat<N, M, T>
+@const fn trunc<T: fa_f32_f16>(@test_value(1.5) T) -> T
+@const fn trunc<N: num, T: fa_f32_f16>(@test_value(1.5) vec<N, T>) -> vec<N, T>
 @const fn unpack2x16float(u32) -> vec2<f32>
 @const fn unpack2x16snorm(u32) -> vec2<f32>
 @const fn unpack2x16unorm(u32) -> vec2<f32>
@@ -675,7 +713,6 @@ fn textureSampleLevel<A: iu32, L: iu32>(texture: texture_depth_2d_array, sampler
 fn textureSampleLevel<A: iu32, L: iu32>(texture: texture_depth_2d_array, sampler: sampler, coords: vec2<f32>, array_index: A, level: L, @const offset: vec2<i32>) -> f32
 fn textureSampleLevel<L: iu32>(texture: texture_depth_cube, sampler: sampler, coords: vec3<f32>, level: L) -> f32
 fn textureSampleLevel<A: iu32, L: iu32>(texture: texture_depth_cube_array,sampler: sampler, coords: vec3<f32>, array_index: A, level: L) -> f32
-@deprecated fn textureSampleLevel(texture: texture_external, sampler: sampler, coords: vec2<f32>) -> vec4<f32>
 fn textureSampleBaseClampToEdge(texture: texture_2d<f32>, sampler: sampler, coords: vec2<f32>) -> vec4<f32>
 fn textureSampleBaseClampToEdge(texture: texture_external, sampler: sampler, coords: vec2<f32>) -> vec4<f32>
 fn textureStore<C: iu32>(texture: texture_storage_1d<f32_texel_format, write>, coords: C, value: vec4<f32>)
@@ -933,10 +970,10 @@ init mat4x4<T: fa_f32_f16>(vec4<T>, vec4<T>, vec4<T>, vec4<T>) -> mat4x4<T>
 @const op / <T: fia_fiu32_f16, N: num> (vec<N, T>, T) -> vec<N, T>
 @const op / <T: fia_fiu32_f16, N: num> (T, vec<N, T>) -> vec<N, T>
 
-op % <T: fiu32_f16>(T, T) -> T
-op % <T: fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
-op % <T: fiu32_f16, N: num> (vec<N, T>, T) -> vec<N, T>
-op % <T: fiu32_f16, N: num> (T, vec<N, T>) -> vec<N, T>
+@const op % <T: fia_fiu32_f16>(T, T) -> T
+@const op % <T: fia_fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
+@const op % <T: fia_fiu32_f16, N: num> (vec<N, T>, T) -> vec<N, T>
+@const op % <T: fia_fiu32_f16, N: num> (T, vec<N, T>) -> vec<N, T>
 
 @const op ^ <T: ia_iu32>(T, T) -> T
 @const op ^ <T: ia_iu32, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
@@ -951,8 +988,8 @@ op % <T: fiu32_f16, N: num> (T, vec<N, T>) -> vec<N, T>
 @const op | <T: ia_iu32>(T, T) -> T
 @const op | <T: ia_iu32, N: num> (vec<N, T>, vec<N, T>) -> vec<N, T>
 
-op && (bool, bool) -> bool
-op || (bool, bool) -> bool
+@const op && (bool, bool) -> bool
+@const op || (bool, bool) -> bool
 
 @const op == <T: scalar>(T, T) -> bool
 @const op == <T: scalar, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
@@ -972,13 +1009,11 @@ op || (bool, bool) -> bool
 @const op >= <T: fia_fiu32_f16>(T, T) -> bool
 @const op >= <T: fiu32_f16, N: num> (vec<N, T>, vec<N, T>) -> vec<N, bool>
 
-@const op << <T: iu32>(T, u32) -> T
-@const op << <T: iu32, N: num> (vec<N, T>, vec<N, u32>) -> vec<N, T>
-@const op << <T: ia>(T, u32) -> T
-@const op << <T: ia, N: num> (vec<N, T>, vec<N, u32>) -> vec<N, T>
+@const op << <T: ia_iu32>(T, u32) -> T
+@const op << <T: ia_iu32, N: num> (vec<N, T>, vec<N, u32>) -> vec<N, T>
 
-op >> <T: iu32>(T, u32) -> T
-op >> <T: iu32, N: num> (vec<N, T>, vec<N, u32>) -> vec<N, T>
+@const op >> <T: ia_iu32>(T, u32) -> T
+@const op >> <T: ia_iu32, N: num> (vec<N, T>, vec<N, u32>) -> vec<N, T>
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tint internal builtins                                                     //

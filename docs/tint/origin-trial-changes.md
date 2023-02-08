@@ -1,5 +1,17 @@
 # Tint changes during Origin Trial
 
+## Changes for M110
+
+### Breaking changes
+
+* The `textureSampleLevel()` overload for `texture_external` has been removed. Use `textureSampleBaseClampToEdge()`. [tint:1671](crbug.com/tint/1671)
+
+### Deprecated Features
+
+* The `sig` member of the return type of `frexp()` has been renamed to `fract`. [tint:1757](crbug.com/tint/1757)
+* Calling a function with multiple pointer arguments that alias each other is now a warning, and
+  will become an error in a future release. [tint:1675](crbug.com/tint/1675)
+
 ## Changes for M109
 
 ### Breaking changes

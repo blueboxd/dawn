@@ -107,7 +107,7 @@ Transform::ApplyResult NumWorkgroupsFromUniform::Apply(const Program* src,
                 // Capture the symbols that would be used to access this member, which
                 // we will replace later. We currently have no way to get from the
                 // parameter directly to the member accessor expressions that use it.
-                to_replace.insert({param->Declaration()->symbol, member->Declaration()->symbol});
+                to_replace.insert({param->Declaration()->symbol, member->Name()});
 
                 // Remove the struct member.
                 // The CanonicalizeEntryPointIO transform will have generated this
@@ -117,7 +117,7 @@ Transform::ApplyResult NumWorkgroupsFromUniform::Apply(const Program* src,
                 ctx.Remove(str->Declaration()->members, member->Declaration());
 
                 // If this is the only member, remove the struct and parameter too.
-                if (str->Members().size() == 1) {
+                if (str->Members().Length() == 1) {
                     ctx.Remove(func->params, param->Declaration());
                     ctx.Remove(src->AST().GlobalDeclarations(), str->Declaration());
                 }

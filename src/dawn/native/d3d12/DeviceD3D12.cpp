@@ -235,9 +235,7 @@ ComPtr<IDXGIFactory4> Device::GetFactory() const {
 }
 
 MaybeError Device::ApplyUseDxcToggle() {
-    // Require DXC version 1.4 or higher to enable using DXC, as DXC 1.2 have some known issues when
-    // compiling Tint generated HLSL program. Please refer to crbug.com/tint/1719.
-    if (!ToBackend(GetAdapter())->GetBackend()->IsDXCAvailable(1, 4)) {
+    if (!ToBackend(GetAdapter())->GetBackend()->IsDXCAvailable()) {
         ForceSetToggle(Toggle::UseDXC, false);
     }
 
@@ -565,10 +563,12 @@ ResultOrError<ResourceHeapAllocation> Device::AllocateMemory(
     D3D12_HEAP_TYPE heapType,
     const D3D12_RESOURCE_DESC& resourceDescriptor,
     D3D12_RESOURCE_STATES initialUsage,
-    uint32_t formatBytesPerBlock) {
+    uint32_t formatBytesPerBlock,
+    bool forceAllocateAsCommittedResource) {
     // formatBytesPerBlock is needed only for color non-compressed formats for a workaround.
     return mResourceAllocatorManager->AllocateMemory(heapType, resourceDescriptor, initialUsage,
-                                                     formatBytesPerBlock);
+                                                     formatBytesPerBlock,
+                                                     forceAllocateAsCommittedResource);
 }
 
 std::unique_ptr<ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
@@ -688,9 +688,9 @@ void Device::InitTogglesFromDriver() {
     // Currently this workaround is only needed on Intel Gen9, Gen9.5 and Gen11 GPUs.
     // See http://crbug.com/1161355 for more information.
     if (gpu_info::IsIntelGen9(vendorId, deviceId) || gpu_info::IsIntelGen11(vendorId, deviceId)) {
-        constexpr gpu_info::D3DDriverVersion kFixedDriverVersion = {31, 0, 101, 2114};
-        if (gpu_info::CompareD3DDriverVersion(vendorId, ToBackend(GetAdapter())->GetDriverVersion(),
-                                              kFixedDriverVersion) < 0) {
+        const gpu_info::DriverVersion kFixedDriverVersion = {31, 0, 101, 2114};
+        if (gpu_info::CompareWindowsDriverVersion(vendorId, GetAdapter()->GetDriverVersion(),
+                                                  kFixedDriverVersion) < 0) {
             SetToggle(
                 Toggle::UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
                 true);
@@ -721,11 +721,18 @@ void Device::InitTogglesFromDriver() {
     // This workaround is only needed on Intel Gen12LP with driver prior to 30.0.101.1692.
     // See http://crbug.com/dawn/949 for more information.
     if (gpu_info::IsIntelGen12LP(vendorId, deviceId)) {
-        constexpr gpu_info::D3DDriverVersion kFixedDriverVersion = {30, 0, 101, 1692};
-        if (gpu_info::CompareD3DDriverVersion(vendorId, ToBackend(GetAdapter())->GetDriverVersion(),
-                                              kFixedDriverVersion) == -1) {
-            SetToggle(Toggle::D3D12AllocateExtraMemoryFor2DArrayTexture, true);
+        const gpu_info::DriverVersion kFixedDriverVersion = {30, 0, 101, 1692};
+        if (gpu_info::CompareWindowsDriverVersion(vendorId, GetAdapter()->GetDriverVersion(),
+                                                  kFixedDriverVersion) == -1) {
+            SetToggle(Toggle::D3D12AllocateExtraMemoryFor2DArrayColorTexture, true);
         }
+    }
+
+    // Currently this workaround is only needed on Intel Gen9.5 and Gen11 GPUs.
+    // See http://crbug.com/1237175 for more information.
+    if ((gpu_info::IsIntelGen9(vendorId, deviceId) && !gpu_info::IsSkylake(deviceId)) ||
+        gpu_info::IsIntelGen11(vendorId, deviceId)) {
+        SetToggle(Toggle::D3D12Allocate2DTexturewithCopyDstAsCommittedResource, true);
     }
 }
 
@@ -840,16 +847,19 @@ void Device::DestroyImpl() {
         ::CloseHandle(mFenceEvent);
     }
 
-    // Release recycled resource heaps.
-    if (mResourceAllocatorManager != nullptr) {
-        mResourceAllocatorManager->DestroyPool();
-    }
+    // Release recycled resource heaps and all other objects waiting for deletion in the resource
+    // allocation manager.
+    mResourceAllocatorManager.reset();
 
     // We need to handle clearing up com object refs that were enqeued after TickImpl
     mUsedComObjectRefs.ClearUpTo(std::numeric_limits<ExecutionSerial>::max());
 
     ASSERT(mUsedComObjectRefs.Empty());
     ASSERT(!mPendingCommands.IsOpen());
+
+    // Now that we've cleared out pending work from the queue, we can safely release it and reclaim
+    // memory.
+    mCommandQueue.Reset();
 }
 
 ShaderVisibleDescriptorAllocator* Device::GetViewShaderVisibleDescriptorAllocator() const {

@@ -22,9 +22,9 @@
 
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/atomic.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/type/atomic.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/unique_vector.h"
 
@@ -100,6 +100,9 @@ struct ZeroInitWorkgroupMemory::State {
         uint32_t num_iterations = 0;
         /// All array indices used by this expression
         ArrayIndices array_indices;
+
+        /// @returns true if the expr is not null (null usually indicates a failure)
+        operator bool() const { return expr != nullptr; }
     };
 
     /// Statement holds information about a statement that will zero workgroup
@@ -137,10 +140,13 @@ struct ZeroInitWorkgroupMemory::State {
         auto* func = sem.Get(fn);
         for (auto* var : func->TransitivelyReferencedGlobals()) {
             if (var->AddressSpace() == ast::AddressSpace::kWorkgroup) {
-                BuildZeroingStatements(var->Type()->UnwrapRef(), [&](uint32_t num_values) {
+                auto get_expr = [&](uint32_t num_values) {
                     auto var_name = ctx.Clone(var->Declaration()->symbol);
                     return Expression{b.Expr(var_name), num_values, ArrayIndices{}};
-                });
+                };
+                if (!BuildZeroingStatements(var->Type()->UnwrapRef(), get_expr)) {
+                    return;
+                }
             }
         }
 
@@ -283,64 +289,81 @@ struct ZeroInitWorkgroupMemory::State {
     /// initialize the workgroup storage expression of type `ty`.
     /// @param ty the expression type
     /// @param get_expr a function that builds the AST nodes for the expression.
-    void BuildZeroingStatements(const sem::Type* ty, const BuildZeroingExpr& get_expr) {
+    /// @returns true on success, false on failure
+    [[nodiscard]] bool BuildZeroingStatements(const type::Type* ty,
+                                              const BuildZeroingExpr& get_expr) {
         if (CanTriviallyZero(ty)) {
             auto var = get_expr(1u);
+            if (!var) {
+                return false;
+            }
             auto* zero_init = b.Construct(CreateASTTypeFor(ctx, ty));
             statements.emplace_back(
                 Statement{b.Assign(var.expr, zero_init), var.num_iterations, var.array_indices});
-            return;
+            return true;
         }
 
-        if (auto* atomic = ty->As<sem::Atomic>()) {
+        if (auto* atomic = ty->As<type::Atomic>()) {
             auto* zero_init = b.Construct(CreateASTTypeFor(ctx, atomic->Type()));
             auto expr = get_expr(1u);
+            if (!expr) {
+                return false;
+            }
             auto* store = b.Call("atomicStore", b.AddressOf(expr.expr), zero_init);
             statements.emplace_back(
                 Statement{b.CallStmt(store), expr.num_iterations, expr.array_indices});
-            return;
+            return true;
         }
 
         if (auto* str = ty->As<sem::Struct>()) {
             for (auto* member : str->Members()) {
                 auto name = ctx.Clone(member->Declaration()->symbol);
-                BuildZeroingStatements(member->Type(), [&](uint32_t num_values) {
+                auto get_member = [&](uint32_t num_values) {
                     auto s = get_expr(num_values);
+                    if (!s) {
+                        return Expression{};  // error
+                    }
                     return Expression{b.MemberAccessor(s.expr, name), s.num_iterations,
                                       s.array_indices};
-                });
+                };
+                if (!BuildZeroingStatements(member->Type(), get_member)) {
+                    return false;
+                }
             }
-            return;
+            return true;
         }
 
-        if (auto* arr = ty->As<sem::Array>()) {
-            BuildZeroingStatements(arr->ElemType(), [&](uint32_t num_values) {
+        if (auto* arr = ty->As<type::Array>()) {
+            auto get_el = [&](uint32_t num_values) {
                 // num_values is the number of values to zero for the element type.
-                // The number of iterations required to zero the array and its elements
-                // is:
+                // The number of iterations required to zero the array and its elements is:
                 //      `num_values * arr->Count()`
                 // The index for this array is:
                 //      `(idx % modulo) / division`
                 auto count = arr->ConstantCount();
                 if (!count) {
                     ctx.dst->Diagnostics().add_error(diag::System::Transform,
-                                                     sem::Array::kErrExpectedConstantCount);
-                    return Expression{};
+                                                     type::Array::kErrExpectedConstantCount);
+                    return Expression{};  // error
                 }
                 auto modulo = num_values * count.value();
                 auto division = num_values;
                 auto a = get_expr(modulo);
+                if (!a) {
+                    return Expression{};  // error
+                }
                 auto array_indices = a.array_indices;
                 array_indices.Add(ArrayIndex{modulo, division});
                 auto index = utils::GetOrCreate(array_index_names, ArrayIndex{modulo, division},
                                                 [&] { return b.Symbols().New("i"); });
                 return Expression{b.IndexAccessor(a.expr, index), a.num_iterations, array_indices};
-            });
-            return;
+            };
+            return BuildZeroingStatements(arr->ElemType(), get_el);
         }
 
         TINT_UNREACHABLE(Transform, b.Diagnostics())
             << "could not zero workgroup type: " << ty->FriendlyName(ctx.src->Symbols());
+        return false;
     }
 
     /// DeclareArrayIndices returns a list of statements that contain the `let`
@@ -382,13 +405,13 @@ struct ZeroInitWorkgroupMemory::State {
             }
             auto* sem = ctx.src->Sem().Get(expr);
             if (auto* c = sem->ConstantValue()) {
-                workgroup_size_const *= c->As<AInt>();
+                workgroup_size_const *= c->ValueAs<AInt>();
                 continue;
             }
             // Constant value could not be found. Build expression instead.
             workgroup_size_expr = [this, expr, size = workgroup_size_expr] {
                 auto* e = ctx.Clone(expr);
-                if (ctx.src->TypeOf(expr)->UnwrapRef()->Is<sem::I32>()) {
+                if (ctx.src->TypeOf(expr)->UnwrapRef()->Is<type::I32>()) {
                     e = b.Construct<u32>(e);
                 }
                 return size ? b.Mul(size(), e) : e;
@@ -415,8 +438,8 @@ struct ZeroInitWorkgroupMemory::State {
     /// initialized by decomposing the initialization into multiple
     /// sub-initializations.
     /// @param ty the type to inspect
-    bool CanTriviallyZero(const sem::Type* ty) {
-        if (ty->Is<sem::Atomic>()) {
+    bool CanTriviallyZero(const type::Type* ty) {
+        if (ty->Is<type::Atomic>()) {
             return false;
         }
         if (auto* str = ty->As<sem::Struct>()) {
@@ -426,7 +449,7 @@ struct ZeroInitWorkgroupMemory::State {
                 }
             }
         }
-        if (ty->Is<sem::Array>()) {
+        if (ty->Is<type::Array>()) {
             return false;
         }
         // True for all other storable types

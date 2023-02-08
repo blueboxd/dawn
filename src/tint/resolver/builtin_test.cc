@@ -32,9 +32,10 @@
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/member_accessor_expression.h"
-#include "src/tint/sem/sampled_texture.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/type/sampled_texture.h"
+#include "src/tint/type/test_helper.h"
 
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
@@ -86,7 +87,7 @@ TEST_P(ResolverBuiltinTest_BoolMethod, Scalar) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<sem::Bool>());
+    EXPECT_TRUE(TypeOf(expr)->Is<type::Bool>());
 }
 TEST_P(ResolverBuiltinTest_BoolMethod, Vector) {
     auto name = GetParam();
@@ -99,7 +100,7 @@ TEST_P(ResolverBuiltinTest_BoolMethod, Vector) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<sem::Bool>());
+    EXPECT_TRUE(TypeOf(expr)->Is<type::Bool>());
 }
 INSTANTIATE_TEST_SUITE_P(ResolverTest,
                          ResolverBuiltinTest_BoolMethod,
@@ -116,9 +117,9 @@ TEST_F(ResolverBuiltinTest, Select) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<sem::Vector>());
-    EXPECT_EQ(TypeOf(expr)->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(TypeOf(expr)->As<sem::Vector>()->type()->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(expr)->Is<type::Vector>());
+    EXPECT_EQ(TypeOf(expr)->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(TypeOf(expr)->As<type::Vector>()->type()->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinTest, Select_Error_NoParams) {
@@ -221,7 +222,7 @@ TEST_F(ResolverBuiltinArrayTest, ArrayLength_Vector) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
 }
 
 TEST_F(ResolverBuiltinArrayTest, ArrayLength_Error_ArraySized) {
@@ -289,7 +290,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Scalar_f32) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -314,9 +315,9 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Vector_f32) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_float_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -337,7 +338,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Scalar_f32) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -359,9 +360,9 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Vector_f32) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_float_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -374,7 +375,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Vector_f32) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Scalar_f32) {
     auto param = GetParam();
 
-    auto* call = Call(param.name, 1_f, 1_f, 1_f);
+    auto* call = Call(param.name, 0_f, 1_f, 2_f);
     WrapInFunction(call);
 
     if (param.args_number == 3u) {
@@ -382,7 +383,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Scalar_f32) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -395,8 +396,8 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Scalar_f32) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Vector_f32) {
     auto param = GetParam();
 
-    auto* call = Call(param.name, vec3<f32>(1_f, 1_f, 3_f), vec3<f32>(1_f, 1_f, 3_f),
-                      vec3<f32>(1_f, 1_f, 3_f));
+    auto* call = Call(param.name, vec3<f32>(0_f, 0_f, 0_f), vec3<f32>(1_f, 1_f, 1_f),
+                      vec3<f32>(2_f, 2_f, 2_f));
     WrapInFunction(call);
 
     if (param.args_number == 3u) {
@@ -405,9 +406,9 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Vector_f32) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_float_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -429,7 +430,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Scalar_f32) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -452,9 +453,9 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Vector_f32) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_float_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -483,7 +484,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Scalar_f16) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -510,9 +511,9 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Vector_f16) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_float_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F16>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F16>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -535,7 +536,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Scalar_f16) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -559,9 +560,9 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Vector_f16) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_float_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F16>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F16>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -576,7 +577,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Scalar_f16) {
 
     Enable(ast::Extension::kF16);
 
-    auto* call = Call(param.name, 1_h, 1_h, 1_h);
+    auto* call = Call(param.name, 0_h, 1_h, 2_h);
     WrapInFunction(call);
 
     if (param.args_number == 3u) {
@@ -584,7 +585,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Scalar_f16) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -599,8 +600,8 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Vector_f16) {
 
     Enable(ast::Extension::kF16);
 
-    auto* call = Call(param.name, vec3<f16>(1_h, 1_h, 3_h), vec3<f16>(1_h, 1_h, 3_h),
-                      vec3<f16>(1_h, 1_h, 3_h));
+    auto* call = Call(param.name, vec3<f16>(0_h, 0_h, 0_h), vec3<f16>(1_h, 1_h, 1_h),
+                      vec3<f16>(2_h, 2_h, 2_h));
     WrapInFunction(call);
 
     if (param.args_number == 3u) {
@@ -609,9 +610,9 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Vector_f16) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_float_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F16>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F16>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -635,7 +636,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Scalar_f16) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -660,9 +661,9 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Vector_f16) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_float_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F16>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F16>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -737,8 +738,8 @@ TEST_F(ResolverBuiltinFloatTest, Cross_f32) {
 
     ASSERT_NE(TypeOf(call), nullptr);
     EXPECT_TRUE(TypeOf(call)->is_float_vector());
-    EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F32>());
+    EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Cross_f16) {
@@ -751,8 +752,8 @@ TEST_F(ResolverBuiltinFloatTest, Cross_f16) {
 
     ASSERT_NE(TypeOf(call), nullptr);
     EXPECT_TRUE(TypeOf(call)->is_float_vector());
-    EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F16>());
+    EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F16>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Cross_Error_NoArgs) {
@@ -834,7 +835,7 @@ TEST_F(ResolverBuiltinFloatTest, Distance_Scalar_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Distance_Scalar_f16) {
@@ -846,7 +847,7 @@ TEST_F(ResolverBuiltinFloatTest, Distance_Scalar_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Distance_Vector_f32) {
@@ -856,7 +857,7 @@ TEST_F(ResolverBuiltinFloatTest, Distance_Vector_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Distance_Vector_f16) {
@@ -868,7 +869,7 @@ TEST_F(ResolverBuiltinFloatTest, Distance_Vector_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Distance_TooManyParams) {
@@ -881,8 +882,8 @@ TEST_F(ResolverBuiltinFloatTest, Distance_TooManyParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to distance(vec3<f32>, vec3<f32>, vec3<f32>)
 
 2 candidate functions:
-  distance(T, T) -> T  where: T is f32 or f16
-  distance(vecN<T>, vecN<T>) -> T  where: T is f32 or f16
+  distance(T, T) -> T  where: T is abstract-float, f32 or f16
+  distance(vecN<T>, vecN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -895,8 +896,8 @@ TEST_F(ResolverBuiltinFloatTest, Distance_TooFewParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to distance(vec3<f32>)
 
 2 candidate functions:
-  distance(T, T) -> T  where: T is f32 or f16
-  distance(vecN<T>, vecN<T>) -> T  where: T is f32 or f16
+  distance(T, T) -> T  where: T is abstract-float, f32 or f16
+  distance(vecN<T>, vecN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -909,8 +910,8 @@ TEST_F(ResolverBuiltinFloatTest, Distance_NoParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to distance()
 
 2 candidate functions:
-  distance(T, T) -> T  where: T is f32 or f16
-  distance(vecN<T>, vecN<T>) -> T  where: T is f32 or f16
+  distance(T, T) -> T  where: T is abstract-float, f32 or f16
+  distance(vecN<T>, vecN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -925,17 +926,17 @@ TEST_F(ResolverBuiltinFloatTest, FrexpScalar_f32) {
     ASSERT_NE(TypeOf(call), nullptr);
     auto* ty = TypeOf(call)->As<sem::Struct>();
     ASSERT_NE(ty, nullptr);
-    ASSERT_EQ(ty->Members().size(), 2u);
+    ASSERT_EQ(ty->Members().Length(), 2u);
 
-    auto* sig = ty->Members()[0];
-    EXPECT_TRUE(sig->Type()->Is<sem::F32>());
-    EXPECT_EQ(sig->Offset(), 0u);
-    EXPECT_EQ(sig->Size(), 4u);
-    EXPECT_EQ(sig->Align(), 4u);
-    EXPECT_EQ(sig->Name(), Sym("sig"));
+    auto* fract = ty->Members()[0];
+    EXPECT_TRUE(fract->Type()->Is<type::F32>());
+    EXPECT_EQ(fract->Offset(), 0u);
+    EXPECT_EQ(fract->Size(), 4u);
+    EXPECT_EQ(fract->Align(), 4u);
+    EXPECT_EQ(fract->Name(), Sym("fract"));
 
     auto* exp = ty->Members()[1];
-    EXPECT_TRUE(exp->Type()->Is<sem::I32>());
+    EXPECT_TRUE(exp->Type()->Is<type::I32>());
     EXPECT_EQ(exp->Offset(), 4u);
     EXPECT_EQ(exp->Size(), 4u);
     EXPECT_EQ(exp->Align(), 4u);
@@ -956,17 +957,17 @@ TEST_F(ResolverBuiltinFloatTest, FrexpScalar_f16) {
     ASSERT_NE(TypeOf(call), nullptr);
     auto* ty = TypeOf(call)->As<sem::Struct>();
     ASSERT_NE(ty, nullptr);
-    ASSERT_EQ(ty->Members().size(), 2u);
+    ASSERT_EQ(ty->Members().Length(), 2u);
 
-    auto* sig = ty->Members()[0];
-    EXPECT_TRUE(sig->Type()->Is<sem::F16>());
-    EXPECT_EQ(sig->Offset(), 0u);
-    EXPECT_EQ(sig->Size(), 2u);
-    EXPECT_EQ(sig->Align(), 2u);
-    EXPECT_EQ(sig->Name(), Sym("sig"));
+    auto* fract = ty->Members()[0];
+    EXPECT_TRUE(fract->Type()->Is<type::F16>());
+    EXPECT_EQ(fract->Offset(), 0u);
+    EXPECT_EQ(fract->Size(), 2u);
+    EXPECT_EQ(fract->Align(), 2u);
+    EXPECT_EQ(fract->Name(), Sym("fract"));
 
     auto* exp = ty->Members()[1];
-    EXPECT_TRUE(exp->Type()->Is<sem::I32>());
+    EXPECT_TRUE(exp->Type()->Is<type::I32>());
     EXPECT_EQ(exp->Offset(), 4u);
     EXPECT_EQ(exp->Size(), 4u);
     EXPECT_EQ(exp->Align(), 4u);
@@ -985,21 +986,21 @@ TEST_F(ResolverBuiltinFloatTest, FrexpVector_f32) {
     ASSERT_NE(TypeOf(call), nullptr);
     auto* ty = TypeOf(call)->As<sem::Struct>();
     ASSERT_NE(ty, nullptr);
-    ASSERT_EQ(ty->Members().size(), 2u);
+    ASSERT_EQ(ty->Members().Length(), 2u);
 
-    auto* sig = ty->Members()[0];
-    ASSERT_TRUE(sig->Type()->Is<sem::Vector>());
-    EXPECT_EQ(sig->Type()->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(sig->Type()->As<sem::Vector>()->type()->Is<sem::F32>());
-    EXPECT_EQ(sig->Offset(), 0u);
-    EXPECT_EQ(sig->Size(), 12u);
-    EXPECT_EQ(sig->Align(), 16u);
-    EXPECT_EQ(sig->Name(), Sym("sig"));
+    auto* fract = ty->Members()[0];
+    ASSERT_TRUE(fract->Type()->Is<type::Vector>());
+    EXPECT_EQ(fract->Type()->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(fract->Type()->As<type::Vector>()->type()->Is<type::F32>());
+    EXPECT_EQ(fract->Offset(), 0u);
+    EXPECT_EQ(fract->Size(), 12u);
+    EXPECT_EQ(fract->Align(), 16u);
+    EXPECT_EQ(fract->Name(), Sym("fract"));
 
     auto* exp = ty->Members()[1];
-    ASSERT_TRUE(exp->Type()->Is<sem::Vector>());
-    EXPECT_EQ(exp->Type()->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(exp->Type()->As<sem::Vector>()->type()->Is<sem::I32>());
+    ASSERT_TRUE(exp->Type()->Is<type::Vector>());
+    EXPECT_EQ(exp->Type()->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(exp->Type()->As<type::Vector>()->type()->Is<type::I32>());
     EXPECT_EQ(exp->Offset(), 16u);
     EXPECT_EQ(exp->Size(), 12u);
     EXPECT_EQ(exp->Align(), 16u);
@@ -1020,21 +1021,21 @@ TEST_F(ResolverBuiltinFloatTest, FrexpVector_f16) {
     ASSERT_NE(TypeOf(call), nullptr);
     auto* ty = TypeOf(call)->As<sem::Struct>();
     ASSERT_NE(ty, nullptr);
-    ASSERT_EQ(ty->Members().size(), 2u);
+    ASSERT_EQ(ty->Members().Length(), 2u);
 
-    auto* sig = ty->Members()[0];
-    ASSERT_TRUE(sig->Type()->Is<sem::Vector>());
-    EXPECT_EQ(sig->Type()->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(sig->Type()->As<sem::Vector>()->type()->Is<sem::F16>());
-    EXPECT_EQ(sig->Offset(), 0u);
-    EXPECT_EQ(sig->Size(), 6u);
-    EXPECT_EQ(sig->Align(), 8u);
-    EXPECT_EQ(sig->Name(), Sym("sig"));
+    auto* fract = ty->Members()[0];
+    ASSERT_TRUE(fract->Type()->Is<type::Vector>());
+    EXPECT_EQ(fract->Type()->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(fract->Type()->As<type::Vector>()->type()->Is<type::F16>());
+    EXPECT_EQ(fract->Offset(), 0u);
+    EXPECT_EQ(fract->Size(), 6u);
+    EXPECT_EQ(fract->Align(), 8u);
+    EXPECT_EQ(fract->Name(), Sym("fract"));
 
     auto* exp = ty->Members()[1];
-    ASSERT_TRUE(exp->Type()->Is<sem::Vector>());
-    EXPECT_EQ(exp->Type()->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(exp->Type()->As<sem::Vector>()->type()->Is<sem::I32>());
+    ASSERT_TRUE(exp->Type()->Is<type::Vector>());
+    EXPECT_EQ(exp->Type()->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(exp->Type()->As<type::Vector>()->type()->Is<type::I32>());
     EXPECT_EQ(exp->Offset(), 16u);
     EXPECT_EQ(exp->Size(), 12u);
     EXPECT_EQ(exp->Align(), 16u);
@@ -1042,6 +1043,29 @@ TEST_F(ResolverBuiltinFloatTest, FrexpVector_f16) {
 
     EXPECT_EQ(ty->Size(), 32u);
     EXPECT_EQ(ty->SizeNoPadding(), 28u);
+}
+
+// TODO(crbug.com/tint/1757): Remove once deprecation period for `frexp().sig` is over
+TEST_F(ResolverBuiltinFloatTest, FrexpVector_sig) {
+    Enable(ast::Extension::kF16);
+
+    auto* call = Call("frexp", vec3<f16>());
+    auto* expr = MemberAccessor(call, "sig");
+    WrapInFunction(expr);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    ASSERT_NE(TypeOf(call), nullptr);
+    auto* ty = TypeOf(call)->As<sem::Struct>();
+    ASSERT_NE(ty, nullptr);
+    ASSERT_EQ(ty->Members().Length(), 2u);
+
+    auto* sig = ty->Members()[0];
+    EXPECT_TYPE(sig->Type(), TypeOf(expr));
+
+    auto* access = Sem().Get<sem::StructMemberAccess>(expr);
+    ASSERT_NE(access, nullptr);
+    EXPECT_EQ(access->Member(), sig);
 }
 
 TEST_F(ResolverBuiltinFloatTest, Frexp_Error_FirstParamInt) {
@@ -1055,54 +1079,8 @@ TEST_F(ResolverBuiltinFloatTest, Frexp_Error_FirstParamInt) {
               R"(error: no matching call to frexp(i32, ptr<workgroup, i32, read_write>)
 
 2 candidate functions:
-  frexp(T) -> __frexp_result_T  where: T is f32 or f16
-  frexp(vecN<T>) -> __frexp_result_vecN_T  where: T is f32 or f16
-)");
-}
-
-TEST_F(ResolverBuiltinFloatTest, Frexp_Error_SecondParamFloatPtr) {
-    GlobalVar("v", ty.f32(), ast::AddressSpace::kWorkgroup);
-    auto* call = Call("frexp", 1_f, AddressOf("v"));
-    WrapInFunction(call);
-
-    EXPECT_FALSE(r()->Resolve());
-
-    EXPECT_EQ(r()->error(),
-              R"(error: no matching call to frexp(f32, ptr<workgroup, f32, read_write>)
-
-2 candidate functions:
-  frexp(T) -> __frexp_result_T  where: T is f32 or f16
-  frexp(vecN<T>) -> __frexp_result_vecN_T  where: T is f32 or f16
-)");
-}
-
-TEST_F(ResolverBuiltinFloatTest, Frexp_Error_SecondParamNotAPointer) {
-    auto* call = Call("frexp", 1_f, 1_i);
-    WrapInFunction(call);
-
-    EXPECT_FALSE(r()->Resolve());
-
-    EXPECT_EQ(r()->error(), R"(error: no matching call to frexp(f32, i32)
-
-2 candidate functions:
-  frexp(T) -> __frexp_result_T  where: T is f32 or f16
-  frexp(vecN<T>) -> __frexp_result_vecN_T  where: T is f32 or f16
-)");
-}
-
-TEST_F(ResolverBuiltinFloatTest, Frexp_Error_VectorSizesDontMatch) {
-    GlobalVar("v", ty.vec4<i32>(), ast::AddressSpace::kWorkgroup);
-    auto* call = Call("frexp", vec2<f32>(1_f, 2_f), AddressOf("v"));
-    WrapInFunction(call);
-
-    EXPECT_FALSE(r()->Resolve());
-
-    EXPECT_EQ(r()->error(),
-              R"(error: no matching call to frexp(vec2<f32>, ptr<workgroup, vec4<i32>, read_write>)
-
-2 candidate functions:
-  frexp(T) -> __frexp_result_T  where: T is f32 or f16
-  frexp(vecN<T>) -> __frexp_result_vecN_T  where: T is f32 or f16
+  frexp(T) -> __frexp_result_T  where: T is abstract-float, f32 or f16
+  frexp(vecN<T>) -> __frexp_result_vecN_T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1114,7 +1092,7 @@ TEST_F(ResolverBuiltinFloatTest, Length_Scalar_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Length_Scalar_f16) {
@@ -1126,7 +1104,7 @@ TEST_F(ResolverBuiltinFloatTest, Length_Scalar_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Length_FloatVector_f32) {
@@ -1136,7 +1114,7 @@ TEST_F(ResolverBuiltinFloatTest, Length_FloatVector_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Length_FloatVector_f16) {
@@ -1148,7 +1126,7 @@ TEST_F(ResolverBuiltinFloatTest, Length_FloatVector_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Length_NoParams) {
@@ -1160,8 +1138,8 @@ TEST_F(ResolverBuiltinFloatTest, Length_NoParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to length()
 
 2 candidate functions:
-  length(T) -> T  where: T is f32 or f16
-  length(vecN<T>) -> T  where: T is f32 or f16
+  length(T) -> T  where: T is abstract-float, f32 or f16
+  length(vecN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1174,8 +1152,8 @@ TEST_F(ResolverBuiltinFloatTest, Length_TooManyParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to length(f32, f32)
 
 2 candidate functions:
-  length(T) -> T  where: T is f32 or f16
-  length(vecN<T>) -> T  where: T is f32 or f16
+  length(T) -> T  where: T is abstract-float, f32 or f16
+  length(vecN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1189,9 +1167,9 @@ TEST_F(ResolverBuiltinFloatTest, Mix_VectorScalar_f32) {
 
     ASSERT_NE(TypeOf(call), nullptr);
     EXPECT_TRUE(TypeOf(call)->is_float_vector());
-    EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-    ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-    EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F32>());
+    EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+    ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+    EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Mix_VectorScalar_f16) {
@@ -1204,9 +1182,9 @@ TEST_F(ResolverBuiltinFloatTest, Mix_VectorScalar_f16) {
 
     ASSERT_NE(TypeOf(call), nullptr);
     EXPECT_TRUE(TypeOf(call)->is_float_vector());
-    EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-    ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-    EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F16>());
+    EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+    ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+    EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F16>());
 }
 
 // modf: (f32) -> __modf_result, (vecN<f32>) -> __modf_result_vecN, (f16) -> __modf_result_f16,
@@ -1220,17 +1198,17 @@ TEST_F(ResolverBuiltinFloatTest, ModfScalar_f32) {
     ASSERT_NE(TypeOf(call), nullptr);
     auto* ty = TypeOf(call)->As<sem::Struct>();
     ASSERT_NE(ty, nullptr);
-    ASSERT_EQ(ty->Members().size(), 2u);
+    ASSERT_EQ(ty->Members().Length(), 2u);
 
     auto* fract = ty->Members()[0];
-    EXPECT_TRUE(fract->Type()->Is<sem::F32>());
+    EXPECT_TRUE(fract->Type()->Is<type::F32>());
     EXPECT_EQ(fract->Offset(), 0u);
     EXPECT_EQ(fract->Size(), 4u);
     EXPECT_EQ(fract->Align(), 4u);
     EXPECT_EQ(fract->Name(), Sym("fract"));
 
     auto* whole = ty->Members()[1];
-    EXPECT_TRUE(whole->Type()->Is<sem::F32>());
+    EXPECT_TRUE(whole->Type()->Is<type::F32>());
     EXPECT_EQ(whole->Offset(), 4u);
     EXPECT_EQ(whole->Size(), 4u);
     EXPECT_EQ(whole->Align(), 4u);
@@ -1251,17 +1229,17 @@ TEST_F(ResolverBuiltinFloatTest, ModfScalar_f16) {
     ASSERT_NE(TypeOf(call), nullptr);
     auto* ty = TypeOf(call)->As<sem::Struct>();
     ASSERT_NE(ty, nullptr);
-    ASSERT_EQ(ty->Members().size(), 2u);
+    ASSERT_EQ(ty->Members().Length(), 2u);
 
     auto* fract = ty->Members()[0];
-    EXPECT_TRUE(fract->Type()->Is<sem::F16>());
+    EXPECT_TRUE(fract->Type()->Is<type::F16>());
     EXPECT_EQ(fract->Offset(), 0u);
     EXPECT_EQ(fract->Size(), 2u);
     EXPECT_EQ(fract->Align(), 2u);
     EXPECT_EQ(fract->Name(), Sym("fract"));
 
     auto* whole = ty->Members()[1];
-    EXPECT_TRUE(whole->Type()->Is<sem::F16>());
+    EXPECT_TRUE(whole->Type()->Is<type::F16>());
     EXPECT_EQ(whole->Offset(), 2u);
     EXPECT_EQ(whole->Size(), 2u);
     EXPECT_EQ(whole->Align(), 2u);
@@ -1280,21 +1258,21 @@ TEST_F(ResolverBuiltinFloatTest, ModfVector_f32) {
     ASSERT_NE(TypeOf(call), nullptr);
     auto* ty = TypeOf(call)->As<sem::Struct>();
     ASSERT_NE(ty, nullptr);
-    ASSERT_EQ(ty->Members().size(), 2u);
+    ASSERT_EQ(ty->Members().Length(), 2u);
 
     auto* fract = ty->Members()[0];
-    ASSERT_TRUE(fract->Type()->Is<sem::Vector>());
-    EXPECT_EQ(fract->Type()->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(fract->Type()->As<sem::Vector>()->type()->Is<sem::F32>());
+    ASSERT_TRUE(fract->Type()->Is<type::Vector>());
+    EXPECT_EQ(fract->Type()->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(fract->Type()->As<type::Vector>()->type()->Is<type::F32>());
     EXPECT_EQ(fract->Offset(), 0u);
     EXPECT_EQ(fract->Size(), 12u);
     EXPECT_EQ(fract->Align(), 16u);
     EXPECT_EQ(fract->Name(), Sym("fract"));
 
     auto* whole = ty->Members()[1];
-    ASSERT_TRUE(whole->Type()->Is<sem::Vector>());
-    EXPECT_EQ(whole->Type()->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(whole->Type()->As<sem::Vector>()->type()->Is<sem::F32>());
+    ASSERT_TRUE(whole->Type()->Is<type::Vector>());
+    EXPECT_EQ(whole->Type()->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(whole->Type()->As<type::Vector>()->type()->Is<type::F32>());
     EXPECT_EQ(whole->Offset(), 16u);
     EXPECT_EQ(whole->Size(), 12u);
     EXPECT_EQ(whole->Align(), 16u);
@@ -1315,21 +1293,21 @@ TEST_F(ResolverBuiltinFloatTest, ModfVector_f16) {
     ASSERT_NE(TypeOf(call), nullptr);
     auto* ty = TypeOf(call)->As<sem::Struct>();
     ASSERT_NE(ty, nullptr);
-    ASSERT_EQ(ty->Members().size(), 2u);
+    ASSERT_EQ(ty->Members().Length(), 2u);
 
     auto* fract = ty->Members()[0];
-    ASSERT_TRUE(fract->Type()->Is<sem::Vector>());
-    EXPECT_EQ(fract->Type()->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(fract->Type()->As<sem::Vector>()->type()->Is<sem::F16>());
+    ASSERT_TRUE(fract->Type()->Is<type::Vector>());
+    EXPECT_EQ(fract->Type()->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(fract->Type()->As<type::Vector>()->type()->Is<type::F16>());
     EXPECT_EQ(fract->Offset(), 0u);
     EXPECT_EQ(fract->Size(), 6u);
     EXPECT_EQ(fract->Align(), 8u);
     EXPECT_EQ(fract->Name(), Sym("fract"));
 
     auto* whole = ty->Members()[1];
-    ASSERT_TRUE(whole->Type()->Is<sem::Vector>());
-    EXPECT_EQ(whole->Type()->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(whole->Type()->As<sem::Vector>()->type()->Is<sem::F16>());
+    ASSERT_TRUE(whole->Type()->Is<type::Vector>());
+    EXPECT_EQ(whole->Type()->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(whole->Type()->As<type::Vector>()->type()->Is<type::F16>());
     EXPECT_EQ(whole->Offset(), 8u);
     EXPECT_EQ(whole->Size(), 6u);
     EXPECT_EQ(whole->Align(), 8u);
@@ -1350,8 +1328,8 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_FirstParamInt) {
               R"(error: no matching call to modf(i32, ptr<workgroup, f32, read_write>)
 
 2 candidate functions:
-  modf(T) -> __modf_result_T  where: T is f32 or f16
-  modf(vecN<T>) -> __modf_result_vecN_T  where: T is f32 or f16
+  modf(T) -> __modf_result_T  where: T is abstract-float, f32 or f16
+  modf(vecN<T>) -> __modf_result_vecN_T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1366,8 +1344,8 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_SecondParamIntPtr) {
               R"(error: no matching call to modf(f32, ptr<workgroup, i32, read_write>)
 
 2 candidate functions:
-  modf(T) -> __modf_result_T  where: T is f32 or f16
-  modf(vecN<T>) -> __modf_result_vecN_T  where: T is f32 or f16
+  modf(T) -> __modf_result_T  where: T is abstract-float, f32 or f16
+  modf(vecN<T>) -> __modf_result_vecN_T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1380,8 +1358,8 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_SecondParamNotAPointer) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to modf(f32, f32)
 
 2 candidate functions:
-  modf(T) -> __modf_result_T  where: T is f32 or f16
-  modf(vecN<T>) -> __modf_result_vecN_T  where: T is f32 or f16
+  modf(T) -> __modf_result_T  where: T is abstract-float, f32 or f16
+  modf(vecN<T>) -> __modf_result_vecN_T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1396,8 +1374,8 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_VectorSizesDontMatch) {
               R"(error: no matching call to modf(vec2<f32>, ptr<workgroup, vec4<f32>, read_write>)
 
 2 candidate functions:
-  modf(T) -> __modf_result_T  where: T is f32 or f16
-  modf(vecN<T>) -> __modf_result_vecN_T  where: T is f32 or f16
+  modf(T) -> __modf_result_T  where: T is abstract-float, f32 or f16
+  modf(vecN<T>) -> __modf_result_vecN_T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1410,8 +1388,8 @@ TEST_F(ResolverBuiltinFloatTest, Normalize_Vector_f32) {
 
     ASSERT_NE(TypeOf(call), nullptr);
     EXPECT_TRUE(TypeOf(call)->is_float_vector());
-    EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F32>());
+    EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Normalize_Vector_f16) {
@@ -1424,8 +1402,8 @@ TEST_F(ResolverBuiltinFloatTest, Normalize_Vector_f16) {
 
     ASSERT_NE(TypeOf(call), nullptr);
     EXPECT_TRUE(TypeOf(call)->is_float_vector());
-    EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-    EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::F16>());
+    EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+    EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::F16>());
 }
 
 TEST_F(ResolverBuiltinFloatTest, Normalize_Error_NoParams) {
@@ -1437,7 +1415,7 @@ TEST_F(ResolverBuiltinFloatTest, Normalize_Error_NoParams) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to normalize()
 
 1 candidate function:
-  normalize(vecN<T>) -> vecN<T>  where: T is f32 or f16
+  normalize(vecN<T>) -> vecN<T>  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1486,7 +1464,7 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, OneParams_Scalar_i32) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::I32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::I32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1508,9 +1486,9 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, OneParams_Vector_i32) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_signed_integer_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::I32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::I32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1531,7 +1509,7 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, OneParams_Scalar_u32) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1553,9 +1531,9 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, OneParams_Vector_u32) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_unsigned_integer_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::U32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::U32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1576,7 +1554,7 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, TwoParams_Scalar_i32) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::I32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::I32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1598,9 +1576,9 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, TwoParams_Vector_i32) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_signed_integer_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::I32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::I32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1621,7 +1599,7 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, TwoParams_Scalar_u32) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1643,9 +1621,9 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, TwoParams_Vector_u32) {
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_unsigned_integer_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::U32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::U32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1666,7 +1644,7 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, ThreeParams_Scalar_i32)
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::I32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::I32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1689,9 +1667,9 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, ThreeParams_Vector_i32)
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_signed_integer_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::I32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::I32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1713,7 +1691,7 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, ThreeParams_Scalar_u32)
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1736,9 +1714,9 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, ThreeParams_Vector_u32)
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_unsigned_integer_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::U32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::U32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1760,7 +1738,7 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, FourParams_Scalar_i32) 
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::I32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::I32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1783,9 +1761,9 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, FourParams_Vector_i32) 
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_signed_integer_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::I32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::I32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1807,7 +1785,7 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, FourParams_Scalar_u32) 
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
         ASSERT_NE(TypeOf(call), nullptr);
-        EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1830,9 +1808,9 @@ TEST_P(ResolverBuiltinTest_IntegerBuiltin_IdenticalType, FourParams_Vector_u32) 
 
         ASSERT_NE(TypeOf(call), nullptr);
         EXPECT_TRUE(TypeOf(call)->is_unsigned_integer_vector());
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 3u);
-        ASSERT_NE(TypeOf(call)->As<sem::Vector>()->type(), nullptr);
-        EXPECT_TRUE(TypeOf(call)->As<sem::Vector>()->type()->Is<sem::U32>());
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 3u);
+        ASSERT_NE(TypeOf(call)->As<type::Vector>()->type(), nullptr);
+        EXPECT_TRUE(TypeOf(call)->As<type::Vector>()->type()->Is<type::U32>());
     } else {
         // Invalid parameter count.
         EXPECT_FALSE(r()->Resolve());
@@ -1874,7 +1852,7 @@ TEST_F(ResolverBuiltinTest, Determinant_2x2_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_2x2_f16) {
@@ -1888,7 +1866,7 @@ TEST_F(ResolverBuiltinTest, Determinant_2x2_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_3x3_f32) {
@@ -1900,7 +1878,7 @@ TEST_F(ResolverBuiltinTest, Determinant_3x3_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_3x3_f16) {
@@ -1914,7 +1892,7 @@ TEST_F(ResolverBuiltinTest, Determinant_3x3_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_4x4_f32) {
@@ -1926,7 +1904,7 @@ TEST_F(ResolverBuiltinTest, Determinant_4x4_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_4x4_f16) {
@@ -1940,7 +1918,7 @@ TEST_F(ResolverBuiltinTest, Determinant_4x4_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F16>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F16>());
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_NotSquare) {
@@ -1954,7 +1932,7 @@ TEST_F(ResolverBuiltinTest, Determinant_NotSquare) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to determinant(mat2x3<f32>)
 
 1 candidate function:
-  determinant(matNxN<T>) -> T  where: T is f32 or f16
+  determinant(matNxN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1969,7 +1947,7 @@ TEST_F(ResolverBuiltinTest, Determinant_NotMatrix) {
     EXPECT_EQ(r()->error(), R"(error: no matching call to determinant(f32)
 
 1 candidate function:
-  determinant(matNxN<T>) -> T  where: T is f32 or f16
+  determinant(matNxN<T>) -> T  where: T is abstract-float, f32 or f16
 )");
 }
 
@@ -1987,7 +1965,7 @@ TEST_F(ResolverBuiltinTest, Dot_Vec2_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(expr)->Is<type::F32>());
 }
 
 TEST_F(ResolverBuiltinTest, Dot_Vec2_f16) {
@@ -2001,7 +1979,7 @@ TEST_F(ResolverBuiltinTest, Dot_Vec2_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<sem::F16>());
+    EXPECT_TRUE(TypeOf(expr)->Is<type::F16>());
 }
 
 TEST_F(ResolverBuiltinTest, Dot_Vec3_i32) {
@@ -2013,7 +1991,7 @@ TEST_F(ResolverBuiltinTest, Dot_Vec3_i32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<sem::I32>());
+    EXPECT_TRUE(TypeOf(expr)->Is<type::I32>());
 }
 
 TEST_F(ResolverBuiltinTest, Dot_Vec4_u32) {
@@ -2025,7 +2003,7 @@ TEST_F(ResolverBuiltinTest, Dot_Vec4_u32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<sem::U32>());
+    EXPECT_TRUE(TypeOf(expr)->Is<type::U32>());
 }
 
 TEST_F(ResolverBuiltinTest, Dot_Error_Scalar) {
@@ -2038,7 +2016,7 @@ TEST_F(ResolverBuiltinTest, Dot_Error_Scalar) {
               R"(error: no matching call to dot(f32, f32)
 
 1 candidate function:
-  dot(vecN<T>, vecN<T>) -> T  where: T is f32, i32, u32 or f16
+  dot(vecN<T>, vecN<T>) -> T  where: T is abstract-float, abstract-int, f32, i32, u32 or f16
 )");
 }
 
@@ -2061,7 +2039,7 @@ TEST_P(ResolverBuiltinDerivativeTest, Scalar) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    ASSERT_TRUE(TypeOf(expr)->Is<sem::F32>());
+    ASSERT_TRUE(TypeOf(expr)->Is<type::F32>());
 }
 
 TEST_P(ResolverBuiltinDerivativeTest, Vector) {
@@ -2075,9 +2053,9 @@ TEST_P(ResolverBuiltinDerivativeTest, Vector) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    ASSERT_TRUE(TypeOf(expr)->Is<sem::Vector>());
-    EXPECT_TRUE(TypeOf(expr)->As<sem::Vector>()->type()->Is<sem::F32>());
-    EXPECT_EQ(TypeOf(expr)->As<sem::Vector>()->Width(), 4u);
+    ASSERT_TRUE(TypeOf(expr)->Is<type::Vector>());
+    EXPECT_TRUE(TypeOf(expr)->As<type::Vector>()->type()->Is<type::F32>());
+    EXPECT_EQ(TypeOf(expr)->As<type::Vector>()->Width(), 4u);
 }
 
 TEST_P(ResolverBuiltinDerivativeTest, MissingParam) {
@@ -2202,15 +2180,15 @@ TEST_P(ResolverBuiltinTest_SampledTextureOperation, TextureLoadSampled) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    ASSERT_TRUE(TypeOf(expr)->Is<sem::Vector>());
+    ASSERT_TRUE(TypeOf(expr)->Is<type::Vector>());
     if (type == Texture::kF32) {
-        EXPECT_TRUE(TypeOf(expr)->As<sem::Vector>()->type()->Is<sem::F32>());
+        EXPECT_TRUE(TypeOf(expr)->As<type::Vector>()->type()->Is<type::F32>());
     } else if (type == Texture::kI32) {
-        EXPECT_TRUE(TypeOf(expr)->As<sem::Vector>()->type()->Is<sem::I32>());
+        EXPECT_TRUE(TypeOf(expr)->As<type::Vector>()->type()->Is<type::I32>());
     } else {
-        EXPECT_TRUE(TypeOf(expr)->As<sem::Vector>()->type()->Is<sem::U32>());
+        EXPECT_TRUE(TypeOf(expr)->As<type::Vector>()->type()->Is<type::U32>());
     }
-    EXPECT_EQ(TypeOf(expr)->As<sem::Vector>()->Width(), 4u);
+    EXPECT_EQ(TypeOf(expr)->As<type::Vector>()->Width(), 4u);
 }
 
 INSTANTIATE_TEST_SUITE_P(ResolverTest,
@@ -2492,77 +2470,77 @@ TEST_P(ResolverBuiltinTest_Texture, Call) {
             default:
                 FAIL() << "invalid texture dimensions: " << param.texture_dimension;
             case ast::TextureDimension::k1d:
-                EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
+                EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
                 break;
             case ast::TextureDimension::k2d:
             case ast::TextureDimension::k2dArray:
             case ast::TextureDimension::kCube:
             case ast::TextureDimension::kCubeArray: {
-                auto* vec = As<sem::Vector>(TypeOf(call));
+                auto* vec = As<type::Vector>(TypeOf(call));
                 ASSERT_NE(vec, nullptr);
                 EXPECT_EQ(vec->Width(), 2u);
-                EXPECT_TRUE(vec->type()->Is<sem::U32>());
+                EXPECT_TRUE(vec->type()->Is<type::U32>());
                 break;
             }
             case ast::TextureDimension::k3d: {
-                auto* vec = As<sem::Vector>(TypeOf(call));
+                auto* vec = As<type::Vector>(TypeOf(call));
                 ASSERT_NE(vec, nullptr);
                 EXPECT_EQ(vec->Width(), 3u);
-                EXPECT_TRUE(vec->type()->Is<sem::U32>());
+                EXPECT_TRUE(vec->type()->Is<type::U32>());
                 break;
             }
         }
     } else if (std::string(param.function) == "textureNumLayers") {
-        EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
     } else if (std::string(param.function) == "textureNumLevels") {
-        EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
     } else if (std::string(param.function) == "textureNumSamples") {
-        EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
     } else if (std::string(param.function) == "textureStore") {
-        EXPECT_TRUE(TypeOf(call)->Is<sem::Void>());
+        EXPECT_TRUE(TypeOf(call)->Is<type::Void>());
     } else if (std::string(param.function) == "textureGather") {
-        auto* vec = As<sem::Vector>(TypeOf(call));
+        auto* vec = As<type::Vector>(TypeOf(call));
         ASSERT_NE(vec, nullptr);
         EXPECT_EQ(vec->Width(), 4u);
         switch (param.texture_data_type) {
             case ast::builtin::test::TextureDataType::kF32:
-                EXPECT_TRUE(vec->type()->Is<sem::F32>());
+                EXPECT_TRUE(vec->type()->Is<type::F32>());
                 break;
             case ast::builtin::test::TextureDataType::kU32:
-                EXPECT_TRUE(vec->type()->Is<sem::U32>());
+                EXPECT_TRUE(vec->type()->Is<type::U32>());
                 break;
             case ast::builtin::test::TextureDataType::kI32:
-                EXPECT_TRUE(vec->type()->Is<sem::I32>());
+                EXPECT_TRUE(vec->type()->Is<type::I32>());
                 break;
         }
     } else if (std::string(param.function) == "textureGatherCompare") {
-        auto* vec = As<sem::Vector>(TypeOf(call));
+        auto* vec = As<type::Vector>(TypeOf(call));
         ASSERT_NE(vec, nullptr);
         EXPECT_EQ(vec->Width(), 4u);
-        EXPECT_TRUE(vec->type()->Is<sem::F32>());
+        EXPECT_TRUE(vec->type()->Is<type::F32>());
     } else {
         switch (param.texture_kind) {
             case ast::builtin::test::TextureKind::kRegular:
             case ast::builtin::test::TextureKind::kMultisampled:
             case ast::builtin::test::TextureKind::kStorage: {
-                auto* vec = TypeOf(call)->As<sem::Vector>();
+                auto* vec = TypeOf(call)->As<type::Vector>();
                 ASSERT_NE(vec, nullptr);
                 switch (param.texture_data_type) {
                     case ast::builtin::test::TextureDataType::kF32:
-                        EXPECT_TRUE(vec->type()->Is<sem::F32>());
+                        EXPECT_TRUE(vec->type()->Is<type::F32>());
                         break;
                     case ast::builtin::test::TextureDataType::kU32:
-                        EXPECT_TRUE(vec->type()->Is<sem::U32>());
+                        EXPECT_TRUE(vec->type()->Is<type::U32>());
                         break;
                     case ast::builtin::test::TextureDataType::kI32:
-                        EXPECT_TRUE(vec->type()->Is<sem::I32>());
+                        EXPECT_TRUE(vec->type()->Is<type::I32>());
                         break;
                 }
                 break;
             }
             case ast::builtin::test::TextureKind::kDepth:
             case ast::builtin::test::TextureKind::kDepthMultisampled: {
-                EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+                EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
                 break;
             }
         }
@@ -2596,7 +2574,7 @@ TEST_P(ResolverBuiltinTest_DataPacking, InferType) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::U32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
 }
 
 TEST_P(ResolverBuiltinTest_DataPacking, Error_IncorrectParamType) {
@@ -2668,9 +2646,9 @@ TEST_P(ResolverBuiltinTest_DataUnpacking, InferType) {
     ASSERT_NE(TypeOf(call), nullptr);
     EXPECT_TRUE(TypeOf(call)->is_float_vector());
     if (pack4) {
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 4u);
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 4u);
     } else {
-        EXPECT_EQ(TypeOf(call)->As<sem::Vector>()->Width(), 2u);
+        EXPECT_EQ(TypeOf(call)->As<type::Vector>()->Width(), 2u);
     }
 }
 
@@ -2697,7 +2675,7 @@ TEST_P(ResolverBuiltinTest_Barrier, InferType) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::Void>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::Void>());
 }
 
 TEST_P(ResolverBuiltinTest_Barrier, Error_TooManyParams) {

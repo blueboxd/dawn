@@ -14,7 +14,7 @@
 
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/stage_attribute.h"
-#include "src/tint/sem/depth_texture.h"
+#include "src/tint/type/depth_texture.h"
 #include "src/tint/utils/string.h"
 #include "src/tint/writer/spirv/spv_dump.h"
 #include "src/tint/writer/spirv/test_helper.h"
@@ -1630,7 +1630,7 @@ OpFunctionEnd
     EXPECT_EQ(got, expect);
 }
 
-TEST_F(BuiltinBuilderTest, Call_Modf_f32) {
+TEST_F(BuiltinBuilderTest, Runtime_Call_Modf_f32) {
     auto* vec = Var("vec", vec2<f32>(1_f, 2_f));
     auto* expr = Call("modf", vec);
     Func("a_func", utils::Empty, ty.void_(),
@@ -1653,7 +1653,7 @@ OpEntryPoint Fragment %3 "a_func"
 OpExecutionMode %3 OriginUpperLeft
 OpName %3 "a_func"
 OpName %10 "vec"
-OpName %14 "__modf_result_vec2"
+OpName %14 "__modf_result_vec2_f32"
 OpMemberName %14 0 "fract"
 OpMemberName %14 1 "whole"
 OpMemberDecorate %14 0 Offset 0
@@ -1682,7 +1682,7 @@ OpFunctionEnd
     Validate(b);
 }
 
-TEST_F(BuiltinBuilderTest, Call_Modf_f16) {
+TEST_F(BuiltinBuilderTest, Runtime_Call_Modf_f16) {
     Enable(ast::Extension::kF16);
 
     auto* vec = Var("vec", vec2<f16>(1_h, 2_h));
@@ -1740,7 +1740,101 @@ OpFunctionEnd
     Validate(b);
 }
 
-TEST_F(BuiltinBuilderTest, Call_Frexp_f32) {
+TEST_F(BuiltinBuilderTest, Const_Call_Modf_f32) {
+    auto* expr = Call("modf", vec2<f32>(1_f, 2_f));
+    Func("a_func", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(expr),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
+
+    spirv::Builder& b = Build();
+
+    ASSERT_TRUE(b.Build()) << b.error();
+    auto got = DumpBuilder(b);
+    auto* expect = R"(OpCapability Shader
+%9 = OpExtInstImport "GLSL.std.450"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %3 "a_func"
+OpExecutionMode %3 OriginUpperLeft
+OpName %3 "a_func"
+OpName %6 "__modf_result_vec2_f32"
+OpMemberName %6 0 "fract"
+OpMemberName %6 1 "whole"
+OpMemberDecorate %6 0 Offset 0
+OpMemberDecorate %6 1 Offset 8
+%2 = OpTypeVoid
+%1 = OpTypeFunction %2
+%8 = OpTypeFloat 32
+%7 = OpTypeVector %8 2
+%6 = OpTypeStruct %7 %7
+%10 = OpConstant %8 1
+%11 = OpConstant %8 2
+%12 = OpConstantComposite %7 %10 %11
+%3 = OpFunction %2 None %1
+%4 = OpLabel
+%5 = OpExtInst %6 %9 ModfStruct %12
+OpReturn
+OpFunctionEnd
+)";
+    EXPECT_EQ(expect, got);
+
+    Validate(b);
+}
+
+TEST_F(BuiltinBuilderTest, Const_Call_Modf_f16) {
+    Enable(ast::Extension::kF16);
+
+    auto* expr = Call("modf", vec2<f16>(1_h, 2_h));
+    Func("a_func", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(expr),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
+
+    spirv::Builder& b = Build();
+
+    ASSERT_TRUE(b.Build()) << b.error();
+    auto got = DumpBuilder(b);
+    auto* expect = R"(OpCapability Shader
+OpCapability Float16
+OpCapability UniformAndStorageBuffer16BitAccess
+OpCapability StorageBuffer16BitAccess
+OpCapability StorageInputOutput16
+%9 = OpExtInstImport "GLSL.std.450"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %3 "a_func"
+OpExecutionMode %3 OriginUpperLeft
+OpName %3 "a_func"
+OpName %6 "__modf_result_vec2_f16"
+OpMemberName %6 0 "fract"
+OpMemberName %6 1 "whole"
+OpMemberDecorate %6 0 Offset 0
+OpMemberDecorate %6 1 Offset 4
+%2 = OpTypeVoid
+%1 = OpTypeFunction %2
+%8 = OpTypeFloat 16
+%7 = OpTypeVector %8 2
+%6 = OpTypeStruct %7 %7
+%10 = OpConstant %8 0x1p+0
+%11 = OpConstant %8 0x1p+1
+%12 = OpConstantComposite %7 %10 %11
+%3 = OpFunction %2 None %1
+%4 = OpLabel
+%5 = OpExtInst %6 %9 ModfStruct %12
+OpReturn
+OpFunctionEnd
+)";
+    EXPECT_EQ(expect, got);
+
+    Validate(b);
+}
+
+TEST_F(BuiltinBuilderTest, Runtime_Call_Frexp_f32) {
     auto* vec = Var("vec", vec2<f32>(1_f, 2_f));
     auto* expr = Call("frexp", vec);
     Func("a_func", utils::Empty, ty.void_(),
@@ -1763,8 +1857,8 @@ OpEntryPoint Fragment %3 "a_func"
 OpExecutionMode %3 OriginUpperLeft
 OpName %3 "a_func"
 OpName %10 "vec"
-OpName %14 "__frexp_result_vec2"
-OpMemberName %14 0 "sig"
+OpName %14 "__frexp_result_vec2_f32"
+OpMemberName %14 0 "fract"
 OpMemberName %14 1 "exp"
 OpMemberDecorate %14 0 Offset 0
 OpMemberDecorate %14 1 Offset 8
@@ -1794,7 +1888,7 @@ OpFunctionEnd
     Validate(b);
 }
 
-TEST_F(BuiltinBuilderTest, Call_Frexp_f16) {
+TEST_F(BuiltinBuilderTest, Runtime_Call_Frexp_f16) {
     Enable(ast::Extension::kF16);
 
     auto* vec = Var("vec", vec2<f16>(1_h, 2_h));
@@ -1824,7 +1918,7 @@ OpExecutionMode %3 OriginUpperLeft
 OpName %3 "a_func"
 OpName %10 "vec"
 OpName %14 "__frexp_result_vec2_f16"
-OpMemberName %14 0 "sig"
+OpMemberName %14 0 "fract"
 OpMemberName %14 1 "exp"
 OpMemberDecorate %14 0 Offset 0
 OpMemberDecorate %14 1 Offset 8
@@ -1846,6 +1940,156 @@ OpMemberDecorate %14 1 Offset 8
 OpStore %10 %9
 %18 = OpLoad %5 %10
 %13 = OpExtInst %14 %17 FrexpStruct %18
+OpReturn
+OpFunctionEnd
+)";
+    EXPECT_EQ(expect, got);
+
+    Validate(b);
+}
+
+TEST_F(BuiltinBuilderTest, Const_Call_Frexp_f32) {
+    Func("a_func", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call("frexp", vec2<f32>(1_f, 2_f))),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
+
+    spirv::Builder& b = Build();
+
+    ASSERT_TRUE(b.Build()) << b.error();
+    auto got = DumpBuilder(b);
+    auto* expect = R"(OpCapability Shader
+%11 = OpExtInstImport "GLSL.std.450"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %3 "a_func"
+OpExecutionMode %3 OriginUpperLeft
+OpName %3 "a_func"
+OpName %6 "__frexp_result_vec2_f32"
+OpMemberName %6 0 "fract"
+OpMemberName %6 1 "exp"
+OpMemberDecorate %6 0 Offset 0
+OpMemberDecorate %6 1 Offset 8
+%2 = OpTypeVoid
+%1 = OpTypeFunction %2
+%8 = OpTypeFloat 32
+%7 = OpTypeVector %8 2
+%10 = OpTypeInt 32 1
+%9 = OpTypeVector %10 2
+%6 = OpTypeStruct %7 %9
+%12 = OpConstant %8 1
+%13 = OpConstant %8 2
+%14 = OpConstantComposite %7 %12 %13
+%3 = OpFunction %2 None %1
+%4 = OpLabel
+%5 = OpExtInst %6 %11 FrexpStruct %14
+OpReturn
+OpFunctionEnd
+)";
+    EXPECT_EQ(expect, got);
+
+    Validate(b);
+}
+
+TEST_F(BuiltinBuilderTest, Const_Call_Frexp_f16) {
+    Enable(ast::Extension::kF16);
+
+    Func("a_func", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call("frexp", vec2<f16>(1_h, 2_h))),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
+
+    spirv::Builder& b = Build();
+
+    ASSERT_TRUE(b.Build()) << b.error();
+    auto got = DumpBuilder(b);
+    auto* expect = R"(OpCapability Shader
+OpCapability Float16
+OpCapability UniformAndStorageBuffer16BitAccess
+OpCapability StorageBuffer16BitAccess
+OpCapability StorageInputOutput16
+%11 = OpExtInstImport "GLSL.std.450"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %3 "a_func"
+OpExecutionMode %3 OriginUpperLeft
+OpName %3 "a_func"
+OpName %6 "__frexp_result_vec2_f16"
+OpMemberName %6 0 "fract"
+OpMemberName %6 1 "exp"
+OpMemberDecorate %6 0 Offset 0
+OpMemberDecorate %6 1 Offset 8
+%2 = OpTypeVoid
+%1 = OpTypeFunction %2
+%8 = OpTypeFloat 16
+%7 = OpTypeVector %8 2
+%10 = OpTypeInt 32 1
+%9 = OpTypeVector %10 2
+%6 = OpTypeStruct %7 %9
+%12 = OpConstant %8 0x1p+0
+%13 = OpConstant %8 0x1p+1
+%14 = OpConstantComposite %7 %12 %13
+%3 = OpFunction %2 None %1
+%4 = OpLabel
+%5 = OpExtInst %6 %11 FrexpStruct %14
+OpReturn
+OpFunctionEnd
+)";
+    EXPECT_EQ(expect, got);
+
+    Validate(b);
+}
+
+// TODO(crbug.com/tint/1757): Remove once deprecation period for `frexp().sig` is over
+TEST_F(BuiltinBuilderTest, Frexp_Sig_Deprecation) {
+    Func("a_func", utils::Empty, ty.void_(),
+         utils::Vector{
+             Decl(Var("vec", vec2<f32>(1_f, 2_f))),
+             Decl(Let("s", MemberAccessor(Call("frexp", "vec"), "sig"))),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
+
+    spirv::Builder& b = Build();
+
+    ASSERT_TRUE(b.Build()) << b.error();
+    auto got = DumpBuilder(b);
+    auto* expect = R"(OpCapability Shader
+%17 = OpExtInstImport "GLSL.std.450"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %3 "a_func"
+OpExecutionMode %3 OriginUpperLeft
+OpName %3 "a_func"
+OpName %10 "vec"
+OpName %14 "__frexp_result_vec2_f32"
+OpMemberName %14 0 "fract"
+OpMemberName %14 1 "exp"
+OpMemberDecorate %14 0 Offset 0
+OpMemberDecorate %14 1 Offset 8
+%2 = OpTypeVoid
+%1 = OpTypeFunction %2
+%6 = OpTypeFloat 32
+%5 = OpTypeVector %6 2
+%7 = OpConstant %6 1
+%8 = OpConstant %6 2
+%9 = OpConstantComposite %5 %7 %8
+%11 = OpTypePointer Function %5
+%12 = OpConstantNull %5
+%16 = OpTypeInt 32 1
+%15 = OpTypeVector %16 2
+%14 = OpTypeStruct %5 %15
+%3 = OpFunction %2 None %1
+%4 = OpLabel
+%10 = OpVariable %11 Function %12
+OpStore %10 %9
+%18 = OpLoad %5 %10
+%13 = OpExtInst %14 %17 FrexpStruct %18
+%19 = OpCompositeExtract %5 %13 0
 OpReturn
 OpFunctionEnd
 )";

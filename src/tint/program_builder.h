@@ -47,7 +47,6 @@
 #include "src/tint/ast/external_texture.h"
 #include "src/tint/ast/f16.h"
 #include "src/tint/ast/f32.h"
-#include "src/tint/ast/fallthrough_statement.h"
 #include "src/tint/ast/float_literal_expression.h"
 #include "src/tint/ast/for_loop_statement.h"
 #include "src/tint/ast/i32.h"
@@ -88,26 +87,27 @@
 #include "src/tint/ast/void.h"
 #include "src/tint/ast/while_statement.h"
 #include "src/tint/ast/workgroup_attribute.h"
+#include "src/tint/constant/value.h"
 #include "src/tint/number.h"
 #include "src/tint/program.h"
 #include "src/tint/program_id.h"
-#include "src/tint/sem/array.h"
-#include "src/tint/sem/bool.h"
-#include "src/tint/sem/constant.h"
-#include "src/tint/sem/depth_texture.h"
-#include "src/tint/sem/external_texture.h"
-#include "src/tint/sem/f16.h"
-#include "src/tint/sem/f32.h"
-#include "src/tint/sem/i32.h"
-#include "src/tint/sem/matrix.h"
-#include "src/tint/sem/multisampled_texture.h"
-#include "src/tint/sem/pointer.h"
-#include "src/tint/sem/sampled_texture.h"
-#include "src/tint/sem/storage_texture.h"
+#include "src/tint/sem/array_count.h"
 #include "src/tint/sem/struct.h"
-#include "src/tint/sem/u32.h"
-#include "src/tint/sem/vector.h"
-#include "src/tint/sem/void.h"
+#include "src/tint/type/array.h"
+#include "src/tint/type/bool.h"
+#include "src/tint/type/depth_texture.h"
+#include "src/tint/type/external_texture.h"
+#include "src/tint/type/f16.h"
+#include "src/tint/type/f32.h"
+#include "src/tint/type/i32.h"
+#include "src/tint/type/matrix.h"
+#include "src/tint/type/multisampled_texture.h"
+#include "src/tint/type/pointer.h"
+#include "src/tint/type/sampled_texture.h"
+#include "src/tint/type/storage_texture.h"
+#include "src/tint/type/u32.h"
+#include "src/tint/type/vector.h"
+#include "src/tint/type/void.h"
 
 #ifdef CURRENTLY_IN_TINT_PUBLIC_HEADER
 #error "internal tint header being #included from tint.h"
@@ -265,8 +265,8 @@ class ProgramBuilder {
     /// SemNodeAllocator is an alias to BlockAllocator<sem::Node>
     using SemNodeAllocator = utils::BlockAllocator<sem::Node>;
 
-    /// ConstantAllocator is an alias to BlockAllocator<sem::Constant>
-    using ConstantAllocator = utils::BlockAllocator<sem::Constant>;
+    /// ConstantAllocator is an alias to BlockAllocator<constant::Value>
+    using ConstantAllocator = utils::BlockAllocator<constant::Value>;
 
     /// Constructor
     ProgramBuilder();
@@ -299,13 +299,13 @@ class ProgramBuilder {
     ProgramID ID() const { return id_; }
 
     /// @returns a reference to the program's types
-    sem::TypeManager& Types() {
+    type::Manager& Types() {
         AssertNotMoved();
         return types_;
     }
 
     /// @returns a reference to the program's types
-    const sem::TypeManager& Types() const {
+    const type::Manager& Types() const {
         AssertNotMoved();
         return types_;
     }
@@ -458,35 +458,50 @@ class ProgramBuilder {
     /// @returns the node pointer
     template <typename T, typename... ARGS>
     traits::EnableIf<traits::IsTypeOrDerived<T, sem::Node> &&
-                         !traits::IsTypeOrDerived<T, sem::Type>,
+                         !traits::IsTypeOrDerived<T, type::Node>,
                      T>*
     create(ARGS&&... args) {
         AssertNotMoved();
         return sem_nodes_.Create<T>(std::forward<ARGS>(args)...);
     }
 
-    /// Creates a new sem::Constant owned by the ProgramBuilder.
+    /// Creates a new constant::Value owned by the ProgramBuilder.
     /// When the ProgramBuilder is destructed, the sem::Node will also be destructed.
     /// @param args the arguments to pass to the constructor
     /// @returns the node pointer
     template <typename T, typename... ARGS>
-    traits::EnableIf<traits::IsTypeOrDerived<T, sem::Constant>, T>* create(ARGS&&... args) {
+    traits::EnableIf<traits::IsTypeOrDerived<T, constant::Value>, T>* create(ARGS&&... args) {
         AssertNotMoved();
         return constant_nodes_.Create<T>(std::forward<ARGS>(args)...);
     }
 
-    /// Creates a new sem::Type owned by the ProgramBuilder.
+    /// Creates a new type::Type owned by the ProgramBuilder.
     /// When the ProgramBuilder is destructed, owned ProgramBuilder and the
-    /// returned`Type` will also be destructed.
+    /// returned `Type` will also be destructed.
     /// Types are unique (de-aliased), and so calling create() for the same `T`
     /// and arguments will return the same pointer.
     /// @param args the arguments to pass to the type constructor
     /// @returns the de-aliased type pointer
     template <typename T, typename... ARGS>
-    traits::EnableIfIsType<T, sem::Type>* create(ARGS&&... args) {
-        static_assert(std::is_base_of<sem::Type, T>::value, "T does not derive from sem::Type");
+    traits::EnableIfIsType<T, type::Type>* create(ARGS&&... args) {
         AssertNotMoved();
         return types_.Get<T>(std::forward<ARGS>(args)...);
+    }
+
+    /// Creates a new type::ArrayCount owned by the ProgramBuilder.
+    /// When the ProgramBuilder is destructed, owned ProgramBuilder and the
+    /// returned `ArrayCount` will also be destructed.
+    /// ArrayCounts are unique (de-aliased), and so calling create() for the same `T`
+    /// and arguments will return the same pointer.
+    /// @param args the arguments to pass to the array count constructor
+    /// @returns the de-aliased array count pointer
+    template <typename T, typename... ARGS>
+    traits::EnableIf<traits::IsTypeOrDerived<T, type::ArrayCount> ||
+                         traits::IsTypeOrDerived<T, type::StructMember>,
+                     T>*
+    create(ARGS&&... args) {
+        AssertNotMoved();
+        return types_.GetNode<T>(std::forward<ARGS>(args)...);
     }
 
     /// Marks this builder as moved, preventing any further use of the builder.
@@ -1962,6 +1977,16 @@ class ProgramBuilder {
         return create<ast::UnaryOpExpression>(ast::UnaryOp::kNot, Expr(std::forward<EXPR>(expr)));
     }
 
+    /// @param source the source information
+    /// @param expr the expression to perform a unary not on
+    /// @return an ast::UnaryOpExpression that is the unary not of the input
+    /// expression
+    template <typename EXPR>
+    const ast::UnaryOpExpression* Not(const Source& source, EXPR&& expr) {
+        return create<ast::UnaryOpExpression>(source, ast::UnaryOp::kNot,
+                                              Expr(std::forward<EXPR>(expr)));
+    }
+
     /// @param expr the expression to perform a unary complement on
     /// @return an ast::UnaryOpExpression that is the unary complement of the
     /// input expression
@@ -2106,6 +2131,17 @@ class ProgramBuilder {
                                              Expr(std::forward<RHS>(rhs)));
     }
 
+    /// @param source the source information
+    /// @param lhs the left hand argument to the division operation
+    /// @param rhs the right hand argument to the division operation
+    /// @returns a `ast::BinaryExpression` dividing `lhs` by `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* Div(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, ast::BinaryOp::kDivide,
+                                             Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
+    }
+
     /// @param lhs the left hand argument to the modulo operation
     /// @param rhs the right hand argument to the modulo operation
     /// @returns a `ast::BinaryExpression` applying modulo of `lhs` by `rhs`
@@ -2162,6 +2198,17 @@ class ProgramBuilder {
             ast::BinaryOp::kLogicalAnd, Expr(std::forward<LHS>(lhs)), Expr(std::forward<RHS>(rhs)));
     }
 
+    /// @param source the source information
+    /// @param lhs the left hand argument to the logical and operation
+    /// @param rhs the right hand argument to the logical and operation
+    /// @returns a `ast::BinaryExpression` of `lhs` && `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* LogicalAnd(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, ast::BinaryOp::kLogicalAnd,
+                                             Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
+    }
+
     /// @param lhs the left hand argument to the logical or operation
     /// @param rhs the right hand argument to the logical or operation
     /// @returns a `ast::BinaryExpression` of `lhs` || `rhs`
@@ -2169,6 +2216,17 @@ class ProgramBuilder {
     const ast::BinaryExpression* LogicalOr(LHS&& lhs, RHS&& rhs) {
         return create<ast::BinaryExpression>(
             ast::BinaryOp::kLogicalOr, Expr(std::forward<LHS>(lhs)), Expr(std::forward<RHS>(rhs)));
+    }
+
+    /// @param source the source information
+    /// @param lhs the left hand argument to the logical or operation
+    /// @param rhs the right hand argument to the logical or operation
+    /// @returns a `ast::BinaryExpression` of `lhs` || `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* LogicalOr(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, ast::BinaryOp::kLogicalOr,
+                                             Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
     }
 
     /// @param lhs the left hand argument to the greater than operation
@@ -2216,6 +2274,17 @@ class ProgramBuilder {
     template <typename LHS, typename RHS>
     const ast::BinaryExpression* Equal(LHS&& lhs, RHS&& rhs) {
         return create<ast::BinaryExpression>(ast::BinaryOp::kEqual, Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
+    }
+
+    /// @param source the source information
+    /// @param lhs the left hand argument to the equal expression
+    /// @param rhs the right hand argument to the equal expression
+    /// @returns a `ast::BinaryExpression` comparing `lhs` equal to `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* Equal(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, ast::BinaryOp::kEqual,
+                                             Expr(std::forward<LHS>(lhs)),
                                              Expr(std::forward<RHS>(rhs)));
     }
 
@@ -2932,17 +3001,6 @@ class ProgramBuilder {
     /// @returns the selector pointer
     const ast::CaseSelector* DefaultCaseSelector() { return create<ast::CaseSelector>(nullptr); }
 
-    /// Creates an ast::FallthroughStatement
-    /// @param source the source information
-    /// @returns the fallthrough statement pointer
-    const ast::FallthroughStatement* Fallthrough(const Source& source) {
-        return create<ast::FallthroughStatement>(source);
-    }
-
-    /// Creates an ast::FallthroughStatement
-    /// @returns the fallthrough statement pointer
-    const ast::FallthroughStatement* Fallthrough() { return create<ast::FallthroughStatement>(); }
-
     /// Creates an ast::BuiltinAttribute
     /// @param source the source information
     /// @param builtin the builtin value
@@ -3158,7 +3216,7 @@ class ProgramBuilder {
     /// @param expr the AST expression
     /// @return the resolved semantic type for the expression, or nullptr if the
     /// expression has no resolved type.
-    const sem::Type* TypeOf(const ast::Expression* expr) const;
+    const type::Type* TypeOf(const ast::Expression* expr) const;
 
     /// Helper for returning the resolved semantic type of the variable `var`.
     /// @note As the Resolver is run when the Program is built, this will only be
@@ -3166,7 +3224,7 @@ class ProgramBuilder {
     /// @param var the AST variable
     /// @return the resolved semantic type for the variable, or nullptr if the
     /// variable has no resolved type.
-    const sem::Type* TypeOf(const ast::Variable* var) const;
+    const type::Type* TypeOf(const ast::Variable* var) const;
 
     /// Helper for returning the resolved semantic type of the AST type `type`.
     /// @note As the Resolver is run when the Program is built, this will only be
@@ -3174,7 +3232,7 @@ class ProgramBuilder {
     /// @param type the AST type
     /// @return the resolved semantic type for the type, or nullptr if the type
     /// has no resolved type.
-    const sem::Type* TypeOf(const ast::Type* type) const;
+    const type::Type* TypeOf(const ast::Type* type) const;
 
     /// Helper for returning the resolved semantic type of the AST type
     /// declaration `type_decl`.
@@ -3183,7 +3241,7 @@ class ProgramBuilder {
     /// @param type_decl the AST type declaration
     /// @return the resolved semantic type for the type declaration, or nullptr if
     /// the type declaration has no resolved type.
-    const sem::Type* TypeOf(const ast::TypeDecl* type_decl) const;
+    const type::Type* TypeOf(const ast::TypeDecl* type_decl) const;
 
     /// @param type a type
     /// @returns the name for `type` that closely resembles how it would be
@@ -3193,7 +3251,7 @@ class ProgramBuilder {
     /// @param type a type
     /// @returns the name for `type` that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(const sem::Type* type) const;
+    std::string FriendlyName(const type::Type* type) const;
 
     /// Overload of FriendlyName, which removes an ambiguity when passing nullptr.
     /// Simplifies test code.
@@ -3243,7 +3301,7 @@ class ProgramBuilder {
   private:
     ProgramID id_;
     ast::NodeID last_ast_node_id_ = ast::NodeID{static_cast<decltype(ast::NodeID::value)>(0) - 1};
-    sem::TypeManager types_;
+    type::Manager types_;
     ASTNodeAllocator ast_nodes_;
     SemNodeAllocator sem_nodes_;
     ConstantAllocator constant_nodes_;

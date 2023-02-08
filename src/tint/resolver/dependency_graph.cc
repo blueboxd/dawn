@@ -35,7 +35,6 @@
 #include "src/tint/ast/external_texture.h"
 #include "src/tint/ast/f16.h"
 #include "src/tint/ast/f32.h"
-#include "src/tint/ast/fallthrough_statement.h"
 #include "src/tint/ast/for_loop_statement.h"
 #include "src/tint/ast/i32.h"
 #include "src/tint/ast/id_attribute.h"
@@ -70,6 +69,7 @@
 #include "src/tint/scope_stack.h"
 #include "src/tint/sem/builtin.h"
 #include "src/tint/symbol_table.h"
+#include "src/tint/type/short_name.h"
 #include "src/tint/utils/block_allocator.h"
 #include "src/tint/utils/defer.h"
 #include "src/tint/utils/map.h"
@@ -320,7 +320,7 @@ class DependencyScanner {
             [&](const ast::StaticAssert* assertion) { TraverseExpression(assertion->condition); },
             [&](Default) {
                 if (!stmt->IsAnyOf<ast::BreakStatement, ast::ContinueStatement,
-                                   ast::DiscardStatement, ast::FallthroughStatement>()) {
+                                   ast::DiscardStatement>()) {
                     UnhandledNode(diagnostics_, stmt);
                 }
             });
@@ -472,7 +472,7 @@ class DependencyScanner {
             }
         }
 
-        if (auto* global = globals_.Find(to); global && (*global)->node == resolved) {
+        if (auto global = globals_.Find(to); global && (*global)->node == resolved) {
             if (dependency_edges_.Add(DependencyEdge{current_global_, *global},
                                       DependencyInfo{from->source, action})) {
                 current_global_->deps.Push(*global);
@@ -482,9 +482,14 @@ class DependencyScanner {
         graph_.resolved_symbols.Add(from, resolved);
     }
 
-    /// @returns true if `name` is the name of a builtin function
+    /// @returns true if `name` is the name of a builtin function, or builtin type alias
     bool IsBuiltin(Symbol name) const {
-        return sem::ParseBuiltinType(symbols_.NameFor(name)) != sem::BuiltinType::kNone;
+        auto s = symbols_.NameFor(name);
+        if (sem::ParseBuiltinType(s) != sem::BuiltinType::kNone ||
+            type::ParseShortName(s) != type::ShortName::kUndefined) {
+            return true;
+        }
+        return false;
     }
 
     /// Appends an error to the diagnostics that the given symbol cannot be

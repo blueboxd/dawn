@@ -14,43 +14,64 @@
 
 #include "src/tint/resolver/const_eval_test.h"
 
+#include "src/tint/reader/wgsl/parser.h"
+#include "src/tint/utils/result.h"
+
 using namespace tint::number_suffixes;  // NOLINT
 using ::testing::HasSubstr;
 
 namespace tint::resolver {
 namespace {
 
-// Bring in std::ostream& operator<<(std::ostream& o, const Types& types)
-using resolver::operator<<;
-
 struct Case {
-    Types lhs;
-    Types rhs;
-    Types expected;
-    bool overflow;
+    struct Success {
+        Value value;
+    };
+    struct Failure {
+        std::string error;
+    };
+
+    Value lhs;
+    Value rhs;
+    utils::Result<Success, Failure> expected;
 };
 
 struct ErrorCase {
-    Types lhs;
-    Types rhs;
+    Value lhs;
+    Value rhs;
 };
 
 /// Creates a Case with Values of any type
-template <typename T, typename U, typename V>
-Case C(Value<T> lhs, Value<U> rhs, Value<V> expected, bool overflow = false) {
-    return Case{std::move(lhs), std::move(rhs), std::move(expected), overflow};
+Case C(Value lhs, Value rhs, Value expected) {
+    return Case{std::move(lhs), std::move(rhs), Case::Success{std::move(expected)}};
 }
 
 /// Convenience overload that creates a Case with just scalars
 template <typename T, typename U, typename V, typename = std::enable_if_t<!IsValue<T>>>
-Case C(T lhs, U rhs, V expected, bool overflow = false) {
-    return Case{Val(lhs), Val(rhs), Val(expected), overflow};
+Case C(T lhs, U rhs, V expected) {
+    return Case{Val(lhs), Val(rhs), Case::Success{Val(expected)}};
+}
+
+/// Creates an failure Case with Values of any type
+Case E(Value lhs, Value rhs, std::string error) {
+    return Case{std::move(lhs), std::move(rhs), Case::Failure{std::move(error)}};
+}
+
+/// Convenience overload that creates an error Case with just scalars
+template <typename T, typename U, typename = std::enable_if_t<!IsValue<T>>>
+Case E(T lhs, U rhs, std::string error) {
+    return Case{Val(lhs), Val(rhs), Case::Failure{std::move(error)}};
 }
 
 /// Prints Case to ostream
 static std::ostream& operator<<(std::ostream& o, const Case& c) {
-    o << "lhs: " << c.lhs << ", rhs: " << c.rhs << ", expected: " << c.expected
-      << ", overflow: " << c.overflow;
+    o << "lhs: " << c.lhs << ", rhs: " << c.rhs << ", expected: ";
+    if (c.expected) {
+        auto& s = c.expected.Get();
+        o << s.value;
+    } else {
+        o << "[ERROR: " << c.expected.Failure().error << "]";
+    }
     return o;
 }
 
@@ -66,38 +87,26 @@ TEST_P(ResolverConstEvalBinaryOpTest, Test) {
     auto op = std::get<0>(GetParam());
     auto& c = std::get<1>(GetParam());
 
-    auto* expected = ToValueBase(c.expected);
-    if (expected->IsAbstract() && c.overflow) {
-        // Overflow is not allowed for abstract types. This is tested separately.
-        return;
-    }
+    auto* lhs_expr = c.lhs.Expr(*this);
+    auto* rhs_expr = c.rhs.Expr(*this);
 
-    auto* lhs = ToValueBase(c.lhs);
-    auto* rhs = ToValueBase(c.rhs);
-
-    auto* lhs_expr = lhs->Expr(*this);
-    auto* rhs_expr = rhs->Expr(*this);
-    auto* expr = create<ast::BinaryExpression>(op, lhs_expr, rhs_expr);
+    auto* expr = create<ast::BinaryExpression>(Source{{12, 34}}, op, lhs_expr, rhs_expr);
     GlobalConst("C", expr);
-    ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = Sem().Get(expr);
-    const sem::Constant* value = sem->ConstantValue();
-    ASSERT_NE(value, nullptr);
-    EXPECT_TYPE(value->Type(), sem->Type());
+    if (c.expected) {
+        ASSERT_TRUE(r()->Resolve()) << r()->error();
+        auto expected_case = c.expected.Get();
+        auto& expected = expected_case.value;
 
-    auto values_flat = ScalarArgsFrom(value);
-    auto expected_values_flat = expected->Args();
-    ASSERT_EQ(values_flat.values.Length(), expected_values_flat.values.Length());
-    for (size_t i = 0; i < values_flat.values.Length(); ++i) {
-        auto& a = values_flat.values[i];
-        auto& b = expected_values_flat.values[i];
-        EXPECT_EQ(a, b);
-        if (expected->IsIntegral()) {
-            // Check that the constant's integer doesn't contain unexpected
-            // data in the MSBs that are outside of the bit-width of T.
-            EXPECT_EQ(builder::As<AInt>(a), builder::As<AInt>(b));
-        }
+        auto* sem = Sem().Get(expr);
+        const constant::Value* value = sem->ConstantValue();
+        ASSERT_NE(value, nullptr);
+        EXPECT_TYPE(value->Type(), sem->Type());
+
+        CheckConstant(value, expected);
+    } else {
+        ASSERT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), c.expected.Failure().error);
     }
 }
 
@@ -113,27 +122,47 @@ INSTANTIATE_TEST_SUITE_P(MixedAbstractArgs,
 template <typename T>
 std::vector<Case> OpAddIntCases() {
     static_assert(IsIntegral<T>);
-    return {
+    auto r = std::vector<Case>{
         C(T{0}, T{0}, T{0}),
         C(T{1}, T{2}, T{3}),
         C(T::Lowest(), T{1}, T{T::Lowest() + 1}),
         C(T::Highest(), Negate(T{1}), T{T::Highest() - 1}),
         C(T::Lowest(), T::Highest(), Negate(T{1})),
-        C(T::Highest(), T{1}, T::Lowest(), true),
-        C(T::Lowest(), Negate(T{1}), T::Highest(), true),
     };
+    if constexpr (IsAbstract<T>) {
+        auto error_msg = [](auto a, auto b) {
+            return "12:34 error: " + OverflowErrorMessage(a, "+", b);
+        };
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   E(T::Highest(), T{1}, error_msg(T::Highest(), T{1})),
+                   E(T::Lowest(), Negate(T{1}), error_msg(T::Lowest(), Negate(T{1}))),
+               });
+    } else {
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(T::Highest(), T{1}, T::Lowest()),
+                   C(T::Lowest(), Negate(T{1}), T::Highest()),
+               });
+    }
+
+    return r;
 }
 template <typename T>
 std::vector<Case> OpAddFloatCases() {
     static_assert(IsFloatingPoint<T>);
-    return {
+    auto error_msg = [](auto a, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, "+", b);
+    };
+    return std::vector<Case>{
         C(T{0}, T{0}, T{0}),
         C(T{1}, T{2}, T{3}),
         C(T::Lowest(), T{1}, T{T::Lowest() + 1}),
         C(T::Highest(), Negate(T{1}), T{T::Highest() - 1}),
         C(T::Lowest(), T::Highest(), T{0}),
-        C(T::Highest(), T::Highest(), T::Inf(), true),
-        C(T::Lowest(), Negate(T::Highest()), -T::Inf(), true),
+
+        E(T::Highest(), T::Highest(), error_msg(T::Highest(), T::Highest())),
+        E(T::Lowest(), Negate(T::Highest()), error_msg(T::Lowest(), Negate(T::Highest()))),
     };
 }
 INSTANTIATE_TEST_SUITE_P(Add,
@@ -150,27 +179,46 @@ INSTANTIATE_TEST_SUITE_P(Add,
 template <typename T>
 std::vector<Case> OpSubIntCases() {
     static_assert(IsIntegral<T>);
-    return {
+    auto r = std::vector<Case>{
         C(T{0}, T{0}, T{0}),
         C(T{3}, T{2}, T{1}),
         C(T{T::Lowest() + 1}, T{1}, T::Lowest()),
         C(T{T::Highest() - 1}, Negate(T{1}), T::Highest()),
         C(Negate(T{1}), T::Highest(), T::Lowest()),
-        C(T::Lowest(), T{1}, T::Highest(), true),
-        C(T::Highest(), Negate(T{1}), T::Lowest(), true),
     };
+    if constexpr (IsAbstract<T>) {
+        auto error_msg = [](auto a, auto b) {
+            return "12:34 error: " + OverflowErrorMessage(a, "-", b);
+        };
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   E(T::Lowest(), T{1}, error_msg(T::Lowest(), T{1})),
+                   E(T::Highest(), Negate(T{1}), error_msg(T::Highest(), Negate(T{1}))),
+               });
+    } else {
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(T::Lowest(), T{1}, T::Highest()),
+                   C(T::Highest(), Negate(T{1}), T::Lowest()),
+               });
+    }
+    return r;
 }
 template <typename T>
 std::vector<Case> OpSubFloatCases() {
     static_assert(IsFloatingPoint<T>);
-    return {
+    auto error_msg = [](auto a, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, "-", b);
+    };
+    return std::vector<Case>{
         C(T{0}, T{0}, T{0}),
         C(T{3}, T{2}, T{1}),
         C(T::Highest(), T{1}, T{T::Highest() - 1}),
         C(T::Lowest(), Negate(T{1}), T{T::Lowest() + 1}),
         C(T{0}, T::Highest(), T::Lowest()),
-        C(T::Highest(), Negate(T::Highest()), T::Inf(), true),
-        C(T::Lowest(), T::Highest(), -T::Inf(), true),
+
+        E(T::Highest(), Negate(T::Highest()), error_msg(T::Highest(), Negate(T::Highest()))),
+        E(T::Lowest(), T::Highest(), error_msg(T::Lowest(), T::Highest())),
     };
 }
 INSTANTIATE_TEST_SUITE_P(Sub,
@@ -186,21 +234,39 @@ INSTANTIATE_TEST_SUITE_P(Sub,
 
 template <typename T>
 std::vector<Case> OpMulScalarCases() {
-    return {
+    auto r = std::vector<Case>{
         C(T{0}, T{0}, T{0}),
         C(T{1}, T{2}, T{2}),
         C(T{2}, T{3}, T{6}),
         C(Negate(T{2}), T{3}, Negate(T{6})),
         C(T::Highest(), T{1}, T::Highest()),
         C(T::Lowest(), T{1}, T::Lowest()),
-        C(T::Highest(), T::Highest(), Mul(T::Highest(), T::Highest()), true),
-        C(T::Lowest(), T::Lowest(), Mul(T::Lowest(), T::Lowest()), true),
     };
+    if constexpr (IsAbstract<T> || IsFloatingPoint<T>) {
+        auto error_msg = [](auto a, auto b) {
+            return "12:34 error: " + OverflowErrorMessage(a, "*", b);
+        };
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   // Fail if result is +/-inf
+                   E(T::Highest(), T::Highest(), error_msg(T::Highest(), T::Highest())),
+                   E(T::Lowest(), T::Lowest(), error_msg(T::Lowest(), T::Lowest())),
+                   E(T::Highest(), T{2}, error_msg(T::Highest(), T{2})),
+                   E(T::Lowest(), Negate(T{2}), error_msg(T::Lowest(), Negate(T{2}))),
+               });
+    } else {
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(T::Highest(), T::Highest(), Mul(T::Highest(), T::Highest())),
+                   C(T::Lowest(), T::Lowest(), Mul(T::Lowest(), T::Lowest())),
+               });
+    }
+    return r;
 }
 
 template <typename T>
 std::vector<Case> OpMulVecCases() {
-    return {
+    auto r = std::vector<Case>{
         // s * vec3 = vec3
         C(Val(T{2.0}), Vec(T{1.25}, T{2.25}, T{3.25}), Vec(T{2.5}, T{4.5}, T{6.5})),
         // vec3 * s = vec3
@@ -208,11 +274,30 @@ std::vector<Case> OpMulVecCases() {
         // vec3 * vec3 = vec3
         C(Vec(T{1.25}, T{2.25}, T{3.25}), Vec(T{2.0}, T{2.0}, T{2.0}), Vec(T{2.5}, T{4.5}, T{6.5})),
     };
+    if constexpr (IsAbstract<T> || IsFloatingPoint<T>) {
+        auto error_msg = [](auto a, auto b) {
+            return "12:34 error: " + OverflowErrorMessage(a, "*", b);
+        };
+        ConcatInto(  //
+            r,
+            std::vector<Case>{
+                // Fail if result is +/-inf
+                E(Val(T::Highest()), Vec(T{2}, T{1}), error_msg(T::Highest(), T{2})),
+                E(Val(T::Lowest()), Vec(Negate(T{2}), T{1}), error_msg(T::Lowest(), Negate(T{2}))),
+            });
+    } else {
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(Val(T::Highest()), Vec(T{2}, T{1}), Vec(T{-2}, T::Highest())),
+                   C(Val(T::Lowest()), Vec(Negate(T{2}), T{1}), Vec(T{0}, T{T::Lowest()})),
+               });
+    }
+    return r;
 }
 
 template <typename T>
 std::vector<Case> OpMulMatCases() {
-    return {
+    auto r = std::vector<Case>{
         // s * mat3x2 = mat3x2
         C(Val(T{2.25}),
           Mat({T{1.0}, T{4.0}},  //
@@ -248,6 +333,68 @@ std::vector<Case> OpMulMatCases() {
           Mat({T{24.25}, T{31.0}},           //
               {T{51.25}, T{67.0}})),         //
     };
+    auto error_msg = [](auto a, const char* op, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, op, b);
+    };
+    ConcatIntoIf<IsAbstract<T> || IsFloatingPoint<T>>(  //
+        r, std::vector<Case>{
+               // vector-matrix multiply
+
+               // Overflow from first multiplication of dot product of vector and matrix column 0
+               // i.e. (v[0] * m[0][0] + v[1] * m[0][1])
+               //            ^
+               E(Vec(T::Highest(), T{1.0}),  //
+                 Mat({T{2.0}, T{1.0}},       //
+                     {T{1.0}, T{1.0}}),      //
+                 error_msg(T{2}, "*", T::Highest())),
+
+               // Overflow from second multiplication of dot product of vector and matrix column 0
+               // i.e. (v[0] * m[0][0] + v[1] * m[0][1])
+               //                             ^
+               E(Vec(T{1.0}, T::Highest()),  //
+                 Mat({T{1.0}, T{2.0}},       //
+                     {T{1.0}, T{1.0}}),      //
+                 error_msg(T{2}, "*", T::Highest())),
+
+               // Overflow from addition of dot product of vector and matrix column 0
+               // i.e. (v[0] * m[0][0] + v[1] * m[0][1])
+               //                      ^
+               E(Vec(T::Highest(), T::Highest()),  //
+                 Mat({T{1.0}, T{1.0}},             //
+                     {T{1.0}, T{1.0}}),            //
+                 error_msg(T::Highest(), "+", T::Highest())),
+
+               // matrix-matrix multiply
+
+               // Overflow from first multiplication of dot product of lhs row 0 and rhs column 0
+               // i.e. m1[0][0] * m2[0][0] + m1[0][1] * m[1][0]
+               //               ^
+               E(Mat({T::Highest(), T{1.0}},  //
+                     {T{1.0}, T{1.0}}),       //
+                 Mat({T{2.0}, T{1.0}},        //
+                     {T{1.0}, T{1.0}}),       //
+                 error_msg(T::Highest(), "*", T{2.0})),
+
+               // Overflow from second multiplication of dot product of lhs row 0 and rhs column 0
+               // i.e. m1[0][0] * m2[0][0] + m1[0][1] * m[1][0]
+               //                                     ^
+               E(Mat({T{1.0}, T{1.0}},         //
+                     {T::Highest(), T{1.0}}),  //
+                 Mat({T{1.0}, T{2.0}},         //
+                     {T{1.0}, T{1.0}}),        //
+                 error_msg(T::Highest(), "*", T{2.0})),
+
+               // Overflow from addition of dot product of lhs row 0 and rhs column 0
+               // i.e. m1[0][0] * m2[0][0] + m1[0][1] * m[1][0]
+               //                          ^
+               E(Mat({T::Highest(), T{1.0}},   //
+                     {T::Highest(), T{1.0}}),  //
+                 Mat({T{1.0}, T{1.0}},         //
+                     {T{1.0}, T{1.0}}),        //
+                 error_msg(T::Highest(), "+", T::Highest())),
+           });
+
+    return r;
 }
 
 INSTANTIATE_TEST_SUITE_P(Mul,
@@ -273,49 +420,59 @@ INSTANTIATE_TEST_SUITE_P(Mul,
 
 template <typename T>
 std::vector<Case> OpDivIntCases() {
-    std::vector<Case> r = {
-        C(Val(T{0}), Val(T{1}), Val(T{0})),
-        C(Val(T{1}), Val(T{1}), Val(T{1})),
-        C(Val(T{1}), Val(T{1}), Val(T{1})),
-        C(Val(T{2}), Val(T{1}), Val(T{2})),
-        C(Val(T{4}), Val(T{2}), Val(T{2})),
-        C(Val(T::Highest()), Val(T{1}), Val(T::Highest())),
-        C(Val(T::Lowest()), Val(T{1}), Val(T::Lowest())),
-        C(Val(T::Highest()), Val(T::Highest()), Val(T{1})),
-        C(Val(T{0}), Val(T::Highest()), Val(T{0})),
-        C(Val(T{0}), Val(T::Lowest()), Val(T{0})),
+    auto error_msg = [](auto a, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, "/", b);
     };
-    ConcatIntoIf<IsIntegral<T>>(  //
-        r, std::vector<Case>{
-               // e1, when e2 is zero.
-               C(T{123}, T{0}, T{123}, true),
-           });
+
+    std::vector<Case> r = {
+        C(T{0}, T{1}, T{0}),
+        C(T{1}, T{1}, T{1}),
+        C(T{1}, T{1}, T{1}),
+        C(T{2}, T{1}, T{2}),
+        C(T{4}, T{2}, T{2}),
+        C(T::Highest(), T{1}, T::Highest()),
+        C(T::Lowest(), T{1}, T::Lowest()),
+        C(T::Highest(), T::Highest(), T{1}),
+        C(T{0}, T::Highest(), T{0}),
+
+        // Divide by zero
+        E(T{123}, T{0}, error_msg(T{123}, T{0})),
+        E(T::Highest(), T{0}, error_msg(T::Highest(), T{0})),
+        E(T::Lowest(), T{0}, error_msg(T::Lowest(), T{0})),
+    };
+
+    // Error on most negative divided by -1
     ConcatIntoIf<IsSignedIntegral<T>>(  //
         r, std::vector<Case>{
-               // e1, when e1 is the most negative value in T, and e2 is -1.
-               C(T::Smallest(), T{-1}, T::Smallest(), true),
+               E(T::Lowest(), T{-1}, error_msg(T::Lowest(), T{-1})),
            });
     return r;
 }
 
 template <typename T>
 std::vector<Case> OpDivFloatCases() {
-    return {
-        C(Val(T{0}), Val(T{1}), Val(T{0})),
-        C(Val(T{1}), Val(T{1}), Val(T{1})),
-        C(Val(T{1}), Val(T{1}), Val(T{1})),
-        C(Val(T{2}), Val(T{1}), Val(T{2})),
-        C(Val(T{4}), Val(T{2}), Val(T{2})),
-        C(Val(T::Highest()), Val(T{1}), Val(T::Highest())),
-        C(Val(T::Lowest()), Val(T{1}), Val(T::Lowest())),
-        C(Val(T::Highest()), Val(T::Highest()), Val(T{1})),
-        C(Val(T{0}), Val(T::Highest()), Val(T{0})),
-        C(Val(T{0}), Val(T::Lowest()), Val(-T{0})),
-        C(T{123}, T{0}, T::Inf(), true),
-        C(T{-123}, -T{0}, T::Inf(), true),
-        C(T{-123}, T{0}, -T::Inf(), true),
-        C(T{123}, -T{0}, -T::Inf(), true),
+    auto error_msg = [](auto a, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, "/", b);
     };
+    std::vector<Case> r = {
+        C(T{0}, T{1}, T{0}),
+        C(T{1}, T{1}, T{1}),
+        C(T{1}, T{1}, T{1}),
+        C(T{2}, T{1}, T{2}),
+        C(T{4}, T{2}, T{2}),
+        C(T::Highest(), T{1}, T::Highest()),
+        C(T::Lowest(), T{1}, T::Lowest()),
+        C(T::Highest(), T::Highest(), T{1}),
+        C(T{0}, T::Highest(), T{0}),
+        C(T{0}, T::Lowest(), -T{0}),
+
+        // Divide by zero
+        E(T{123}, T{0}, error_msg(T{123}, T{0})),
+        E(Negate(T{123}), Negate(T{0}), error_msg(Negate(T{123}), Negate(T{0}))),
+        E(Negate(T{123}), T{0}, error_msg(Negate(T{123}), T{0})),
+        E(T{123}, Negate(T{0}), error_msg(T{123}, Negate(T{0}))),
+    };
+    return r;
 }
 INSTANTIATE_TEST_SUITE_P(Div,
                          ResolverConstEvalBinaryOpTest,
@@ -329,13 +486,168 @@ INSTANTIATE_TEST_SUITE_P(Div,
                                  OpDivFloatCases<f32>(),
                                  OpDivFloatCases<f16>()))));
 
+template <typename T>
+std::vector<Case> OpModCases() {
+    auto error_msg = [](auto a, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, "%", b);
+    };
+
+    // Common cases for all types
+    std::vector<Case> r = {
+        C(T{0}, T{1}, T{0}),    //
+        C(T{1}, T{1}, T{0}),    //
+        C(T{10}, T{1}, T{0}),   //
+        C(T{10}, T{2}, T{0}),   //
+        C(T{10}, T{3}, T{1}),   //
+        C(T{10}, T{4}, T{2}),   //
+        C(T{10}, T{5}, T{0}),   //
+        C(T{10}, T{6}, T{4}),   //
+        C(T{10}, T{5}, T{0}),   //
+        C(T{10}, T{8}, T{2}),   //
+        C(T{10}, T{9}, T{1}),   //
+        C(T{10}, T{10}, T{0}),  //
+
+        // Error on divide by zero
+        E(T{123}, T{0}, error_msg(T{123}, T{0})),
+        E(T::Highest(), T{0}, error_msg(T::Highest(), T{0})),
+        E(T::Lowest(), T{0}, error_msg(T::Lowest(), T{0})),
+    };
+
+    if constexpr (IsIntegral<T>) {
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(T::Highest(), T{T::Highest() - T{1}}, T{1}),
+               });
+    }
+
+    if constexpr (IsSignedIntegral<T>) {
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(T::Lowest(), T{T::Lowest() + T{1}}, -T(1)),
+
+                   // Error on most negative integer divided by -1
+                   E(T::Lowest(), T{-1}, error_msg(T::Lowest(), T{-1})),
+               });
+    }
+
+    // Negative values (both signed integrals and floating point)
+    if constexpr (IsSignedIntegral<T> || IsFloatingPoint<T>) {
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(-T{1}, T{1}, T{0}),  //
+
+                   // lhs negative, rhs positive
+                   C(-T{10}, T{1}, T{0}),   //
+                   C(-T{10}, T{2}, T{0}),   //
+                   C(-T{10}, T{3}, -T{1}),  //
+                   C(-T{10}, T{4}, -T{2}),  //
+                   C(-T{10}, T{5}, T{0}),   //
+                   C(-T{10}, T{6}, -T{4}),  //
+                   C(-T{10}, T{5}, T{0}),   //
+                   C(-T{10}, T{8}, -T{2}),  //
+                   C(-T{10}, T{9}, -T{1}),  //
+                   C(-T{10}, T{10}, T{0}),  //
+
+                   // lhs positive, rhs negative
+                   C(T{10}, -T{1}, T{0}),   //
+                   C(T{10}, -T{2}, T{0}),   //
+                   C(T{10}, -T{3}, T{1}),   //
+                   C(T{10}, -T{4}, T{2}),   //
+                   C(T{10}, -T{5}, T{0}),   //
+                   C(T{10}, -T{6}, T{4}),   //
+                   C(T{10}, -T{5}, T{0}),   //
+                   C(T{10}, -T{8}, T{2}),   //
+                   C(T{10}, -T{9}, T{1}),   //
+                   C(T{10}, -T{10}, T{0}),  //
+
+                   // lhs negative, rhs negative
+                   C(-T{10}, -T{1}, T{0}),   //
+                   C(-T{10}, -T{2}, T{0}),   //
+                   C(-T{10}, -T{3}, -T{1}),  //
+                   C(-T{10}, -T{4}, -T{2}),  //
+                   C(-T{10}, -T{5}, T{0}),   //
+                   C(-T{10}, -T{6}, -T{4}),  //
+                   C(-T{10}, -T{5}, T{0}),   //
+                   C(-T{10}, -T{8}, -T{2}),  //
+                   C(-T{10}, -T{9}, -T{1}),  //
+                   C(-T{10}, -T{10}, T{0}),  //
+               });
+    }
+
+    // Float values
+    if constexpr (IsFloatingPoint<T>) {
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(T{10.5}, T{1}, T{0.5}),   //
+                   C(T{10.5}, T{2}, T{0.5}),   //
+                   C(T{10.5}, T{3}, T{1.5}),   //
+                   C(T{10.5}, T{4}, T{2.5}),   //
+                   C(T{10.5}, T{5}, T{0.5}),   //
+                   C(T{10.5}, T{6}, T{4.5}),   //
+                   C(T{10.5}, T{5}, T{0.5}),   //
+                   C(T{10.5}, T{8}, T{2.5}),   //
+                   C(T{10.5}, T{9}, T{1.5}),   //
+                   C(T{10.5}, T{10}, T{0.5}),  //
+
+                   // lhs negative, rhs positive
+                   C(-T{10.5}, T{1}, -T{0.5}),   //
+                   C(-T{10.5}, T{2}, -T{0.5}),   //
+                   C(-T{10.5}, T{3}, -T{1.5}),   //
+                   C(-T{10.5}, T{4}, -T{2.5}),   //
+                   C(-T{10.5}, T{5}, -T{0.5}),   //
+                   C(-T{10.5}, T{6}, -T{4.5}),   //
+                   C(-T{10.5}, T{5}, -T{0.5}),   //
+                   C(-T{10.5}, T{8}, -T{2.5}),   //
+                   C(-T{10.5}, T{9}, -T{1.5}),   //
+                   C(-T{10.5}, T{10}, -T{0.5}),  //
+
+                   // lhs positive, rhs negative
+                   C(T{10.5}, -T{1}, T{0.5}),   //
+                   C(T{10.5}, -T{2}, T{0.5}),   //
+                   C(T{10.5}, -T{3}, T{1.5}),   //
+                   C(T{10.5}, -T{4}, T{2.5}),   //
+                   C(T{10.5}, -T{5}, T{0.5}),   //
+                   C(T{10.5}, -T{6}, T{4.5}),   //
+                   C(T{10.5}, -T{5}, T{0.5}),   //
+                   C(T{10.5}, -T{8}, T{2.5}),   //
+                   C(T{10.5}, -T{9}, T{1.5}),   //
+                   C(T{10.5}, -T{10}, T{0.5}),  //
+
+                   // lhs negative, rhs negative
+                   C(-T{10.5}, -T{1}, -T{0.5}),   //
+                   C(-T{10.5}, -T{2}, -T{0.5}),   //
+                   C(-T{10.5}, -T{3}, -T{1.5}),   //
+                   C(-T{10.5}, -T{4}, -T{2.5}),   //
+                   C(-T{10.5}, -T{5}, -T{0.5}),   //
+                   C(-T{10.5}, -T{6}, -T{4.5}),   //
+                   C(-T{10.5}, -T{5}, -T{0.5}),   //
+                   C(-T{10.5}, -T{8}, -T{2.5}),   //
+                   C(-T{10.5}, -T{9}, -T{1.5}),   //
+                   C(-T{10.5}, -T{10}, -T{0.5}),  //
+               });
+    }
+
+    return r;
+}
+INSTANTIATE_TEST_SUITE_P(Mod,
+                         ResolverConstEvalBinaryOpTest,
+                         testing::Combine(  //
+                             testing::Values(ast::BinaryOp::kModulo),
+                             testing::ValuesIn(Concat(  //
+                                 OpModCases<AInt>(),
+                                 OpModCases<i32>(),
+                                 OpModCases<u32>(),
+                                 OpModCases<AFloat>(),
+                                 OpModCases<f32>(),
+                                 OpModCases<f16>()))));
+
 template <typename T, bool equals>
 std::vector<Case> OpEqualCases() {
     return {
-        C(Val(T{0}), Val(T{0}), Val(true == equals)),
-        C(Val(T{0}), Val(T{1}), Val(false == equals)),
-        C(Val(T{1}), Val(T{0}), Val(false == equals)),
-        C(Val(T{1}), Val(T{1}), Val(true == equals)),
+        C(T{0}, T{0}, true == equals),
+        C(T{0}, T{1}, false == equals),
+        C(T{1}, T{0}, false == equals),
+        C(T{1}, T{1}, true == equals),
         C(Vec(T{0}, T{0}), Vec(T{0}, T{0}), Vec(true == equals, true == equals)),
         C(Vec(T{1}, T{0}), Vec(T{0}, T{1}), Vec(false == equals, false == equals)),
         C(Vec(T{1}, T{1}), Vec(T{0}, T{1}), Vec(false == equals, true == equals)),
@@ -369,10 +681,10 @@ INSTANTIATE_TEST_SUITE_P(NotEqual,
 template <typename T, bool less_than>
 std::vector<Case> OpLessThanCases() {
     return {
-        C(Val(T{0}), Val(T{0}), Val(false == less_than)),
-        C(Val(T{0}), Val(T{1}), Val(true == less_than)),
-        C(Val(T{1}), Val(T{0}), Val(false == less_than)),
-        C(Val(T{1}), Val(T{1}), Val(false == less_than)),
+        C(T{0}, T{0}, false == less_than),
+        C(T{0}, T{1}, true == less_than),
+        C(T{1}, T{0}, false == less_than),
+        C(T{1}, T{1}, false == less_than),
         C(Vec(T{0}, T{0}), Vec(T{0}, T{0}), Vec(false == less_than, false == less_than)),
         C(Vec(T{0}, T{0}), Vec(T{1}, T{1}), Vec(true == less_than, true == less_than)),
         C(Vec(T{1}, T{1}), Vec(T{0}, T{0}), Vec(false == less_than, false == less_than)),
@@ -405,10 +717,10 @@ INSTANTIATE_TEST_SUITE_P(GreaterThanEqual,
 template <typename T, bool greater_than>
 std::vector<Case> OpGreaterThanCases() {
     return {
-        C(Val(T{0}), Val(T{0}), Val(false == greater_than)),
-        C(Val(T{0}), Val(T{1}), Val(false == greater_than)),
-        C(Val(T{1}), Val(T{0}), Val(true == greater_than)),
-        C(Val(T{1}), Val(T{1}), Val(false == greater_than)),
+        C(T{0}, T{0}, false == greater_than),
+        C(T{0}, T{1}, false == greater_than),
+        C(T{1}, T{0}, true == greater_than),
+        C(T{1}, T{1}, false == greater_than),
         C(Vec(T{0}, T{0}), Vec(T{0}, T{0}), Vec(false == greater_than, false == greater_than)),
         C(Vec(T{1}, T{1}), Vec(T{0}, T{0}), Vec(true == greater_than, true == greater_than)),
         C(Vec(T{0}, T{0}), Vec(T{1}, T{1}), Vec(false == greater_than, false == greater_than)),
@@ -437,6 +749,34 @@ INSTANTIATE_TEST_SUITE_P(LessThanEqual,
                                  OpGreaterThanCases<AFloat, false>(),
                                  OpGreaterThanCases<f32, false>(),
                                  OpGreaterThanCases<f16, false>()))));
+
+static std::vector<Case> OpLogicalAndCases() {
+    return {
+        C(true, true, true),
+        C(true, false, false),
+        C(false, true, false),
+        C(false, false, false),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(LogicalAnd,
+                         ResolverConstEvalBinaryOpTest,
+                         testing::Combine(  //
+                             testing::Values(ast::BinaryOp::kLogicalAnd),
+                             testing::ValuesIn(OpLogicalAndCases())));
+
+static std::vector<Case> OpLogicalOrCases() {
+    return {
+        C(true, true, true),
+        C(true, false, true),
+        C(false, true, true),
+        C(false, false, false),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(LogicalOr,
+                         ResolverConstEvalBinaryOpTest,
+                         testing::Combine(  //
+                             testing::Values(ast::BinaryOp::kLogicalOr),
+                             testing::ValuesIn(OpLogicalOrCases())));
 
 static std::vector<Case> OpAndBoolCases() {
     return {
@@ -542,7 +882,6 @@ INSTANTIATE_TEST_SUITE_P(Or,
                                                       OpOrIntCases<u32>()))));
 
 TEST_F(ResolverConstEvalTest, NotAndOrOfVecs) {
-    // const C = !((vec2(true, true) & vec2(true, false)) | vec2(false, true));
     auto v1 = Vec(true, true).Expr(*this);
     auto v2 = Vec(true, false).Expr(*this);
     auto v3 = Vec(false, true).Expr(*this);
@@ -553,17 +892,17 @@ TEST_F(ResolverConstEvalTest, NotAndOrOfVecs) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem = Sem().Get(expr);
-    const sem::Constant* value = sem->ConstantValue();
+    const constant::Value* value = sem->ConstantValue();
     ASSERT_NE(value, nullptr);
     EXPECT_TYPE(value->Type(), sem->Type());
 
     auto* expected_sem = Sem().Get(expected_expr);
-    const sem::Constant* expected_value = expected_sem->ConstantValue();
+    const constant::Value* expected_value = expected_sem->ConstantValue();
     ASSERT_NE(expected_value, nullptr);
     EXPECT_TYPE(expected_value->Type(), expected_sem->Type());
 
-    ForEachElemPair(value, expected_value, [&](const sem::Constant* a, const sem::Constant* b) {
-        EXPECT_EQ(a->As<bool>(), b->As<bool>());
+    ForEachElemPair(value, expected_value, [&](const constant::Value* a, const constant::Value* b) {
+        EXPECT_EQ(a->ValueAs<bool>(), b->ValueAs<bool>());
         return HasFailure() ? Action::kStop : Action::kContinue;
     });
 }
@@ -607,8 +946,7 @@ INSTANTIATE_TEST_SUITE_P(Xor,
 
 template <typename T>
 std::vector<Case> ShiftLeftCases() {
-    // Shift type is u32 for non-abstract
-    using ST = std::conditional_t<IsAbstract<T>, T, u32>;
+    using ST = u32;  // Shift type is u32
     using B = BitValues<T>;
     auto r = std::vector<Case>{
         C(T{0b1010}, ST{0}, T{0b0000'0000'1010}),  //
@@ -653,8 +991,8 @@ std::vector<Case> ShiftLeftCases() {
                C(Negate(T{0}), ST{u32::Highest()}, Negate(T{0})),  //
            });
 
-    // Cases that are fine for signed values (no sign change), but would overflow unsigned values.
-    // See ResolverConstEvalBinaryOpTest_Overflow for negative tests.
+    // Cases that are fine for signed values (no sign change), but would overflow
+    // unsigned values. See below for negative tests.
     ConcatIntoIf<IsSignedIntegral<T>>(  //
         r, std::vector<Case>{
                C(B::TwoLeftMost, ST{1}, B::LeftMost),      //
@@ -678,6 +1016,39 @@ std::vector<Case> ShiftLeftCases() {
                C(B::AllButLeftMost, ST{1}, B::AllButRightMost),
            });
 
+    auto error_msg = [](auto a, auto b) {
+        return "12:34 error: " + OverflowErrorMessage(a, "<<", b);
+    };
+    ConcatIntoIf<IsAbstract<T>>(  //
+        r, std::vector<Case>{
+               // ShiftLeft of AInts that result in values not representable as AInts.
+               // Note that for i32/u32, these would error because shift value is larger than 32.
+               E(B::All, T{B::NumBits}, error_msg(B::All, T{B::NumBits})),
+               E(B::RightMost, T{B::NumBits}, error_msg(B::RightMost, T{B::NumBits})),
+               E(B::AllButLeftMost, T{B::NumBits}, error_msg(B::AllButLeftMost, T{B::NumBits})),
+               E(B::AllButLeftMost, T{B::NumBits + 1},
+                 error_msg(B::AllButLeftMost, T{B::NumBits + 1})),
+               E(B::AllButLeftMost, T{B::NumBits + 1000},
+                 error_msg(B::AllButLeftMost, T{B::NumBits + 1000})),
+           });
+    ConcatIntoIf<IsUnsignedIntegral<T>>(  //
+        r, std::vector<Case>{
+               // ShiftLeft of u32s that overflow (non-zero bits get shifted out)
+               E(T{0b00010}, T{31}, error_msg(T{0b00010}, T{31})),
+               E(T{0b00100}, T{30}, error_msg(T{0b00100}, T{30})),
+               E(T{0b01000}, T{29}, error_msg(T{0b01000}, T{29})),
+               E(T{0b10000}, T{28}, error_msg(T{0b10000}, T{28})),
+               //...
+               E(T{1 << 28}, T{4}, error_msg(T{1 << 28}, T{4})),
+               E(T{1 << 29}, T{3}, error_msg(T{1 << 29}, T{3})),
+               E(T{1 << 30}, T{2}, error_msg(T{1 << 30}, T{2})),
+               E(T{1u << 31}, T{1}, error_msg(T{1u << 31}, T{1})),
+
+               // And some more
+               E(B::All, T{1}, error_msg(B::All, T{1})),
+               E(B::AllButLeftMost, T{2}, error_msg(B::AllButLeftMost, T{2})),
+           });
+
     return r;
 }
 INSTANTIATE_TEST_SUITE_P(ShiftLeft,
@@ -687,153 +1058,6 @@ INSTANTIATE_TEST_SUITE_P(ShiftLeft,
                              testing::ValuesIn(Concat(ShiftLeftCases<AInt>(),  //
                                                       ShiftLeftCases<i32>(),   //
                                                       ShiftLeftCases<u32>()))));
-
-// Tests for errors on overflow/underflow of binary operations with abstract numbers
-struct OverflowCase {
-    ast::BinaryOp op;
-    Types lhs;
-    Types rhs;
-};
-
-static std::ostream& operator<<(std::ostream& o, const OverflowCase& c) {
-    o << ast::FriendlyName(c.op) << ", lhs: " << c.lhs << ", rhs: " << c.rhs;
-    return o;
-}
-using ResolverConstEvalBinaryOpTest_Overflow = ResolverTestWithParam<OverflowCase>;
-TEST_P(ResolverConstEvalBinaryOpTest_Overflow, Test) {
-    Enable(ast::Extension::kF16);
-    auto& c = GetParam();
-    auto* lhs = ToValueBase(c.lhs);
-    auto* rhs = ToValueBase(c.rhs);
-    auto* lhs_expr = lhs->Expr(*this);
-    auto* rhs_expr = rhs->Expr(*this);
-    auto* expr = create<ast::BinaryExpression>(Source{{1, 1}}, c.op, lhs_expr, rhs_expr);
-    GlobalConst("C", expr);
-    ASSERT_FALSE(r()->Resolve());
-    EXPECT_THAT(r()->error(), HasSubstr("1:1 error: '"));
-    EXPECT_THAT(r()->error(), HasSubstr("' cannot be represented as '" + lhs->TypeName() + "'"));
-}
-INSTANTIATE_TEST_SUITE_P(
-    Test,
-    ResolverConstEvalBinaryOpTest_Overflow,
-    testing::Values(
-
-        // scalar-scalar add
-        OverflowCase{ast::BinaryOp::kAdd, Val(AInt::Highest()), Val(1_a)},
-        OverflowCase{ast::BinaryOp::kAdd, Val(AInt::Lowest()), Val(-1_a)},
-        OverflowCase{ast::BinaryOp::kAdd, Val(AFloat::Highest()), Val(AFloat::Highest())},
-        OverflowCase{ast::BinaryOp::kAdd, Val(AFloat::Lowest()), Val(AFloat::Lowest())},
-        // scalar-scalar subtract
-        OverflowCase{ast::BinaryOp::kSubtract, Val(AInt::Lowest()), Val(1_a)},
-        OverflowCase{ast::BinaryOp::kSubtract, Val(AInt::Highest()), Val(-1_a)},
-        OverflowCase{ast::BinaryOp::kSubtract, Val(AFloat::Highest()), Val(AFloat::Lowest())},
-        OverflowCase{ast::BinaryOp::kSubtract, Val(AFloat::Lowest()), Val(AFloat::Highest())},
-
-        // scalar-scalar multiply
-        OverflowCase{ast::BinaryOp::kMultiply, Val(AInt::Highest()), Val(2_a)},
-        OverflowCase{ast::BinaryOp::kMultiply, Val(AInt::Lowest()), Val(-2_a)},
-
-        // scalar-vector multiply
-        OverflowCase{ast::BinaryOp::kMultiply, Val(AInt::Highest()), Vec(2_a, 1_a)},
-        OverflowCase{ast::BinaryOp::kMultiply, Val(AInt::Lowest()), Vec(-2_a, 1_a)},
-
-        // vector-matrix multiply
-
-        // Overflow from first multiplication of dot product of vector and matrix column 0
-        // i.e. (v[0] * m[0][0] + v[1] * m[0][1])
-        //            ^
-        OverflowCase{ast::BinaryOp::kMultiply,       //
-                     Vec(AFloat::Highest(), 1.0_a),  //
-                     Mat({2.0_a, 1.0_a},             //
-                         {1.0_a, 1.0_a})},
-
-        // Overflow from second multiplication of dot product of vector and matrix column 0
-        // i.e. (v[0] * m[0][0] + v[1] * m[0][1])
-        //                             ^
-        OverflowCase{ast::BinaryOp::kMultiply,       //
-                     Vec(1.0_a, AFloat::Highest()),  //
-                     Mat({1.0_a, 2.0_a},             //
-                         {1.0_a, 1.0_a})},
-
-        // Overflow from addition of dot product of vector and matrix column 0
-        // i.e. (v[0] * m[0][0] + v[1] * m[0][1])
-        //                      ^
-        OverflowCase{ast::BinaryOp::kMultiply,                   //
-                     Vec(AFloat::Highest(), AFloat::Highest()),  //
-                     Mat({1.0_a, 1.0_a},                         //
-                         {1.0_a, 1.0_a})},
-
-        // matrix-matrix multiply
-
-        // Overflow from first multiplication of dot product of lhs row 0 and rhs column 0
-        // i.e. m1[0][0] * m2[0][0] + m1[0][1] * m[1][0]
-        //               ^
-        OverflowCase{ast::BinaryOp::kMultiply,        //
-                     Mat({AFloat::Highest(), 1.0_a},  //
-                         {1.0_a, 1.0_a}),             //
-                     Mat({2.0_a, 1.0_a},              //
-                         {1.0_a, 1.0_a})},
-
-        // Overflow from second multiplication of dot product of lhs row 0 and rhs column 0
-        // i.e. m1[0][0] * m2[0][0] + m1[0][1] * m[1][0]
-        //                                     ^
-        OverflowCase{ast::BinaryOp::kMultiply,        //
-                     Mat({1.0_a, AFloat::Highest()},  //
-                         {1.0_a, 1.0_a}),             //
-                     Mat({1.0_a, 1.0_a},              //
-                         {2.0_a, 1.0_a})},
-
-        // Overflow from addition of dot product of lhs row 0 and rhs column 0
-        // i.e. m1[0][0] * m2[0][0] + m1[0][1] * m[1][0]
-        //                          ^
-        OverflowCase{ast::BinaryOp::kMultiply,         //
-                     Mat({AFloat::Highest(), 1.0_a},   //
-                         {AFloat::Highest(), 1.0_a}),  //
-                     Mat({1.0_a, 1.0_a},               //
-                         {1.0_a, 1.0_a})},
-
-        // Divide by zero
-        OverflowCase{ast::BinaryOp::kDivide, Val(123_a), Val(0_a)},
-        OverflowCase{ast::BinaryOp::kDivide, Val(-123_a), Val(-0_a)},
-        OverflowCase{ast::BinaryOp::kDivide, Val(-123_a), Val(0_a)},
-        OverflowCase{ast::BinaryOp::kDivide, Val(123_a), Val(-0_a)},
-
-        // Most negative value divided by -1
-        OverflowCase{ast::BinaryOp::kDivide, Val(AInt::Lowest()), Val(-1_a)},
-
-        // ShiftLeft of AInts that result in values not representable as AInts.
-        // Note that for i32/u32, these would error because shift value is larger than 32.
-        OverflowCase{ast::BinaryOp::kShiftLeft,                   //
-                     Val(AInt{BitValues<AInt>::All}),             //
-                     Val(AInt{BitValues<AInt>::NumBits})},        //
-        OverflowCase{ast::BinaryOp::kShiftLeft,                   //
-                     Val(AInt{BitValues<AInt>::RightMost}),       //
-                     Val(AInt{BitValues<AInt>::NumBits})},        //
-        OverflowCase{ast::BinaryOp::kShiftLeft,                   //
-                     Val(AInt{BitValues<AInt>::AllButLeftMost}),  //
-                     Val(AInt{BitValues<AInt>::NumBits})},        //
-        OverflowCase{ast::BinaryOp::kShiftLeft,                   //
-                     Val(AInt{BitValues<AInt>::AllButLeftMost}),  //
-                     Val(AInt{BitValues<AInt>::NumBits + 1})},    //
-        OverflowCase{ast::BinaryOp::kShiftLeft,                   //
-                     Val(AInt{BitValues<AInt>::AllButLeftMost}),  //
-                     Val(AInt{BitValues<AInt>::NumBits + 1000})},
-
-        // ShiftLeft of u32s that overflow (non-zero bits get shifted out)
-        OverflowCase{ast::BinaryOp::kShiftLeft, Val(0b00010_u), Val(31_u)},
-        OverflowCase{ast::BinaryOp::kShiftLeft, Val(0b00100_u), Val(30_u)},
-        OverflowCase{ast::BinaryOp::kShiftLeft, Val(0b01000_u), Val(29_u)},
-        OverflowCase{ast::BinaryOp::kShiftLeft, Val(0b10000_u), Val(28_u)},
-        // ...
-        OverflowCase{ast::BinaryOp::kShiftLeft, Val(u32(1u << 28)), Val(4_u)},
-        OverflowCase{ast::BinaryOp::kShiftLeft, Val(u32(1u << 29)), Val(3_u)},
-        OverflowCase{ast::BinaryOp::kShiftLeft, Val(u32(1u << 30)), Val(2_u)},
-        OverflowCase{ast::BinaryOp::kShiftLeft, Val(u32(1u << 31)), Val(1_u)},
-        // And some more
-        OverflowCase{ast::BinaryOp::kShiftLeft, Val(BitValues<u32>::All), Val(1_u)},
-        OverflowCase{ast::BinaryOp::kShiftLeft, Val(BitValues<u32>::AllButLeftMost), Val(2_u)}
-
-        ));
 
 TEST_F(ResolverConstEvalTest, BinaryAbstractAddOverflow_AInt) {
     GlobalConst("c", Add(Source{{1, 1}}, Expr(AInt::Highest()), 1_a));
@@ -853,15 +1077,16 @@ TEST_F(ResolverConstEvalTest, BinaryAbstractAddOverflow_AFloat) {
     GlobalConst("c", Add(Source{{1, 1}}, Expr(AFloat::Highest()), AFloat::Highest()));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "1:1 error: '1.7976931348623157081e+308 + 1.7976931348623157081e+308' cannot be represented as 'abstract-float'");
+              "1:1 error: '1.7976931348623157081e+308 + 1.7976931348623157081e+308' cannot be "
+              "represented as 'abstract-float'");
 }
 
 TEST_F(ResolverConstEvalTest, BinaryAbstractAddUnderflow_AFloat) {
     GlobalConst("c", Add(Source{{1, 1}}, Expr(AFloat::Lowest()), AFloat::Lowest()));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(
-        r()->error(),
-        "1:1 error: '-1.7976931348623157081e+308 + -1.7976931348623157081e+308' cannot be represented as 'abstract-float'");
+    EXPECT_EQ(r()->error(),
+              "1:1 error: '-1.7976931348623157081e+308 + -1.7976931348623157081e+308' cannot be "
+              "represented as 'abstract-float'");
 }
 
 // Mixed AInt and AFloat args to test implicit conversion to AFloat
@@ -918,7 +1143,7 @@ TEST_F(ResolverConstEvalTest, BinaryAbstractShiftLeftRemainsAbstract) {
     auto* sem2 = Sem().Get(expr2);
     ASSERT_NE(sem2, nullptr);
 
-    auto aint_ty = create<sem::AbstractInt>();
+    auto aint_ty = create<type::AbstractInt>();
     EXPECT_EQ(sem1->Type(), aint_ty);
     EXPECT_EQ(sem2->Type(), aint_ty);
 }
@@ -926,8 +1151,8 @@ TEST_F(ResolverConstEvalTest, BinaryAbstractShiftLeftRemainsAbstract) {
 // i32/u32 left shift by >= 32 -> error
 using ResolverConstEvalShiftLeftConcreteGeqBitWidthError = ResolverTestWithParam<ErrorCase>;
 TEST_P(ResolverConstEvalShiftLeftConcreteGeqBitWidthError, Test) {
-    auto* lhs_expr = ToValueBase(GetParam().lhs)->Expr(*this);
-    auto* rhs_expr = ToValueBase(GetParam().rhs)->Expr(*this);
+    auto* lhs_expr = GetParam().lhs.Expr(*this);
+    auto* rhs_expr = GetParam().rhs.Expr(*this);
     GlobalConst("c", Shl(Source{{1, 1}}, lhs_expr, rhs_expr));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(
@@ -972,8 +1197,8 @@ INSTANTIATE_TEST_SUITE_P(Test,
 // AInt left shift results in sign change error
 using ResolverConstEvalShiftLeftSignChangeError = ResolverTestWithParam<ErrorCase>;
 TEST_P(ResolverConstEvalShiftLeftSignChangeError, Test) {
-    auto* lhs_expr = ToValueBase(GetParam().lhs)->Expr(*this);
-    auto* rhs_expr = ToValueBase(GetParam().rhs)->Expr(*this);
+    auto* lhs_expr = GetParam().lhs.Expr(*this);
+    auto* rhs_expr = GetParam().rhs.Expr(*this);
     GlobalConst("c", Shl(Source{{1, 1}}, lhs_expr, rhs_expr));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "1:1 error: shift left operation results in sign change");
@@ -1002,6 +1227,1057 @@ INSTANTIATE_TEST_SUITE_P(Test,
                          testing::ValuesIn(Concat(  //
                              ShiftLeftSignChangeErrorCases<AInt>(),
                              ShiftLeftSignChangeErrorCases<i32>())));
+
+template <typename T>
+std::vector<Case> ShiftRightCases() {
+    using B = BitValues<T>;
+    auto r = std::vector<Case>{
+        C(T{0b10101100}, u32{0}, T{0b10101100}),  //
+        C(T{0b10101100}, u32{1}, T{0b01010110}),  //
+        C(T{0b10101100}, u32{2}, T{0b00101011}),  //
+        C(T{0b10101100}, u32{3}, T{0b00010101}),  //
+        C(T{0b10101100}, u32{4}, T{0b00001010}),  //
+        C(T{0b10101100}, u32{5}, T{0b00000101}),  //
+        C(T{0b10101100}, u32{6}, T{0b00000010}),  //
+        C(T{0b10101100}, u32{7}, T{0b00000001}),  //
+        C(T{0b10101100}, u32{8}, T{0b00000000}),  //
+        C(T{0b10101100}, u32{9}, T{0b00000000}),  //
+        C(B::LeftMost, u32{0}, B::LeftMost),      //
+    };
+
+    // msb not set, same for all types: inserted bit is 0
+    ConcatInto(  //
+        r, std::vector<Case>{
+               C(T{0b01000000000000000000000010101100}, u32{0},  //
+                 T{0b01000000000000000000000010101100}),
+               C(T{0b01000000000000000000000010101100}, u32{1},  //
+                 T{0b00100000000000000000000001010110}),
+               C(T{0b01000000000000000000000010101100}, u32{2},  //
+                 T{0b00010000000000000000000000101011}),
+               C(T{0b01000000000000000000000010101100}, u32{3},  //
+                 T{0b00001000000000000000000000010101}),
+               C(T{0b01000000000000000000000010101100}, u32{4},  //
+                 T{0b00000100000000000000000000001010}),
+               C(T{0b01000000000000000000000010101100}, u32{5},  //
+                 T{0b00000010000000000000000000000101}),
+               C(T{0b01000000000000000000000010101100}, u32{6},  //
+                 T{0b00000001000000000000000000000010}),
+               C(T{0b01000000000000000000000010101100}, u32{7},  //
+                 T{0b00000000100000000000000000000001}),
+               C(T{0b01000000000000000000000010101100}, u32{8},  //
+                 T{0b00000000010000000000000000000000}),
+               C(T{0b01000000000000000000000010101100}, u32{9},  //
+                 T{0b00000000001000000000000000000000}),
+           });
+
+    // msb set, result differs for i32 and u32
+    if constexpr (std::is_same_v<T, u32>) {
+        // If unsigned, insert zero bits at the most significant positions.
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(T{0b10000000000000000000000010101100}, u32{0},
+                     T{0b10000000000000000000000010101100}),
+                   C(T{0b10000000000000000000000010101100}, u32{1},
+                     T{0b01000000000000000000000001010110}),
+                   C(T{0b10000000000000000000000010101100}, u32{2},
+                     T{0b00100000000000000000000000101011}),
+                   C(T{0b10000000000000000000000010101100}, u32{3},
+                     T{0b00010000000000000000000000010101}),
+                   C(T{0b10000000000000000000000010101100}, u32{4},
+                     T{0b00001000000000000000000000001010}),
+                   C(T{0b10000000000000000000000010101100}, u32{5},
+                     T{0b00000100000000000000000000000101}),
+                   C(T{0b10000000000000000000000010101100}, u32{6},
+                     T{0b00000010000000000000000000000010}),
+                   C(T{0b10000000000000000000000010101100}, u32{7},
+                     T{0b00000001000000000000000000000001}),
+                   C(T{0b10000000000000000000000010101100}, u32{8},
+                     T{0b00000000100000000000000000000000}),
+                   C(T{0b10000000000000000000000010101100}, u32{9},
+                     T{0b00000000010000000000000000000000}),
+                   // msb shifted by bit width - 1
+                   C(T{0b10000000000000000000000000000000}, u32{31},
+                     T{0b00000000000000000000000000000001}),
+               });
+    } else if constexpr (std::is_same_v<T, i32>) {
+        // If signed, each inserted bit is 1, so the result is negative.
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(T{0b10000000000000000000000010101100}, u32{0},
+                     T{0b10000000000000000000000010101100}),  //
+                   C(T{0b10000000000000000000000010101100}, u32{1},
+                     T{0b11000000000000000000000001010110}),  //
+                   C(T{0b10000000000000000000000010101100}, u32{2},
+                     T{0b11100000000000000000000000101011}),  //
+                   C(T{0b10000000000000000000000010101100}, u32{3},
+                     T{0b11110000000000000000000000010101}),  //
+                   C(T{0b10000000000000000000000010101100}, u32{4},
+                     T{0b11111000000000000000000000001010}),  //
+                   C(T{0b10000000000000000000000010101100}, u32{5},
+                     T{0b11111100000000000000000000000101}),  //
+                   C(T{0b10000000000000000000000010101100}, u32{6},
+                     T{0b11111110000000000000000000000010}),  //
+                   C(T{0b10000000000000000000000010101100}, u32{7},
+                     T{0b11111111000000000000000000000001}),  //
+                   C(T{0b10000000000000000000000010101100}, u32{8},
+                     T{0b11111111100000000000000000000000}),  //
+                   C(T{0b10000000000000000000000010101100}, u32{9},
+                     T{0b11111111110000000000000000000000}),  //
+                   // msb shifted by bit width - 1
+                   C(T{0b10000000000000000000000000000000}, u32{31},
+                     T{0b11111111111111111111111111111111}),
+               });
+    }
+
+    // Test shift right by bit width or more
+    if constexpr (IsAbstract<T>) {
+        // For abstract int, no error, result is 0
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   C(T{0}, u32{B::NumBits}, T{0}),
+                   C(T{0}, u32{B::NumBits + 1}, T{0}),
+                   C(T{0}, u32{B::NumBits + 1000}, T{0}),
+                   C(T{42}, u32{B::NumBits}, T{0}),
+                   C(T{42}, u32{B::NumBits + 1}, T{0}),
+                   C(T{42}, u32{B::NumBits + 1000}, T{0}),
+               });
+    } else {
+        // For concretes, error
+        const char* error_msg =
+            "12:34 error: shift right value must be less than the bit width of the lhs, which is "
+            "32";
+        ConcatInto(  //
+            r, std::vector<Case>{
+                   E(T{0}, u32{B::NumBits}, error_msg),
+                   E(T{0}, u32{B::NumBits + 1}, error_msg),
+                   E(T{0}, u32{B::NumBits + 1000}, error_msg),
+                   E(T{42}, u32{B::NumBits}, error_msg),
+                   E(T{42}, u32{B::NumBits + 1}, error_msg),
+                   E(T{42}, u32{B::NumBits + 1000}, error_msg),
+               });
+    }
+
+    return r;
+}
+INSTANTIATE_TEST_SUITE_P(ShiftRight,
+                         ResolverConstEvalBinaryOpTest,
+                         testing::Combine(  //
+                             testing::Values(ast::BinaryOp::kShiftRight),
+                             testing::ValuesIn(Concat(ShiftRightCases<AInt>(),  //
+                                                      ShiftRightCases<i32>(),   //
+                                                      ShiftRightCases<u32>()))));
+
+namespace LogicalShortCircuit {
+
+/// Validates that `binary` is a short-circuiting logical and expression
+static void ValidateAnd(const sem::Info& sem, const ast::BinaryExpression* binary) {
+    auto* lhs = binary->lhs;
+    auto* rhs = binary->rhs;
+
+    auto* lhs_sem = sem.Get(lhs);
+    ASSERT_TRUE(lhs_sem->ConstantValue());
+    EXPECT_EQ(lhs_sem->ConstantValue()->ValueAs<bool>(), false);
+    EXPECT_EQ(lhs_sem->Stage(), sem::EvaluationStage::kConstant);
+
+    auto* rhs_sem = sem.Get(rhs);
+    EXPECT_EQ(rhs_sem->ConstantValue(), nullptr);
+    EXPECT_EQ(rhs_sem->Stage(), sem::EvaluationStage::kNotEvaluated);
+
+    auto* binary_sem = sem.Get(binary);
+    ASSERT_TRUE(binary_sem->ConstantValue());
+    EXPECT_EQ(binary_sem->ConstantValue()->ValueAs<bool>(), false);
+    EXPECT_EQ(binary_sem->Stage(), sem::EvaluationStage::kConstant);
+}
+
+/// Validates that `binary` is a short-circuiting logical or expression
+static void ValidateOr(const sem::Info& sem, const ast::BinaryExpression* binary) {
+    auto* lhs = binary->lhs;
+    auto* rhs = binary->rhs;
+
+    auto* lhs_sem = sem.Get(lhs);
+    ASSERT_TRUE(lhs_sem->ConstantValue());
+    EXPECT_EQ(lhs_sem->ConstantValue()->ValueAs<bool>(), true);
+    EXPECT_EQ(lhs_sem->Stage(), sem::EvaluationStage::kConstant);
+
+    auto* rhs_sem = sem.Get(rhs);
+    EXPECT_EQ(rhs_sem->ConstantValue(), nullptr);
+    EXPECT_EQ(rhs_sem->Stage(), sem::EvaluationStage::kNotEvaluated);
+
+    auto* binary_sem = sem.Get(binary);
+    ASSERT_TRUE(binary_sem->ConstantValue());
+    EXPECT_EQ(binary_sem->ConstantValue()->ValueAs<bool>(), true);
+    EXPECT_EQ(binary_sem->Stage(), sem::EvaluationStage::kConstant);
+}
+
+// Naming convention for tests below:
+//
+// [Non]ShortCircuit_[And|Or]_[Error|Invalid]_<Op>
+//
+// Where:
+//  ShortCircuit: the rhs will not be const-evaluated
+//  NonShortCircuitL the rhs will be const-evaluated
+//
+//  And/Or: type of binary expression
+//
+//  Error: a non-const evaluation error (e.g. parser or validation error)
+//  Invalid: a const-evaluation error
+//
+// <Op> the type of operation on the rhs that may or may not be short-circuited.
+
+////////////////////////////////////////////////
+// Short-Circuit Unary
+////////////////////////////////////////////////
+
+// NOTE: Cannot demonstrate short-circuiting an invalid unary op as const eval of unary does not
+// fail.
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_Unary) {
+    // const one = 1;
+    // const result = (one == 0) && (!0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Not(Source{{12, 34}}, 0_a);
+    GlobalConst("result", LogicalAnd(lhs, rhs));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: no matching overload for operator ! (abstract-int)
+
+2 candidate operators:
+  operator ! (bool) -> bool
+  operator ! (vecN<bool>) -> vecN<bool>
+)");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Unary) {
+    // const one = 1;
+    // const result = (one == 1) || (!0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Not(Source{{12, 34}}, 0_a);
+    GlobalConst("result", LogicalOr(lhs, rhs));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: no matching overload for operator ! (abstract-int)
+
+2 candidate operators:
+  operator ! (bool) -> bool
+  operator ! (vecN<bool>) -> vecN<bool>
+)");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Binary
+////////////////////////////////////////////////
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Invalid_Binary) {
+    // const one = 1;
+    // const result = (one == 0) && ((2 / 0) == 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Div(2_a, 0_a), 0_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateAnd(Sem(), binary);
+}
+
+TEST_F(ResolverConstEvalTest, NonShortCircuit_And_Invalid_Binary) {
+    // const one = 1;
+    // const result = (one == 1) && ((2 / 0) == 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Div(Source{{12, 34}}, 2_a, 0_a), 0_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: '2 / 0' cannot be represented as 'abstract-int'");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_Binary) {
+    // const one = 1;
+    // const result = (one == 0) && (2 / 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Div(2_a, 0_a);
+    auto* binary = LogicalAnd(Source{{12, 34}}, lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: no matching overload for operator && (bool, abstract-int)
+
+1 candidate operator:
+  operator && (bool, bool) -> bool
+)");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Invalid_Binary) {
+    // const one = 1;
+    // const result = (one == 1) || ((2 / 0) == 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Div(2_a, 0_a), 0_a);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateOr(Sem(), binary);
+}
+
+TEST_F(ResolverConstEvalTest, NonShortCircuit_Or_Invalid_Binary) {
+    // const one = 1;
+    // const result = (one == 0) || ((2 / 0) == 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Div(Source{{12, 34}}, 2_a, 0_a), 0_a);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: '2 / 0' cannot be represented as 'abstract-int'");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Binary) {
+    // const one = 1;
+    // const result = (one == 1) || (2 / 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Div(2_a, 0_a);
+    auto* binary = LogicalOr(Source{{12, 34}}, lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: no matching overload for operator || (bool, abstract-int)
+
+1 candidate operator:
+  operator || (bool, bool) -> bool
+)");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Materialize
+////////////////////////////////////////////////
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Invalid_Materialize) {
+    // const one = 1;
+    // const result = (one == 0) && (1.7976931348623157e+308 == 0.0f);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Expr(1.7976931348623157e+308_a), 0_f);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateAnd(Sem(), binary);
+}
+
+TEST_F(ResolverConstEvalTest, NonShortCircuit_And_Invalid_Materialize) {
+    // const one = 1;
+    // const result = (one == 1) && (1.7976931348623157e+308 == 0.0f);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Expr(Source{{12, 34}}, 1.7976931348623157e+308_a), 0_f);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "12:34 error: value 1.7976931348623157081e+308 cannot be represented as 'f32'");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_Materialize) {
+    // const one = 1;
+    // const result = (one == 0) && (1.7976931348623157e+308 == 0i);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Source{{12, 34}}, 1.7976931348623157e+308_a, 0_i);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: no matching overload for operator == (abstract-float, i32)
+
+2 candidate operators:
+  operator == (T, T) -> bool  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  operator == (vecN<T>, vecN<T>) -> vecN<bool>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+)");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Invalid_Materialize) {
+    // const one = 1;
+    // const result = (one == 1) || (1.7976931348623157e+308 == 0.0f);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(1.7976931348623157e+308_a, 0_f);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateOr(Sem(), binary);
+}
+
+TEST_F(ResolverConstEvalTest, NonShortCircuit_Or_Invalid_Materialize) {
+    // const one = 1;
+    // const result = (one == 0) || (1.7976931348623157e+308 == 0.0f);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Expr(Source{{12, 34}}, 1.7976931348623157e+308_a), 0_f);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "12:34 error: value 1.7976931348623157081e+308 cannot be represented as 'f32'");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Materialize) {
+    // const one = 1;
+    // const result = (one == 1) || (1.7976931348623157e+308 == 0i);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Source{{12, 34}}, Expr(1.7976931348623157e+308_a), 0_i);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: no matching overload for operator == (abstract-float, i32)
+
+2 candidate operators:
+  operator == (T, T) -> bool  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  operator == (vecN<T>, vecN<T>) -> vecN<bool>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+)");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Index
+////////////////////////////////////////////////
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Invalid_Index) {
+    // const one = 1;
+    // const a = array(1i, 2i, 3i);
+    // const i = 4;
+    // const result = (one == 0) && (a[i] == 0);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", array<i32, 3>(1_i, 2_i, 3_i));
+    GlobalConst("i", Expr(4_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(IndexAccessor("a", "i"), 0_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateAnd(Sem(), binary);
+}
+
+TEST_F(ResolverConstEvalTest, NonShortCircuit_And_Invalid_Index) {
+    // const one = 1;
+    // const a = array(1i, 2i, 3i);
+    // const i = 3;
+    // const result = (one == 1) && (a[i] == 0);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", array<i32, 3>(1_i, 2_i, 3_i));
+    GlobalConst("i", Expr(3_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(IndexAccessor("a", Expr(Source{{12, 34}}, "i")), 0_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: index 3 out of bounds [0..2]");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_Index) {
+    // const one = 1;
+    // const a = array(1i, 2i, 3i);
+    // const i = 3;
+    // const result = (one == 0) && (a[i] == 0.0f);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", array<i32, 3>(1_i, 2_i, 3_i));
+    GlobalConst("i", Expr(3_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Source{{12, 34}}, IndexAccessor("a", "i"), 0.0_f);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: no matching overload for operator == (i32, f32)
+
+2 candidate operators:
+  operator == (T, T) -> bool  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  operator == (vecN<T>, vecN<T>) -> vecN<bool>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+)");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Invalid_Index) {
+    // const one = 1;
+    // const a = array(1i, 2i, 3i);
+    // const i = 4;
+    // const result = (one == 1) || (a[i] == 0);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", array<i32, 3>(1_i, 2_i, 3_i));
+    GlobalConst("i", Expr(4_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(IndexAccessor("a", "i"), 0_a);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateOr(Sem(), binary);
+}
+
+TEST_F(ResolverConstEvalTest, NonShortCircuit_Or_Invalid_Index) {
+    // const one = 1;
+    // const a = array(1i, 2i, 3i);
+    // const i = 3;
+    // const result = (one == 0) || (a[i] == 0);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", array<i32, 3>(1_i, 2_i, 3_i));
+    GlobalConst("i", Expr(3_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(IndexAccessor("a", Expr(Source{{12, 34}}, "i")), 0_a);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: index 3 out of bounds [0..2]");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Index) {
+    // const one = 1;
+    // const a = array(1i, 2i, 3i);
+    // const i = 3;
+    // const result = (one == 1) || (a[i] == 0.0f);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", array<i32, 3>(1_i, 2_i, 3_i));
+    GlobalConst("i", Expr(3_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Source{{12, 34}}, IndexAccessor("a", "i"), 0.0_f);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: no matching overload for operator == (i32, f32)
+
+2 candidate operators:
+  operator == (T, T) -> bool  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  operator == (vecN<T>, vecN<T>) -> vecN<bool>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+)");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Bitcast
+////////////////////////////////////////////////
+
+// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
+TEST_F(ResolverConstEvalTest, DISABLED_ShortCircuit_And_Invalid_Bitcast) {
+    // const one = 1;
+    // const a = 0x7F800000;
+    // const result = (one == 0) && (bitcast<f32>(a) == 0.0);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", Expr(0x7F800000_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Bitcast<f32>("a"), 0.0_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateAnd(Sem(), binary);
+}
+
+// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
+TEST_F(ResolverConstEvalTest, DISABLED_NonShortCircuit_And_Invalid_Bitcast) {
+    // const one = 1;
+    // const a = 0x7F800000;
+    // const result = (one == 1) && (bitcast<f32>(a) == 0.0);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", Expr(0x7F800000_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Bitcast(Source{{12, 34}}, ty.f32(), "a"), 0.0_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: value not representable as f32 message here");
+}
+
+// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
+TEST_F(ResolverConstEvalTest, DISABLED_ShortCircuit_And_Error_Bitcast) {
+    // const one = 1;
+    // const a = 0x7F800000;
+    // const result = (one == 0) && (bitcast<f32>(a) == 0i);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", Expr(0x7F800000_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Source{{12, 34}}, Bitcast(ty.f32(), "a"), 0_i);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: no matching overload message here)");
+}
+
+// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
+TEST_F(ResolverConstEvalTest, DISABLED_ShortCircuit_Or_Invalid_Bitcast) {
+    // const one = 1;
+    // const a = 0x7F800000;
+    // const result = (one == 1) || (bitcast<f32>(a) == 0.0);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", Expr(0x7F800000_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Bitcast<f32>("a"), 0.0_a);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateOr(Sem(), binary);
+}
+
+// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
+TEST_F(ResolverConstEvalTest, DISABLED_NonShortCircuit_Or_Invalid_Bitcast) {
+    // const one = 1;
+    // const a = 0x7F800000;
+    // const result = (one == 0) || (bitcast<f32>(a) == 0.0);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", Expr(0x7F800000_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Bitcast(Source{{12, 34}}, ty.f32(), "a"), 0.0_a);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: value not representable as f32 message here");
+}
+
+// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
+TEST_F(ResolverConstEvalTest, DISABLED_ShortCircuit_Or_Error_Bitcast) {
+    // const one = 1;
+    // const a = 0x7F800000;
+    // const result = (one == 1) || (bitcast<f32>(a) == 0i);
+    GlobalConst("one", Expr(1_a));
+    GlobalConst("a", Expr(0x7F800000_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Source{{12, 34}}, Bitcast(ty.f32(), "a"), 0_i);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), R"(12:34 error: no matching overload message here)");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Type Init/Convert
+////////////////////////////////////////////////
+
+// NOTE: Cannot demonstrate short-circuiting an invalid init/convert as const eval of init/convert
+// always succeeds.
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_Init) {
+    // const one = 1;
+    // const result = (one == 0) && (vec2<f32>(1.0, true).x == 0.0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(MemberAccessor(vec2<f32>(Source{{12, 34}}, 1.0_a, Expr(true)), "x"), 0.0_a);
+    GlobalConst("result", LogicalAnd(lhs, rhs));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: no matching initializer for vec2<f32>(abstract-float, bool)
+
+4 candidate initializers:
+  vec2(x: T, y: T) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  vec2(T) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  vec2(vec2<T>) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  vec2<T>() -> vec2<T>  where: T is f32, f16, i32, u32 or bool
+
+5 candidate conversions:
+  vec2<T>(vec2<U>) -> vec2<f32>  where: T is f32, U is abstract-int, abstract-float, i32, f16, u32 or bool
+  vec2<T>(vec2<U>) -> vec2<f16>  where: T is f16, U is abstract-int, abstract-float, f32, i32, u32 or bool
+  vec2<T>(vec2<U>) -> vec2<i32>  where: T is i32, U is abstract-int, abstract-float, f32, f16, u32 or bool
+  vec2<T>(vec2<U>) -> vec2<u32>  where: T is u32, U is abstract-int, abstract-float, f32, f16, i32 or bool
+  vec2<T>(vec2<U>) -> vec2<bool>  where: T is bool, U is abstract-int, abstract-float, f32, f16, i32 or u32
+)");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Init) {
+    // const one = 1;
+    // const result = (one == 1) || (vec2<f32>(1.0, true).x == 0.0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(MemberAccessor(vec2<f32>(Source{{12, 34}}, 1.0_a, Expr(true)), "x"), 0.0_a);
+    GlobalConst("result", LogicalOr(lhs, rhs));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: no matching initializer for vec2<f32>(abstract-float, bool)
+
+4 candidate initializers:
+  vec2(x: T, y: T) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  vec2(T) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  vec2(vec2<T>) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  vec2<T>() -> vec2<T>  where: T is f32, f16, i32, u32 or bool
+
+5 candidate conversions:
+  vec2<T>(vec2<U>) -> vec2<f32>  where: T is f32, U is abstract-int, abstract-float, i32, f16, u32 or bool
+  vec2<T>(vec2<U>) -> vec2<f16>  where: T is f16, U is abstract-int, abstract-float, f32, i32, u32 or bool
+  vec2<T>(vec2<U>) -> vec2<i32>  where: T is i32, U is abstract-int, abstract-float, f32, f16, u32 or bool
+  vec2<T>(vec2<U>) -> vec2<u32>  where: T is u32, U is abstract-int, abstract-float, f32, f16, i32 or bool
+  vec2<T>(vec2<U>) -> vec2<bool>  where: T is bool, U is abstract-int, abstract-float, f32, f16, i32 or u32
+)");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Array/Struct Init
+////////////////////////////////////////////////
+
+// NOTE: Cannot demonstrate short-circuiting an invalid array/struct init as const eval of
+// array/struct init always succeeds.
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_StructInit) {
+    // struct S {
+    //     a : i32,
+    //     b : f32,
+    // }
+    // const one = 1;
+    // const result = (one == 0) && Foo(1, true).a == 0;
+    Structure("S", utils::Vector{Member("a", ty.i32()), Member("b", ty.f32())});
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(
+        MemberAccessor(Construct(ty.type_name("S"), Expr(1_a), Expr(Source{{12, 34}}, true)), "a"),
+        0_a);
+    GlobalConst("result", LogicalAnd(lhs, rhs));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "12:34 error: type in struct initializer does not match struct member type: "
+              "expected 'f32', found 'bool'");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_StructInit) {
+    // struct S {
+    //     a : i32,
+    //     b : f32,
+    // }
+    // const one = 1;
+    // const result = (one == 1) || Foo(1, true).a == 0;
+    Structure("S", utils::Vector{Member("a", ty.i32()), Member("b", ty.f32())});
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(
+        MemberAccessor(Construct(ty.type_name("S"), Expr(1_a), Expr(Source{{12, 34}}, true)), "a"),
+        0_a);
+    GlobalConst("result", LogicalOr(lhs, rhs));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "12:34 error: type in struct initializer does not match struct member type: "
+              "expected 'f32', found 'bool'");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Builtin Call
+////////////////////////////////////////////////
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Invalid_BuiltinCall) {
+    // const one = 1;
+    // return (one == 0) && (extractBits(1, 0, 99) == 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Call("extractBits", 1_a, 0_a, 99_a), 0_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateAnd(Sem(), binary);
+}
+
+TEST_F(ResolverConstEvalTest, NonShortCircuit_And_Invalid_BuiltinCall) {
+    // const one = 1;
+    // return (one == 1) && (extractBits(1, 0, 99) == 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Call(Source{{12, 34}}, "extractBits", 1_a, 0_a, 99_a), 0_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "12:34 error: 'offset + 'count' must be less than or equal to the bit width of 'e'");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_BuiltinCall) {
+    // const one = 1;
+    // return (one == 0) && (extractBits(1, 0, 99) == 0.0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Source{{12, 34}}, Call("extractBits", 1_a, 0_a, 99_a), 0.0_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: no matching overload for operator == (i32, abstract-float)
+
+2 candidate operators:
+  operator == (T, T) -> bool  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  operator == (vecN<T>, vecN<T>) -> vecN<bool>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+)");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Invalid_BuiltinCall) {
+    // const one = 1;
+    // return (one == 1) || (extractBits(1, 0, 99) == 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Call("extractBits", 1_a, 0_a, 99_a), 0_a);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateOr(Sem(), binary);
+}
+
+TEST_F(ResolverConstEvalTest, NonShortCircuit_Or_Invalid_BuiltinCall) {
+    // const one = 1;
+    // return (one == 0) || (extractBits(1, 0, 99) == 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(Call(Source{{12, 34}}, "extractBits", 1_a, 0_a, 99_a), 0_a);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "12:34 error: 'offset + 'count' must be less than or equal to the bit width of 'e'");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_BuiltinCall) {
+    // const one = 1;
+    // return (one == 1) || (extractBits(1, 0, 99) == 0.0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(Source{{12, 34}}, Call("extractBits", 1_a, 0_a, 99_a), 0.0_a);
+    auto* binary = LogicalOr(lhs, rhs);
+    GlobalConst("result", binary);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: no matching overload for operator == (i32, abstract-float)
+
+2 candidate operators:
+  operator == (T, T) -> bool  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  operator == (vecN<T>, vecN<T>) -> vecN<bool>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+)");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Literal
+////////////////////////////////////////////////
+
+// NOTE: Cannot demonstrate short-circuiting an invalid literal as const eval of a literal does not
+// fail.
+
+#if TINT_BUILD_WGSL_READER
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_Literal) {
+    // NOTE: This fails parsing rather than resolving, which is why we can't use the ProgramBuilder
+    // for this test.
+    auto src = R"(
+const one = 1;
+const result = (one == 0) && (1111111111111111111111111111111i == 0);
+)";
+
+    auto file = std::make_unique<Source::File>("test", src);
+    auto program = reader::wgsl::Parse(file.get());
+    EXPECT_FALSE(program.IsValid());
+
+    diag::Formatter::Style style;
+    style.print_newline_at_end = false;
+    auto error = diag::Formatter(style).format(program.Diagnostics());
+    EXPECT_EQ(error, R"(test:3:31 error: value cannot be represented as 'i32'
+const result = (one == 0) && (1111111111111111111111111111111i == 0);
+                              ^
+)");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Literal) {
+    // NOTE: This fails parsing rather than resolving, which is why we can't use the ProgramBuilder
+    // for this test.
+    auto src = R"(
+const one = 1;
+const result = (one == 1) || (1111111111111111111111111111111i == 0);
+)";
+
+    auto file = std::make_unique<Source::File>("test", src);
+    auto program = reader::wgsl::Parse(file.get());
+    EXPECT_FALSE(program.IsValid());
+
+    diag::Formatter::Style style;
+    style.print_newline_at_end = false;
+    auto error = diag::Formatter(style).format(program.Diagnostics());
+    EXPECT_EQ(error, R"(test:3:31 error: value cannot be represented as 'i32'
+const result = (one == 1) || (1111111111111111111111111111111i == 0);
+                              ^
+)");
+}
+#endif  // TINT_BUILD_WGSL_READER
+
+////////////////////////////////////////////////
+// Short-Circuit Member Access
+////////////////////////////////////////////////
+
+// NOTE: Cannot demonstrate short-circuiting an invalid member access as const eval of member access
+// always succeeds.
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_MemberAccess) {
+    // struct S {
+    //     a : i32,
+    //     b : f32,
+    // }
+    // const s = S(1, 2.0);
+    // const one = 1;
+    // const result = (one == 0) && (s.c == 0);
+    Structure("S", utils::Vector{Member("a", ty.i32()), Member("b", ty.f32())});
+    GlobalConst("s", Construct(ty.type_name("S"), Expr(1_a), Expr(2.0_a)));
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(MemberAccessor(Source{{12, 34}}, "s", Expr("c")), 0_a);
+    GlobalConst("result", LogicalAnd(lhs, rhs));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: struct member c not found");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_MemberAccess) {
+    // struct S {
+    //     a : i32,
+    //     b : f32,
+    // }
+    // const s = S(1, 2.0);
+    // const one = 1;
+    // const result = (one == 1) || (s.c == 0);
+    Structure("S", utils::Vector{Member("a", ty.i32()), Member("b", ty.f32())});
+    GlobalConst("s", Construct(ty.type_name("S"), Expr(1_a), Expr(2.0_a)));
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(MemberAccessor(Source{{12, 34}}, "s", Expr("c")), 0_a);
+    GlobalConst("result", LogicalOr(lhs, rhs));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: struct member c not found");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Swizzle
+////////////////////////////////////////////////
+
+// NOTE: Cannot demonstrate short-circuiting an invalid swizzle as const eval of swizzle always
+// succeeds.
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_Swizzle) {
+    // const one = 1;
+    // const result = (one == 0) && (vec2(1, 2).z == 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal(MemberAccessor(vec2<AInt>(1_a, 2_a), Expr(Source{{12, 34}}, "z")), 0_a);
+    GlobalConst("result", LogicalAnd(lhs, rhs));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: invalid vector swizzle member");
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Swizzle) {
+    // const one = 1;
+    // const result = (one == 1) || (vec2(1, 2).z == 0);
+    GlobalConst("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal(MemberAccessor(vec2<AInt>(1_a, 2_a), Expr(Source{{12, 34}}, "z")), 0_a);
+    GlobalConst("result", LogicalOr(lhs, rhs));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: invalid vector swizzle member");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Nested
+////////////////////////////////////////////////
+
+#if TINT_BUILD_WGSL_READER
+using ResolverConstEvalTestShortCircuit = ResolverTestWithParam<std::tuple<const char*, bool>>;
+TEST_P(ResolverConstEvalTestShortCircuit, Test) {
+    const char* expr = std::get<0>(GetParam());
+    bool should_pass = std::get<1>(GetParam());
+
+    auto src = std::string(R"(
+const one = 1;
+const result = )");
+    src = src + expr + ";";
+    auto file = std::make_unique<Source::File>("test", src);
+    auto program = reader::wgsl::Parse(file.get());
+
+    if (should_pass) {
+        diag::Formatter::Style style;
+        style.print_newline_at_end = false;
+        auto error = diag::Formatter(style).format(program.Diagnostics());
+
+        EXPECT_TRUE(program.IsValid()) << error;
+    } else {
+        EXPECT_FALSE(program.IsValid());
+    }
+}
+INSTANTIATE_TEST_SUITE_P(Nested,
+                         ResolverConstEvalTestShortCircuit,
+                         testing::ValuesIn(std::vector<std::tuple<const char*, bool>>{
+                             // AND nested rhs
+                             {"(one == 0) && ((one == 0) && ((2/0)==0))", true},
+                             {"(one == 1) && ((one == 0) && ((2/0)==0))", true},
+                             {"(one == 0) && ((one == 1) && ((2/0)==0))", true},
+                             {"(one == 1) && ((one == 1) && ((2/0)==0))", false},
+                             // AND nested lhs
+                             {"((one == 0) && ((2/0)==0)) && (one == 0)", true},
+                             {"((one == 0) && ((2/0)==0)) && (one == 1)", true},
+                             {"((one == 1) && ((2/0)==0)) && (one == 0)", false},
+                             {"((one == 1) && ((2/0)==0)) && (one == 1)", false},
+                             // OR nested rhs
+                             {"(one == 1) || ((one == 1) || ((2/0)==0))", true},
+                             {"(one == 0) || ((one == 1) || ((2/0)==0))", true},
+                             {"(one == 1) || ((one == 0) || ((2/0)==0))", true},
+                             {"(one == 0) || ((one == 0) || ((2/0)==0))", false},
+                             // OR nested lhs
+                             {"((one == 1) || ((2/0)==0)) || (one == 1)", true},
+                             {"((one == 1) || ((2/0)==0)) || (one == 0)", true},
+                             {"((one == 0) || ((2/0)==0)) || (one == 1)", false},
+                             {"((one == 0) || ((2/0)==0)) || (one == 0)", false},
+                             // AND nested both sides
+                             {"((one == 0) && ((2/0)==0)) && ((one == 0) && ((2/0)==0))", true},
+                             {"((one == 0) && ((2/0)==0)) && ((one == 1) && ((2/0)==0))", true},
+                             {"((one == 1) && ((2/0)==0)) && ((one == 0) && ((2/0)==0))", false},
+                             {"((one == 1) && ((2/0)==0)) && ((one == 1) && ((2/0)==0))", false},
+                             // OR nested both sides
+                             {"((one == 1) || ((2/0)==0)) && ((one == 1) || ((2/0)==0))", true},
+                             {"((one == 1) || ((2/0)==0)) && ((one == 0) || ((2/0)==0))", false},
+                             {"((one == 0) || ((2/0)==0)) && ((one == 1) || ((2/0)==0))", false},
+                             {"((one == 0) || ((2/0)==0)) && ((one == 0) || ((2/0)==0))", false},
+                             // AND chained
+                             {"(one == 0) && (one == 0) && ((2 / 0) == 0)", true},
+                             {"(one == 1) && (one == 0) && ((2 / 0) == 0)", true},
+                             {"(one == 0) && (one == 1) && ((2 / 0) == 0)", true},
+                             {"(one == 1) && (one == 1) && ((2 / 0) == 0)", false},
+                             // OR chained
+                             {"(one == 1) || (one == 1) || ((2 / 0) == 0)", true},
+                             {"(one == 0) || (one == 1) || ((2 / 0) == 0)", true},
+                             {"(one == 1) || (one == 0) || ((2 / 0) == 0)", true},
+                             {"(one == 0) || (one == 0) || ((2 / 0) == 0)", false},
+                         }));
+#endif  // TINT_BUILD_WGSL_READER
+
+}  // namespace LogicalShortCircuit
 
 }  // namespace
 }  // namespace tint::resolver

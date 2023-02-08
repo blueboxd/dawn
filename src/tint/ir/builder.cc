@@ -77,7 +77,7 @@ Switch* Builder::CreateSwitch(const ast::SwitchStatement* stmt) {
     return ir_switch;
 }
 
-Block* Builder::CreateCase(Switch* s, const utils::VectorRef<const ast::CaseSelector*> selectors) {
+Block* Builder::CreateCase(Switch* s, utils::VectorRef<const ast::CaseSelector*> selectors) {
     s->cases.Push(Switch::Case{selectors, CreateBlock()});
 
     Block* b = s->cases.Back().start_target;
@@ -91,6 +91,86 @@ void Builder::Branch(Block* from, FlowNode* to) {
     TINT_ASSERT(IR, to);
     from->branch_target = to;
     to->inbound_branches.Push(from);
+}
+
+Temp::Id Builder::AllocateTempId() {
+    return next_temp_id++;
+}
+
+const Binary* Builder::CreateBinary(Binary::Kind kind, const Value* lhs, const Value* rhs) {
+    return ir.instructions.Create<ir::Binary>(kind, Temp(), lhs, rhs);
+}
+
+const Binary* Builder::And(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kAnd, lhs, rhs);
+}
+
+const Binary* Builder::Or(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kOr, lhs, rhs);
+}
+
+const Binary* Builder::Xor(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kXor, lhs, rhs);
+}
+
+const Binary* Builder::LogicalAnd(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kLogicalAnd, lhs, rhs);
+}
+
+const Binary* Builder::LogicalOr(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kLogicalOr, lhs, rhs);
+}
+
+const Binary* Builder::Equal(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kEqual, lhs, rhs);
+}
+
+const Binary* Builder::NotEqual(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kNotEqual, lhs, rhs);
+}
+
+const Binary* Builder::LessThan(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kLessThan, lhs, rhs);
+}
+
+const Binary* Builder::GreaterThan(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kGreaterThan, lhs, rhs);
+}
+
+const Binary* Builder::LessThanEqual(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kLessThanEqual, lhs, rhs);
+}
+
+const Binary* Builder::GreaterThanEqual(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kGreaterThanEqual, lhs, rhs);
+}
+
+const Binary* Builder::ShiftLeft(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kShiftLeft, lhs, rhs);
+}
+
+const Binary* Builder::ShiftRight(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kShiftRight, lhs, rhs);
+}
+
+const Binary* Builder::Add(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kAdd, lhs, rhs);
+}
+
+const Binary* Builder::Subtract(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kSubtract, lhs, rhs);
+}
+
+const Binary* Builder::Multiply(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kMultiply, lhs, rhs);
+}
+
+const Binary* Builder::Divide(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kDivide, lhs, rhs);
+}
+
+const Binary* Builder::Modulo(const Value* lhs, const Value* rhs) {
+    return CreateBinary(Binary::Kind::kModulo, lhs, rhs);
 }
 
 }  // namespace tint::ir

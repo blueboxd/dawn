@@ -16,15 +16,14 @@
 #define SRC_TINT_SEM_EXPRESSION_H_
 
 #include "src/tint/ast/expression.h"
+#include "src/tint/constant/value.h"
 #include "src/tint/sem/behavior.h"
-#include "src/tint/sem/constant.h"
 #include "src/tint/sem/evaluation_stage.h"
 #include "src/tint/sem/node.h"
 
 // Forward declarations
 namespace tint::sem {
 class Statement;
-class Type;
 class Variable;
 }  // namespace tint::sem
 
@@ -42,10 +41,10 @@ class Expression : public Castable<Expression, Node> {
     /// @param has_side_effects true if this expression may have side-effects
     /// @param root_ident the (optional) root identifier for this expression
     Expression(const ast::Expression* declaration,
-               const sem::Type* type,
+               const type::Type* type,
                EvaluationStage stage,
                const Statement* statement,
-               const Constant* constant,
+               const constant::Value* constant,
                bool has_side_effects,
                const Variable* root_ident = nullptr);
 
@@ -56,7 +55,7 @@ class Expression : public Castable<Expression, Node> {
     const ast::Expression* Declaration() const { return declaration_; }
 
     /// @return the resolved type of the expression
-    const sem::Type* Type() const { return type_; }
+    const type::Type* Type() const { return type_; }
 
     /// @return the earliest evaluation stage for the expression
     EvaluationStage Stage() const { return stage_; }
@@ -65,7 +64,7 @@ class Expression : public Castable<Expression, Node> {
     const Statement* Stmt() const { return statement_; }
 
     /// @return the constant value of this expression
-    const Constant* ConstantValue() const { return constant_; }
+    const constant::Value* ConstantValue() const { return constant_; }
 
     /// Returns the variable or parameter that this expression derives from.
     /// For reference and pointer expressions, this will either be the originating
@@ -93,10 +92,10 @@ class Expression : public Castable<Expression, Node> {
     const Variable* root_identifier_;
 
   private:
-    const sem::Type* const type_;
+    const type::Type* const type_;
     const EvaluationStage stage_;
     const Statement* const statement_;
-    const Constant* const constant_;
+    const constant::Value* const constant_;
     sem::Behaviors behaviors_{sem::Behavior::kNext};
     const bool has_side_effects_;
 };

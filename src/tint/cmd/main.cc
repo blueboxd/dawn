@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <charconv>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -24,7 +25,7 @@
 #include <vector>
 
 #if TINT_BUILD_GLSL_WRITER
-#include "StandAlone/ResourceLimits.h"
+#include "glslang/Public/ResourceLimits.h"
 #include "glslang/Public/ShaderLang.h"
 #endif  // TINT_BUILD_GLSL_WRITER
 
@@ -41,6 +42,7 @@
 
 #if TINT_BUILD_IR
 #include "src/tint/ir/debug.h"
+#include "src/tint/ir/disassembler.h"
 #include "src/tint/ir/module.h"
 #endif  // TINT_BUILD_IR
 
@@ -62,8 +64,14 @@ namespace {
     exit(1);
 }
 
+/// Prints the given hash value in a format string that the end-to-end test runner can parse.
+void PrintHash(uint32_t hash) {
+    std::cout << "<<HASH: 0x" << std::hex << hash << ">>" << std::endl;
+}
+
 enum class Format {
-    kNone = -1,
+    kUnknown,
+    kNone,
     kSpirv,
     kSpvAsm,
     kWgsl,
@@ -82,10 +90,13 @@ struct Options {
     bool parse_only = false;
     bool disable_workgroup_init = false;
     bool validate = false;
+    bool print_hash = false;
     bool demangle = false;
     bool dump_inspector_bindings = false;
 
-    Format format = Format::kNone;
+    std::unordered_set<uint32_t> skip_hash;
+
+    Format format = Format::kUnknown;
 
     bool emit_single_entry_point = false;
     std::string ep_name;
@@ -101,6 +112,7 @@ struct Options {
     std::optional<tint::sem::BindingPoint> hlsl_root_constant_binding_point;
 
 #if TINT_BUILD_IR
+    bool dump_ir = false;
     bool dump_ir_graph = false;
 #endif  // TINT_BUILD_IR
 };
@@ -108,7 +120,7 @@ struct Options {
 const char kUsage[] = R"(Usage: tint [options] <input-file>
 
  options:
-  --format <spirv|spvasm|wgsl|msl|hlsl>  -- Output format.
+  --format <spirv|spvasm|wgsl|msl|hlsl|none>  -- Output format.
                                If not provided, will be inferred from output
                                filename extension:
                                    .spvasm -> spvasm
@@ -122,8 +134,7 @@ const char kUsage[] = R"(Usage: tint [options] <input-file>
   -o <name>                 -- Output file name.  Use "-" for standard output
   --transform <name list>   -- Runs transforms, name list is comma separated
                                Available transforms:
-${transforms}
-  --parse-only              -- Stop after parsing the input
+${transforms} --parse-only              -- Stop after parsing the input
   --disable-workgroup-init  -- Disable workgroup memory zero initialization.
   --demangle                -- Preserve original source names. Demangle them.
                                Affects AST dumping, and text-based output languages.
@@ -135,6 +146,9 @@ ${transforms}
                                default to binding 0 of the largest used group plus 1,
                                or group 0 if no resource bound.
   --validate                -- Validates the generated shader with all available validators
+  --skip-hash <hash list>   -- Skips validation if the hash of the output is equal to any
+                               of the hash codes in the comma separated list of hashes
+  --print-hash              -- Emit the hash of the output program
   --fxc                     -- Path to FXC dll, used to validate HLSL output.
                                When specified, automatically enables HLSL validation with FXC
   --dxc                     -- Path to DXC executable, used to validate HLSL output.
@@ -181,7 +195,11 @@ Format parse_format(const std::string& fmt) {
     }
 #endif  // TINT_BUILD_GLSL_WRITER
 
-    return Format::kNone;
+    if (fmt == "none") {
+        return Format::kNone;
+    }
+
+    return Format::kUnknown;
 }
 
 #if TINT_BUILD_SPV_WRITER || TINT_BUILD_WGSL_WRITER || TINT_BUILD_MSL_WRITER || \
@@ -229,7 +247,7 @@ Format infer_format(const std::string& filename) {
     }
 #endif  // TINT_BUILD_HLSL_WRITER
 
-    return Format::kNone;
+    return Format::kUnknown;
 }
 
 std::vector<std::string> split_on_char(std::string list, char c) {
@@ -389,7 +407,7 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
             }
             opts->format = parse_format(args[i]);
 
-            if (opts->format == Format::kNone) {
+            if (opts->format == Format::kUnknown) {
                 std::cerr << "Unknown output format: " << args[i] << std::endl;
                 return false;
             }
@@ -431,6 +449,24 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
             opts->dump_inspector_bindings = true;
         } else if (arg == "--validate") {
             opts->validate = true;
+        } else if (arg == "--skip-hash") {
+            ++i;
+            if (i >= args.size()) {
+                std::cerr << "Missing hash value for " << arg << std::endl;
+                return false;
+            }
+            for (auto hash : split_on_comma(args[i])) {
+                uint32_t value = 0;
+                int base = 10;
+                if (hash.size() > 2 && hash[0] == '0' && (hash[1] == 'x' || hash[1] == 'X')) {
+                    hash = hash.substr(2);
+                    base = 16;
+                }
+                std::from_chars(hash.data(), hash.data() + hash.size(), value, base);
+                opts->skip_hash.emplace(value);
+            }
+        } else if (arg == "--print-hash") {
+            opts->print_hash = true;
         } else if (arg == "--fxc") {
             ++i;
             if (i >= args.size()) {
@@ -446,6 +482,8 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
             }
             opts->dxc_path = args[i];
 #if TINT_BUILD_IR
+        } else if (arg == "--dump-ir") {
+            opts->dump_ir = true;
         } else if (arg == "--dump-ir-graph") {
             opts->dump_ir_graph = true;
 #endif  // TINT_BUILD_IR
@@ -682,7 +720,12 @@ bool GenerateSpirv(const tint::Program* program, const Options& options) {
         }
     }
 
-    if (options.validate) {
+    const auto hash = tint::utils::CRC32(result.spirv.data(), result.spirv.size());
+    if (options.print_hash) {
+        PrintHash(hash);
+    }
+
+    if (options.validate && options.skip_hash.count(hash) == 0) {
         // Use Vulkan 1.1, since this is what Tint, internally, uses.
         spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_1);
         tools.SetMessageConsumer(
@@ -722,7 +765,12 @@ bool GenerateWgsl(const tint::Program* program, const Options& options) {
         return false;
     }
 
-    if (options.validate) {
+    const auto hash = tint::utils::CRC32(result.wgsl.data(), result.wgsl.size());
+    if (options.print_hash) {
+        PrintHash(hash);
+    }
+
+    if (options.validate && options.skip_hash.count(hash) == 0) {
         // Attempt to re-parse the output program with Tint's WGSL reader.
         auto source = std::make_unique<tint::Source::File>(options.input_filename, result.wgsl);
         auto reparsed_program = tint::reader::wgsl::Parse(source.get());
@@ -772,7 +820,12 @@ bool GenerateMsl(const tint::Program* program, const Options& options) {
         return false;
     }
 
-    if (options.validate) {
+    const auto hash = tint::utils::CRC32(result.msl.c_str());
+    if (options.print_hash) {
+        PrintHash(hash);
+    }
+
+    if (options.validate && options.skip_hash.count(hash) == 0) {
         tint::val::Result res;
 #ifdef TINT_ENABLE_MSL_VALIDATION_USING_METAL_API
         res = tint::val::MslUsingMetalAPI(result.msl);
@@ -828,11 +881,17 @@ bool GenerateHlsl(const tint::Program* program, const Options& options) {
         return false;
     }
 
+    const auto hash = tint::utils::CRC32(result.hlsl.c_str());
+    if (options.print_hash) {
+        PrintHash(hash);
+    }
+
     // If --fxc or --dxc was passed, then we must explicitly find and validate with that respective
     // compiler.
     const bool must_validate_dxc = !options.dxc_path.empty();
     const bool must_validate_fxc = !options.fxc_path.empty();
-    if (options.validate || must_validate_dxc || must_validate_fxc) {
+    if ((options.validate || must_validate_dxc || must_validate_fxc) &&
+        (options.skip_hash.count(hash) == 0)) {
         tint::val::Result dxc_res;
         bool dxc_found = false;
         if (options.validate || must_validate_dxc) {
@@ -959,7 +1018,12 @@ bool GenerateGlsl(const tint::Program* program, const Options& options) {
             return false;
         }
 
-        if (options.validate) {
+        const auto hash = tint::utils::CRC32(result.glsl.c_str());
+        if (options.print_hash) {
+            PrintHash(hash);
+        }
+
+        if (options.validate && options.skip_hash.count(hash) == 0) {
             for (auto entry_pt : result.entry_points) {
                 EShLanguage lang = pipeline_stage_to_esh_language(entry_pt.second);
                 glslang::TShader shader(lang);
@@ -967,8 +1031,8 @@ bool GenerateGlsl(const tint::Program* program, const Options& options) {
                 int lengths[1] = {static_cast<int>(result.glsl.length())};
                 shader.setStringsWithLengths(strings, lengths, 1);
                 shader.setEntryPoint("main");
-                bool glslang_result = shader.parse(&glslang::DefaultTBuiltInResource, 310,
-                                                   EEsProfile, false, false, EShMsgDefault);
+                bool glslang_result = shader.parse(GetDefaultResources(), 310, EEsProfile, false,
+                                                   false, EShMsgDefault);
                 if (!glslang_result) {
                     std::cerr << "Error parsing GLSL shader:\n"
                               << shader.getInfoLog() << "\n"
@@ -1150,6 +1214,7 @@ int main(int argc, const char** argv) {
         std::string usage = tint::utils::ReplaceAll(kUsage, "${transforms}", transform_names());
 #if TINT_BUILD_IR
         usage +=
+            "  --dump-ir                 -- Writes the IR to stdout\n"
             "  --dump-ir-graph           -- Writes the IR graph to 'tint.dot' as a dot graph\n";
 #endif  // TINT_BUILD_IR
 
@@ -1158,11 +1223,11 @@ int main(int argc, const char** argv) {
     }
 
     // Implement output format defaults.
-    if (options.format == Format::kNone) {
+    if (options.format == Format::kUnknown) {
         // Try inferring from filename.
         options.format = infer_format(options.output_file);
     }
-    if (options.format == Format::kNone) {
+    if (options.format == Format::kUnknown) {
         // Ultimately, default to SPIR-V assembly. That's nice for interactive use.
         options.format = Format::kSpvAsm;
     }
@@ -1272,14 +1337,20 @@ int main(int argc, const char** argv) {
     }
 
 #if TINT_BUILD_IR
-    if (options.dump_ir_graph) {
+    if (options.dump_ir || options.dump_ir_graph) {
         auto result = tint::ir::Module::FromProgram(program.get());
         if (!result) {
             std::cerr << "Failed to build IR from program: " << result.Failure() << std::endl;
         } else {
             auto mod = result.Move();
-            auto graph = tint::ir::Debug::AsDotGraph(&mod);
-            WriteFile("tint.dot", "w", graph);
+            if (options.dump_ir) {
+                tint::ir::Disassembler d;
+                std::cout << d.Disassemble(mod) << std::endl;
+            }
+            if (options.dump_ir_graph) {
+                auto graph = tint::ir::Debug::AsDotGraph(&mod);
+                WriteFile("tint.dot", "w", graph);
+            }
         }
     }
 #endif  // TINT_BUILD_IR
@@ -1420,6 +1491,8 @@ int main(int argc, const char** argv) {
             break;
         case Format::kGlsl:
             success = GenerateGlsl(program.get(), options);
+            break;
+        case Format::kNone:
             break;
         default:
             std::cerr << "Unknown output format specified" << std::endl;

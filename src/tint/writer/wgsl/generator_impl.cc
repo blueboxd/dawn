@@ -606,8 +606,8 @@ bool GeneratorImpl::EmitStructType(const ast::Struct* str) {
     increment_indent();
     uint32_t offset = 0;
     for (auto* mem : str->members) {
-        // TODO(crbug.com/tint/798) move the @offset attribute handling to the
-        // transform::Wgsl sanitizer.
+        // TODO(crbug.com/tint/798) move the @offset attribute handling to the transform::Wgsl
+        // sanitizer.
         if (auto* mem_sem = program_->Sem().Get(mem)) {
             offset = utils::RoundUp(mem_sem->Align(), offset);
             if (uint32_t padding = mem_sem->Offset() - offset) {
@@ -623,7 +623,14 @@ bool GeneratorImpl::EmitStructType(const ast::Struct* str) {
         utils::Vector<const ast::Attribute*, 4> attributes_sanitized;
         attributes_sanitized.Reserve(mem->attributes.Length());
         for (auto* attr : mem->attributes) {
-            if (!attr->Is<ast::StructMemberOffsetAttribute>()) {
+            if (attr->Is<ast::StructMemberOffsetAttribute>()) {
+                auto l = line();
+                l << "/* ";
+                if (!EmitAttributes(l, utils::Vector{attr})) {
+                    return false;
+                }
+                l << " */";
+            } else {
                 attributes_sanitized.Push(attr);
             }
         }
@@ -787,6 +794,14 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
             [&](const ast::IdAttribute* override_deco) {
                 out << "id(";
                 if (!EmitExpression(out, override_deco->expr)) {
+                    return false;
+                }
+                out << ")";
+                return true;
+            },
+            [&](const ast::StructMemberOffsetAttribute* offset) {
+                out << "offset(";
+                if (!EmitExpression(out, offset->expr)) {
                     return false;
                 }
                 out << ")";
@@ -970,7 +985,6 @@ bool GeneratorImpl::EmitStatement(const ast::Statement* stmt) {
         [&](const ast::CompoundAssignmentStatement* c) { return EmitCompoundAssign(c); },
         [&](const ast::ContinueStatement* c) { return EmitContinue(c); },
         [&](const ast::DiscardStatement* d) { return EmitDiscard(d); },
-        [&](const ast::FallthroughStatement* f) { return EmitFallthrough(f); },
         [&](const ast::IfStatement* i) { return EmitIf(i); },
         [&](const ast::IncrementDecrementStatement* l) { return EmitIncrementDecrement(l); },
         [&](const ast::LoopStatement* l) { return EmitLoop(l); },
@@ -1090,11 +1104,6 @@ bool GeneratorImpl::EmitCompoundAssign(const ast::CompoundAssignmentStatement* s
 
 bool GeneratorImpl::EmitContinue(const ast::ContinueStatement*) {
     line() << "continue;";
-    return true;
-}
-
-bool GeneratorImpl::EmitFallthrough(const ast::FallthroughStatement*) {
-    line() << "fallthrough;";
     return true;
 }
 

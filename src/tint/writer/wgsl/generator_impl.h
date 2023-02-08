@@ -25,7 +25,6 @@
 #include "src/tint/ast/compound_assignment_statement.h"
 #include "src/tint/ast/continue_statement.h"
 #include "src/tint/ast/discard_statement.h"
-#include "src/tint/ast/fallthrough_statement.h"
 #include "src/tint/ast/for_loop_statement.h"
 #include "src/tint/ast/if_statement.h"
 #include "src/tint/ast/index_accessor_expression.h"
@@ -35,8 +34,8 @@
 #include "src/tint/ast/switch_statement.h"
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/program.h"
-#include "src/tint/sem/storage_texture.h"
 #include "src/tint/sem/struct.h"
+#include "src/tint/type/storage_texture.h"
 #include "src/tint/writer/text_generator.h"
 
 namespace tint::writer::wgsl {
@@ -124,10 +123,6 @@ class GeneratorImpl : public TextGenerator {
     /// @param expr the expression
     /// @returns true if the expression was emitted
     bool EmitExpression(std::ostream& out, const ast::Expression* expr);
-    /// Handles generating a fallthrough statement
-    /// @param stmt the fallthrough statement
-    /// @returns true if the statement was successfully emitted
-    bool EmitFallthrough(const ast::FallthroughStatement* stmt);
     /// Handles generating a function
     /// @param func the function to generate
     /// @returns true if the function was emitted

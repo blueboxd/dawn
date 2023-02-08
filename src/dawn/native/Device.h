@@ -272,7 +272,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     InternalPipelineStore* GetInternalPipelineStore();
 
     // For Dawn Wire
-    BufferBase* APICreateErrorBuffer();
+    BufferBase* APICreateErrorBuffer(const BufferDescriptor* desc);
     ExternalTextureBase* APICreateErrorExternalTexture();
     TextureBase* APICreateErrorTexture(const TextureDescriptor* desc);
 
@@ -342,7 +342,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     size_t GetLazyClearCountForTesting();
     void IncrementLazyClearCountForTesting();
     size_t GetDeprecationWarningCountForTesting();
-    void EmitDeprecationWarning(const char* warning);
+    void EmitDeprecationWarning(const std::string& warning);
     void EmitLog(const char* message);
     void EmitLog(WGPULoggingType loggingType, const char* message);
     void APIForceLoss(wgpu::DeviceLostReason reason, const char* message);

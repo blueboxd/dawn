@@ -47,14 +47,15 @@ Transform::ApplyResult VarForDynamicIndex::Apply(const Program* src,
         }
 
         auto* indexed = sem.Get(object_expr);
-        if (!indexed->Type()->IsAnyOf<sem::Array, sem::Matrix>()) {
+        if (!indexed->Type()->IsAnyOf<type::Array, type::Matrix>()) {
             // We only care about array and matrices.
             return true;
         }
 
         // TODO(bclayton): group multiple accesses in the same object.
         // e.g. arr[i] + arr[i+1] // Don't create two vars for this
-        return hoist_to_decl_before.Add(indexed, object_expr, false, "var_for_index");
+        return hoist_to_decl_before.Add(indexed, object_expr, HoistToDeclBefore::VariableKind::kVar,
+                                        "var_for_index");
     };
 
     bool index_accessor_found = false;

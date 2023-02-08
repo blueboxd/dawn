@@ -27,71 +27,12 @@
 #include "src/tint/ast/type_name.h"
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/reader/spirv/function.h"
-#include "src/tint/sem/depth_texture.h"
-#include "src/tint/sem/multisampled_texture.h"
-#include "src/tint/sem/sampled_texture.h"
+#include "src/tint/type/depth_texture.h"
+#include "src/tint/type/multisampled_texture.h"
+#include "src/tint/type/sampled_texture.h"
 #include "src/tint/utils/unique_vector.h"
 
 namespace tint::reader::spirv {
-
-namespace three_sided_patch {
-// This machinery is only used while SPIRV-Tools is in transition before it fully
-// uses the C++11 header spirv.hpp11
-
-/// Typedef for pointer to member function while the API call uses
-/// SpvStorageClass for its second argument.
-typedef uint32_t (
-    spvtools::opt::analysis::TypeManager::*PointerFinderSpvStorageClass)(uint32_t, SpvStorageClass);
-/// Typedef for pointer to member function while the API call uses
-/// spv::StorageClass for its second argument.
-typedef uint32_t (spvtools::opt::analysis::TypeManager::*PointerFinderSpvStorageClassCpp11)(
-    uint32_t,
-    spv::StorageClass);
-
-/// @param type_manager the SPIRV-Tools optimizer's type manager
-/// @param finder a pointer to member function in the type manager that does the
-/// actual lookup
-/// @param pointee_type_id the ID of the pointee type
-/// @param sc the storage class.  SC can be SpvStorageClass or spv::StorageClass
-/// @returns the ID for a SPIR-V pointer to pointee_type_id in storage class sc
-template <typename FinderType, typename SC>
-uint32_t FindPointerToType(spvtools::opt::analysis::TypeManager* type_manager,
-                           FinderType finder,
-                           uint32_t pointee_type_id,
-                           SC sc);
-
-template <>
-uint32_t FindPointerToType(spvtools::opt::analysis::TypeManager* type_mgr,
-                           PointerFinderSpvStorageClass finder,
-                           uint32_t pointee_type_id,
-                           SpvStorageClass sc) {
-    return (type_mgr->*finder)(pointee_type_id, sc);
-}
-
-template <>
-uint32_t FindPointerToType(spvtools::opt::analysis::TypeManager* type_mgr,
-                           PointerFinderSpvStorageClass finder,
-                           uint32_t pointee_type_id,
-                           spv::StorageClass sc) {
-    return (type_mgr->*finder)(pointee_type_id, static_cast<SpvStorageClass>(sc));
-}
-
-template <>
-uint32_t FindPointerToType(spvtools::opt::analysis::TypeManager* type_mgr,
-                           PointerFinderSpvStorageClassCpp11 finder,
-                           uint32_t pointee_type_id,
-                           SpvStorageClass sc) {
-    return (type_mgr->*finder)(pointee_type_id, static_cast<spv::StorageClass>(sc));
-}
-
-template <>
-uint32_t FindPointerToType(spvtools::opt::analysis::TypeManager* type_mgr,
-                           PointerFinderSpvStorageClassCpp11 finder,
-                           uint32_t pointee_type_id,
-                           spv::StorageClass sc) {
-    return (type_mgr->*finder)(pointee_type_id, sc);
-}
-}  // namespace three_sided_patch
 
 namespace {
 
@@ -104,12 +45,12 @@ const spv_target_env kInputEnv = SPV_ENV_VULKAN_1_1;
 /// @param inst a SPIR-V instruction
 /// @returns Returns the opcode for an instruciton
 inline spv::Op opcode(const spvtools::opt::Instruction& inst) {
-    return static_cast<spv::Op>(inst.opcode());
+    return inst.opcode();
 }
 /// @param inst a SPIR-V instruction pointer
 /// @returns Returns the opcode for an instruciton
 inline spv::Op opcode(const spvtools::opt::Instruction* inst) {
-    return static_cast<spv::Op>(inst->opcode());
+    return inst->opcode();
 }
 
 // A FunctionTraverser is used to compute an ordering of functions in the
@@ -1183,7 +1124,7 @@ const Type* ParserImpl::ConvertType(uint32_t type_id,
                         break;
                     case spv::BuiltIn::ClipDistance:  // not supported in WGSL
                     case spv::BuiltIn::CullDistance:  // not supported in WGSL
-                        create_ast_member = false;  // Not part of the WGSL structure.
+                        create_ast_member = false;    // Not part of the WGSL structure.
                         break;
                     default:
                         Fail() << "unrecognized builtin " << decoration[1];
@@ -1347,8 +1288,7 @@ bool ParserImpl::RegisterTypes() {
     // Manufacture a type for the gl_Position variable if we have to.
     if ((builtin_position_.struct_type_id != 0) &&
         (builtin_position_.position_member_pointer_type_id == 0)) {
-        builtin_position_.position_member_pointer_type_id = three_sided_patch::FindPointerToType(
-            type_mgr_, &spvtools::opt::analysis::TypeManager::FindPointerToType,
+        builtin_position_.position_member_pointer_type_id = type_mgr_->FindPointerToType(
             builtin_position_.position_member_type_id, builtin_position_.storage_class);
         ConvertType(builtin_position_.position_member_pointer_type_id);
     }
@@ -1535,28 +1475,33 @@ bool ParserImpl::EmitModuleScopeVariables() {
         if (!success_) {
             return false;
         }
-        const Type* ast_type = nullptr;
+        const Type* ast_store_type = nullptr;
+        ast::AddressSpace ast_address_space = ast::AddressSpace::kNone;
         if (spirv_storage_class == spv::StorageClass::UniformConstant) {
             // These are opaque handles: samplers or textures
-            ast_type = GetTypeForHandleMemObjDecl(var);
-            if (!ast_type) {
+            ast_store_type = GetHandleTypeForSpirvHandle(var);
+            if (!ast_store_type) {
                 return false;
             }
+            // ast_storage_class should remain kNone because handle variables
+            // are never declared with an explicit address space.
         } else {
-            ast_type = ConvertType(type_id);
+            const Type* ast_type = ConvertType(type_id);
             if (ast_type == nullptr) {
                 return Fail() << "internal error: failed to register Tint AST type for "
                                  "SPIR-V type with ID: "
                               << var.type_id();
             }
-            if (!ast_type->Is<Pointer>()) {
+            if (auto* ast_ptr_type = ast_type->As<Pointer>()) {
+                ast_store_type = ast_ptr_type->type;
+                ast_address_space = ast_ptr_type->address_space;
+            } else {
                 return Fail() << "variable with ID " << var.result_id() << " has non-pointer type "
                               << var.type_id();
             }
         }
+        TINT_ASSERT(Reader, ast_store_type != nullptr);
 
-        auto* ast_store_type = ast_type->As<Pointer>()->type;
-        auto ast_address_space = ast_type->As<Pointer>()->address_space;
         const ast::Expression* ast_initializer = nullptr;
         if (var.NumInOperands() > 1) {
             // SPIR-V initializers are always constants.
@@ -2020,10 +1965,15 @@ TypedExpression ParserImpl::MakeConstantExpressionForScalarSpirvConstant(
                                        ast::IntLiteralExpression::Suffix::kU)};
         },
         [&](const F32*) {
-            return TypedExpression{ty_.F32(),
-                                   create<ast::FloatLiteralExpression>(
-                                       source, static_cast<double>(spirv_const->GetFloat()),
-                                       ast::FloatLiteralExpression::Suffix::kF)};
+            if (auto f = CheckedConvert<f32>(AFloat(spirv_const->GetFloat()))) {
+                return TypedExpression{ty_.F32(),
+                                       create<ast::FloatLiteralExpression>(
+                                           source, static_cast<double>(spirv_const->GetFloat()),
+                                           ast::FloatLiteralExpression::Suffix::kF)};
+            } else {
+                Fail() << "value cannot be represented as 'f32': " << spirv_const->GetFloat();
+                return TypedExpression{};
+            }
         },
         [&](const Bool*) {
             const bool value =
@@ -2356,7 +2306,7 @@ const spvtools::opt::Instruction* ParserImpl::GetMemoryObjectDeclarationForHandl
 }
 
 const spvtools::opt::Instruction* ParserImpl::GetSpirvTypeForHandleOrHandleMemoryObjectDeclaration(
-    const spvtools::opt::Instruction& mem_obj_decl) {
+    const spvtools::opt::Instruction& obj) {
     if (!success()) {
         return nullptr;
     }
@@ -2371,9 +2321,11 @@ const spvtools::opt::Instruction* ParserImpl::GetSpirvTypeForHandleOrHandleMemor
     // are the only SPIR-V handles supported by WGSL.
 
     // Get the SPIR-V handle type.
-    const auto* type = def_use_mgr_->GetDef(mem_obj_decl.type_id());
+    const auto* type = def_use_mgr_->GetDef(obj.type_id());
     if (!type) {
-        Fail() << "Invalid type for variable or function parameter " << mem_obj_decl.PrettyPrint();
+        Fail() << "Invalid type for image, sampler, variable or function parameter to image or "
+                  "sampler "
+               << obj.PrettyPrint();
         return nullptr;
     }
     switch (opcode(type)) {
@@ -2384,16 +2336,16 @@ const spvtools::opt::Instruction* ParserImpl::GetSpirvTypeForHandleOrHandleMemor
             // The remaining cases.
             break;
         default:
-            Fail() << "Invalid type for variable or function parameter "
-                   << mem_obj_decl.PrettyPrint();
+            Fail() << "Invalid type for image, sampler, variable or function parameter to image or "
+                      "sampler "
+                   << obj.PrettyPrint();
             return nullptr;
     }
 
     // Look at the pointee type instead.
     const auto* raw_handle_type = def_use_mgr_->GetDef(type->GetSingleWordInOperand(1));
     if (!raw_handle_type) {
-        Fail() << "Invalid pointer type for variable or function parameter "
-               << mem_obj_decl.PrettyPrint();
+        Fail() << "Invalid pointer type for variable or function parameter " << obj.PrettyPrint();
         return nullptr;
     }
     switch (opcode(raw_handle_type)) {
@@ -2405,30 +2357,28 @@ const spvtools::opt::Instruction* ParserImpl::GetSpirvTypeForHandleOrHandleMemor
         case spv::Op::OpTypeRuntimeArray:
             Fail() << "arrays of textures or samplers are not supported in WGSL; can't "
                       "translate variable or function parameter: "
-                   << mem_obj_decl.PrettyPrint();
+                   << obj.PrettyPrint();
             return nullptr;
         case spv::Op::OpTypeSampledImage:
-            Fail() << "WGSL does not support combined image-samplers: "
-                   << mem_obj_decl.PrettyPrint();
+            Fail() << "WGSL does not support combined image-samplers: " << obj.PrettyPrint();
             return nullptr;
         default:
             Fail() << "invalid type for image or sampler variable or function "
                       "parameter: "
-                   << mem_obj_decl.PrettyPrint();
+                   << obj.PrettyPrint();
             return nullptr;
     }
     return raw_handle_type;
 }
 
-const Pointer* ParserImpl::GetTypeForHandleMemObjDecl(
-    const spvtools::opt::Instruction& mem_obj_decl) {
-    auto where = handle_type_.find(&mem_obj_decl);
+const Type* ParserImpl::GetHandleTypeForSpirvHandle(const spvtools::opt::Instruction& obj) {
+    auto where = handle_type_.find(&obj);
     if (where != handle_type_.end()) {
         return where->second;
     }
 
     const spvtools::opt::Instruction* raw_handle_type =
-        GetSpirvTypeForHandleOrHandleMemoryObjectDeclaration(mem_obj_decl);
+        GetSpirvTypeForHandleOrHandleMemoryObjectDeclaration(obj);
     if (!raw_handle_type) {
         return nullptr;
     }
@@ -2436,10 +2386,10 @@ const Pointer* ParserImpl::GetTypeForHandleMemObjDecl(
     // The memory object declaration could be a sampler or image.
     // Where possible, determine which one it is from the usage inferred
     // for the variable.
-    Usage usage = handle_usage_[&mem_obj_decl];
+    Usage usage = handle_usage_[&obj];
     if (!usage.IsValid()) {
         Fail() << "Invalid sampler or texture usage for variable or function parameter "
-               << mem_obj_decl.PrettyPrint() << "\n"
+               << obj.PrettyPrint() << "\n"
                << usage;
         return nullptr;
     }
@@ -2465,7 +2415,7 @@ const Pointer* ParserImpl::GetTypeForHandleMemObjDecl(
                 // Get NonWritable and NonReadable attributes of the variable.
                 bool is_nonwritable = false;
                 bool is_nonreadable = false;
-                for (const auto& deco : GetDecorationsFor(mem_obj_decl.result_id())) {
+                for (const auto& deco : GetDecorationsFor(obj.result_id())) {
                     if (deco.size() != 1) {
                         continue;
                     }
@@ -2478,11 +2428,11 @@ const Pointer* ParserImpl::GetTypeForHandleMemObjDecl(
                 }
                 if (is_nonwritable && is_nonreadable) {
                     Fail() << "storage image variable is both NonWritable and NonReadable"
-                           << mem_obj_decl.PrettyPrint();
+                           << obj.PrettyPrint();
                 }
                 if (!is_nonwritable && !is_nonreadable) {
                     Fail() << "storage image variable is neither NonWritable nor NonReadable"
-                           << mem_obj_decl.PrettyPrint();
+                           << obj.PrettyPrint();
                 }
                 // Let's make it one of the storage textures.
                 if (is_nonwritable) {
@@ -2502,9 +2452,9 @@ const Pointer* ParserImpl::GetTypeForHandleMemObjDecl(
     }
 
     // Construct the Tint handle type.
-    const Type* ast_store_type = nullptr;
+    const Type* ast_handle_type = nullptr;
     if (usage.IsSampler()) {
-        ast_store_type =
+        ast_handle_type =
             ty_.Sampler(usage.IsComparisonSampler() ? ast::SamplerKind::kComparisonSampler
                                                     : ast::SamplerKind::kSampler);
     } else if (usage.IsTexture()) {
@@ -2526,8 +2476,7 @@ const Pointer* ParserImpl::GetTypeForHandleMemObjDecl(
                 default:
                     Fail() << "WGSL arrayed textures must be 2d_array or cube_array: "
                               "invalid multisampled texture variable or function parameter "
-                           << namer_.Name(mem_obj_decl.result_id()) << ": "
-                           << mem_obj_decl.PrettyPrint();
+                           << namer_.Name(obj.result_id()) << ": " << obj.PrettyPrint();
                     return nullptr;
             }
         }
@@ -2552,21 +2501,20 @@ const Pointer* ParserImpl::GetTypeForHandleMemObjDecl(
             // treat that as a depth texture.
             if (image_type->depth() || usage.IsDepthTexture()) {
                 if (image_type->is_multisampled()) {
-                    ast_store_type = ty_.DepthMultisampledTexture(dim);
+                    ast_handle_type = ty_.DepthMultisampledTexture(dim);
                 } else {
-                    ast_store_type = ty_.DepthTexture(dim);
+                    ast_handle_type = ty_.DepthTexture(dim);
                 }
             } else if (image_type->is_multisampled()) {
                 if (dim != ast::TextureDimension::k2d) {
                     Fail() << "WGSL multisampled textures must be 2d and non-arrayed: "
                               "invalid multisampled texture variable or function parameter "
-                           << namer_.Name(mem_obj_decl.result_id()) << ": "
-                           << mem_obj_decl.PrettyPrint();
+                           << namer_.Name(obj.result_id()) << ": " << obj.PrettyPrint();
                 }
                 // Multisampled textures are never depth textures.
-                ast_store_type = ty_.MultisampledTexture(dim, ast_sampled_component_type);
+                ast_handle_type = ty_.MultisampledTexture(dim, ast_sampled_component_type);
             } else {
-                ast_store_type = ty_.SampledTexture(dim, ast_sampled_component_type);
+                ast_handle_type = ty_.SampledTexture(dim, ast_sampled_component_type);
             }
         } else {
             const auto access = ast::Access::kWrite;
@@ -2574,20 +2522,18 @@ const Pointer* ParserImpl::GetTypeForHandleMemObjDecl(
             if (format == ast::TexelFormat::kUndefined) {
                 return nullptr;
             }
-            ast_store_type = ty_.StorageTexture(dim, format, access);
+            ast_handle_type = ty_.StorageTexture(dim, format, access);
         }
     } else {
         Fail() << "unsupported: UniformConstant variable or function parameter is not a recognized "
                   "sampler or texture "
-               << mem_obj_decl.PrettyPrint();
+               << obj.PrettyPrint();
         return nullptr;
     }
 
-    // Form the pointer type.
-    auto* result = ty_.Pointer(ast_store_type, ast::AddressSpace::kHandle);
     // Remember it for later.
-    handle_type_[&mem_obj_decl] = result;
-    return result;
+    handle_type_[&obj] = ast_handle_type;
+    return ast_handle_type;
 }
 
 const Type* ParserImpl::GetComponentTypeForFormat(ast::TexelFormat format) {

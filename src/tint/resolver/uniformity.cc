@@ -172,7 +172,7 @@ struct FunctionInfo {
             parameters[i].sem = sem;
 
             Node* node_init;
-            if (sem->Type()->Is<sem::Pointer>()) {
+            if (sem->Type()->Is<type::Pointer>()) {
                 node_init = CreateNode("ptrparam_" + name + "_init");
                 parameters[i].pointer_return_value = CreateNode("ptrparam_" + name + "_return");
                 local_var_decls.Add(sem);
@@ -477,10 +477,9 @@ class UniformityGraph {
                 }
 
                 // Propagate all variables assignments to the containing scope if the behavior is
-                // either 'Next' or 'Fallthrough'.
+                // 'Next'.
                 auto& behaviors = sem_.Get(b)->Behaviors();
-                if (behaviors.Contains(sem::Behavior::kNext) ||
-                    behaviors.Contains(sem::Behavior::kFallthrough)) {
+                if (behaviors.Contains(sem::Behavior::kNext)) {
                     for (auto var : scoped_assignments) {
                         current_function_->variables.Set(var.key, var.value);
                     }
@@ -601,7 +600,7 @@ class UniformityGraph {
                     }
 
                     // Add an edge from the variable's loop input node to its value at this point.
-                    auto** in_node = info.var_in_nodes.Find(var);
+                    auto in_node = info.var_in_nodes.Find(var);
                     TINT_ASSERT(Resolver, in_node != nullptr);
                     auto* out_node = current_function_->variables.Get(var);
                     if (out_node != *in_node) {
@@ -612,8 +611,6 @@ class UniformityGraph {
             },
 
             [&](const ast::DiscardStatement*) { return cf; },
-
-            [&](const ast::FallthroughStatement*) { return cf; },
 
             [&](const ast::ForLoopStatement* f) {
                 auto* sem_loop = sem_.Get(f);
@@ -676,7 +673,7 @@ class UniformityGraph {
                 }
 
                 // Set each variable's exit node as its value in the outer scope.
-                for (auto& v : info.var_exit_nodes) {
+                for (auto v : info.var_exit_nodes) {
                     current_function_->variables.Set(v.key, v.value);
                 }
 
@@ -729,7 +726,7 @@ class UniformityGraph {
                 cfx->AddEdge(cf);
 
                 // Add edges from variable loop input nodes to their values at the end of the loop.
-                for (auto& v : info.var_in_nodes) {
+                for (auto v : info.var_in_nodes) {
                     auto* in_node = v.value;
                     auto* out_node = current_function_->variables.Get(v.key);
                     if (out_node != in_node) {
@@ -937,46 +934,35 @@ class UniformityGraph {
                 info.type = "switch";
 
                 auto* cf_n = v;
-                bool previous_case_has_fallthrough = false;
                 for (auto* c : s->body) {
                     auto* sem_case = sem_.Get(c);
 
-                    if (previous_case_has_fallthrough) {
-                        cf_n = ProcessStatement(cf_n, c->body);
-                    } else {
-                        current_function_->variables.Push();
-                        cf_n = ProcessStatement(v, c->body);
-                    }
+                    current_function_->variables.Push();
+                    cf_n = ProcessStatement(v, c->body);
 
                     if (cf_end) {
                         cf_end->AddEdge(cf_n);
                     }
 
-                    bool has_fallthrough =
-                        sem_case->Behaviors().Contains(sem::Behavior::kFallthrough);
-                    if (!has_fallthrough) {
-                        if (sem_case->Behaviors().Contains(sem::Behavior::kNext)) {
-                            // Propagate variable values to the switch exit nodes.
-                            for (auto* var : current_function_->local_var_decls) {
-                                // Skip variables that were declared inside the switch.
-                                if (auto* lv = var->As<sem::LocalVariable>();
-                                    lv && lv->Statement()->FindFirstParent(
-                                              [&](auto* st) { return st == sem_switch; })) {
-                                    continue;
-                                }
-
-                                // Add an edge from the variable exit node to its new value.
-                                auto* exit_node = info.var_exit_nodes.GetOrCreate(var, [&]() {
-                                    auto name =
-                                        builder_->Symbols().NameFor(var->Declaration()->symbol);
-                                    return CreateNode(name + "_value_" + info.type + "_exit");
-                                });
-                                exit_node->AddEdge(current_function_->variables.Get(var));
+                    if (sem_case->Behaviors().Contains(sem::Behavior::kNext)) {
+                        // Propagate variable values to the switch exit nodes.
+                        for (auto* var : current_function_->local_var_decls) {
+                            // Skip variables that were declared inside the switch.
+                            if (auto* lv = var->As<sem::LocalVariable>();
+                                lv && lv->Statement()->FindFirstParent(
+                                          [&](auto* st) { return st == sem_switch; })) {
+                                continue;
                             }
+
+                            // Add an edge from the variable exit node to its new value.
+                            auto* exit_node = info.var_exit_nodes.GetOrCreate(var, [&]() {
+                                auto name = builder_->Symbols().NameFor(var->Declaration()->symbol);
+                                return CreateNode(name + "_value_" + info.type + "_exit");
+                            });
+                            exit_node->AddEdge(current_function_->variables.Get(var));
                         }
-                        current_function_->variables.Pop();
                     }
-                    previous_case_has_fallthrough = has_fallthrough;
+                    current_function_->variables.Pop();
                 }
 
                 // Update nodes for any variables assigned in the switch statement.
@@ -996,7 +982,7 @@ class UniformityGraph {
                     node = v;
 
                     // Store if lhs is a partial pointer
-                    if (sem_var->Type()->Is<sem::Pointer>()) {
+                    if (sem_var->Type()->Is<type::Pointer>()) {
                         auto* init = sem_.Get(decl->variable->initializer);
                         if (auto* unary_init = init->Declaration()->As<ast::UnaryOpExpression>()) {
                             auto* e = UnwrapIndirectAndAddressOfChain(unary_init);
@@ -1348,7 +1334,7 @@ class UniformityGraph {
             [&](const sem::Function* func) {
                 // We must have already analyzed the user-defined function since we process
                 // functions in dependency order.
-                auto* info = functions_.Find(func->Declaration());
+                auto info = functions_.Find(func->Declaration());
                 TINT_ASSERT(Resolver, info != nullptr);
                 callsite_tag = info->callsite_tag;
                 function_tag = info->function_tag;
@@ -1392,7 +1378,7 @@ class UniformityGraph {
                 }
 
                 auto* sem_arg = sem_.Get(call->args[i]);
-                if (sem_arg->Type()->Is<sem::Pointer>()) {
+                if (sem_arg->Type()->Is<type::Pointer>()) {
                     auto* ptr_result =
                         CreateNode(name + "_ptrarg_" + std::to_string(i) + "_result", call);
                     ptr_result->type = Node::kFunctionCallPointerArgumentResult;
@@ -1480,7 +1466,7 @@ class UniformityGraph {
         } else if (auto* user = target->As<sem::Function>()) {
             // This is a call to a user-defined function, so inspect the functions called by that
             // function and look for one whose node has an edge from the RequiredToBeUniform node.
-            auto* target_info = functions_.Find(user->Declaration());
+            auto target_info = functions_.Find(user->Declaration());
             for (auto* call_node : target_info->required_to_be_uniform->edges) {
                 if (call_node->type == Node::kRegular) {
                     auto* child_call = call_node->ast->As<ast::CallExpression>();
@@ -1650,7 +1636,7 @@ class UniformityGraph {
             // If this is a call to a user-defined function, add a note to show the reason that the
             // parameter is required to be uniform.
             if (auto* user = target->As<sem::Function>()) {
-                auto* next_function = functions_.Find(user->Declaration());
+                auto next_function = functions_.Find(user->Declaration());
                 Node* next_cause = next_function->parameters[cause->arg_index].init_value;
                 MakeError(*next_function, next_cause, true);
             }

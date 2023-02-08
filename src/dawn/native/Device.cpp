@@ -618,27 +618,18 @@ BlobCache* DeviceBase::GetBlobCache() {
     // TODO(crbug.com/dawn/1481): Shader caching currently has a dependency on the WGSL writer to
     // generate cache keys. We can lift the dependency once we also cache frontend parsing,
     // transformations, and reflection.
-    if (IsToggleEnabled(Toggle::EnableBlobCache)) {
-        return mAdapter->GetInstance()->GetBlobCache();
-    }
+    return mAdapter->GetInstance()->GetBlobCache(!IsToggleEnabled(Toggle::DisableBlobCache));
 #endif
-    return nullptr;
+    return mAdapter->GetInstance()->GetBlobCache(false);
 }
 
 Blob DeviceBase::LoadCachedBlob(const CacheKey& key) {
-    BlobCache* blobCache = GetBlobCache();
-    if (!blobCache) {
-        return Blob();
-    }
-    return blobCache->Load(key);
+    return GetBlobCache()->Load(key);
 }
 
 void DeviceBase::StoreCachedBlob(const CacheKey& key, const Blob& blob) {
     if (!blob.Empty()) {
-        BlobCache* blobCache = GetBlobCache();
-        if (blobCache) {
-            blobCache->Store(key, blob);
-        }
+        GetBlobCache()->Store(key, blob);
     }
 }
 
@@ -1193,9 +1184,27 @@ TextureBase* DeviceBase::APICreateTexture(const TextureDescriptor* descriptor) {
 
 // For Dawn Wire
 
-BufferBase* DeviceBase::APICreateErrorBuffer() {
-    BufferDescriptor desc = {};
-    return BufferBase::MakeError(this, &desc);
+BufferBase* DeviceBase::APICreateErrorBuffer(const BufferDescriptor* desc) {
+    BufferDescriptor fakeDescriptor = *desc;
+    fakeDescriptor.nextInChain = nullptr;
+
+    // The validation errors on BufferDescriptor should be prior to any OOM errors when
+    // MapppedAtCreation == false.
+    MaybeError maybeError = ValidateBufferDescriptor(this, &fakeDescriptor);
+    if (maybeError.IsError()) {
+        ConsumedError(maybeError.AcquireError(), "calling %s.CreateBuffer(%s).", this, desc);
+    } else {
+        const DawnBufferDescriptorErrorInfoFromWireClient* clientErrorInfo = nullptr;
+        FindInChain(desc->nextInChain, &clientErrorInfo);
+        if (clientErrorInfo != nullptr && clientErrorInfo->outOfMemory) {
+            ConsumedError(DAWN_OUT_OF_MEMORY_ERROR("Failed to allocate memory for buffer mapping"));
+        }
+    }
+
+    // Set the size of the error buffer to 0 as this function is called only when an OOM happens at
+    // the client side.
+    fakeDescriptor.size = 0;
+    return BufferBase::MakeError(this, &fakeDescriptor);
 }
 
 ExternalTextureBase* DeviceBase::APICreateErrorExternalTexture() {
@@ -1324,10 +1333,10 @@ size_t DeviceBase::GetDeprecationWarningCountForTesting() {
     return mDeprecationWarnings->count;
 }
 
-void DeviceBase::EmitDeprecationWarning(const char* warning) {
+void DeviceBase::EmitDeprecationWarning(const std::string& message) {
     mDeprecationWarnings->count++;
-    if (mDeprecationWarnings->emitted.insert(warning).second) {
-        dawn::WarningLog() << warning;
+    if (mDeprecationWarnings->emitted.insert(message).second) {
+        dawn::WarningLog() << message;
     }
 }
 
@@ -1408,15 +1417,7 @@ ResultOrError<Ref<BindGroupLayoutBase>> DeviceBase::CreateBindGroupLayout(
 ResultOrError<Ref<BufferBase>> DeviceBase::CreateBuffer(const BufferDescriptor* descriptor) {
     DAWN_TRY(ValidateIsAlive());
     if (IsValidationEnabled()) {
-        DAWN_TRY_CONTEXT(ValidateBufferDescriptor(this, descriptor), "validating %s", descriptor);
-
-        // TODO(dawn:1525): Change to validation error after the deprecation period.
-        if (descriptor->size > mLimits.v1.maxBufferSize) {
-            std::string warning =
-                absl::StrFormat("Buffer size (%u) exceeds the max buffer size limit (%u).",
-                                descriptor->size, mLimits.v1.maxBufferSize);
-            EmitDeprecationWarning(warning.c_str());
-        }
+        DAWN_TRY(ValidateBufferDescriptor(this, descriptor));
     }
 
     Ref<BufferBase> buffer;
@@ -1584,7 +1585,8 @@ ResultOrError<Ref<RenderBundleEncoder>> DeviceBase::CreateRenderBundleEncoder(
     const RenderBundleEncoderDescriptor* descriptor) {
     DAWN_TRY(ValidateIsAlive());
     if (IsValidationEnabled()) {
-        DAWN_TRY(ValidateRenderBundleEncoderDescriptor(this, descriptor));
+        DAWN_TRY_CONTEXT(ValidateRenderBundleEncoderDescriptor(this, descriptor),
+                         "validating render bundle encoder descriptor.");
     }
     return RenderBundleEncoder::Create(this, descriptor);
 }
