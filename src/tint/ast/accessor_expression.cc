@@ -1,4 +1,4 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2023 The Tint Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,27 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/ast/void.h"
+#include "src/tint/ast/accessor_expression.h"
 
 #include "src/tint/program_builder.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ast::Void);
+TINT_INSTANTIATE_TYPEINFO(tint::ast::AccessorExpression);
 
 namespace tint::ast {
 
-Void::Void(ProgramID pid, NodeID nid, const Source& src) : Base(pid, nid, src) {}
-
-Void::Void(Void&&) = default;
-
-Void::~Void() = default;
-
-std::string Void::FriendlyName(const SymbolTable&) const {
-    return "void";
+AccessorExpression::AccessorExpression(ProgramID pid,
+                                       NodeID nid,
+                                       const Source& src,
+                                       const Expression* obj)
+    : Base(pid, nid, src), object(obj) {
+    TINT_ASSERT(AST, object);
+    TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, object, program_id);
 }
 
-const Void* Void::Clone(CloneContext* ctx) const {
-    auto src = ctx->Clone(source);
-    return ctx->dst->create<Void>(src);
-}
+AccessorExpression::AccessorExpression(AccessorExpression&&) = default;
+
+AccessorExpression::~AccessorExpression() = default;
 
 }  // namespace tint::ast

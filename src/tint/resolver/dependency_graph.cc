@@ -61,18 +61,18 @@
 #include "src/tint/ast/struct_member_offset_attribute.h"
 #include "src/tint/ast/struct_member_size_attribute.h"
 #include "src/tint/ast/switch_statement.h"
+#include "src/tint/ast/templated_identifier.h"
 #include "src/tint/ast/traverse_expressions.h"
 #include "src/tint/ast/type_name.h"
 #include "src/tint/ast/u32.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/ast/vector.h"
-#include "src/tint/ast/void.h"
 #include "src/tint/ast/while_statement.h"
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/scope_stack.h"
 #include "src/tint/sem/builtin.h"
 #include "src/tint/symbol_table.h"
-#include "src/tint/type/short_name.h"
+#include "src/tint/type/builtin.h"
 #include "src/tint/utils/block_allocator.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/defer.h"
@@ -206,8 +206,8 @@ class DependencyScanner {
                     TraverseExpression(var->initializer);
                 }
             },
-            [&](const ast::DiagnosticControl*) {
-                // Diagnostic control directives do not affect the dependency graph.
+            [&](const ast::DiagnosticDirective*) {
+                // Diagnostic directives do not affect the dependency graph.
             },
             [&](const ast::Enable*) {
                 // Enable directives do not affect the dependency graph.
@@ -392,7 +392,7 @@ class DependencyScanner {
                 TraverseType(ptr->type);
             },
             [&](const ast::TypeName* tn) {  //
-                AddDependency(tn, tn->name, "type", "references");
+                AddDependency(tn, tn->name->symbol, "type", "references");
             },
             [&](const ast::Vector* vec) {  //
                 TraverseType(vec->type);
@@ -404,7 +404,7 @@ class DependencyScanner {
                 TraverseType(tex->type);
             },
             [&](Default) {
-                if (!ty->IsAnyOf<ast::Void, ast::Bool, ast::I32, ast::U32, ast::F16, ast::F32,
+                if (!ty->IsAnyOf<ast::Bool, ast::I32, ast::U32, ast::F16, ast::F32,
                                  ast::DepthTexture, ast::DepthMultisampledTexture,
                                  ast::StorageTexture, ast::ExternalTexture, ast::Sampler>()) {
                     UnhandledNode(diagnostics_, ty);
@@ -493,7 +493,7 @@ class DependencyScanner {
     bool IsBuiltin(Symbol name) const {
         auto s = symbols_.NameFor(name);
         if (sem::ParseBuiltinType(s) != sem::BuiltinType::kNone ||
-            type::ParseShortName(s) != type::ShortName::kUndefined) {
+            type::ParseBuiltin(s) != type::Builtin::kUndefined) {
             return true;
         }
         return false;
@@ -560,7 +560,7 @@ struct DependencyAnalysis {
             [&](const ast::TypeDecl* td) { return td->name; },
             [&](const ast::Function* func) { return func->symbol; },
             [&](const ast::Variable* var) { return var->symbol; },
-            [&](const ast::DiagnosticControl*) { return Symbol(); },
+            [&](const ast::DiagnosticDirective*) { return Symbol(); },
             [&](const ast::Enable*) { return Symbol(); },
             [&](const ast::ConstAssert*) { return Symbol(); },
             [&](Default) {
@@ -671,13 +671,13 @@ struct DependencyAnalysis {
 
         // Make sure all directives go before any other global declarations.
         for (auto* global : declaration_order_) {
-            if (global->node->IsAnyOf<ast::DiagnosticControl, ast::Enable>()) {
+            if (global->node->IsAnyOf<ast::DiagnosticDirective, ast::Enable>()) {
                 sorted_.Add(global->node);
             }
         }
 
         for (auto* global : declaration_order_) {
-            if (global->node->IsAnyOf<ast::DiagnosticControl, ast::Enable>()) {
+            if (global->node->IsAnyOf<ast::DiagnosticDirective, ast::Enable>()) {
                 // Skip directives here, as they are already added.
                 continue;
             }

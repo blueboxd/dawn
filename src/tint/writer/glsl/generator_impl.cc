@@ -250,7 +250,7 @@ bool GeneratorImpl::Generate() {
 
     auto* mod = builder_.Sem().Module();
     for (auto* decl : mod->DependencyOrderedDeclarations()) {
-        if (decl->IsAnyOf<ast::Alias, ast::ConstAssert, ast::DiagnosticControl>()) {
+        if (decl->IsAnyOf<ast::Alias, ast::ConstAssert, ast::DiagnosticDirective>()) {
             continue;  // These are not emitted.
         }
 
@@ -1313,9 +1313,9 @@ bool GeneratorImpl::EmitBarrierCall(std::ostream& out, const sem::Builtin* built
 const ast::Expression* GeneratorImpl::CreateF32Zero(const sem::Statement* stmt) {
     auto* zero = builder_.Expr(0_f);
     auto* f32 = builder_.create<type::F32>();
-    auto* sem_zero = builder_.create<sem::Expression>(zero, f32, sem::EvaluationStage::kRuntime,
-                                                      stmt, /* constant_value */ nullptr,
-                                                      /* has_side_effects */ false);
+    auto* sem_zero = builder_.create<sem::ValueExpression>(
+        zero, f32, sem::EvaluationStage::kRuntime, stmt, /* constant_value */ nullptr,
+        /* has_side_effects */ false);
     builder_.Sem().Add(zero, sem_zero);
     return zero;
 }
@@ -1814,7 +1814,7 @@ bool GeneratorImpl::EmitDiscard(const ast::DiscardStatement*) {
 }
 
 bool GeneratorImpl::EmitExpression(std::ostream& out, const ast::Expression* expr) {
-    if (auto* sem = builder_.Sem().Get(expr)) {
+    if (auto* sem = builder_.Sem().GetVal(expr)) {
         if (auto* constant = sem->ConstantValue()) {
             return EmitConstant(out, constant);
         }
@@ -2260,8 +2260,11 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
     // Emit original entry point signature
     {
         auto out = line();
-        out << func->return_type->FriendlyName(builder_.Symbols()) << " "
-            << builder_.Symbols().NameFor(func->symbol) << "(";
+        if (!EmitTypeAndName(out, func_sem->ReturnType(), type::AddressSpace::kUndefined,
+                             type::Access::kUndefined, builder_.Symbols().NameFor(func->symbol))) {
+            return false;
+        }
+        out << "(";
 
         bool first = true;
 
@@ -2720,7 +2723,7 @@ bool GeneratorImpl::EmitWhile(const ast::WhileStatement* stmt) {
 
 bool GeneratorImpl::EmitMemberAccessor(std::ostream& out,
                                        const ast::MemberAccessorExpression* expr) {
-    if (!EmitExpression(out, expr->structure)) {
+    if (!EmitExpression(out, expr->object)) {
         return false;
     }
     out << ".";

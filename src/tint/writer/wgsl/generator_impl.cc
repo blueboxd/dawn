@@ -46,7 +46,6 @@
 #include "src/tint/ast/u32.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/ast/vector.h"
-#include "src/tint/ast/void.h"
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/switch_statement.h"
@@ -71,9 +70,9 @@ bool GeneratorImpl::Generate() {
         }
         has_directives = true;
     }
-    for (auto diagnostic : program_->AST().DiagnosticControls()) {
+    for (auto diagnostic : program_->AST().DiagnosticDirectives()) {
         auto out = line();
-        if (!EmitDiagnosticControl(out, diagnostic)) {
+        if (!EmitDiagnosticControl(out, diagnostic->control)) {
             return false;
         }
         out << ";";
@@ -84,7 +83,7 @@ bool GeneratorImpl::Generate() {
     }
     // Generate global declarations in the order they appear in the module.
     for (auto* decl : program_->AST().GlobalDeclarations()) {
-        if (decl->IsAnyOf<ast::DiagnosticControl, ast::Enable>()) {
+        if (decl->IsAnyOf<ast::DiagnosticDirective, ast::Enable>()) {
             continue;
         }
         if (!Switch(
@@ -108,9 +107,9 @@ bool GeneratorImpl::Generate() {
 }
 
 bool GeneratorImpl::EmitDiagnosticControl(std::ostream& out,
-                                          const ast::DiagnosticControl* diagnostic) {
-    out << "diagnostic(" << diagnostic->severity << ", "
-        << program_->Symbols().NameFor(diagnostic->rule_name->symbol) << ")";
+                                          const ast::DiagnosticControl& diagnostic) {
+    out << "diagnostic(" << diagnostic.severity << ", "
+        << program_->Symbols().NameFor(diagnostic.rule_name->symbol) << ")";
     return true;
 }
 
@@ -181,8 +180,8 @@ bool GeneratorImpl::EmitExpression(std::ostream& out, const ast::Expression* exp
 
 bool GeneratorImpl::EmitIndexAccessor(std::ostream& out, const ast::IndexAccessorExpression* expr) {
     bool paren_lhs =
-        !expr->object->IsAnyOf<ast::IndexAccessorExpression, ast::CallExpression,
-                               ast::IdentifierExpression, ast::MemberAccessorExpression>();
+        !expr->object
+             ->IsAnyOf<ast::AccessorExpression, ast::CallExpression, ast::IdentifierExpression>();
     if (paren_lhs) {
         out << "(";
     }
@@ -205,12 +204,12 @@ bool GeneratorImpl::EmitIndexAccessor(std::ostream& out, const ast::IndexAccesso
 bool GeneratorImpl::EmitMemberAccessor(std::ostream& out,
                                        const ast::MemberAccessorExpression* expr) {
     bool paren_lhs =
-        !expr->structure->IsAnyOf<ast::IndexAccessorExpression, ast::CallExpression,
-                                  ast::IdentifierExpression, ast::MemberAccessorExpression>();
+        !expr->object
+             ->IsAnyOf<ast::AccessorExpression, ast::CallExpression, ast::IdentifierExpression>();
     if (paren_lhs) {
         out << "(";
     }
-    if (!EmitExpression(out, expr->structure)) {
+    if (!EmitExpression(out, expr->object)) {
         return false;
     }
     if (paren_lhs) {
@@ -334,7 +333,7 @@ bool GeneratorImpl::EmitFunction(const ast::Function* func) {
 
         out << ")";
 
-        if (!func->return_type->Is<ast::Void>() || !func->return_type_attributes.IsEmpty()) {
+        if (func->return_type || !func->return_type_attributes.IsEmpty()) {
             out << " -> ";
 
             if (!func->return_type_attributes.IsEmpty()) {
@@ -590,12 +589,8 @@ bool GeneratorImpl::EmitType(std::ostream& out, const ast::Type* ty) {
             }
             return true;
         },
-        [&](const ast::Void*) {
-            out << "void";
-            return true;
-        },
         [&](const ast::TypeName* tn) {
-            out << program_->Symbols().NameFor(tn->name);
+            out << program_->Symbols().NameFor(tn->name->symbol);
             return true;
         },
         [&](Default) {

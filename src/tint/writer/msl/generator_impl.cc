@@ -30,7 +30,6 @@
 #include "src/tint/ast/interpolate_attribute.h"
 #include "src/tint/ast/module.h"
 #include "src/tint/ast/variable_decl_statement.h"
-#include "src/tint/ast/void.h"
 #include "src/tint/constant/value.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/function.h"
@@ -313,7 +312,7 @@ bool GeneratorImpl::Generate() {
                 }
                 return EmitFunction(func);
             },
-            [&](const ast::DiagnosticControl*) {
+            [&](const ast::DiagnosticDirective*) {
                 // Do nothing for diagnostic directives in MSL
                 return true;
             },
@@ -370,8 +369,8 @@ bool GeneratorImpl::EmitTypeDecl(const type::Type* ty) {
 
 bool GeneratorImpl::EmitIndexAccessor(std::ostream& out, const ast::IndexAccessorExpression* expr) {
     bool paren_lhs =
-        !expr->object->IsAnyOf<ast::IndexAccessorExpression, ast::CallExpression,
-                               ast::IdentifierExpression, ast::MemberAccessorExpression>();
+        !expr->object
+             ->IsAnyOf<ast::AccessorExpression, ast::CallExpression, ast::IdentifierExpression>();
 
     if (paren_lhs) {
         out << "(";
@@ -733,7 +732,7 @@ bool GeneratorImpl::EmitBuiltinCall(std::ostream& out,
         }
 
         case sem::BuiltinType::kLength: {
-            auto* sem = builder_.Sem().Get(expr->args[0]);
+            auto* sem = builder_.Sem().GetVal(expr->args[0]);
             if (sem->Type()->UnwrapRef()->is_scalar()) {
                 // Emulate scalar overload using fabs(x).
                 name = "fabs";
@@ -742,7 +741,7 @@ bool GeneratorImpl::EmitBuiltinCall(std::ostream& out,
         }
 
         case sem::BuiltinType::kDistance: {
-            auto* sem = builder_.Sem().Get(expr->args[0]);
+            auto* sem = builder_.Sem().GetVal(expr->args[0]);
             if (sem->Type()->UnwrapRef()->is_scalar()) {
                 // Emulate scalar overload using fabs(x - y);
                 out << "fabs";
@@ -1009,9 +1008,8 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
     // expression includes an operator with lower precedence than the member
     // accessor used for the function calls.
     auto texture_expr = [&]() {
-        bool paren_lhs =
-            !texture->IsAnyOf<ast::IndexAccessorExpression, ast::CallExpression,
-                              ast::IdentifierExpression, ast::MemberAccessorExpression>();
+        bool paren_lhs = !texture->IsAnyOf<ast::AccessorExpression, ast::CallExpression,
+                                           ast::IdentifierExpression>();
         if (paren_lhs) {
             out << "(";
         }
@@ -1828,7 +1826,7 @@ bool GeneratorImpl::EmitLiteral(std::ostream& out, const ast::LiteralExpression*
 }
 
 bool GeneratorImpl::EmitExpression(std::ostream& out, const ast::Expression* expr) {
-    if (auto* sem = builder_.Sem().Get(expr)) {
+    if (auto* sem = builder_.Sem().GetVal(expr)) {
         if (auto* constant = sem->ConstantValue()) {
             return EmitConstant(out, constant);
         }
@@ -1975,6 +1973,8 @@ std::string GeneratorImpl::interpolation_to_attribute(ast::InterpolationType typ
 }
 
 bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
+    auto* func_sem = builder_.Sem().Get(func);
+
     auto func_name = program_->Symbols().NameFor(func->symbol);
 
     // Returns the binding index of a variable, requiring that the group
@@ -2000,8 +2000,11 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
         auto out = line();
 
         EmitStage(out, func->PipelineStage());
-        out << " " << func->return_type->FriendlyName(program_->Symbols());
-        out << " " << func_name << "(";
+        out << " ";
+        if (!EmitTypeAndName(out, func_sem->ReturnType(), func_name)) {
+            return false;
+        }
+        out << "(";
 
         // Emit entry point parameters.
         bool first = true;
@@ -2331,13 +2334,12 @@ bool GeneratorImpl::EmitIf(const ast::IfStatement* stmt) {
 bool GeneratorImpl::EmitMemberAccessor(std::ostream& out,
                                        const ast::MemberAccessorExpression* expr) {
     auto write_lhs = [&] {
-        bool paren_lhs =
-            !expr->structure->IsAnyOf<ast::IndexAccessorExpression, ast::CallExpression,
-                                      ast::IdentifierExpression, ast::MemberAccessorExpression>();
+        bool paren_lhs = !expr->object->IsAnyOf<ast::AccessorExpression, ast::CallExpression,
+                                                ast::IdentifierExpression>();
         if (paren_lhs) {
             out << "(";
         }
-        if (!EmitExpression(out, expr->structure)) {
+        if (!EmitExpression(out, expr->object)) {
             return false;
         }
         if (paren_lhs) {

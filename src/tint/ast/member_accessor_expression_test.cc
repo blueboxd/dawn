@@ -25,7 +25,7 @@ TEST_F(MemberAccessorExpressionTest, Creation) {
     auto* mem = Ident("member");
 
     auto* stmt = create<MemberAccessorExpression>(str, mem);
-    EXPECT_EQ(stmt->structure, str);
+    EXPECT_EQ(stmt->object, str);
     EXPECT_EQ(stmt->member, mem);
 }
 
@@ -76,6 +76,16 @@ TEST_F(MemberAccessorExpressionTest, Assert_DifferentProgramID_Member) {
             ProgramBuilder b1;
             ProgramBuilder b2;
             b1.create<MemberAccessorExpression>(b1.Expr("structure"), b2.Ident("member"));
+        },
+        "internal compiler error");
+}
+
+TEST_F(MemberAccessorExpressionTest, Assert_MemberNotTemplated) {
+    EXPECT_FATAL_FAILURE(
+        {
+            ProgramBuilder b;
+            b.create<MemberAccessorExpression>(b.Expr("structure"),
+                                               b.Ident("member", "a", "b", "c"));
         },
         "internal compiler error");
 }

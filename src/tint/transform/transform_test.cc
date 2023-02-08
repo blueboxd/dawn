@@ -45,7 +45,7 @@ TEST_F(CreateASTTypeForTest, Basic) {
     EXPECT_TRUE(create([](ProgramBuilder& b) { return b.create<type::U32>(); })->Is<ast::U32>());
     EXPECT_TRUE(create([](ProgramBuilder& b) { return b.create<type::F32>(); })->Is<ast::F32>());
     EXPECT_TRUE(create([](ProgramBuilder& b) { return b.create<type::Bool>(); })->Is<ast::Bool>());
-    EXPECT_TRUE(create([](ProgramBuilder& b) { return b.create<type::Void>(); })->Is<ast::Void>());
+    EXPECT_EQ(create([](ProgramBuilder& b) { return b.create<type::Void>(); }), nullptr);
 }
 
 TEST_F(CreateASTTypeForTest, Matrix) {
@@ -116,7 +116,7 @@ TEST_F(CreateASTTypeForTest, AliasedArrayWithComplexOverrideLength) {
     CloneContext ctx(&ast_type_builder, &program, false);
     auto* ast_ty = tint::As<ast::TypeName>(CreateASTTypeFor(ctx, arr_ty));
     ASSERT_NE(ast_ty, nullptr);
-    EXPECT_EQ(ast_type_builder.Symbols().NameFor(ast_ty->name), "A");
+    EXPECT_EQ(ast_type_builder.Symbols().NameFor(ast_ty->name->symbol), "A");
 }
 
 TEST_F(CreateASTTypeForTest, Struct) {
@@ -126,7 +126,7 @@ TEST_F(CreateASTTypeForTest, Struct) {
                                      4u /* size */, 4u /* size_no_padding */);
     });
     ASSERT_TRUE(str->Is<ast::TypeName>());
-    EXPECT_EQ(ast_type_builder.Symbols().NameFor(str->As<ast::TypeName>()->name), "S");
+    EXPECT_EQ(ast_type_builder.Symbols().NameFor(str->As<ast::TypeName>()->name->symbol), "S");
 }
 
 }  // namespace

@@ -181,7 +181,7 @@ TEST_F(ResolverValidationTest, Expr_DontCall_Type) {
     EXPECT_EQ(r()->error(), "12:34 error: missing '(' for type initializer or cast");
 }
 
-TEST_F(ResolverValidationTest, Expr_DontCall_ShortName) {
+TEST_F(ResolverValidationTest, Expr_DontCall_BuiltinType) {
     WrapInFunction(Expr(Source{{12, 34}}, "vec3f"));
 
     EXPECT_FALSE(r()->Resolve());
@@ -1267,8 +1267,7 @@ TEST_F(ResolverValidationTest, OffsetAndAlignAndSizeAttribute) {
 
 TEST_F(ResolverTest, Expr_Initializer_Cast_Pointer) {
     auto* vf = Var("vf", ty.f32());
-    auto* c =
-        Construct(Source{{12, 34}}, ty.pointer<i32>(type::AddressSpace::kFunction), ExprList(vf));
+    auto* c = Call(Source{{12, 34}}, ty.pointer<i32>(type::AddressSpace::kFunction), ExprList(vf));
     auto* ip = Let("ip", ty.pointer<i32>(type::AddressSpace::kFunction), c);
     WrapInFunction(Decl(vf), Decl(ip));
 
