@@ -1383,8 +1383,8 @@ bool FunctionEmitter::EmitEntryPointAsWrapper() {
             return_type = ty_.Void()->Build(builder_);
         } else {
             // Create and register the result type.
-            auto* str =
-                create<ast::Struct>(Source{}, return_struct_sym, return_members, AttributeList{});
+            auto* str = create<ast::Struct>(Source{}, builder_.Ident(return_struct_sym),
+                                            return_members, AttributeList{});
             parser_impl_.AddTypeDecl(return_struct_sym, str);
             return_type = builder_.ty.Of(str);
 
@@ -5787,7 +5787,7 @@ bool FunctionEmitter::EmitAtomicOp(const spvtools::opt::Instruction& inst) {
             });
 
         // Emit call to stub, will be replaced with call to atomic builtin by transform::SpirvAtomic
-        auto* call = builder_.Call(Source{}, stub->symbol, std::move(exprs));
+        auto* call = builder_.Call(Source{}, stub->name->symbol, std::move(exprs));
         if (inst.type_id() != 0) {
             auto* result_type = parser_impl_.ConvertType(inst.type_id());
             TypedExpression expr{result_type, call};
