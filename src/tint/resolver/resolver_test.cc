@@ -34,6 +34,7 @@
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/ast/workgroup_attribute.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/resolver/resolver_test_helper.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/function.h"
@@ -2127,9 +2128,10 @@ TEST_F(ResolverTest, TextureSampler_TextureSample) {
               Binding(1_a));
     GlobalVar("s", ty.sampler(type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
 
-    auto* call = CallStmt(Call("textureSample", "t", "s", vec2<f32>(1_f, 2_f)));
-    const ast::Function* f = Func("test_function", utils::Empty, ty.void_(), utils::Vector{call},
-                                  utils::Vector{Stage(ast::PipelineStage::kFragment)});
+    auto* call = Call("textureSample", "t", "s", vec2<f32>(1_f, 2_f));
+    const ast::Function* f =
+        Func("test_function", utils::Empty, ty.void_(), utils::Vector{Assign(Phony(), call)},
+             utils::Vector{Stage(ast::PipelineStage::kFragment)});
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
@@ -2145,7 +2147,7 @@ TEST_F(ResolverTest, TextureSampler_TextureSampleInFunction) {
               Binding(1_a));
     GlobalVar("s", ty.sampler(type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
 
-    auto* inner_call = CallStmt(Call("textureSample", "t", "s", vec2<f32>(1_f, 2_f)));
+    auto* inner_call = Assign(Phony(), Call("textureSample", "t", "s", vec2<f32>(1_f, 2_f)));
     const ast::Function* inner_func =
         Func("inner_func", utils::Empty, ty.void_(), utils::Vector{inner_call});
     auto* outer_call = CallStmt(Call("inner_func"));
@@ -2171,10 +2173,10 @@ TEST_F(ResolverTest, TextureSampler_TextureSampleFunctionDiamondSameVariables) {
               Binding(1_a));
     GlobalVar("s", ty.sampler(type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
 
-    auto* inner_call_1 = CallStmt(Call("textureSample", "t", "s", vec2<f32>(1_f, 2_f)));
+    auto* inner_call_1 = Assign(Phony(), Call("textureSample", "t", "s", vec2<f32>(1_f, 2_f)));
     const ast::Function* inner_func_1 =
         Func("inner_func_1", utils::Empty, ty.void_(), utils::Vector{inner_call_1});
-    auto* inner_call_2 = CallStmt(Call("textureSample", "t", "s", vec2<f32>(3_f, 4_f)));
+    auto* inner_call_2 = Assign(Phony(), Call("textureSample", "t", "s", vec2<f32>(3_f, 4_f)));
     const ast::Function* inner_func_2 =
         Func("inner_func_2", utils::Empty, ty.void_(), utils::Vector{inner_call_2});
     auto* outer_call_1 = CallStmt(Call("inner_func_1"));
@@ -2208,10 +2210,10 @@ TEST_F(ResolverTest, TextureSampler_TextureSampleFunctionDiamondDifferentVariabl
               Binding(2_a));
     GlobalVar("s", ty.sampler(type::SamplerKind::kSampler), Group(1_a), Binding(3_a));
 
-    auto* inner_call_1 = CallStmt(Call("textureSample", "t1", "s", vec2<f32>(1_f, 2_f)));
+    auto* inner_call_1 = Assign(Phony(), Call("textureSample", "t1", "s", vec2<f32>(1_f, 2_f)));
     const ast::Function* inner_func_1 =
         Func("inner_func_1", utils::Empty, ty.void_(), utils::Vector{inner_call_1});
-    auto* inner_call_2 = CallStmt(Call("textureSample", "t2", "s", vec2<f32>(3_f, 4_f)));
+    auto* inner_call_2 = Assign(Phony(), Call("textureSample", "t2", "s", vec2<f32>(3_f, 4_f)));
     const ast::Function* inner_func_2 =
         Func("inner_func_2", utils::Empty, ty.void_(), utils::Vector{inner_call_2});
     auto* outer_call_1 = CallStmt(Call("inner_func_1"));

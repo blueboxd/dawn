@@ -20,7 +20,7 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/statement.h"
-#include "src/tint/sem/type_initializer.h"
+#include "src/tint/sem/value_constructor.h"
 #include "src/tint/transform/utils/hoist_to_decl_before.h"
 #include "src/tint/type/struct.h"
 #include "src/tint/utils/hashset.h"
@@ -58,8 +58,8 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
             }
 
             auto* ctor = root_expr->UnwrapMaterialize()->As<sem::Call>();
-            if (!ctor || !ctor->Target()->Is<sem::TypeInitializer>()) {
-                // Root expression is not a type constructor. Not interested in this.
+            if (!ctor || !ctor->Target()->Is<sem::ValueConstructor>()) {
+                // Root expression is not a value constructor. Not interested in this.
                 return false;
             }
         }
@@ -134,7 +134,7 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
         return expr_a->Declaration()->node_id < expr_b->Declaration()->node_id;
     });
 
-    // Hoist all the expression in to_hoist  to a constant variable, declared just before the
+    // Hoist all the expressions in to_hoist to a constant variable, declared just before the
     // statement of usage.
     HoistToDeclBefore hoist_to_decl_before(ctx);
     for (auto* expr : to_hoist) {

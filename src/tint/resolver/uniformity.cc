@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/resolver/dependency_graph.h"
 #include "src/tint/scope_stack.h"
@@ -33,8 +34,8 @@
 #include "src/tint/sem/loop_statement.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/switch_statement.h"
-#include "src/tint/sem/type_conversion.h"
-#include "src/tint/sem/type_initializer.h"
+#include "src/tint/sem/value_constructor.h"
+#include "src/tint/sem/value_conversion.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/sem/while_statement.h"
 #include "src/tint/utils/block_allocator.h"
@@ -1145,11 +1146,12 @@ class UniformityGraph {
                                                    const ast::IdentifierExpression* ident,
                                                    bool load_rule = false) {
         // Helper to check if the entry point attribute of `obj` indicates non-uniformity.
-        auto has_nonuniform_entry_point_attribute = [](auto* obj) {
+        auto has_nonuniform_entry_point_attribute = [&](auto* obj) {
             // Only the num_workgroups and workgroup_id builtins are uniform.
-            if (auto* builtin = ast::GetAttribute<ast::BuiltinAttribute>(obj->attributes)) {
-                if (builtin->builtin == builtin::BuiltinValue::kNumWorkgroups ||
-                    builtin->builtin == builtin::BuiltinValue::kWorkgroupId) {
+            if (auto* builtin_attr = ast::GetAttribute<ast::BuiltinAttribute>(obj->attributes)) {
+                auto builtin = builder_->Sem().Get(builtin_attr)->Value();
+                if (builtin == builtin::BuiltinValue::kNumWorkgroups ||
+                    builtin == builtin::BuiltinValue::kWorkgroupId) {
                     return false;
                 }
             }
@@ -1539,11 +1541,11 @@ class UniformityGraph {
                 function_tag = info->function_tag;
                 func_info = info;
             },
-            [&](const sem::TypeInitializer*) {
+            [&](const sem::ValueConstructor*) {
                 callsite_tag = {CallSiteTag::CallSiteNoRestriction};
                 function_tag = NoRestriction;
             },
-            [&](const sem::TypeConversion*) {
+            [&](const sem::ValueConversion*) {
                 callsite_tag = {CallSiteTag::CallSiteNoRestriction};
                 function_tag = NoRestriction;
             },
@@ -1629,7 +1631,7 @@ class UniformityGraph {
                     current_function_->RequiredToBeUniform(default_severity)->AddEdge(args[i]);
                 } else {
                     // All other builtin function parameters are RequiredToBeUniformForReturnValue,
-                    // as are parameters for type initializers and type conversions.
+                    // as are parameters for value constructors and value conversions.
                     result->AddEdge(args[i]);
                 }
             }

@@ -15,6 +15,7 @@
 #include "src/tint/ast/discard_statement.h"
 #include "src/tint/ast/return_statement.h"
 #include "src/tint/ast/stage_attribute.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
 
@@ -484,18 +485,6 @@ TEST_F(ResolverFunctionValidationTest, FunctionConstInitWithParam) {
          });
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
-}
-
-TEST_F(ResolverFunctionValidationTest, FunctionParamsConst) {
-    Func("foo", utils::Vector{Param(Sym("arg"), ty.i32())}, ty.void_(),
-         utils::Vector{
-             Assign(Expr(Source{{12, 34}}, "arg"), Expr(1_i)),
-             Return(),
-         });
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: cannot assign to function parameter\nnote: 'arg' is declared here:");
 }
 
 TEST_F(ResolverFunctionValidationTest, WorkgroupSize_GoodType_ConstU32) {
@@ -1069,11 +1058,14 @@ TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceNoExtension) {
         ss << param.address_space;
         EXPECT_FALSE(r()->Resolve());
         if (param.expectation == Expectation::kInvalid) {
-            EXPECT_EQ(r()->error(), "12:34 error: unknown identifier: '" + ss.str() + "'");
+            std::string err = R"(12:34 error: unresolved address space '${addr_space}'
+12:34 note: Possible values: 'function', 'private', 'push_constant', 'storage', 'uniform', 'workgroup')";
+            err = utils::ReplaceAll(err, "${addr_space}", utils::ToString(param.address_space));
+            EXPECT_EQ(r()->error(), err);
         } else {
             EXPECT_EQ(r()->error(),
-                      "12:34 error: function parameter of pointer type cannot be in '" + ss.str() +
-                          "' address space");
+                      "12:34 error: function parameter of pointer type cannot be in '" +
+                          utils::ToString(param.address_space) + "' address space");
         }
     }
 }
@@ -1090,8 +1082,10 @@ TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceWithExtension) {
     } else {
         EXPECT_FALSE(r()->Resolve());
         if (param.expectation == Expectation::kInvalid) {
-            EXPECT_EQ(r()->error(), "12:34 error: unknown identifier: '" +
-                                        utils::ToString(param.address_space) + "'");
+            std::string err = R"(12:34 error: unresolved address space '${addr_space}'
+12:34 note: Possible values: 'function', 'private', 'push_constant', 'storage', 'uniform', 'workgroup')";
+            err = utils::ReplaceAll(err, "${addr_space}", utils::ToString(param.address_space));
+            EXPECT_EQ(r()->error(), err);
         } else {
             EXPECT_EQ(r()->error(),
                       "12:34 error: function parameter of pointer type cannot be in '" +

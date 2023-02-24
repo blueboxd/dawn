@@ -536,6 +536,17 @@ void Adapter::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
         }
     }
 
+    // This workaround is needed on Intel Gen12LP GPUs with driver >= 30.0.101.4091.
+    // See http://crbug.com/dawn/1083 for more information.
+    if (gpu_info::IsIntelGen12LP(vendorId, deviceId)) {
+        const gpu_info::DriverVersion kDriverVersion = {30, 0, 101, 4091};
+        if (gpu_info::CompareWindowsDriverVersion(vendorId, GetDriverVersion(), kDriverVersion) !=
+            -1) {
+            deviceToggles->Default(Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
+                                   true);
+        }
+    }
+
     // Currently these workarounds are only needed on Intel Gen9.5 and Gen11 GPUs.
     // See http://crbug.com/1237175 and http://crbug.com/dawn/1628 for more information.
     if ((gpu_info::IsIntelGen9(vendorId, deviceId) && !gpu_info::IsSkylake(deviceId)) ||
@@ -551,13 +562,30 @@ void Adapter::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
     // Currently this toggle is only needed on Intel Gen9 and Gen9.5 GPUs.
     // See http://crbug.com/dawn/1579 for more information.
     if (gpu_info::IsIntelGen9(vendorId, deviceId)) {
-        deviceToggles->ForceSet(Toggle::NoWorkaroundDstAlphaBlendDoesNotWork, true);
+        // We can add workaround when the blending operation is "Add", DstFactor is "Zero" and
+        // SrcFactor is "DstAlpha".
+        deviceToggles->ForceSet(
+            Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha, true);
+
+        // Unfortunately we cannot add workaround for other cases.
+        deviceToggles->ForceSet(
+            Toggle::NoWorkaroundDstAlphaAsSrcBlendFactorForBothColorAndAlphaDoesNotWork, true);
     }
 
-    // TODO(http://crbug.com/dawn/1216): Actually query D3D12_FEATURE_DATA_D3D12_OPTIONS13.
-    // This is blocked on updating the Windows SDK.
-    deviceToggles->ForceSet(
-        Toggle::D3D12UseTempBufferInTextureToTextureCopyBetweenDifferentDimensions, true);
+#if D3D12_SDK_VERSION >= 602
+    D3D12_FEATURE_DATA_D3D12_OPTIONS13 featureData13;
+    if (FAILED(mD3d12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS13, &featureData13,
+                                                 sizeof(featureData13)))) {
+        // If the platform doesn't support D3D12_FEATURE_D3D12_OPTIONS13, default initialize the
+        // struct to set all features to false.
+        featureData13 = {};
+    }
+    if (!featureData13.TextureCopyBetweenDimensionsSupported)
+#endif
+    {
+        deviceToggles->ForceSet(
+            Toggle::D3D12UseTempBufferInTextureToTextureCopyBetweenDifferentDimensions, true);
+    }
 }
 
 ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(const DeviceDescriptor* descriptor,

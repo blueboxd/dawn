@@ -31,6 +31,7 @@
 #include "src/tint/ast/return_statement.h"
 #include "src/tint/ast/switch_statement.h"
 #include "src/tint/ast/unary_op_expression.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/scope_stack.h"
 #include "src/tint/sem/binding_point.h"
@@ -42,10 +43,10 @@
 
 // Forward declarations
 namespace tint::sem {
-class Call;
 class Builtin;
-class TypeInitializer;
-class TypeConversion;
+class Call;
+class ValueConstructor;
+class ValueConversion;
 }  // namespace tint::sem
 
 namespace tint::writer::hlsl {
@@ -139,22 +140,22 @@ class GeneratorImpl : public TextGenerator {
     /// @param builtin the builtin being called
     /// @returns true if the expression is emitted
     bool EmitBuiltinCall(std::ostream& out, const sem::Call* call, const sem::Builtin* builtin);
-    /// Handles generating a type conversion expression
+    /// Handles generating a value conversion expression
     /// @param out the output of the expression stream
     /// @param call the call expression
-    /// @param conv the type conversion
+    /// @param conv the value conversion
     /// @returns true if the expression is emitted
-    bool EmitTypeConversion(std::ostream& out,
-                            const sem::Call* call,
-                            const sem::TypeConversion* conv);
-    /// Handles generating a type initializer expression
-    /// @param out the output of the expression stream
-    /// @param call the call expression
-    /// @param ctor the type initializer
-    /// @returns true if the expression is emitted
-    bool EmitTypeInitializer(std::ostream& out,
+    bool EmitValueConversion(std::ostream& out,
                              const sem::Call* call,
-                             const sem::TypeInitializer* ctor);
+                             const sem::ValueConversion* conv);
+    /// Handles generating a value constructor expression
+    /// @param out the output of the expression stream
+    /// @param call the call expression
+    /// @param ctor the value constructor
+    /// @returns true if the expression is emitted
+    bool EmitValueConstructor(std::ostream& out,
+                              const sem::Call* call,
+                              const sem::ValueConstructor* ctor);
     /// Handles generating a call expression to a
     /// transform::DecomposeMemoryAccess::Intrinsic for a uniform buffer
     /// @param out the output of the expression stream

@@ -1,4 +1,4 @@
-// Copyright 2021 The Tint Authors.
+// Copyright 2023 The Dawn Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/ast/invariant_attribute.h"
+#include "dawn/tests/unittests/native/mocks/DawnMockTest.h"
 
-#include "src/tint/ast/test_helper.h"
+#include "dawn/dawn_proc.h"
 
-namespace tint::ast {
-namespace {
+namespace dawn::native {
 
-using InvariantAttributeTest = TestHelper;
+DawnMockTest::DawnMockTest() {
+    dawnProcSetProcs(&dawn::native::GetProcs());
 
-}  // namespace
-}  // namespace tint::ast
+    mDeviceMock = new ::testing::NiceMock<DeviceMock>();
+    device = wgpu::Device::Acquire(ToAPI(mDeviceMock));
+}
+
+DawnMockTest::~DawnMockTest() {
+    device = wgpu::Device();
+    dawnProcSetProcs(nullptr);
+}
+
+}  // namespace dawn::native
