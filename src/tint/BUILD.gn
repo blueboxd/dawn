@@ -221,6 +221,8 @@ libtint_source_set("libtint_base_src") {
     "utils/slice.h",
     "utils/string.cc",
     "utils/string.h",
+    "utils/string_stream.cc",
+    "utils/string_stream.h",
     "utils/unique_allocator.h",
     "utils/unique_vector.h",
     "utils/vector.h",
@@ -291,7 +293,10 @@ libtint_source_set("libtint_demangler_src") {
     "demangler.cc",
     "demangler.h",
   ]
-  deps = [ ":libtint_program_src" ]
+  deps = [
+    ":libtint_base_src",
+    ":libtint_program_src",
+  ]
 }
 
 libtint_source_set("libtint_initializer_src") {
@@ -1559,6 +1564,7 @@ if (tint_build_unittests) {
       "utils/reverse_test.cc",
       "utils/scoped_assignment_test.cc",
       "utils/slice_test.cc",
+      "utils/string_stream_test.cc",
       "utils/string_test.cc",
       "utils/transform_test.cc",
       "utils/unique_allocator_test.cc",
@@ -1696,7 +1702,6 @@ if (tint_build_unittests) {
       "reader/wgsl/parser_impl_diagnostic_attribute_test.cc",
       "reader/wgsl/parser_impl_diagnostic_control_test.cc",
       "reader/wgsl/parser_impl_diagnostic_directive_test.cc",
-      "reader/wgsl/parser_impl_element_count_expression_test.cc",
       "reader/wgsl/parser_impl_enable_directive_test.cc",
       "reader/wgsl/parser_impl_error_msg_test.cc",
       "reader/wgsl/parser_impl_error_resync_test.cc",
@@ -2050,6 +2055,12 @@ if (tint_build_unittests) {
     if (build_with_chromium) {
       configs -= [ "//build/config/compiler:chromium_code" ]
       configs += [ "//build/config/compiler:no_chromium_code" ]
+    }
+
+    if (is_win && is_debug) {
+      # TODO(crbug.com/tint/1749): both msvc and clang builds stack overflow on debug builds.
+      # Increase the initial stack size to 4 MB (default is 1MB).
+      ldflags = [ "/STACK:4194304" ]
     }
 
     testonly = true

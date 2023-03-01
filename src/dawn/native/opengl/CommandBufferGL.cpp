@@ -231,8 +231,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
     void Apply(const OpenGLFunctions& gl) {
         BeforeApply();
         for (BindGroupIndex index : IterateBitSet(mDirtyBindGroupsObjectChangedOrIsDynamic)) {
-            ApplyBindGroup(gl, index, mBindGroups[index], mDynamicOffsetCounts[index],
-                           mDynamicOffsets[index].data());
+            ApplyBindGroup(gl, index, mBindGroups[index], mDynamicOffsets[index]);
         }
         AfterApply();
     }
@@ -241,10 +240,8 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
     void ApplyBindGroup(const OpenGLFunctions& gl,
                         BindGroupIndex index,
                         BindGroupBase* group,
-                        uint32_t dynamicOffsetCount,
-                        uint64_t* dynamicOffsets) {
+                        const ityp::vector<BindingIndex, uint64_t>& dynamicOffsets) {
         const auto& indices = ToBackend(mPipelineLayout)->GetBindingIndexInfo()[index];
-        uint32_t currentDynamicOffsetIndex = 0;
 
         for (BindingIndex bindingIndex{0}; bindingIndex < group->GetLayout()->GetBindingCount();
              ++bindingIndex) {
@@ -268,8 +265,8 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                     GLuint offset = binding.offset;
 
                     if (bindingInfo.buffer.hasDynamicOffset) {
-                        offset += dynamicOffsets[currentDynamicOffsetIndex];
-                        ++currentDynamicOffsetIndex;
+                        // Dynamic buffers are packed at the front of BindingIndices.
+                        offset += dynamicOffsets[bindingIndex];
                     }
 
                     GLenum target;
@@ -1010,7 +1007,11 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 vertexStateBufferBindingTracker.Apply(gl);
                 bindGroupTracker.Apply(gl);
 
-                if (draw->firstInstance > 0) {
+                if (gl.DrawArraysInstancedBaseInstanceANGLE) {
+                    gl.DrawArraysInstancedBaseInstanceANGLE(
+                        lastPipeline->GetGLPrimitiveTopology(), draw->firstVertex,
+                        draw->vertexCount, draw->instanceCount, draw->firstInstance);
+                } else if (draw->firstInstance > 0) {
                     gl.DrawArraysInstancedBaseInstance(lastPipeline->GetGLPrimitiveTopology(),
                                                        draw->firstVertex, draw->vertexCount,
                                                        draw->instanceCount, draw->firstInstance);
@@ -1028,7 +1029,13 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 vertexStateBufferBindingTracker.Apply(gl);
                 bindGroupTracker.Apply(gl);
 
-                if (draw->firstInstance > 0) {
+                if (gl.DrawElementsInstancedBaseVertexBaseInstanceANGLE) {
+                    gl.DrawElementsInstancedBaseVertexBaseInstanceANGLE(
+                        lastPipeline->GetGLPrimitiveTopology(), draw->indexCount, indexBufferFormat,
+                        reinterpret_cast<void*>(draw->firstIndex * indexFormatSize +
+                                                indexBufferBaseOffset),
+                        draw->instanceCount, draw->baseVertex, draw->firstInstance);
+                } else if (draw->firstInstance > 0) {
                     gl.DrawElementsInstancedBaseVertexBaseInstance(
                         lastPipeline->GetGLPrimitiveTopology(), draw->indexCount, indexBufferFormat,
                         reinterpret_cast<void*>(draw->firstIndex * indexFormatSize +

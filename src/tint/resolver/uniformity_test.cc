@@ -21,6 +21,7 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/reader/wgsl/parser.h"
 #include "src/tint/resolver/uniformity.h"
+#include "src/tint/utils/string_stream.h"
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -6374,6 +6375,43 @@ test:11:9 note: reading from read_write storage buffer 'rw' may result in a non-
 )");
 }
 
+TEST_F(UniformityAnalysisTest, StructMember_MemberBecomesUniformThroughPartialPointer) {
+    // For aggregate types, we conservatively consider them to be non-uniform once they
+    // become non-uniform. Test that after assigning a uniform value to a member, that member is
+    // still considered to be non-uniform.
+    std::string src = R"(
+struct S {
+  a : i32,
+  b : i32,
+}
+@group(0) @binding(0) var<storage, read_write> rw : i32;
+
+fn foo() {
+  var s : S;
+  s.a = rw;
+  *&s.a = 0;
+  if (s.a == 0) {
+    workgroupBarrier();
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:13:5 error: 'workgroupBarrier' must only be called from uniform control flow
+    workgroupBarrier();
+    ^^^^^^^^^^^^^^^^
+
+test:12:3 note: control flow depends on possibly non-uniform value
+  if (s.a == 0) {
+  ^^
+
+test:10:9 note: reading from read_write storage buffer 'rw' may result in a non-uniform value
+  s.a = rw;
+        ^^
+)");
+}
+
 TEST_F(UniformityAnalysisTest, StructMember_MemberBecomesUniformThroughCapturedPartialPointer) {
     // For aggregate types, we conservatively consider them to be non-uniform once they
     // become non-uniform. Test that after assigning a uniform value to a member, that member is
@@ -7890,7 +7928,7 @@ class UniformityAnalysisDiagnosticFilterTest
 
 TEST_P(UniformityAnalysisDiagnosticFilterTest, Directive) {
     auto& param = GetParam();
-    std::ostringstream ss;
+    utils::StringStream ss;
     ss << "diagnostic(" << param << ", derivative_uniformity);"
        << R"(
 @group(0) @binding(0) var<storage, read_write> non_uniform : i32;
@@ -7909,7 +7947,7 @@ fn foo() {
     if (param == builtin::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
-        std::ostringstream err;
+        utils::StringStream err;
         err << ToStr(param) << ": 'textureSample' must only be called";
         EXPECT_THAT(error_, ::testing::HasSubstr(err.str()));
     }
@@ -7917,7 +7955,7 @@ fn foo() {
 
 TEST_P(UniformityAnalysisDiagnosticFilterTest, AttributeOnFunction) {
     auto& param = GetParam();
-    std::ostringstream ss;
+    utils::StringStream ss;
     ss << R"(
 @group(0) @binding(0) var<storage, read_write> non_uniform : i32;
 @group(0) @binding(1) var t : texture_2d<f32>;
@@ -7936,7 +7974,7 @@ TEST_P(UniformityAnalysisDiagnosticFilterTest, AttributeOnFunction) {
     if (param == builtin::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
-        std::ostringstream err;
+        utils::StringStream err;
         err << ToStr(param) << ": 'textureSample' must only be called";
         EXPECT_THAT(error_, ::testing::HasSubstr(err.str()));
     }
@@ -7944,7 +7982,7 @@ TEST_P(UniformityAnalysisDiagnosticFilterTest, AttributeOnFunction) {
 
 TEST_P(UniformityAnalysisDiagnosticFilterTest, AttributeOnBlock) {
     auto& param = GetParam();
-    std::ostringstream ss;
+    utils::StringStream ss;
     ss << R"(
 @group(0) @binding(0) var<storage, read_write> non_uniform : i32;
 @group(0) @binding(1) var t : texture_2d<f32>;
@@ -7962,7 +8000,7 @@ fn foo() {
     if (param == builtin::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
-        std::ostringstream err;
+        utils::StringStream err;
         err << ToStr(param) << ": 'textureSample' must only be called";
         EXPECT_THAT(error_, ::testing::HasSubstr(err.str()));
     }

@@ -16,6 +16,7 @@
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/stage_attribute.h"
 #include "src/tint/sem/call.h"
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/hlsl/test_helper.h"
 
 using ::testing::HasSubstr;
@@ -64,8 +65,8 @@ const ast::CallExpression* GenerateCall(BuiltinType builtin,
                                         CallParamType type,
                                         ProgramBuilder* builder) {
     std::string name;
-    std::ostringstream str(name);
-    str << builtin;
+    utils::StringStream str;
+    str << name << builtin;
     switch (builtin) {
         case BuiltinType::kAcos:
         case BuiltinType::kAsin:
@@ -347,7 +348,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Builtin_Call) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-    std::stringstream out;
+    utils::StringStream out;
     ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.error();
     EXPECT_EQ(out.str(), "dot(param1, param2)");
 }
@@ -360,7 +361,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Select_Scalar) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-    std::stringstream out;
+    utils::StringStream out;
     ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.error();
     EXPECT_EQ(out.str(), "(true ? b : a)");
 }
@@ -373,7 +374,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Select_Vector) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-    std::stringstream out;
+    utils::StringStream out;
     ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.error();
     EXPECT_EQ(out.str(), "(bool2(true, false) ? b : a)");
 }
@@ -811,7 +812,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Degrees_Scalar_f32) {
 
     ASSERT_TRUE(gen.Generate()) << gen.error();
     EXPECT_EQ(gen.result(), R"(float tint_degrees(float param_0) {
-  return param_0 * 57.295779513082322865;
+  return param_0 * 57.295779513082323;
 }
 
 [numthreads(1, 1, 1)]
@@ -832,7 +833,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Degrees_Vector_f32) {
 
     ASSERT_TRUE(gen.Generate()) << gen.error();
     EXPECT_EQ(gen.result(), R"(float3 tint_degrees(float3 param_0) {
-  return param_0 * 57.295779513082322865;
+  return param_0 * 57.295779513082323;
 }
 
 [numthreads(1, 1, 1)]
@@ -855,7 +856,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Degrees_Scalar_f16) {
 
     ASSERT_TRUE(gen.Generate()) << gen.error();
     EXPECT_EQ(gen.result(), R"(float16_t tint_degrees(float16_t param_0) {
-  return param_0 * 57.295779513082322865;
+  return param_0 * 57.295779513082323;
 }
 
 [numthreads(1, 1, 1)]
@@ -878,7 +879,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Degrees_Vector_f16) {
 
     ASSERT_TRUE(gen.Generate()) << gen.error();
     EXPECT_EQ(gen.result(), R"(vector<float16_t, 3> tint_degrees(vector<float16_t, 3> param_0) {
-  return param_0 * 57.295779513082322865;
+  return param_0 * 57.295779513082323;
 }
 
 [numthreads(1, 1, 1)]
@@ -899,7 +900,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Radians_Scalar_f32) {
 
     ASSERT_TRUE(gen.Generate()) << gen.error();
     EXPECT_EQ(gen.result(), R"(float tint_radians(float param_0) {
-  return param_0 * 0.017453292519943295474;
+  return param_0 * 0.017453292519943295;
 }
 
 [numthreads(1, 1, 1)]
@@ -920,7 +921,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Radians_Vector_f32) {
 
     ASSERT_TRUE(gen.Generate()) << gen.error();
     EXPECT_EQ(gen.result(), R"(float3 tint_radians(float3 param_0) {
-  return param_0 * 0.017453292519943295474;
+  return param_0 * 0.017453292519943295;
 }
 
 [numthreads(1, 1, 1)]
@@ -943,7 +944,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Radians_Scalar_f16) {
 
     ASSERT_TRUE(gen.Generate()) << gen.error();
     EXPECT_EQ(gen.result(), R"(float16_t tint_radians(float16_t param_0) {
-  return param_0 * 0.017453292519943295474;
+  return param_0 * 0.017453292519943295;
 }
 
 [numthreads(1, 1, 1)]
@@ -966,7 +967,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Radians_Vector_f16) {
 
     ASSERT_TRUE(gen.Generate()) << gen.error();
     EXPECT_EQ(gen.result(), R"(vector<float16_t, 3> tint_radians(vector<float16_t, 3> param_0) {
-  return param_0 * 0.017453292519943295474;
+  return param_0 * 0.017453292519943295;
 }
 
 [numthreads(1, 1, 1)]

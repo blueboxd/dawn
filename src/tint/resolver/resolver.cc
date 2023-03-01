@@ -84,6 +84,7 @@
 #include "src/tint/utils/reverse.h"
 #include "src/tint/utils/scoped_assignment.h"
 #include "src/tint/utils/string.h"
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/utils/transform.h"
 #include "src/tint/utils/vector.h"
 
@@ -99,6 +100,7 @@ namespace {
 
 constexpr int64_t kMaxArrayElementCount = 65536;
 constexpr uint32_t kMaxStatementDepth = 127;
+constexpr size_t kMaxNestDepthOfCompositeType = 255;
 
 }  // namespace
 
@@ -1697,7 +1699,7 @@ const type::Type* Resolver::ConcreteType(const type::Type* ty,
                 target_el_ty = target_arr_ty->ElemType();
             }
             if (auto* el_ty = ConcreteType(a->ElemType(), target_el_ty, source)) {
-                return Array(source, source, el_ty, a->Count(), /* explicit_stride */ 0);
+                return Array(source, source, source, el_ty, a->Count(), /* explicit_stride */ 0);
             }
             return nullptr;
         },
@@ -2010,8 +2012,12 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
 
         auto stage = args_stage;                 // The evaluation stage of the call
         const constant::Value* value = nullptr;  // The constant value for the call
+        if (stage == sem::EvaluationStage::kConstant && skip_const_eval_.Contains(expr)) {
+            stage = sem::EvaluationStage::kNotEvaluated;
+        }
         if (stage == sem::EvaluationStage::kConstant) {
-            if (auto r = const_eval_.ArrayOrStructCtor(ty, args)) {
+            auto els = utils::Transform(args, [&](auto* arg) { return arg->ConstantValue(); });
+            if (auto r = const_eval_.ArrayOrStructCtor(ty, std::move(els))) {
                 value = r.Get();
             } else {
                 return nullptr;
@@ -2043,6 +2049,10 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             [&](const type::F32*) { return ctor_or_conv(CtorConvIntrinsic::kF32, nullptr); },
             [&](const type::Bool*) { return ctor_or_conv(CtorConvIntrinsic::kBool, nullptr); },
             [&](const type::Vector* v) {
+                if (v->Packed()) {
+                    TINT_ASSERT(Resolver, v->Width() == 3u);
+                    return ctor_or_conv(CtorConvIntrinsic::kPackedVec3, v->type());
+                }
                 return ctor_or_conv(VectorCtorConvIntrinsic(v->Width()), v->type());
             },
             [&](const type::Matrix* m) {
@@ -2128,7 +2138,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             }
             return nullptr;
         }
-        auto* arr = Array(expr->source, expr->source, el_ty, el_count, /* explicit_stride */ 0);
+        auto* arr = Array(expr->source, expr->source, expr->source, el_ty, el_count,
+                          /* explicit_stride */ 0);
         if (!arr) {
             return nullptr;
         }
@@ -2445,7 +2456,8 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
             return nullptr;
         }
 
-        auto* out = Array(ast_el_ty->source,                              //
+        auto* out = Array(tmpl_ident->source,                             //
+                          ast_el_ty->source,                              //
                           ast_count ? ast_count->source : ident->source,  //
                           el_ty, el_count, explicit_stride);
         if (!out) {
@@ -2569,6 +2581,24 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
             return nullptr;
         }
         return tex;
+    };
+    auto packed_vec3_t = [&]() -> type::Vector* {
+        auto* tmpl_ident = templated_identifier(1);
+        if (TINT_UNLIKELY(!tmpl_ident)) {
+            return nullptr;
+        }
+        auto* el_ty = Type(tmpl_ident->arguments[0]);
+        if (TINT_UNLIKELY(!el_ty)) {
+            return nullptr;
+        }
+
+        if (TINT_UNLIKELY(!el_ty)) {
+            return nullptr;
+        }
+        if (TINT_UNLIKELY(!validator_.Vector(el_ty, ident->source))) {
+            return nullptr;
+        }
+        return b.create<type::Vector>(el_ty, 3u, true);
     };
 
     switch (builtin_ty) {
@@ -2716,6 +2746,9 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
             return storage_texture(type::TextureDimension::k2dArray);
         case builtin::Builtin::kTextureStorage3D:
             return storage_texture(type::TextureDimension::k3d);
+        case builtin::Builtin::kPackedVec3: {
+            return packed_vec3_t();
+        }
         case builtin::Builtin::kUndefined:
             break;
     }
@@ -2723,6 +2756,19 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
     auto name = builder_->Symbols().NameFor(ident->symbol);
     TINT_ICE(Resolver, diagnostics_) << ident->source << " unhandled builtin type '" << name << "'";
     return nullptr;
+}
+
+size_t Resolver::NestDepth(const type::Type* ty) const {
+    return Switch(
+        ty,  //
+        [](const type::Vector*) { return size_t{1}; },
+        [](const type::Matrix*) { return size_t{2}; },
+        [&](Default) {
+            if (auto d = nest_depth_.Get(ty)) {
+                return *d;
+            }
+            return size_t{0};
+        });
 }
 
 void Resolver::CollectTextureSamplerPairs(
@@ -3057,7 +3103,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
                         filtered.Push(str);
                     }
                 }
-                std::ostringstream msg;
+                utils::StringStream msg;
                 utils::SuggestAlternatives(unresolved->name,
                                            filtered.Slice().Reinterpret<char const* const>(), msg);
                 AddNote(msg.str(), expr->source);
@@ -3422,7 +3468,7 @@ bool Resolver::DiagnosticControl(const ast::DiagnosticControl& control) {
     if (rule != builtin::DiagnosticRule::kUndefined) {
         validator_.DiagnosticFilters().Set(rule, control.severity);
     } else {
-        std::ostringstream ss;
+        utils::StringStream ss;
         ss << "unrecognized diagnostic rule '" << rule_name << "'\n";
         utils::SuggestAlternatives(rule_name, builtin::kDiagnosticRuleStrings, ss);
         AddWarning(ss.str(), control.rule_name->source);
@@ -3527,7 +3573,8 @@ bool Resolver::ArrayAttributes(utils::VectorRef<const ast::Attribute*> attribute
     return true;
 }
 
-type::Array* Resolver::Array(const Source& el_source,
+type::Array* Resolver::Array(const Source& array_source,
+                             const Source& el_source,
                              const Source& count_source,
                              const type::Type* el_ty,
                              const type::ArrayCount* el_count,
@@ -3541,7 +3588,7 @@ type::Array* Resolver::Array(const Source& el_source,
     if (auto const_count = el_count->As<type::ConstantArrayCount>()) {
         size = const_count->value * stride;
         if (size > std::numeric_limits<uint32_t>::max()) {
-            std::stringstream msg;
+            utils::StringStream msg;
             msg << "array byte size (0x" << std::hex << size
                 << ") must not exceed 0xffffffff bytes";
             AddError(msg.str(), count_source);
@@ -3553,6 +3600,17 @@ type::Array* Resolver::Array(const Source& el_source,
     auto* out = builder_->create<type::Array>(
         el_ty, el_count, el_align, static_cast<uint32_t>(size), static_cast<uint32_t>(stride),
         static_cast<uint32_t>(implicit_stride));
+
+    // Maximum nesting depth of composite types
+    //  https://gpuweb.github.io/gpuweb/wgsl/#limits
+    const size_t nest_depth = 1 + NestDepth(el_ty);
+    if (nest_depth > kMaxNestDepthOfCompositeType) {
+        AddError("array has nesting depth of " + std::to_string(nest_depth) + ", maximum is " +
+                     std::to_string(kMaxNestDepthOfCompositeType),
+                 array_source);
+        return nullptr;
+    }
+    nest_depth_.Add(out, nest_depth);
 
     if (!validator_.Array(out, el_source)) {
         return nullptr;
@@ -3573,6 +3631,23 @@ type::Type* Resolver::Alias(const ast::Alias* alias) {
 }
 
 sem::Struct* Resolver::Structure(const ast::Struct* str) {
+    auto struct_name = [&] {  //
+        return builder_->Symbols().NameFor(str->name->symbol);
+    };
+
+    if (validator_.IsValidationEnabled(str->attributes,
+                                       ast::DisabledValidation::kIgnoreStructMemberLimit)) {
+        // Maximum number of members in a structure type
+        // https://gpuweb.github.io/gpuweb/wgsl/#limits
+        const size_t kMaxNumStructMembers = 16383;
+        if (str->members.Length() > kMaxNumStructMembers) {
+            AddError("struct '" + struct_name() + "' has " + std::to_string(str->members.Length()) +
+                         " members, maximum is " + std::to_string(kMaxNumStructMembers),
+                     str->source);
+            return nullptr;
+        }
+    }
+
     if (!validator_.NoDuplicateAttributes(str->attributes)) {
         return nullptr;
     }
@@ -3593,6 +3668,7 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
     uint64_t struct_align = 1;
     utils::Hashmap<Symbol, const ast::StructMember*, 8> member_map;
 
+    size_t members_nest_depth = 0;
     for (auto* member : str->members) {
         Mark(member);
         Mark(member->name);
@@ -3608,6 +3684,8 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
         if (!type) {
             return nullptr;
         }
+
+        members_nest_depth = std::max(members_nest_depth, NestDepth(type));
 
         // validator_.Validate member type
         if (!validator_.IsPlain(type)) {
@@ -3748,7 +3826,7 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
 
         offset = utils::RoundUp(align, offset);
         if (offset > std::numeric_limits<uint32_t>::max()) {
-            std::stringstream msg;
+            utils::StringStream msg;
             msg << "struct member offset (0x" << std::hex << offset << ") must not exceed 0x"
                 << std::hex << std::numeric_limits<uint32_t>::max() << " bytes";
             AddError(msg.str(), member->source);
@@ -3770,7 +3848,7 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
     struct_size = utils::RoundUp(struct_align, struct_size);
 
     if (struct_size > std::numeric_limits<uint32_t>::max()) {
-        std::stringstream msg;
+        utils::StringStream msg;
         msg << "struct size (0x" << std::hex << struct_size << ") must not exceed 0xffffffff bytes";
         AddError(msg.str(), str->source);
         return nullptr;
@@ -3805,6 +3883,18 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
     if (!validator_.Structure(out, stage)) {
         return nullptr;
     }
+
+    // Maximum nesting depth of composite types
+    //  https://gpuweb.github.io/gpuweb/wgsl/#limits
+    const size_t nest_depth = 1 + members_nest_depth;
+    if (nest_depth > kMaxNestDepthOfCompositeType) {
+        AddError("struct '" + struct_name() + "' has nesting depth of " +
+                     std::to_string(nest_depth) + ", maximum is " +
+                     std::to_string(kMaxNestDepthOfCompositeType),
+                 str->source);
+        return nullptr;
+    }
+    nest_depth_.Add(out, nest_depth);
 
     return out;
 }
@@ -4106,7 +4196,7 @@ bool Resolver::ApplyAddressSpaceUsageToType(builtin::AddressSpace address_space,
             if (decl &&
                 !ApplyAddressSpaceUsageToType(
                     address_space, const_cast<type::Type*>(member->Type()), decl->type->source)) {
-                std::stringstream err;
+                utils::StringStream err;
                 err << "while analyzing structure member " << sem_.TypeNameOf(str) << "."
                     << builder_->Symbols().NameFor(member->Name());
                 AddNote(err.str(), member->Source());
@@ -4137,7 +4227,7 @@ bool Resolver::ApplyAddressSpaceUsageToType(builtin::AddressSpace address_space,
     }
 
     if (builtin::IsHostShareable(address_space) && !validator_.IsHostShareable(ty)) {
-        std::stringstream err;
+        utils::StringStream err;
         err << "Type '" << sem_.TypeNameOf(ty) << "' cannot be used in address space '"
             << address_space << "' as it is non-host-shareable";
         AddError(err.str(), usage);
@@ -4162,7 +4252,7 @@ SEM* Resolver::StatementScope(const ast::Statement* ast, SEM* sem, F&& callback)
                     return false;
                 }
             } else {
-                std::ostringstream ss;
+                utils::StringStream ss;
                 ss << "attribute is not valid for " << use;
                 AddError(ss.str(), attr->source);
                 return false;

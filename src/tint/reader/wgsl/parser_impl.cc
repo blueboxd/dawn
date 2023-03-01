@@ -44,6 +44,7 @@
 #include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/reverse.h"
 #include "src/tint/utils/string.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::reader::wgsl {
 namespace {
@@ -213,7 +214,7 @@ ParserImpl::~ParserImpl() = default;
 ParserImpl::Failure::Errored ParserImpl::add_error(const Source& source,
                                                    std::string_view err,
                                                    std::string_view use) {
-    std::stringstream msg;
+    utils::StringStream msg;
     msg << err;
     if (!use.empty()) {
         msg << " for " << use;
@@ -911,7 +912,7 @@ Expect<ENUM> ParserImpl::expect_enum(std::string_view name,
     }
 
     /// Create a sensible error message
-    std::ostringstream err;
+    utils::StringStream err;
     err << "expected " << name;
 
     if (!use.empty()) {
@@ -2354,37 +2355,6 @@ Expect<const ast::Expression*> ParserImpl::expect_math_expression_post_unary_exp
     return expect_additive_expression_post_unary_expression(rhs.value);
 }
 
-// element_count_expression
-//   : unary_expression math_expression.post.unary_expression
-//   | unary_expression bitwise_expression.post.unary_expression
-//
-// Note, this moves the `( multiplicative_operator unary_expression )* ( additive_operator
-// unary_expression ( multiplicative_operator unary_expression )* )*` expression for the first
-// branch out into helper methods.
-Maybe<const ast::Expression*> ParserImpl::element_count_expression() {
-    auto lhs = unary_expression();
-    if (lhs.errored) {
-        return Failure::kErrored;
-    }
-    if (!lhs.matched) {
-        return Failure::kNoMatch;
-    }
-
-    auto bitwise = bitwise_expression_post_unary_expression(lhs.value);
-    if (bitwise.errored) {
-        return Failure::kErrored;
-    }
-    if (bitwise.matched) {
-        return bitwise.value;
-    }
-
-    auto math = expect_math_expression_post_unary_expression(lhs.value);
-    if (math.errored) {
-        return Failure::kErrored;
-    }
-    return math.value;
-}
-
 // shift_expression
 //   : unary_expression shift_expression.post.unary_expression
 Maybe<const ast::Expression*> ParserImpl::shift_expression() {
@@ -3195,7 +3165,7 @@ bool ParserImpl::expect(std::string_view use, Token::Type tok) {
         return false;
     }
 
-    std::stringstream err;
+    utils::StringStream err;
     if (tok == Token::Type::kTemplateArgsLeft && t.type() == Token::Type::kLessThan) {
         err << "missing closing '>'";
     } else {

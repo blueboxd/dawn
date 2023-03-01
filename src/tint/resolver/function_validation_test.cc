@@ -18,6 +18,7 @@
 #include "src/tint/builtin/builtin_value.h"
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
+#include "src/tint/utils/string_stream.h"
 
 #include "gmock/gmock.h"
 
@@ -979,7 +980,7 @@ TEST_F(ResolverFunctionValidationTest, ParameterStoreType_NonAtomicFree) {
     EXPECT_EQ(r()->error(), "12:34 error: type of function parameter must be constructible");
 }
 
-TEST_F(ResolverFunctionValidationTest, ParameterSotreType_AtomicFree) {
+TEST_F(ResolverFunctionValidationTest, ParameterStoreType_AtomicFree) {
     Structure("S", utils::Vector{
                        Member("m", ty.i32()),
                    });
@@ -1008,7 +1009,7 @@ TEST_F(ResolverFunctionValidationTest, ParametersOverLimit) {
     Func(Source{{12, 34}}, "f", params, ty.void_(), utils::Empty);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: functions may declare at most 255 parameters");
+    EXPECT_EQ(r()->error(), "12:34 error: function declares 256 parameters, maximum is 255");
 }
 
 TEST_F(ResolverFunctionValidationTest, ParameterVectorNoType) {
@@ -1054,7 +1055,7 @@ TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceNoExtension) {
     if (param.expectation == Expectation::kAlwaysPass) {
         ASSERT_TRUE(r()->Resolve()) << r()->error();
     } else {
-        std::stringstream ss;
+        utils::StringStream ss;
         ss << param.address_space;
         EXPECT_FALSE(r()->Resolve());
         if (param.expectation == Expectation::kInvalid) {
