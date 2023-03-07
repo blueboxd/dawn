@@ -71,6 +71,17 @@ auto Dispatch_iu32(F&& f, CONSTANTS&&... cs) {
 /// Helper that calls `f` passing in the value of all `cs`.
 /// Calls `f` with all constants cast to the type of the first `cs` argument.
 template <typename F, typename... CONSTANTS>
+auto Dispatch_fiu32(F&& f, CONSTANTS&&... cs) {
+    return Switch(
+        First(cs...)->Type(),  //
+        [&](const type::F32*) { return f(cs->template ValueAs<f32>()...); },
+        [&](const type::I32*) { return f(cs->template ValueAs<i32>()...); },
+        [&](const type::U32*) { return f(cs->template ValueAs<u32>()...); });
+}
+
+/// Helper that calls `f` passing in the value of all `cs`.
+/// Calls `f` with all constants cast to the type of the first `cs` argument.
+template <typename F, typename... CONSTANTS>
 auto Dispatch_ia_iu32(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
@@ -232,11 +243,6 @@ std::make_unsigned_t<T> CountTrailingBits(T e, T bit_value_to_count) {
     return count;
 }
 
-// Forward declaration
-const constant::Value* CreateComposite(ProgramBuilder& builder,
-                                       const type::Type* type,
-                                       utils::VectorRef<const constant::Value*> elements);
-
 template <typename T>
 ConstEval::Result ScalarConvert(const constant::Scalar<T>* scalar,
                                 ProgramBuilder& builder,
@@ -326,7 +332,7 @@ ConstEval::Result CompositeConvert(const constant::Composite* composite,
 
     std::function<const type::Type*(size_t idx)> target_el_ty;
     if (auto* str = target_ty->As<type::Struct>()) {
-        if (str->Members().Length() != composite->elements.Length()) {
+        if (TINT_UNLIKELY(str->Members().Length() != composite->elements.Length())) {
             TINT_ICE(Resolver, builder.Diagnostics())
                 << "const-eval conversion of structure has mismatched element counts";
             return utils::Failure;
@@ -347,7 +353,7 @@ ConstEval::Result CompositeConvert(const constant::Composite* composite,
         }
         conv_els.Push(conv_el.Get());
     }
-    return CreateComposite(builder, target_ty, std::move(conv_els));
+    return builder.create<constant::Composite>(target_ty, std::move(conv_els));
 }
 
 ConstEval::Result ConvertInternal(const constant::Value* c,
@@ -438,7 +444,7 @@ const constant::Value* ZeroValue(ProgramBuilder& builder, const type::Type* type
                 // All members were of the same type, so the zero value is the same for all members.
                 return builder.create<constant::Splat>(type, zeros[0], s->Members().Length());
             }
-            return CreateComposite(builder, s, std::move(zeros));
+            return builder.create<constant::Composite>(s, std::move(zeros));
         },
         [&](Default) -> const constant::Value* {
             return ZeroTypeDispatch(type, [&](auto zero) -> const constant::Value* {
@@ -447,42 +453,6 @@ const constant::Value* ZeroValue(ProgramBuilder& builder, const type::Type* type
                 return el.Get();
             });
         });
-}
-
-/// CreateComposite is used to construct a constant of a vector, matrix or array type.
-/// CreateComposite examines the element values and will return either a Composite or a Splat,
-/// depending on the element types and values.
-const constant::Value* CreateComposite(ProgramBuilder& builder,
-                                       const type::Type* type,
-                                       utils::VectorRef<const constant::Value*> elements) {
-    if (elements.IsEmpty()) {
-        return nullptr;
-    }
-    bool any_zero = false;
-    bool all_zero = true;
-    bool all_equal = true;
-    auto* first = elements.Front();
-    for (auto* el : elements) {
-        if (!el) {
-            return nullptr;
-        }
-        if (!any_zero && el->AnyZero()) {
-            any_zero = true;
-        }
-        if (all_zero && !el->AllZero()) {
-            all_zero = false;
-        }
-        if (all_equal && el != first) {
-            if (!el->Equal(first)) {
-                all_equal = false;
-            }
-        }
-    }
-    if (all_equal) {
-        return builder.create<constant::Splat>(type, elements[0], elements.Length());
-    } else {
-        return builder.create<constant::Composite>(type, std::move(elements), all_zero, any_zero);
-    }
 }
 
 namespace detail {
@@ -515,7 +485,7 @@ ConstEval::Result TransformElements(ProgramBuilder& builder,
             return el.Failure();
         }
     }
-    return CreateComposite(builder, composite_ty, std::move(els));
+    return builder.create<constant::Composite>(composite_ty, std::move(els));
 }
 }  // namespace detail
 
@@ -569,7 +539,7 @@ ConstEval::Result TransformBinaryElements(ProgramBuilder& builder,
             return el.Failure();
         }
     }
-    return CreateComposite(builder, composite_ty, std::move(els));
+    return builder.create<constant::Composite>(composite_ty, std::move(els));
 }
 }  // namespace
 
@@ -1211,7 +1181,7 @@ ConstEval::Result ConstEval::ArrayOrStructInit(const type::Type* ty,
     for (auto* arg : args) {
         els.Push(arg->ConstantValue());
     }
-    return CreateComposite(builder, ty, std::move(els));
+    return builder.create<constant::Composite>(ty, std::move(els));
 }
 
 ConstEval::Result ConstEval::Conv(const type::Type* ty,
@@ -1255,7 +1225,7 @@ ConstEval::Result ConstEval::VecSplat(const type::Type* ty,
 ConstEval::Result ConstEval::VecInitS(const type::Type* ty,
                                       utils::VectorRef<const constant::Value*> args,
                                       const Source&) {
-    return CreateComposite(builder, ty, args);
+    return builder.create<constant::Composite>(ty, args);
 }
 
 ConstEval::Result ConstEval::VecInitM(const type::Type* ty,
@@ -1281,7 +1251,7 @@ ConstEval::Result ConstEval::VecInitM(const type::Type* ty,
             els.Push(val);
         }
     }
-    return CreateComposite(builder, ty, std::move(els));
+    return builder.create<constant::Composite>(ty, std::move(els));
 }
 
 ConstEval::Result ConstEval::MatInitS(const type::Type* ty,
@@ -1296,15 +1266,15 @@ ConstEval::Result ConstEval::MatInitS(const type::Type* ty,
             auto i = r + c * m->rows();
             column.Push(args[i]);
         }
-        els.Push(CreateComposite(builder, m->ColumnType(), std::move(column)));
+        els.Push(builder.create<constant::Composite>(m->ColumnType(), std::move(column)));
     }
-    return CreateComposite(builder, ty, std::move(els));
+    return builder.create<constant::Composite>(ty, std::move(els));
 }
 
 ConstEval::Result ConstEval::MatInitV(const type::Type* ty,
                                       utils::VectorRef<const constant::Value*> args,
                                       const Source&) {
-    return CreateComposite(builder, ty, args);
+    return builder.create<constant::Composite>(ty, args);
 }
 
 ConstEval::Result ConstEval::Index(const sem::Expression* obj_expr,
@@ -1357,12 +1327,33 @@ ConstEval::Result ConstEval::Swizzle(const type::Type* ty,
     }
     auto values = utils::Transform<4>(
         indices, [&](uint32_t i) { return vec_val->Index(static_cast<size_t>(i)); });
-    return CreateComposite(builder, ty, std::move(values));
+    return builder.create<constant::Composite>(ty, std::move(values));
 }
 
-ConstEval::Result ConstEval::Bitcast(const type::Type*, const sem::Expression*) {
-    // TODO(crbug.com/tint/1581): Implement @const intrinsics
-    return nullptr;
+ConstEval::Result ConstEval::Bitcast(const type::Type* ty,
+                                     const constant::Value* value,
+                                     const Source& source) {
+    auto* el_ty = type::Type::DeepestElementOf(ty);
+    auto transform = [&](const constant::Value* c0) {
+        auto create = [&](auto e) {
+            return Switch(
+                el_ty,
+                [&](const type::U32*) {  //
+                    auto r = utils::Bitcast<u32>(e);
+                    return CreateScalar(builder, source, el_ty, r);
+                },
+                [&](const type::I32*) {  //
+                    auto r = utils::Bitcast<i32>(e);
+                    return CreateScalar(builder, source, el_ty, r);
+                },
+                [&](const type::F32*) {  //
+                    auto r = utils::Bitcast<f32>(e);
+                    return CreateScalar(builder, source, el_ty, r);
+                });
+        };
+        return Dispatch_fiu32(create, c0);
+    };
+    return TransformElements(builder, ty, transform, value);
 }
 
 ConstEval::Result ConstEval::OpComplement(const type::Type* ty,
@@ -1484,7 +1475,7 @@ ConstEval::Result ConstEval::OpMultiplyMatVec(const type::Type* ty,
         }
         result.Push(r.Get());
     }
-    return CreateComposite(builder, ty, result);
+    return builder.create<constant::Composite>(ty, result);
 }
 ConstEval::Result ConstEval::OpMultiplyVecMat(const type::Type* ty,
                                               utils::VectorRef<const constant::Value*> args,
@@ -1534,7 +1525,7 @@ ConstEval::Result ConstEval::OpMultiplyVecMat(const type::Type* ty,
         }
         result.Push(r.Get());
     }
-    return CreateComposite(builder, ty, result);
+    return builder.create<constant::Composite>(ty, result);
 }
 
 ConstEval::Result ConstEval::OpMultiplyMatMat(const type::Type* ty,
@@ -1596,9 +1587,9 @@ ConstEval::Result ConstEval::OpMultiplyMatMat(const type::Type* ty,
 
         // Add column vector to matrix
         auto* col_vec_ty = ty->As<type::Matrix>()->ColumnType();
-        result_mat.Push(CreateComposite(builder, col_vec_ty, col_vec));
+        result_mat.Push(builder.create<constant::Composite>(col_vec_ty, col_vec));
     }
-    return CreateComposite(builder, ty, result_mat);
+    return builder.create<constant::Composite>(ty, result_mat);
 }
 
 ConstEval::Result ConstEval::OpDivide(const type::Type* ty,
@@ -1846,7 +1837,7 @@ ConstEval::Result ConstEval::OpShiftLeft(const type::Type* ty,
         return Dispatch_ia_iu32(create, c0, c1);
     };
 
-    if (!type::Type::DeepestElementOf(args[1]->Type())->Is<type::U32>()) {
+    if (TINT_UNLIKELY(!type::Type::DeepestElementOf(args[1]->Type())->Is<type::U32>())) {
         TINT_ICE(Resolver, builder.Diagnostics())
             << "Element type of rhs of ShiftLeft must be a u32";
         return utils::Failure;
@@ -1910,7 +1901,7 @@ ConstEval::Result ConstEval::OpShiftRight(const type::Type* ty,
         return Dispatch_ia_iu32(create, c0, c1);
     };
 
-    if (!type::Type::DeepestElementOf(args[1]->Type())->Is<type::U32>()) {
+    if (TINT_UNLIKELY(!type::Type::DeepestElementOf(args[1]->Type())->Is<type::U32>())) {
         TINT_ICE(Resolver, builder.Diagnostics())
             << "Element type of rhs of ShiftLeft must be a u32";
         return utils::Failure;
@@ -2208,8 +2199,8 @@ ConstEval::Result ConstEval::cross(const type::Type* ty,
         return utils::Failure;
     }
 
-    return CreateComposite(builder, ty,
-                           utils::Vector<const constant::Value*, 3>{x.Get(), y.Get(), z.Get()});
+    return builder.create<constant::Composite>(
+        ty, utils::Vector<const constant::Value*, 3>{x.Get(), y.Get(), z.Get()});
 }
 
 ConstEval::Result ConstEval::degrees(const type::Type* ty,
@@ -2592,21 +2583,20 @@ ConstEval::Result ConstEval::frexp(const type::Type* ty,
         }
         auto fract_ty = builder.create<type::Vector>(fract_els[0]->Type(), vec->Width());
         auto exp_ty = builder.create<type::Vector>(exp_els[0]->Type(), vec->Width());
-        return CreateComposite(builder, ty,
-                               utils::Vector<const constant::Value*, 2>{
-                                   CreateComposite(builder, fract_ty, std::move(fract_els)),
-                                   CreateComposite(builder, exp_ty, std::move(exp_els)),
-                               });
+        return builder.create<constant::Composite>(
+            ty, utils::Vector<const constant::Value*, 2>{
+                    builder.create<constant::Composite>(fract_ty, std::move(fract_els)),
+                    builder.create<constant::Composite>(exp_ty, std::move(exp_els)),
+                });
     } else {
         auto fe = scalar(arg);
         if (!fe.fract || !fe.exp) {
             return utils::Failure;
         }
-        return CreateComposite(builder, ty,
-                               utils::Vector<const constant::Value*, 2>{
-                                   fe.fract.Get(),
-                                   fe.exp.Get(),
-                               });
+        return builder.create<constant::Composite>(ty, utils::Vector<const constant::Value*, 2>{
+                                                           fe.fract.Get(),
+                                                           fe.exp.Get(),
+                                                       });
     }
 }
 
@@ -2691,6 +2681,48 @@ ConstEval::Result ConstEval::inverseSqrt(const type::Type* ty,
             return CreateScalar(builder, source, c0->Type(), div.Get());
         };
         return Dispatch_fa_f32_f16(create, c0);
+    };
+
+    return TransformElements(builder, ty, transform, args[0]);
+}
+
+ConstEval::Result ConstEval::ldexp(const type::Type* ty,
+                                   utils::VectorRef<const constant::Value*> args,
+                                   const Source& source) {
+    auto transform = [&](const constant::Value* c1, size_t index) {
+        auto create = [&](auto e1) -> ConstEval::Result {
+            using E1Type = decltype(e1);
+            // If e1 is AFloat, then e2 is AInt, otherwise it's i32
+            using E2Type = std::conditional_t<std::is_same_v<E1Type, AFloat>, AInt, i32>;
+
+            E2Type e2;
+            auto* c2 = args[1];
+            if (c2->Type()->Is<type::Vector>()) {
+                e2 = c2->Index(index)->ValueAs<E2Type>();
+            } else {
+                e2 = c2->ValueAs<E2Type>();
+            }
+
+            E2Type bias;
+            if constexpr (std::is_same_v<E1Type, f16>) {
+                bias = 15;
+            } else if constexpr (std::is_same_v<E1Type, f32>) {
+                bias = 127;
+            } else {
+                bias = 1023;
+            }
+
+            if (e2 > bias + 1) {
+                AddError("e2 must be less than or equal to " + std::to_string(bias + 1), source);
+                return utils::Failure;
+            }
+
+            auto target_ty = type::Type::DeepestElementOf(ty);
+
+            auto r = std::ldexp(e1, static_cast<int>(e2));
+            return CreateScalar(builder, source, target_ty, E1Type{r});
+        };
+        return Dispatch_fa_f32_f16(create, c1);
     };
 
     return TransformElements(builder, ty, transform, args[0]);
@@ -2838,7 +2870,7 @@ ConstEval::Result ConstEval::modf(const type::Type* ty,
         return utils::Failure;
     }
 
-    return CreateComposite(builder, ty, std::move(fields));
+    return builder.create<constant::Composite>(ty, std::move(fields));
 }
 
 ConstEval::Result ConstEval::normalize(const type::Type* ty,
@@ -3412,9 +3444,10 @@ ConstEval::Result ConstEval::transpose(const type::Type* ty,
         for (size_t c = 0; c < mat_ty->columns(); ++c) {
             new_col_vec.Push(me(r, c));
         }
-        result_mat.Push(CreateComposite(builder, result_mat_ty->ColumnType(), new_col_vec));
+        result_mat.Push(
+            builder.create<constant::Composite>(result_mat_ty->ColumnType(), new_col_vec));
     }
-    return CreateComposite(builder, ty, result_mat);
+    return builder.create<constant::Composite>(ty, result_mat);
 }
 
 ConstEval::Result ConstEval::trunc(const type::Type* ty,
@@ -3450,7 +3483,7 @@ ConstEval::Result ConstEval::unpack2x16float(const type::Type* ty,
         }
         els.Push(el.Get());
     }
-    return CreateComposite(builder, ty, std::move(els));
+    return builder.create<constant::Composite>(ty, std::move(els));
 }
 
 ConstEval::Result ConstEval::unpack2x16snorm(const type::Type* ty,
@@ -3470,7 +3503,7 @@ ConstEval::Result ConstEval::unpack2x16snorm(const type::Type* ty,
         }
         els.Push(el.Get());
     }
-    return CreateComposite(builder, ty, std::move(els));
+    return builder.create<constant::Composite>(ty, std::move(els));
 }
 
 ConstEval::Result ConstEval::unpack2x16unorm(const type::Type* ty,
@@ -3489,7 +3522,7 @@ ConstEval::Result ConstEval::unpack2x16unorm(const type::Type* ty,
         }
         els.Push(el.Get());
     }
-    return CreateComposite(builder, ty, std::move(els));
+    return builder.create<constant::Composite>(ty, std::move(els));
 }
 
 ConstEval::Result ConstEval::unpack4x8snorm(const type::Type* ty,
@@ -3509,7 +3542,7 @@ ConstEval::Result ConstEval::unpack4x8snorm(const type::Type* ty,
         }
         els.Push(el.Get());
     }
-    return CreateComposite(builder, ty, std::move(els));
+    return builder.create<constant::Composite>(ty, std::move(els));
 }
 
 ConstEval::Result ConstEval::unpack4x8unorm(const type::Type* ty,
@@ -3528,7 +3561,7 @@ ConstEval::Result ConstEval::unpack4x8unorm(const type::Type* ty,
         }
         els.Push(el.Get());
     }
-    return CreateComposite(builder, ty, std::move(els));
+    return builder.create<constant::Composite>(ty, std::move(els));
 }
 
 ConstEval::Result ConstEval::quantizeToF16(const type::Type* ty,

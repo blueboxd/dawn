@@ -40,6 +40,22 @@ enum builtin_value {
   @internal point_size
 }
 
+// https://gpuweb.github.io/gpuweb/wgsl/#filterable-triggering-rules
+enum diagnostic_rule {
+  // Rules defined in the spec.
+  derivative_uniformity
+  // Chromium specific rules not defined in the spec.
+  chromium_unreachable_code
+}
+
+// https://gpuweb.github.io/gpuweb/wgsl/#syntax-severity_control_name
+enum diagnostic_severity {
+  error
+  warning
+  info
+  off
+}
+
 // https://gpuweb.github.io/gpuweb/wgsl/#extension
 enum extension {
   // WGSL Extension "f16"
@@ -79,6 +95,7 @@ enum access {
 
 // https://gpuweb.github.io/gpuweb/wgsl/#texel-formats
 enum texel_format {
+  bgra8unorm
   rgba8unorm
   rgba8snorm
   rgba8uint
@@ -226,6 +243,7 @@ match fia_fiu32: fa | ia | f32 | i32 | u32
 match fa_f32: fa | f32
 match fa_f32_f16: fa | f32 | f16
 match ia_iu32: ia | i32 | u32
+match ia_i32: ia | i32
 match fiu32_f16: f32 | i32 | u32 | f16
 match fiu32: f32 | i32 | u32
 match fi32_f16: f32 | i32 | f16
@@ -243,7 +261,8 @@ match iu32: i32 | u32
 
 // https://gpuweb.github.io/gpuweb/wgsl/#texel-formats
 match f32_texel_format
-  : texel_format.rgba8unorm
+  : texel_format.bgra8unorm
+  | texel_format.rgba8unorm
   | texel_format.rgba8snorm
   | texel_format.rgba16float
   | texel_format.r32float
@@ -274,6 +293,8 @@ match workgroup_or_storage
   | address_space.storage
 match storage
   : address_space.storage
+match workgroup
+  : address_space.workgroup
 
 ////////////////////////////////////////////////////////////////////////////////
 // Builtin Functions                                                          //
@@ -527,8 +548,8 @@ fn dot4U8Packed(u32, u32) -> u32
 @const fn insertBits<N: num, T: iu32>(vec<N, T>, vec<N, T>, u32, u32) -> vec<N, T>
 @const fn inverseSqrt<T: fa_f32_f16>(T) -> T
 @const fn inverseSqrt<N: num, T: fa_f32_f16>(vec<N, T>) -> vec<N, T>
-fn ldexp<T: f32_f16>(T, i32) -> T
-fn ldexp<N: num, T: f32_f16>(vec<N, T>, vec<N, i32>) -> vec<N, T>
+@const fn ldexp<T: fa_f32_f16, U: ia_i32>(T, U) -> T
+@const fn ldexp<N: num, T: fa_f32_f16, U: ia_i32>(vec<N, T>, vec<N, U>) -> vec<N, T>
 @const fn length<T: fa_f32_f16>(@test_value(0.0) T) -> T
 @const fn length<N: num, T: fa_f32_f16>(@test_value(0.0) vec<N, T>) -> T
 @const fn log<T: fa_f32_f16>(T) -> T
@@ -593,6 +614,7 @@ fn ldexp<N: num, T: f32_f16>(vec<N, T>, vec<N, i32>) -> vec<N, T>
 @const fn unpack4x8snorm(u32) -> vec4<f32>
 @const fn unpack4x8unorm(u32) -> vec4<f32>
 @stage("compute") fn workgroupBarrier()
+@stage("compute") fn workgroupUniformLoad<T>(ptr<workgroup, T, read_write>) -> T
 
 fn textureDimensions<T: fiu32>(texture: texture_1d<T>) -> u32
 fn textureDimensions<T: fiu32, L: iu32>(texture: texture_1d<T>, level: L) -> u32

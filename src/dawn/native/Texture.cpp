@@ -84,14 +84,13 @@ MaybeError ValidateCanViewTextureAs(const DeviceBase* device,
             "The formats must be compatible, and the view format "
             "must be passed in the list of view formats on texture creation.",
             viewFormat.format, format.format);
-    } else {
-        // The view format is compatible, but not in the list.
-        return DAWN_VALIDATION_ERROR(
-            "%s was not created with the texture view format (%s) "
-            "in the list of compatible view formats.",
-            texture, viewFormat.format);
     }
-    return {};
+
+    // The view format is compatible, but not in the list.
+    return DAWN_VALIDATION_ERROR(
+        "%s was not created with the texture view format (%s) "
+        "in the list of compatible view formats.",
+        texture, viewFormat.format);
 }
 
 bool IsTextureViewDimensionCompatibleWithTextureDimension(
@@ -553,6 +552,16 @@ TextureBase::TextureBase(DeviceBase* device,
         mInternalUsage |= internalUsageDesc->internalUsage;
     }
     GetObjectTrackingList()->Track(this);
+
+    // dawn:1569: If a texture with multiple array layers or mip levels is specified as a texture
+    // attachment when this toggle is active, it needs to be given CopyDst usage internally.
+    bool applyAlwaysResolveIntoZeroLevelAndLayerToggle =
+        device->IsToggleEnabled(Toggle::AlwaysResolveIntoZeroLevelAndLayer) &&
+        (GetArrayLayers() > 1 || GetNumMipLevels() > 1) &&
+        (GetInternalUsage() & wgpu::TextureUsage::RenderAttachment);
+    if (applyAlwaysResolveIntoZeroLevelAndLayerToggle) {
+        AddInternalUsage(wgpu::TextureUsage::CopyDst);
+    }
 }
 
 TextureBase::~TextureBase() = default;

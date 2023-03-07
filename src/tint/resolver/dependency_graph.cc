@@ -31,6 +31,7 @@
 #include "src/tint/ast/continue_statement.h"
 #include "src/tint/ast/depth_multisampled_texture.h"
 #include "src/tint/ast/depth_texture.h"
+#include "src/tint/ast/diagnostic_attribute.h"
 #include "src/tint/ast/discard_statement.h"
 #include "src/tint/ast/external_texture.h"
 #include "src/tint/ast/f16.h"
@@ -50,6 +51,7 @@
 #include "src/tint/ast/pointer.h"
 #include "src/tint/ast/return_statement.h"
 #include "src/tint/ast/sampled_texture.h"
+#include "src/tint/ast/sampler.h"
 #include "src/tint/ast/stage_attribute.h"
 #include "src/tint/ast/storage_texture.h"
 #include "src/tint/ast/stride_attribute.h"
@@ -71,6 +73,7 @@
 #include "src/tint/symbol_table.h"
 #include "src/tint/type/short_name.h"
 #include "src/tint/utils/block_allocator.h"
+#include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/defer.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/scoped_assignment.h"
@@ -202,10 +205,13 @@ class DependencyScanner {
                     TraverseExpression(var->initializer);
                 }
             },
-            [&](const ast::Enable*) {
-                // Enable directives do not effect the dependency graph.
+            [&](const ast::DiagnosticControl*) {
+                // Diagnostic control directives do not affect the dependency graph.
             },
-            [&](const ast::StaticAssert* assertion) { TraverseExpression(assertion->condition); },
+            [&](const ast::Enable*) {
+                // Enable directives do not affect the dependency graph.
+            },
+            [&](const ast::ConstAssert* assertion) { TraverseExpression(assertion->condition); },
             [&](Default) { UnhandledNode(diagnostics_, global->node); });
     }
 
@@ -317,10 +323,10 @@ class DependencyScanner {
                 TraverseExpression(w->condition);
                 TraverseStatement(w->body);
             },
-            [&](const ast::StaticAssert* assertion) { TraverseExpression(assertion->condition); },
+            [&](const ast::ConstAssert* assertion) { TraverseExpression(assertion->condition); },
             [&](Default) {
-                if (!stmt->IsAnyOf<ast::BreakStatement, ast::ContinueStatement,
-                                   ast::DiscardStatement>()) {
+                if (TINT_UNLIKELY((!stmt->IsAnyOf<ast::BreakStatement, ast::ContinueStatement,
+                                                  ast::DiscardStatement>()))) {
                     UnhandledNode(diagnostics_, stmt);
                 }
             });
@@ -452,9 +458,9 @@ class DependencyScanner {
             return;
         }
 
-        if (attr->IsAnyOf<ast::BuiltinAttribute, ast::InternalAttribute, ast::InterpolateAttribute,
-                          ast::InvariantAttribute, ast::StageAttribute, ast::StrideAttribute,
-                          ast::StructMemberOffsetAttribute>()) {
+        if (attr->IsAnyOf<ast::BuiltinAttribute, ast::DiagnosticAttribute, ast::InternalAttribute,
+                          ast::InterpolateAttribute, ast::InvariantAttribute, ast::StageAttribute,
+                          ast::StrideAttribute, ast::StructMemberOffsetAttribute>()) {
             return;
         }
 
@@ -553,8 +559,9 @@ struct DependencyAnalysis {
             [&](const ast::TypeDecl* td) { return td->name; },
             [&](const ast::Function* func) { return func->symbol; },
             [&](const ast::Variable* var) { return var->symbol; },
+            [&](const ast::DiagnosticControl*) { return Symbol(); },
             [&](const ast::Enable*) { return Symbol(); },
-            [&](const ast::StaticAssert*) { return Symbol(); },
+            [&](const ast::ConstAssert*) { return Symbol(); },
             [&](Default) {
                 UnhandledNode(diagnostics_, node);
                 return Symbol{};
@@ -573,12 +580,12 @@ struct DependencyAnalysis {
     /// declaration
     std::string KindOf(const ast::Node* node) {
         return Switch(
-            node,                                                       //
-            [&](const ast::Struct*) { return "struct"; },               //
-            [&](const ast::Alias*) { return "alias"; },                 //
-            [&](const ast::Function*) { return "function"; },           //
-            [&](const ast::Variable* v) { return v->Kind(); },          //
-            [&](const ast::StaticAssert*) { return "static_assert"; },  //
+            node,                                                     //
+            [&](const ast::Struct*) { return "struct"; },             //
+            [&](const ast::Alias*) { return "alias"; },               //
+            [&](const ast::Function*) { return "function"; },         //
+            [&](const ast::Variable* v) { return v->Kind(); },        //
+            [&](const ast::ConstAssert*) { return "const_assert"; },  //
             [&](Default) {
                 UnhandledNode(diagnostics_, node);
                 return "<error>";
@@ -661,16 +668,16 @@ struct DependencyAnalysis {
             return;  // This code assumes there are no undeclared identifiers.
         }
 
-        // Make sure all 'enable' directives go before any other global declarations.
+        // Make sure all directives go before any other global declarations.
         for (auto* global : declaration_order_) {
-            if (auto* enable = global->node->As<ast::Enable>()) {
-                sorted_.Add(enable);
+            if (global->node->IsAnyOf<ast::DiagnosticControl, ast::Enable>()) {
+                sorted_.Add(global->node);
             }
         }
 
         for (auto* global : declaration_order_) {
-            if (global->node->Is<ast::Enable>()) {
-                // Skip 'enable' directives here, as they are already added.
+            if (global->node->IsAnyOf<ast::DiagnosticControl, ast::Enable>()) {
+                // Skip directives here, as they are already added.
                 continue;
             }
             utils::UniqueVector<const Global*, 8> stack;
@@ -697,7 +704,7 @@ struct DependencyAnalysis {
 
             sorted_.Add(global->node);
 
-            if (!stack.IsEmpty()) {
+            if (TINT_UNLIKELY(!stack.IsEmpty())) {
                 // Each stack.push() must have a corresponding stack.pop_back().
                 TINT_ICE(Resolver, diagnostics_)
                     << "stack not empty after returning from TraverseDependencies()";
@@ -709,7 +716,8 @@ struct DependencyAnalysis {
     /// of global `from` depending on `to`.
     /// @note will raise an ICE if the edge is not found.
     DependencyInfo DepInfoFor(const Global* from, const Global* to) const {
-        if (auto info = dependency_edges_.Find(DependencyEdge{from, to})) {
+        auto info = dependency_edges_.Find(DependencyEdge{from, to});
+        if (TINT_LIKELY(info)) {
             return *info;
         }
         TINT_ICE(Resolver, diagnostics_)

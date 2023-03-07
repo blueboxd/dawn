@@ -25,6 +25,7 @@
 #include "src/tint/sem/module.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/hashmap.h"
 #include "src/tint/utils/transform.h"
 
@@ -143,7 +144,7 @@ struct Std140::State {
         // Scan structures for members that need forking
         for (auto* ty : src->Types()) {
             if (auto* str = ty->As<sem::Struct>()) {
-                if (str->UsedAs(ast::AddressSpace::kUniform)) {
+                if (str->UsedAs(type::AddressSpace::kUniform)) {
                     for (auto* member : str->Members()) {
                         if (needs_fork(member->Type())) {
                             return true;
@@ -156,7 +157,7 @@ struct Std140::State {
         // Scan uniform variables that have types that need forking
         for (auto* decl : src->AST().GlobalVariables()) {
             auto* global = src->Sem().Get(decl);
-            if (global->AddressSpace() == ast::AddressSpace::kUniform) {
+            if (global->AddressSpace() == type::AddressSpace::kUniform) {
                 if (needs_fork(global->Type()->UnwrapRef())) {
                     return true;
                 }
@@ -279,7 +280,7 @@ struct Std140::State {
         for (auto* global : src->Sem().Module()->DependencyOrderedDeclarations()) {
             // Check to see if this is a structure used by a uniform buffer...
             auto* str = sem.Get<sem::Struct>(global);
-            if (str && str->UsedAs(ast::AddressSpace::kUniform)) {
+            if (str && str->UsedAs(type::AddressSpace::kUniform)) {
                 // Should this uniform buffer be forked for std140 usage?
                 bool fork_std140 = false;
                 utils::Vector<const ast::StructMember*, 8> members;
@@ -349,7 +350,7 @@ struct Std140::State {
     void ReplaceUniformVarTypes() {
         for (auto* global : src->AST().GlobalVariables()) {
             if (auto* var = global->As<ast::Var>()) {
-                if (var->declared_address_space == ast::AddressSpace::kUniform) {
+                if (var->declared_address_space == type::AddressSpace::kUniform) {
                     auto* v = sem.Get(var);
                     if (auto* std140_ty = Std140Type(v->Type()->UnwrapRef())) {
                         ctx.Replace(global->type, std140_ty);
@@ -433,7 +434,7 @@ struct Std140::State {
                         attrs.Push(b.create<ast::StrideAttribute>(arr->Stride()));
                     }
                     auto count = arr->ConstantCount();
-                    if (!count) {
+                    if (TINT_UNLIKELY(!count)) {
                         // Non-constant counts should not be possible:
                         // * Override-expression counts can only be applied to workgroup arrays, and
                         //   this method only handles types transitively used as uniform buffers.
@@ -511,14 +512,14 @@ struct Std140::State {
         while (true) {
             enum class Action { kStop, kContinue, kError };
             Action action = Switch(
-                expr,  //
+                expr->Unwrap(),  //
                 [&](const sem::VariableUser* user) {
                     if (user->Variable() == access.var) {
                         // Walked all the way to the root identifier. We're done traversing.
                         access.indices.Push(UniformVariable{});
                         return Action::kStop;
                     }
-                    if (user->Variable()->Type()->Is<type::Pointer>()) {
+                    if (TINT_LIKELY(user->Variable()->Type()->Is<type::Pointer>())) {
                         // Found a pointer. As the root identifier is a uniform buffer variable,
                         // this must be a pointer-let. Continue traversing from the let
                         // initializer.
@@ -633,7 +634,7 @@ struct Std140::State {
             [&](const sem::Struct* str) { return sym.NameFor(str->Name()); },
             [&](const type::Array* arr) {
                 auto count = arr->ConstantCount();
-                if (!count) {
+                if (TINT_UNLIKELY(!count)) {
                     // Non-constant counts should not be possible:
                     // * Override-expression counts can only be applied to workgroup arrays, and
                     //   this method only handles types transitively used as uniform buffers.
@@ -717,7 +718,8 @@ struct Std140::State {
                 },  //
                 [&](const type::Matrix* mat) {
                     // Reassemble a std140 matrix from the structure of column vector members.
-                    if (auto std140_mat = std140_mats.Get(mat)) {
+                    auto std140_mat = std140_mats.Get(mat);
+                    if (TINT_LIKELY(std140_mat)) {
                         utils::Vector<const ast::Expression*, 8> args;
                         // std140 decomposed matrix. Reassemble.
                         auto* mat_ty = CreateASTTypeFor(ctx, mat);
@@ -739,7 +741,7 @@ struct Std140::State {
                     auto* dst_el = b.IndexAccessor(var, i);
                     auto* src_el = Convert(arr->ElemType(), b.IndexAccessor(param, i));
                     auto count = arr->ConstantCount();
-                    if (!count) {
+                    if (TINT_UNLIKELY(!count)) {
                         // Non-constant counts should not be possible:
                         // * Override-expression counts can only be applied to workgroup arrays, and
                         //   this method only handles types transitively used as uniform buffers.

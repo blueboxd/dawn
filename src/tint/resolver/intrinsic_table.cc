@@ -34,6 +34,7 @@
 #include "src/tint/type/multisampled_texture.h"
 #include "src/tint/type/sampled_texture.h"
 #include "src/tint/type/storage_texture.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/hashmap.h"
 #include "src/tint/utils/math.h"
@@ -57,13 +58,13 @@ constexpr static const size_t kNumFixedCandidates = 8;
 /// A special type that matches all TypeMatchers
 class Any final : public Castable<Any, type::Type> {
   public:
-    Any() : Base(type::Flags{}) {}
+    Any() : Base(0u, type::Flags{}) {}
     ~Any() override = default;
 
     // Stub implementations for type::Type conformance.
-    size_t Hash() const override { return 0; }
-    bool Equals(const type::Type&) const override { return false; }
+    bool Equals(const type::UniqueNode&) const override { return false; }
     std::string FriendlyName(const SymbolTable&) const override { return "<any>"; }
+    type::Type* Clone(type::CloneContext&) const override { return nullptr; }
 };
 
 /// Number is an 32 bit unsigned integer, which can be in one of three states:
@@ -327,9 +328,9 @@ class TemplateNumberMatcher : public NumberMatcher {
 // TODO(bclayton): See if we can move more of this hand-rolled code to the
 // template
 ////////////////////////////////////////////////////////////////////////////////
-using TexelFormat = ast::TexelFormat;
-using Access = ast::Access;
-using AddressSpace = ast::AddressSpace;
+using TexelFormat = type::TexelFormat;
+using Access = type::Access;
+using AddressSpace = type::AddressSpace;
 using ParameterUsage = sem::ParameterUsage;
 using PipelineStage = ast::PipelineStage;
 
@@ -357,7 +358,7 @@ const type::AbstractFloat* build_fa(MatchState& state) {
 }
 
 bool match_fa(MatchState& state, const type::Type* ty) {
-    return (state.earliest_eval_stage == sem::EvaluationStage::kConstant) &&
+    return (state.earliest_eval_stage <= sem::EvaluationStage::kConstant) &&
            ty->IsAnyOf<Any, type::AbstractNumeric>();
 }
 
@@ -366,7 +367,7 @@ const type::AbstractInt* build_ia(MatchState& state) {
 }
 
 bool match_ia(MatchState& state, const type::Type* ty) {
-    return (state.earliest_eval_stage == sem::EvaluationStage::kConstant) &&
+    return (state.earliest_eval_stage <= sem::EvaluationStage::kConstant) &&
            ty->IsAnyOf<Any, type::AbstractInt>();
 }
 
@@ -559,8 +560,8 @@ bool match_ptr(MatchState&, const type::Type* ty, Number& S, const type::Type*& 
 }
 
 const type::Pointer* build_ptr(MatchState& state, Number S, const type::Type* T, Number& A) {
-    return state.builder.create<type::Pointer>(T, static_cast<ast::AddressSpace>(S.Value()),
-                                               static_cast<ast::Access>(A.Value()));
+    return state.builder.create<type::Pointer>(T, static_cast<type::AddressSpace>(S.Value()),
+                                               static_cast<type::Access>(A.Value()));
 }
 
 bool match_atomic(MatchState&, const type::Type* ty, const type::Type*& T) {
@@ -584,11 +585,11 @@ bool match_sampler(MatchState&, const type::Type* ty) {
     if (ty->Is<Any>()) {
         return true;
     }
-    return ty->Is([](const type::Sampler* s) { return s->kind() == ast::SamplerKind::kSampler; });
+    return ty->Is([](const type::Sampler* s) { return s->kind() == type::SamplerKind::kSampler; });
 }
 
 const type::Sampler* build_sampler(MatchState& state) {
-    return state.builder.create<type::Sampler>(ast::SamplerKind::kSampler);
+    return state.builder.create<type::Sampler>(type::SamplerKind::kSampler);
 }
 
 bool match_sampler_comparison(MatchState&, const type::Type* ty) {
@@ -596,16 +597,16 @@ bool match_sampler_comparison(MatchState&, const type::Type* ty) {
         return true;
     }
     return ty->Is(
-        [](const type::Sampler* s) { return s->kind() == ast::SamplerKind::kComparisonSampler; });
+        [](const type::Sampler* s) { return s->kind() == type::SamplerKind::kComparisonSampler; });
 }
 
 const type::Sampler* build_sampler_comparison(MatchState& state) {
-    return state.builder.create<type::Sampler>(ast::SamplerKind::kComparisonSampler);
+    return state.builder.create<type::Sampler>(type::SamplerKind::kComparisonSampler);
 }
 
 bool match_texture(MatchState&,
                    const type::Type* ty,
-                   ast::TextureDimension dim,
+                   type::TextureDimension dim,
                    const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
@@ -632,17 +633,17 @@ bool match_texture(MatchState&,
         return state.builder.create<type::SampledTexture>(dim, T);                  \
     }
 
-DECLARE_SAMPLED_TEXTURE(1d, ast::TextureDimension::k1d)
-DECLARE_SAMPLED_TEXTURE(2d, ast::TextureDimension::k2d)
-DECLARE_SAMPLED_TEXTURE(2d_array, ast::TextureDimension::k2dArray)
-DECLARE_SAMPLED_TEXTURE(3d, ast::TextureDimension::k3d)
-DECLARE_SAMPLED_TEXTURE(cube, ast::TextureDimension::kCube)
-DECLARE_SAMPLED_TEXTURE(cube_array, ast::TextureDimension::kCubeArray)
+DECLARE_SAMPLED_TEXTURE(1d, type::TextureDimension::k1d)
+DECLARE_SAMPLED_TEXTURE(2d, type::TextureDimension::k2d)
+DECLARE_SAMPLED_TEXTURE(2d_array, type::TextureDimension::k2dArray)
+DECLARE_SAMPLED_TEXTURE(3d, type::TextureDimension::k3d)
+DECLARE_SAMPLED_TEXTURE(cube, type::TextureDimension::kCube)
+DECLARE_SAMPLED_TEXTURE(cube_array, type::TextureDimension::kCubeArray)
 #undef DECLARE_SAMPLED_TEXTURE
 
 bool match_texture_multisampled(MatchState&,
                                 const type::Type* ty,
-                                ast::TextureDimension dim,
+                                type::TextureDimension dim,
                                 const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
@@ -667,10 +668,10 @@ bool match_texture_multisampled(MatchState&,
         return state.builder.create<type::MultisampledTexture>(dim, T);                      \
     }
 
-DECLARE_MULTISAMPLED_TEXTURE(2d, ast::TextureDimension::k2d)
+DECLARE_MULTISAMPLED_TEXTURE(2d, type::TextureDimension::k2d)
 #undef DECLARE_MULTISAMPLED_TEXTURE
 
-bool match_texture_depth(MatchState&, const type::Type* ty, ast::TextureDimension dim) {
+bool match_texture_depth(MatchState&, const type::Type* ty, type::TextureDimension dim) {
     if (ty->Is<Any>()) {
         return true;
     }
@@ -685,10 +686,10 @@ bool match_texture_depth(MatchState&, const type::Type* ty, ast::TextureDimensio
         return state.builder.create<type::DepthTexture>(dim);                           \
     }
 
-DECLARE_DEPTH_TEXTURE(2d, ast::TextureDimension::k2d)
-DECLARE_DEPTH_TEXTURE(2d_array, ast::TextureDimension::k2dArray)
-DECLARE_DEPTH_TEXTURE(cube, ast::TextureDimension::kCube)
-DECLARE_DEPTH_TEXTURE(cube_array, ast::TextureDimension::kCubeArray)
+DECLARE_DEPTH_TEXTURE(2d, type::TextureDimension::k2d)
+DECLARE_DEPTH_TEXTURE(2d_array, type::TextureDimension::k2dArray)
+DECLARE_DEPTH_TEXTURE(cube, type::TextureDimension::kCube)
+DECLARE_DEPTH_TEXTURE(cube_array, type::TextureDimension::kCubeArray)
 #undef DECLARE_DEPTH_TEXTURE
 
 bool match_texture_depth_multisampled_2d(MatchState&, const type::Type* ty) {
@@ -696,17 +697,17 @@ bool match_texture_depth_multisampled_2d(MatchState&, const type::Type* ty) {
         return true;
     }
     return ty->Is([&](const type::DepthMultisampledTexture* t) {
-        return t->dim() == ast::TextureDimension::k2d;
+        return t->dim() == type::TextureDimension::k2d;
     });
 }
 
 type::DepthMultisampledTexture* build_texture_depth_multisampled_2d(MatchState& state) {
-    return state.builder.create<type::DepthMultisampledTexture>(ast::TextureDimension::k2d);
+    return state.builder.create<type::DepthMultisampledTexture>(type::TextureDimension::k2d);
 }
 
 bool match_texture_storage(MatchState&,
                            const type::Type* ty,
-                           ast::TextureDimension dim,
+                           type::TextureDimension dim,
                            Number& F,
                            Number& A) {
     if (ty->Is<Any>()) {
@@ -737,10 +738,10 @@ bool match_texture_storage(MatchState&,
         return state.builder.create<type::StorageTexture>(dim, format, access, T);                 \
     }
 
-DECLARE_STORAGE_TEXTURE(1d, ast::TextureDimension::k1d)
-DECLARE_STORAGE_TEXTURE(2d, ast::TextureDimension::k2d)
-DECLARE_STORAGE_TEXTURE(2d_array, ast::TextureDimension::k2dArray)
-DECLARE_STORAGE_TEXTURE(3d, ast::TextureDimension::k3d)
+DECLARE_STORAGE_TEXTURE(1d, type::TextureDimension::k1d)
+DECLARE_STORAGE_TEXTURE(2d, type::TextureDimension::k2d)
+DECLARE_STORAGE_TEXTURE(2d_array, type::TextureDimension::k2dArray)
+DECLARE_STORAGE_TEXTURE(3d, type::TextureDimension::k3d)
 #undef DECLARE_STORAGE_TEXTURE
 
 bool match_texture_external(MatchState&, const type::Type* ty) {
@@ -1154,7 +1155,7 @@ class Impl : public IntrinsicTable {
     Candidate ScoreOverload(const OverloadInfo* overload,
                             utils::VectorRef<const type::Type*> args,
                             sem::EvaluationStage earliest_eval_stage,
-                            TemplateState templates) const;
+                            const TemplateState& templates) const;
 
     /// Performs overload resolution given the list of candidates, by ranking the conversions of
     /// arguments to the each of the candidate's parameter types.
@@ -1274,8 +1275,8 @@ Impl::Builtin Impl::Lookup(sem::BuiltinType builtin_type,
         params.Reserve(match.parameters.Length());
         for (auto& p : match.parameters) {
             params.Push(builder.create<sem::Parameter>(
-                nullptr, static_cast<uint32_t>(params.Length()), p.type, ast::AddressSpace::kNone,
-                ast::Access::kUndefined, p.usage));
+                nullptr, static_cast<uint32_t>(params.Length()), p.type, type::AddressSpace::kNone,
+                type::Access::kUndefined, p.usage));
         }
         sem::PipelineStageSet supported_stages;
         if (match.overload->flags.Contains(OverloadFlag::kSupportsVertexPipeline)) {
@@ -1475,8 +1476,8 @@ IntrinsicTable::InitOrConv Impl::Lookup(InitConvIntrinsic type,
         params.Reserve(match.parameters.Length());
         for (auto& p : match.parameters) {
             params.Push(builder.create<sem::Parameter>(
-                nullptr, static_cast<uint32_t>(params.Length()), p.type, ast::AddressSpace::kNone,
-                ast::Access::kUndefined, p.usage));
+                nullptr, static_cast<uint32_t>(params.Length()), p.type, type::AddressSpace::kNone,
+                type::Access::kUndefined, p.usage));
         }
         auto eval_stage = match.overload->const_eval_fn ? sem::EvaluationStage::kConstant
                                                         : sem::EvaluationStage::kRuntime;
@@ -1490,8 +1491,8 @@ IntrinsicTable::InitOrConv Impl::Lookup(InitConvIntrinsic type,
     // Conversion.
     auto* target = converters.GetOrCreate(match, [&]() {
         auto param = builder.create<sem::Parameter>(
-            nullptr, 0u, match.parameters[0].type, ast::AddressSpace::kNone,
-            ast::Access::kUndefined, match.parameters[0].usage);
+            nullptr, 0u, match.parameters[0].type, type::AddressSpace::kNone,
+            type::Access::kUndefined, match.parameters[0].usage);
         auto eval_stage = match.overload->const_eval_fn ? sem::EvaluationStage::kConstant
                                                         : sem::EvaluationStage::kRuntime;
         return builder.create<sem::TypeConversion>(match.return_type, param, eval_stage);
@@ -1546,7 +1547,7 @@ IntrinsicPrototype Impl::MatchIntrinsic(const IntrinsicInfo& intrinsic,
         Any any;
         return_type =
             Match(match.templates, match.overload, indices, earliest_eval_stage).Type(&any);
-        if (!return_type) {
+        if (TINT_UNLIKELY(!return_type)) {
             TINT_ICE(Resolver, builder.Diagnostics()) << "MatchState.Match() returned null";
             return {};
         }
@@ -1560,7 +1561,7 @@ IntrinsicPrototype Impl::MatchIntrinsic(const IntrinsicInfo& intrinsic,
 Impl::Candidate Impl::ScoreOverload(const OverloadInfo* overload,
                                     utils::VectorRef<const type::Type*> args,
                                     sem::EvaluationStage earliest_eval_stage,
-                                    TemplateState templates) const {
+                                    const TemplateState& in_templates) const {
     // Penalty weights for overload mismatching.
     // This scoring is used to order the suggested overloads in diagnostic on overload mismatch, and
     // has no impact for a correct program.
@@ -1579,6 +1580,10 @@ Impl::Candidate Impl::ScoreOverload(const OverloadInfo* overload,
         score += kMismatchedParamCountPenalty * (std::max(num_parameters, num_arguments) -
                                                  std::min(num_parameters, num_arguments));
     }
+
+    // Make a mutable copy of the input templates so we can implicitly match more templated
+    // arguments.
+    TemplateState templates(in_templates);
 
     // Invoke the matchers for each parameter <-> argument pair.
     // If any arguments cannot be matched, then `score` will be increased.

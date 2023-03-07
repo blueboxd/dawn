@@ -82,7 +82,15 @@ enum class Toggle {
     MetalUseMockBlitEncoderForWriteTimestamp,
     VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass,
     D3D12Allocate2DTexturewithCopyDstAsCommittedResource,
+    MetalUseCombinedDepthStencilFormatForStencil8,
+    MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats,
+    UseTempTextureInStencilTextureToBufferCopy,
     DisallowDeprecatedAPIs,
+
+    // Unresolved issues.
+    NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
+    NoWorkaroundIndirectBaseVertexNotApplied,
+    NoWorkaroundDstAlphaBlendDoesNotWork,
 
     EnumCount,
     InvalidEnum = EnumCount,

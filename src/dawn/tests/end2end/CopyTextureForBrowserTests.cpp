@@ -280,15 +280,14 @@ class CopyTextureForBrowserTests : public Parent {
                               all(textureLoad(dst, vec2<i32>(dstTexCoord), 0) == nonCoveredColor);
                 } else {
                     // Calculate source texture coord.
-                    var srcTexCoord = dstTexCoord - uniforms.dstCopyOrigin +
-                                                  uniforms.srcCopyOrigin;
-                    // Note that |flipY| equals flip src texture firstly and then do copy from src
-                    // subrect to dst subrect. This helps on blink part to handle some input texture
-                    // which is flipped and need to unpack flip during the copy.
-                    // We need to calculate the expect y coord based on this rule.
+                    var srcTexCoordInRect = dstTexCoord - uniforms.dstCopyOrigin;
+
+                    // Note that |flipY| equals flip src texture in copy sub rect.
                     if (uniforms.dstTextureFlipY == 1u) {
-                        srcTexCoord.y = u32(srcSize.y) - srcTexCoord.y - 1u;
+                        srcTexCoordInRect.y = uniforms.copySize.y - srcTexCoordInRect.y - 1;
                     }
+
+                    var srcTexCoord = srcTexCoordInRect + uniforms.srcCopyOrigin;
 
                     var srcColor = textureLoad(src, vec2<i32>(srcTexCoord), 0);
                     var dstColor = textureLoad(dst, vec2<i32>(dstTexCoord), 0);
@@ -1090,9 +1089,6 @@ TEST_P(CopyTextureForBrowser_Basic, VerifyCopyFromLargeTexture) {
     // TODO(crbug.com/dawn/1232): Program link error on OpenGLES backend
     DAWN_SUPPRESS_TEST_IF(IsOpenGLES());
     DAWN_SUPPRESS_TEST_IF(IsOpenGL() && IsLinux());
-
-    // TODO(crbug.com/dawn/1070): Flaky VK_DEVICE_LOST
-    DAWN_SUPPRESS_TEST_IF(IsWindows() && IsVulkan() && IsIntel());
 
     DoBasicCopyTest({899, 999});
 }

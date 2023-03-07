@@ -18,7 +18,7 @@ struct ExternalTextureParams {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  mat2 rotationMatrix;
+  mat3x2 coordTransformationMatrix;
 };
 
 struct ExternalTextureParams_std140 {
@@ -28,8 +28,9 @@ struct ExternalTextureParams_std140 {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  vec2 rotationMatrix_0;
-  vec2 rotationMatrix_1;
+  vec2 coordTransformationMatrix_0;
+  vec2 coordTransformationMatrix_1;
+  vec2 coordTransformationMatrix_2;
 };
 
 layout(binding = 3, std140) uniform ext_tex_params_block_std140_ubo {
@@ -45,7 +46,7 @@ vec3 gammaCorrection(vec3 v, GammaTransferParams params) {
 
 
 vec4 textureSampleExternal(highp sampler2D plane0_1, highp sampler2D plane1_1, highp sampler2D plane0_smp, highp sampler2D plane1_smp, vec2 coord, ExternalTextureParams params) {
-  vec2 modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  vec2 modifiedCoords = (params.coordTransformationMatrix * vec3(coord, 1.0f));
   vec2 plane0_dims = vec2(uvec2(textureSize(plane0_1, 0)));
   vec2 plane0_half_texel = (vec2(0.5f) / plane0_dims);
   vec2 plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1.0f - plane0_half_texel));
@@ -71,7 +72,7 @@ uniform highp sampler2D ext_tex_plane_1_1;
 uniform highp sampler2D arg_0_arg_1;
 uniform highp sampler2D ext_tex_plane_1_arg_1;
 ExternalTextureParams conv_ExternalTextureParams(ExternalTextureParams_std140 val) {
-  return ExternalTextureParams(val.numPlanes, val.doYuvToRgbConversionOnly, val.yuvToRgbConversionMatrix, val.gammaDecodeParams, val.gammaEncodeParams, val.gamutConversionMatrix, mat2(val.rotationMatrix_0, val.rotationMatrix_1));
+  return ExternalTextureParams(val.numPlanes, val.doYuvToRgbConversionOnly, val.yuvToRgbConversionMatrix, val.gammaDecodeParams, val.gammaEncodeParams, val.gamutConversionMatrix, mat3x2(val.coordTransformationMatrix_0, val.coordTransformationMatrix_1, val.coordTransformationMatrix_2));
 }
 
 void textureSampleBaseClampToEdge_7c04e6() {
@@ -113,7 +114,7 @@ struct ExternalTextureParams {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  mat2 rotationMatrix;
+  mat3x2 coordTransformationMatrix;
 };
 
 struct ExternalTextureParams_std140 {
@@ -123,8 +124,9 @@ struct ExternalTextureParams_std140 {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  vec2 rotationMatrix_0;
-  vec2 rotationMatrix_1;
+  vec2 coordTransformationMatrix_0;
+  vec2 coordTransformationMatrix_1;
+  vec2 coordTransformationMatrix_2;
 };
 
 layout(binding = 3, std140) uniform ext_tex_params_block_std140_ubo {
@@ -140,7 +142,7 @@ vec3 gammaCorrection(vec3 v, GammaTransferParams params) {
 
 
 vec4 textureSampleExternal(highp sampler2D plane0_1, highp sampler2D plane1_1, highp sampler2D plane0_smp, highp sampler2D plane1_smp, vec2 coord, ExternalTextureParams params) {
-  vec2 modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  vec2 modifiedCoords = (params.coordTransformationMatrix * vec3(coord, 1.0f));
   vec2 plane0_dims = vec2(uvec2(textureSize(plane0_1, 0)));
   vec2 plane0_half_texel = (vec2(0.5f) / plane0_dims);
   vec2 plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1.0f - plane0_half_texel));
@@ -166,7 +168,7 @@ uniform highp sampler2D ext_tex_plane_1_1;
 uniform highp sampler2D arg_0_arg_1;
 uniform highp sampler2D ext_tex_plane_1_arg_1;
 ExternalTextureParams conv_ExternalTextureParams(ExternalTextureParams_std140 val) {
-  return ExternalTextureParams(val.numPlanes, val.doYuvToRgbConversionOnly, val.yuvToRgbConversionMatrix, val.gammaDecodeParams, val.gammaEncodeParams, val.gamutConversionMatrix, mat2(val.rotationMatrix_0, val.rotationMatrix_1));
+  return ExternalTextureParams(val.numPlanes, val.doYuvToRgbConversionOnly, val.yuvToRgbConversionMatrix, val.gammaDecodeParams, val.gammaEncodeParams, val.gamutConversionMatrix, mat3x2(val.coordTransformationMatrix_0, val.coordTransformationMatrix_1, val.coordTransformationMatrix_2));
 }
 
 void textureSampleBaseClampToEdge_7c04e6() {
@@ -202,7 +204,7 @@ struct ExternalTextureParams {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  mat2 rotationMatrix;
+  mat3x2 coordTransformationMatrix;
 };
 
 struct ExternalTextureParams_std140 {
@@ -212,8 +214,9 @@ struct ExternalTextureParams_std140 {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  vec2 rotationMatrix_0;
-  vec2 rotationMatrix_1;
+  vec2 coordTransformationMatrix_0;
+  vec2 coordTransformationMatrix_1;
+  vec2 coordTransformationMatrix_2;
 };
 
 layout(binding = 3, std140) uniform ext_tex_params_block_std140_ubo {
@@ -229,7 +232,7 @@ vec3 gammaCorrection(vec3 v, GammaTransferParams params) {
 
 
 vec4 textureSampleExternal(highp sampler2D plane0_1, highp sampler2D plane1_1, highp sampler2D plane0_smp, highp sampler2D plane1_smp, vec2 coord, ExternalTextureParams params) {
-  vec2 modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  vec2 modifiedCoords = (params.coordTransformationMatrix * vec3(coord, 1.0f));
   vec2 plane0_dims = vec2(uvec2(textureSize(plane0_1, 0)));
   vec2 plane0_half_texel = (vec2(0.5f) / plane0_dims);
   vec2 plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1.0f - plane0_half_texel));
@@ -255,7 +258,7 @@ uniform highp sampler2D ext_tex_plane_1_1;
 uniform highp sampler2D arg_0_arg_1;
 uniform highp sampler2D ext_tex_plane_1_arg_1;
 ExternalTextureParams conv_ExternalTextureParams(ExternalTextureParams_std140 val) {
-  return ExternalTextureParams(val.numPlanes, val.doYuvToRgbConversionOnly, val.yuvToRgbConversionMatrix, val.gammaDecodeParams, val.gammaEncodeParams, val.gamutConversionMatrix, mat2(val.rotationMatrix_0, val.rotationMatrix_1));
+  return ExternalTextureParams(val.numPlanes, val.doYuvToRgbConversionOnly, val.yuvToRgbConversionMatrix, val.gammaDecodeParams, val.gammaEncodeParams, val.gamutConversionMatrix, mat3x2(val.coordTransformationMatrix_0, val.coordTransformationMatrix_1, val.coordTransformationMatrix_2));
 }
 
 void textureSampleBaseClampToEdge_7c04e6() {

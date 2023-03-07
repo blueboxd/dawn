@@ -20,14 +20,11 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::UnnamedOverrideArrayCount);
 namespace tint::sem {
 
 NamedOverrideArrayCount::NamedOverrideArrayCount(const GlobalVariable* var)
-    : Base(), variable(var) {}
+    : Base(static_cast<size_t>(TypeInfo::Of<NamedOverrideArrayCount>().full_hashcode)),
+      variable(var) {}
 NamedOverrideArrayCount::~NamedOverrideArrayCount() = default;
 
-size_t NamedOverrideArrayCount::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<NamedOverrideArrayCount>().full_hashcode);
-}
-
-bool NamedOverrideArrayCount::Equals(const ArrayCount& other) const {
+bool NamedOverrideArrayCount::Equals(const UniqueNode& other) const {
     if (auto* v = other.As<NamedOverrideArrayCount>()) {
         return variable == v->variable;
     }
@@ -38,14 +35,16 @@ std::string NamedOverrideArrayCount::FriendlyName(const SymbolTable& symbols) co
     return symbols.NameFor(variable->Declaration()->symbol);
 }
 
-UnnamedOverrideArrayCount::UnnamedOverrideArrayCount(const Expression* e) : Base(), expr(e) {}
-UnnamedOverrideArrayCount::~UnnamedOverrideArrayCount() = default;
-
-size_t UnnamedOverrideArrayCount::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<UnnamedOverrideArrayCount>().full_hashcode);
+type::ArrayCount* NamedOverrideArrayCount::Clone(type::CloneContext&) const {
+    TINT_ASSERT(Type, false && "Named override array count clone not available");
+    return nullptr;
 }
 
-bool UnnamedOverrideArrayCount::Equals(const ArrayCount& other) const {
+UnnamedOverrideArrayCount::UnnamedOverrideArrayCount(const Expression* e)
+    : Base(static_cast<size_t>(TypeInfo::Of<UnnamedOverrideArrayCount>().full_hashcode)), expr(e) {}
+UnnamedOverrideArrayCount::~UnnamedOverrideArrayCount() = default;
+
+bool UnnamedOverrideArrayCount::Equals(const UniqueNode& other) const {
     if (auto* v = other.As<UnnamedOverrideArrayCount>()) {
         return expr == v->expr;
     }
@@ -54,6 +53,11 @@ bool UnnamedOverrideArrayCount::Equals(const ArrayCount& other) const {
 
 std::string UnnamedOverrideArrayCount::FriendlyName(const SymbolTable&) const {
     return "[unnamed override-expression]";
+}
+
+type::ArrayCount* UnnamedOverrideArrayCount::Clone(type::CloneContext&) const {
+    TINT_ASSERT(Type, false && "Unnamed override array count clone not available");
+    return nullptr;
 }
 
 }  // namespace tint::sem

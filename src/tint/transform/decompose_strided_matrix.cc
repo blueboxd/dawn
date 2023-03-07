@@ -72,8 +72,8 @@ Transform::ApplyResult DecomposeStridedMatrix::Apply(const Program* src,
     for (auto* node : src->ASTNodes().Objects()) {
         if (auto* str = node->As<ast::Struct>()) {
             auto* str_ty = src->Sem().Get(str);
-            if (!str_ty->UsedAs(ast::AddressSpace::kUniform) &&
-                !str_ty->UsedAs(ast::AddressSpace::kStorage)) {
+            if (!str_ty->UsedAs(type::AddressSpace::kUniform) &&
+                !str_ty->UsedAs(type::AddressSpace::kStorage)) {
                 continue;
             }
             for (auto* member : str_ty->Members()) {
@@ -167,7 +167,7 @@ Transform::ApplyResult DecomposeStridedMatrix::Apply(const Program* src,
     //   m = arr_to_mat(ssbo.mat)
     std::unordered_map<MatrixInfo, Symbol, MatrixInfo::Hasher> arr_to_mat;
     ctx.ReplaceAll([&](const ast::MemberAccessorExpression* expr) -> const ast::Expression* {
-        if (auto* access = src->Sem().Get<sem::StructMemberAccess>(expr)) {
+        if (auto* access = src->Sem().Get(expr)->UnwrapLoad()->As<sem::StructMemberAccess>()) {
             if (auto info = decomposed.Find(access->Member()->Declaration())) {
                 auto fn = utils::GetOrCreate(arr_to_mat, *info, [&] {
                     auto name =

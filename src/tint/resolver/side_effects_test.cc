@@ -19,6 +19,7 @@
 #include "src/tint/sem/expression.h"
 #include "src/tint/sem/index_accessor_expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/vector.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -30,7 +31,7 @@ struct SideEffectsTest : ResolverTest {
     template <typename T>
     void MakeSideEffectFunc(const char* name) {
         auto global = Sym();
-        GlobalVar(global, ty.Of<T>(), ast::AddressSpace::kPrivate);
+        GlobalVar(global, ty.Of<T>(), type::AddressSpace::kPrivate);
         auto local = Sym();
         Func(name, utils::Empty, ty.Of<T>(),
              utils::Vector{
@@ -43,7 +44,7 @@ struct SideEffectsTest : ResolverTest {
     template <typename MAKE_TYPE_FUNC>
     void MakeSideEffectFunc(const char* name, MAKE_TYPE_FUNC make_type) {
         auto global = Sym();
-        GlobalVar(global, make_type(), ast::AddressSpace::kPrivate);
+        GlobalVar(global, make_type(), type::AddressSpace::kPrivate);
         auto local = Sym();
         Func(name, utils::Empty, make_type(),
              utils::Vector{
@@ -83,12 +84,12 @@ TEST_F(SideEffectsTest, VariableUser) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(expr);
     ASSERT_NE(sem, nullptr);
-    EXPECT_TRUE(sem->Is<sem::VariableUser>());
+    EXPECT_TRUE(sem->UnwrapLoad()->Is<sem::VariableUser>());
     EXPECT_FALSE(sem->HasSideEffects());
 }
 
 TEST_F(SideEffectsTest, Call_Builtin_NoSE) {
-    GlobalVar("a", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("a", ty.f32(), type::AddressSpace::kPrivate);
     auto* expr = Call("dpdx", "a");
     Func("f", utils::Empty, ty.void_(), utils::Vector{Ignore(expr)},
          utils::Vector{create<ast::StageAttribute>(ast::PipelineStage::kFragment)});
@@ -114,7 +115,7 @@ TEST_F(SideEffectsTest, Call_Builtin_NoSE_WithSEArg) {
 }
 
 TEST_F(SideEffectsTest, Call_Builtin_SE) {
-    GlobalVar("a", ty.atomic(ty.i32()), ast::AddressSpace::kWorkgroup);
+    GlobalVar("a", ty.atomic(ty.i32()), type::AddressSpace::kWorkgroup);
     auto* expr = Call("atomicAdd", AddressOf("a"), 1_i);
     WrapInFunction(expr);
 
@@ -163,42 +164,46 @@ TEST_P(SideEffectsBuiltinTest, Test) {
     auto& c = GetParam();
 
     uint32_t next_binding = 0;
-    GlobalVar("f", ty.f32(), ast::AddressSpace::kPrivate);
-    GlobalVar("i", ty.i32(), ast::AddressSpace::kPrivate);
-    GlobalVar("u", ty.u32(), ast::AddressSpace::kPrivate);
-    GlobalVar("b", ty.bool_(), ast::AddressSpace::kPrivate);
-    GlobalVar("vf", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
-    GlobalVar("vf2", ty.vec2<f32>(), ast::AddressSpace::kPrivate);
-    GlobalVar("vi2", ty.vec2<i32>(), ast::AddressSpace::kPrivate);
-    GlobalVar("vf4", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
-    GlobalVar("vb", ty.vec3<bool>(), ast::AddressSpace::kPrivate);
-    GlobalVar("m", ty.mat3x3<f32>(), ast::AddressSpace::kPrivate);
-    GlobalVar("arr", ty.array<f32, 10>(), ast::AddressSpace::kPrivate);
-    GlobalVar("storage_arr", ty.array<f32>(), ast::AddressSpace::kStorage, Group(0_a),
+    GlobalVar("f", ty.f32(), type::AddressSpace::kPrivate);
+    GlobalVar("i", ty.i32(), type::AddressSpace::kPrivate);
+    GlobalVar("u", ty.u32(), type::AddressSpace::kPrivate);
+    GlobalVar("b", ty.bool_(), type::AddressSpace::kPrivate);
+    GlobalVar("vf", ty.vec3<f32>(), type::AddressSpace::kPrivate);
+    GlobalVar("vf2", ty.vec2<f32>(), type::AddressSpace::kPrivate);
+    GlobalVar("vi2", ty.vec2<i32>(), type::AddressSpace::kPrivate);
+    GlobalVar("vf4", ty.vec4<f32>(), type::AddressSpace::kPrivate);
+    GlobalVar("vb", ty.vec3<bool>(), type::AddressSpace::kPrivate);
+    GlobalVar("m", ty.mat3x3<f32>(), type::AddressSpace::kPrivate);
+    GlobalVar("arr", ty.array<f32, 10>(), type::AddressSpace::kPrivate);
+    GlobalVar("storage_arr", ty.array<f32>(), type::AddressSpace::kStorage, Group(0_a),
               Binding(AInt(next_binding++)));
-    GlobalVar("a", ty.atomic(ty.i32()), ast::AddressSpace::kStorage, ast::Access::kReadWrite,
+    GlobalVar("workgroup_arr", ty.array<f32, 4>(), type::AddressSpace::kWorkgroup);
+    GlobalVar("a", ty.atomic(ty.i32()), type::AddressSpace::kStorage, type::Access::kReadWrite,
               Group(0_a), Binding(AInt(next_binding++)));
     if (c.pipeline_stage != ast::PipelineStage::kCompute) {
-        GlobalVar("t2d", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()), Group(0_a),
+        GlobalVar("t2d", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()), Group(0_a),
                   Binding(AInt(next_binding++)));
-        GlobalVar("tdepth2d", ty.depth_texture(ast::TextureDimension::k2d), Group(0_a),
+        GlobalVar("tdepth2d", ty.depth_texture(type::TextureDimension::k2d), Group(0_a),
                   Binding(AInt(next_binding++)));
-        GlobalVar("t2d_arr", ty.sampled_texture(ast::TextureDimension::k2dArray, ty.f32()),
+        GlobalVar("t2d_arr", ty.sampled_texture(type::TextureDimension::k2dArray, ty.f32()),
                   Group(0_a), Binding(AInt(next_binding++)));
-        GlobalVar("t2d_multi", ty.multisampled_texture(ast::TextureDimension::k2d, ty.f32()),
+        GlobalVar("t2d_multi", ty.multisampled_texture(type::TextureDimension::k2d, ty.f32()),
                   Group(0_a), Binding(AInt(next_binding++)));
         GlobalVar("tstorage2d",
-                  ty.storage_texture(ast::TextureDimension::k2d, ast::TexelFormat::kR32Float,
-                                     ast::Access::kWrite),
+                  ty.storage_texture(type::TextureDimension::k2d, type::TexelFormat::kR32Float,
+                                     type::Access::kWrite),
                   Group(0_a), Binding(AInt(next_binding++)));
-        GlobalVar("s2d", ty.sampler(ast::SamplerKind::kSampler), Group(0_a),
+        GlobalVar("s2d", ty.sampler(type::SamplerKind::kSampler), Group(0_a),
                   Binding(AInt(next_binding++)));
-        GlobalVar("scomp", ty.sampler(ast::SamplerKind::kComparisonSampler), Group(0_a),
+        GlobalVar("scomp", ty.sampler(type::SamplerKind::kComparisonSampler), Group(0_a),
                   Binding(AInt(next_binding++)));
     }
 
     utils::Vector<const ast::Statement*, 4> stmts;
     stmts.Push(Decl(Let("pstorage_arr", AddressOf("storage_arr"))));
+    if (c.pipeline_stage == ast::PipelineStage::kCompute) {
+        stmts.Push(Decl(Let("pworkgroup_arr", AddressOf("workgroup_arr"))));
+    }
     stmts.Push(Decl(Let("pa", AddressOf("a"))));
 
     utils::Vector<const ast::Expression*, 5> args;
@@ -339,6 +344,10 @@ INSTANTIATE_TEST_SUITE_P(
         C("atomicSub", utils::Vector{"pa", "i"}, true),                       //
         C("atomicXor", utils::Vector{"pa", "i"}, true),                       //
         C("textureStore", utils::Vector{"tstorage2d", "vi2", "vf4"}, true),   //
+        C("workgroupUniformLoad",
+          utils::Vector{"pworkgroup_arr"},
+          true,
+          ast::PipelineStage::kCompute),  //
 
         // Unimplemented builtins
         // C("quantizeToF16", utils::Vector{"f"}, false), //
@@ -438,8 +447,8 @@ TEST_F(SideEffectsTest, MemberAccessor_Vector) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(expr);
-    EXPECT_TRUE(sem->Is<sem::MemberAccessorExpression>());
     ASSERT_NE(sem, nullptr);
+    EXPECT_TRUE(sem->UnwrapLoad()->Is<sem::MemberAccessorExpression>());
     EXPECT_FALSE(sem->HasSideEffects());
 }
 
@@ -450,8 +459,8 @@ TEST_F(SideEffectsTest, MemberAccessor_VectorSwizzleNoSE) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(expr);
-    EXPECT_TRUE(sem->Is<sem::Swizzle>());
     ASSERT_NE(sem, nullptr);
+    EXPECT_TRUE(sem->Is<sem::Swizzle>());
     EXPECT_FALSE(sem->HasSideEffects());
 }
 
@@ -462,8 +471,8 @@ TEST_F(SideEffectsTest, MemberAccessor_VectorSwizzleSE) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(expr);
-    EXPECT_TRUE(sem->Is<sem::Swizzle>());
     ASSERT_NE(sem, nullptr);
+    EXPECT_TRUE(sem->Is<sem::Swizzle>());
     EXPECT_TRUE(sem->HasSideEffects());
 }
 

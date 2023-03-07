@@ -30,7 +30,6 @@
 #include "src/tint/resolver/intrinsic_table.h"
 #include "src/tint/resolver/sem_helper.h"
 #include "src/tint/resolver/validator.h"
-#include "src/tint/scope_stack.h"
 #include "src/tint/sem/binding_point.h"
 #include "src/tint/sem/block_statement.h"
 #include "src/tint/sem/function.h"
@@ -157,10 +156,6 @@ class Resolver {
     sem::Expression* MemberAccessor(const ast::MemberAccessorExpression*);
     sem::Expression* UnaryOp(const ast::UnaryOpExpression*);
 
-    /// Register a memory load from an expression, to track accesses to root identifiers in order to
-    /// perform alias analysis.
-    void RegisterLoadIfNeeded(const sem::Expression* expr);
-
     /// Register a memory store to an expression, to track accesses to root identifiers in order to
     /// perform alias analysis.
     void RegisterStore(const sem::Expression* expr);
@@ -169,8 +164,11 @@ class Resolver {
     /// @returns true is the call arguments are free from aliasing issues, false otherwise.
     bool AliasAnalysis(const sem::Call* call);
 
+    /// If `expr` is of a reference type, then Load will create and return a sem::Load node wrapping
+    /// `expr`. If `expr` is not of a reference type, then Load will just return `expr`.
+    const sem::Expression* Load(const sem::Expression* expr);
+
     /// If `expr` is not of an abstract-numeric type, then Materialize() will just return `expr`.
-    /// If `expr` is of an abstract-numeric type:
     /// * Materialize will create and return a sem::Materialize node wrapping `expr`.
     /// * The AST -> Sem binding will be updated to point to the new sem::Materialize node.
     /// * The sem::Materialize node will have a new concrete type, which will be `target_type` if
@@ -181,15 +179,19 @@ class Resolver {
     ///       if `expr` has a element type of abstract-float.
     /// * The sem::Materialize constant value will be the value of `expr` value-converted to the
     ///   materialized type.
+    /// If `expr` is not of an abstract-numeric type, then Materialize() will just return `expr`.
     /// If `expr` is nullptr, then Materialize() will also return nullptr.
     const sem::Expression* Materialize(const sem::Expression* expr,
                                        const type::Type* target_type = nullptr);
 
-    /// Materializes all the arguments in `args` to the parameter types of `target`.
+    /// For each argument in `args`:
+    /// * Calls Materialize() passing the argument and the corresponding parameter type.
+    /// * Calls Load() passing the argument, iff the corresponding parameter type is not a
+    ///   reference type.
     /// @returns true on success, false on failure.
     template <size_t N>
-    bool MaybeMaterializeArguments(utils::Vector<const sem::Expression*, N>& args,
-                                   const sem::CallTarget* target);
+    bool MaybeMaterializeAndLoadArguments(utils::Vector<const sem::Expression*, N>& args,
+                                          const sem::CallTarget* target);
 
     /// @returns true if an argument of an abstract numeric type, passed to a parameter of type
     /// `parameter_ty` should be materialized.
@@ -227,6 +229,7 @@ class Resolver {
     sem::CaseStatement* CaseStatement(const ast::CaseStatement*, const type::Type*);
     sem::Statement* CompoundAssignmentStatement(const ast::CompoundAssignmentStatement*);
     sem::Statement* ContinueStatement(const ast::ContinueStatement*);
+    sem::Statement* ConstAssert(const ast::ConstAssert*);
     sem::Statement* DiscardStatement(const ast::DiscardStatement*);
     sem::ForLoopStatement* ForLoopStatement(const ast::ForLoopStatement*);
     sem::WhileStatement* WhileStatement(const ast::WhileStatement*);
@@ -237,7 +240,6 @@ class Resolver {
     sem::LoopStatement* LoopStatement(const ast::LoopStatement*);
     sem::Statement* ReturnStatement(const ast::ReturnStatement*);
     sem::Statement* Statement(const ast::Statement*);
-    sem::Statement* StaticAssert(const ast::StaticAssert*);
     sem::SwitchStatement* SwitchStatement(const ast::SwitchStatement* s);
     sem::Statement* VariableDeclStatement(const ast::VariableDeclStatement*);
     bool Statements(utils::VectorRef<const ast::Statement*>);
@@ -258,6 +260,10 @@ class Resolver {
     /// returned.
     /// @param ty the ast::Type
     type::Type* Type(const ast::Type* ty);
+
+    /// @param control the diagnostic control
+    /// @returns true on success, false on failure
+    bool DiagnosticControl(const ast::DiagnosticControl* control);
 
     /// @param enable the enable declaration
     /// @returns the resolved extension
@@ -375,11 +381,11 @@ class Resolver {
     /// given type and address space. Used for generating sensible error
     /// messages.
     /// @returns true on success, false on error
-    bool ApplyAddressSpaceUsageToType(ast::AddressSpace sc, type::Type* ty, const Source& usage);
+    bool ApplyAddressSpaceUsageToType(type::AddressSpace sc, type::Type* ty, const Source& usage);
 
     /// @param address_space the address space
     /// @returns the default access control for the given address space
-    ast::Access DefaultAccessForAddressSpace(ast::AddressSpace address_space);
+    type::Access DefaultAccessForAddressSpace(type::AddressSpace address_space);
 
     /// Allocate constant IDs for pipeline-overridable constants.
     /// @returns true on success, false on error
@@ -407,6 +413,11 @@ class Resolver {
     /// @param node the AST node.
     /// @returns true on success, false on error
     bool Mark(const ast::Node* node);
+
+    /// Applies the diagnostic severities from the current scope to a semantic node.
+    /// @param node the semantic node to apply the diagnostic severities to
+    template <typename NODE>
+    void ApplyDiagnosticSeverities(NODE* node);
 
     /// Adds the given error message to the diagnostics
     void AddError(const std::string& msg, const Source& source) const;

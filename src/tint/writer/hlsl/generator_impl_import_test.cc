@@ -62,7 +62,6 @@ INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
                                          HlslImportData{"log", "log"},
                                          HlslImportData{"log2", "log2"},
                                          HlslImportData{"round", "round"},
-                                         HlslImportData{"sign", "sign"},
                                          HlslImportData{"sin", "sin"},
                                          HlslImportData{"sinh", "sinh"},
                                          HlslImportData{"sqrt", "sqrt"},
@@ -121,7 +120,6 @@ INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
                                          HlslImportData{"log2", "log2"},
                                          HlslImportData{"normalize", "normalize"},
                                          HlslImportData{"round", "round"},
-                                         HlslImportData{"sign", "sign"},
                                          HlslImportData{"sin", "sin"},
                                          HlslImportData{"sinh", "sinh"},
                                          HlslImportData{"sqrt", "sqrt"},
@@ -256,7 +254,7 @@ INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
                          testing::Values(HlslImportData{"clamp", "clamp"}));
 
 TEST_F(HlslGeneratorImplTest_Import, HlslImportData_Determinant) {
-    GlobalVar("var", ty.mat3x3<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("var", ty.mat3x3<f32>(), type::AddressSpace::kPrivate);
 
     auto* expr = Call("determinant", "var");
     WrapInFunction(expr);
@@ -269,7 +267,7 @@ TEST_F(HlslGeneratorImplTest_Import, HlslImportData_Determinant) {
 }
 
 TEST_F(HlslGeneratorImplTest_Import, HlslImportData_QuantizeToF16_Scalar) {
-    GlobalVar("v", Expr(2_f), ast::AddressSpace::kPrivate);
+    GlobalVar("v", Expr(2_f), type::AddressSpace::kPrivate);
 
     auto* expr = Call("quantizeToF16", "v");
     WrapInFunction(expr);
@@ -282,7 +280,7 @@ TEST_F(HlslGeneratorImplTest_Import, HlslImportData_QuantizeToF16_Scalar) {
 }
 
 TEST_F(HlslGeneratorImplTest_Import, HlslImportData_QuantizeToF16_Vector) {
-    GlobalVar("v", vec3<f32>(2_f), ast::AddressSpace::kPrivate);
+    GlobalVar("v", vec3<f32>(2_f), type::AddressSpace::kPrivate);
 
     auto* expr = Call("quantizeToF16", "v");
     WrapInFunction(expr);

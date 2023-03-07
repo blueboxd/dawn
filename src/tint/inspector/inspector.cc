@@ -586,7 +586,7 @@ uint32_t Inspector::GetWorkgroupStorageSize(const std::string& entry_point) {
     uint32_t total_size = 0;
     auto* func_sem = program_->Sem().Get(func);
     for (const sem::Variable* var : func_sem->TransitivelyReferencedGlobals()) {
-        if (var->AddressSpace() == ast::AddressSpace::kWorkgroup) {
+        if (var->AddressSpace() == type::AddressSpace::kWorkgroup) {
             auto* ty = var->Type()->UnwrapRef();
             uint32_t align = ty->Align();
             uint32_t size = ty->Size();
@@ -718,7 +718,7 @@ std::vector<ResourceBinding> Inspector::GetStorageBufferResourceBindingsImpl(
         auto* var = rsv.first;
         auto binding_info = rsv.second;
 
-        if (read_only != (var->Access() == ast::Access::kRead)) {
+        if (read_only != (var->Access() == type::Access::kRead)) {
             continue;
         }
 
@@ -887,7 +887,7 @@ void Inspector::GenerateSamplerTargets() {
 
 template <size_t N, typename F>
 void Inspector::GetOriginatingResources(std::array<const ast::Expression*, N> exprs, F&& callback) {
-    if (!program_->IsValid()) {
+    if (TINT_UNLIKELY(!program_->IsValid())) {
         TINT_ICE(Inspector, diagnostics_)
             << "attempting to get originating resources in invalid program";
         return;

@@ -258,12 +258,6 @@ class DepthStencilCopyTests : public DawnTestWithParams<DepthStencilCopyTestPara
 
 // Test copying both aspects in a T2T copy, then copying only stencil.
 TEST_P(DepthStencilCopyTests, T2TBothAspectsThenCopyStencil) {
-    // TODO(crbug.com/dawn/704): Readback after clear via stencil copy does not work
-    // on some Intel drivers.
-    // Maybe has to do with the RenderAttachment usage. Notably, a later test
-    // T2TBothAspectsThenCopyNonRenderableStencil does not use RenderAttachment and works correctly.
-    DAWN_SUPPRESS_TEST_IF(IsMetal() && IsIntel());
-
     // TODO(crbug.com/dawn/1497): glReadPixels: GL error: HIGH: Invalid format and type combination.
     DAWN_SUPPRESS_TEST_IF(IsANGLE());
 
@@ -317,12 +311,6 @@ TEST_P(DepthStencilCopyTests, T2TBothAspectsThenCopyNonRenderableStencil) {
 // Test that part of a non-renderable, non-zero mip stencil aspect can be copied. Notably,
 // this test has different behavior on some platforms than T2TBothAspectsThenCopyStencil.
 TEST_P(DepthStencilCopyTests, T2TBothAspectsThenCopyNonRenderableNonZeroMipStencil) {
-    /// TODO(crbug.com/dawn/704): Readback after clear via stencil copy does not work
-    // on some Intel drivers.
-    // Maybe has to do with the non-zero mip. Notably, a previous test
-    // T2TBothAspectsThenCopyNonRenderableStencil works correctly.
-    DAWN_SUPPRESS_TEST_IF(IsMetal() && IsIntel());
-
     // TODO(crbug.com/dawn/1497): glReadPixels: GL error: HIGH: Invalid format and type combination.
     DAWN_SUPPRESS_TEST_IF(IsANGLE());
 
@@ -417,14 +405,6 @@ TEST_P(DepthStencilCopyTests, T2TBothAspectsThenCopyStencilThenDepth) {
 // Test copying both aspects in a T2T copy, then copying depth, then copying stencil
 TEST_P(DepthStencilCopyTests, T2TBothAspectsThenCopyDepthThenStencil) {
     DAWN_TEST_UNSUPPORTED_IF(!IsValidDepthCopyTextureFormat());
-
-    // TODO(crbug.com/dawn/704): Readback after clear via stencil copy does not work
-    // on some Intel drivers.
-    // It seems like the depth readback copy mutates the stencil because the previous
-    // test T2TBothAspectsThenCopyStencil passes.
-    // T2TBothAspectsThenCopyStencilThenDepth which checks stencil first also passes.
-    DAWN_SUPPRESS_TEST_IF(IsMetal() && IsIntel());
-
     // TODO(crbug.com/dawn/667): Work around the fact that some platforms are unable to read
     // stencil.
     DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("disable_depth_stencil_read"));
@@ -725,10 +705,6 @@ class StencilCopyTests : public DepthStencilCopyTests {
         DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
         DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
 
-        // TODO(crbug.com/dawn/704): Readback after clear via stencil copy does not work
-        // on some Intel drivers.
-        DAWN_SUPPRESS_TEST_IF(IsMetal() && IsIntel());
-
         // TODO(crbug.com/dawn/1273): Fails on Win11 with D3D12 debug layer and full validation
         DAWN_SUPPRESS_TEST_IF(IsD3D12() && IsBackendValidationEnabled());
 
@@ -899,8 +875,51 @@ TEST_P(StencilCopyTests, ToStencilAspectAtNonZeroOffset) {
     }
 }
 
+// Test uploading to the non-zero mip, stencil-only aspect of a texture,
+// and then checking the contents with a stencil test.
+TEST_P(StencilCopyTests, CopyNonzeroMipThenReadWithStencilTest) {
+    // Copies to a single aspect are unsupported on OpenGL.
+    DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
+    DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
+
+    // Create a stencil texture
+    constexpr uint32_t kWidth = 4;
+    constexpr uint32_t kHeight = 4;
+    constexpr uint32_t kMipLevel = 1;
+
+    wgpu::Texture depthStencilTexture =
+        CreateDepthStencilTexture(kWidth, kHeight,
+                                  wgpu::TextureUsage::RenderAttachment |
+                                      wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst,
+                                  kMipLevel + 1);
+
+    std::vector<uint8_t> stencilData = {
+        7u, 7u,  //
+        7u, 7u,  //
+    };
+
+    // Upload the stencil data.
+    {
+        wgpu::TextureDataLayout dataLayout = {};
+        dataLayout.bytesPerRow = kWidth >> kMipLevel;
+
+        wgpu::ImageCopyTexture imageCopyTexture = utils::CreateImageCopyTexture(
+            depthStencilTexture, 1, {0, 0, 0}, wgpu::TextureAspect::StencilOnly);
+        wgpu::Extent3D copySize = {kWidth >> kMipLevel, kHeight >> kMipLevel, 1};
+
+        queue.WriteTexture(&imageCopyTexture, stencilData.data(), stencilData.size(), &dataLayout,
+                           &copySize);
+    }
+
+    // Check the stencil contents.
+    ExpectAttachmentStencilTestData(depthStencilTexture, GetParam().mTextureFormat,
+                                    kWidth >> kMipLevel, kWidth >> kMipLevel, 0u, kMipLevel, 7u);
+}
+
 DAWN_INSTANTIATE_TEST_P(DepthStencilCopyTests,
-                        {D3D12Backend(), MetalBackend(), OpenGLBackend(), OpenGLESBackend(),
+                        {D3D12Backend(), MetalBackend(),
+                         MetalBackend({"use_temp_texture_in_stencil_texture_to_buffer_copy"}),
+                         OpenGLBackend(), OpenGLESBackend(),
                          // Test with the vulkan_use_s8 toggle forced on and off.
                          VulkanBackend({"vulkan_use_s8"}, {}),
                          VulkanBackend({}, {"vulkan_use_s8"})},
@@ -923,13 +942,16 @@ DAWN_INSTANTIATE_TEST_P(DepthCopyFromBufferTests,
                         std::vector<wgpu::TextureFormat>(kValidDepthCopyFromBufferFormats.begin(),
                                                          kValidDepthCopyFromBufferFormats.end()));
 
-DAWN_INSTANTIATE_TEST_P(StencilCopyTests,
-                        {D3D12Backend(),
-                         D3D12Backend({"d3d12_use_temp_buffer_in_depth_stencil_texture_and_buffer_"
-                                       "copy_with_non_zero_buffer_offset"}),
-                         MetalBackend(), OpenGLBackend(), OpenGLESBackend(),
-                         // Test with the vulkan_use_s8 toggle forced on and off.
-                         VulkanBackend({"vulkan_use_s8"}, {}),
-                         VulkanBackend({}, {"vulkan_use_s8"})},
-                        std::vector<wgpu::TextureFormat>(utils::kStencilFormats.begin(),
-                                                         utils::kStencilFormats.end()));
+DAWN_INSTANTIATE_TEST_P(
+    StencilCopyTests,
+    {D3D12Backend(),
+     D3D12Backend({"d3d12_use_temp_buffer_in_depth_stencil_texture_and_buffer_"
+                   "copy_with_non_zero_buffer_offset"}),
+     MetalBackend(), MetalBackend({"metal_use_combined_depth_stencil_format_for_stencil8"}),
+     MetalBackend({"use_temp_texture_in_stencil_texture_to_buffer_copy"}),
+     MetalBackend(
+         {"metal_use_both_depth_and_stencil_attachments_for_combined_depth_stencil_formats"}),
+     OpenGLBackend(), OpenGLESBackend(),
+     // Test with the vulkan_use_s8 toggle forced on and off.
+     VulkanBackend({"vulkan_use_s8"}, {}), VulkanBackend({}, {"vulkan_use_s8"})},
+    std::vector<wgpu::TextureFormat>(utils::kStencilFormats.begin(), utils::kStencilFormats.end()));

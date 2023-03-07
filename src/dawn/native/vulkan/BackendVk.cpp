@@ -73,19 +73,35 @@ constexpr SkippedMessage kSkippedMessages[] = {
     // considers the image read-only and produces a hazard. Dawn can't rely on storeOp=NONE and
     // so this is not expected to be worked around.
     // See http://crbug.com/dawn/1225 for more details.
+    //
+    // Depth used as storage
     {"SYNC-HAZARD-WRITE-AFTER-READ",
      "depth aspect during store with storeOp VK_ATTACHMENT_STORE_OP_STORE. Access info (usage: "
      "SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, prior_usage: "
      "SYNC_FRAGMENT_SHADER_SHADER_STORAGE_READ, read_barriers: VK_PIPELINE_STAGE_2_NONE"},
-
+    // Depth used in sampling
+    {"SYNC-HAZARD-WRITE-AFTER-READ",
+     "depth aspect during store with storeOp VK_ATTACHMENT_STORE_OP_STORE. Access info (usage: "
+     "SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, prior_usage: "
+     "SYNC_FRAGMENT_SHADER_SHADER_SAMPLED_READ, read_barriers: VK_PIPELINE_STAGE_2_NONE"},
+    // Stencil used as storage
     {"SYNC-HAZARD-WRITE-AFTER-READ",
      "stencil aspect during store with stencilStoreOp VK_ATTACHMENT_STORE_OP_STORE. Access info "
      "(usage: SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, prior_usage: "
      "SYNC_FRAGMENT_SHADER_SHADER_STORAGE_READ, read_barriers: VK_PIPELINE_STAGE_2_NONE"},
+    // Stencil used in sampling (note no tests actually hit this)
+    {"SYNC-HAZARD-WRITE-AFTER-READ",
+     "stencil aspect during store with stencilStoreOp VK_ATTACHMENT_STORE_OP_STORE. Access info "
+     "(usage: SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, prior_usage: "
+     "SYNC_FRAGMENT_SHADER_SHADER_SAMPLED_READ, read_barriers: VK_PIPELINE_STAGE_2_NONE"},
 
     // http://anglebug.com/7513
     {"VUID-VkGraphicsPipelineCreateInfo-pStages-06896",
      "contains fragment shader state, but stages"},
+    // http://crbug.com/dawn/1627
+    {"VUID-vkCmdBindDescriptorSets-pDescriptorSets-00358",
+     "is empty (has no bindings). Use VK_NULL_HANDLE to indicate this set is unused if using "
+     "VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT"},
 
     // A warning that's generated on valid usage of the WebGPU API where a fragment output doesn't
     // have a corresponding attachment
@@ -111,6 +127,11 @@ static constexpr ICD kICDs[] = {
 
 // Suppress validation errors that are known. Returns false in that case.
 bool ShouldReportDebugMessage(const char* messageId, const char* message) {
+    // pMessageIdName may be NULL
+    if (messageId == nullptr) {
+        return true;
+    }
+
     for (const SkippedMessage& msg : kSkippedMessages) {
         if (strstr(messageId, msg.messageId) != nullptr &&
             strstr(message, msg.messageContents) != nullptr) {

@@ -335,6 +335,7 @@ MaybeError ValidateColorTargetState(
 MaybeError ValidateFragmentState(DeviceBase* device,
                                  const FragmentState* descriptor,
                                  const PipelineLayoutBase* layout,
+                                 const DepthStencilState* depthStencil,
                                  bool alphaToCoverageEnabled) {
     DAWN_INVALID_IF(descriptor->nextInChain != nullptr, "nextInChain must be nullptr.");
 
@@ -351,6 +352,22 @@ MaybeError ValidateFragmentState(DeviceBase* device,
 
     const EntryPointMetadata& fragmentMetadata =
         descriptor->module->GetEntryPoint(descriptor->entryPoint);
+
+    if (fragmentMetadata.usesFragDepth) {
+        DAWN_INVALID_IF(
+            depthStencil == nullptr,
+            "Depth stencil state is not present when fragment stage (%s, entryPoint: %s) is "
+            "writing to frag_depth.",
+            descriptor->module, descriptor->entryPoint);
+        const Format* depthStencilFormat;
+        DAWN_TRY_ASSIGN(depthStencilFormat, device->GetInternalFormat(depthStencil->format));
+        DAWN_INVALID_IF(!depthStencilFormat->HasDepth(),
+                        "Depth stencil state format (%s) has no depth aspect when fragment stage "
+                        "(%s, entryPoint: %s) is "
+                        "writing to frag_depth.",
+                        depthStencil->format, descriptor->module, descriptor->entryPoint);
+    }
+
     ColorAttachmentFormats colorAttachmentFormats;
     for (ColorAttachmentIndex i(uint8_t(0));
          i < ColorAttachmentIndex(static_cast<uint8_t>(descriptor->targetCount)); ++i) {
@@ -477,6 +494,7 @@ MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
 
     if (descriptor->fragment != nullptr) {
         DAWN_TRY_CONTEXT(ValidateFragmentState(device, descriptor->fragment, descriptor->layout,
+                                               descriptor->depthStencil,
                                                descriptor->multisample.alphaToCoverageEnabled),
                          "validating fragment state.");
 
@@ -641,6 +659,10 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
             mTargetBlend[i] = *target->blend;
             mTargets[i].blend = &mTargetBlend[i];
         }
+    }
+
+    if (HasStage(SingleShaderStage::Fragment)) {
+        mUsesFragDepth = GetStage(SingleShaderStage::Fragment).metadata->usesFragDepth;
     }
 
     SetContentHash(ComputeContentHash());
@@ -829,20 +851,22 @@ bool RenderPipelineBase::IsAlphaToCoverageEnabled() const {
 
 const AttachmentState* RenderPipelineBase::GetAttachmentState() const {
     ASSERT(!IsError());
-
     return mAttachmentState.Get();
 }
 
 bool RenderPipelineBase::WritesDepth() const {
     ASSERT(!IsError());
-
     return mWritesDepth;
 }
 
 bool RenderPipelineBase::WritesStencil() const {
     ASSERT(!IsError());
-
     return mWritesStencil;
+}
+
+bool RenderPipelineBase::UsesFragDepth() const {
+    ASSERT(!IsError());
+    return mUsesFragDepth;
 }
 
 size_t RenderPipelineBase::ComputeContentHash() {

@@ -72,6 +72,7 @@
 #include "src/tint/type/reference.h"
 #include "src/tint/type/sampled_texture.h"
 #include "src/tint/type/storage_texture.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/type/u32.h"
 #include "src/tint/type/vector.h"
 #include "src/tint/type/void.h"
@@ -183,6 +184,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         polyfills.int_div_mod = true;
         polyfills.sign_int = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
+        polyfills.workgroup_uniform_load = true;
         data.Add<transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<transform::BuiltinPolyfill>();
     }
@@ -203,7 +205,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         // Use the SSBO binding numbers as the indices for the buffer size lookups.
         for (auto* var : in->AST().GlobalVariables()) {
             auto* global = in->Sem().Get<sem::GlobalVariable>(var);
-            if (global && global->AddressSpace() == ast::AddressSpace::kStorage) {
+            if (global && global->AddressSpace() == type::AddressSpace::kStorage) {
                 array_length_from_uniform_cfg.bindpoint_to_size_index.emplace(
                     global->BindingPoint(), global->BindingPoint().binding);
             }
@@ -311,11 +313,15 @@ bool GeneratorImpl::Generate() {
                 }
                 return EmitFunction(func);
             },
+            [&](const ast::DiagnosticControl*) {
+                // Do nothing for diagnostic directives in MSL
+                return true;
+            },
             [&](const ast::Enable*) {
                 // Do nothing for enabling extension in MSL
                 return true;
             },
-            [&](const ast::StaticAssert*) {
+            [&](const ast::ConstAssert*) {
                 return true;  // Not emitted
             },
             [&](Default) {
@@ -992,7 +998,7 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
     };
 
     auto* texture = arg(Usage::kTexture)->Declaration();
-    if (!texture) {
+    if (TINT_UNLIKELY(!texture)) {
         TINT_ICE(Writer, diagnostics_) << "missing texture arg";
         return false;
     }
@@ -1019,25 +1025,25 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
     };
 
     // MSL requires that `lod` is a constant 0 for 1D textures.
-    bool level_is_constant_zero = texture_type->dim() == ast::TextureDimension::k1d;
+    bool level_is_constant_zero = texture_type->dim() == type::TextureDimension::k1d;
 
     switch (builtin->Type()) {
         case sem::BuiltinType::kTextureDimensions: {
             std::vector<const char*> dims;
             switch (texture_type->dim()) {
-                case ast::TextureDimension::kNone:
+                case type::TextureDimension::kNone:
                     diagnostics_.add_error(diag::System::Writer, "texture dimension is kNone");
                     return false;
-                case ast::TextureDimension::k1d:
+                case type::TextureDimension::k1d:
                     dims = {"width"};
                     break;
-                case ast::TextureDimension::k2d:
-                case ast::TextureDimension::k2dArray:
-                case ast::TextureDimension::kCube:
-                case ast::TextureDimension::kCubeArray:
+                case type::TextureDimension::k2d:
+                case type::TextureDimension::k2dArray:
+                case type::TextureDimension::kCube:
+                case type::TextureDimension::kCubeArray:
                     dims = {"width", "height"};
                     break;
-                case ast::TextureDimension::k3d:
+                case type::TextureDimension::k3d:
                     dims = {"width", "height", "depth"};
                     break;
             }
@@ -1154,14 +1160,14 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
             if (usage == Usage::kCoords && e->Type()->UnwrapRef()->is_integer_scalar_or_vector()) {
                 casted = true;
                 switch (texture_type->dim()) {
-                    case ast::TextureDimension::k1d:
+                    case type::TextureDimension::k1d:
                         out << "uint(";
                         break;
-                    case ast::TextureDimension::k2d:
-                    case ast::TextureDimension::k2dArray:
+                    case type::TextureDimension::k2d:
+                    case type::TextureDimension::k2dArray:
                         out << "uint2(";
                         break;
-                    case ast::TextureDimension::k3d:
+                    case type::TextureDimension::k3d:
                         out << "uint3(";
                         break;
                     default:
@@ -1211,17 +1217,17 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
     if (auto* ddx = arg(Usage::kDdx)) {
         auto dim = texture_type->dim();
         switch (dim) {
-            case ast::TextureDimension::k2d:
-            case ast::TextureDimension::k2dArray:
+            case type::TextureDimension::k2d:
+            case type::TextureDimension::k2dArray:
                 maybe_write_comma();
                 out << "gradient2d(";
                 break;
-            case ast::TextureDimension::k3d:
+            case type::TextureDimension::k3d:
                 maybe_write_comma();
                 out << "gradient3d(";
                 break;
-            case ast::TextureDimension::kCube:
-            case ast::TextureDimension::kCubeArray:
+            case type::TextureDimension::kCube:
+            case type::TextureDimension::kCubeArray:
                 maybe_write_comma();
                 out << "gradientcube(";
                 break;
@@ -1256,8 +1262,8 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
         if (!has_offset) {
             // offset argument may need to be provided if we have a component.
             switch (texture_type->dim()) {
-                case ast::TextureDimension::k2d:
-                case ast::TextureDimension::k2dArray:
+                case type::TextureDimension::k2d:
+                case type::TextureDimension::k2dArray:
                     out << "int2(0), ";
                     break;
                 default:
@@ -1975,14 +1981,14 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
     // attribute have a value of zero.
     const uint32_t kInvalidBindingIndex = std::numeric_limits<uint32_t>::max();
     auto get_binding_index = [&](const ast::Parameter* param) -> uint32_t {
-        if (!param->HasBindingPoint()) {
+        if (TINT_UNLIKELY(!param->HasBindingPoint())) {
             TINT_ICE(Writer, diagnostics_)
                 << "missing binding attributes for entry point parameter";
             return kInvalidBindingIndex;
         }
         auto* param_sem = program_->Sem().Get<sem::Parameter>(param);
         auto bp = param_sem->BindingPoint();
-        if (bp.group != 0) {
+        if (TINT_UNLIKELY(bp.group != 0)) {
             TINT_ICE(Writer, diagnostics_) << "encountered non-zero resource group index (use "
                                               "BindingRemapper to fix)";
             return kInvalidBindingIndex;
@@ -2025,7 +2031,7 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
                 }
                 if (param->type->Is<ast::Sampler>()) {
                     out << " [[sampler(" << binding << ")]]";
-                } else if (param->type->Is<ast::Texture>()) {
+                } else if (TINT_LIKELY(param->type->Is<ast::Texture>())) {
                     out << " [[texture(" << binding << ")]]";
                 } else {
                     TINT_ICE(Writer, diagnostics_) << "invalid handle type entry point parameter";
@@ -2033,11 +2039,12 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
                 }
             } else if (auto* ptr = param->type->As<ast::Pointer>()) {
                 auto sc = ptr->address_space;
-                if (sc == ast::AddressSpace::kWorkgroup) {
+                if (sc == type::AddressSpace::kWorkgroup) {
                     auto& allocations = workgroup_allocations_[func_name];
                     out << " [[threadgroup(" << allocations.size() << ")]]";
                     allocations.push_back(program_->Sem().Get(ptr->type)->Size());
-                } else if (sc == ast::AddressSpace::kStorage || sc == ast::AddressSpace::kUniform) {
+                } else if (TINT_LIKELY(sc == type::AddressSpace::kStorage ||
+                                       sc == type::AddressSpace::kUniform)) {
                     uint32_t binding = get_binding_index(param);
                     if (binding == kInvalidBindingIndex) {
                         return false;
@@ -2066,7 +2073,7 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
                     }
                     out << " [[" << name << "]]";
                 }
-                if (!builtin_found) {
+                if (TINT_UNLIKELY(!builtin_found)) {
                     TINT_ICE(Writer, diagnostics_) << "Unsupported entry point parameter";
                 }
             }
@@ -2339,7 +2346,7 @@ bool GeneratorImpl::EmitMemberAccessor(std::ostream& out,
         return true;
     };
 
-    auto* sem = builder_.Sem().Get(expr);
+    auto* sem = builder_.Sem().Get(expr)->UnwrapLoad();
 
     return Switch(
         sem,
@@ -2466,7 +2473,7 @@ bool GeneratorImpl::EmitStatement(const ast::Statement* stmt) {
                     return false;
                 });
         },
-        [&](const ast::StaticAssert*) {
+        [&](const ast::ConstAssert*) {
             return true;  // Not emitted
         },
         [&](Default) {
@@ -2529,7 +2536,7 @@ bool GeneratorImpl::EmitType(std::ostream& out,
                 out << "atomic_int";
                 return true;
             }
-            if (atomic->Type()->Is<type::U32>()) {
+            if (TINT_LIKELY(atomic->Type()->Is<type::U32>())) {
                 out << "atomic_uint";
                 return true;
             }
@@ -2582,7 +2589,7 @@ bool GeneratorImpl::EmitType(std::ostream& out,
             return true;
         },
         [&](const type::Pointer* ptr) {
-            if (ptr->Access() == ast::Access::kRead) {
+            if (ptr->Access() == type::Access::kRead) {
                 out << "const ";
             }
             if (!EmitAddressSpace(out, ptr->AddressSpace())) {
@@ -2609,7 +2616,7 @@ bool GeneratorImpl::EmitType(std::ostream& out,
             return true;
         },
         [&](const type::Texture* tex) {
-            if (tex->Is<type::ExternalTexture>()) {
+            if (TINT_UNLIKELY(tex->Is<type::ExternalTexture>())) {
                 TINT_ICE(Writer, diagnostics_)
                     << "Multiplanar external texture transform was not run.";
                 return false;
@@ -2622,22 +2629,22 @@ bool GeneratorImpl::EmitType(std::ostream& out,
             }
 
             switch (tex->dim()) {
-                case ast::TextureDimension::k1d:
+                case type::TextureDimension::k1d:
                     out << "1d";
                     break;
-                case ast::TextureDimension::k2d:
+                case type::TextureDimension::k2d:
                     out << "2d";
                     break;
-                case ast::TextureDimension::k2dArray:
+                case type::TextureDimension::k2dArray:
                     out << "2d_array";
                     break;
-                case ast::TextureDimension::k3d:
+                case type::TextureDimension::k3d:
                     out << "3d";
                     break;
-                case ast::TextureDimension::kCube:
+                case type::TextureDimension::kCube:
                     out << "cube";
                     break;
-                case ast::TextureDimension::kCubeArray:
+                case type::TextureDimension::kCubeArray:
                     out << "cube_array";
                     break;
                 default:
@@ -2666,9 +2673,9 @@ bool GeneratorImpl::EmitType(std::ostream& out,
                     }
 
                     std::string access_str;
-                    if (storage->access() == ast::Access::kRead) {
+                    if (storage->access() == type::Access::kRead) {
                         out << ", access::read";
-                    } else if (storage->access() == ast::Access::kWrite) {
+                    } else if (storage->access() == type::Access::kWrite) {
                         out << ", access::write";
                     } else {
                         diagnostics_.add_error(diag::System::Writer,
@@ -2732,20 +2739,20 @@ bool GeneratorImpl::EmitTypeAndName(std::ostream& out,
     return true;
 }
 
-bool GeneratorImpl::EmitAddressSpace(std::ostream& out, ast::AddressSpace sc) {
+bool GeneratorImpl::EmitAddressSpace(std::ostream& out, type::AddressSpace sc) {
     switch (sc) {
-        case ast::AddressSpace::kFunction:
-        case ast::AddressSpace::kPrivate:
-        case ast::AddressSpace::kHandle:
+        case type::AddressSpace::kFunction:
+        case type::AddressSpace::kPrivate:
+        case type::AddressSpace::kHandle:
             out << "thread";
             return true;
-        case ast::AddressSpace::kWorkgroup:
+        case type::AddressSpace::kWorkgroup:
             out << "threadgroup";
             return true;
-        case ast::AddressSpace::kStorage:
+        case type::AddressSpace::kStorage:
             out << "device";
             return true;
-        case ast::AddressSpace::kUniform:
+        case type::AddressSpace::kUniform:
             out << "constant";
             return true;
         default:
@@ -2792,7 +2799,7 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
         auto wgsl_offset = mem->Offset();
 
         if (is_host_shareable) {
-            if (wgsl_offset < msl_offset) {
+            if (TINT_UNLIKELY(wgsl_offset < msl_offset)) {
                 // Unimplementable layout
                 TINT_ICE(Writer, diagnostics_) << "Structure member WGSL offset (" << wgsl_offset
                                                << ") is behind MSL offset (" << msl_offset << ")";
@@ -2836,7 +2843,7 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
                     },
                     [&](const ast::LocationAttribute*) {
                         auto& pipeline_stage_uses = str->PipelineStageUses();
-                        if (pipeline_stage_uses.size() != 1) {
+                        if (TINT_UNLIKELY(pipeline_stage_uses.size() != 1)) {
                             TINT_ICE(Writer, diagnostics_) << "invalid entry point IO struct uses";
                             return false;
                         }
@@ -2850,8 +2857,8 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
                         } else if (pipeline_stage_uses.count(
                                        type::PipelineStageUsage::kFragmentInput)) {
                             out << " [[user(locn" + std::to_string(loc) + ")]]";
-                        } else if (pipeline_stage_uses.count(
-                                       type::PipelineStageUsage::kFragmentOutput)) {
+                        } else if (TINT_LIKELY(pipeline_stage_uses.count(
+                                       type::PipelineStageUsage::kFragmentOutput))) {
                             out << " [[color(" + std::to_string(loc) + ")]]";
                         } else {
                             TINT_ICE(Writer, diagnostics_) << "invalid use of location decoration";
@@ -2897,7 +2904,7 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
         if (is_host_shareable) {
             // Calculate new MSL offset
             auto size_align = MslPackedTypeSizeAndAlign(ty);
-            if (msl_offset % size_align.align) {
+            if (TINT_UNLIKELY(msl_offset % size_align.align)) {
                 TINT_ICE(Writer, diagnostics_)
                     << "Misaligned MSL structure member " << ty->FriendlyName(program_->Symbols())
                     << " " << mem_name;
@@ -2997,14 +3004,14 @@ bool GeneratorImpl::EmitVar(const ast::Var* var) {
     auto out = line();
 
     switch (sem->AddressSpace()) {
-        case ast::AddressSpace::kFunction:
-        case ast::AddressSpace::kHandle:
-        case ast::AddressSpace::kNone:
+        case type::AddressSpace::kFunction:
+        case type::AddressSpace::kHandle:
+        case type::AddressSpace::kNone:
             break;
-        case ast::AddressSpace::kPrivate:
+        case type::AddressSpace::kPrivate:
             out << "thread ";
             break;
-        case ast::AddressSpace::kWorkgroup:
+        case type::AddressSpace::kWorkgroup:
             out << "threadgroup ";
             break;
         default:
@@ -3026,9 +3033,9 @@ bool GeneratorImpl::EmitVar(const ast::Var* var) {
         if (!EmitExpression(out, var->initializer)) {
             return false;
         }
-    } else if (sem->AddressSpace() == ast::AddressSpace::kPrivate ||
-               sem->AddressSpace() == ast::AddressSpace::kFunction ||
-               sem->AddressSpace() == ast::AddressSpace::kNone) {
+    } else if (sem->AddressSpace() == type::AddressSpace::kPrivate ||
+               sem->AddressSpace() == type::AddressSpace::kFunction ||
+               sem->AddressSpace() == type::AddressSpace::kNone) {
         out << " = ";
         if (!EmitZeroValue(out, type)) {
             return false;
@@ -3046,14 +3053,14 @@ bool GeneratorImpl::EmitLet(const ast::Let* let) {
     auto out = line();
 
     switch (sem->AddressSpace()) {
-        case ast::AddressSpace::kFunction:
-        case ast::AddressSpace::kHandle:
-        case ast::AddressSpace::kNone:
+        case type::AddressSpace::kFunction:
+        case type::AddressSpace::kHandle:
+        case type::AddressSpace::kNone:
             break;
-        case ast::AddressSpace::kPrivate:
+        case type::AddressSpace::kPrivate:
             out << "thread ";
             break;
-        case ast::AddressSpace::kWorkgroup:
+        case type::AddressSpace::kWorkgroup:
             out << "threadgroup ";
             break;
         default:
@@ -3166,7 +3173,7 @@ GeneratorImpl::SizeAndAlign GeneratorImpl::MslPackedTypeSizeAndAlign(const type:
         },
 
         [&](const type::Array* arr) {
-            if (!arr->IsStrideImplicit()) {
+            if (TINT_UNLIKELY(!arr->IsStrideImplicit())) {
                 TINT_ICE(Writer, diagnostics_)
                     << "arrays with explicit strides should not exist past the SPIR-V reader";
                 return SizeAndAlign{};

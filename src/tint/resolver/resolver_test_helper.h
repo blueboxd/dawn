@@ -83,7 +83,7 @@ class TestHelper : public ProgramBuilder {
     /// @return the resolved sem::Variable of the identifier, or nullptr if
     /// the expression did not resolve to a variable.
     const sem::Variable* VarOf(const ast::Expression* expr) {
-        auto* sem_ident = Sem().Get(expr);
+        auto* sem_ident = Sem().Get(expr)->UnwrapLoad();
         auto* var_user = sem_ident ? sem_ident->As<sem::VariableUser>() : nullptr;
         return var_user ? var_user->Variable() : nullptr;
     }
@@ -616,14 +616,14 @@ struct DataType<ptr<T>> {
     /// @param b the ProgramBuilder
     /// @return a new AST alias type
     static inline const ast::Type* AST(ProgramBuilder& b) {
-        return b.create<ast::Pointer>(DataType<T>::AST(b), ast::AddressSpace::kPrivate,
-                                      ast::Access::kUndefined);
+        return b.create<ast::Pointer>(DataType<T>::AST(b), type::AddressSpace::kPrivate,
+                                      type::Access::kUndefined);
     }
     /// @param b the ProgramBuilder
     /// @return the semantic aliased type
     static inline const type::Type* Sem(ProgramBuilder& b) {
-        return b.create<type::Pointer>(DataType<T>::Sem(b), ast::AddressSpace::kPrivate,
-                                       ast::Access::kReadWrite);
+        return b.create<type::Pointer>(DataType<T>::Sem(b), type::AddressSpace::kPrivate,
+                                       type::Access::kReadWrite);
     }
 
     /// @param b the ProgramBuilder
@@ -631,7 +631,7 @@ struct DataType<ptr<T>> {
     static inline const ast::Expression* Expr(ProgramBuilder& b,
                                               utils::VectorRef<Scalar> /*unused*/) {
         auto sym = b.Symbols().New("global_for_ptr");
-        b.GlobalVar(sym, DataType<T>::AST(b), ast::AddressSpace::kPrivate);
+        b.GlobalVar(sym, DataType<T>::AST(b), type::AddressSpace::kPrivate);
         return b.AddressOf(sym);
     }
 
@@ -755,15 +755,18 @@ struct Value {
         static_assert(IsDataTypeSpecializedFor<T>, "No DataType<T> specialization exists");
         using EL_TY = typename builder::DataType<T>::ElementType;
         return Value{
-            std::move(args),         CreatePtrsFor<T>().expr,     tint::IsAbstract<EL_TY>,
-            tint::IsIntegral<EL_TY>, tint::FriendlyName<EL_TY>(),
+            std::move(args),          //
+            CreatePtrsFor<T>(),       //
+            tint::IsAbstract<EL_TY>,  //
+            tint::IsIntegral<EL_TY>,  //
+            tint::FriendlyName<EL_TY>(),
         };
     }
 
     /// Creates an `ast::Expression` for the type T passing in previously stored args
     /// @param b the ProgramBuilder
     /// @returns an expression node
-    const ast::Expression* Expr(ProgramBuilder& b) const { return (*create)(b, args); }
+    const ast::Expression* Expr(ProgramBuilder& b) const { return (*create_ptrs.expr)(b, args); }
 
     /// Prints this value to the output stream
     /// @param o the output stream
@@ -782,8 +785,8 @@ struct Value {
 
     /// The arguments used to construct the value
     utils::Vector<Scalar, 4> args;
-    /// Function used to construct an expression with the given value
-    builder::ast_expr_func_ptr create;
+    /// CreatePtrs for value's type used to create an expression with `args`
+    builder::CreatePtrs create_ptrs;
     /// True if the element type is abstract
     bool is_abstract = false;
     /// True if the element type is an integer
@@ -809,12 +812,26 @@ Value Val(T v) {
 }
 
 /// Creates a Value of DataType<vec<N, T>> from N scalar `args`
-template <typename... T>
-Value Vec(T... args) {
-    using FirstT = std::tuple_element_t<0, std::tuple<T...>>;
+template <typename... Ts>
+Value Vec(Ts... args) {
+    using FirstT = std::tuple_element_t<0, std::tuple<Ts...>>;
+    static_assert(sizeof...(args) >= 2 && sizeof...(args) <= 4, "Invalid vector size");
+    static_assert(std::conjunction_v<std::is_same<FirstT, Ts>...>,
+                  "Vector args must all be the same type");
     constexpr size_t N = sizeof...(args);
     utils::Vector<Scalar, sizeof...(args)> v{args...};
     return Value::Create<vec<N, FirstT>>(std::move(v));
+}
+
+/// Creates a Value of DataType<array<N, T>> from N scalar `args`
+template <typename... Ts>
+Value Array(Ts... args) {
+    using FirstT = std::tuple_element_t<0, std::tuple<Ts...>>;
+    static_assert(std::conjunction_v<std::is_same<FirstT, Ts>...>,
+                  "Array args must all be the same type");
+    constexpr size_t N = sizeof...(args);
+    utils::Vector<Scalar, sizeof...(args)> v{args...};
+    return Value::Create<array<N, FirstT>>(std::move(v));
 }
 
 /// Creates a Value of DataType<mat<C,R,T> from C*R scalar `args`
@@ -879,7 +896,6 @@ Value Mat(const T (&c0)[R], const T (&c1)[R], const T (&c2)[R], const T (&c3)[R]
     }
     return Value::Create<mat<C, R, T>>(std::move(m));
 }
-
 }  // namespace builder
 }  // namespace tint::resolver
 

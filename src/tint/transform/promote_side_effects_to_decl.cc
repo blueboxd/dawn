@@ -276,13 +276,13 @@ class DecomposeSideEffects::CollectHoistsState : public StateBase {
             },
             [&](const ast::IdentifierExpression* e) {
                 if (auto* sem_e = sem.Get(e)) {
-                    if (auto* var_user = sem_e->As<sem::VariableUser>()) {
+                    if (auto* var_user = sem_e->UnwrapLoad()->As<sem::VariableUser>()) {
                         // Don't hoist constants.
                         if (var_user->ConstantValue()) {
                             return false;
                         }
                         // Don't hoist read-only variables as they cannot receive side-effects.
-                        if (var_user->Variable()->Access() == ast::Access::kRead) {
+                        if (var_user->Variable()->Access() == type::Access::kRead) {
                             return false;
                         }
                         // Don't hoist textures / samplers as they can't be placed into a let, nor

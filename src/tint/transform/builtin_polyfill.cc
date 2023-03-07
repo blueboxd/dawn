@@ -22,6 +22,7 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/builtin.h"
 #include "src/tint/sem/call.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/map.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -39,7 +40,14 @@ struct BuiltinPolyfill::State {
     /// Constructor
     /// @param c the CloneContext
     /// @param p the builtins to polyfill
-    State(CloneContext& c, Builtins p) : ctx(c), polyfill(p) {}
+    State(CloneContext& c, Builtins p) : ctx(c), polyfill(p) {
+        has_full_ptr_params = false;
+        for (auto* enable : c.src->AST().Enables()) {
+            if (enable->extension == ast::Extension::kChromiumExperimentalFullPtrParameters) {
+                has_full_ptr_params = true;
+            }
+        }
+    }
 
     ////////////////////////////////////////////////////////////////////////////
     // Function polyfills
@@ -473,7 +481,7 @@ struct BuiltinPolyfill::State {
         uint32_t width = WidthOf(ty);
 
         // Currently in WGSL parameters of insertBits must be i32, u32, vecN<i32> or vecN<u32>
-        if (!type::Type::DeepestElementOf(ty)->IsAnyOf<type::I32, type::U32>()) {
+        if (TINT_UNLIKELY(((!type::Type::DeepestElementOf(ty)->IsAnyOf<type::I32, type::U32>())))) {
             TINT_ICE(Transform, b.Diagnostics())
                 << "insertBits polyfill only support i32, u32, and vector of i32 or u32, got "
                 << b.FriendlyName(ty);
@@ -631,8 +639,8 @@ struct BuiltinPolyfill::State {
         };
         b.Func(name,
                utils::Vector{
-                   b.Param("t", b.ty.sampled_texture(ast::TextureDimension::k2d, b.ty.f32())),
-                   b.Param("s", b.ty.sampler(ast::SamplerKind::kSampler)),
+                   b.Param("t", b.ty.sampled_texture(type::TextureDimension::k2d, b.ty.f32())),
+                   b.Param("s", b.ty.sampler(type::SamplerKind::kSampler)),
                    b.Param("coord", b.ty.vec2<f32>()),
                },
                b.ty.vec4<f32>(), body);
@@ -656,6 +664,29 @@ struct BuiltinPolyfill::State {
                T(vec),
                utils::Vector{
                    b.Return(b.Construct(T(vec), std::move(args))),
+               });
+        return name;
+    }
+
+    /// Builds the polyfill function for the `workgroupUniformLoad` builtin.
+    /// @param type the type being loaded
+    /// @return the polyfill function name
+    Symbol workgroupUniformLoad(const type::Type* type) {
+        if (!has_full_ptr_params) {
+            b.Enable(ast::Extension::kChromiumExperimentalFullPtrParameters);
+            has_full_ptr_params = true;
+        }
+        auto name = b.Symbols().New("tint_workgroupUniformLoad");
+        b.Func(name,
+               utils::Vector{
+                   b.Param("p", b.ty.pointer(T(type), type::AddressSpace::kWorkgroup)),
+               },
+               T(type),
+               utils::Vector{
+                   b.CallStmt(b.Call("workgroupBarrier")),
+                   b.Decl(b.Let("result", b.Deref("p"))),
+                   b.CallStmt(b.Call("workgroupBarrier")),
+                   b.Return("result"),
                });
         return name;
     }
@@ -756,6 +787,9 @@ struct BuiltinPolyfill::State {
     // Polyfill functions for binary operators.
     utils::Hashmap<BinaryOpSignature, Symbol, 8> binary_op_polyfills;
 
+    // Tracks whether the chromium_experimental_full_ptr_parameters extension has been enabled.
+    bool has_full_ptr_params;
+
     /// @returns the AST type for the given sem type
     const ast::Type* T(const type::Type* ty) const { return CreateASTTypeFor(ctx, ty); }
 
@@ -800,153 +834,206 @@ Transform::ApplyResult BuiltinPolyfill::Apply(const Program* src,
 
     bool made_changes = false;
     for (auto* node : src->ASTNodes().Objects()) {
-        auto* expr = src->Sem().Get<sem::Expression>(node);
-        if (!expr || expr->Stage() == sem::EvaluationStage::kConstant ||
-            expr->Stage() == sem::EvaluationStage::kNotEvaluated) {
-            continue;  // Don't polyfill @const expressions
-        }
-
-        if (auto* call = expr->As<sem::Call>()) {
-            auto* builtin = call->Target()->As<sem::Builtin>();
-            if (!builtin) {
-                continue;
-            }
-            Symbol fn;
-            switch (builtin->Type()) {
-                case sem::BuiltinType::kAcosh:
-                    if (polyfill.acosh != Level::kNone) {
-                        fn = builtin_polyfills.GetOrCreate(
-                            builtin, [&] { return s.acosh(builtin->ReturnType()); });
-                    }
-                    break;
-                case sem::BuiltinType::kAsinh:
-                    if (polyfill.asinh) {
-                        fn = builtin_polyfills.GetOrCreate(
-                            builtin, [&] { return s.asinh(builtin->ReturnType()); });
-                    }
-                    break;
-                case sem::BuiltinType::kAtanh:
-                    if (polyfill.atanh != Level::kNone) {
-                        fn = builtin_polyfills.GetOrCreate(
-                            builtin, [&] { return s.atanh(builtin->ReturnType()); });
-                    }
-                    break;
-                case sem::BuiltinType::kClamp:
-                    if (polyfill.clamp_int) {
-                        auto& sig = builtin->Signature();
-                        if (sig.parameters[0]->Type()->is_integer_scalar_or_vector()) {
+        Switch(
+            node,
+            [&](const ast::CallExpression* expr) {
+                auto* call = src->Sem().Get(expr)->UnwrapMaterialize()->As<sem::Call>();
+                if (!call || call->Stage() == sem::EvaluationStage::kConstant ||
+                    call->Stage() == sem::EvaluationStage::kNotEvaluated) {
+                    return;  // Don't polyfill @const expressions
+                }
+                auto* builtin = call->Target()->As<sem::Builtin>();
+                if (!builtin) {
+                    return;
+                }
+                Symbol fn;
+                switch (builtin->Type()) {
+                    case sem::BuiltinType::kAcosh:
+                        if (polyfill.acosh != Level::kNone) {
                             fn = builtin_polyfills.GetOrCreate(
-                                builtin, [&] { return s.clampInteger(builtin->ReturnType()); });
+                                builtin, [&] { return s.acosh(builtin->ReturnType()); });
                         }
-                    }
-                    break;
-                case sem::BuiltinType::kCountLeadingZeros:
-                    if (polyfill.count_leading_zeros) {
-                        fn = builtin_polyfills.GetOrCreate(
-                            builtin, [&] { return s.countLeadingZeros(builtin->ReturnType()); });
-                    }
-                    break;
-                case sem::BuiltinType::kCountTrailingZeros:
-                    if (polyfill.count_trailing_zeros) {
-                        fn = builtin_polyfills.GetOrCreate(
-                            builtin, [&] { return s.countTrailingZeros(builtin->ReturnType()); });
-                    }
-                    break;
-                case sem::BuiltinType::kExtractBits:
-                    if (polyfill.extract_bits != Level::kNone) {
-                        fn = builtin_polyfills.GetOrCreate(
-                            builtin, [&] { return s.extractBits(builtin->ReturnType()); });
-                    }
-                    break;
-                case sem::BuiltinType::kFirstLeadingBit:
-                    if (polyfill.first_leading_bit) {
-                        fn = builtin_polyfills.GetOrCreate(
-                            builtin, [&] { return s.firstLeadingBit(builtin->ReturnType()); });
-                    }
-                    break;
-                case sem::BuiltinType::kFirstTrailingBit:
-                    if (polyfill.first_trailing_bit) {
-                        fn = builtin_polyfills.GetOrCreate(
-                            builtin, [&] { return s.firstTrailingBit(builtin->ReturnType()); });
-                    }
-                    break;
-                case sem::BuiltinType::kInsertBits:
-                    if (polyfill.insert_bits != Level::kNone) {
-                        fn = builtin_polyfills.GetOrCreate(
-                            builtin, [&] { return s.insertBits(builtin->ReturnType()); });
-                    }
-                    break;
-                case sem::BuiltinType::kSaturate:
-                    if (polyfill.saturate) {
-                        fn = builtin_polyfills.GetOrCreate(
-                            builtin, [&] { return s.saturate(builtin->ReturnType()); });
-                    }
-                    break;
-                case sem::BuiltinType::kSign:
-                    if (polyfill.sign_int) {
-                        auto* ty = builtin->ReturnType();
-                        if (ty->is_signed_integer_scalar_or_vector()) {
-                            fn = builtin_polyfills.GetOrCreate(builtin,
-                                                               [&] { return s.sign_int(ty); });
+                        break;
+                    case sem::BuiltinType::kAsinh:
+                        if (polyfill.asinh) {
+                            fn = builtin_polyfills.GetOrCreate(
+                                builtin, [&] { return s.asinh(builtin->ReturnType()); });
                         }
-                    }
-                    break;
-                case sem::BuiltinType::kTextureSampleBaseClampToEdge:
-                    if (polyfill.texture_sample_base_clamp_to_edge_2d_f32) {
-                        auto& sig = builtin->Signature();
-                        auto* tex = sig.Parameter(sem::ParameterUsage::kTexture);
-                        if (auto* stex = tex->Type()->As<type::SampledTexture>()) {
-                            if (stex->type()->Is<type::F32>()) {
-                                fn = builtin_polyfills.GetOrCreate(builtin, [&] {
-                                    return s.textureSampleBaseClampToEdge_2d_f32();
-                                });
+                        break;
+                    case sem::BuiltinType::kAtanh:
+                        if (polyfill.atanh != Level::kNone) {
+                            fn = builtin_polyfills.GetOrCreate(
+                                builtin, [&] { return s.atanh(builtin->ReturnType()); });
+                        }
+                        break;
+                    case sem::BuiltinType::kClamp:
+                        if (polyfill.clamp_int) {
+                            auto& sig = builtin->Signature();
+                            if (sig.parameters[0]->Type()->is_integer_scalar_or_vector()) {
+                                fn = builtin_polyfills.GetOrCreate(
+                                    builtin, [&] { return s.clampInteger(builtin->ReturnType()); });
                             }
                         }
-                    }
-                    break;
-                case sem::BuiltinType::kQuantizeToF16:
-                    if (polyfill.quantize_to_vec_f16) {
-                        if (auto* vec = builtin->ReturnType()->As<type::Vector>()) {
-                            fn = builtin_polyfills.GetOrCreate(
-                                builtin, [&] { return s.quantizeToF16(vec); });
+                        break;
+                    case sem::BuiltinType::kCountLeadingZeros:
+                        if (polyfill.count_leading_zeros) {
+                            fn = builtin_polyfills.GetOrCreate(builtin, [&] {
+                                return s.countLeadingZeros(builtin->ReturnType());
+                            });
                         }
-                    }
-                    break;
+                        break;
+                    case sem::BuiltinType::kCountTrailingZeros:
+                        if (polyfill.count_trailing_zeros) {
+                            fn = builtin_polyfills.GetOrCreate(builtin, [&] {
+                                return s.countTrailingZeros(builtin->ReturnType());
+                            });
+                        }
+                        break;
+                    case sem::BuiltinType::kExtractBits:
+                        if (polyfill.extract_bits != Level::kNone) {
+                            fn = builtin_polyfills.GetOrCreate(
+                                builtin, [&] { return s.extractBits(builtin->ReturnType()); });
+                        }
+                        break;
+                    case sem::BuiltinType::kFirstLeadingBit:
+                        if (polyfill.first_leading_bit) {
+                            fn = builtin_polyfills.GetOrCreate(
+                                builtin, [&] { return s.firstLeadingBit(builtin->ReturnType()); });
+                        }
+                        break;
+                    case sem::BuiltinType::kFirstTrailingBit:
+                        if (polyfill.first_trailing_bit) {
+                            fn = builtin_polyfills.GetOrCreate(
+                                builtin, [&] { return s.firstTrailingBit(builtin->ReturnType()); });
+                        }
+                        break;
+                    case sem::BuiltinType::kInsertBits:
+                        if (polyfill.insert_bits != Level::kNone) {
+                            fn = builtin_polyfills.GetOrCreate(
+                                builtin, [&] { return s.insertBits(builtin->ReturnType()); });
+                        }
+                        break;
+                    case sem::BuiltinType::kSaturate:
+                        if (polyfill.saturate) {
+                            fn = builtin_polyfills.GetOrCreate(
+                                builtin, [&] { return s.saturate(builtin->ReturnType()); });
+                        }
+                        break;
+                    case sem::BuiltinType::kSign:
+                        if (polyfill.sign_int) {
+                            auto* ty = builtin->ReturnType();
+                            if (ty->is_signed_integer_scalar_or_vector()) {
+                                fn = builtin_polyfills.GetOrCreate(builtin,
+                                                                   [&] { return s.sign_int(ty); });
+                            }
+                        }
+                        break;
+                    case sem::BuiltinType::kTextureSampleBaseClampToEdge:
+                        if (polyfill.texture_sample_base_clamp_to_edge_2d_f32) {
+                            auto& sig = builtin->Signature();
+                            auto* tex = sig.Parameter(sem::ParameterUsage::kTexture);
+                            if (auto* stex = tex->Type()->As<type::SampledTexture>()) {
+                                if (stex->type()->Is<type::F32>()) {
+                                    fn = builtin_polyfills.GetOrCreate(builtin, [&] {
+                                        return s.textureSampleBaseClampToEdge_2d_f32();
+                                    });
+                                }
+                            }
+                        }
+                        break;
+                    case sem::BuiltinType::kTextureStore:
+                        if (polyfill.bgra8unorm) {
+                            auto& sig = builtin->Signature();
+                            auto* tex = sig.Parameter(sem::ParameterUsage::kTexture);
+                            if (auto* stex = tex->Type()->As<type::StorageTexture>()) {
+                                if (stex->texel_format() == type::TexelFormat::kBgra8Unorm) {
+                                    size_t value_idx = static_cast<size_t>(
+                                        sig.IndexOf(sem::ParameterUsage::kValue));
+                                    ctx.Replace(expr, [&ctx, expr, value_idx] {
+                                        utils::Vector<const ast::Expression*, 3> args;
+                                        for (auto* arg : expr->args) {
+                                            arg = ctx.Clone(arg);
+                                            if (args.Length() == value_idx) {  // value
+                                                arg = ctx.dst->MemberAccessor(arg, "bgra");
+                                            }
+                                            args.Push(arg);
+                                        }
+                                        return ctx.dst->Call(
+                                            utils::ToString(sem::BuiltinType::kTextureStore),
+                                            std::move(args));
+                                    });
+                                    made_changes = true;
+                                }
+                            }
+                        }
+                        break;
+                    case sem::BuiltinType::kQuantizeToF16:
+                        if (polyfill.quantize_to_vec_f16) {
+                            if (auto* vec = builtin->ReturnType()->As<type::Vector>()) {
+                                fn = builtin_polyfills.GetOrCreate(
+                                    builtin, [&] { return s.quantizeToF16(vec); });
+                            }
+                        }
+                        break;
 
-                default:
-                    break;
-            }
+                    case sem::BuiltinType::kWorkgroupUniformLoad:
+                        if (polyfill.workgroup_uniform_load) {
+                            fn = builtin_polyfills.GetOrCreate(builtin, [&] {
+                                return s.workgroupUniformLoad(builtin->ReturnType());
+                            });
+                        }
+                        break;
 
-            if (fn.IsValid()) {
-                auto* replacement = b.Call(fn, ctx.Clone(call->Declaration()->args));
-                ctx.Replace(call->Declaration(), replacement);
-                made_changes = true;
-            }
-        } else if (auto* bin_op = node->As<ast::BinaryExpression>()) {
-            switch (bin_op->op) {
-                case ast::BinaryOp::kShiftLeft:
-                case ast::BinaryOp::kShiftRight: {
-                    if (polyfill.bitshift_modulo) {
-                        ctx.Replace(bin_op, [bin_op, &s] { return s.BitshiftModulo(bin_op); });
-                        made_changes = true;
-                    }
-                    break;
+                    default:
+                        break;
                 }
-                case ast::BinaryOp::kDivide:
-                case ast::BinaryOp::kModulo: {
-                    if (polyfill.int_div_mod) {
-                        auto* lhs_ty = src->TypeOf(bin_op->lhs)->UnwrapRef();
-                        if (lhs_ty->is_integer_scalar_or_vector()) {
-                            ctx.Replace(bin_op, [bin_op, &s] { return s.IntDivMod(bin_op); });
+
+                if (fn.IsValid()) {
+                    ctx.Replace(call->Declaration(), [&ctx, fn, expr] {
+                        return ctx.dst->Call(fn, ctx.Clone(expr->args));
+                    });
+                    made_changes = true;
+                }
+            },
+            [&](const ast::BinaryExpression* bin_op) {
+                if (auto* sem = src->Sem().Get(bin_op);
+                    !sem || sem->Stage() == sem::EvaluationStage::kConstant ||
+                    sem->Stage() == sem::EvaluationStage::kNotEvaluated) {
+                    return;  // Don't polyfill @const expressions
+                }
+                switch (bin_op->op) {
+                    case ast::BinaryOp::kShiftLeft:
+                    case ast::BinaryOp::kShiftRight: {
+                        if (polyfill.bitshift_modulo) {
+                            ctx.Replace(bin_op, [bin_op, &s] { return s.BitshiftModulo(bin_op); });
                             made_changes = true;
                         }
+                        break;
                     }
-                    break;
+                    case ast::BinaryOp::kDivide:
+                    case ast::BinaryOp::kModulo: {
+                        if (polyfill.int_div_mod) {
+                            auto* lhs_ty = src->TypeOf(bin_op->lhs)->UnwrapRef();
+                            if (lhs_ty->is_integer_scalar_or_vector()) {
+                                ctx.Replace(bin_op, [bin_op, &s] { return s.IntDivMod(bin_op); });
+                                made_changes = true;
+                            }
+                        }
+                        break;
+                    }
+                    default:
+                        break;
                 }
-                default:
-                    break;
-            }
-        }
+            },
+            [&](const ast::StorageTexture* tex) {
+                if (polyfill.bgra8unorm && tex->format == type::TexelFormat::kBgra8Unorm) {
+                    ctx.Replace(tex, [&ctx, tex] {
+                        return ctx.dst->ty.storage_texture(tex->dim, type::TexelFormat::kRgba8Unorm,
+                                                           tex->access);
+                    });
+                    made_changes = true;
+                }
+            });
     }
 
     if (!made_changes) {

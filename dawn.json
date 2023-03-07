@@ -446,6 +446,10 @@
                 "returns": "uint64_t"
             },
             {
+                "name": "get map state",
+                "returns": "buffer map state"
+            },
+            {
                 "name": "unmap"
             },
             {
@@ -480,6 +484,14 @@
             {"value": 3, "name": "device lost"},
             {"value": 4, "name": "destroyed before callback"},
             {"value": 5, "name": "unmapped before callback"}
+        ]
+    },
+    "buffer map state": {
+        "category": "enum",
+        "values": [
+            {"value": 0, "name": "unmapped"},
+            {"value": 1, "name": "pending"},
+            {"value": 2, "name": "mapped"}
         ]
     },
     "buffer usage": {
@@ -737,7 +749,10 @@
             {"name": "line num", "type": "uint64_t"},
             {"name": "line pos", "type": "uint64_t"},
             {"name": "offset", "type": "uint64_t"},
-            {"name": "length", "type": "uint64_t"}
+            {"name": "length", "type": "uint64_t"},
+            {"name": "utf16 line pos", "type": "uint64_t"},
+            {"name": "utf16 offset", "type": "uint64_t"},
+            {"name": "utf16 length", "type": "uint64_t"}
         ]
     },
     "compilation message type": {
@@ -1213,6 +1228,13 @@
                 "returns": "void",
                 "args": [
                     {"name": "label", "type": "char", "annotation": "const*", "length": "strlen"}
+                ]
+            },
+            {
+                "name": "validate texture descriptor",
+                "tags": ["dawn"],
+                "args": [
+                    {"name": "descriptor", "type": "texture descriptor", "annotation": "const*"}
                 ]
             }
         ]

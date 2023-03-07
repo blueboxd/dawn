@@ -49,7 +49,8 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "a texture, we first resolve into a temporarily 2D texture with only one mipmap level and "
       "one array layer, and copy the result of MSAA resolve into the true resolve target. This "
       "workaround is enabled by default on the Metal drivers that have bugs when setting non-zero "
-      "resolveLevel or resolveSlice.",
+      "resolveLevel or resolveSlice. It is also enabled by default on Qualcomm Vulkan drivers, "
+      "which have similar bugs.",
       "https://crbug.com/dawn/56"}},
     {Toggle::LazyClearResourceOnFirstUse,
      {"lazy_clear_resource_on_first_use",
@@ -325,6 +326,28 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "resources. This toggle is enabled by default on D3D12 backends using Intel Gen9.5 and Gen11 "
       "GPUs due to a driver issue on Intel D3D12 driver.",
       "https://crbug.com/1237175"}},
+    {Toggle::MetalUseCombinedDepthStencilFormatForStencil8,
+     {"metal_use_combined_depth_stencil_format_for_stencil8",
+      "Use a combined depth stencil format instead of stencil8. Works around an issue where the "
+      "stencil8 format alone does not work correctly. This toggle also causes depth stencil "
+      "attachments using a stencil8 format to also set the depth attachment in the Metal render "
+      "pass. This works around another issue where Metal fails to set the stencil attachment "
+      "correctly for a combined depth stencil format if the depth attachment is not also set.",
+      "https://crbug.com/dawn/1389"}},
+    {Toggle::MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats,
+     {"metal_use_both_depth_and_stencil_attachments_for_combined_depth_stencil_formats",
+      "In Metal, depth and stencil attachments are set separately. Setting just one without the "
+      "other does not work correctly for combined depth stencil formats on some Metal drivers. "
+      "This workarounds ensures that both are set. This situation arises during lazy clears, or "
+      "for stencil8 formats if metal_use_combined_depth_stencil_format_for_stencil8 is also "
+      "enabled.",
+      "https://crbug.com/dawn/1389"}},
+    {Toggle::UseTempTextureInStencilTextureToBufferCopy,
+     {"use_temp_texture_in_stencil_texture_to_buffer_copy",
+      "Use an intermediate temporary texture when copying the stencil aspect of a texture to a "
+      "buffer. Works around an issue where stencil writes from a render pass are not reflected in "
+      "the destination buffer.",
+      "https://crbug.com/dawn/1389"}},
     {Toggle::DisallowDeprecatedAPIs,
      {"disallow_deprecated_apis",
       "Disallow all deprecated paths by changing the deprecation warnings to validation error for "
@@ -332,6 +355,22 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "This toggle is off by default. It is expected to turn on or get removed when WebGPU V1 "
       "ships and stays stable.",
       "https://crbug.com/dawn/1563"}},
+    {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
+     {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
+      "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "
+      "target. If there are multiple color targets, all but the last one will use a sample mask "
+      "of zero.",
+      "https://crbug.com/dawn/1462"}},
+    {Toggle::NoWorkaroundIndirectBaseVertexNotApplied,
+     {"no_workaround_indirect_base_vertex_not_applied",
+      "MacOS Intel < Gen9 has a bug where indirect base vertex is not applied for "
+      "drawIndexedIndirect. Draws are done as if it is always zero.",
+      "https://crbug.com/dawn/966"}},
+    {Toggle::NoWorkaroundDstAlphaBlendDoesNotWork,
+     {"no_workaround_dst_alpha_blend_does_not_work",
+      "Using D3D12_BLEND_DEST_ALPHA as blend factor doesn't work correctly on the D3D12 backend "
+      "using Intel Gen9 or Gen9.5 GPUs.",
+      "https://crbug.com/dawn/1579"}},
     // Comment to separate the }} so it is clearer what to copy-paste to add a toggle.
 }};
 }  // anonymous namespace

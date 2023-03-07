@@ -123,9 +123,9 @@ struct CombineSamplers::State {
     /// Creates placeholder global sampler variables.
     /// @param kind the sampler kind to create for
     /// @returns the newly-created global variable
-    const ast::Variable* CreatePlaceholder(ast::SamplerKind kind) {
+    const ast::Variable* CreatePlaceholder(type::SamplerKind kind) {
         const ast::Type* type = ctx.dst->ty.sampler(kind);
-        const char* name = kind == ast::SamplerKind::kComparisonSampler
+        const char* name = kind == type::SamplerKind::kComparisonSampler
                                ? "placeholder_comparison_sampler"
                                : "placeholder_sampler";
         Symbol symbol = ctx.dst->Symbols().New(name);
@@ -250,9 +250,10 @@ struct CombineSamplers::State {
                     const sem::Expression* sampler =
                         sampler_index != -1 ? call->Arguments()[static_cast<size_t>(sampler_index)]
                                             : nullptr;
-                    auto* texture_var = texture->As<sem::VariableUser>()->Variable();
+                    auto* texture_var = texture->UnwrapLoad()->As<sem::VariableUser>()->Variable();
                     auto* sampler_var =
-                        sampler ? sampler->As<sem::VariableUser>()->Variable() : nullptr;
+                        sampler ? sampler->UnwrapLoad()->As<sem::VariableUser>()->Variable()
+                                : nullptr;
                     sem::VariablePair new_pair(texture_var, sampler_var);
                     for (auto* arg : expr->args) {
                         auto* type = ctx.src->TypeOf(arg)->UnwrapRef();
@@ -264,8 +265,8 @@ struct CombineSamplers::State {
                                                                          [new_pair];
                             args.Push(ctx.dst->Expr(var->symbol));
                         } else if (auto* sampler_type = type->As<type::Sampler>()) {
-                            ast::SamplerKind kind = sampler_type->kind();
-                            int index = (kind == ast::SamplerKind::kSampler) ? 0 : 1;
+                            type::SamplerKind kind = sampler_type->kind();
+                            int index = (kind == type::SamplerKind::kSampler) ? 0 : 1;
                             const ast::Variable*& p = placeholder_samplers_[index];
                             if (!p) {
                                 p = CreatePlaceholder(kind);
@@ -296,12 +297,14 @@ struct CombineSamplers::State {
                         const sem::Variable* sampler_var = pair.second;
                         if (auto* param = texture_var->As<sem::Parameter>()) {
                             const sem::Expression* texture = call->Arguments()[param->Index()];
-                            texture_var = texture->As<sem::VariableUser>()->Variable();
+                            texture_var =
+                                texture->UnwrapLoad()->As<sem::VariableUser>()->Variable();
                         }
                         if (sampler_var) {
                             if (auto* param = sampler_var->As<sem::Parameter>()) {
                                 const sem::Expression* sampler = call->Arguments()[param->Index()];
-                                sampler_var = sampler->As<sem::VariableUser>()->Variable();
+                                sampler_var =
+                                    sampler->UnwrapLoad()->As<sem::VariableUser>()->Variable();
                             }
                         }
                         sem::VariablePair new_pair(texture_var, sampler_var);

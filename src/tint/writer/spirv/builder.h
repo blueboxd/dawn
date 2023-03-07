@@ -43,6 +43,7 @@
 // Forward declarations
 namespace tint::sem {
 class Call;
+class Load;
 class TypeInitializer;
 class TypeConversion;
 }  // namespace tint::sem
@@ -193,7 +194,7 @@ class Builder {
     /// Pushes a variable to the current function
     /// @param operands the variable operands
     void push_function_var(const OperandList& operands) {
-        if (functions_.empty()) {
+        if (TINT_UNLIKELY(functions_.empty())) {
             TINT_ICE(Writer, builder_.Diagnostics())
                 << "push_function_var() called without a function";
         }
@@ -207,12 +208,12 @@ class Builder {
     /// Converts a address space to a SPIR-V address space.
     /// @param klass the address space to convert
     /// @returns the SPIR-V address space or SpvStorageClassMax on error.
-    SpvStorageClass ConvertAddressSpace(ast::AddressSpace klass) const;
+    SpvStorageClass ConvertAddressSpace(type::AddressSpace klass) const;
     /// Converts a builtin to a SPIR-V builtin and pushes a capability if needed.
     /// @param builtin the builtin to convert
     /// @param storage the address space that this builtin is being used with
     /// @returns the SPIR-V builtin or SpvBuiltInMax on error.
-    SpvBuiltIn ConvertBuiltin(ast::BuiltinValue builtin, ast::AddressSpace storage);
+    SpvBuiltIn ConvertBuiltin(ast::BuiltinValue builtin, type::AddressSpace storage);
 
     /// Converts an interpolate attribute to SPIR-V decorations and pushes a
     /// capability if needed.
@@ -271,6 +272,10 @@ class Builder {
     /// @param id the id of the function
     /// @returns false on failure
     bool GenerateExecutionModes(const ast::Function* func, uint32_t id);
+    /// Generates an expression
+    /// @param expr the expression to generate
+    /// @returns the resulting ID of the expression or 0 on error
+    uint32_t GenerateExpression(const sem::Expression* expr);
     /// Generates an expression
     /// @param expr the expression to generate
     /// @returns the resulting ID of the expression or 0 on error
@@ -440,24 +445,15 @@ class Builder {
     /// @param stmt the statement to generate
     /// @returns true if the statement was generated
     bool GenerateStatement(const ast::Statement* stmt);
-    /// Generates an expression. If the WGSL expression does not have reference
-    /// type, then return the SPIR-V ID for the expression. Otherwise implement
-    /// the WGSL Load Rule: generate an OpLoad and return the ID of the result.
-    /// Returns 0 if the expression could not be generated.
-    /// @param expr the semantic expression node to be generated
-    /// @returns the the ID of the expression, or loaded expression
-    uint32_t GenerateExpressionWithLoadIfNeeded(const sem::Expression* expr);
-    /// Generates an expression. If the WGSL expression does not have reference
-    /// type, then return the SPIR-V ID for the expression. Otherwise implement
-    /// the WGSL Load Rule: generate an OpLoad and return the ID of the result.
-    /// Returns 0 if the expression could not be generated.
-    /// @param expr the AST expression to be generated
-    /// @returns the the ID of the expression, or loaded expression
-    uint32_t GenerateExpressionWithLoadIfNeeded(const ast::Expression* expr);
-    /// Generates an OpLoad on the given ID if it has reference type in WGSL,
-    /// othewrise return the ID itself.
+    /// Generates an OpLoad of the given expression type
+    /// @param type the reference type of the expression
+    /// @param id the SPIR-V id of the expression
+    /// @returns the ID of the loaded value or 0 on failure.
+    uint32_t GenerateLoad(const type::Reference* type, uint32_t id);
+    /// Generates an OpLoad on the given ID if it has reference type in WGSL, otherwise return the
+    /// ID itself.
     /// @param type the type of the expression
-    /// @param id the SPIR-V id of the experssion
+    /// @param id the SPIR-V id of the expression
     /// @returns the ID of the loaded value or `id` if type is not a reference
     uint32_t GenerateLoadIfNeeded(const type::Type* type, uint32_t id);
     /// Generates an OpStore. Emits an error and returns false if we're
@@ -539,7 +535,7 @@ class Builder {
     /// Converts TexelFormat to SPIR-V and pushes an appropriate capability.
     /// @param format AST image format type
     /// @returns SPIR-V image format type
-    SpvImageFormat convert_texel_format_to_spv(const ast::TexelFormat format);
+    SpvImageFormat convert_texel_format_to_spv(const type::TexelFormat format);
 
     /// Determines if the given type initializer is created from constant values
     /// @param expr the expression to check

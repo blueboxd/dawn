@@ -84,6 +84,8 @@ wgpu::TextureFormat TintImageFormatToTextureFormat(
             return wgpu::TextureFormat::R32Sint;
         case tint::inspector::ResourceBinding::TexelFormat::kR32Float:
             return wgpu::TextureFormat::R32Float;
+        case tint::inspector::ResourceBinding::TexelFormat::kBgra8Unorm:
+            return wgpu::TextureFormat::BGRA8Unorm;
         case tint::inspector::ResourceBinding::TexelFormat::kRgba8Unorm:
             return wgpu::TextureFormat::RGBA8Unorm;
         case tint::inspector::ResourceBinding::TexelFormat::kRgba8Snorm:
@@ -299,7 +301,7 @@ ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
 #if TINT_BUILD_WGSL_READER
     tint::Program program = tint::reader::wgsl::Parse(file);
     if (outMessages != nullptr) {
-        outMessages->AddMessages(program.Diagnostics());
+        DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
     }
     if (!program.IsValid()) {
         return DAWN_VALIDATION_ERROR("Tint WGSL reader failure: %s\n", program.Diagnostics().str());
@@ -311,12 +313,12 @@ ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
 #endif
 }
 
+#if TINT_BUILD_SPV_READER
 ResultOrError<tint::Program> ParseSPIRV(const std::vector<uint32_t>& spirv,
                                         OwnedCompilationMessages* outMessages) {
-#if TINT_BUILD_SPV_READER
     tint::Program program = tint::reader::spirv::Parse(spirv);
     if (outMessages != nullptr) {
-        outMessages->AddMessages(program.Diagnostics());
+        DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
     }
     if (!program.IsValid()) {
         return DAWN_VALIDATION_ERROR("Tint SPIR-V reader failure:\nParser: %s\n",
@@ -324,11 +326,8 @@ ResultOrError<tint::Program> ParseSPIRV(const std::vector<uint32_t>& spirv,
     }
 
     return std::move(program);
-#else
-    return DAWN_VALIDATION_ERROR("TINT_BUILD_SPV_READER is not defined.");
-
-#endif
 }
+#endif  // TINT_BUILD_SPV_READER
 
 std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingGroupInfoMap& shaderBindings,
                                                  const BindGroupLayoutBase* layout) {
@@ -529,7 +528,6 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
 
     if (!entryPoint.overrides.empty()) {
         const auto& name2Id = inspector->GetNamedOverrideIds();
-        const auto& id2Scalar = inspector->GetOverrideDefaultValues();
 
         for (auto& c : entryPoint.overrides) {
             auto id = name2Id.at(c.name);
@@ -647,6 +645,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
         if (entryPoint.sample_index_used) {
             totalInterStageShaderComponents += 1;
         }
+        metadata->usesFragDepth = entryPoint.frag_depth_used;
 
         metadata->totalInterStageShaderComponents = totalInterStageShaderComponents;
         DelayedInvalidIf(totalInterStageShaderComponents > maxInterStageShaderComponents,
@@ -726,6 +725,9 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
                 info.storageTexture.viewDimension =
                     TintTextureDimensionToTextureViewDimension(resource.dim);
 
+                DAWN_INVALID_IF(info.storageTexture.format == wgpu::TextureFormat::BGRA8Unorm,
+                                "BGRA8Unorm storage textures are not yet supported.");
+
                 break;
             case BindingInfoType::ExternalTexture:
                 break;
@@ -789,7 +791,7 @@ MaybeError ValidateWGSLProgramExtension(const DeviceBase* device,
 
     if (hasDisallowedExtension) {
         if (outMessages != nullptr) {
-            outMessages->AddMessages(messages);
+            DAWN_TRY(outMessages->AddMessages(messages));
         }
         return DAWN_MAKE_ERROR(InternalErrorType::Validation,
                                "Shader module uses extension(s) not enabled for its device.");
@@ -903,16 +905,22 @@ MaybeError ValidateAndParseShaderModule(DeviceBase* device,
     DAWN_INVALID_IF(chainedDescriptor == nullptr,
                     "Shader module descriptor missing chained descriptor");
 
-    // For now only a single SPIRV or WGSL subdescriptor is allowed.
+// For now only a single WGSL (or SPIRV, if enabled) subdescriptor is allowed.
+#if TINT_BUILD_SPV_READER
     DAWN_TRY(ValidateSingleSType(chainedDescriptor, wgpu::SType::ShaderModuleSPIRVDescriptor,
                                  wgpu::SType::ShaderModuleWGSLDescriptor));
+#else
+    DAWN_TRY(ValidateSingleSType(chainedDescriptor, wgpu::SType::ShaderModuleWGSLDescriptor));
+#endif
 
     ScopedTintICEHandler scopedICEHandler(device);
 
-    const ShaderModuleSPIRVDescriptor* spirvDesc = nullptr;
-    FindInChain(chainedDescriptor, &spirvDesc);
     const ShaderModuleWGSLDescriptor* wgslDesc = nullptr;
     FindInChain(chainedDescriptor, &wgslDesc);
+
+#if TINT_BUILD_SPV_READER
+    const ShaderModuleSPIRVDescriptor* spirvDesc = nullptr;
+    FindInChain(chainedDescriptor, &spirvDesc);
 
     // We have a temporary toggle to force the SPIRV ingestion to go through a WGSL
     // intermediate step. It is done by switching the spirvDesc for a wgslDesc below.
@@ -937,7 +945,7 @@ MaybeError ValidateAndParseShaderModule(DeviceBase* device,
         device->EmitLog(
             WGPULoggingType_Info,
             "Toggle::ForceWGSLStep skipped because TINT_BUILD_WGSL_WRITER is not defined\n");
-#endif
+#endif  // TINT_BUILD_WGSL_WRITER
     }
 
     if (spirvDesc) {
@@ -947,20 +955,25 @@ MaybeError ValidateAndParseShaderModule(DeviceBase* device,
         tint::Program program;
         DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages));
         parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
-    } else if (wgslDesc) {
-        auto tintSource = std::make_unique<TintSource>("", wgslDesc->source);
 
-        if (device->IsToggleEnabled(Toggle::DumpShaders)) {
-            std::ostringstream dumpedMsg;
-            dumpedMsg << "// Dumped WGSL:" << std::endl << wgslDesc->source;
-            device->EmitLog(WGPULoggingType_Info, dumpedMsg.str().c_str());
-        }
-
-        tint::Program program;
-        DAWN_TRY_ASSIGN(program, ParseWGSL(&tintSource->file, outMessages));
-        parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
-        parseResult->tintSource = std::move(tintSource);
+        return {};
     }
+#endif  // TINT_BUILD_SPV_READER
+
+    ASSERT(wgslDesc != nullptr);
+
+    auto tintSource = std::make_unique<TintSource>("", wgslDesc->source);
+
+    if (device->IsToggleEnabled(Toggle::DumpShaders)) {
+        std::ostringstream dumpedMsg;
+        dumpedMsg << "// Dumped WGSL:" << std::endl << wgslDesc->source;
+        device->EmitLog(WGPULoggingType_Info, dumpedMsg.str().c_str());
+    }
+
+    tint::Program program;
+    DAWN_TRY_ASSIGN(program, ParseWGSL(&tintSource->file, outMessages));
+    parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
+    parseResult->tintSource = std::move(tintSource);
 
     return {};
 }
@@ -983,7 +996,7 @@ ResultOrError<tint::Program> RunTransforms(tint::transform::Transform* transform
                                            OwnedCompilationMessages* outMessages) {
     tint::transform::Output output = transform->Run(program, inputs);
     if (outMessages != nullptr) {
-        outMessages->AddMessages(output.program.Diagnostics());
+        DAWN_TRY(outMessages->AddMessages(output.program.Diagnostics()));
     }
     DAWN_INVALID_IF(!output.program.IsValid(), "Tint program failure: %s\n",
                     output.program.Diagnostics().str());

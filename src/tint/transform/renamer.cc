@@ -35,7 +35,7 @@ namespace tint::transform {
 namespace {
 
 // This list is used for a binary search and must be kept in sorted order.
-const char* kReservedKeywordsGLSL[] = {
+const char* const kReservedKeywordsGLSL[] = {
     "abs",
     "acos",
     "acosh",
@@ -395,7 +395,7 @@ const char* kReservedKeywordsGLSL[] = {
 };
 
 // This list is used for a binary search and must be kept in sorted order.
-const char* kReservedKeywordsHLSL[] = {
+const char* const kReservedKeywordsHLSL[] = {
     "AddressU",
     "AddressV",
     "AddressW",
@@ -969,7 +969,7 @@ const char* kReservedKeywordsHLSL[] = {
 };
 
 // This list is used for a binary search and must be kept in sorted order.
-const char* kReservedKeywordsMSL[] = {
+const char* const kReservedKeywordsMSL[] = {
     "HUGE_VALF",
     "HUGE_VALH",
     "INFINITY",
@@ -1285,7 +1285,7 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
         Switch(
             node,
             [&](const ast::MemberAccessorExpression* accessor) {
-                auto* sem = src->Sem().Get(accessor);
+                auto* sem = src->Sem().Get(accessor)->UnwrapLoad();
                 if (sem->Is<sem::Swizzle>()) {
                     preserved_identifiers.Add(accessor->member);
                 } else if (auto* str_expr = src->Sem().Get(accessor->structure)) {
@@ -1312,6 +1312,9 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
                             }
                         });
                 }
+            },
+            [&](const ast::DiagnosticControl* diagnostic) {
+                preserved_identifiers.Add(diagnostic->rule_name);
             },
             [&](const ast::TypeName* type_name) {
                 if (is_type_short_name(type_name->name)) {

@@ -47,6 +47,8 @@ class BuiltinPolyfill final : public Castable<BuiltinPolyfill, Transform> {
         bool asinh = false;
         /// What level should `atanh` be polyfilled?
         Level atanh = Level::kNone;
+        /// Should storage textures of format 'bgra8unorm' be replaced with 'rgba8unorm'?
+        bool bgra8unorm = false;
         /// Should the RHS of `<<` and `>>` be wrapped in a modulo bit-width of LHS?
         bool bitshift_modulo = false;
         /// Should `clamp()` be polyfilled for integer values (scalar or vector)?
@@ -75,6 +77,8 @@ class BuiltinPolyfill final : public Castable<BuiltinPolyfill, Transform> {
         /// Should the vector form of `quantizeToF16()` be polyfilled with a scalar implementation?
         /// See crbug.com/tint/1741
         bool quantize_to_vec_f16 = false;
+        /// Should `workgroupUniformLoad()` be polyfilled?
+        bool workgroup_uniform_load = false;
     };
 
     /// Config is consumed by the BuiltinPolyfill transform.

@@ -40,7 +40,6 @@
 #include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
 #include "dawn/native/vulkan/SamplerVk.h"
 #include "dawn/native/vulkan/ShaderModuleVk.h"
-#include "dawn/native/vulkan/StagingBufferVk.h"
 #include "dawn/native/vulkan/SwapChainVk.h"
 #include "dawn/native/vulkan/TextureVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
@@ -319,6 +318,12 @@ MaybeError Device::SubmitPendingCommands() {
         return {};
     }
 
+    if (!mRecordingContext.mappableBuffersForEagerTransition.empty()) {
+        // Transition mappable buffers back to map usages with the submit.
+        Buffer::TransitionMappableBuffersEagerly(
+            fn, &mRecordingContext, std::move(mRecordingContext.mappableBuffersForEagerTransition));
+    }
+
     ScopedSignalSemaphore scopedSignalSemaphore(this, VK_NULL_HANDLE);
     if (mRecordingContext.externalTexturesForEagerTransition.size() > 0) {
         // Create an external semaphore for all external textures that have been used in the pending
@@ -505,6 +510,7 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice physicalD
         ASSERT(deviceInfo.HasExt(DeviceExt::DepthClipEnable) &&
                deviceInfo.depthClipEnableFeatures.depthClipEnable == VK_TRUE);
 
+        usedKnobs.features.depthClamp = VK_TRUE;
         usedKnobs.depthClipEnableFeatures.depthClipEnable = VK_TRUE;
         featuresChain.Add(&usedKnobs.depthClipEnableFeatures,
                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT);
@@ -639,12 +645,16 @@ void Device::InitTogglesFromDriver() {
     // By default try to use S8 if available.
     SetToggle(Toggle::VulkanUseS8, true);
 
-    // dawn:1564: Clearing a depth/stencil buffer in a render pass and then sampling it in a
-    // compute pass in the same command buffer causes a crash on Qualcomm GPUs. To work around that
-    // bug, split the command buffer any time we can detect that situation.
     if (ToBackend(GetAdapter())->IsAndroidQualcomm()) {
-        ForceSetToggle(Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass,
-                       true);
+        // dawn:1564: Clearing a depth/stencil buffer in a render pass and then sampling it in a
+        // compute pass in the same command buffer causes a crash on Qualcomm GPUs. To work around
+        // that bug, split the command buffer any time we can detect that situation.
+        SetToggle(Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass, true);
+
+        // dawn:1569: Qualcomm devices have a bug resolving into a non-zero level of an array
+        // texture. Work around it by resolving into a single level texture and then copying into
+        // the intended layer.
+        SetToggle(Toggle::AlwaysResolveIntoZeroLevelAndLayer, true);
     }
 }
 
@@ -818,13 +828,7 @@ void Device::RecycleCompletedCommands() {
     mCommandsInFlight.ClearUpTo(GetCompletedCommandSerial());
 }
 
-ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
-    std::unique_ptr<StagingBufferBase> stagingBuffer = std::make_unique<StagingBuffer>(size, this);
-    DAWN_TRY(stagingBuffer->Initialize());
-    return std::move(stagingBuffer);
-}
-
-MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
@@ -852,13 +856,13 @@ MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
     copy.dstOffset = destinationOffset;
     copy.size = size;
 
-    this->fn.CmdCopyBuffer(recordingContext->commandBuffer, ToBackend(source)->GetBufferHandle(),
+    this->fn.CmdCopyBuffer(recordingContext->commandBuffer, ToBackend(source)->GetHandle(),
                            ToBackend(destination)->GetHandle(), 1, &copy);
 
     return {};
 }
 
-MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                                 const TextureDataLayout& src,
                                                 TextureCopy* dst,
                                                 const Extent3D& copySizePixels) {
@@ -888,9 +892,8 @@ MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
 
     // Dawn guarantees dstImage be in the TRANSFER_DST_OPTIMAL layout after the
     // copy command.
-    this->fn.CmdCopyBufferToImage(recordingContext->commandBuffer,
-                                  ToBackend(source)->GetBufferHandle(), dstImage,
-                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    this->fn.CmdCopyBufferToImage(recordingContext->commandBuffer, ToBackend(source)->GetHandle(),
+                                  dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     return {};
 }
 

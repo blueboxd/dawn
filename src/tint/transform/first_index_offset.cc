@@ -130,7 +130,7 @@ Transform::ApplyResult FirstIndexOffset::Apply(const Program* src,
 
         // Create a global to hold the uniform buffer
         Symbol buffer_name = b.Sym();
-        b.GlobalVar(buffer_name, b.ty.Of(struct_), ast::AddressSpace::kUniform,
+        b.GlobalVar(buffer_name, b.ty.Of(struct_), type::AddressSpace::kUniform,
                     utils::Vector{
                         b.Binding(AInt(ub_binding)),
                         b.Group(AInt(ub_group)),
@@ -139,7 +139,7 @@ Transform::ApplyResult FirstIndexOffset::Apply(const Program* src,
         // Fix up all references to the builtins with the offsets
         ctx.ReplaceAll([=, &ctx](const ast::Expression* expr) -> const ast::Expression* {
             if (auto* sem = ctx.src->Sem().Get(expr)) {
-                if (auto* user = sem->As<sem::VariableUser>()) {
+                if (auto* user = sem->UnwrapLoad()->As<sem::VariableUser>()) {
                     auto it = builtin_vars.find(user->Variable());
                     if (it != builtin_vars.end()) {
                         return ctx.dst->Add(ctx.CloneWithoutTransform(expr),

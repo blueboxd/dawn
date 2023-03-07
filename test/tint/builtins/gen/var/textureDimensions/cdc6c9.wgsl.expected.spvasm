@@ -32,8 +32,9 @@
                OpMemberName %GammaTransferParams 7 "padding"
                OpMemberName %ExternalTextureParams_std140 4 "gammaEncodeParams"
                OpMemberName %ExternalTextureParams_std140 5 "gamutConversionMatrix"
-               OpMemberName %ExternalTextureParams_std140 6 "rotationMatrix_0"
-               OpMemberName %ExternalTextureParams_std140 7 "rotationMatrix_1"
+               OpMemberName %ExternalTextureParams_std140 6 "coordTransformationMatrix_0"
+               OpMemberName %ExternalTextureParams_std140 7 "coordTransformationMatrix_1"
+               OpMemberName %ExternalTextureParams_std140 8 "coordTransformationMatrix_2"
                OpName %ext_tex_params "ext_tex_params"
                OpName %arg_0 "arg_0"
                OpName %textureDimensions_cdc6c9 "textureDimensions_cdc6c9"
@@ -68,6 +69,7 @@
                OpMemberDecorate %ExternalTextureParams_std140 5 MatrixStride 16
                OpMemberDecorate %ExternalTextureParams_std140 6 Offset 176
                OpMemberDecorate %ExternalTextureParams_std140 7 Offset 184
+               OpMemberDecorate %ExternalTextureParams_std140 8 Offset 192
                OpDecorate %ext_tex_params NonWritable
                OpDecorate %ext_tex_params DescriptorSet 1
                OpDecorate %ext_tex_params Binding 2
@@ -90,7 +92,7 @@
     %v3float = OpTypeVector %float 3
 %mat3v3float = OpTypeMatrix %v3float 3
     %v2float = OpTypeVector %float 2
-%ExternalTextureParams_std140 = OpTypeStruct %uint %uint %mat3v4float %GammaTransferParams %GammaTransferParams %mat3v3float %v2float %v2float
+%ExternalTextureParams_std140 = OpTypeStruct %uint %uint %mat3v4float %GammaTransferParams %GammaTransferParams %mat3v3float %v2float %v2float %v2float
 %ext_tex_params_block_std140 = OpTypeStruct %ExternalTextureParams_std140
 %_ptr_Uniform_ext_tex_params_block_std140 = OpTypePointer Uniform %ext_tex_params_block_std140
 %ext_tex_params = OpVariable %_ptr_Uniform_ext_tex_params_block_std140 Uniform

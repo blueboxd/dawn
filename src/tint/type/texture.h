@@ -15,7 +15,7 @@
 #ifndef SRC_TINT_TYPE_TEXTURE_H_
 #define SRC_TINT_TYPE_TEXTURE_H_
 
-#include "src/tint/ast/texture.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/type/type.h"
 
 namespace tint::type {
@@ -24,17 +24,17 @@ namespace tint::type {
 class Texture : public Castable<Texture, Type> {
   public:
     /// Constructor
+    /// @param hash the unique hash of the node
     /// @param dim the dimensionality of the texture
-    explicit Texture(ast::TextureDimension dim);
-    /// Move constructor
-    Texture(Texture&&);
+    Texture(size_t hash, TextureDimension dim);
+    /// Destructor
     ~Texture() override;
 
     /// @returns the texture dimension
-    ast::TextureDimension dim() const { return dim_; }
+    TextureDimension dim() const { return dim_; }
 
   private:
-    ast::TextureDimension const dim_;
+    TextureDimension const dim_;
 };
 
 }  // namespace tint::type

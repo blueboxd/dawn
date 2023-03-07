@@ -166,7 +166,7 @@ TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalConstUsedAsType) 
 }
 
 TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalVarUsedAsFunction) {
-    GlobalVar(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i), ast::AddressSpace::kPrivate);
+    GlobalVar(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i), type::AddressSpace::kPrivate);
     WrapInFunction(Call(Expr(Source{{56, 78}}, "mix"), 1_f, 2_f, 3_f));
 
     EXPECT_FALSE(r()->Resolve());
@@ -176,18 +176,18 @@ TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalVarUsedAsFunction
 
 TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalVarUsedAsVariable) {
     auto* mix =
-        GlobalVar(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i), ast::AddressSpace::kPrivate);
+        GlobalVar(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i), type::AddressSpace::kPrivate);
     auto* use = Expr("mix");
     WrapInFunction(Decl(Var("v", use)));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
-    auto* sem = Sem().Get<sem::VariableUser>(use);
+    auto* sem = Sem().Get(use)->UnwrapLoad()->As<sem::VariableUser>();
     ASSERT_NE(sem, nullptr);
     EXPECT_EQ(sem->Variable(), Sem().Get(mix));
 }
 
 TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalVarUsedAsType) {
-    GlobalVar(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i), ast::AddressSpace::kPrivate);
+    GlobalVar(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i), type::AddressSpace::kPrivate);
     WrapInFunction(Construct(ty.type_name(Source{{56, 78}}, "mix")));
 
     EXPECT_FALSE(r()->Resolve());
@@ -481,7 +481,7 @@ TEST_P(BuiltinTextureConstExprArgValidationTest, GlobalVar) {
     overload.BuildSamplerVariable(this);
 
     // Build the module-scope var 'G' with the offset value
-    GlobalVar("G", expr({}, *this), ast::AddressSpace::kPrivate);
+    GlobalVar("G", expr({}, *this), type::AddressSpace::kPrivate);
 
     auto args = overload.args(this);
     auto*& arg_to_replace = (param.position == Position::kFirst) ? args.Front() : args.Back();
@@ -645,6 +645,71 @@ TEST_F(ResolverDP4aExtensionValidationTest, Dot4U8PackedWithoutExtension) {
     EXPECT_EQ(
         r()->error(),
         R"(12:34 error: cannot call built-in function 'dot4U8Packed' without extension chromium_experimental_dp4a)");
+}
+
+TEST_F(ResolverBuiltinValidationTest, WorkgroupUniformLoad_WrongAddressSpace) {
+    // @group(0) @binding(0) var<storage, read_write> v : i32;
+    // fn foo() {
+    //   workgroupUniformLoad(&v);
+    // }
+    GlobalVar("v", ty.i32(), type::AddressSpace::kStorage, type::Access::kReadWrite,
+              utils::Vector{Group(0_a), Binding(0_a)});
+    WrapInFunction(CallStmt(Call("workgroupUniformLoad", AddressOf(Source{{12, 34}}, "v"))));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(error: no matching call to workgroupUniformLoad(ptr<storage, i32, read_write>)
+
+1 candidate function:
+  workgroupUniformLoad(ptr<workgroup, T, read_write>) -> T
+)");
+}
+
+TEST_F(ResolverBuiltinValidationTest, WorkgroupUniformLoad_Atomic) {
+    // var<workgroup> v : atomic<i32>;
+    // fn foo() {
+    //   workgroupUniformLoad(&v);
+    // }
+    GlobalVar("v", ty.atomic<i32>(), type::AddressSpace::kWorkgroup);
+    WrapInFunction(CallStmt(Call("workgroupUniformLoad", AddressOf(Source{{12, 34}}, "v"))));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: workgroupUniformLoad must not be called with an argument that contains an atomic type)");
+}
+
+TEST_F(ResolverBuiltinValidationTest, WorkgroupUniformLoad_AtomicInArray) {
+    // var<workgroup> v : array<atomic<i32>, 4>;
+    // fn foo() {
+    //   workgroupUniformLoad(&v);
+    // }
+    GlobalVar("v", ty.array(ty.atomic<i32>(), 4_a), type::AddressSpace::kWorkgroup);
+    WrapInFunction(CallStmt(Call("workgroupUniformLoad", AddressOf(Source{{12, 34}}, "v"))));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: workgroupUniformLoad must not be called with an argument that contains an atomic type)");
+}
+
+TEST_F(ResolverBuiltinValidationTest, WorkgroupUniformLoad_AtomicInStruct) {
+    // struct Inner { a : array<atomic<i32, 4> }
+    // struct S { i : Inner }
+    // var<workgroup> v : array<S, 4>;
+    // fn foo() {
+    //   workgroupUniformLoad(&v);
+    // }
+    Structure("Inner", utils::Vector{Member("a", ty.array(ty.atomic<i32>(), 4_a))});
+    Structure("S", utils::Vector{Member("i", ty.type_name("Inner"))});
+    GlobalVar(Source{{12, 34}}, "v", ty.array(ty.type_name("S"), 4_a),
+              type::AddressSpace::kWorkgroup);
+    WrapInFunction(CallStmt(Call("workgroupUniformLoad", AddressOf("v"))));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(error: workgroupUniformLoad must not be called with an argument that contains an atomic type)");
 }
 
 }  // namespace

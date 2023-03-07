@@ -93,7 +93,8 @@ fn entry() -> @builtin(position) vec4<f32> {
   var v : vec4<f32>;
   var rgba : f32;
   var xyzw : f32;
-  return v.zyxw + v.rgab;
+  var z : f32;
+  return v.zyxw + v.rgab * v.z;
 }
 )";
 
@@ -103,7 +104,8 @@ fn tint_symbol() -> @builtin(position) vec4<f32> {
   var tint_symbol_1 : vec4<f32>;
   var tint_symbol_2 : f32;
   var tint_symbol_3 : f32;
-  return (tint_symbol_1.zyxw + tint_symbol_1.rgab);
+  var tint_symbol_4 : f32;
+  return (tint_symbol_1.zyxw + (tint_symbol_1.rgab * tint_symbol_1.z));
 }
 )";
 
@@ -115,10 +117,8 @@ fn tint_symbol() -> @builtin(position) vec4<f32> {
 
     ASSERT_NE(data, nullptr);
     Renamer::Data::Remappings expected_remappings = {
-        {"entry", "tint_symbol"},
-        {"v", "tint_symbol_1"},
-        {"rgba", "tint_symbol_2"},
-        {"xyzw", "tint_symbol_3"},
+        {"entry", "tint_symbol"},  {"v", "tint_symbol_1"}, {"rgba", "tint_symbol_2"},
+        {"xyzw", "tint_symbol_3"}, {"z", "tint_symbol_4"},
     };
     EXPECT_THAT(data->remappings, ContainerEq(expected_remappings));
 }
@@ -185,6 +185,48 @@ fn tint_symbol() {
     Renamer::Data::Remappings expected_remappings = {
         {"entry", "tint_symbol"}, {"a", "tint_symbol_1"}, {"b", "tint_symbol_2"},
         {"c", "tint_symbol_3"},   {"d", "tint_symbol_4"},
+    };
+    EXPECT_THAT(data->remappings, ContainerEq(expected_remappings));
+}
+
+TEST_F(RenamerTest, PreserveDiagnosticControls) {
+    auto* src = R"(
+diagnostic(off, unreachable_code);
+
+@diagnostic(off, derivative_uniformity)
+@fragment
+fn entry(@location(0) value : f32) -> @location(0) f32 {
+  if (value > 0) {
+    return dpdx(value);
+    return 0.0;
+  }
+  return 1.0;
+}
+)";
+
+    auto* expect = R"(
+diagnostic(off, unreachable_code);
+
+@diagnostic(off, derivative_uniformity) @fragment
+fn tint_symbol(@location(0) tint_symbol_1 : f32) -> @location(0) f32 {
+  if ((tint_symbol_1 > 0)) {
+    return dpdx(tint_symbol_1);
+    return 0.0;
+  }
+  return 1.0;
+}
+)";
+
+    auto got = Run<Renamer>(src);
+
+    EXPECT_EQ(expect, str(got));
+
+    auto* data = got.data.Get<Renamer::Data>();
+
+    ASSERT_NE(data, nullptr);
+    Renamer::Data::Remappings expected_remappings = {
+        {"entry", "tint_symbol"},
+        {"value", "tint_symbol_1"},
     };
     EXPECT_THAT(data->remappings, ContainerEq(expected_remappings));
 }
@@ -1673,7 +1715,7 @@ fn f() {
 )");
 
     auto expect = expand(R"(
-type tint_symbol = i32;
+alias tint_symbol = i32;
 
 @fragment
 fn tint_symbol_1() {

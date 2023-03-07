@@ -18,7 +18,7 @@ struct ExternalTextureParams {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  mat2 rotationMatrix;
+  mat3x2 coordTransformationMatrix;
 };
 
 struct ExternalTextureParams_std140 {
@@ -28,8 +28,9 @@ struct ExternalTextureParams_std140 {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  vec2 rotationMatrix_0;
-  vec2 rotationMatrix_1;
+  vec2 coordTransformationMatrix_0;
+  vec2 coordTransformationMatrix_1;
+  vec2 coordTransformationMatrix_2;
 };
 
 layout(binding = 2, std140) uniform ext_tex_params_block_std140_ubo {
@@ -75,7 +76,7 @@ struct ExternalTextureParams {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  mat2 rotationMatrix;
+  mat3x2 coordTransformationMatrix;
 };
 
 struct ExternalTextureParams_std140 {
@@ -85,8 +86,9 @@ struct ExternalTextureParams_std140 {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  vec2 rotationMatrix_0;
-  vec2 rotationMatrix_1;
+  vec2 coordTransformationMatrix_0;
+  vec2 coordTransformationMatrix_1;
+  vec2 coordTransformationMatrix_2;
 };
 
 layout(binding = 2, std140) uniform ext_tex_params_block_std140_ubo {
@@ -126,7 +128,7 @@ struct ExternalTextureParams {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  mat2 rotationMatrix;
+  mat3x2 coordTransformationMatrix;
 };
 
 struct ExternalTextureParams_std140 {
@@ -136,8 +138,9 @@ struct ExternalTextureParams_std140 {
   GammaTransferParams gammaDecodeParams;
   GammaTransferParams gammaEncodeParams;
   mat3 gamutConversionMatrix;
-  vec2 rotationMatrix_0;
-  vec2 rotationMatrix_1;
+  vec2 coordTransformationMatrix_0;
+  vec2 coordTransformationMatrix_1;
+  vec2 coordTransformationMatrix_2;
 };
 
 layout(binding = 2, std140) uniform ext_tex_params_block_std140_ubo {
