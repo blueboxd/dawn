@@ -18,6 +18,10 @@
 #include <utility>
 #include <vector>
 
+#if TINT_BUILD_SPV_READER
+#include "spirv-tools/libspirv.hpp"
+#endif
+
 namespace tint::cmd {
 namespace {
 

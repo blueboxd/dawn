@@ -72,28 +72,24 @@ ExternalTextureParams tint_unpack_vec3_in_composite_1(ExternalTextureParams_tint
   return result;
 }
 
-int tint_clamp(int e, int low, int high) {
-  return min(max(e, low), high);
-}
-
-int2 tint_clamp_1(int2 e, int2 low, int2 high) {
+int2 tint_clamp(int2 e, int2 low, int2 high) {
   return min(max(e, low), high);
 }
 
 float3 gammaCorrection(float3 v, GammaTransferParams params) {
   bool3 const cond = (fabs(v) < float3(params.D));
-  float3 const t_1 = (sign(v) * ((params.C * fabs(v)) + params.F));
+  float3 const t = (sign(v) * ((params.C * fabs(v)) + params.F));
   float3 const f = (sign(v) * (pow(((params.A * fabs(v)) + params.B), float3(params.G)) + params.E));
-  return select(f, t_1, cond);
+  return select(f, t, cond);
 }
 
 float4 textureLoadExternal(texture2d<float, access::sample> plane0, texture2d<float, access::sample> plane1, int2 coord, ExternalTextureParams params) {
   int2 const coord1 = (coord >> uint2(1u));
   float3 color = 0.0f;
   if ((params.numPlanes == 1u)) {
-    color = plane0.read(uint2(tint_clamp_1(coord, int2(0), int2((uint2(uint2(plane0.get_width(tint_clamp(0, 0, int((uint(plane0.get_num_mip_levels()) - 1u)))), plane0.get_height(tint_clamp(0, 0, int((uint(plane0.get_num_mip_levels()) - 1u)))))) - uint2(1u))))), tint_clamp(0, 0, int((uint(plane0.get_num_mip_levels()) - 1u)))).rgb;
+    color = plane0.read(uint2(coord), 0).rgb;
   } else {
-    color = (float4(plane0.read(uint2(tint_clamp_1(coord, int2(0), int2((uint2(uint2(plane0.get_width(tint_clamp(0, 0, int((uint(plane0.get_num_mip_levels()) - 1u)))), plane0.get_height(tint_clamp(0, 0, int((uint(plane0.get_num_mip_levels()) - 1u)))))) - uint2(1u))))), tint_clamp(0, 0, int((uint(plane0.get_num_mip_levels()) - 1u))))[0], plane1.read(uint2(tint_clamp_1(coord1, int2(0), int2((uint2(uint2(plane1.get_width(tint_clamp(0, 0, int((uint(plane1.get_num_mip_levels()) - 1u)))), plane1.get_height(tint_clamp(0, 0, int((uint(plane1.get_num_mip_levels()) - 1u)))))) - uint2(1u))))), tint_clamp(0, 0, int((uint(plane1.get_num_mip_levels()) - 1u)))).rg, 1.0f) * params.yuvToRgbConversionMatrix);
+    color = (float4(plane0.read(uint2(coord), 0)[0], plane1.read(uint2(coord1), 0).rg, 1.0f) * params.yuvToRgbConversionMatrix);
   }
   if ((params.doYuvToRgbConversionOnly == 0u)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
@@ -103,11 +99,11 @@ float4 textureLoadExternal(texture2d<float, access::sample> plane0, texture2d<fl
   return float4(color, 1.0f);
 }
 
-kernel void tint_symbol(texture2d<float, access::sample> tint_symbol_1 [[texture(0)]], texture2d<float, access::sample> tint_symbol_2 [[texture(1)]], const constant ExternalTextureParams_tint_packed_vec3* tint_symbol_3 [[buffer(0)]], texture2d<float, access::write> tint_symbol_4 [[texture(2)]]) {
-  float4 red = textureLoadExternal(tint_symbol_1, tint_symbol_2, int2(10), tint_unpack_vec3_in_composite_1(*(tint_symbol_3)));
-  tint_symbol_4.write(red, uint2(tint_clamp_1(int2(0), int2(0), int2((uint2(uint2(tint_symbol_4.get_width(), tint_symbol_4.get_height())) - uint2(1u))))));
-  float4 green = textureLoadExternal(tint_symbol_1, tint_symbol_2, int2(70, 118), tint_unpack_vec3_in_composite_1(*(tint_symbol_3)));
-  tint_symbol_4.write(green, uint2(tint_clamp_1(int2(1, 0), int2(0), int2((uint2(uint2(tint_symbol_4.get_width(), tint_symbol_4.get_height())) - uint2(1u))))));
+kernel void tint_symbol(texture2d<float, access::sample> tint_symbol_1 [[texture(1)]], texture2d<float, access::sample> tint_symbol_2 [[texture(2)]], const constant ExternalTextureParams_tint_packed_vec3* tint_symbol_3 [[buffer(3)]], texture2d<float, access::write> tint_symbol_4 [[texture(0)]]) {
+  float4 red = textureLoadExternal(tint_symbol_1, tint_symbol_2, tint_clamp(int2(10), int2(0), int2((uint2(tint_symbol_1.get_width(), tint_symbol_1.get_height()) - uint2(1u)))), tint_unpack_vec3_in_composite_1(*(tint_symbol_3)));
+  tint_symbol_4.write(red, uint2(tint_clamp(int2(0), int2(0), int2((uint2(tint_symbol_4.get_width(), tint_symbol_4.get_height()) - uint2(1u))))));
+  float4 green = textureLoadExternal(tint_symbol_1, tint_symbol_2, tint_clamp(int2(70, 118), int2(0), int2((uint2(tint_symbol_1.get_width(), tint_symbol_1.get_height()) - uint2(1u)))), tint_unpack_vec3_in_composite_1(*(tint_symbol_3)));
+  tint_symbol_4.write(green, uint2(tint_clamp(int2(1, 0), int2(0), int2((uint2(tint_symbol_4.get_width(), tint_symbol_4.get_height()) - uint2(1u))))));
   return;
 }
 

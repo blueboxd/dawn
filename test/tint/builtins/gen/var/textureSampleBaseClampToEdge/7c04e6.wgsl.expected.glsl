@@ -1,5 +1,10 @@
 #version 310 es
 
+vec3 tint_select(vec3 param_0, vec3 param_1, bvec3 param_2) {
+    return vec3(param_2[0] ? param_1[0] : param_0[0], param_2[1] ? param_1[1] : param_0[1], param_2[2] ? param_1[2] : param_0[2]);
+}
+
+
 struct GammaTransferParams {
   float G;
   float A;
@@ -49,7 +54,7 @@ vec3 gammaCorrection(vec3 v, GammaTransferParams params) {
   bvec3 cond = lessThan(abs(v), vec3(params.D));
   vec3 t = (sign(v) * ((params.C * abs(v)) + params.F));
   vec3 f = (sign(v) * (pow(((params.A * abs(v)) + params.B), vec3(params.G)) + params.E));
-  return mix(f, t, cond);
+  return tint_select(f, t, cond);
 }
 
 
@@ -83,9 +88,14 @@ ExternalTextureParams conv_ExternalTextureParams(ExternalTextureParams_std140 va
   return ExternalTextureParams(val.numPlanes, val.doYuvToRgbConversionOnly, val.pad, val.pad_1, val.yuvToRgbConversionMatrix, val.gammaDecodeParams, val.gammaEncodeParams, val.gamutConversionMatrix, mat3x2(val.coordTransformationMatrix_0, val.coordTransformationMatrix_1, val.coordTransformationMatrix_2), val.pad_2, val.pad_3);
 }
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  vec4 inner;
+} prevent_dce;
+
 void textureSampleBaseClampToEdge_7c04e6() {
   vec2 arg_2 = vec2(1.0f);
   vec4 res = textureSampleExternal(arg_0_1, ext_tex_plane_1_1, arg_0_arg_1, ext_tex_plane_1_arg_1, arg_2, conv_ExternalTextureParams(ext_tex_params.inner));
+  prevent_dce.inner = res;
 }
 
 vec4 vertex_main() {
@@ -102,7 +112,12 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
+
+vec3 tint_select(vec3 param_0, vec3 param_1, bvec3 param_2) {
+    return vec3(param_2[0] ? param_1[0] : param_0[0], param_2[1] ? param_1[1] : param_0[1], param_2[2] ? param_1[2] : param_0[2]);
+}
+
 
 struct GammaTransferParams {
   float G;
@@ -153,7 +168,7 @@ vec3 gammaCorrection(vec3 v, GammaTransferParams params) {
   bvec3 cond = lessThan(abs(v), vec3(params.D));
   vec3 t = (sign(v) * ((params.C * abs(v)) + params.F));
   vec3 f = (sign(v) * (pow(((params.A * abs(v)) + params.B), vec3(params.G)) + params.E));
-  return mix(f, t, cond);
+  return tint_select(f, t, cond);
 }
 
 
@@ -187,9 +202,14 @@ ExternalTextureParams conv_ExternalTextureParams(ExternalTextureParams_std140 va
   return ExternalTextureParams(val.numPlanes, val.doYuvToRgbConversionOnly, val.pad, val.pad_1, val.yuvToRgbConversionMatrix, val.gammaDecodeParams, val.gammaEncodeParams, val.gamutConversionMatrix, mat3x2(val.coordTransformationMatrix_0, val.coordTransformationMatrix_1, val.coordTransformationMatrix_2), val.pad_2, val.pad_3);
 }
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  vec4 inner;
+} prevent_dce;
+
 void textureSampleBaseClampToEdge_7c04e6() {
   vec2 arg_2 = vec2(1.0f);
   vec4 res = textureSampleExternal(arg_0_1, ext_tex_plane_1_1, arg_0_arg_1, ext_tex_plane_1_arg_1, arg_2, conv_ExternalTextureParams(ext_tex_params.inner));
+  prevent_dce.inner = res;
 }
 
 void fragment_main() {
@@ -202,6 +222,11 @@ void main() {
 }
 #version 310 es
 
+vec3 tint_select(vec3 param_0, vec3 param_1, bvec3 param_2) {
+    return vec3(param_2[0] ? param_1[0] : param_0[0], param_2[1] ? param_1[1] : param_0[1], param_2[2] ? param_1[2] : param_0[2]);
+}
+
+
 struct GammaTransferParams {
   float G;
   float A;
@@ -251,7 +276,7 @@ vec3 gammaCorrection(vec3 v, GammaTransferParams params) {
   bvec3 cond = lessThan(abs(v), vec3(params.D));
   vec3 t = (sign(v) * ((params.C * abs(v)) + params.F));
   vec3 f = (sign(v) * (pow(((params.A * abs(v)) + params.B), vec3(params.G)) + params.E));
-  return mix(f, t, cond);
+  return tint_select(f, t, cond);
 }
 
 
@@ -285,9 +310,14 @@ ExternalTextureParams conv_ExternalTextureParams(ExternalTextureParams_std140 va
   return ExternalTextureParams(val.numPlanes, val.doYuvToRgbConversionOnly, val.pad, val.pad_1, val.yuvToRgbConversionMatrix, val.gammaDecodeParams, val.gammaEncodeParams, val.gamutConversionMatrix, mat3x2(val.coordTransformationMatrix_0, val.coordTransformationMatrix_1, val.coordTransformationMatrix_2), val.pad_2, val.pad_3);
 }
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  vec4 inner;
+} prevent_dce;
+
 void textureSampleBaseClampToEdge_7c04e6() {
   vec2 arg_2 = vec2(1.0f);
   vec4 res = textureSampleExternal(arg_0_1, ext_tex_plane_1_1, arg_0_arg_1, ext_tex_plane_1_arg_1, arg_2, conv_ExternalTextureParams(ext_tex_params.inner));
+  prevent_dce.inner = res;
 }
 
 void compute_main() {

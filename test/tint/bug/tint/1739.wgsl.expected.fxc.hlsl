@@ -1,8 +1,4 @@
-int tint_clamp(int e, int low, int high) {
-  return min(max(e, low), high);
-}
-
-int2 tint_clamp_1(int2 e, int2 low, int2 high) {
+int2 tint_clamp(int2 e, int2 low, int2 high) {
   return min(max(e, low), high);
 }
 
@@ -35,36 +31,18 @@ RWTexture2D<float4> outImage : register(u1, space0);
 
 float3 gammaCorrection(float3 v, GammaTransferParams params) {
   const bool3 cond = (abs(v) < float3((params.D).xxx));
-  const float3 t_1 = (float3(sign(v)) * ((params.C * abs(v)) + params.F));
+  const float3 t = (float3(sign(v)) * ((params.C * abs(v)) + params.F));
   const float3 f = (float3(sign(v)) * (pow(((params.A * abs(v)) + params.B), float3((params.G).xxx)) + params.E));
-  return (cond ? t_1 : f);
+  return (cond ? t : f);
 }
 
 float4 textureLoadExternal(Texture2D<float4> plane0, Texture2D<float4> plane1, int2 coord, ExternalTextureParams params) {
   const int2 coord1 = (coord >> (1u).xx);
   float3 color = float3(0.0f, 0.0f, 0.0f);
   if ((params.numPlanes == 1u)) {
-    int3 tint_tmp;
-    int3 tint_tmp_1;
-    plane0.GetDimensions(0, tint_tmp_1.x, tint_tmp_1.y, tint_tmp_1.z);
-    plane0.GetDimensions(tint_clamp(0, 0, int((uint(tint_tmp_1.z) - 1u))), tint_tmp.x, tint_tmp.y, tint_tmp.z);
-    int3 tint_tmp_2;
-    plane0.GetDimensions(0, tint_tmp_2.x, tint_tmp_2.y, tint_tmp_2.z);
-    color = plane0.Load(int3(tint_clamp_1(coord, (0).xx, int2((uint2(tint_tmp.xy) - (1u).xx))), tint_clamp(0, 0, int((uint(tint_tmp_2.z) - 1u))))).rgb;
+    color = plane0.Load(int3(coord, 0)).rgb;
   } else {
-    int3 tint_tmp_3;
-    int3 tint_tmp_4;
-    plane0.GetDimensions(0, tint_tmp_4.x, tint_tmp_4.y, tint_tmp_4.z);
-    plane0.GetDimensions(tint_clamp(0, 0, int((uint(tint_tmp_4.z) - 1u))), tint_tmp_3.x, tint_tmp_3.y, tint_tmp_3.z);
-    int3 tint_tmp_5;
-    plane0.GetDimensions(0, tint_tmp_5.x, tint_tmp_5.y, tint_tmp_5.z);
-    int3 tint_tmp_6;
-    int3 tint_tmp_7;
-    plane1.GetDimensions(0, tint_tmp_7.x, tint_tmp_7.y, tint_tmp_7.z);
-    plane1.GetDimensions(tint_clamp(0, 0, int((uint(tint_tmp_7.z) - 1u))), tint_tmp_6.x, tint_tmp_6.y, tint_tmp_6.z);
-    int3 tint_tmp_8;
-    plane1.GetDimensions(0, tint_tmp_8.x, tint_tmp_8.y, tint_tmp_8.z);
-    color = mul(params.yuvToRgbConversionMatrix, float4(plane0.Load(int3(tint_clamp_1(coord, (0).xx, int2((uint2(tint_tmp_3.xy) - (1u).xx))), tint_clamp(0, 0, int((uint(tint_tmp_5.z) - 1u))))).r, plane1.Load(int3(tint_clamp_1(coord1, (0).xx, int2((uint2(tint_tmp_6.xy) - (1u).xx))), tint_clamp(0, 0, int((uint(tint_tmp_8.z) - 1u))))).rg, 1.0f));
+    color = mul(params.yuvToRgbConversionMatrix, float4(plane0.Load(int3(coord, 0)).r, plane1.Load(int3(coord1, 0)).rg, 1.0f));
   }
   if ((params.doYuvToRgbConversionOnly == 0u)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
@@ -120,13 +98,17 @@ ExternalTextureParams ext_tex_params_load(uint offset) {
 
 [numthreads(1, 1, 1)]
 void main() {
-  float4 red = textureLoadExternal(t, ext_tex_plane_1, (10).xx, ext_tex_params_load(0u));
-  int2 tint_tmp_9;
-  outImage.GetDimensions(tint_tmp_9.x, tint_tmp_9.y);
-  outImage[tint_clamp_1((0).xx, (0).xx, int2((uint2(tint_tmp_9) - (1u).xx)))] = red;
-  float4 green = textureLoadExternal(t, ext_tex_plane_1, int2(70, 118), ext_tex_params_load(0u));
-  int2 tint_tmp_10;
-  outImage.GetDimensions(tint_tmp_10.x, tint_tmp_10.y);
-  outImage[tint_clamp_1(int2(1, 0), (0).xx, int2((uint2(tint_tmp_10) - (1u).xx)))] = green;
+  uint2 tint_tmp;
+  t.GetDimensions(tint_tmp.x, tint_tmp.y);
+  float4 red = textureLoadExternal(t, ext_tex_plane_1, tint_clamp((10).xx, (0).xx, int2((tint_tmp - (1u).xx))), ext_tex_params_load(0u));
+  uint2 tint_tmp_1;
+  outImage.GetDimensions(tint_tmp_1.x, tint_tmp_1.y);
+  outImage[tint_clamp((0).xx, (0).xx, int2((tint_tmp_1 - (1u).xx)))] = red;
+  uint2 tint_tmp_2;
+  t.GetDimensions(tint_tmp_2.x, tint_tmp_2.y);
+  float4 green = textureLoadExternal(t, ext_tex_plane_1, tint_clamp(int2(70, 118), (0).xx, int2((tint_tmp_2 - (1u).xx))), ext_tex_params_load(0u));
+  uint2 tint_tmp_3;
+  outImage.GetDimensions(tint_tmp_3.x, tint_tmp_3.y);
+  outImage[tint_clamp(int2(1, 0), (0).xx, int2((tint_tmp_3 - (1u).xx)))] = green;
   return;
 }

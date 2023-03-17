@@ -58,8 +58,9 @@ gpu_info::DriverVersion DecodeVulkanDriverVersion(uint32_t vendorID, uint32_t ve
 
 Adapter::Adapter(InstanceBase* instance,
                  VulkanInstance* vulkanInstance,
-                 VkPhysicalDevice physicalDevice)
-    : AdapterBase(instance, wgpu::BackendType::Vulkan),
+                 VkPhysicalDevice physicalDevice,
+                 const TogglesState& adapterToggles)
+    : AdapterBase(instance, wgpu::BackendType::Vulkan, adapterToggles),
       mPhysicalDevice(physicalDevice),
       mVulkanInstance(vulkanInstance) {}
 
@@ -185,35 +186,35 @@ MaybeError Adapter::InitializeImpl() {
 void Adapter::InitializeSupportedFeaturesImpl() {
     // Initialize supported extensions
     if (mDeviceInfo.features.textureCompressionBC == VK_TRUE) {
-        mSupportedFeatures.EnableFeature(Feature::TextureCompressionBC);
+        EnableFeature(Feature::TextureCompressionBC);
     }
 
     if (mDeviceInfo.features.textureCompressionETC2 == VK_TRUE) {
-        mSupportedFeatures.EnableFeature(Feature::TextureCompressionETC2);
+        EnableFeature(Feature::TextureCompressionETC2);
     }
 
     if (mDeviceInfo.features.textureCompressionASTC_LDR == VK_TRUE) {
-        mSupportedFeatures.EnableFeature(Feature::TextureCompressionASTC);
+        EnableFeature(Feature::TextureCompressionASTC);
     }
 
     if (mDeviceInfo.features.pipelineStatisticsQuery == VK_TRUE) {
-        mSupportedFeatures.EnableFeature(Feature::PipelineStatisticsQuery);
+        EnableFeature(Feature::PipelineStatisticsQuery);
     }
 
     // TODO(dawn:1559) Resolving timestamp queries after a render pass is failing on Qualcomm-based
     // Android devices.
     if (mDeviceInfo.properties.limits.timestampComputeAndGraphics == VK_TRUE &&
         !IsAndroidQualcomm()) {
-        mSupportedFeatures.EnableFeature(Feature::TimestampQuery);
-        mSupportedFeatures.EnableFeature(Feature::TimestampQueryInsidePasses);
+        EnableFeature(Feature::TimestampQuery);
+        EnableFeature(Feature::TimestampQueryInsidePasses);
     }
 
     if (IsDepthStencilFormatSupported(VK_FORMAT_D32_SFLOAT_S8_UINT)) {
-        mSupportedFeatures.EnableFeature(Feature::Depth32FloatStencil8);
+        EnableFeature(Feature::Depth32FloatStencil8);
     }
 
     if (mDeviceInfo.features.drawIndirectFirstInstance == VK_TRUE) {
-        mSupportedFeatures.EnableFeature(Feature::IndirectFirstInstance);
+        EnableFeature(Feature::IndirectFirstInstance);
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
@@ -222,7 +223,7 @@ void Adapter::InitializeSupportedFeaturesImpl() {
         mDeviceInfo._16BitStorageFeatures.storageBuffer16BitAccess == VK_TRUE &&
         mDeviceInfo._16BitStorageFeatures.storageInputOutput16 == VK_TRUE &&
         mDeviceInfo._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess == VK_TRUE) {
-        mSupportedFeatures.EnableFeature(Feature::ShaderF16);
+        EnableFeature(Feature::ShaderF16);
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::ShaderIntegerDotProduct) &&
@@ -230,14 +231,14 @@ void Adapter::InitializeSupportedFeaturesImpl() {
                 .integerDotProduct4x8BitPackedSignedAccelerated == VK_TRUE &&
         mDeviceInfo.shaderIntegerDotProductProperties
                 .integerDotProduct4x8BitPackedUnsignedAccelerated == VK_TRUE) {
-        mSupportedFeatures.EnableFeature(Feature::ChromiumExperimentalDp4a);
+        EnableFeature(Feature::ChromiumExperimentalDp4a);
     }
 
     // unclippedDepth=true translates to depthClipEnable=false, depthClamp=true
     if (mDeviceInfo.features.depthClamp == VK_TRUE &&
         mDeviceInfo.HasExt(DeviceExt::DepthClipEnable) &&
         mDeviceInfo.depthClipEnableFeatures.depthClipEnable == VK_TRUE) {
-        mSupportedFeatures.EnableFeature(Feature::DepthClipControl);
+        EnableFeature(Feature::DepthClipControl);
     }
 
     VkFormatProperties rg11b10Properties;
@@ -247,20 +248,20 @@ void Adapter::InitializeSupportedFeaturesImpl() {
     if (IsSubset(static_cast<VkFormatFeatureFlags>(VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
                                                    VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT),
                  rg11b10Properties.optimalTilingFeatures)) {
-        mSupportedFeatures.EnableFeature(Feature::RG11B10UfloatRenderable);
+        EnableFeature(Feature::RG11B10UfloatRenderable);
     }
 
     VkFormatProperties bgra8unormProperties;
     mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
         mPhysicalDevice, VK_FORMAT_B8G8R8A8_UNORM, &bgra8unormProperties);
     if (bgra8unormProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) {
-        mSupportedFeatures.EnableFeature(Feature::BGRA8UnormStorage);
+        EnableFeature(Feature::BGRA8UnormStorage);
     }
 
 #if DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
     // TODO(chromium:1258986): Precisely enable the feature by querying the device's format
     // features.
-    mSupportedFeatures.EnableFeature(Feature::MultiPlanarFormats);
+    EnableFeature(Feature::MultiPlanarFormats);
 #endif  // DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
 }
 
@@ -325,6 +326,8 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
                                maxUniformBuffersPerShaderStage);
     CHECK_AND_SET_V1_MAX_LIMIT(maxUniformBufferRange, maxUniformBufferBindingSize);
     CHECK_AND_SET_V1_MAX_LIMIT(maxStorageBufferRange, maxStorageBufferBindingSize);
+    CHECK_AND_SET_V1_MAX_LIMIT(maxFragmentCombinedOutputResources,
+                               maxFragmentCombinedOutputResources);
 
     CHECK_AND_SET_V1_MIN_LIMIT(minUniformBufferOffsetAlignment, minUniformBufferOffsetAlignment);
     CHECK_AND_SET_V1_MIN_LIMIT(minStorageBufferOffsetAlignment, minStorageBufferOffsetAlignment);
@@ -379,58 +382,6 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
         }
     } else {
         limits->v1.maxBufferSize = kAssumedMaxBufferSize;
-    }
-
-    // Only check maxFragmentCombinedOutputResources on mobile GPUs. Desktop GPUs drivers seem
-    // to put incorrect values for this limit with things like 8 or 16 when they can do bindless
-    // storage buffers. Mesa llvmpipe driver also puts 8 here.
-    uint32_t vendorId = mDeviceInfo.properties.vendorID;
-    if (!gpu_info::IsAMD(vendorId) && !gpu_info::IsIntel(vendorId) && !gpu_info::IsMesa(vendorId) &&
-        !gpu_info::IsNvidia(vendorId)) {
-        if (vkLimits.maxFragmentCombinedOutputResources <
-            kMaxColorAttachments + baseLimits.v1.maxStorageTexturesPerShaderStage +
-                baseLimits.v1.maxStorageBuffersPerShaderStage) {
-            return DAWN_INTERNAL_ERROR(
-                "Insufficient Vulkan maxFragmentCombinedOutputResources limit");
-        }
-
-        uint32_t maxFragmentCombinedOutputResources = kMaxColorAttachments +
-                                                      limits->v1.maxStorageTexturesPerShaderStage +
-                                                      limits->v1.maxStorageBuffersPerShaderStage;
-
-        if (maxFragmentCombinedOutputResources > vkLimits.maxFragmentCombinedOutputResources) {
-            // WebGPU's maxFragmentCombinedOutputResources exceeds the Vulkan limit.
-            // Decrease |maxStorageTexturesPerShaderStage| and |maxStorageBuffersPerShaderStage|
-            // to fit within the Vulkan limit.
-            uint32_t countOverLimit =
-                maxFragmentCombinedOutputResources - vkLimits.maxFragmentCombinedOutputResources;
-
-            uint32_t maxStorageTexturesOverBase = limits->v1.maxStorageTexturesPerShaderStage -
-                                                  baseLimits.v1.maxStorageTexturesPerShaderStage;
-            uint32_t maxStorageBuffersOverBase = limits->v1.maxStorageBuffersPerShaderStage -
-                                                 baseLimits.v1.maxStorageBuffersPerShaderStage;
-
-            // Reduce the number of resources by half the overage count, but clamp to
-            // to ensure we don't go below the base limits.
-            uint32_t numFewerStorageTextures =
-                std::min(countOverLimit / 2, maxStorageTexturesOverBase);
-            uint32_t numFewerStorageBuffers =
-                std::min((countOverLimit + 1) / 2, maxStorageBuffersOverBase);
-
-            if (numFewerStorageTextures == maxStorageTexturesOverBase) {
-                // If |numFewerStorageTextures| was clamped, subtract the remaining
-                // from the storage buffers.
-                numFewerStorageBuffers = countOverLimit - numFewerStorageTextures;
-                ASSERT(numFewerStorageBuffers <= maxStorageBuffersOverBase);
-            } else if (numFewerStorageBuffers == maxStorageBuffersOverBase) {
-                // If |numFewerStorageBuffers| was clamped, subtract the remaining
-                // from the storage textures.
-                numFewerStorageTextures = countOverLimit - numFewerStorageBuffers;
-                ASSERT(numFewerStorageTextures <= maxStorageTexturesOverBase);
-            }
-            limits->v1.maxStorageTexturesPerShaderStage -= numFewerStorageTextures;
-            limits->v1.maxStorageBuffersPerShaderStage -= numFewerStorageBuffers;
-        }
     }
 
     // Using base limits for:
@@ -496,6 +447,12 @@ void Adapter::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
     // By default try to initialize workgroup memory with OpConstantNull according to the Vulkan
     // extension VK_KHR_zero_initialize_workgroup_memory.
     deviceToggles->Default(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, true);
+
+    // Inject fragment shaders in all vertex-only pipelines.
+    // TODO(crbug.com/dawn/1698): relax this requirement where the Vulkan spec allows.
+    // In particular, enable rasterizer discard if the depth-stencil stage is a no-op, and skip
+    // insertion of the placeholder fragment shader.
+    deviceToggles->Default(Toggle::UsePlaceholderFragmentInVertexOnlyPipeline, true);
 }
 
 ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(const DeviceDescriptor* descriptor,
@@ -503,9 +460,8 @@ ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(const DeviceDescriptor*
     return Device::Create(this, descriptor, deviceToggles);
 }
 
-MaybeError Adapter::ValidateFeatureSupportedWithDeviceTogglesImpl(
-    wgpu::FeatureName feature,
-    const TogglesState& deviceToggles) {
+MaybeError Adapter::ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
+                                                            const TogglesState& toggles) const {
     return {};
 }
 

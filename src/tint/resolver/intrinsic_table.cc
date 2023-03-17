@@ -24,6 +24,7 @@
 #include "src/tint/sem/pipeline_stage_set.h"
 #include "src/tint/sem/value_constructor.h"
 #include "src/tint/sem/value_conversion.h"
+#include "src/tint/switch.h"
 #include "src/tint/type/abstract_float.h"
 #include "src/tint/type/abstract_int.h"
 #include "src/tint/type/abstract_numeric.h"
@@ -1096,7 +1097,7 @@ class Impl : public IntrinsicTable {
   public:
     explicit Impl(ProgramBuilder& builder);
 
-    Builtin Lookup(sem::BuiltinType builtin_type,
+    Builtin Lookup(builtin::Function builtin_type,
                    utils::VectorRef<const type::Type*> args,
                    sem::EvaluationStage earliest_eval_stage,
                    const Source& source) override;
@@ -1264,11 +1265,11 @@ std::string TemplateNumberMatcher::String(MatchState* state) const {
 
 Impl::Impl(ProgramBuilder& b) : builder(b) {}
 
-Impl::Builtin Impl::Lookup(sem::BuiltinType builtin_type,
+Impl::Builtin Impl::Lookup(builtin::Function builtin_type,
                            utils::VectorRef<const type::Type*> args,
                            sem::EvaluationStage earliest_eval_stage,
                            const Source& source) {
-    const char* intrinsic_name = sem::str(builtin_type);
+    const char* intrinsic_name = builtin::str(builtin_type);
 
     // Generates an error when no overloads match the provided arguments
     auto on_no_match = [&](utils::VectorRef<Candidate> candidates) {
@@ -1495,7 +1496,7 @@ IntrinsicTable::CtorOrConv Impl::Lookup(CtorConvIntrinsic type,
 
     // Was this overload a constructor or conversion?
     if (match.overload->flags.Contains(OverloadFlag::kIsConstructor)) {
-        utils::Vector<const sem::Parameter*, 8> params;
+        utils::Vector<sem::Parameter*, 8> params;
         params.Reserve(match.parameters.Length());
         for (auto& p : match.parameters) {
             params.Push(builder.create<sem::Parameter>(

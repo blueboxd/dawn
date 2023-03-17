@@ -34,6 +34,8 @@
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/switch_statement.h"
+#include "src/tint/switch.h"
+#include "src/tint/utils/defer.h"
 #include "src/tint/utils/math.h"
 #include "src/tint/utils/scoped_assignment.h"
 #include "src/tint/writer/float_to_string.h"
@@ -98,7 +100,14 @@ bool GeneratorImpl::EmitDiagnosticControl(utils::StringStream& out,
 
 bool GeneratorImpl::EmitEnable(const ast::Enable* enable) {
     auto out = line();
-    out << "enable " << enable->extension << ";";
+    out << "enable ";
+    for (auto* ext : enable->extensions) {
+        if (ext != enable->extensions.Front()) {
+            out << ", ";
+        }
+        out << ext->name;
+    }
+    out << ";";
     return true;
 }
 
@@ -940,6 +949,14 @@ bool GeneratorImpl::EmitContinue(const ast::ContinueStatement*) {
 bool GeneratorImpl::EmitIf(const ast::IfStatement* stmt) {
     {
         auto out = line();
+
+        if (!stmt->attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
         out << "if (";
         if (!EmitExpression(out, stmt->condition)) {
             return false;
@@ -1008,7 +1025,21 @@ bool GeneratorImpl::EmitDiscard(const ast::DiscardStatement*) {
 }
 
 bool GeneratorImpl::EmitLoop(const ast::LoopStatement* stmt) {
-    line() << "loop {";
+    {
+        auto out = line();
+
+        if (!stmt->attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
+        out << "loop ";
+        if (!EmitBlockHeader(out, stmt->body)) {
+            return false;
+        }
+    }
     increment_indent();
 
     if (!EmitStatements(stmt->body->statements)) {
@@ -1017,7 +1048,17 @@ bool GeneratorImpl::EmitLoop(const ast::LoopStatement* stmt) {
 
     if (stmt->continuing && !stmt->continuing->Empty()) {
         line();
-        line() << "continuing {";
+        {
+            auto out = line();
+            out << "continuing ";
+            if (!stmt->continuing->attributes.IsEmpty()) {
+                if (!EmitAttributes(out, stmt->continuing->attributes)) {
+                    return false;
+                }
+                out << " ";
+            }
+            out << "{";
+        }
         if (!EmitStatementsWithIndent(stmt->continuing->statements)) {
             return false;
         }
@@ -1049,6 +1090,14 @@ bool GeneratorImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
 
     {
         auto out = line();
+
+        if (!stmt->attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
         out << "for";
         {
             ScopedParen sp(out);
@@ -1110,6 +1159,14 @@ bool GeneratorImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
 bool GeneratorImpl::EmitWhile(const ast::WhileStatement* stmt) {
     {
         auto out = line();
+
+        if (!stmt->attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
         out << "while";
         {
             ScopedParen sp(out);
@@ -1149,7 +1206,7 @@ bool GeneratorImpl::EmitReturn(const ast::ReturnStatement* stmt) {
 
 bool GeneratorImpl::EmitConstAssert(const ast::ConstAssert* stmt) {
     auto out = line();
-    out << "static_assert ";
+    out << "const_assert ";
     if (!EmitExpression(out, stmt->condition)) {
         return false;
     }
@@ -1160,11 +1217,28 @@ bool GeneratorImpl::EmitConstAssert(const ast::ConstAssert* stmt) {
 bool GeneratorImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
     {
         auto out = line();
+
+        if (!stmt->attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
         out << "switch(";
         if (!EmitExpression(out, stmt->condition)) {
             return false;
         }
-        out << ") {";
+        out << ") ";
+
+        if (!stmt->body_attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->body_attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
+        out << "{";
     }
 
     {

@@ -23,6 +23,7 @@
 #include "dawn/native/Instance.h"
 #include "dawn/native/Texture.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "tint/tint.h"
 
 // Contains the entry-points into dawn_native
 
@@ -187,7 +188,9 @@ AdapterDiscoveryOptionsBase::AdapterDiscoveryOptionsBase(WGPUBackendType type)
 // Instance
 
 Instance::Instance(const WGPUInstanceDescriptor* desc)
-    : mImpl(APICreateInstance(reinterpret_cast<const InstanceDescriptor*>(desc))) {}
+    : mImpl(APICreateInstance(reinterpret_cast<const InstanceDescriptor*>(desc))) {
+    tint::Initialize();
+}
 
 Instance::~Instance() {
     if (mImpl != nullptr) {
@@ -246,6 +249,10 @@ void Instance::SetPlatform(dawn::platform::Platform* platform) {
 
 uint64_t Instance::GetDeviceCountForTesting() const {
     return mImpl->GetDeviceCountForTesting();
+}
+
+bool Instance::ProcessEvents() {
+    return mImpl->APIProcessEvents();
 }
 
 WGPUInstance Instance::Get() const {

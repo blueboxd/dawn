@@ -15,23 +15,24 @@
 #include "dawn/native/d3d12/AdapterD3D12.h"
 
 #include <string>
+#include <utility>
 
 #include "dawn/common/Constants.h"
 #include "dawn/common/Platform.h"
 #include "dawn/common/WindowsUtils.h"
 #include "dawn/native/Instance.h"
+#include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/BackendD3D12.h"
-#include "dawn/native/d3d12/D3D12Error.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctions.h"
+#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
 
 namespace dawn::native::d3d12 {
 
-Adapter::Adapter(Backend* backend, ComPtr<IDXGIAdapter3> hardwareAdapter)
-    : AdapterBase(backend->GetInstance(), wgpu::BackendType::D3D12),
-      mHardwareAdapter(hardwareAdapter),
-      mBackend(backend) {}
+Adapter::Adapter(Backend* backend,
+                 ComPtr<IDXGIAdapter3> hardwareAdapter,
+                 const TogglesState& adapterToggles)
+    : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D12, adapterToggles) {}
 
 Adapter::~Adapter() {
     CleanUpDebugLayerFilters();
@@ -46,12 +47,8 @@ const D3D12DeviceInfo& Adapter::GetDeviceInfo() const {
     return mDeviceInfo;
 }
 
-IDXGIAdapter3* Adapter::GetHardwareAdapter() const {
-    return mHardwareAdapter.Get();
-}
-
 Backend* Adapter::GetBackend() const {
-    return mBackend;
+    return static_cast<Backend*>(Base::GetBackend());
 }
 
 ComPtr<ID3D12Device> Adapter::GetDevice() const {
@@ -71,7 +68,7 @@ MaybeError Adapter::InitializeImpl() {
     DAWN_TRY(InitializeDebugLayerFilters());
 
     DXGI_ADAPTER_DESC1 adapterDesc;
-    mHardwareAdapter->GetDesc1(&adapterDesc);
+    GetHardwareAdapter()->GetDesc1(&adapterDesc);
 
     mDeviceId = adapterDesc.DeviceId;
     mVendorId = adapterDesc.VendorId;
@@ -88,7 +85,7 @@ MaybeError Adapter::InitializeImpl() {
 
     // Convert the adapter's D3D12 driver version to a readable string like "24.21.13.9793".
     LARGE_INTEGER umdVersion;
-    if (mHardwareAdapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &umdVersion) !=
+    if (GetHardwareAdapter()->CheckInterfaceSupport(__uuidof(IDXGIDevice), &umdVersion) !=
         DXGI_ERROR_UNSUPPORTED) {
         uint64_t encodedVersion = umdVersion.QuadPart;
         uint16_t mask = 0xFFFF;
@@ -138,26 +135,26 @@ bool Adapter::AreTimestampQueriesSupported() const {
 }
 
 void Adapter::InitializeSupportedFeaturesImpl() {
-    mSupportedFeatures.EnableFeature(Feature::TextureCompressionBC);
-    mSupportedFeatures.EnableFeature(Feature::MultiPlanarFormats);
-    mSupportedFeatures.EnableFeature(Feature::Depth32FloatStencil8);
-    mSupportedFeatures.EnableFeature(Feature::IndirectFirstInstance);
-    mSupportedFeatures.EnableFeature(Feature::RG11B10UfloatRenderable);
-    mSupportedFeatures.EnableFeature(Feature::DepthClipControl);
+    EnableFeature(Feature::TextureCompressionBC);
+    EnableFeature(Feature::MultiPlanarFormats);
+    EnableFeature(Feature::Depth32FloatStencil8);
+    EnableFeature(Feature::IndirectFirstInstance);
+    EnableFeature(Feature::RG11B10UfloatRenderable);
+    EnableFeature(Feature::DepthClipControl);
 
     if (AreTimestampQueriesSupported()) {
-        mSupportedFeatures.EnableFeature(Feature::TimestampQuery);
-        mSupportedFeatures.EnableFeature(Feature::TimestampQueryInsidePasses);
+        EnableFeature(Feature::TimestampQuery);
+        EnableFeature(Feature::TimestampQueryInsidePasses);
     }
-    mSupportedFeatures.EnableFeature(Feature::PipelineStatisticsQuery);
+    EnableFeature(Feature::PipelineStatisticsQuery);
 
     // Both Dp4a and ShaderF16 features require DXC version being 1.4 or higher
     if (GetBackend()->IsDXCAvailableAndVersionAtLeast(1, 4, 1, 4)) {
         if (mDeviceInfo.supportsDP4a) {
-            mSupportedFeatures.EnableFeature(Feature::ChromiumExperimentalDp4a);
+            EnableFeature(Feature::ChromiumExperimentalDp4a);
         }
         if (mDeviceInfo.supportsShaderF16) {
-            mSupportedFeatures.EnableFeature(Feature::ShaderF16);
+            EnableFeature(Feature::ShaderF16);
         }
     }
 
@@ -167,7 +164,7 @@ void Adapter::InitializeSupportedFeaturesImpl() {
         D3D12_FEATURE_FORMAT_SUPPORT, &bgra8unormFormatInfo, sizeof(bgra8unormFormatInfo));
     if (SUCCEEDED(hr) &&
         (bgra8unormFormatInfo.Support1 & D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW)) {
-        mSupportedFeatures.EnableFeature(Feature::BGRA8UnormStorage);
+        EnableFeature(Feature::BGRA8UnormStorage);
     }
 }
 
@@ -260,6 +257,9 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     limits->v1.maxSamplersPerShaderStage = maxSamplersPerStage;
 
     limits->v1.maxColorAttachments = D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT;
+    limits->v1.maxFragmentCombinedOutputResources = limits->v1.maxColorAttachments +
+                                                    limits->v1.maxStorageBuffersPerShaderStage +
+                                                    limits->v1.maxStorageTexturesPerShaderStage;
 
     // https://docs.microsoft.com/en-us/windows/win32/direct3d12/root-signature-limits
     // In DWORDS. Descriptor tables cost 1, Root constants cost 1, Root descriptors cost 2.
@@ -342,16 +342,13 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     return {};
 }
 
-MaybeError Adapter::ValidateFeatureSupportedWithDeviceTogglesImpl(
-    wgpu::FeatureName feature,
-    const TogglesState& deviceTogglesState) {
+MaybeError Adapter::ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
+                                                            const TogglesState& toggles) const {
     // shader-f16 feature and chromium-experimental-dp4a feature require DXC 1.4 or higher for
-    // D3D12.
+    // D3D12. Note that DXC version is checked in InitializeSupportedFeaturesImpl.
     if (feature == wgpu::FeatureName::ShaderF16 ||
         feature == wgpu::FeatureName::ChromiumExperimentalDp4a) {
-        DAWN_INVALID_IF(!(deviceTogglesState.IsEnabled(Toggle::UseDXC) &&
-                          mBackend->IsDXCAvailableAndVersionAtLeast(1, 4, 1, 4)),
-                        "Feature %s requires DXC for D3D12.",
+        DAWN_INVALID_IF(!toggles.IsEnabled(Toggle::UseDXC), "Feature %s requires DXC for D3D12.",
                         GetInstance()->GetFeatureInfo(feature)->name);
     }
     return {};

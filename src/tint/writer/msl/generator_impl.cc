@@ -40,7 +40,9 @@
 #include "src/tint/sem/value_constructor.h"
 #include "src/tint/sem/value_conversion.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/switch.h"
 #include "src/tint/transform/array_length_from_uniform.h"
+#include "src/tint/transform/binding_remapper.h"
 #include "src/tint/transform/builtin_polyfill.h"
 #include "src/tint/transform/canonicalize_entry_point_io.h"
 #include "src/tint/transform/demote_to_helper.h"
@@ -48,6 +50,7 @@
 #include "src/tint/transform/expand_compound_assignment.h"
 #include "src/tint/transform/manager.h"
 #include "src/tint/transform/module_scope_var_to_entry_point_param.h"
+#include "src/tint/transform/multiplanar_external_texture.h"
 #include "src/tint/transform/packed_vec3.h"
 #include "src/tint/transform/preserve_padding.h"
 #include "src/tint/transform/promote_initializers_to_let.h"
@@ -82,7 +85,6 @@
 #include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/check_supported_extensions.h"
 #include "src/tint/writer/float_to_string.h"
-#include "src/tint/writer/generate_external_texture_bindings.h"
 
 namespace tint::writer::msl {
 namespace {
@@ -172,29 +174,6 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     // ExpandCompoundAssignment must come before BuiltinPolyfill
     manager.Add<transform::ExpandCompoundAssignment>();
 
-    // Build the config for the internal ArrayLengthFromUniform transform.
-    auto& array_length_from_uniform = options.array_length_from_uniform;
-    transform::ArrayLengthFromUniform::Config array_length_from_uniform_cfg(
-        array_length_from_uniform.ubo_binding);
-    if (!array_length_from_uniform.bindpoint_to_size_index.empty()) {
-        // If |array_length_from_uniform| bindings are provided, use that config.
-        array_length_from_uniform_cfg.bindpoint_to_size_index =
-            array_length_from_uniform.bindpoint_to_size_index;
-    } else {
-        // If the binding map is empty, use the deprecated |buffer_size_ubo_index|
-        // and automatically choose indices using the binding numbers.
-        array_length_from_uniform_cfg = transform::ArrayLengthFromUniform::Config(
-            sem::BindingPoint{0, options.buffer_size_ubo_index});
-        // Use the SSBO binding numbers as the indices for the buffer size lookups.
-        for (auto* var : in->AST().GlobalVariables()) {
-            auto* global = in->Sem().Get<sem::GlobalVariable>(var);
-            if (global && global->AddressSpace() == builtin::AddressSpace::kStorage) {
-                array_length_from_uniform_cfg.bindpoint_to_size_index.emplace(
-                    global->BindingPoint(), global->BindingPoint().binding);
-            }
-        }
-    }
-
     // Build the configs for the internal CanonicalizeEntryPointIO transform.
     auto entry_point_io_cfg = transform::CanonicalizeEntryPointIO::Config(
         transform::CanonicalizeEntryPointIO::ShaderStyle::kMsl, options.fixed_sample_mask,
@@ -207,7 +186,9 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     manager.Add<transform::PromoteSideEffectsToDecl>();
 
     if (!options.disable_robustness) {
-        // Robustness must come before BuiltinPolyfill
+        // Robustness must come after PromoteSideEffectsToDecl
+        // Robustness must come before BuiltinPolyfill and CanonicalizeEntryPointIO
+        // Robustness must come before ArrayLengthFromUniform
         manager.Add<transform::Robustness>();
     }
 
@@ -217,6 +198,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         polyfills.atanh = transform::BuiltinPolyfill::Level::kRangeCheck;
         polyfills.bitshift_modulo = true;  // crbug.com/tint/1543
         polyfills.clamp_int = true;
+        polyfills.conv_f32_to_iu32 = true;
         polyfills.extract_bits = transform::BuiltinPolyfill::Level::kClampParameters;
         polyfills.first_leading_bit = true;
         polyfills.first_trailing_bit = true;
@@ -229,12 +211,19 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         manager.Add<transform::BuiltinPolyfill>();
     }
 
-    if (options.generate_external_texture_bindings) {
+    if (!options.external_texture_options.bindings_map.empty()) {
         // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
-        auto new_bindings_map = GenerateExternalTextureBindings(in);
-        data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(new_bindings_map);
+        data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(
+            options.external_texture_options.bindings_map);
         manager.Add<transform::MultiplanarExternalTexture>();
     }
+
+    // BindingRemapper must come after MultiplanarExternalTexture
+    manager.Add<transform::BindingRemapper>();
+    data.Add<transform::BindingRemapper::Remappings>(
+        options.binding_remapper_options.binding_points,
+        options.binding_remapper_options.access_controls,
+        options.binding_remapper_options.allow_collisions);
 
     if (!options.disable_workgroup_init) {
         // ZeroInitWorkgroupMemory must come before CanonicalizeEntryPointIO as
@@ -244,6 +233,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
 
     // CanonicalizeEntryPointIO must come after Robustness
     manager.Add<transform::CanonicalizeEntryPointIO>();
+    data.Add<transform::CanonicalizeEntryPointIO::Config>(std::move(entry_point_io_cfg));
 
     manager.Add<transform::PromoteInitializersToLet>();
 
@@ -254,14 +244,21 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     manager.Add<transform::VectorizeScalarMatrixInitializers>();
     manager.Add<transform::RemovePhonies>();
     manager.Add<transform::SimplifyPointers>();
+
     // ArrayLengthFromUniform must come after SimplifyPointers, as
     // it assumes that the form of the array length argument is &var.array.
     manager.Add<transform::ArrayLengthFromUniform>();
+
+    transform::ArrayLengthFromUniform::Config array_length_cfg(
+        std::move(options.array_length_from_uniform.ubo_binding));
+    array_length_cfg.bindpoint_to_size_index =
+        std::move(options.array_length_from_uniform.bindpoint_to_size_index);
+    data.Add<transform::ArrayLengthFromUniform::Config>(array_length_cfg);
+
     // PackedVec3 must come after ExpandCompoundAssignment.
     manager.Add<transform::PackedVec3>();
     manager.Add<transform::ModuleScopeVarToEntryPointParam>();
-    data.Add<transform::ArrayLengthFromUniform::Config>(std::move(array_length_from_uniform_cfg));
-    data.Add<transform::CanonicalizeEntryPointIO::Config>(std::move(entry_point_io_cfg));
+
     auto out = manager.Run(in, data);
 
     SanitizedResult result;
@@ -698,20 +695,20 @@ bool GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
     auto name = generate_builtin_name(builtin);
 
     switch (builtin->Type()) {
-        case sem::BuiltinType::kDot:
+        case builtin::Function::kDot:
             return EmitDotCall(out, expr, builtin);
-        case sem::BuiltinType::kModf:
+        case builtin::Function::kModf:
             return EmitModfCall(out, expr, builtin);
-        case sem::BuiltinType::kFrexp:
+        case builtin::Function::kFrexp:
             return EmitFrexpCall(out, expr, builtin);
-        case sem::BuiltinType::kDegrees:
+        case builtin::Function::kDegrees:
             return EmitDegreesCall(out, expr, builtin);
-        case sem::BuiltinType::kRadians:
+        case builtin::Function::kRadians:
             return EmitRadiansCall(out, expr, builtin);
 
-        case sem::BuiltinType::kPack2X16Float:
-        case sem::BuiltinType::kUnpack2X16Float: {
-            if (builtin->Type() == sem::BuiltinType::kPack2X16Float) {
+        case builtin::Function::kPack2X16Float:
+        case builtin::Function::kUnpack2X16Float: {
+            if (builtin->Type() == builtin::Function::kPack2X16Float) {
                 out << "as_type<uint>(half2(";
             } else {
                 out << "float2(as_type<half2>(";
@@ -722,7 +719,7 @@ bool GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
             out << "))";
             return true;
         }
-        case sem::BuiltinType::kQuantizeToF16: {
+        case builtin::Function::kQuantizeToF16: {
             std::string width = "";
             if (auto* vec = builtin->ReturnType()->As<type::Vector>()) {
                 width = std::to_string(vec->Width());
@@ -736,16 +733,16 @@ bool GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
         }
         // TODO(crbug.com/tint/661): Combine sequential barriers to a single
         // instruction.
-        case sem::BuiltinType::kStorageBarrier: {
+        case builtin::Function::kStorageBarrier: {
             out << "threadgroup_barrier(mem_flags::mem_device)";
             return true;
         }
-        case sem::BuiltinType::kWorkgroupBarrier: {
+        case builtin::Function::kWorkgroupBarrier: {
             out << "threadgroup_barrier(mem_flags::mem_threadgroup)";
             return true;
         }
 
-        case sem::BuiltinType::kLength: {
+        case builtin::Function::kLength: {
             auto* sem = builder_.Sem().GetVal(expr->args[0]);
             if (sem->Type()->UnwrapRef()->is_scalar()) {
                 // Emulate scalar overload using fabs(x).
@@ -754,7 +751,7 @@ bool GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
             break;
         }
 
-        case sem::BuiltinType::kDistance: {
+        case builtin::Function::kDistance: {
             auto* sem = builder_.Sem().GetVal(expr->args[0]);
             if (sem->Type()->UnwrapRef()->is_scalar()) {
                 // Emulate scalar overload using fabs(x - y);
@@ -895,37 +892,37 @@ bool GeneratorImpl::EmitAtomicCall(utils::StringStream& out,
     };
 
     switch (builtin->Type()) {
-        case sem::BuiltinType::kAtomicLoad:
+        case builtin::Function::kAtomicLoad:
             return call("atomic_load_explicit", true);
 
-        case sem::BuiltinType::kAtomicStore:
+        case builtin::Function::kAtomicStore:
             return call("atomic_store_explicit", true);
 
-        case sem::BuiltinType::kAtomicAdd:
+        case builtin::Function::kAtomicAdd:
             return call("atomic_fetch_add_explicit", true);
 
-        case sem::BuiltinType::kAtomicSub:
+        case builtin::Function::kAtomicSub:
             return call("atomic_fetch_sub_explicit", true);
 
-        case sem::BuiltinType::kAtomicMax:
+        case builtin::Function::kAtomicMax:
             return call("atomic_fetch_max_explicit", true);
 
-        case sem::BuiltinType::kAtomicMin:
+        case builtin::Function::kAtomicMin:
             return call("atomic_fetch_min_explicit", true);
 
-        case sem::BuiltinType::kAtomicAnd:
+        case builtin::Function::kAtomicAnd:
             return call("atomic_fetch_and_explicit", true);
 
-        case sem::BuiltinType::kAtomicOr:
+        case builtin::Function::kAtomicOr:
             return call("atomic_fetch_or_explicit", true);
 
-        case sem::BuiltinType::kAtomicXor:
+        case builtin::Function::kAtomicXor:
             return call("atomic_fetch_xor_explicit", true);
 
-        case sem::BuiltinType::kAtomicExchange:
+        case builtin::Function::kAtomicExchange:
             return call("atomic_exchange_explicit", true);
 
-        case sem::BuiltinType::kAtomicCompareExchangeWeak: {
+        case builtin::Function::kAtomicCompareExchangeWeak: {
             auto* ptr_ty = TypeOf(expr->args[0])->UnwrapRef()->As<type::Pointer>();
             auto sc = ptr_ty->AddressSpace();
             auto* str = builtin->ReturnType()->As<sem::Struct>();
@@ -1040,7 +1037,7 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
     bool level_is_constant_zero = texture_type->dim() == type::TextureDimension::k1d;
 
     switch (builtin->Type()) {
-        case sem::BuiltinType::kTextureDimensions: {
+        case builtin::Function::kTextureDimensions: {
             std::vector<const char*> dims;
             switch (texture_type->dim()) {
                 case type::TextureDimension::kNone:
@@ -1093,21 +1090,21 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
             }
             return true;
         }
-        case sem::BuiltinType::kTextureNumLayers: {
+        case builtin::Function::kTextureNumLayers: {
             if (!texture_expr()) {
                 return false;
             }
             out << ".get_array_size()";
             return true;
         }
-        case sem::BuiltinType::kTextureNumLevels: {
+        case builtin::Function::kTextureNumLevels: {
             if (!texture_expr()) {
                 return false;
             }
             out << ".get_num_mip_levels()";
             return true;
         }
-        case sem::BuiltinType::kTextureNumSamples: {
+        case builtin::Function::kTextureNumSamples: {
             if (!texture_expr()) {
                 return false;
             }
@@ -1125,27 +1122,27 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
     bool lod_param_is_named = true;
 
     switch (builtin->Type()) {
-        case sem::BuiltinType::kTextureSample:
-        case sem::BuiltinType::kTextureSampleBias:
-        case sem::BuiltinType::kTextureSampleLevel:
-        case sem::BuiltinType::kTextureSampleGrad:
+        case builtin::Function::kTextureSample:
+        case builtin::Function::kTextureSampleBias:
+        case builtin::Function::kTextureSampleLevel:
+        case builtin::Function::kTextureSampleGrad:
             out << ".sample(";
             break;
-        case sem::BuiltinType::kTextureSampleCompare:
-        case sem::BuiltinType::kTextureSampleCompareLevel:
+        case builtin::Function::kTextureSampleCompare:
+        case builtin::Function::kTextureSampleCompareLevel:
             out << ".sample_compare(";
             break;
-        case sem::BuiltinType::kTextureGather:
+        case builtin::Function::kTextureGather:
             out << ".gather(";
             break;
-        case sem::BuiltinType::kTextureGatherCompare:
+        case builtin::Function::kTextureGatherCompare:
             out << ".gather_compare(";
             break;
-        case sem::BuiltinType::kTextureLoad:
+        case builtin::Function::kTextureLoad:
             out << ".read(";
             lod_param_is_named = false;
             break;
-        case sem::BuiltinType::kTextureStore:
+        case builtin::Function::kTextureStore:
             out << ".write(";
             break;
         default:
@@ -1222,7 +1219,7 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
             out << ")";
         }
     }
-    if (builtin->Type() == sem::BuiltinType::kTextureSampleCompareLevel) {
+    if (builtin->Type() == builtin::Function::kTextureSampleCompareLevel) {
         maybe_write_comma();
         out << "level(0)";
     }
@@ -1429,143 +1426,143 @@ bool GeneratorImpl::EmitRadiansCall(utils::StringStream& out,
 std::string GeneratorImpl::generate_builtin_name(const sem::Builtin* builtin) {
     std::string out = "";
     switch (builtin->Type()) {
-        case sem::BuiltinType::kAcos:
-        case sem::BuiltinType::kAcosh:
-        case sem::BuiltinType::kAll:
-        case sem::BuiltinType::kAny:
-        case sem::BuiltinType::kAsin:
-        case sem::BuiltinType::kAsinh:
-        case sem::BuiltinType::kAtanh:
-        case sem::BuiltinType::kAtan:
-        case sem::BuiltinType::kAtan2:
-        case sem::BuiltinType::kCeil:
-        case sem::BuiltinType::kCos:
-        case sem::BuiltinType::kCosh:
-        case sem::BuiltinType::kCross:
-        case sem::BuiltinType::kDeterminant:
-        case sem::BuiltinType::kDistance:
-        case sem::BuiltinType::kDot:
-        case sem::BuiltinType::kExp:
-        case sem::BuiltinType::kExp2:
-        case sem::BuiltinType::kFloor:
-        case sem::BuiltinType::kFma:
-        case sem::BuiltinType::kFract:
-        case sem::BuiltinType::kFrexp:
-        case sem::BuiltinType::kLength:
-        case sem::BuiltinType::kLdexp:
-        case sem::BuiltinType::kLog:
-        case sem::BuiltinType::kLog2:
-        case sem::BuiltinType::kMix:
-        case sem::BuiltinType::kModf:
-        case sem::BuiltinType::kNormalize:
-        case sem::BuiltinType::kPow:
-        case sem::BuiltinType::kReflect:
-        case sem::BuiltinType::kRefract:
-        case sem::BuiltinType::kSaturate:
-        case sem::BuiltinType::kSelect:
-        case sem::BuiltinType::kSin:
-        case sem::BuiltinType::kSinh:
-        case sem::BuiltinType::kSqrt:
-        case sem::BuiltinType::kStep:
-        case sem::BuiltinType::kTan:
-        case sem::BuiltinType::kTanh:
-        case sem::BuiltinType::kTranspose:
-        case sem::BuiltinType::kTrunc:
-        case sem::BuiltinType::kSign:
-        case sem::BuiltinType::kClamp:
+        case builtin::Function::kAcos:
+        case builtin::Function::kAcosh:
+        case builtin::Function::kAll:
+        case builtin::Function::kAny:
+        case builtin::Function::kAsin:
+        case builtin::Function::kAsinh:
+        case builtin::Function::kAtanh:
+        case builtin::Function::kAtan:
+        case builtin::Function::kAtan2:
+        case builtin::Function::kCeil:
+        case builtin::Function::kCos:
+        case builtin::Function::kCosh:
+        case builtin::Function::kCross:
+        case builtin::Function::kDeterminant:
+        case builtin::Function::kDistance:
+        case builtin::Function::kDot:
+        case builtin::Function::kExp:
+        case builtin::Function::kExp2:
+        case builtin::Function::kFloor:
+        case builtin::Function::kFma:
+        case builtin::Function::kFract:
+        case builtin::Function::kFrexp:
+        case builtin::Function::kLength:
+        case builtin::Function::kLdexp:
+        case builtin::Function::kLog:
+        case builtin::Function::kLog2:
+        case builtin::Function::kMix:
+        case builtin::Function::kModf:
+        case builtin::Function::kNormalize:
+        case builtin::Function::kPow:
+        case builtin::Function::kReflect:
+        case builtin::Function::kRefract:
+        case builtin::Function::kSaturate:
+        case builtin::Function::kSelect:
+        case builtin::Function::kSin:
+        case builtin::Function::kSinh:
+        case builtin::Function::kSqrt:
+        case builtin::Function::kStep:
+        case builtin::Function::kTan:
+        case builtin::Function::kTanh:
+        case builtin::Function::kTranspose:
+        case builtin::Function::kTrunc:
+        case builtin::Function::kSign:
+        case builtin::Function::kClamp:
             out += builtin->str();
             break;
-        case sem::BuiltinType::kAbs:
+        case builtin::Function::kAbs:
             if (builtin->ReturnType()->is_float_scalar_or_vector()) {
                 out += "fabs";
             } else {
                 out += "abs";
             }
             break;
-        case sem::BuiltinType::kCountLeadingZeros:
+        case builtin::Function::kCountLeadingZeros:
             out += "clz";
             break;
-        case sem::BuiltinType::kCountOneBits:
+        case builtin::Function::kCountOneBits:
             out += "popcount";
             break;
-        case sem::BuiltinType::kCountTrailingZeros:
+        case builtin::Function::kCountTrailingZeros:
             out += "ctz";
             break;
-        case sem::BuiltinType::kDpdx:
-        case sem::BuiltinType::kDpdxCoarse:
-        case sem::BuiltinType::kDpdxFine:
+        case builtin::Function::kDpdx:
+        case builtin::Function::kDpdxCoarse:
+        case builtin::Function::kDpdxFine:
             out += "dfdx";
             break;
-        case sem::BuiltinType::kDpdy:
-        case sem::BuiltinType::kDpdyCoarse:
-        case sem::BuiltinType::kDpdyFine:
+        case builtin::Function::kDpdy:
+        case builtin::Function::kDpdyCoarse:
+        case builtin::Function::kDpdyFine:
             out += "dfdy";
             break;
-        case sem::BuiltinType::kExtractBits:
+        case builtin::Function::kExtractBits:
             out += "extract_bits";
             break;
-        case sem::BuiltinType::kInsertBits:
+        case builtin::Function::kInsertBits:
             out += "insert_bits";
             break;
-        case sem::BuiltinType::kFwidth:
-        case sem::BuiltinType::kFwidthCoarse:
-        case sem::BuiltinType::kFwidthFine:
+        case builtin::Function::kFwidth:
+        case builtin::Function::kFwidthCoarse:
+        case builtin::Function::kFwidthFine:
             out += "fwidth";
             break;
-        case sem::BuiltinType::kMax:
+        case builtin::Function::kMax:
             if (builtin->ReturnType()->is_float_scalar_or_vector()) {
                 out += "fmax";
             } else {
                 out += "max";
             }
             break;
-        case sem::BuiltinType::kMin:
+        case builtin::Function::kMin:
             if (builtin->ReturnType()->is_float_scalar_or_vector()) {
                 out += "fmin";
             } else {
                 out += "min";
             }
             break;
-        case sem::BuiltinType::kFaceForward:
+        case builtin::Function::kFaceForward:
             out += "faceforward";
             break;
-        case sem::BuiltinType::kPack4X8Snorm:
+        case builtin::Function::kPack4X8Snorm:
             out += "pack_float_to_snorm4x8";
             break;
-        case sem::BuiltinType::kPack4X8Unorm:
+        case builtin::Function::kPack4X8Unorm:
             out += "pack_float_to_unorm4x8";
             break;
-        case sem::BuiltinType::kPack2X16Snorm:
+        case builtin::Function::kPack2X16Snorm:
             out += "pack_float_to_snorm2x16";
             break;
-        case sem::BuiltinType::kPack2X16Unorm:
+        case builtin::Function::kPack2X16Unorm:
             out += "pack_float_to_unorm2x16";
             break;
-        case sem::BuiltinType::kReverseBits:
+        case builtin::Function::kReverseBits:
             out += "reverse_bits";
             break;
-        case sem::BuiltinType::kRound:
+        case builtin::Function::kRound:
             out += "rint";
             break;
-        case sem::BuiltinType::kSmoothstep:
+        case builtin::Function::kSmoothstep:
             out += "smoothstep";
             break;
-        case sem::BuiltinType::kInverseSqrt:
+        case builtin::Function::kInverseSqrt:
             out += "rsqrt";
             break;
-        case sem::BuiltinType::kUnpack4X8Snorm:
+        case builtin::Function::kUnpack4X8Snorm:
             out += "unpack_snorm4x8_to_float";
             break;
-        case sem::BuiltinType::kUnpack4X8Unorm:
+        case builtin::Function::kUnpack4X8Unorm:
             out += "unpack_unorm4x8_to_float";
             break;
-        case sem::BuiltinType::kUnpack2X16Snorm:
+        case builtin::Function::kUnpack2X16Snorm:
             out += "unpack_snorm2x16_to_float";
             break;
-        case sem::BuiltinType::kUnpack2X16Unorm:
+        case builtin::Function::kUnpack2X16Unorm:
             out += "unpack_unorm2x16_to_float";
             break;
-        case sem::BuiltinType::kArrayLength:
+        case builtin::Function::kArrayLength:
             diagnostics_.add_error(
                 diag::System::Writer,
                 "Unable to translate builtin: " + std::string(builtin->str()) +
@@ -1706,8 +1703,8 @@ bool GeneratorImpl::EmitConstant(utils::StringStream& out, const constant::Value
 
             ScopedParen sp(out);
 
-            if (constant->AllEqual()) {
-                if (!EmitConstant(out, constant->Index(0))) {
+            if (auto* splat = constant->As<constant::Splat>()) {
+                if (!EmitConstant(out, splat->el)) {
                     return false;
                 }
                 return true;
@@ -3257,7 +3254,7 @@ bool GeneratorImpl::CallBuiltinHelper(utils::StringStream& out,
         TextBuffer b;
         TINT_DEFER(helpers_.Append(b));
 
-        auto fn_name = UniqueIdentifier(std::string("tint_") + sem::str(builtin->Type()));
+        auto fn_name = UniqueIdentifier(std::string("tint_") + builtin::str(builtin->Type()));
         std::vector<std::string> parameter_names;
         {
             auto decl = line(&b);

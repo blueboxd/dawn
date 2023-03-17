@@ -40,8 +40,10 @@
 #include "src/tint/sem/value_constructor.h"
 #include "src/tint/sem/value_conversion.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/switch.h"
 #include "src/tint/transform/add_empty_entry_point.h"
 #include "src/tint/transform/array_length_from_uniform.h"
+#include "src/tint/transform/binding_remapper.h"
 #include "src/tint/transform/builtin_polyfill.h"
 #include "src/tint/transform/calculate_array_length.h"
 #include "src/tint/transform/canonicalize_entry_point_io.h"
@@ -52,6 +54,7 @@
 #include "src/tint/transform/expand_compound_assignment.h"
 #include "src/tint/transform/localize_struct_array_assignment.h"
 #include "src/tint/transform/manager.h"
+#include "src/tint/transform/multiplanar_external_texture.h"
 #include "src/tint/transform/num_workgroups_from_uniform.h"
 #include "src/tint/transform/promote_initializers_to_let.h"
 #include "src/tint/transform/promote_side_effects_to_decl.h"
@@ -80,7 +83,6 @@
 #include "src/tint/writer/append_vector.h"
 #include "src/tint/writer/check_supported_extensions.h"
 #include "src/tint/writer/float_to_string.h"
-#include "src/tint/writer/generate_external_texture_bindings.h"
 
 using namespace tint::number_suffixes;  // NOLINT
 
@@ -182,16 +184,24 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     manager.Add<transform::PromoteSideEffectsToDecl>();
 
     if (!options.disable_robustness) {
-        // Robustness must come before BuiltinPolyfill
+        // Robustness must come after PromoteSideEffectsToDecl
+        // Robustness must come before BuiltinPolyfill and CanonicalizeEntryPointIO
         manager.Add<transform::Robustness>();
     }
 
-    if (options.generate_external_texture_bindings) {
+    if (!options.external_texture_options.bindings_map.empty()) {
         // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
-        auto new_bindings_map = GenerateExternalTextureBindings(in);
-        data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(new_bindings_map);
+        data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(
+            options.external_texture_options.bindings_map);
         manager.Add<transform::MultiplanarExternalTexture>();
     }
+
+    // BindingRemapper must come after MultiplanarExternalTexture
+    manager.Add<transform::BindingRemapper>();
+    data.Add<transform::BindingRemapper::Remappings>(
+        options.binding_remapper_options.binding_points,
+        options.binding_remapper_options.access_controls,
+        options.binding_remapper_options.allow_collisions);
 
     {  // Builtin polyfills
         transform::BuiltinPolyfill::Builtins polyfills;
@@ -202,6 +212,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         polyfills.clamp_int = true;
         // TODO(crbug.com/tint/1449): Some of these can map to HLSL's `firstbitlow`
         // and `firstbithigh`.
+        polyfills.conv_f32_to_iu32 = true;
         polyfills.count_leading_zeros = true;
         polyfills.count_trailing_zeros = true;
         polyfills.extract_bits = transform::BuiltinPolyfill::Level::kFull;
@@ -965,25 +976,25 @@ bool GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
     if (builtin->IsTexture()) {
         return EmitTextureCall(out, call, builtin);
     }
-    if (type == sem::BuiltinType::kSelect) {
+    if (type == builtin::Function::kSelect) {
         return EmitSelectCall(out, expr);
     }
-    if (type == sem::BuiltinType::kModf) {
+    if (type == builtin::Function::kModf) {
         return EmitModfCall(out, expr, builtin);
     }
-    if (type == sem::BuiltinType::kFrexp) {
+    if (type == builtin::Function::kFrexp) {
         return EmitFrexpCall(out, expr, builtin);
     }
-    if (type == sem::BuiltinType::kDegrees) {
+    if (type == builtin::Function::kDegrees) {
         return EmitDegreesCall(out, expr, builtin);
     }
-    if (type == sem::BuiltinType::kRadians) {
+    if (type == builtin::Function::kRadians) {
         return EmitRadiansCall(out, expr, builtin);
     }
-    if (type == sem::BuiltinType::kSign) {
+    if (type == builtin::Function::kSign) {
         return EmitSignCall(out, call, builtin);
     }
-    if (type == sem::BuiltinType::kQuantizeToF16) {
+    if (type == builtin::Function::kQuantizeToF16) {
         return EmitQuantizeToF16Call(out, expr, builtin);
     }
     if (builtin->IsDataPacking()) {
@@ -1010,7 +1021,7 @@ bool GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
     // Handle single argument builtins that only accept and return uint (not int overload). We need
     // to explicitly cast the return value (we also cast the arg for good measure). See
     // crbug.com/tint/1550
-    if (type == sem::BuiltinType::kCountOneBits || type == sem::BuiltinType::kReverseBits) {
+    if (type == builtin::Function::kCountOneBits || type == builtin::Function::kReverseBits) {
         auto* arg = call->Arguments()[0];
         if (arg->Type()->UnwrapRef()->is_signed_integer_scalar_or_vector()) {
             out << "asint(" << name << "(asuint(";
@@ -1125,7 +1136,7 @@ bool GeneratorImpl::EmitUniformBufferAccess(
     utils::StringStream& out,
     const ast::CallExpression* expr,
     const transform::DecomposeMemoryAccess::Intrinsic* intrinsic) {
-    auto const buffer = program_->Symbols().NameFor(intrinsic->buffer);
+    auto const buffer = program_->Symbols().NameFor(intrinsic->Buffer()->identifier->symbol);
     auto* const offset = expr->args[0];
 
     // offset in bytes
@@ -1413,7 +1424,7 @@ bool GeneratorImpl::EmitStorageBufferAccess(
     utils::StringStream& out,
     const ast::CallExpression* expr,
     const transform::DecomposeMemoryAccess::Intrinsic* intrinsic) {
-    auto const buffer = program_->Symbols().NameFor(intrinsic->buffer);
+    auto const buffer = program_->Symbols().NameFor(intrinsic->Buffer()->identifier->symbol);
     auto* const offset = expr->args[0];
     auto* const value = expr->args[1];
 
@@ -1581,7 +1592,7 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
     const auto name = builder_.Symbols().NameFor(func->name->symbol);
     auto& buf = *current_buffer_;
 
-    auto const buffer = program_->Symbols().NameFor(intrinsic->buffer);
+    auto const buffer = program_->Symbols().NameFor(intrinsic->Buffer()->identifier->symbol);
 
     auto rmw = [&](const char* hlsl) -> bool {
         {
@@ -1804,7 +1815,7 @@ bool GeneratorImpl::EmitWorkgroupAtomicCall(utils::StringStream& out,
                 if (i > 0) {
                     pre << ", ";
                 }
-                if (i == 1 && builtin->Type() == sem::BuiltinType::kAtomicSub) {
+                if (i == 1 && builtin->Type() == builtin::Function::kAtomicSub) {
                     // Sub uses InterlockedAdd with the operand negated.
                     pre << "-";
                 }
@@ -1823,7 +1834,7 @@ bool GeneratorImpl::EmitWorkgroupAtomicCall(utils::StringStream& out,
     };
 
     switch (builtin->Type()) {
-        case sem::BuiltinType::kAtomicLoad: {
+        case builtin::Function::kAtomicLoad: {
             // HLSL does not have an InterlockedLoad, so we emulate it with
             // InterlockedOr using 0 as the OR value
             auto pre = line();
@@ -1840,7 +1851,7 @@ bool GeneratorImpl::EmitWorkgroupAtomicCall(utils::StringStream& out,
             out << result;
             return true;
         }
-        case sem::BuiltinType::kAtomicStore: {
+        case builtin::Function::kAtomicStore: {
             // HLSL does not have an InterlockedStore, so we emulate it with
             // InterlockedExchange and discard the returned value
             {  // T result = 0;
@@ -1871,7 +1882,7 @@ bool GeneratorImpl::EmitWorkgroupAtomicCall(utils::StringStream& out,
             }
             return true;
         }
-        case sem::BuiltinType::kAtomicCompareExchangeWeak: {
+        case builtin::Function::kAtomicCompareExchangeWeak: {
             if (!EmitStructType(&helpers_, builtin->ReturnType()->As<sem::Struct>())) {
                 return false;
             }
@@ -1920,26 +1931,26 @@ bool GeneratorImpl::EmitWorkgroupAtomicCall(utils::StringStream& out,
             return true;
         }
 
-        case sem::BuiltinType::kAtomicAdd:
-        case sem::BuiltinType::kAtomicSub:
+        case builtin::Function::kAtomicAdd:
+        case builtin::Function::kAtomicSub:
             return call("InterlockedAdd");
 
-        case sem::BuiltinType::kAtomicMax:
+        case builtin::Function::kAtomicMax:
             return call("InterlockedMax");
 
-        case sem::BuiltinType::kAtomicMin:
+        case builtin::Function::kAtomicMin:
             return call("InterlockedMin");
 
-        case sem::BuiltinType::kAtomicAnd:
+        case builtin::Function::kAtomicAnd:
             return call("InterlockedAnd");
 
-        case sem::BuiltinType::kAtomicOr:
+        case builtin::Function::kAtomicOr:
             return call("InterlockedOr");
 
-        case sem::BuiltinType::kAtomicXor:
+        case builtin::Function::kAtomicXor:
             return call("InterlockedXor");
 
-        case sem::BuiltinType::kAtomicExchange:
+        case builtin::Function::kAtomicExchange:
             return call("InterlockedExchange");
 
         default:
@@ -2034,7 +2045,7 @@ bool GeneratorImpl::EmitFrexpCall(utils::StringStream& out,
             }
 
             line(b) << member_type << " exp;";
-            line(b) << member_type << " fract = frexp(" << in << ", exp);";
+            line(b) << member_type << " fract = sign(" << in << ") * frexp(" << in << ", exp);";
             {
                 auto l = line(b);
                 if (!EmitType(l, builtin->ReturnType(), builtin::AddressSpace::kUndefined,
@@ -2113,21 +2124,21 @@ bool GeneratorImpl::EmitDataPackingCall(utils::StringStream& out,
             uint32_t dims = 2;
             bool is_signed = false;
             uint32_t scale = 65535;
-            if (builtin->Type() == sem::BuiltinType::kPack4X8Snorm ||
-                builtin->Type() == sem::BuiltinType::kPack4X8Unorm) {
+            if (builtin->Type() == builtin::Function::kPack4X8Snorm ||
+                builtin->Type() == builtin::Function::kPack4X8Unorm) {
                 dims = 4;
                 scale = 255;
             }
-            if (builtin->Type() == sem::BuiltinType::kPack4X8Snorm ||
-                builtin->Type() == sem::BuiltinType::kPack2X16Snorm) {
+            if (builtin->Type() == builtin::Function::kPack4X8Snorm ||
+                builtin->Type() == builtin::Function::kPack2X16Snorm) {
                 is_signed = true;
                 scale = (scale - 1) / 2;
             }
             switch (builtin->Type()) {
-                case sem::BuiltinType::kPack4X8Snorm:
-                case sem::BuiltinType::kPack4X8Unorm:
-                case sem::BuiltinType::kPack2X16Snorm:
-                case sem::BuiltinType::kPack2X16Unorm: {
+                case builtin::Function::kPack4X8Snorm:
+                case builtin::Function::kPack4X8Unorm:
+                case builtin::Function::kPack2X16Snorm:
+                case builtin::Function::kPack2X16Unorm: {
                     {
                         auto l = line(b);
                         l << (is_signed ? "" : "u") << "int" << dims
@@ -2153,7 +2164,7 @@ bool GeneratorImpl::EmitDataPackingCall(utils::StringStream& out,
                     }
                     break;
                 }
-                case sem::BuiltinType::kPack2X16Float: {
+                case builtin::Function::kPack2X16Float: {
                     line(b) << "uint2 i = f32tof16(" << params[0] << ");";
                     line(b) << "return i.x | (i.y << 16);";
                     break;
@@ -2176,19 +2187,19 @@ bool GeneratorImpl::EmitDataUnpackingCall(utils::StringStream& out,
             uint32_t dims = 2;
             bool is_signed = false;
             uint32_t scale = 65535;
-            if (builtin->Type() == sem::BuiltinType::kUnpack4X8Snorm ||
-                builtin->Type() == sem::BuiltinType::kUnpack4X8Unorm) {
+            if (builtin->Type() == builtin::Function::kUnpack4X8Snorm ||
+                builtin->Type() == builtin::Function::kUnpack4X8Unorm) {
                 dims = 4;
                 scale = 255;
             }
-            if (builtin->Type() == sem::BuiltinType::kUnpack4X8Snorm ||
-                builtin->Type() == sem::BuiltinType::kUnpack2X16Snorm) {
+            if (builtin->Type() == builtin::Function::kUnpack4X8Snorm ||
+                builtin->Type() == builtin::Function::kUnpack2X16Snorm) {
                 is_signed = true;
                 scale = (scale - 1) / 2;
             }
             switch (builtin->Type()) {
-                case sem::BuiltinType::kUnpack4X8Snorm:
-                case sem::BuiltinType::kUnpack2X16Snorm: {
+                case builtin::Function::kUnpack4X8Snorm:
+                case builtin::Function::kUnpack2X16Snorm: {
                     line(b) << "int j = int(" << params[0] << ");";
                     {  // Perform sign extension on the converted values.
                         auto l = line(b);
@@ -2204,8 +2215,8 @@ bool GeneratorImpl::EmitDataUnpackingCall(utils::StringStream& out,
                             << (is_signed ? "-1.0" : "0.0") << ", 1.0);";
                     break;
                 }
-                case sem::BuiltinType::kUnpack4X8Unorm:
-                case sem::BuiltinType::kUnpack2X16Unorm: {
+                case builtin::Function::kUnpack4X8Unorm:
+                case builtin::Function::kUnpack2X16Unorm: {
                     line(b) << "uint j = " << params[0] << ";";
                     {
                         auto l = line(b);
@@ -2221,7 +2232,7 @@ bool GeneratorImpl::EmitDataUnpackingCall(utils::StringStream& out,
                     line(b) << "return float" << dims << "(i) / " << scale << ".0;";
                     break;
                 }
-                case sem::BuiltinType::kUnpack2X16Float:
+                case builtin::Function::kUnpack2X16Float:
                     line(b) << "uint i = " << params[0] << ";";
                     line(b) << "return f16tof32(uint2(i & 0xffff, i >> 16));";
                     break;
@@ -2243,11 +2254,11 @@ bool GeneratorImpl::EmitDP4aCall(utils::StringStream& out,
         out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
             std::string functionName;
             switch (builtin->Type()) {
-                case sem::BuiltinType::kDot4I8Packed:
+                case builtin::Function::kDot4I8Packed:
                     line(b) << "int accumulator = 0;";
                     functionName = "dot4add_i8packed";
                     break;
-                case sem::BuiltinType::kDot4U8Packed:
+                case builtin::Function::kDot4U8Packed:
                     line(b) << "uint accumulator = 0u;";
                     functionName = "dot4add_u8packed";
                     break;
@@ -2266,13 +2277,13 @@ bool GeneratorImpl::EmitDP4aCall(utils::StringStream& out,
 bool GeneratorImpl::EmitBarrierCall(utils::StringStream& out, const sem::Builtin* builtin) {
     // TODO(crbug.com/tint/661): Combine sequential barriers to a single
     // instruction.
-    if (builtin->Type() == sem::BuiltinType::kWorkgroupBarrier) {
+    if (builtin->Type() == builtin::Function::kWorkgroupBarrier) {
         out << "GroupMemoryBarrierWithGroupSync()";
-    } else if (builtin->Type() == sem::BuiltinType::kStorageBarrier) {
+    } else if (builtin->Type() == builtin::Function::kStorageBarrier) {
         out << "DeviceMemoryBarrierWithGroupSync()";
     } else {
         TINT_UNREACHABLE(Writer, diagnostics_)
-            << "unexpected barrier builtin type " << sem::str(builtin->Type());
+            << "unexpected barrier builtin type " << builtin::str(builtin->Type());
         return false;
     }
     return true;
@@ -2302,10 +2313,10 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
     auto* texture_type = TypeOf(texture)->UnwrapRef()->As<type::Texture>();
 
     switch (builtin->Type()) {
-        case sem::BuiltinType::kTextureDimensions:
-        case sem::BuiltinType::kTextureNumLayers:
-        case sem::BuiltinType::kTextureNumLevels:
-        case sem::BuiltinType::kTextureNumSamples: {
+        case builtin::Function::kTextureDimensions:
+        case builtin::Function::kTextureNumLayers:
+        case builtin::Function::kTextureNumLevels:
+        case builtin::Function::kTextureNumSamples: {
             // All of these builtins use the GetDimensions() method on the texture
             bool is_ms =
                 texture_type->IsAnyOf<type::MultisampledTexture, type::DepthMultisampledTexture>();
@@ -2313,7 +2324,7 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
             std::string swizzle;
 
             switch (builtin->Type()) {
-                case sem::BuiltinType::kTextureDimensions:
+                case builtin::Function::kTextureDimensions:
                     switch (texture_type->dim()) {
                         case type::TextureDimension::kNone:
                             TINT_ICE(Writer, diagnostics_) << "texture dimension is kNone";
@@ -2341,7 +2352,7 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
                             break;
                     }
                     break;
-                case sem::BuiltinType::kTextureNumLayers:
+                case builtin::Function::kTextureNumLayers:
                     switch (texture_type->dim()) {
                         default:
                             TINT_ICE(Writer, diagnostics_) << "texture dimension is not arrayed";
@@ -2356,7 +2367,7 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
                             break;
                     }
                     break;
-                case sem::BuiltinType::kTextureNumLevels:
+                case builtin::Function::kTextureNumLevels:
                     switch (texture_type->dim()) {
                         default:
                             TINT_ICE(Writer, diagnostics_)
@@ -2379,7 +2390,7 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
                             break;
                     }
                     break;
-                case sem::BuiltinType::kTextureNumSamples:
+                case builtin::Function::kTextureNumSamples:
                     switch (texture_type->dim()) {
                         default:
                             TINT_ICE(Writer, diagnostics_)
@@ -2426,9 +2437,9 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
             // Declare a variable to hold the queried texture info
             auto dims = UniqueIdentifier(kTempNamePrefix);
             if (num_dimensions == 1) {
-                line() << "int " << dims << ";";
+                line() << "uint " << dims << ";";
             } else {
-                line() << "int" << num_dimensions << " " << dims << ";";
+                line() << "uint" << num_dimensions << " " << dims << ";";
             }
 
             {  // texture.GetDimensions(...)
@@ -2443,7 +2454,7 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
                         return false;
                     }
                     pre << ", ";
-                } else if (builtin->Type() == sem::BuiltinType::kTextureNumLevels) {
+                } else if (builtin->Type() == builtin::Function::kTextureNumLevels) {
                     pre << "0, ";
                 }
 
@@ -2490,34 +2501,34 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
     uint32_t hlsl_ret_width = 4u;
 
     switch (builtin->Type()) {
-        case sem::BuiltinType::kTextureSample:
+        case builtin::Function::kTextureSample:
             out << ".Sample(";
             break;
-        case sem::BuiltinType::kTextureSampleBias:
+        case builtin::Function::kTextureSampleBias:
             out << ".SampleBias(";
             break;
-        case sem::BuiltinType::kTextureSampleLevel:
+        case builtin::Function::kTextureSampleLevel:
             out << ".SampleLevel(";
             break;
-        case sem::BuiltinType::kTextureSampleGrad:
+        case builtin::Function::kTextureSampleGrad:
             out << ".SampleGrad(";
             break;
-        case sem::BuiltinType::kTextureSampleCompare:
+        case builtin::Function::kTextureSampleCompare:
             out << ".SampleCmp(";
             hlsl_ret_width = 1;
             break;
-        case sem::BuiltinType::kTextureSampleCompareLevel:
+        case builtin::Function::kTextureSampleCompareLevel:
             out << ".SampleCmpLevelZero(";
             hlsl_ret_width = 1;
             break;
-        case sem::BuiltinType::kTextureLoad:
+        case builtin::Function::kTextureLoad:
             out << ".Load(";
             // Multisampled textures do not support mip-levels.
             if (!texture_type->Is<type::MultisampledTexture>()) {
                 pack_level_in_coords = true;
             }
             break;
-        case sem::BuiltinType::kTextureGather:
+        case builtin::Function::kTextureGather:
             out << ".Gather";
             if (builtin->Parameters()[0]->Usage() == sem::ParameterUsage::kComponent) {
                 switch (call->Arguments()[0]->ConstantValue()->ValueAs<AInt>()) {
@@ -2537,10 +2548,10 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
             }
             out << "(";
             break;
-        case sem::BuiltinType::kTextureGatherCompare:
+        case builtin::Function::kTextureGatherCompare:
             out << ".GatherCmp(";
             break;
-        case sem::BuiltinType::kTextureStore:
+        case builtin::Function::kTextureStore:
             out << "[";
             break;
         default:
@@ -2620,7 +2631,7 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
         }
     }
 
-    if (builtin->Type() == sem::BuiltinType::kTextureStore) {
+    if (builtin->Type() == builtin::Function::kTextureStore) {
         out << "] = ";
         if (!EmitExpression(out, arg(Usage::kValue))) {
             return false;
@@ -2654,78 +2665,78 @@ bool GeneratorImpl::EmitTextureCall(utils::StringStream& out,
 
 std::string GeneratorImpl::generate_builtin_name(const sem::Builtin* builtin) {
     switch (builtin->Type()) {
-        case sem::BuiltinType::kAbs:
-        case sem::BuiltinType::kAcos:
-        case sem::BuiltinType::kAll:
-        case sem::BuiltinType::kAny:
-        case sem::BuiltinType::kAsin:
-        case sem::BuiltinType::kAtan:
-        case sem::BuiltinType::kAtan2:
-        case sem::BuiltinType::kCeil:
-        case sem::BuiltinType::kClamp:
-        case sem::BuiltinType::kCos:
-        case sem::BuiltinType::kCosh:
-        case sem::BuiltinType::kCross:
-        case sem::BuiltinType::kDeterminant:
-        case sem::BuiltinType::kDistance:
-        case sem::BuiltinType::kDot:
-        case sem::BuiltinType::kExp:
-        case sem::BuiltinType::kExp2:
-        case sem::BuiltinType::kFloor:
-        case sem::BuiltinType::kFrexp:
-        case sem::BuiltinType::kLdexp:
-        case sem::BuiltinType::kLength:
-        case sem::BuiltinType::kLog:
-        case sem::BuiltinType::kLog2:
-        case sem::BuiltinType::kMax:
-        case sem::BuiltinType::kMin:
-        case sem::BuiltinType::kModf:
-        case sem::BuiltinType::kNormalize:
-        case sem::BuiltinType::kPow:
-        case sem::BuiltinType::kReflect:
-        case sem::BuiltinType::kRefract:
-        case sem::BuiltinType::kRound:
-        case sem::BuiltinType::kSaturate:
-        case sem::BuiltinType::kSin:
-        case sem::BuiltinType::kSinh:
-        case sem::BuiltinType::kSqrt:
-        case sem::BuiltinType::kStep:
-        case sem::BuiltinType::kTan:
-        case sem::BuiltinType::kTanh:
-        case sem::BuiltinType::kTranspose:
-        case sem::BuiltinType::kTrunc:
+        case builtin::Function::kAbs:
+        case builtin::Function::kAcos:
+        case builtin::Function::kAll:
+        case builtin::Function::kAny:
+        case builtin::Function::kAsin:
+        case builtin::Function::kAtan:
+        case builtin::Function::kAtan2:
+        case builtin::Function::kCeil:
+        case builtin::Function::kClamp:
+        case builtin::Function::kCos:
+        case builtin::Function::kCosh:
+        case builtin::Function::kCross:
+        case builtin::Function::kDeterminant:
+        case builtin::Function::kDistance:
+        case builtin::Function::kDot:
+        case builtin::Function::kExp:
+        case builtin::Function::kExp2:
+        case builtin::Function::kFloor:
+        case builtin::Function::kFrexp:
+        case builtin::Function::kLdexp:
+        case builtin::Function::kLength:
+        case builtin::Function::kLog:
+        case builtin::Function::kLog2:
+        case builtin::Function::kMax:
+        case builtin::Function::kMin:
+        case builtin::Function::kModf:
+        case builtin::Function::kNormalize:
+        case builtin::Function::kPow:
+        case builtin::Function::kReflect:
+        case builtin::Function::kRefract:
+        case builtin::Function::kRound:
+        case builtin::Function::kSaturate:
+        case builtin::Function::kSin:
+        case builtin::Function::kSinh:
+        case builtin::Function::kSqrt:
+        case builtin::Function::kStep:
+        case builtin::Function::kTan:
+        case builtin::Function::kTanh:
+        case builtin::Function::kTranspose:
+        case builtin::Function::kTrunc:
             return builtin->str();
-        case sem::BuiltinType::kCountOneBits:  // uint
+        case builtin::Function::kCountOneBits:  // uint
             return "countbits";
-        case sem::BuiltinType::kDpdx:
+        case builtin::Function::kDpdx:
             return "ddx";
-        case sem::BuiltinType::kDpdxCoarse:
+        case builtin::Function::kDpdxCoarse:
             return "ddx_coarse";
-        case sem::BuiltinType::kDpdxFine:
+        case builtin::Function::kDpdxFine:
             return "ddx_fine";
-        case sem::BuiltinType::kDpdy:
+        case builtin::Function::kDpdy:
             return "ddy";
-        case sem::BuiltinType::kDpdyCoarse:
+        case builtin::Function::kDpdyCoarse:
             return "ddy_coarse";
-        case sem::BuiltinType::kDpdyFine:
+        case builtin::Function::kDpdyFine:
             return "ddy_fine";
-        case sem::BuiltinType::kFaceForward:
+        case builtin::Function::kFaceForward:
             return "faceforward";
-        case sem::BuiltinType::kFract:
+        case builtin::Function::kFract:
             return "frac";
-        case sem::BuiltinType::kFma:
+        case builtin::Function::kFma:
             return "mad";
-        case sem::BuiltinType::kFwidth:
-        case sem::BuiltinType::kFwidthCoarse:
-        case sem::BuiltinType::kFwidthFine:
+        case builtin::Function::kFwidth:
+        case builtin::Function::kFwidthCoarse:
+        case builtin::Function::kFwidthFine:
             return "fwidth";
-        case sem::BuiltinType::kInverseSqrt:
+        case builtin::Function::kInverseSqrt:
             return "rsqrt";
-        case sem::BuiltinType::kMix:
+        case builtin::Function::kMix:
             return "lerp";
-        case sem::BuiltinType::kReverseBits:  // uint
+        case builtin::Function::kReverseBits:  // uint
             return "reversebits";
-        case sem::BuiltinType::kSmoothstep:
+        case builtin::Function::kSmoothstep:
             return "smoothstep";
         default:
             diagnostics_.add_error(diag::System::Writer,
@@ -3320,10 +3331,10 @@ bool GeneratorImpl::EmitConstant(utils::StringStream& out,
             return true;
         },
         [&](const type::Vector* v) {
-            if (constant->AllEqual()) {
+            if (auto* splat = constant->As<constant::Splat>()) {
                 {
                     ScopedParen sp(out);
-                    if (!EmitConstant(out, constant->Index(0), is_variable_initializer)) {
+                    if (!EmitConstant(out, splat->el, is_variable_initializer)) {
                         return false;
                     }
                 }
@@ -4345,7 +4356,7 @@ bool GeneratorImpl::CallBuiltinHelper(utils::StringStream& out,
         TextBuffer b;
         TINT_DEFER(helpers_.Append(b));
 
-        auto fn_name = UniqueIdentifier(std::string("tint_") + sem::str(builtin->Type()));
+        auto fn_name = UniqueIdentifier(std::string("tint_") + builtin::str(builtin->Type()));
         std::vector<std::string> parameter_names;
         {
             auto decl = line(&b);

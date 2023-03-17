@@ -260,7 +260,7 @@ sem::Variable* Resolver::Let(const ast::Let* v, bool is_global) {
         ty = rhs->Type()->UnwrapRef();  // Implicit load of RHS
     }
 
-    if (rhs && !validator_.VariableInitializer(v, builtin::AddressSpace::kUndefined, ty, rhs)) {
+    if (rhs && !validator_.VariableInitializer(v, ty, rhs)) {
         return nullptr;
     }
 
@@ -323,7 +323,7 @@ sem::Variable* Resolver::Override(const ast::Override* v) {
         return nullptr;
     }
 
-    if (rhs && !validator_.VariableInitializer(v, builtin::AddressSpace::kUndefined, ty, rhs)) {
+    if (rhs && !validator_.VariableInitializer(v, ty, rhs)) {
         return nullptr;
     }
 
@@ -417,7 +417,7 @@ sem::Variable* Resolver::Const(const ast::Const* c, bool is_global) {
         ty = rhs->Type();
     }
 
-    if (!validator_.VariableInitializer(c, builtin::AddressSpace::kUndefined, ty, rhs)) {
+    if (!validator_.VariableInitializer(c, ty, rhs)) {
         return nullptr;
     }
 
@@ -516,7 +516,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
         access = DefaultAccessForAddressSpace(address_space);
     }
 
-    if (rhs && !validator_.VariableInitializer(var, address_space, storage_ty, rhs)) {
+    if (rhs && !validator_.VariableInitializer(var, storage_ty, rhs)) {
         return nullptr;
     }
 
@@ -856,9 +856,9 @@ sem::Statement* Resolver::ConstAssert(const ast::ConstAssert* assertion) {
 sem::Function* Resolver::Function(const ast::Function* decl) {
     Mark(decl->name);
 
-    uint32_t parameter_index = 0;
-    utils::Hashmap<Symbol, Source, 8> parameter_names;
-    utils::Vector<sem::Parameter*, 8> parameters;
+    auto* func = builder_->create<sem::Function>(decl);
+    builder_->Sem().Add(decl, func);
+    TINT_SCOPED_ASSIGNMENT(current_function_, func);
 
     validator_.DiagnosticFilters().Push();
     TINT_DEFER(validator_.DiagnosticFilters().Pop());
@@ -872,6 +872,8 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
     }
 
     // Resolve all the parameters
+    uint32_t parameter_index = 0;
+    utils::Hashmap<Symbol, Source, 8> parameter_names;
     for (auto* param : decl->params) {
         Mark(param);
 
@@ -893,7 +895,7 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
             return nullptr;
         }
 
-        parameters.Push(p);
+        func->AddParameter(p);
 
         auto* p_ty = const_cast<type::Type*>(p->Type());
         if (auto* str = p_ty->As<sem::Struct>()) {
@@ -923,9 +925,9 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
     } else {
         return_type = builder_->create<type::Void>();
     }
+    func->SetReturnType(return_type);
 
     // Determine if the return type has a location
-    std::optional<uint32_t> return_location;
     for (auto* attr : decl->return_type_attributes) {
         if (!Attribute(attr)) {
             return nullptr;
@@ -936,7 +938,7 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
             if (!value) {
                 return nullptr;
             }
-            return_location = value.Get();
+            func->SetReturnLocation(value.Get());
         }
     }
 
@@ -963,12 +965,7 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
         }
     }
 
-    auto* func =
-        builder_->create<sem::Function>(decl, return_type, return_location, std::move(parameters));
     ApplyDiagnosticSeverities(func);
-    builder_->Sem().Add(decl, func);
-
-    TINT_SCOPED_ASSIGNMENT(current_function_, func);
 
     if (!WorkgroupSize(decl)) {
         return nullptr;
@@ -2089,7 +2086,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                 auto* call_target = struct_ctors_.GetOrCreate(
                     StructConstructorSig{{str, args.Length(), args_stage}},
                     [&]() -> sem::ValueConstructor* {
-                        utils::Vector<const sem::Parameter*, 8> params;
+                        utils::Vector<sem::Parameter*, 8> params;
                         params.Resize(std::min(args.Length(), str->Members().Length()));
                         for (size_t i = 0, n = params.Length(); i < n; i++) {
                             params[i] = builder_->create<sem::Parameter>(
@@ -2159,7 +2156,12 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             return Switch(
                 sem_.Get(ast_node),  //
                 [&](type::Type* t) { return ty_init_or_conv(t); },
-                [&](sem::Function* f) { return FunctionCall(expr, f, args, arg_behaviors); },
+                [&](sem::Function* f) -> sem::Call* {
+                    if (!TINT_LIKELY(CheckNotTemplated("function", ident))) {
+                        return nullptr;
+                    }
+                    return FunctionCall(expr, f, args, arg_behaviors);
+                },
                 [&](sem::Expression* e) {
                     sem_.ErrorUnexpectedExprKind(e, "call target");
                     return nullptr;
@@ -2170,7 +2172,10 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                 });
         }
 
-        if (auto f = resolved->BuiltinFunction(); f != sem::BuiltinType::kNone) {
+        if (auto f = resolved->BuiltinFunction(); f != builtin::Function::kNone) {
+            if (!TINT_LIKELY(CheckNotTemplated("builtin", ident))) {
+                return nullptr;
+            }
             return BuiltinCall(expr, f, args);
         }
 
@@ -2242,7 +2247,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
 
 template <size_t N>
 sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
-                                 sem::BuiltinType builtin_type,
+                                 builtin::Function builtin_type,
                                  utils::Vector<const sem::ValueExpression*, N>& args) {
     auto arg_stage = sem::EvaluationStage::kConstant;
     for (auto* arg : args) {
@@ -2258,7 +2263,7 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         }
     }
 
-    if (builtin_type == sem::BuiltinType::kTintMaterialize) {
+    if (builtin_type == builtin::Function::kTintMaterialize) {
         args[0] = Materialize(args[0]);
         if (!args[0]) {
             return nullptr;
@@ -2310,14 +2315,14 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         return nullptr;
     }
 
-    if (IsTextureBuiltin(builtin_type)) {
+    if (sem::IsTextureBuiltin(builtin_type)) {
         if (!validator_.TextureBuiltinFunction(call)) {
             return nullptr;
         }
         CollectTextureSamplerPairs(builtin.sem, call->Arguments());
     }
 
-    if (builtin_type == sem::BuiltinType::kWorkgroupUniformLoad) {
+    if (builtin_type == builtin::Function::kWorkgroupUniformLoad) {
         if (!validator_.WorkgroupUniformLoad(call)) {
             return nullptr;
         }
@@ -2334,13 +2339,7 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
     auto& b = *builder_;
 
     auto check_no_tmpl_args = [&](type::Type* ty) -> type::Type* {
-        if (TINT_UNLIKELY(ident->Is<ast::TemplatedIdentifier>())) {
-            AddError("type '" + b.Symbols().NameFor(ident->symbol) +
-                         "' does not take template arguments",
-                     ident->source);
-            return nullptr;
-        }
-        return ty;
+        return TINT_LIKELY(CheckNotTemplated("type", ident)) ? ty : nullptr;
     };
     auto f32 = [&] { return b.create<type::F32>(); };
     auto i32 = [&] { return b.create<type::I32>(); };
@@ -3022,25 +3021,15 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
                 return user;
             },
             [&](const type::Type* ty) -> sem::TypeExpression* {
-                if (TINT_UNLIKELY(ident->Is<ast::TemplatedIdentifier>())) {
-                    AddError("type '" + builder_->Symbols().NameFor(ident->symbol) +
-                                 "' does not take template arguments",
-                             ident->source);
-                    sem_.NoteDeclarationSource(ast_node);
+                if (!TINT_LIKELY(CheckNotTemplated("type", ident))) {
                     return nullptr;
                 }
-
                 return builder_->create<sem::TypeExpression>(expr, current_statement_, ty);
             },
             [&](const sem::Function* fn) -> sem::FunctionExpression* {
-                if (TINT_UNLIKELY(ident->Is<ast::TemplatedIdentifier>())) {
-                    AddError("function '" + builder_->Symbols().NameFor(ident->symbol) +
-                                 "' does not take template arguments",
-                             ident->source);
-                    sem_.NoteDeclarationSource(ast_node);
+                if (!TINT_LIKELY(CheckNotTemplated("function", ident))) {
                     return nullptr;
                 }
-
                 return builder_->create<sem::FunctionExpression>(expr, current_statement_, fn);
             });
     }
@@ -3053,7 +3042,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
         return builder_->create<sem::TypeExpression>(expr, current_statement_, ty);
     }
 
-    if (resolved->BuiltinFunction() != sem::BuiltinType::kNone) {
+    if (resolved->BuiltinFunction() != builtin::Function::kNone) {
         AddError("missing '(' for builtin function call", expr->source.End());
         return nullptr;
     }
@@ -3436,6 +3425,7 @@ bool Resolver::Attribute(const ast::Attribute* attr) {
         [&](const ast::BuiltinAttribute* b) { return BuiltinAttribute(b); },
         [&](const ast::DiagnosticAttribute* d) { return DiagnosticControl(d->control); },
         [&](const ast::InterpolateAttribute* i) { return InterpolateAttribute(i); },
+        [&](const ast::InternalAttribute* i) { return InternalAttribute(i); },
         [&](Default) { return true; });
 }
 
@@ -3460,6 +3450,15 @@ bool Resolver::InterpolateAttribute(const ast::InterpolateAttribute* attr) {
     return true;
 }
 
+bool Resolver::InternalAttribute(const ast::InternalAttribute* attr) {
+    for (auto* dep : attr->dependencies) {
+        if (!Expression(dep)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool Resolver::DiagnosticControl(const ast::DiagnosticControl& control) {
     Mark(control.rule_name);
 
@@ -3477,7 +3476,10 @@ bool Resolver::DiagnosticControl(const ast::DiagnosticControl& control) {
 }
 
 bool Resolver::Enable(const ast::Enable* enable) {
-    enabled_extensions_.Add(enable->extension);
+    for (auto* ext : enable->extensions) {
+        Mark(ext);
+        enabled_extensions_.Add(ext->name);
+    }
     return true;
 }
 
@@ -3973,6 +3975,22 @@ sem::SwitchStatement* Resolver::SwitchStatement(const ast::SwitchStatement* stmt
             return false;
         }
 
+        // Handle switch body attributes.
+        for (auto* attr : stmt->body_attributes) {
+            Mark(attr);
+            if (auto* dc = attr->As<ast::DiagnosticAttribute>()) {
+                if (!DiagnosticControl(dc->control)) {
+                    return false;
+                }
+            } else {
+                AddError("attribute is not valid for switch body", attr->source);
+                return false;
+            }
+        }
+        if (!validator_.NoDuplicateAttributes(stmt->body_attributes)) {
+            return false;
+        }
+
         utils::Vector<sem::CaseStatement*, 4> cases;
         cases.Reserve(stmt->body.Length());
         for (auto* case_stmt : stmt->body) {
@@ -3984,6 +4002,8 @@ sem::SwitchStatement* Resolver::SwitchStatement(const ast::SwitchStatement* stmt
             cases.Push(c);
             behaviors.Add(c->Behaviors());
             sem->Cases().emplace_back(c);
+
+            ApplyDiagnosticSeverities(c);
         }
 
         if (behaviors.Contains(sem::Behavior::kBreak)) {
@@ -4275,6 +4295,19 @@ SEM* Resolver::StatementScope(const ast::Statement* ast, SEM* sem, F&& callback)
             [&](const ast::BlockStatement* block) {
                 return handle_attributes(block, sem, "block statements");
             },
+            [&](const ast::ForLoopStatement* f) {
+                return handle_attributes(f, sem, "for statements");
+            },
+            [&](const ast::IfStatement* i) { return handle_attributes(i, sem, "if statements"); },
+            [&](const ast::LoopStatement* l) {
+                return handle_attributes(l, sem, "loop statements");
+            },
+            [&](const ast::SwitchStatement* s) {
+                return handle_attributes(s, sem, "switch statements");
+            },
+            [&](const ast::WhileStatement* w) {
+                return handle_attributes(w, sem, "while statements");
+            },
             [&](Default) { return true; })) {
         return nullptr;
     }
@@ -4320,6 +4353,21 @@ void Resolver::ApplyDiagnosticSeverities(NODE* node) {
     for (auto itr : validator_.DiagnosticFilters().Top()) {
         node->SetDiagnosticSeverity(itr.key, itr.value);
     }
+}
+
+bool Resolver::CheckNotTemplated(const char* use, const ast::Identifier* ident) {
+    if (TINT_UNLIKELY(ident->Is<ast::TemplatedIdentifier>())) {
+        AddError(std::string(use) + " '" + builder_->Symbols().NameFor(ident->symbol) +
+                     "' does not take template arguments",
+                 ident->source);
+        if (auto resolved = dependencies_.resolved_identifiers.Get(ident)) {
+            if (auto* ast_node = resolved->Node()) {
+                sem_.NoteDeclarationSource(ast_node);
+            }
+        }
+        return false;
+    }
+    return true;
 }
 
 void Resolver::ErrorMismatchedResolvedIdentifier(const Source& source,

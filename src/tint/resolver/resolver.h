@@ -204,7 +204,7 @@ class Resolver {
     sem::Expression* Identifier(const ast::IdentifierExpression*);
     template <size_t N>
     sem::Call* BuiltinCall(const ast::CallExpression*,
-                           sem::BuiltinType,
+                           builtin::Function,
                            utils::Vector<const sem::ValueExpression*, N>& args);
     sem::ValueExpression* Literal(const ast::LiteralExpression*);
     sem::ValueExpression* MemberAccessor(const ast::MemberAccessorExpression*);
@@ -320,6 +320,10 @@ class Resolver {
     /// Resolves the `@interpolate` attribute @p attr
     /// @returns true on success, false on failure
     bool InterpolateAttribute(const ast::InterpolateAttribute* attr);
+
+    /// Resolves the internal attribute @p attr
+    /// @returns true on success, false on failure
+    bool InternalAttribute(const ast::InternalAttribute* attr);
 
     /// @param control the diagnostic control
     /// @returns true on success, false on failure
@@ -475,6 +479,11 @@ class Resolver {
     /// @param node the semantic node to apply the diagnostic severities to
     template <typename NODE>
     void ApplyDiagnosticSeverities(NODE* node);
+
+    /// Checks @p ident is not an ast::TemplatedIdentifier.
+    /// If @p ident is a ast::TemplatedIdentifier, then an error diagnostic is raised.
+    /// @returns true if @p ident is not a ast::TemplatedIdentifier.
+    bool CheckNotTemplated(const char* use, const ast::Identifier* ident);
 
     /// Raises an error diagnostic that the resolved identifier @p resolved was not of the expected
     /// kind.
