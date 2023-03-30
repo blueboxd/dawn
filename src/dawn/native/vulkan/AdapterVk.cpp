@@ -416,6 +416,24 @@ void Adapter::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
         deviceToggles->Default(Toggle::AlwaysResolveIntoZeroLevelAndLayer, true);
     }
 
+    if (IsIntelMesa() && gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId())) {
+        // dawn:1688: Intel Mesa driver has a bug about reusing the VkDeviceMemory that was
+        // previously bound to a 2D VkImage. To work around that bug we have to disable the resource
+        // sub-allocation for 2D textures with CopyDst or RenderAttachment usage.
+        const gpu_info::DriverVersion kBuggyDriverVersion = {21, 3, 6, 0};
+        if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kBuggyDriverVersion) >= 0) {
+            deviceToggles->Default(
+                Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment, true);
+        }
+
+        // chromium:1361662: Mesa driver has a bug clearing R8 mip-leveled textures on Intel Gen12
+        // GPUs. Work around it by clearing the whole texture as soon as they are created.
+        const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 0, 0};
+        if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kFixedDriverVersion) < 0) {
+            deviceToggles->Default(Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation, true);
+        }
+    }
+
     // The environment can request to various options for depth-stencil formats that could be
     // unavailable. Override the decision if it is not applicable.
     bool supportsD32s8 = IsDepthStencilFormatSupported(VK_FORMAT_D32_SFLOAT_S8_UINT);
@@ -472,6 +490,13 @@ bool Adapter::IsAndroidQualcomm() const {
 #else
     return false;
 #endif
+}
+
+bool Adapter::IsIntelMesa() const {
+    if (mDeviceInfo.HasExt(DeviceExt::DriverProperties)) {
+        return mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA_KHR;
+    }
+    return false;
 }
 
 }  // namespace dawn::native::vulkan
