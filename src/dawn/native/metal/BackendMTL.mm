@@ -790,13 +790,15 @@ ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
 
     std::vector<Ref<AdapterBase>> adapters;
 #if DAWN_PLATFORM_IS(MACOS)
-    NSRef<NSArray<id<MTLDevice>>> devices = AcquireNSRef(MTLCopyAllDevices());
+    if(@available(macOS 10.11,*)) {
+      NSRef<NSArray<id<MTLDevice>>> devices = AcquireNSRef(MTLCopyAllDevices());
 
-    for (id<MTLDevice> device in devices.Get()) {
-        Ref<Adapter> adapter = AcquireRef(new Adapter(GetInstance(), device));
-        if (!GetInstance()->ConsumedError(adapter->Initialize())) {
-            adapters.push_back(std::move(adapter));
-        }
+      for (id<MTLDevice> device in devices.Get()) {
+          Ref<Adapter> adapter = AcquireRef(new Adapter(GetInstance(), device));
+          if (!GetInstance()->ConsumedError(adapter->Initialize())) {
+              adapters.push_back(std::move(adapter));
+          }
+      }
     }
 #endif
 
