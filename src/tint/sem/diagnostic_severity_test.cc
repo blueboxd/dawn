@@ -27,41 +27,59 @@ class DiagnosticSeverityTest : public TestHelper {
     /// using an attribute. Test that we correctly track the severity of the filter for the
     /// functions and the statements with them.
     /// @param global_severity the global severity of the "chromium_unreachable_code" filter
-    void Run(ast::DiagnosticSeverity global_severity) {
+    void Run(builtin::DiagnosticSeverity global_severity) {
         // @diagnostic(off, chromium_unreachable_code)
         // fn foo() {
-        //   return;
+        //   @diagnostic(info, chromium_unreachable_code) {
+        //     if (true) @diagnostic(warning, chromium_unreachable_code) {
+        //       return;
+        //     }
+        //   }
         // }
         //
         // fn bar() {
-        //   return;
+        //   {
+        //     if (true) {
+        //       return;
+        //     }
+        //   }
         // }
-        auto rule = ast::DiagnosticRule::kChromiumUnreachableCode;
-        auto func_severity = ast::DiagnosticSeverity::kOff;
+        auto rule = builtin::DiagnosticRule::kChromiumUnreachableCode;
+        auto func_severity = builtin::DiagnosticSeverity::kOff;
+        auto block_severity = builtin::DiagnosticSeverity::kInfo;
+        auto if_severity = builtin::DiagnosticSeverity::kInfo;
+        auto attr = [&](auto severity) {
+            return utils::Vector{DiagnosticAttribute(severity, "chromium_unreachable_code")};
+        };
 
         auto* return_1 = Return();
+        auto* if_1 = If(Expr(true), Block(utils::Vector{return_1}, attr(if_severity)));
+        auto* block_1 = Block(utils::Vector{if_1}, attr(block_severity));
+        auto* func_attr = DiagnosticAttribute(func_severity, "chromium_unreachable_code");
+        auto* foo = Func("foo", {}, ty.void_(), utils::Vector{block_1}, utils::Vector{func_attr});
+
         auto* return_2 = Return();
-        auto* func_attr = DiagnosticAttribute(func_severity, Expr("chromium_unreachable_code"));
-        auto* foo = Func("foo", {}, ty.void_(), utils::Vector{return_1}, utils::Vector{func_attr});
         auto* bar = Func("bar", {}, ty.void_(), utils::Vector{return_2});
 
         auto p = Build();
         EXPECT_TRUE(p.IsValid()) << p.Diagnostics().str();
 
         EXPECT_EQ(p.Sem().DiagnosticSeverity(foo, rule), func_severity);
-        EXPECT_EQ(p.Sem().DiagnosticSeverity(return_1, rule), func_severity);
+        EXPECT_EQ(p.Sem().DiagnosticSeverity(block_1, rule), block_severity);
+        EXPECT_EQ(p.Sem().DiagnosticSeverity(if_1, rule), block_severity);
+        EXPECT_EQ(p.Sem().DiagnosticSeverity(return_1, rule), if_severity);
         EXPECT_EQ(p.Sem().DiagnosticSeverity(bar, rule), global_severity);
         EXPECT_EQ(p.Sem().DiagnosticSeverity(return_2, rule), global_severity);
     }
 };
 
 TEST_F(DiagnosticSeverityTest, WithDirective) {
-    DiagnosticDirective(ast::DiagnosticSeverity::kError, Expr("chromium_unreachable_code"));
-    Run(ast::DiagnosticSeverity::kError);
+    DiagnosticDirective(builtin::DiagnosticSeverity::kError, "chromium_unreachable_code");
+    Run(builtin::DiagnosticSeverity::kError);
 }
 
 TEST_F(DiagnosticSeverityTest, WithoutDirective) {
-    Run(ast::DiagnosticSeverity::kWarning);
+    Run(builtin::DiagnosticSeverity::kWarning);
 }
 
 }  // namespace

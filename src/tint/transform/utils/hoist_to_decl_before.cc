@@ -36,7 +36,7 @@ struct HoistToDeclBefore::State {
     explicit State(CloneContext& ctx_in) : ctx(ctx_in), b(*ctx_in.dst) {}
 
     /// @copydoc HoistToDeclBefore::Add()
-    bool Add(const sem::Expression* before_expr,
+    bool Add(const sem::ValueExpression* before_expr,
              const ast::Expression* expr,
              VariableKind kind,
              const char* decl_name) {
@@ -45,7 +45,9 @@ struct HoistToDeclBefore::State {
         switch (kind) {
             case VariableKind::kLet: {
                 auto builder = [this, expr, name] {
-                    return b.Decl(b.Let(name, ctx.CloneWithoutTransform(expr)));
+                    return b.Decl(b.Let(
+                        name, Transform::CreateASTTypeFor(ctx, ctx.src->Sem().GetVal(expr)->Type()),
+                        ctx.CloneWithoutTransform(expr)));
                 };
                 if (!InsertBeforeImpl(before_expr->Stmt(), std::move(builder))) {
                     return false;
@@ -55,7 +57,9 @@ struct HoistToDeclBefore::State {
 
             case VariableKind::kVar: {
                 auto builder = [this, expr, name] {
-                    return b.Decl(b.Var(name, ctx.CloneWithoutTransform(expr)));
+                    return b.Decl(b.Var(
+                        name, Transform::CreateASTTypeFor(ctx, ctx.src->Sem().GetVal(expr)->Type()),
+                        ctx.CloneWithoutTransform(expr)));
                 };
                 if (!InsertBeforeImpl(before_expr->Stmt(), std::move(builder))) {
                     return false;
@@ -94,7 +98,7 @@ struct HoistToDeclBefore::State {
     }
 
     /// @copydoc HoistToDeclBefore::Prepare()
-    bool Prepare(const sem::Expression* before_expr) {
+    bool Prepare(const sem::ValueExpression* before_expr) {
         return InsertBefore(before_expr->Stmt(), nullptr);
     }
 
@@ -376,7 +380,7 @@ HoistToDeclBefore::HoistToDeclBefore(CloneContext& ctx) : state_(std::make_uniqu
 
 HoistToDeclBefore::~HoistToDeclBefore() {}
 
-bool HoistToDeclBefore::Add(const sem::Expression* before_expr,
+bool HoistToDeclBefore::Add(const sem::ValueExpression* before_expr,
                             const ast::Expression* expr,
                             VariableKind kind,
                             const char* decl_name) {
@@ -393,7 +397,7 @@ bool HoistToDeclBefore::InsertBefore(const sem::Statement* before_stmt,
     return state_->InsertBefore(before_stmt, builder);
 }
 
-bool HoistToDeclBefore::Prepare(const sem::Expression* before_expr) {
+bool HoistToDeclBefore::Prepare(const sem::ValueExpression* before_expr) {
     return state_->Prepare(before_expr);
 }
 

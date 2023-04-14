@@ -234,7 +234,7 @@ func run() error {
 		flags = append(flags, "disable-dawn-features=disallow_unsafe_apis")
 	}
 	if dumpShaders {
-		flags = append(flags, "enable-dawn-features=dump_shaders")
+		flags = append(flags, "enable-dawn-features=dump_shaders,disable_symbol_renaming")
 		verbose = true
 	}
 
@@ -804,6 +804,7 @@ func (r *runner) runServer(ctx context.Context, id int, caseIndices <-chan int, 
 
 			if resp.CoverageData != "" {
 				coverage, covErr := r.covEnv.Import(resp.CoverageData)
+				os.Remove(resp.CoverageData)
 				if covErr != nil {
 					if res.message != "" {
 						res.message += "\n"
@@ -1499,6 +1500,9 @@ func SplitCTSQuery(testcase string) cov.Path {
 			out = append(out, testcase[s:e+1])
 			s = e + 1
 		}
+	}
+	if end := testcase[s:]; end != "" {
+		out = append(out, end)
 	}
 	return out
 }

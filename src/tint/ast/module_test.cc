@@ -61,9 +61,8 @@ TEST_F(ModuleTest, Assert_DifferentProgramID_Function) {
         {
             ProgramBuilder b1;
             ProgramBuilder b2;
-            b1.AST().AddFunction(b2.create<ast::Function>(b2.Symbols().Register("func"),
-                                                          utils::Empty, b2.ty.f32(), b2.Block(),
-                                                          utils::Empty, utils::Empty));
+            b1.AST().AddFunction(b2.create<Function>(b2.Ident("func"), utils::Empty, b2.ty.f32(),
+                                                     b2.Block(), utils::Empty, utils::Empty));
         },
         "internal compiler error");
 }
@@ -73,7 +72,7 @@ TEST_F(ModuleTest, Assert_DifferentProgramID_GlobalVariable) {
         {
             ProgramBuilder b1;
             ProgramBuilder b2;
-            b1.AST().AddGlobalVariable(b2.Var("var", b2.ty.i32(), type::AddressSpace::kPrivate));
+            b1.AST().AddGlobalVariable(b2.Var("var", b2.ty.i32(), builtin::AddressSpace::kPrivate));
         },
         "internal compiler error");
 }
@@ -93,7 +92,7 @@ TEST_F(ModuleTest, CloneOrder) {
         ProgramBuilder b;
         b.Func("F", {}, b.ty.void_(), {});
         b.Alias("A", b.ty.u32());
-        b.GlobalVar("V", b.ty.i32(), type::AddressSpace::kPrivate);
+        b.GlobalVar("V", b.ty.i32(), builtin::AddressSpace::kPrivate);
         return Program(std::move(b));
     }();
 
@@ -102,7 +101,7 @@ TEST_F(ModuleTest, CloneOrder) {
     // declaration that triggered the ReplaceAll().
     ProgramBuilder cloned;
     CloneContext ctx(&cloned, &p);
-    ctx.ReplaceAll([&](const ast::Function*) -> const ast::Function* {
+    ctx.ReplaceAll([&](const Function*) -> const Function* {
         ctx.dst->Alias("inserted_before_F", cloned.ty.u32());
         return nullptr;
     });
@@ -110,7 +109,7 @@ TEST_F(ModuleTest, CloneOrder) {
         ctx.dst->Alias("inserted_before_A", cloned.ty.u32());
         return nullptr;
     });
-    ctx.ReplaceAll([&](const ast::Variable*) -> const ast::Variable* {
+    ctx.ReplaceAll([&](const Variable*) -> const Variable* {
         ctx.dst->Alias("inserted_before_V", cloned.ty.u32());
         return nullptr;
     });
@@ -118,24 +117,27 @@ TEST_F(ModuleTest, CloneOrder) {
 
     auto& decls = cloned.AST().GlobalDeclarations();
     ASSERT_EQ(decls.Length(), 6u);
-    EXPECT_TRUE(decls[1]->Is<ast::Function>());
+    EXPECT_TRUE(decls[1]->Is<Function>());
     EXPECT_TRUE(decls[3]->Is<ast::Alias>());
-    EXPECT_TRUE(decls[5]->Is<ast::Variable>());
+    EXPECT_TRUE(decls[5]->Is<Variable>());
 
     ASSERT_TRUE(decls[0]->Is<ast::Alias>());
     ASSERT_TRUE(decls[2]->Is<ast::Alias>());
     ASSERT_TRUE(decls[4]->Is<ast::Alias>());
 
-    ASSERT_EQ(cloned.Symbols().NameFor(decls[0]->As<ast::Alias>()->name), "inserted_before_F");
-    ASSERT_EQ(cloned.Symbols().NameFor(decls[2]->As<ast::Alias>()->name), "inserted_before_A");
-    ASSERT_EQ(cloned.Symbols().NameFor(decls[4]->As<ast::Alias>()->name), "inserted_before_V");
+    ASSERT_EQ(cloned.Symbols().NameFor(decls[0]->As<ast::Alias>()->name->symbol),
+              "inserted_before_F");
+    ASSERT_EQ(cloned.Symbols().NameFor(decls[2]->As<ast::Alias>()->name->symbol),
+              "inserted_before_A");
+    ASSERT_EQ(cloned.Symbols().NameFor(decls[4]->As<ast::Alias>()->name->symbol),
+              "inserted_before_V");
 }
 
 TEST_F(ModuleTest, Directives) {
-    auto* enable_1 = Enable(ast::Extension::kF16);
-    auto* diagnostic_1 = DiagnosticDirective(DiagnosticSeverity::kWarning, Expr("foo"));
-    auto* enable_2 = Enable(ast::Extension::kChromiumExperimentalFullPtrParameters);
-    auto* diagnostic_2 = DiagnosticDirective(DiagnosticSeverity::kOff, Expr("bar"));
+    auto* enable_1 = Enable(builtin::Extension::kF16);
+    auto* diagnostic_1 = DiagnosticDirective(builtin::DiagnosticSeverity::kWarning, "foo");
+    auto* enable_2 = Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
+    auto* diagnostic_2 = DiagnosticDirective(builtin::DiagnosticSeverity::kOff, "bar");
 
     this->SetResolveOnBuild(false);
     Program program(std::move(*this));
@@ -149,10 +151,10 @@ TEST_F(ModuleTest, Directives) {
                                              enable_1,
                                              enable_2,
                                          }));
-    EXPECT_THAT(program.AST().DiagnosticControls(), ::testing::ContainerEq(utils::Vector{
-                                                        diagnostic_1,
-                                                        diagnostic_2,
-                                                    }));
+    EXPECT_THAT(program.AST().DiagnosticDirectives(), ::testing::ContainerEq(utils::Vector{
+                                                          diagnostic_1,
+                                                          diagnostic_2,
+                                                      }));
 }
 
 }  // namespace

@@ -22,6 +22,8 @@
 #include "dawn/common/Math.h"
 #include "dawn/native/ApplyClearColorValueWithDrawHelper.h"
 #include "dawn/native/BindGroup.h"
+#include "dawn/native/BlitBufferToDepthStencil.h"
+#include "dawn/native/BlitDepthToDepth.h"
 #include "dawn/native/Buffer.h"
 #include "dawn/native/ChainUtils_autogen.h"
 #include "dawn/native/CommandBuffer.h"
@@ -237,16 +239,7 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
     DAWN_INVALID_IF(colorAttachment.loadOp == wgpu::LoadOp::Undefined, "loadOp must be set.");
     DAWN_INVALID_IF(colorAttachment.storeOp == wgpu::StoreOp::Undefined, "storeOp must be set.");
 
-    // TODO(dawn:1269): Remove after the deprecation period.
-    bool useClearColor = HasDeprecatedColor(colorAttachment);
-    const dawn::native::Color& clearValue =
-        useClearColor ? colorAttachment.clearColor : colorAttachment.clearValue;
-
-    if (useClearColor) {
-        DAWN_TRY(DAWN_MAKE_DEPRECATION_ERROR(
-            device, "clearColor is deprecated, prefer using clearValue instead."));
-    }
-
+    const dawn::native::Color& clearValue = colorAttachment.clearValue;
     if (colorAttachment.loadOp == wgpu::LoadOp::Clear) {
         DAWN_INVALID_IF(std::isnan(clearValue.r) || std::isnan(clearValue.g) ||
                             std::isnan(clearValue.b) || std::isnan(clearValue.a),
@@ -378,25 +371,12 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
                         depthStencilAttachment->stencilReadOnly);
     }
 
-    if (!std::isnan(depthStencilAttachment->clearDepth)) {
-        DAWN_TRY(DAWN_MAKE_DEPRECATION_ERROR(
-            device, "clearDepth is deprecated, prefer depthClearValue instead."));
-        DAWN_INVALID_IF(
-            depthStencilAttachment->clearDepth < 0.0f || depthStencilAttachment->clearDepth > 1.0f,
-            "clearDepth is not between 0.0 and 1.0");
-
-    } else if (depthStencilAttachment->depthLoadOp == wgpu::LoadOp::Clear) {
+    if (depthStencilAttachment->depthLoadOp == wgpu::LoadOp::Clear) {
         DAWN_INVALID_IF(std::isnan(depthStencilAttachment->depthClearValue),
                         "depthClearValue is NaN.");
         DAWN_INVALID_IF(depthStencilAttachment->depthClearValue < 0.0f ||
                             depthStencilAttachment->depthClearValue > 1.0f,
                         "depthClearValue is not between 0.0 and 1.0");
-    }
-
-    if (depthStencilAttachment->stencilClearValue == 0 &&
-        depthStencilAttachment->clearStencil != 0) {
-        DAWN_TRY(DAWN_MAKE_DEPRECATION_ERROR(
-            device, "clearStencil is deprecated, prefer stencilClearValue instead."));
     }
 
     // *sampleCount == 0 must only happen when there is no color attachment. In that case we
@@ -669,11 +649,6 @@ struct TemporaryResolveAttachment {
 
 }  // namespace
 
-bool HasDeprecatedColor(const RenderPassColorAttachment& attachment) {
-    return !std::isnan(attachment.clearColor.r) || !std::isnan(attachment.clearColor.g) ||
-           !std::isnan(attachment.clearColor.b) || !std::isnan(attachment.clearColor.a);
-}
-
 Color ClampClearColorValueToLegalRange(const Color& originalColor, const Format& format) {
     const AspectInfo& aspectInfo = format.GetAspectInfo(Aspect::Color);
     double minValue = 0;
@@ -892,10 +867,7 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
                 cmd->colorAttachments[index].loadOp = descriptor->colorAttachments[i].loadOp;
                 cmd->colorAttachments[index].storeOp = descriptor->colorAttachments[i].storeOp;
 
-                Color color = HasDeprecatedColor(descriptor->colorAttachments[i])
-                                  ? descriptor->colorAttachments[i].clearColor
-                                  : descriptor->colorAttachments[i].clearValue;
-
+                Color color = descriptor->colorAttachments[i].clearValue;
                 cmd->colorAttachments[index].clearColor =
                     ClampClearColorValueToLegalRange(color, view->GetFormat());
 
@@ -912,24 +884,10 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
 
                 cmd->depthStencilAttachment.view = view;
 
-                if (!std::isnan(descriptor->depthStencilAttachment->clearDepth)) {
-                    // TODO(dawn:1269): Remove this branch after the deprecation period.
-                    cmd->depthStencilAttachment.clearDepth =
-                        descriptor->depthStencilAttachment->clearDepth;
-                } else {
-                    cmd->depthStencilAttachment.clearDepth =
-                        descriptor->depthStencilAttachment->depthClearValue;
-                }
-
-                if (descriptor->depthStencilAttachment->stencilClearValue == 0 &&
-                    descriptor->depthStencilAttachment->clearStencil != 0) {
-                    // TODO(dawn:1269): Remove this branch after the deprecation period.
-                    cmd->depthStencilAttachment.clearStencil =
-                        descriptor->depthStencilAttachment->clearStencil;
-                } else {
-                    cmd->depthStencilAttachment.clearStencil =
-                        descriptor->depthStencilAttachment->stencilClearValue;
-                }
+                cmd->depthStencilAttachment.clearDepth =
+                    descriptor->depthStencilAttachment->depthClearValue;
+                cmd->depthStencilAttachment.clearStencil =
+                    descriptor->depthStencilAttachment->stencilClearValue;
 
                 // Copy parameters for the depth, reyifing the values when it is not present or
                 // readonly.
@@ -1218,17 +1176,35 @@ void CommandEncoder::APICopyBufferToTexture(const ImageCopyBuffer* source,
             TextureDataLayout srcLayout = source->layout;
             ApplyDefaultTextureDataLayoutOptions(&srcLayout, blockInfo, *copySize);
 
+            TextureCopy dst;
+            dst.texture = destination->texture;
+            dst.origin = destination->origin;
+            dst.mipLevel = destination->mipLevel;
+            dst.aspect = ConvertAspect(destination->texture->GetFormat(), destination->aspect);
+
+            if (dst.aspect == Aspect::Depth &&
+                GetDevice()->IsToggleEnabled(Toggle::UseBlitForBufferToDepthTextureCopy)) {
+                DAWN_TRY_CONTEXT(
+                    BlitBufferToDepth(GetDevice(), this, source->buffer, srcLayout, dst, *copySize),
+                    "copying from %s to depth aspect of %s using blit workaround.", source->buffer,
+                    dst.texture.Get());
+                return {};
+            } else if (dst.aspect == Aspect::Stencil &&
+                       GetDevice()->IsToggleEnabled(Toggle::UseBlitForBufferToStencilTextureCopy)) {
+                DAWN_TRY_CONTEXT(BlitBufferToStencil(GetDevice(), this, source->buffer, srcLayout,
+                                                     dst, *copySize),
+                                 "copying from %s to stencil aspect of %s using blit workaround.",
+                                 source->buffer, dst.texture.Get());
+                return {};
+            }
+
             CopyBufferToTextureCmd* copy =
                 allocator->Allocate<CopyBufferToTextureCmd>(Command::CopyBufferToTexture);
             copy->source.buffer = source->buffer;
             copy->source.offset = srcLayout.offset;
             copy->source.bytesPerRow = srcLayout.bytesPerRow;
             copy->source.rowsPerImage = srcLayout.rowsPerImage;
-            copy->destination.texture = destination->texture;
-            copy->destination.origin = destination->origin;
-            copy->destination.mipLevel = destination->mipLevel;
-            copy->destination.aspect =
-                ConvertAspect(destination->texture->GetFormat(), destination->aspect);
+            copy->destination = dst;
             copy->copySize = *copySize;
 
             return {};
@@ -1277,45 +1253,12 @@ void CommandEncoder::APICopyTextureToBuffer(const ImageCopyTexture* source,
             TextureDataLayout dstLayout = destination->layout;
             ApplyDefaultTextureDataLayoutOptions(&dstLayout, blockInfo, *copySize);
 
-            TextureCopy copySrc;
-            copySrc.texture = source->texture;
-            copySrc.origin = source->origin;
-            copySrc.mipLevel = source->mipLevel;
-            copySrc.aspect = ConvertAspect(source->texture->GetFormat(), source->aspect);
-
-            if (copySrc.aspect == Aspect::Stencil &&
-                GetDevice()->IsToggleEnabled(Toggle::UseTempTextureInStencilTextureToBufferCopy)) {
-                // Encode a copy to an intermediate texture.
-                TextureDescriptor desc = {};
-                desc.format = source->texture->GetFormat().format;
-                desc.usage = wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst;
-                desc.size = *copySize;
-
-                Ref<TextureBase> intermediateTexture;
-                DAWN_TRY_ASSIGN(intermediateTexture, GetDevice()->CreateTexture(&desc));
-
-                // Allocate the intermediate t2t command.
-                Aspect aspect =
-                    ConvertAspect(source->texture->GetFormat(), wgpu::TextureAspect::All);
-                CopyTextureToTextureCmd* t2t =
-                    allocator->Allocate<CopyTextureToTextureCmd>(Command::CopyTextureToTexture);
-                t2t->source = copySrc;
-                t2t->source.aspect = aspect;
-                t2t->destination.texture = intermediateTexture;
-                t2t->destination.origin = {};
-                t2t->destination.mipLevel = 0;
-                t2t->destination.aspect = aspect;
-                t2t->copySize = *copySize;
-
-                // Replace the `copySrc` with the intermediate texture.
-                copySrc.texture = intermediateTexture;
-                copySrc.mipLevel = 0;
-                copySrc.origin = {};
-            }
-
             CopyTextureToBufferCmd* t2b =
                 allocator->Allocate<CopyTextureToBufferCmd>(Command::CopyTextureToBuffer);
-            t2b->source = copySrc;
+            t2b->source.texture = source->texture;
+            t2b->source.origin = source->origin;
+            t2b->source.mipLevel = source->mipLevel;
+            t2b->source.aspect = ConvertAspect(source->texture->GetFormat(), source->aspect);
             t2b->destination.buffer = destination->buffer;
             t2b->destination.offset = dstLayout.offset;
             t2b->destination.bytesPerRow = dstLayout.bytesPerRow;
@@ -1382,18 +1325,44 @@ void CommandEncoder::APICopyTextureToTextureHelper(const ImageCopyTexture* sourc
             mTopLevelTextures.insert(source->texture);
             mTopLevelTextures.insert(destination->texture);
 
-            CopyTextureToTextureCmd* copy =
-                allocator->Allocate<CopyTextureToTextureCmd>(Command::CopyTextureToTexture);
-            copy->source.texture = source->texture;
-            copy->source.origin = source->origin;
-            copy->source.mipLevel = source->mipLevel;
-            copy->source.aspect = ConvertAspect(source->texture->GetFormat(), source->aspect);
-            copy->destination.texture = destination->texture;
-            copy->destination.origin = destination->origin;
-            copy->destination.mipLevel = destination->mipLevel;
-            copy->destination.aspect =
-                ConvertAspect(destination->texture->GetFormat(), destination->aspect);
-            copy->copySize = *copySize;
+            Aspect aspect = ConvertAspect(source->texture->GetFormat(), source->aspect);
+            ASSERT(aspect == ConvertAspect(destination->texture->GetFormat(), destination->aspect));
+
+            TextureCopy src;
+            src.texture = source->texture;
+            src.origin = source->origin;
+            src.mipLevel = source->mipLevel;
+            src.aspect = aspect;
+
+            TextureCopy dst;
+            dst.texture = destination->texture;
+            dst.origin = destination->origin;
+            dst.mipLevel = destination->mipLevel;
+            dst.aspect = aspect;
+
+            const bool blitDepth =
+                (aspect & Aspect::Depth) &&
+                GetDevice()->IsToggleEnabled(
+                    Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource) &&
+                (dst.mipLevel > 0 || dst.origin.z > 0 || copySize->depthOrArrayLayers > 1);
+
+            // If we're not using a blit, or there are aspects other than depth,
+            // issue the copy. This is because if there's also stencil, we still need the copy
+            // command to copy the stencil portion.
+            if (!blitDepth || aspect != Aspect::Depth) {
+                CopyTextureToTextureCmd* copy =
+                    allocator->Allocate<CopyTextureToTextureCmd>(Command::CopyTextureToTexture);
+                copy->source = src;
+                copy->destination = dst;
+                copy->copySize = *copySize;
+            }
+
+            // Use a blit to copy the depth aspect.
+            if (blitDepth) {
+                DAWN_TRY_CONTEXT(BlitDepthToDepth(GetDevice(), this, src, dst, *copySize),
+                                 "copying depth aspect from %s to %s using blit workaround.",
+                                 source->texture, destination->texture);
+            }
 
             return {};
         },
@@ -1655,6 +1624,19 @@ MaybeError CommandEncoder::ValidateFinish() const {
         mDebugGroupStackSize);
 
     return {};
+}
+
+CommandEncoder::InternalUsageScope CommandEncoder::MakeInternalUsageScope() {
+    return InternalUsageScope(this);
+}
+
+CommandEncoder::InternalUsageScope::InternalUsageScope(CommandEncoder* encoder)
+    : mEncoder(encoder), mUsageValidationMode(mEncoder->mUsageValidationMode) {
+    mEncoder->mUsageValidationMode = UsageValidationMode::Internal;
+}
+
+CommandEncoder::InternalUsageScope::~InternalUsageScope() {
+    mEncoder->mUsageValidationMode = mUsageValidationMode;
 }
 
 }  // namespace dawn::native

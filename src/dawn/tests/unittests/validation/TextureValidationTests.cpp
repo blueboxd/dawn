@@ -731,11 +731,11 @@ class CompressedTextureFormatsValidationTests : public TextureValidationTest {
 
         // TODO(dawn:814): Remove when 1D texture support is complete.
         const char* kDisallowUnsafeApis = "disallow_unsafe_apis";
-        wgpu::DawnTogglesDeviceDescriptor togglesDesc;
-        togglesDesc.forceDisabledToggles = &kDisallowUnsafeApis;
-        togglesDesc.forceDisabledTogglesCount = 1;
+        wgpu::DawnTogglesDescriptor deviceTogglesDesc;
+        deviceTogglesDesc.disabledToggles = &kDisallowUnsafeApis;
+        deviceTogglesDesc.disabledTogglesCount = 1;
 
-        descriptor.nextInChain = &togglesDesc;
+        descriptor.nextInChain = &deviceTogglesDesc;
 
         return dawnAdapter.CreateDevice(&descriptor);
     }
@@ -905,6 +905,27 @@ TEST_F(RG11B10UfloatTextureFormatsValidationTests, RenderableFeature) {
 
     descriptor.format = wgpu::TextureFormat::RG11B10Ufloat;
     descriptor.sampleCount = 4;
+    device.CreateTexture(&descriptor);
+}
+
+class BGRA8UnormTextureFormatsValidationTests : public TextureValidationTest {
+  protected:
+    WGPUDevice CreateTestDevice(dawn::native::Adapter dawnAdapter) override {
+        wgpu::DeviceDescriptor descriptor;
+        wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::BGRA8UnormStorage};
+        descriptor.requiredFeatures = requiredFeatures;
+        descriptor.requiredFeaturesCount = 1;
+        return dawnAdapter.CreateDevice(&descriptor);
+    }
+};
+
+// Test that BGRA8Unorm format is valid as storage texture if 'bgra8unorm-storage' is enabled.
+TEST_F(BGRA8UnormTextureFormatsValidationTests, StorageFeature) {
+    wgpu::TextureDescriptor descriptor;
+    descriptor.size = {1, 1, 1};
+    descriptor.usage = wgpu::TextureUsage::StorageBinding;
+
+    descriptor.format = wgpu::TextureFormat::BGRA8Unorm;
     device.CreateTexture(&descriptor);
 }
 

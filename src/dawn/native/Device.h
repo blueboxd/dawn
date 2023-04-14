@@ -63,7 +63,7 @@ class DeviceBase : public RefCountedWithExternalCount {
   public:
     DeviceBase(AdapterBase* adapter,
                const DeviceDescriptor* descriptor,
-               const TripleStateTogglesSet& userProvidedToggles);
+               const TogglesState& deviceToggles);
     ~DeviceBase() override;
 
     // Handles the error, causing a device loss if applicable. Almost always when a device loss
@@ -139,7 +139,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     MaybeError ValidateObject(const ApiObjectBase* object) const;
 
     AdapterBase* GetAdapter() const;
-    dawn::platform::Platform* GetPlatform() const;
+    virtual dawn::platform::Platform* GetPlatform() const;
 
     // Returns the Format corresponding to the wgpu::TextureFormat or an error if the format
     // isn't a valid wgpu::TextureFormat or isn't supported by this device.
@@ -302,9 +302,9 @@ class DeviceBase : public RefCountedWithExternalCount {
                                        BufferBase* destination,
                                        uint64_t destinationOffset,
                                        uint64_t size);
-    MaybeError CopyFromStagingToTexture(const BufferBase* source,
+    MaybeError CopyFromStagingToTexture(BufferBase* source,
                                         const TextureDataLayout& src,
-                                        TextureCopy* dst,
+                                        const TextureCopy& dst,
                                         const Extent3D& copySizePixels);
 
     DynamicUploader* GetDynamicUploader() const;
@@ -379,11 +379,9 @@ class DeviceBase : public RefCountedWithExternalCount {
     dawn::platform::WorkerTaskPool* GetWorkerTaskPool() const;
 
     void AddComputePipelineAsyncCallbackTask(Ref<ComputePipelineBase> pipeline,
-                                             std::string errorMessage,
                                              WGPUCreateComputePipelineAsyncCallback callback,
                                              void* userdata);
     void AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipeline,
-                                            std::string errorMessage,
                                             WGPUCreateRenderPipelineAsyncCallback callback,
                                             void* userdata);
 
@@ -419,8 +417,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     // Constructor used only for mocking and testing.
     DeviceBase();
 
-    void SetToggle(Toggle toggle, bool isEnabled);
-    void ForceSetToggle(Toggle toggle, bool isEnabled);
+    void ForceSetToggleForTesting(Toggle toggle, bool isEnabled);
 
     MaybeError Initialize(Ref<QueueBase> defaultQueue);
     void DestroyObjects();
@@ -490,8 +487,6 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     void ApplyFeatures(const DeviceDescriptor* deviceDescriptor);
 
-    void SetDefaultToggles();
-
     void SetWGSLExtensionAllowList();
 
     void ConsumeError(std::unique_ptr<ErrorData> error);
@@ -532,7 +527,7 @@ class DeviceBase : public RefCountedWithExternalCount {
                                                    uint64_t size) = 0;
     virtual MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
                                                     const TextureDataLayout& src,
-                                                    TextureCopy* dst,
+                                                    const TextureCopy& dst,
                                                     const Extent3D& copySizePixels) = 0;
 
     wgpu::ErrorCallback mUncapturedErrorCallback = nullptr;
@@ -570,8 +565,8 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     FormatTable mFormatTable;
 
-    TogglesSet mEnabledToggles;
-    TogglesSet mOverridenToggles;
+    TogglesState mToggles;
+
     size_t mLazyClearCountForTesting = 0;
     std::atomic_uint64_t mNextPipelineCompatibilityToken;
 
@@ -586,6 +581,16 @@ class DeviceBase : public RefCountedWithExternalCount {
     std::string mLabel;
     CacheKey mDeviceCacheKey;
 };
+
+ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetComputePipelineDescriptorWithDefaults(
+    DeviceBase* device,
+    const ComputePipelineDescriptor& descriptor,
+    ComputePipelineDescriptor* outDescriptor);
+
+ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetRenderPipelineDescriptorWithDefaults(
+    DeviceBase* device,
+    const RenderPipelineDescriptor& descriptor,
+    RenderPipelineDescriptor* outDescriptor);
 
 class IgnoreLazyClearCountScope : public NonMovable {
   public:

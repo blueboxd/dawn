@@ -57,10 +57,9 @@ MaybeError Adapter::InitializeImpl() {
     return {};
 }
 
-MaybeError Adapter::InitializeSupportedFeaturesImpl() {
+void Adapter::InitializeSupportedFeaturesImpl() {
     // Enable all features by default for the convenience of tests.
     mSupportedFeatures.featuresBitSet.set();
-    return {};
 }
 
 MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -68,15 +67,16 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     return {};
 }
 
-ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(
-    const DeviceDescriptor* descriptor,
-    const TripleStateTogglesSet& userProvidedToggles) {
-    return Device::Create(this, descriptor, userProvidedToggles);
+void Adapter::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {}
+
+ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(const DeviceDescriptor* descriptor,
+                                                         const TogglesState& deviceToggles) {
+    return Device::Create(this, descriptor, deviceToggles);
 }
 
-MaybeError Adapter::ValidateFeatureSupportedWithTogglesImpl(
+MaybeError Adapter::ValidateFeatureSupportedWithDeviceTogglesImpl(
     wgpu::FeatureName feature,
-    const TripleStateTogglesSet& userProvidedToggles) {
+    const TogglesState& deviceToggles) {
     return {};
 }
 
@@ -116,8 +116,8 @@ struct CopyFromStagingToBufferOperation : PendingOperation {
 // static
 ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
                                           const DeviceDescriptor* descriptor,
-                                          const TripleStateTogglesSet& userProvidedToggles) {
-    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, userProvidedToggles));
+                                          const TogglesState& deviceToggles) {
+    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
@@ -234,7 +234,7 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
 
 MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                                 const TextureDataLayout& src,
-                                                TextureCopy* dst,
+                                                const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
     return {};
 }

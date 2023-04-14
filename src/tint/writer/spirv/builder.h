@@ -33,6 +33,7 @@
 #include "src/tint/ast/switch_statement.h"
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/ast/variable_decl_statement.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/scope_stack.h"
 #include "src/tint/sem/builtin.h"
@@ -44,8 +45,8 @@
 namespace tint::sem {
 class Call;
 class Load;
-class TypeInitializer;
-class TypeConversion;
+class ValueConstructor;
+class ValueConversion;
 }  // namespace tint::sem
 namespace tint::type {
 class Reference;
@@ -208,12 +209,12 @@ class Builder {
     /// Converts a address space to a SPIR-V address space.
     /// @param klass the address space to convert
     /// @returns the SPIR-V address space or SpvStorageClassMax on error.
-    SpvStorageClass ConvertAddressSpace(type::AddressSpace klass) const;
+    SpvStorageClass ConvertAddressSpace(builtin::AddressSpace klass) const;
     /// Converts a builtin to a SPIR-V builtin and pushes a capability if needed.
     /// @param builtin the builtin to convert
     /// @param storage the address space that this builtin is being used with
     /// @returns the SPIR-V builtin or SpvBuiltInMax on error.
-    SpvBuiltIn ConvertBuiltin(ast::BuiltinValue builtin, type::AddressSpace storage);
+    SpvBuiltIn ConvertBuiltin(builtin::BuiltinValue builtin, builtin::AddressSpace storage);
 
     /// Converts an interpolate attribute to SPIR-V decorations and pushes a
     /// capability if needed.
@@ -221,14 +222,14 @@ class Builder {
     /// @param type the interpolation type
     /// @param sampling the interpolation sampling
     void AddInterpolationDecorations(uint32_t id,
-                                     ast::InterpolationType type,
-                                     ast::InterpolationSampling sampling);
+                                     builtin::InterpolationType type,
+                                     builtin::InterpolationSampling sampling);
 
     /// Generates the enabling of an extension. Emits an error and returns false if the extension is
     /// not supported.
     /// @param ext the extension to generate
     /// @returns true on success.
-    bool GenerateExtension(ast::Extension ext);
+    bool GenerateExtension(builtin::Extension ext);
     /// Generates a label for the given id. Emits an error and returns false if
     /// we're currently outside a function.
     /// @param id the id to use for the label
@@ -308,9 +309,9 @@ class Builder {
     /// For more information on accessors see the "Pointer evaluation" section of
     /// the WGSL specification.
     ///
-    /// @param expr the expresssion to generate
+    /// @param expr the expression to generate
     /// @returns the id of the expression or 0 on failure
-    uint32_t GenerateAccessorExpression(const ast::Expression* expr);
+    uint32_t GenerateAccessorExpression(const ast::AccessorExpression* expr);
     /// Generates an index accessor
     /// @param expr the accessor to generate
     /// @param info the current accessor information
@@ -322,7 +323,7 @@ class Builder {
     /// @returns true if the accessor was generated successfully
     bool GenerateMemberAccessor(const ast::MemberAccessorExpression* expr, AccessorInfo* info);
     /// Generates an identifier expression
-    /// @param expr the expresssion to generate
+    /// @param expr the expression to generate
     /// @returns the id of the expression or 0 on failure
     uint32_t GenerateIdentifierExpression(const ast::IdentifierExpression* expr);
     /// Generates a unary op expression
@@ -337,11 +338,11 @@ class Builder {
     /// instruction set, if one doesn't exist yet, and returns the import ID.
     /// @returns the import ID, or 0 on error.
     uint32_t GetGLSLstd450Import();
-    /// Generates a initializer expression
+    /// Generates a constructor expression
     /// @param var the variable generated for, nullptr if no variable associated.
     /// @param expr the expression to generate
     /// @returns the ID of the expression or 0 on failure.
-    uint32_t GenerateInitializerExpression(const ast::Variable* var, const ast::Expression* expr);
+    uint32_t GenerateConstructorExpression(const ast::Variable* var, const ast::Expression* expr);
     /// Generates a literal constant if needed
     /// @param lit the literal to generate
     /// @returns the ID on success or 0 on failure
@@ -372,11 +373,11 @@ class Builder {
     /// @param builtin the builtin being called
     /// @returns the expression ID on success or 0 otherwise
     uint32_t GenerateBuiltinCall(const sem::Call* call, const sem::Builtin* builtin);
-    /// Handles generating a type initializer or type conversion expression
+    /// Handles generating a value constructor or value conversion expression
     /// @param call the call expression
     /// @param var the variable that is being initialized. May be null.
     /// @returns the expression ID on success or 0 otherwise
-    uint32_t GenerateTypeInitializerOrConversion(const sem::Call* call, const ast::Variable* var);
+    uint32_t GenerateValueConstructorOrConversion(const sem::Call* call, const ast::Variable* var);
     /// Generates a texture builtin call. Emits an error and returns false if
     /// we're currently outside a function.
     /// @param call the call expression
@@ -535,12 +536,12 @@ class Builder {
     /// Converts TexelFormat to SPIR-V and pushes an appropriate capability.
     /// @param format AST image format type
     /// @returns SPIR-V image format type
-    SpvImageFormat convert_texel_format_to_spv(const type::TexelFormat format);
+    SpvImageFormat convert_texel_format_to_spv(const builtin::TexelFormat format);
 
-    /// Determines if the given type initializer is created from constant values
+    /// Determines if the given value constructor is created from constant values
     /// @param expr the expression to check
-    /// @returns true if the initializer is constant
-    bool IsInitializerConst(const ast::Expression* expr);
+    /// @returns true if the constructor is constant
+    bool IsConstructorConst(const ast::Expression* expr);
 
   private:
     /// @returns an Operand with a new result ID in it. Increments the next_id_

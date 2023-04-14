@@ -47,6 +47,10 @@ target_sources(dawn_native PRIVATE
     "BindGroupTracker.h"
     "BindingInfo.cpp"
     "BindingInfo.h"
+    "BlitBufferToDepthStencil.cpp"
+    "BlitBufferToDepthStencil.h"
+    "BlitDepthToDepth.cpp"
+    "BlitDepthToDepth.h"
     "Blob.cpp"
     "Blob.h"
     "BlobCache.cpp"
@@ -396,6 +400,7 @@ if (DAWN_ENABLE_NULL)
 endif()
 
 if (DAWN_ENABLE_OPENGL OR DAWN_ENABLE_VULKAN)
+    target_compile_definitions(dawn_native PRIVATE "DAWN_ENABLE_SPIRV_VALIDATION")
     target_sources(dawn_native PRIVATE
         "SpirvValidation.cpp"
         "SpirvValidation.h"
@@ -546,7 +551,10 @@ if (DAWN_ENABLE_VULKAN)
         "vulkan/VulkanInfo.h"
         "vulkan/external_memory/MemoryService.cpp"
         "vulkan/external_memory/MemoryService.h"
+        "vulkan/external_semaphore/SemaphoreService.cpp"
         "vulkan/external_semaphore/SemaphoreService.h"
+        "vulkan/external_semaphore/ServiceImplementation.cpp"
+        "vulkan/external_semaphore/ServiceImplementation.h"
     )
 
     target_link_libraries(dawn_native PUBLIC Vulkan-Headers)
@@ -555,12 +563,12 @@ if (DAWN_ENABLE_VULKAN)
     if (UNIX AND NOT APPLE)
         target_sources(dawn_native PRIVATE
             "vulkan/external_memory/MemoryServiceOpaqueFD.cpp"
-            "vulkan/external_semaphore/SemaphoreServiceFD.cpp"
+            "vulkan/external_semaphore/ServiceImplementationFD.cpp"
+            "vulkan/external_semaphore/ServiceImplementationFD.h"
         )
     else()
         target_sources(dawn_native PRIVATE
             "vulkan/external_memory/MemoryServiceNull.cpp"
-            "vulkan/external_semaphore/SemaphoreServiceNull.cpp"
         )
     endif()
 endif()

@@ -33,8 +33,8 @@
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/switch_statement.h"
-#include "src/tint/sem/type_conversion.h"
-#include "src/tint/sem/type_initializer.h"
+#include "src/tint/sem/value_constructor.h"
+#include "src/tint/sem/value_conversion.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/transform/add_block_attribute.h"
 #include "src/tint/type/array.h"
@@ -265,11 +265,11 @@ Builder::~Builder() = default;
 bool Builder::Build() {
     if (!CheckSupportedExtensions("SPIR-V", builder_.AST(), builder_.Diagnostics(),
                                   utils::Vector{
-                                      ast::Extension::kChromiumDisableUniformityAnalysis,
-                                      ast::Extension::kChromiumExperimentalDp4A,
-                                      ast::Extension::kChromiumExperimentalFullPtrParameters,
-                                      ast::Extension::kChromiumExperimentalPushConstant,
-                                      ast::Extension::kF16,
+                                      builtin::Extension::kChromiumDisableUniformityAnalysis,
+                                      builtin::Extension::kChromiumExperimentalDp4A,
+                                      builtin::Extension::kChromiumExperimentalFullPtrParameters,
+                                      builtin::Extension::kChromiumExperimentalPushConstant,
+                                      builtin::Extension::kF16,
                                   })) {
         error_ = builder_.Diagnostics().str();
         return false;
@@ -311,7 +311,7 @@ uint32_t Builder::LookupVariableID(const sem::Variable* var) {
     auto it = var_to_id_.find(var);
     if (it == var_to_id_.end()) {
         error_ = "unable to find ID for variable: " +
-                 builder_.Symbols().NameFor(var->Declaration()->symbol);
+                 builder_.Symbols().NameFor(var->Declaration()->name->symbol);
         return 0;
     }
     return it->second;
@@ -394,14 +394,14 @@ void Builder::push_extension(const char* extension) {
     extensions_.push_back(Instruction{spv::Op::OpExtension, {Operand(extension)}});
 }
 
-bool Builder::GenerateExtension(ast::Extension extension) {
+bool Builder::GenerateExtension(builtin::Extension extension) {
     switch (extension) {
-        case ast::Extension::kChromiumExperimentalDp4A:
+        case builtin::Extension::kChromiumExperimentalDp4A:
             push_extension("SPV_KHR_integer_dot_product");
             push_capability(SpvCapabilityDotProductKHR);
             push_capability(SpvCapabilityDotProductInput4x8BitPackedKHR);
             break;
-        case ast::Extension::kF16:
+        case builtin::Extension::kF16:
             push_capability(SpvCapabilityFloat16);
             push_capability(SpvCapabilityUniformAndStorageBuffer16BitAccess);
             push_capability(SpvCapabilityStorageBuffer16BitAccess);
@@ -424,7 +424,7 @@ bool Builder::GenerateLabel(uint32_t id) {
 
 bool Builder::GenerateAssignStatement(const ast::AssignmentStatement* assign) {
     if (assign->lhs->Is<ast::PhonyExpression>()) {
-        if (builder_.Sem().Get(assign->rhs)->ConstantValue()) {
+        if (builder_.Sem().GetVal(assign->rhs)->ConstantValue()) {
             // RHS of phony assignment is constant.
             // Constants can't have side-effects, so just drop this.
             return true;
@@ -500,21 +500,21 @@ bool Builder::GenerateEntryPoint(const ast::Function* func, uint32_t id) {
     }
 
     OperandList operands = {Operand(stage), Operand(id),
-                            Operand(builder_.Symbols().NameFor(func->symbol))};
+                            Operand(builder_.Symbols().NameFor(func->name->symbol))};
 
     auto* func_sem = builder_.Sem().Get(func);
     for (const auto* var : func_sem->TransitivelyReferencedGlobals()) {
         // For SPIR-V 1.3 we only output Input/output variables. If we update to
         // SPIR-V 1.4 or later this should be all variables.
-        if (var->AddressSpace() != type::AddressSpace::kIn &&
-            var->AddressSpace() != type::AddressSpace::kOut) {
+        if (var->AddressSpace() != builtin::AddressSpace::kIn &&
+            var->AddressSpace() != builtin::AddressSpace::kOut) {
             continue;
         }
 
         uint32_t var_id = LookupVariableID(var);
         if (var_id == 0) {
             error_ = "unable to find ID for global variable: " +
-                     builder_.Symbols().NameFor(var->Declaration()->symbol);
+                     builder_.Symbols().NameFor(var->Declaration()->name->symbol);
             return false;
         }
 
@@ -548,8 +548,9 @@ bool Builder::GenerateExecutionModes(const ast::Function* func, uint32_t id) {
              Operand(wgsize[0].value()), Operand(wgsize[1].value()), Operand(wgsize[2].value())});
     }
 
-    for (auto builtin : func_sem->TransitivelyReferencedBuiltinVariables()) {
-        if (builtin.second->builtin == ast::BuiltinValue::kFragDepth) {
+    for (auto it : func_sem->TransitivelyReferencedBuiltinVariables()) {
+        auto builtin = builder_.Sem().Get(it.second)->Value();
+        if (builtin == builtin::BuiltinValue::kFragDepth) {
             push_execution_mode(spv::Op::OpExecutionMode,
                                 {Operand(id), U32Operand(SpvExecutionModeDepthReplacing)});
         }
@@ -559,8 +560,10 @@ bool Builder::GenerateExecutionModes(const ast::Function* func, uint32_t id) {
 }
 
 uint32_t Builder::GenerateExpression(const sem::Expression* expr) {
-    if (auto* constant = expr->ConstantValue()) {
-        return GenerateConstantIfNeeded(constant);
+    if (auto* val_expr = expr->As<sem::ValueExpression>()) {
+        if (auto* constant = val_expr->ConstantValue()) {
+            return GenerateConstantIfNeeded(constant);
+        }
     }
     if (auto* load = expr->As<sem::Load>()) {
         auto ref_id = GenerateExpression(load->Reference());
@@ -571,13 +574,12 @@ uint32_t Builder::GenerateExpression(const sem::Expression* expr) {
     }
     return Switch(
         expr->Declaration(),  //
-        [&](const ast::IndexAccessorExpression* a) { return GenerateAccessorExpression(a); },
+        [&](const ast::AccessorExpression* a) { return GenerateAccessorExpression(a); },
         [&](const ast::BinaryExpression* b) { return GenerateBinaryExpression(b); },
         [&](const ast::BitcastExpression* b) { return GenerateBitcastExpression(b); },
         [&](const ast::CallExpression* c) { return GenerateCallExpression(c); },
         [&](const ast::IdentifierExpression* i) { return GenerateIdentifierExpression(i); },
         [&](const ast::LiteralExpression* l) { return GenerateLiteralIfNeeded(l); },
-        [&](const ast::MemberAccessorExpression* m) { return GenerateAccessorExpression(m); },
         [&](const ast::UnaryOpExpression* u) { return GenerateUnaryOpExpression(u); },
         [&](Default) {
             error_ = "unknown expression type: " + std::string(expr->TypeInfo().name);
@@ -601,7 +603,7 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
     auto func_id = std::get<uint32_t>(func_op);
 
     push_debug(spv::Op::OpName,
-               {Operand(func_id), Operand(builder_.Symbols().NameFor(func_ast->symbol))});
+               {Operand(func_id), Operand(builder_.Symbols().NameFor(func_ast->name->symbol))});
 
     auto ret_id = GenerateTypeIfNeeded(func->ReturnType());
     if (ret_id == 0) {
@@ -625,9 +627,9 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
             return false;
         }
 
-        push_debug(
-            spv::Op::OpName,
-            {Operand(param_id), Operand(builder_.Symbols().NameFor(param->Declaration()->symbol))});
+        push_debug(spv::Op::OpName,
+                   {Operand(param_id),
+                    Operand(builder_.Symbols().NameFor(param->Declaration()->name->symbol))});
         params.push_back(
             Instruction{spv::Op::OpFunctionParameter, {Operand(param_type_id), param_op}});
 
@@ -660,7 +662,7 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
         }
     }
 
-    func_symbol_to_id_[func_ast->symbol] = func_id;
+    func_symbol_to_id_[func_ast->name->symbol] = func_id;
 
     return true;
 }
@@ -717,14 +719,15 @@ bool Builder::GenerateFunctionVariable(const ast::Variable* v) {
 
     auto result = result_op();
     auto var_id = std::get<uint32_t>(result);
-    auto sc = type::AddressSpace::kFunction;
+    auto sc = builtin::AddressSpace::kFunction;
     auto* type = sem->Type();
     auto type_id = GenerateTypeIfNeeded(type);
     if (type_id == 0) {
         return false;
     }
 
-    push_debug(spv::Op::OpName, {Operand(var_id), Operand(builder_.Symbols().NameFor(v->symbol))});
+    push_debug(spv::Op::OpName,
+               {Operand(var_id), Operand(builder_.Symbols().NameFor(v->name->symbol))});
 
     // TODO(dsinclair) We could detect if the initializer is fully const and emit
     // an initializer value for the variable instead of doing the OpLoad.
@@ -767,7 +770,7 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
 
     uint32_t init_id = 0;
     if (auto* ctor = v->initializer) {
-        init_id = GenerateInitializerExpression(v, ctor);
+        init_id = GenerateConstructorExpression(v, ctor);
         if (init_id == 0) {
             return false;
         }
@@ -776,15 +779,17 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
     auto result = result_op();
     auto var_id = std::get<uint32_t>(result);
 
-    auto sc = sem->AddressSpace() == type::AddressSpace::kNone ? type::AddressSpace::kPrivate
-                                                               : sem->AddressSpace();
+    auto sc = sem->AddressSpace() == builtin::AddressSpace::kUndefined
+                  ? builtin::AddressSpace::kPrivate
+                  : sem->AddressSpace();
 
     auto type_id = GenerateTypeIfNeeded(sem->Type());
     if (type_id == 0) {
         return false;
     }
 
-    push_debug(spv::Op::OpName, {Operand(var_id), Operand(builder_.Symbols().NameFor(v->symbol))});
+    push_debug(spv::Op::OpName,
+               {Operand(var_id), Operand(builder_.Symbols().NameFor(v->name->symbol))});
 
     OperandList ops = {Operand(type_id), result, U32Operand(ConvertAddressSpace(sc))};
 
@@ -796,16 +801,16 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
             // type is a sem::Struct or a type::StorageTexture
             auto access = st ? st->access() : sem->Access();
             switch (access) {
-                case type::Access::kWrite:
+                case builtin::Access::kWrite:
                     push_annot(spv::Op::OpDecorate,
                                {Operand(var_id), U32Operand(SpvDecorationNonReadable)});
                     break;
-                case type::Access::kRead:
+                case builtin::Access::kRead:
                     push_annot(spv::Op::OpDecorate,
                                {Operand(var_id), U32Operand(SpvDecorationNonWritable)});
                     break;
-                case type::Access::kUndefined:
-                case type::Access::kReadWrite:
+                case builtin::Access::kUndefined:
+                case builtin::Access::kReadWrite:
                     break;
             }
         }
@@ -815,10 +820,10 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
             // If we're a Workgroup variable, and the
             // VK_KHR_zero_initialize_workgroup_memory extension is enabled, we should
             // also zero-initialize.
-            if (sem->AddressSpace() == type::AddressSpace::kPrivate ||
-                sem->AddressSpace() == type::AddressSpace::kOut ||
+            if (sem->AddressSpace() == builtin::AddressSpace::kPrivate ||
+                sem->AddressSpace() == builtin::AddressSpace::kOut ||
                 (zero_initialize_workgroup_memory_ &&
-                 sem->AddressSpace() == type::AddressSpace::kWorkgroup)) {
+                 sem->AddressSpace() == builtin::AddressSpace::kWorkgroup)) {
                 init_id = GenerateConstantNullIfNeeded(type);
                 if (init_id == 0) {
                     return 0;
@@ -833,10 +838,11 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
     for (auto* attr : v->attributes) {
         bool ok = Switch(
             attr,
-            [&](const ast::BuiltinAttribute* builtin) {
+            [&](const ast::BuiltinAttribute* builtin_attr) {
+                auto builtin = builder_.Sem().Get(builtin_attr)->Value();
                 push_annot(spv::Op::OpDecorate,
                            {Operand(var_id), U32Operand(SpvDecorationBuiltIn),
-                            U32Operand(ConvertBuiltin(builtin->builtin, sem->AddressSpace()))});
+                            U32Operand(ConvertBuiltin(builtin, sem->AddressSpace()))});
                 return true;
             },
             [&](const ast::LocationAttribute*) {
@@ -845,7 +851,19 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
                 return true;
             },
             [&](const ast::InterpolateAttribute* interpolate) {
-                AddInterpolationDecorations(var_id, interpolate->type, interpolate->sampling);
+                auto& s = builder_.Sem();
+                auto i_type =
+                    s.Get<sem::BuiltinEnumExpression<builtin::InterpolationType>>(interpolate->type)
+                        ->Value();
+
+                auto i_smpl = builtin::InterpolationSampling::kUndefined;
+                if (interpolate->sampling) {
+                    i_smpl = s.Get<sem::BuiltinEnumExpression<builtin::InterpolationSampling>>(
+                                  interpolate->sampling)
+                                 ->Value();
+                }
+
+                AddInterpolationDecorations(var_id, i_type, i_smpl);
                 return true;
             },
             [&](const ast::InvariantAttribute*) {
@@ -910,7 +928,7 @@ bool Builder::GenerateIndexAccessor(const ast::IndexAccessorExpression* expr, Ac
     auto extract_id = std::get<uint32_t>(extract);
 
     // If the index is compile-time constant, we use OpCompositeExtract.
-    auto* idx = builder_.Sem().Get(expr->index);
+    auto* idx = builder_.Sem().GetVal(expr->index);
     if (auto idx_constval = idx->ConstantValue()) {
         if (!push_function_inst(spv::Op::OpCompositeExtract,
                                 {
@@ -1070,13 +1088,7 @@ bool Builder::GenerateMemberAccessor(const ast::MemberAccessorExpression* expr,
         });
 }
 
-uint32_t Builder::GenerateAccessorExpression(const ast::Expression* expr) {
-    if (TINT_UNLIKELY(
-            (!expr->IsAnyOf<ast::IndexAccessorExpression, ast::MemberAccessorExpression>()))) {
-        TINT_ICE(Writer, builder_.Diagnostics()) << "expression is not an accessor";
-        return 0;
-    }
-
+uint32_t Builder::GenerateAccessorExpression(const ast::AccessorExpression* expr) {
     // Gather a list of all the member and index accessors that are in this chain.
     // The list is built in reverse order as that's the order we need to access
     // the chain.
@@ -1088,7 +1100,7 @@ uint32_t Builder::GenerateAccessorExpression(const ast::Expression* expr) {
             source = array->object;
         } else if (auto* member = source->As<ast::MemberAccessorExpression>()) {
             accessors.insert(accessors.begin(), source);
-            source = member->structure;
+            source = member->object;
         } else {
             break;
         }
@@ -1147,13 +1159,12 @@ uint32_t Builder::GenerateAccessorExpression(const ast::Expression* expr) {
 }
 
 uint32_t Builder::GenerateIdentifierExpression(const ast::IdentifierExpression* expr) {
-    auto* sem = builder_.Sem().Get(expr);
-    if (sem) {
+    if (auto* sem = builder_.Sem().GetVal(expr); sem) {
         if (auto* user = sem->UnwrapLoad()->As<sem::VariableUser>()) {
             return LookupVariableID(user->Variable());
         }
     }
-    error_ = "identifier '" + builder_.Symbols().NameFor(expr->symbol) +
+    error_ = "identifier '" + builder_.Symbols().NameFor(expr->identifier->symbol) +
              "' does not resolve to a variable";
     return 0;
 }
@@ -1236,23 +1247,23 @@ uint32_t Builder::GetGLSLstd450Import() {
     return id;
 }
 
-uint32_t Builder::GenerateInitializerExpression(const ast::Variable* var,
+uint32_t Builder::GenerateConstructorExpression(const ast::Variable* var,
                                                 const ast::Expression* expr) {
-    if (auto* sem = builder_.Sem().Get(expr)) {
+    if (auto* sem = builder_.Sem().GetVal(expr)) {
         if (auto constant = sem->ConstantValue()) {
             return GenerateConstantIfNeeded(constant);
         }
     }
     if (auto* call = builder_.Sem().Get<sem::Call>(expr)) {
-        if (call->Target()->IsAnyOf<sem::TypeInitializer, sem::TypeConversion>()) {
-            return GenerateTypeInitializerOrConversion(call, var);
+        if (call->Target()->IsAnyOf<sem::ValueConstructor, sem::ValueConversion>()) {
+            return GenerateValueConstructorOrConversion(call, var);
         }
     }
-    error_ = "unknown initializer expression";
+    error_ = "unknown constructor expression";
     return 0;
 }
 
-bool Builder::IsInitializerConst(const ast::Expression* expr) {
+bool Builder::IsConstructorConst(const ast::Expression* expr) {
     bool is_const = true;
     ast::TraverseExpressions(expr, builder_.Diagnostics(), [&](const ast::Expression* e) {
         if (e->Is<ast::LiteralExpression>()) {
@@ -1266,7 +1277,7 @@ bool Builder::IsInitializerConst(const ast::Expression* expr) {
                 return ast::TraverseAction::Skip;
             }
             auto* call = sem->As<sem::Call>();
-            if (call->Target()->Is<sem::TypeInitializer>()) {
+            if (call->Target()->Is<sem::ValueConstructor>()) {
                 return ast::TraverseAction::Descend;
             }
         }
@@ -1277,19 +1288,19 @@ bool Builder::IsInitializerConst(const ast::Expression* expr) {
     return is_const;
 }
 
-uint32_t Builder::GenerateTypeInitializerOrConversion(const sem::Call* call,
-                                                      const ast::Variable* var) {
+uint32_t Builder::GenerateValueConstructorOrConversion(const sem::Call* call,
+                                                       const ast::Variable* var) {
     auto& args = call->Arguments();
     auto* global_var = builder_.Sem().Get<sem::GlobalVariable>(var);
     auto* result_type = call->Type();
 
-    // Generate the zero initializer if there are no values provided.
+    // Generate the zero constructor if there are no values provided.
     if (args.IsEmpty()) {
         return GenerateConstantNullIfNeeded(result_type->UnwrapRef());
     }
 
     result_type = result_type->UnwrapRef();
-    bool initializer_is_const = IsInitializerConst(call->Declaration());
+    bool constructor_is_const = IsConstructorConst(call->Declaration());
     if (has_error()) {
         return 0;
     }
@@ -1324,7 +1335,7 @@ uint32_t Builder::GenerateTypeInitializerOrConversion(const sem::Call* call,
         return 0;
     }
 
-    bool result_is_constant_composite = initializer_is_const;
+    bool result_is_constant_composite = constructor_is_const;
     bool result_is_spec_composite = false;
 
     if (auto* vec = result_type->As<type::Vector>()) {
@@ -1904,9 +1915,9 @@ uint32_t Builder::GenerateSplat(uint32_t scalar_id, const type::Type* vec_type) 
     // Create a new vector to splat scalar into
     auto splat_vector = result_op();
     auto* splat_vector_type = builder_.create<type::Pointer>(
-        vec_type, type::AddressSpace::kFunction, type::Access::kReadWrite);
+        vec_type, builtin::AddressSpace::kFunction, builtin::Access::kReadWrite);
     push_function_var({Operand(GenerateTypeIfNeeded(splat_vector_type)), splat_vector,
-                       U32Operand(ConvertAddressSpace(type::AddressSpace::kFunction)),
+                       U32Operand(ConvertAddressSpace(builtin::AddressSpace::kFunction)),
                        Operand(GenerateConstantNullIfNeeded(vec_type))});
 
     // Splat scalar into vector
@@ -2129,7 +2140,7 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
         } else if (lhs_is_unsigned) {
             op = spv::Op::OpUMod;
         } else {
-            op = spv::Op::OpSMod;
+            op = spv::Op::OpSRem;
         }
     } else if (expr->IsMultiply()) {
         if (lhs_type->is_integer_scalar_or_vector()) {
@@ -2232,13 +2243,14 @@ uint32_t Builder::GenerateCallExpression(const ast::CallExpression* expr) {
     auto* call = builder_.Sem().Get<sem::Call>(expr);
     auto* target = call->Target();
     return Switch(
-        target, [&](const sem::Function* func) { return GenerateFunctionCall(call, func); },
+        target,  //
+        [&](const sem::Function* func) { return GenerateFunctionCall(call, func); },
         [&](const sem::Builtin* builtin) { return GenerateBuiltinCall(call, builtin); },
-        [&](const sem::TypeConversion*) {
-            return GenerateTypeInitializerOrConversion(call, nullptr);
+        [&](const sem::ValueConversion*) {
+            return GenerateValueConstructorOrConversion(call, nullptr);
         },
-        [&](const sem::TypeInitializer*) {
-            return GenerateTypeInitializerOrConversion(call, nullptr);
+        [&](const sem::ValueConstructor*) {
+            return GenerateValueConstructorOrConversion(call, nullptr);
         },
         [&](Default) {
             TINT_ICE(Writer, builder_.Diagnostics())
@@ -2247,9 +2259,9 @@ uint32_t Builder::GenerateCallExpression(const ast::CallExpression* expr) {
         });
 }
 
-uint32_t Builder::GenerateFunctionCall(const sem::Call* call, const sem::Function*) {
+uint32_t Builder::GenerateFunctionCall(const sem::Call* call, const sem::Function* fn) {
     auto* expr = call->Declaration();
-    auto* ident = expr->target.name;
+    auto* ident = fn->Declaration()->name;
 
     auto type_id = GenerateTypeIfNeeded(call->Type());
     if (type_id == 0) {
@@ -2380,13 +2392,13 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::Builtin*
                 return 0;
             }
 
-            auto struct_id = GenerateExpression(accessor->structure);
+            auto struct_id = GenerateExpression(accessor->object);
             if (struct_id == 0) {
                 return 0;
             }
             params.push_back(Operand(struct_id));
 
-            auto* type = TypeOf(accessor->structure)->UnwrapRef();
+            auto* type = TypeOf(accessor->object)->UnwrapRef();
             if (!type->Is<sem::Struct>()) {
                 error_ = "invalid type (" + type->FriendlyName(builder_.Symbols()) +
                          ") for runtime array length";
@@ -2625,7 +2637,7 @@ bool Builder::GenerateTextureBuiltin(const sem::Call* call,
     auto& arguments = call->Arguments();
 
     // Generates the given expression, returning the operand ID
-    auto gen = [&](const sem::Expression* expr) { return Operand(GenerateExpression(expr)); };
+    auto gen = [&](const sem::ValueExpression* expr) { return Operand(GenerateExpression(expr)); };
 
     // Returns the argument with the given usage
     auto arg = [&](Usage usage) {
@@ -3073,11 +3085,11 @@ bool Builder::GenerateAtomicBuiltin(const sem::Call* call,
 
     uint32_t memory_id = 0;
     switch (builtin->Parameters()[0]->Type()->As<type::Pointer>()->AddressSpace()) {
-        case type::AddressSpace::kWorkgroup:
+        case builtin::AddressSpace::kWorkgroup:
             memory_id = GenerateConstantIfNeeded(
                 ScalarConstant::U32(static_cast<uint32_t>(spv::Scope::Workgroup)));
             break;
-        case type::AddressSpace::kStorage:
+        case builtin::AddressSpace::kStorage:
             memory_id = GenerateConstantIfNeeded(
                 ScalarConstant::U32(static_cast<uint32_t>(spv::Scope::Device)));
             break;
@@ -3660,10 +3672,10 @@ uint32_t Builder::GenerateTypeIfNeeded(const type::Type* type) {
     // fine.
     if (auto* ptr = type->As<type::Pointer>()) {
         type = builder_.create<type::Pointer>(ptr->StoreType(), ptr->AddressSpace(),
-                                              type::Access::kReadWrite);
+                                              builtin::Access::kReadWrite);
     } else if (auto* ref = type->As<type::Reference>()) {
         type = builder_.create<type::Pointer>(ref->StoreType(), ref->AddressSpace(),
-                                              type::Access::kReadWrite);
+                                              builtin::Access::kReadWrite);
     }
 
     return utils::GetOrCreate(type_to_id_, type, [&]() -> uint32_t {
@@ -3722,11 +3734,12 @@ uint32_t Builder::GenerateTypeIfNeeded(const type::Type* type) {
                 // SPIR-V, we must output a single type, while the variable is
                 // annotated with the access type. Doing this ensures we de-dupe.
                 type_to_id_[builder_.create<type::StorageTexture>(
-                    tex->dim(), tex->texel_format(), type::Access::kRead, tex->type())] = id;
+                    tex->dim(), tex->texel_format(), builtin::Access::kRead, tex->type())] = id;
                 type_to_id_[builder_.create<type::StorageTexture>(
-                    tex->dim(), tex->texel_format(), type::Access::kWrite, tex->type())] = id;
+                    tex->dim(), tex->texel_format(), builtin::Access::kWrite, tex->type())] = id;
                 type_to_id_[builder_.create<type::StorageTexture>(
-                    tex->dim(), tex->texel_format(), type::Access::kReadWrite, tex->type())] = id;
+                    tex->dim(), tex->texel_format(), builtin::Access::kReadWrite, tex->type())] =
+                    id;
                 return true;
             },
             [&](const type::Texture* tex) { return GenerateTextureType(tex, result); },
@@ -3980,146 +3993,144 @@ bool Builder::GenerateVectorType(const type::Vector* vec, const Operand& result)
     return true;
 }
 
-SpvStorageClass Builder::ConvertAddressSpace(type::AddressSpace klass) const {
+SpvStorageClass Builder::ConvertAddressSpace(builtin::AddressSpace klass) const {
     switch (klass) {
-        case type::AddressSpace::kUndefined:
-            return SpvStorageClassMax;
-        case type::AddressSpace::kIn:
+        case builtin::AddressSpace::kIn:
             return SpvStorageClassInput;
-        case type::AddressSpace::kOut:
+        case builtin::AddressSpace::kOut:
             return SpvStorageClassOutput;
-        case type::AddressSpace::kUniform:
+        case builtin::AddressSpace::kUniform:
             return SpvStorageClassUniform;
-        case type::AddressSpace::kWorkgroup:
+        case builtin::AddressSpace::kWorkgroup:
             return SpvStorageClassWorkgroup;
-        case type::AddressSpace::kPushConstant:
+        case builtin::AddressSpace::kPushConstant:
             return SpvStorageClassPushConstant;
-        case type::AddressSpace::kHandle:
+        case builtin::AddressSpace::kHandle:
             return SpvStorageClassUniformConstant;
-        case type::AddressSpace::kStorage:
+        case builtin::AddressSpace::kStorage:
             return SpvStorageClassStorageBuffer;
-        case type::AddressSpace::kPrivate:
+        case builtin::AddressSpace::kPrivate:
             return SpvStorageClassPrivate;
-        case type::AddressSpace::kFunction:
+        case builtin::AddressSpace::kFunction:
             return SpvStorageClassFunction;
-        case type::AddressSpace::kNone:
+        case builtin::AddressSpace::kUndefined:
             break;
     }
     return SpvStorageClassMax;
 }
 
-SpvBuiltIn Builder::ConvertBuiltin(ast::BuiltinValue builtin, type::AddressSpace storage) {
+SpvBuiltIn Builder::ConvertBuiltin(builtin::BuiltinValue builtin, builtin::AddressSpace storage) {
     switch (builtin) {
-        case ast::BuiltinValue::kPosition:
-            if (storage == type::AddressSpace::kIn) {
+        case builtin::BuiltinValue::kPosition:
+            if (storage == builtin::AddressSpace::kIn) {
                 return SpvBuiltInFragCoord;
-            } else if (TINT_LIKELY(storage == type::AddressSpace::kOut)) {
+            } else if (TINT_LIKELY(storage == builtin::AddressSpace::kOut)) {
                 return SpvBuiltInPosition;
             } else {
                 TINT_ICE(Writer, builder_.Diagnostics()) << "invalid address space for builtin";
                 break;
             }
-        case ast::BuiltinValue::kVertexIndex:
+        case builtin::BuiltinValue::kVertexIndex:
             return SpvBuiltInVertexIndex;
-        case ast::BuiltinValue::kInstanceIndex:
+        case builtin::BuiltinValue::kInstanceIndex:
             return SpvBuiltInInstanceIndex;
-        case ast::BuiltinValue::kFrontFacing:
+        case builtin::BuiltinValue::kFrontFacing:
             return SpvBuiltInFrontFacing;
-        case ast::BuiltinValue::kFragDepth:
+        case builtin::BuiltinValue::kFragDepth:
             return SpvBuiltInFragDepth;
-        case ast::BuiltinValue::kLocalInvocationId:
+        case builtin::BuiltinValue::kLocalInvocationId:
             return SpvBuiltInLocalInvocationId;
-        case ast::BuiltinValue::kLocalInvocationIndex:
+        case builtin::BuiltinValue::kLocalInvocationIndex:
             return SpvBuiltInLocalInvocationIndex;
-        case ast::BuiltinValue::kGlobalInvocationId:
+        case builtin::BuiltinValue::kGlobalInvocationId:
             return SpvBuiltInGlobalInvocationId;
-        case ast::BuiltinValue::kPointSize:
+        case builtin::BuiltinValue::kPointSize:
             return SpvBuiltInPointSize;
-        case ast::BuiltinValue::kWorkgroupId:
+        case builtin::BuiltinValue::kWorkgroupId:
             return SpvBuiltInWorkgroupId;
-        case ast::BuiltinValue::kNumWorkgroups:
+        case builtin::BuiltinValue::kNumWorkgroups:
             return SpvBuiltInNumWorkgroups;
-        case ast::BuiltinValue::kSampleIndex:
+        case builtin::BuiltinValue::kSampleIndex:
             push_capability(SpvCapabilitySampleRateShading);
             return SpvBuiltInSampleId;
-        case ast::BuiltinValue::kSampleMask:
+        case builtin::BuiltinValue::kSampleMask:
             return SpvBuiltInSampleMask;
-        case ast::BuiltinValue::kUndefined:
+        case builtin::BuiltinValue::kUndefined:
             break;
     }
     return SpvBuiltInMax;
 }
 
 void Builder::AddInterpolationDecorations(uint32_t id,
-                                          ast::InterpolationType type,
-                                          ast::InterpolationSampling sampling) {
+                                          builtin::InterpolationType type,
+                                          builtin::InterpolationSampling sampling) {
     switch (type) {
-        case ast::InterpolationType::kLinear:
+        case builtin::InterpolationType::kLinear:
             push_annot(spv::Op::OpDecorate, {Operand(id), U32Operand(SpvDecorationNoPerspective)});
             break;
-        case ast::InterpolationType::kFlat:
+        case builtin::InterpolationType::kFlat:
             push_annot(spv::Op::OpDecorate, {Operand(id), U32Operand(SpvDecorationFlat)});
             break;
-        case ast::InterpolationType::kPerspective:
-        case ast::InterpolationType::kUndefined:
+        case builtin::InterpolationType::kPerspective:
+        case builtin::InterpolationType::kUndefined:
             break;
     }
     switch (sampling) {
-        case ast::InterpolationSampling::kCentroid:
+        case builtin::InterpolationSampling::kCentroid:
             push_annot(spv::Op::OpDecorate, {Operand(id), U32Operand(SpvDecorationCentroid)});
             break;
-        case ast::InterpolationSampling::kSample:
+        case builtin::InterpolationSampling::kSample:
             push_capability(SpvCapabilitySampleRateShading);
             push_annot(spv::Op::OpDecorate, {Operand(id), U32Operand(SpvDecorationSample)});
             break;
-        case ast::InterpolationSampling::kCenter:
-        case ast::InterpolationSampling::kUndefined:
+        case builtin::InterpolationSampling::kCenter:
+        case builtin::InterpolationSampling::kUndefined:
             break;
     }
 }
 
-SpvImageFormat Builder::convert_texel_format_to_spv(const type::TexelFormat format) {
+SpvImageFormat Builder::convert_texel_format_to_spv(const builtin::TexelFormat format) {
     switch (format) {
-        case type::TexelFormat::kBgra8Unorm:
+        case builtin::TexelFormat::kBgra8Unorm:
             TINT_ICE(Writer, builder_.Diagnostics())
                 << "bgra8unorm should have been polyfilled to rgba8unorm";
             return SpvImageFormatUnknown;
-        case type::TexelFormat::kR32Uint:
+        case builtin::TexelFormat::kR32Uint:
             return SpvImageFormatR32ui;
-        case type::TexelFormat::kR32Sint:
+        case builtin::TexelFormat::kR32Sint:
             return SpvImageFormatR32i;
-        case type::TexelFormat::kR32Float:
+        case builtin::TexelFormat::kR32Float:
             return SpvImageFormatR32f;
-        case type::TexelFormat::kRgba8Unorm:
+        case builtin::TexelFormat::kRgba8Unorm:
             return SpvImageFormatRgba8;
-        case type::TexelFormat::kRgba8Snorm:
+        case builtin::TexelFormat::kRgba8Snorm:
             return SpvImageFormatRgba8Snorm;
-        case type::TexelFormat::kRgba8Uint:
+        case builtin::TexelFormat::kRgba8Uint:
             return SpvImageFormatRgba8ui;
-        case type::TexelFormat::kRgba8Sint:
+        case builtin::TexelFormat::kRgba8Sint:
             return SpvImageFormatRgba8i;
-        case type::TexelFormat::kRg32Uint:
+        case builtin::TexelFormat::kRg32Uint:
             push_capability(SpvCapabilityStorageImageExtendedFormats);
             return SpvImageFormatRg32ui;
-        case type::TexelFormat::kRg32Sint:
+        case builtin::TexelFormat::kRg32Sint:
             push_capability(SpvCapabilityStorageImageExtendedFormats);
             return SpvImageFormatRg32i;
-        case type::TexelFormat::kRg32Float:
+        case builtin::TexelFormat::kRg32Float:
             push_capability(SpvCapabilityStorageImageExtendedFormats);
             return SpvImageFormatRg32f;
-        case type::TexelFormat::kRgba16Uint:
+        case builtin::TexelFormat::kRgba16Uint:
             return SpvImageFormatRgba16ui;
-        case type::TexelFormat::kRgba16Sint:
+        case builtin::TexelFormat::kRgba16Sint:
             return SpvImageFormatRgba16i;
-        case type::TexelFormat::kRgba16Float:
+        case builtin::TexelFormat::kRgba16Float:
             return SpvImageFormatRgba16f;
-        case type::TexelFormat::kRgba32Uint:
+        case builtin::TexelFormat::kRgba32Uint:
             return SpvImageFormatRgba32ui;
-        case type::TexelFormat::kRgba32Sint:
+        case builtin::TexelFormat::kRgba32Sint:
             return SpvImageFormatRgba32i;
-        case type::TexelFormat::kRgba32Float:
+        case builtin::TexelFormat::kRgba32Float:
             return SpvImageFormatRgba32f;
-        case type::TexelFormat::kUndefined:
+        case builtin::TexelFormat::kUndefined:
             return SpvImageFormatUnknown;
     }
     return SpvImageFormatUnknown;

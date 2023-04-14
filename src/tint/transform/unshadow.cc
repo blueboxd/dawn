@@ -51,12 +51,12 @@ struct Unshadow::State {
 
         auto rename = [&](const sem::Variable* v) -> const ast::Variable* {
             auto* decl = v->Declaration();
-            auto name = src->Symbols().NameFor(decl->symbol);
+            auto name = src->Symbols().NameFor(decl->name->symbol);
             auto symbol = b.Symbols().New(name);
             renamed_to.Add(v, symbol);
 
             auto source = ctx.Clone(decl->source);
-            auto* type = ctx.Clone(decl->type);
+            auto type = decl->type ? ctx.Clone(decl->type) : ast::Type{};
             auto* initializer = ctx.Clone(decl->initializer);
             auto attributes = ctx.Clone(decl->attributes);
             return Switch(
@@ -106,7 +106,7 @@ struct Unshadow::State {
 
         ctx.ReplaceAll(
             [&](const ast::IdentifierExpression* ident) -> const tint::ast::IdentifierExpression* {
-                if (auto* sem_ident = sem.Get(ident)) {
+                if (auto* sem_ident = sem.GetVal(ident)) {
                     if (auto* user = sem_ident->UnwrapLoad()->As<sem::VariableUser>()) {
                         if (auto renamed = renamed_to.Find(user->Variable())) {
                             return b.Expr(*renamed);

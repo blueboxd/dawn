@@ -90,7 +90,7 @@ class Device final : public DeviceBase {
   public:
     static ResultOrError<Ref<Device>> Create(Adapter* adapter,
                                              const DeviceDescriptor* descriptor,
-                                             const TripleStateTogglesSet& userProvidedToggles);
+                                             const TogglesState& deviceToggles);
     ~Device() override;
 
     MaybeError Initialize(const DeviceDescriptor* descriptor);
@@ -111,7 +111,7 @@ class Device final : public DeviceBase {
                                            uint64_t size) override;
     MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
                                             const TextureDataLayout& src,
-                                            TextureCopy* dst,
+                                            const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
 
     MaybeError IncrementMemoryUsage(uint64_t bytes);
@@ -182,16 +182,16 @@ class Adapter : public AdapterBase {
 
   private:
     MaybeError InitializeImpl() override;
-    MaybeError InitializeSupportedFeaturesImpl() override;
+    void InitializeSupportedFeaturesImpl() override;
     MaybeError InitializeSupportedLimitsImpl(CombinedLimits* limits) override;
 
-    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(
-        const DeviceDescriptor* descriptor,
-        const TripleStateTogglesSet& userProvidedToggles) override;
-
-    MaybeError ValidateFeatureSupportedWithTogglesImpl(
+    MaybeError ValidateFeatureSupportedWithDeviceTogglesImpl(
         wgpu::FeatureName feature,
-        const TripleStateTogglesSet& userProvidedToggles) override;
+        const TogglesState& deviceToggles) override;
+
+    void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override;
+    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(const DeviceDescriptor* descriptor,
+                                                    const TogglesState& deviceToggles) override;
 };
 
 // Helper class so |BindGroup| can allocate memory for its binding data,

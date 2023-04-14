@@ -90,19 +90,16 @@ void DestroyCommandPoolAndBuffer(const VulkanFunctions& fn,
 // static
 ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
                                           const DeviceDescriptor* descriptor,
-                                          const TripleStateTogglesSet& userProvidedToggles) {
-    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, userProvidedToggles));
+                                          const TogglesState& deviceToggles) {
+    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
 
 Device::Device(Adapter* adapter,
                const DeviceDescriptor* descriptor,
-               const TripleStateTogglesSet& userProvidedToggles)
-    : DeviceBase(adapter, descriptor, userProvidedToggles),
-      mDebugPrefix(GetNextDeviceDebugPrefix()) {
-    InitTogglesFromDriver();
-}
+               const TogglesState& deviceToggles)
+    : DeviceBase(adapter, descriptor, deviceToggles), mDebugPrefix(GetNextDeviceDebugPrefix()) {}
 
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     // Copy the adapter's device info to the device so that we can change the "knobs"
@@ -139,14 +136,6 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     mExternalSemaphoreService = std::make_unique<external_semaphore::Service>(this);
 
     DAWN_TRY(PrepareRecordingContext());
-
-    // The environment can request to various options for depth-stencil formats that could be
-    // unavailable. Override the decision if it is not applicable.
-    ApplyDepthStencilFormatToggles();
-
-    // The environment can only request to use VK_KHR_zero_initialize_workgroup_memory when the
-    // extension is available. Override the decision if it is no applicable.
-    ApplyUseZeroInitializeWorkgroupMemoryExtensionToggle();
 
     SetLabelImpl();
 
@@ -629,61 +618,6 @@ void Device::GatherQueueFromDevice() {
     fn.GetDeviceQueue(mVkDevice, mQueueFamily, 0, &mQueue);
 }
 
-// Note that this function is called before mDeviceInfo is initialized.
-void Device::InitTogglesFromDriver() {
-    // TODO(crbug.com/dawn/857): tighten this workaround when this issue is fixed in both
-    // Vulkan SPEC and drivers.
-    SetToggle(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
-
-    // By default try to use D32S8 for Depth24PlusStencil8
-    SetToggle(Toggle::VulkanUseD32S8, true);
-
-    // By default try to initialize workgroup memory with OpConstantNull according to the Vulkan
-    // extension VK_KHR_zero_initialize_workgroup_memory.
-    SetToggle(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, true);
-
-    // By default try to use S8 if available.
-    SetToggle(Toggle::VulkanUseS8, true);
-
-    if (ToBackend(GetAdapter())->IsAndroidQualcomm()) {
-        // dawn:1564: Clearing a depth/stencil buffer in a render pass and then sampling it in a
-        // compute pass in the same command buffer causes a crash on Qualcomm GPUs. To work around
-        // that bug, split the command buffer any time we can detect that situation.
-        SetToggle(Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass, true);
-
-        // dawn:1569: Qualcomm devices have a bug resolving into a non-zero level of an array
-        // texture. Work around it by resolving into a single level texture and then copying into
-        // the intended layer.
-        SetToggle(Toggle::AlwaysResolveIntoZeroLevelAndLayer, true);
-    }
-}
-
-void Device::ApplyDepthStencilFormatToggles() {
-    bool supportsD32s8 =
-        ToBackend(GetAdapter())->IsDepthStencilFormatSupported(VK_FORMAT_D32_SFLOAT_S8_UINT);
-    bool supportsD24s8 =
-        ToBackend(GetAdapter())->IsDepthStencilFormatSupported(VK_FORMAT_D24_UNORM_S8_UINT);
-    bool supportsS8 = ToBackend(GetAdapter())->IsDepthStencilFormatSupported(VK_FORMAT_S8_UINT);
-
-    ASSERT(supportsD32s8 || supportsD24s8);
-
-    if (!supportsD24s8) {
-        ForceSetToggle(Toggle::VulkanUseD32S8, true);
-    }
-    if (!supportsD32s8) {
-        ForceSetToggle(Toggle::VulkanUseD32S8, false);
-    }
-    if (!supportsS8) {
-        ForceSetToggle(Toggle::VulkanUseS8, false);
-    }
-}
-
-void Device::ApplyUseZeroInitializeWorkgroupMemoryExtensionToggle() {
-    if (!mDeviceInfo.HasExt(DeviceExt::ZeroInitializeWorkgroupMemory)) {
-        ForceSetToggle(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, false);
-    }
-}
-
 VulkanFunctions* Device::GetMutableFunctions() {
     return const_cast<VulkanFunctions*>(&fn);
 }
@@ -864,7 +798,7 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
 
 MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                                 const TextureDataLayout& src,
-                                                TextureCopy* dst,
+                                                const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
     // There is no need of a barrier to make host writes available and visible to the copy
     // operation for HOST_COHERENT memory. The Vulkan spec for vkQueueSubmit describes that it
@@ -873,22 +807,22 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
     CommandRecordingContext* recordingContext =
         GetPendingRecordingContext(DeviceBase::SubmitMode::Passive);
 
-    VkBufferImageCopy region = ComputeBufferImageCopyRegion(src, *dst, copySizePixels);
+    VkBufferImageCopy region = ComputeBufferImageCopyRegion(src, dst, copySizePixels);
     VkImageSubresourceLayers subresource = region.imageSubresource;
 
-    SubresourceRange range = GetSubresourcesAffectedByCopy(*dst, copySizePixels);
+    SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copySizePixels);
 
-    if (IsCompleteSubresourceCopiedTo(dst->texture.Get(), copySizePixels, subresource.mipLevel)) {
+    if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copySizePixels, subresource.mipLevel)) {
         // Since texture has been overwritten, it has been "initialized"
-        dst->texture->SetIsSubresourceContentInitialized(true, range);
+        dst.texture->SetIsSubresourceContentInitialized(true, range);
     } else {
-        ToBackend(dst->texture)->EnsureSubresourceContentInitialized(recordingContext, range);
+        ToBackend(dst.texture)->EnsureSubresourceContentInitialized(recordingContext, range);
     }
     // Insert pipeline barrier to ensure correct ordering with previous memory operations on the
     // texture.
-    ToBackend(dst->texture)
+    ToBackend(dst.texture)
         ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, range);
-    VkImage dstImage = ToBackend(dst->texture)->GetHandle();
+    VkImage dstImage = ToBackend(dst.texture)->GetHandle();
 
     // Dawn guarantees dstImage be in the TRANSFER_DST_OPTIMAL layout after the
     // copy command.

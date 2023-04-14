@@ -14,10 +14,10 @@
 
 #include "src/tint/sem/info.h"
 
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/module.h"
 #include "src/tint/sem/statement.h"
+#include "src/tint/sem/value_expression.h"
 
 namespace tint::sem {
 
@@ -29,8 +29,8 @@ Info::~Info() = default;
 
 Info& Info::operator=(Info&&) = default;
 
-ast::DiagnosticSeverity Info::DiagnosticSeverity(const ast::Node* ast_node,
-                                                 ast::DiagnosticRule rule) const {
+builtin::DiagnosticSeverity Info::DiagnosticSeverity(const ast::Node* ast_node,
+                                                     builtin::DiagnosticRule rule) const {
     // Get the diagnostic severity modification for a node.
     auto check = [&](auto* node) {
         auto& severities = node->DiagnosticSeverities();
@@ -38,13 +38,13 @@ ast::DiagnosticSeverity Info::DiagnosticSeverity(const ast::Node* ast_node,
         if (itr != severities.end()) {
             return itr->second;
         }
-        return ast::DiagnosticSeverity::kUndefined;
+        return builtin::DiagnosticSeverity::kUndefined;
     };
 
     // Get the diagnostic severity modification for a function.
     auto check_func = [&](const sem::Function* func) {
         auto severity = check(func);
-        if (severity != ast::DiagnosticSeverity::kUndefined) {
+        if (severity != builtin::DiagnosticSeverity::kUndefined) {
             return severity;
         }
 
@@ -57,7 +57,7 @@ ast::DiagnosticSeverity Info::DiagnosticSeverity(const ast::Node* ast_node,
         // Walk up the statement hierarchy, checking for diagnostic severity modifications.
         while (true) {
             auto severity = check(stmt);
-            if (severity != ast::DiagnosticSeverity::kUndefined) {
+            if (severity != builtin::DiagnosticSeverity::kUndefined) {
                 return severity;
             }
             if (!stmt->Parent()) {
@@ -75,14 +75,14 @@ ast::DiagnosticSeverity Info::DiagnosticSeverity(const ast::Node* ast_node,
     TINT_ASSERT(Resolver, sem != nullptr);
     auto severity = Switch(
         sem,  //
-        [&](const sem::Expression* expr) { return check_stmt(expr->Stmt()); },
+        [&](const sem::ValueExpression* expr) { return check_stmt(expr->Stmt()); },
         [&](const sem::Statement* stmt) { return check_stmt(stmt); },
         [&](const sem::Function* func) { return check_func(func); },
         [&](Default) {
             // Use the global severity set on the module.
             return check(module_);
         });
-    TINT_ASSERT(Resolver, severity != ast::DiagnosticSeverity::kUndefined);
+    TINT_ASSERT(Resolver, severity != builtin::DiagnosticSeverity::kUndefined);
     return severity;
 }
 

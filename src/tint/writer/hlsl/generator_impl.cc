@@ -37,8 +37,8 @@
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/switch_statement.h"
-#include "src/tint/sem/type_conversion.h"
-#include "src/tint/sem/type_initializer.h"
+#include "src/tint/sem/value_constructor.h"
+#include "src/tint/sem/value_conversion.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/transform/add_empty_entry_point.h"
 #include "src/tint/transform/array_length_from_uniform.h"
@@ -87,27 +87,27 @@ namespace {
 
 const char kTempNamePrefix[] = "tint_tmp";
 
-const char* image_format_to_rwtexture_type(type::TexelFormat image_format) {
+const char* image_format_to_rwtexture_type(builtin::TexelFormat image_format) {
     switch (image_format) {
-        case type::TexelFormat::kBgra8Unorm:
-        case type::TexelFormat::kRgba8Unorm:
-        case type::TexelFormat::kRgba8Snorm:
-        case type::TexelFormat::kRgba16Float:
-        case type::TexelFormat::kR32Float:
-        case type::TexelFormat::kRg32Float:
-        case type::TexelFormat::kRgba32Float:
+        case builtin::TexelFormat::kBgra8Unorm:
+        case builtin::TexelFormat::kRgba8Unorm:
+        case builtin::TexelFormat::kRgba8Snorm:
+        case builtin::TexelFormat::kRgba16Float:
+        case builtin::TexelFormat::kR32Float:
+        case builtin::TexelFormat::kRg32Float:
+        case builtin::TexelFormat::kRgba32Float:
             return "float4";
-        case type::TexelFormat::kRgba8Uint:
-        case type::TexelFormat::kRgba16Uint:
-        case type::TexelFormat::kR32Uint:
-        case type::TexelFormat::kRg32Uint:
-        case type::TexelFormat::kRgba32Uint:
+        case builtin::TexelFormat::kRgba8Uint:
+        case builtin::TexelFormat::kRgba16Uint:
+        case builtin::TexelFormat::kR32Uint:
+        case builtin::TexelFormat::kRg32Uint:
+        case builtin::TexelFormat::kRgba32Uint:
             return "uint4";
-        case type::TexelFormat::kRgba8Sint:
-        case type::TexelFormat::kRgba16Sint:
-        case type::TexelFormat::kR32Sint:
-        case type::TexelFormat::kRg32Sint:
-        case type::TexelFormat::kRgba32Sint:
+        case builtin::TexelFormat::kRgba8Sint:
+        case builtin::TexelFormat::kRgba16Sint:
+        case builtin::TexelFormat::kR32Sint:
+        case builtin::TexelFormat::kRg32Sint:
+        case builtin::TexelFormat::kRgba32Sint:
             return "int4";
         default:
             return nullptr;
@@ -180,6 +180,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         polyfills.first_trailing_bit = true;
         polyfills.insert_bits = transform::BuiltinPolyfill::Level::kFull;
         polyfills.int_div_mod = true;
+        polyfills.precise_float_mod = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
         data.Add<transform::BuiltinPolyfill::Config>(polyfills);
@@ -296,11 +297,11 @@ GeneratorImpl::~GeneratorImpl() = default;
 bool GeneratorImpl::Generate() {
     if (!CheckSupportedExtensions("HLSL", program_->AST(), diagnostics_,
                                   utils::Vector{
-                                      ast::Extension::kChromiumDisableUniformityAnalysis,
-                                      ast::Extension::kChromiumExperimentalDp4A,
-                                      ast::Extension::kChromiumExperimentalFullPtrParameters,
-                                      ast::Extension::kChromiumExperimentalPushConstant,
-                                      ast::Extension::kF16,
+                                      builtin::Extension::kChromiumDisableUniformityAnalysis,
+                                      builtin::Extension::kChromiumExperimentalDp4A,
+                                      builtin::Extension::kChromiumExperimentalFullPtrParameters,
+                                      builtin::Extension::kChromiumExperimentalPushConstant,
+                                      builtin::Extension::kF16,
                                   })) {
         return false;
     }
@@ -310,7 +311,7 @@ bool GeneratorImpl::Generate() {
 
     auto* mod = builder_.Sem().Module();
     for (auto* decl : mod->DependencyOrderedDeclarations()) {
-        if (decl->IsAnyOf<ast::Alias, ast::DiagnosticControl, ast::Enable, ast::ConstAssert>()) {
+        if (decl->IsAnyOf<ast::Alias, ast::DiagnosticDirective, ast::Enable, ast::ConstAssert>()) {
             continue;  // These are not emitted.
         }
 
@@ -334,8 +335,8 @@ bool GeneratorImpl::Generate() {
                 auto* ty = builder_.Sem().Get(str);
                 auto address_space_uses = ty->AddressSpaceUsage();
                 if (address_space_uses.size() !=
-                    (address_space_uses.count(type::AddressSpace::kStorage) +
-                     address_space_uses.count(type::AddressSpace::kUniform))) {
+                    (address_space_uses.count(builtin::AddressSpace::kStorage) +
+                     address_space_uses.count(builtin::AddressSpace::kUniform))) {
                     // The structure is used as something other than a storage buffer or
                     // uniform buffer, so it needs to be emitted.
                     // Storage buffer are read and written to via a ByteAddressBuffer
@@ -376,8 +377,8 @@ bool GeneratorImpl::EmitDynamicVectorAssignment(const ast::AssignmentStatement* 
         std::string fn;
         {
             std::ostringstream ss;
-            if (!EmitType(ss, vec, tint::type::AddressSpace::kUndefined, type::Access::kUndefined,
-                          "")) {
+            if (!EmitType(ss, vec, tint::builtin::AddressSpace::kUndefined,
+                          builtin::Access::kUndefined, "")) {
                 return "";
             }
             fn = UniqueIdentifier("set_" + ss.str());
@@ -385,13 +386,13 @@ bool GeneratorImpl::EmitDynamicVectorAssignment(const ast::AssignmentStatement* 
         {
             auto out = line(&helpers_);
             out << "void " << fn << "(inout ";
-            if (!EmitTypeAndName(out, vec, type::AddressSpace::kUndefined, type::Access::kUndefined,
-                                 "vec")) {
+            if (!EmitTypeAndName(out, vec, builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kUndefined, "vec")) {
                 return "";
             }
             out << ", int idx, ";
-            if (!EmitTypeAndName(out, vec->type(), type::AddressSpace::kUndefined,
-                                 type::Access::kUndefined, "val")) {
+            if (!EmitTypeAndName(out, vec->type(), builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kUndefined, "val")) {
                 return "";
             }
             out << ") {";
@@ -450,8 +451,8 @@ bool GeneratorImpl::EmitDynamicMatrixVectorAssignment(const ast::AssignmentState
         std::string fn;
         {
             std::ostringstream ss;
-            if (!EmitType(ss, mat, tint::type::AddressSpace::kUndefined, type::Access::kUndefined,
-                          "")) {
+            if (!EmitType(ss, mat, tint::builtin::AddressSpace::kUndefined,
+                          builtin::Access::kUndefined, "")) {
                 return "";
             }
             fn = UniqueIdentifier("set_vector_" + ss.str());
@@ -459,13 +460,13 @@ bool GeneratorImpl::EmitDynamicMatrixVectorAssignment(const ast::AssignmentState
         {
             auto out = line(&helpers_);
             out << "void " << fn << "(inout ";
-            if (!EmitTypeAndName(out, mat, type::AddressSpace::kUndefined, type::Access::kUndefined,
-                                 "mat")) {
+            if (!EmitTypeAndName(out, mat, builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kUndefined, "mat")) {
                 return "";
             }
             out << ", int col, ";
-            if (!EmitTypeAndName(out, mat->ColumnType(), type::AddressSpace::kUndefined,
-                                 type::Access::kUndefined, "val")) {
+            if (!EmitTypeAndName(out, mat->ColumnType(), builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kUndefined, "val")) {
                 return "";
             }
             out << ") {";
@@ -512,15 +513,15 @@ bool GeneratorImpl::EmitDynamicMatrixVectorAssignment(const ast::AssignmentState
 
 bool GeneratorImpl::EmitDynamicMatrixScalarAssignment(const ast::AssignmentStatement* stmt,
                                                       const type::Matrix* mat) {
-    auto* lhs_col_access = stmt->lhs->As<ast::IndexAccessorExpression>();
-    auto* lhs_row_access = lhs_col_access->object->As<ast::IndexAccessorExpression>();
+    auto* lhs_row_access = stmt->lhs->As<ast::IndexAccessorExpression>();
+    auto* lhs_col_access = lhs_row_access->object->As<ast::IndexAccessorExpression>();
 
     auto name = utils::GetOrCreate(dynamic_matrix_scalar_write_, mat, [&]() -> std::string {
         std::string fn;
         {
             std::ostringstream ss;
-            if (!EmitType(ss, mat, tint::type::AddressSpace::kUndefined, type::Access::kUndefined,
-                          "")) {
+            if (!EmitType(ss, mat, tint::builtin::AddressSpace::kUndefined,
+                          builtin::Access::kUndefined, "")) {
                 return "";
             }
             fn = UniqueIdentifier("set_scalar_" + ss.str());
@@ -528,13 +529,13 @@ bool GeneratorImpl::EmitDynamicMatrixScalarAssignment(const ast::AssignmentState
         {
             auto out = line(&helpers_);
             out << "void " << fn << "(inout ";
-            if (!EmitTypeAndName(out, mat, type::AddressSpace::kUndefined, type::Access::kUndefined,
-                                 "mat")) {
+            if (!EmitTypeAndName(out, mat, builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kUndefined, "mat")) {
                 return "";
             }
             out << ", int col, int row, ";
-            if (!EmitTypeAndName(out, mat->type(), type::AddressSpace::kUndefined,
-                                 type::Access::kUndefined, "val")) {
+            if (!EmitTypeAndName(out, mat->type(), builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kUndefined, "val")) {
                 return "";
             }
             out << ") {";
@@ -544,7 +545,6 @@ bool GeneratorImpl::EmitDynamicMatrixScalarAssignment(const ast::AssignmentState
             line(&helpers_) << "switch (col) {";
             {
                 ScopedIndent si2(&helpers_);
-                auto* vec = TypeOf(lhs_row_access->object)->UnwrapRef()->As<type::Vector>();
                 for (uint32_t i = 0; i < mat->columns(); ++i) {
                     line(&helpers_) << "case " << i << ":";
                     {
@@ -568,10 +568,14 @@ bool GeneratorImpl::EmitDynamicMatrixScalarAssignment(const ast::AssignmentState
                                         << " = (row.xxxx == int4(0, 1, 2, 3)) ? val.xxxx : "
                                         << vec_name << ";";
                                     break;
-                                default:
+                                default: {
+                                    auto* vec = TypeOf(lhs_row_access->object)
+                                                    ->UnwrapRef()
+                                                    ->As<type::Vector>();
                                     TINT_UNREACHABLE(Writer, diagnostics_)
                                         << "invalid vector size " << vec->Width();
                                     break;
+                                }
                             }
                         }
                         line(&helpers_) << "break;";
@@ -591,7 +595,7 @@ bool GeneratorImpl::EmitDynamicMatrixScalarAssignment(const ast::AssignmentState
 
     auto out = line();
     out << name << "(";
-    if (!EmitExpression(out, lhs_row_access->object)) {
+    if (!EmitExpression(out, lhs_col_access->object)) {
         return false;
     }
     out << ", ";
@@ -638,7 +642,7 @@ bool GeneratorImpl::EmitBitcast(std::ostream& out, const ast::BitcastExpression*
     }
 
     out << "as";
-    if (!EmitType(out, type, type::AddressSpace::kNone, type::Access::kReadWrite, "")) {
+    if (!EmitType(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "")) {
         return false;
     }
     out << "(";
@@ -655,9 +659,9 @@ bool GeneratorImpl::EmitAssign(const ast::AssignmentStatement* stmt) {
         // with at least one dynamic index
         if (auto* lhs_sub_access = lhs_access->object->As<ast::IndexAccessorExpression>()) {
             if (auto* mat = TypeOf(lhs_sub_access->object)->UnwrapRef()->As<type::Matrix>()) {
-                auto* rhs_col_idx_sem = builder_.Sem().Get(lhs_access->index);
-                auto* rhs_row_idx_sem = builder_.Sem().Get(lhs_sub_access->index);
-                if (!rhs_col_idx_sem->ConstantValue() || !rhs_row_idx_sem->ConstantValue()) {
+                auto* rhs_row_idx_sem = builder_.Sem().GetVal(lhs_access->index);
+                auto* rhs_col_idx_sem = builder_.Sem().GetVal(lhs_sub_access->index);
+                if (!rhs_row_idx_sem->ConstantValue() || !rhs_col_idx_sem->ConstantValue()) {
                     return EmitDynamicMatrixScalarAssignment(stmt, mat);
                 }
             }
@@ -666,7 +670,7 @@ bool GeneratorImpl::EmitAssign(const ast::AssignmentStatement* stmt) {
         // with dynamic indices
         const auto* lhs_access_type = TypeOf(lhs_access->object)->UnwrapRef();
         if (auto* mat = lhs_access_type->As<type::Matrix>()) {
-            auto* lhs_index_sem = builder_.Sem().Get(lhs_access->index);
+            auto* lhs_index_sem = builder_.Sem().GetVal(lhs_access->index);
             if (!lhs_index_sem->ConstantValue()) {
                 return EmitDynamicMatrixVectorAssignment(stmt, mat);
             }
@@ -674,7 +678,7 @@ bool GeneratorImpl::EmitAssign(const ast::AssignmentStatement* stmt) {
         // BUG(crbug.com/tint/534): work around assignment to vectors with dynamic
         // indices
         if (auto* vec = lhs_access_type->As<type::Vector>()) {
-            auto* rhs_sem = builder_.Sem().Get(lhs_access->index);
+            auto* rhs_sem = builder_.Sem().GetVal(lhs_access->index);
             if (!rhs_sem->ConstantValue()) {
                 return EmitDynamicVectorAssignment(stmt, vec);
             }
@@ -872,10 +876,11 @@ bool GeneratorImpl::EmitCall(std::ostream& out, const ast::CallExpression* expr)
     auto* call = builder_.Sem().Get<sem::Call>(expr);
     auto* target = call->Target();
     return Switch(
-        target, [&](const sem::Function* func) { return EmitFunctionCall(out, call, func); },
+        target,  //
+        [&](const sem::Function* func) { return EmitFunctionCall(out, call, func); },
         [&](const sem::Builtin* builtin) { return EmitBuiltinCall(out, call, builtin); },
-        [&](const sem::TypeConversion* conv) { return EmitTypeConversion(out, call, conv); },
-        [&](const sem::TypeInitializer* ctor) { return EmitTypeInitializer(out, call, ctor); },
+        [&](const sem::ValueConversion* conv) { return EmitValueConversion(out, call, conv); },
+        [&](const sem::ValueConstructor* ctor) { return EmitValueConstructor(out, call, ctor); },
         [&](Default) {
             TINT_ICE(Writer, diagnostics_) << "unhandled call target: " << target->TypeInfo().name;
             return false;
@@ -905,9 +910,9 @@ bool GeneratorImpl::EmitFunctionCall(std::ostream& out,
     if (auto* intrinsic = ast::GetAttribute<transform::DecomposeMemoryAccess::Intrinsic>(
             func->Declaration()->attributes)) {
         switch (intrinsic->address_space) {
-            case type::AddressSpace::kUniform:
+            case builtin::AddressSpace::kUniform:
                 return EmitUniformBufferAccess(out, expr, intrinsic);
-            case type::AddressSpace::kStorage:
+            case builtin::AddressSpace::kStorage:
                 if (!intrinsic->IsAtomic()) {
                     return EmitStorageBufferAccess(out, expr, intrinsic);
                 }
@@ -920,7 +925,7 @@ bool GeneratorImpl::EmitFunctionCall(std::ostream& out,
         }
     }
 
-    out << builder_.Symbols().NameFor(func->Declaration()->symbol) << "(";
+    out << builder_.Symbols().NameFor(func->Declaration()->name->symbol) << "(";
 
     bool first = true;
     for (auto* arg : call->Arguments()) {
@@ -1023,10 +1028,11 @@ bool GeneratorImpl::EmitBuiltinCall(std::ostream& out,
     return true;
 }
 
-bool GeneratorImpl::EmitTypeConversion(std::ostream& out,
-                                       const sem::Call* call,
-                                       const sem::TypeConversion* conv) {
-    if (!EmitType(out, conv->Target(), type::AddressSpace::kNone, type::Access::kReadWrite, "")) {
+bool GeneratorImpl::EmitValueConversion(std::ostream& out,
+                                        const sem::Call* call,
+                                        const sem::ValueConversion* conv) {
+    if (!EmitType(out, conv->Target(), builtin::AddressSpace::kUndefined,
+                  builtin::Access::kReadWrite, "")) {
         return false;
     }
     out << "(";
@@ -1039,13 +1045,13 @@ bool GeneratorImpl::EmitTypeConversion(std::ostream& out,
     return true;
 }
 
-bool GeneratorImpl::EmitTypeInitializer(std::ostream& out,
-                                        const sem::Call* call,
-                                        const sem::TypeInitializer* ctor) {
+bool GeneratorImpl::EmitValueConstructor(std::ostream& out,
+                                         const sem::Call* call,
+                                         const sem::ValueConstructor* ctor) {
     auto* type = call->Type();
 
-    // If the type initializer is empty then we need to construct with the zero
-    // value for all components.
+    // If the value constructor arguments are empty then we need to construct with the zero value
+    // for all components.
     if (call->Arguments().IsEmpty()) {
         return EmitZeroValue(out, type);
     }
@@ -1071,7 +1077,8 @@ bool GeneratorImpl::EmitTypeInitializer(std::ostream& out,
     if (brackets) {
         out << "{";
     } else {
-        if (!EmitType(out, type, type::AddressSpace::kNone, type::Access::kReadWrite, "")) {
+        if (!EmitType(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite,
+                      "")) {
             return false;
         }
         out << "(";
@@ -1106,7 +1113,7 @@ bool GeneratorImpl::EmitUniformBufferAccess(
     const ast::CallExpression* expr,
     const transform::DecomposeMemoryAccess::Intrinsic* intrinsic) {
     const auto& args = expr->args;
-    auto* offset_arg = builder_.Sem().Get(args[1]);
+    auto* offset_arg = builder_.Sem().GetVal(args[1]);
 
     // offset in bytes
     uint32_t scalar_offset_bytes = 0;
@@ -1162,7 +1169,7 @@ bool GeneratorImpl::EmitUniformBufferAccess(
         }
     }
 
-    constexpr const char swizzle[] = {'x', 'y', 'z', 'w'};
+    const char swizzle[] = {'x', 'y', 'z', 'w'};
 
     using Op = transform::DecomposeMemoryAccess::Intrinsic::Op;
     using DataType = transform::DecomposeMemoryAccess::Intrinsic::DataType;
@@ -1582,19 +1589,19 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
     const sem::Function* sem_func = builder_.Sem().Get(func);
     auto* result_ty = sem_func->ReturnType();
     const auto& params = sem_func->Parameters();
-    const auto name = builder_.Symbols().NameFor(func->symbol);
+    const auto name = builder_.Symbols().NameFor(func->name->symbol);
     auto& buf = *current_buffer_;
 
     auto rmw = [&](const char* hlsl) -> bool {
         {
             auto fn = line(&buf);
-            if (!EmitTypeAndName(fn, result_ty, type::AddressSpace::kNone, type::Access::kUndefined,
-                                 name)) {
+            if (!EmitTypeAndName(fn, result_ty, builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kUndefined, name)) {
                 return false;
             }
             fn << "(RWByteAddressBuffer buffer, uint offset, ";
-            if (!EmitTypeAndName(fn, result_ty, type::AddressSpace::kNone, type::Access::kUndefined,
-                                 "value")) {
+            if (!EmitTypeAndName(fn, result_ty, builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kUndefined, "value")) {
                 return false;
             }
             fn << ") {";
@@ -1609,8 +1616,8 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
 
         {
             auto l = line(&buf);
-            if (!EmitTypeAndName(l, result_ty, type::AddressSpace::kNone, type::Access::kUndefined,
-                                 "original_value")) {
+            if (!EmitTypeAndName(l, result_ty, builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kUndefined, "original_value")) {
                 return false;
             }
             l << " = 0;";
@@ -1658,8 +1665,8 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
             // InterlockedOr using 0 as the OR value
             {
                 auto fn = line(&buf);
-                if (!EmitTypeAndName(fn, result_ty, type::AddressSpace::kNone,
-                                     type::Access::kUndefined, name)) {
+                if (!EmitTypeAndName(fn, result_ty, builtin::AddressSpace::kUndefined,
+                                     builtin::Access::kUndefined, name)) {
                     return false;
                 }
                 fn << "(RWByteAddressBuffer buffer, uint offset) {";
@@ -1674,8 +1681,8 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
 
             {
                 auto l = line(&buf);
-                if (!EmitTypeAndName(l, result_ty, type::AddressSpace::kNone,
-                                     type::Access::kUndefined, "value")) {
+                if (!EmitTypeAndName(l, result_ty, builtin::AddressSpace::kUndefined,
+                                     builtin::Access::kUndefined, "value")) {
                     return false;
                 }
                 l << " = 0;";
@@ -1692,8 +1699,8 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
             {
                 auto fn = line(&buf);
                 fn << "void " << name << "(RWByteAddressBuffer buffer, uint offset, ";
-                if (!EmitTypeAndName(fn, value_ty, type::AddressSpace::kNone,
-                                     type::Access::kUndefined, "value")) {
+                if (!EmitTypeAndName(fn, value_ty, builtin::AddressSpace::kUndefined,
+                                     builtin::Access::kUndefined, "value")) {
                     return false;
                 }
                 fn << ") {";
@@ -1708,8 +1715,8 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
 
             {
                 auto l = line(&buf);
-                if (!EmitTypeAndName(l, value_ty, type::AddressSpace::kNone,
-                                     type::Access::kUndefined, "ignored")) {
+                if (!EmitTypeAndName(l, value_ty, builtin::AddressSpace::kUndefined,
+                                     builtin::Access::kUndefined, "ignored")) {
                     return false;
                 }
                 l << ";";
@@ -1723,18 +1730,18 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
             auto* value_ty = params[2]->Type()->UnwrapRef();
             {
                 auto fn = line(&buf);
-                if (!EmitTypeAndName(fn, result_ty, type::AddressSpace::kNone,
-                                     type::Access::kUndefined, name)) {
+                if (!EmitTypeAndName(fn, result_ty, builtin::AddressSpace::kUndefined,
+                                     builtin::Access::kUndefined, name)) {
                     return false;
                 }
                 fn << "(RWByteAddressBuffer buffer, uint offset, ";
-                if (!EmitTypeAndName(fn, value_ty, type::AddressSpace::kNone,
-                                     type::Access::kUndefined, "compare")) {
+                if (!EmitTypeAndName(fn, value_ty, builtin::AddressSpace::kUndefined,
+                                     builtin::Access::kUndefined, "compare")) {
                     return false;
                 }
                 fn << ", ";
-                if (!EmitTypeAndName(fn, value_ty, type::AddressSpace::kNone,
-                                     type::Access::kUndefined, "value")) {
+                if (!EmitTypeAndName(fn, value_ty, builtin::AddressSpace::kUndefined,
+                                     builtin::Access::kUndefined, "value")) {
                     return false;
                 }
                 fn << ") {";
@@ -1749,8 +1756,8 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
 
             {  // T result = {0};
                 auto l = line(&buf);
-                if (!EmitTypeAndName(l, result_ty, type::AddressSpace::kNone,
-                                     type::Access::kUndefined, "result")) {
+                if (!EmitTypeAndName(l, result_ty, builtin::AddressSpace::kUndefined,
+                                     builtin::Access::kUndefined, "result")) {
                     return false;
                 }
                 l << "=";
@@ -1784,8 +1791,8 @@ bool GeneratorImpl::EmitWorkgroupAtomicCall(std::ostream& out,
 
     if (!builtin->ReturnType()->Is<type::Void>()) {
         auto pre = line();
-        if (!EmitTypeAndName(pre, builtin->ReturnType(), type::AddressSpace::kNone,
-                             type::Access::kUndefined, result)) {
+        if (!EmitTypeAndName(pre, builtin->ReturnType(), builtin::AddressSpace::kUndefined,
+                             builtin::Access::kUndefined, result)) {
             return false;
         }
         pre << " = ";
@@ -1848,8 +1855,8 @@ bool GeneratorImpl::EmitWorkgroupAtomicCall(std::ostream& out,
             {  // T result = 0;
                 auto pre = line();
                 auto* value_ty = builtin->Parameters()[1]->Type()->UnwrapRef();
-                if (!EmitTypeAndName(pre, value_ty, type::AddressSpace::kNone,
-                                     type::Access::kUndefined, result)) {
+                if (!EmitTypeAndName(pre, value_ty, builtin::AddressSpace::kUndefined,
+                                     builtin::Access::kUndefined, result)) {
                     return false;
                 }
                 pre << " = ";
@@ -1887,7 +1894,7 @@ bool GeneratorImpl::EmitWorkgroupAtomicCall(std::ostream& out,
             {  // T compare_value = <compare_value>;
                 auto pre = line();
                 if (!EmitTypeAndName(pre, TypeOf(compare_value)->UnwrapRef(),
-                                     type::AddressSpace::kNone, type::Access::kUndefined,
+                                     builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
                                      compare)) {
                     return false;
                 }
@@ -1997,8 +2004,8 @@ bool GeneratorImpl::EmitModfCall(std::ostream& out,
 
             {
                 auto l = line(b);
-                if (!EmitType(l, builtin->ReturnType(), type::AddressSpace::kNone,
-                              type::Access::kUndefined, "")) {
+                if (!EmitType(l, builtin->ReturnType(), builtin::AddressSpace::kUndefined,
+                              builtin::Access::kUndefined, "")) {
                     return false;
                 }
                 l << " result;";
@@ -2039,8 +2046,8 @@ bool GeneratorImpl::EmitFrexpCall(std::ostream& out,
             line(b) << member_type << " fract = frexp(" << in << ", exp);";
             {
                 auto l = line(b);
-                if (!EmitType(l, builtin->ReturnType(), type::AddressSpace::kNone,
-                              type::Access::kUndefined, "")) {
+                if (!EmitType(l, builtin->ReturnType(), builtin::AddressSpace::kUndefined,
+                              builtin::Access::kUndefined, "")) {
                     return false;
                 }
                 l << " result = {fract, int" << width << "(exp)};";
@@ -2077,7 +2084,8 @@ bool GeneratorImpl::EmitRadiansCall(std::ostream& out,
 // type after the call to `sign`.
 bool GeneratorImpl::EmitSignCall(std::ostream& out, const sem::Call* call, const sem::Builtin*) {
     auto* arg = call->Arguments()[0];
-    if (!EmitType(out, arg->Type(), type::AddressSpace::kNone, type::Access::kReadWrite, "")) {
+    if (!EmitType(out, arg->Type(), builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite,
+                  "")) {
         return false;
     }
     out << "(sign(";
@@ -2566,10 +2574,10 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
         auto* i32 = builder_.create<type::I32>();
         auto* zero = builder_.Expr(0_i);
         auto* stmt = builder_.Sem().Get(vector)->Stmt();
-        builder_.Sem().Add(
-            zero, builder_.create<sem::Expression>(zero, i32, sem::EvaluationStage::kRuntime, stmt,
-                                                   /* constant_value */ nullptr,
-                                                   /* has_side_effects */ false));
+        builder_.Sem().Add(zero, builder_.create<sem::ValueExpression>(
+                                     zero, i32, sem::EvaluationStage::kRuntime, stmt,
+                                     /* constant_value */ nullptr,
+                                     /* has_side_effects */ false));
         auto* packed = AppendVector(&builder_, vector, zero);
         return EmitExpression(out, packed->Declaration());
     };
@@ -2787,7 +2795,7 @@ bool GeneratorImpl::EmitDiscard(const ast::DiscardStatement*) {
 }
 
 bool GeneratorImpl::EmitExpression(std::ostream& out, const ast::Expression* expr) {
-    if (auto* sem = builder_.Sem().Get(expr)) {
+    if (auto* sem = builder_.Sem().GetVal(expr)) {
         if (auto* constant = sem->ConstantValue()) {
             bool is_variable_initializer = false;
             if (auto* stmt = sem->Stmt()) {
@@ -2816,7 +2824,7 @@ bool GeneratorImpl::EmitExpression(std::ostream& out, const ast::Expression* exp
 }
 
 bool GeneratorImpl::EmitIdentifier(std::ostream& out, const ast::IdentifierExpression* expr) {
-    out << builder_.Symbols().NameFor(expr->symbol);
+    out << builder_.Symbols().NameFor(expr->identifier->symbol);
     return true;
 }
 
@@ -2857,7 +2865,7 @@ bool GeneratorImpl::EmitFunction(const ast::Function* func) {
     // Emit storage atomic helpers
     if (auto* intrinsic =
             ast::GetAttribute<transform::DecomposeMemoryAccess::Intrinsic>(func->attributes)) {
-        if (intrinsic->address_space == type::AddressSpace::kStorage && intrinsic->IsAtomic()) {
+        if (intrinsic->address_space == builtin::AddressSpace::kStorage && intrinsic->IsAtomic()) {
             if (!EmitStorageAtomicIntrinsic(func, intrinsic)) {
                 return false;
             }
@@ -2872,22 +2880,22 @@ bool GeneratorImpl::EmitFunction(const ast::Function* func) {
 
     {
         auto out = line();
-        auto name = builder_.Symbols().NameFor(func->symbol);
+        auto name = builder_.Symbols().NameFor(func->name->symbol);
         // If the function returns an array, then we need to declare a typedef for
         // this.
         if (sem->ReturnType()->Is<type::Array>()) {
             auto typedef_name = UniqueIdentifier(name + "_ret");
             auto pre = line();
             pre << "typedef ";
-            if (!EmitTypeAndName(pre, sem->ReturnType(), type::AddressSpace::kNone,
-                                 type::Access::kReadWrite, typedef_name)) {
+            if (!EmitTypeAndName(pre, sem->ReturnType(), builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kReadWrite, typedef_name)) {
                 return false;
             }
             pre << ";";
             out << typedef_name;
         } else {
-            if (!EmitType(out, sem->ReturnType(), type::AddressSpace::kNone,
-                          type::Access::kReadWrite, "")) {
+            if (!EmitType(out, sem->ReturnType(), builtin::AddressSpace::kUndefined,
+                          builtin::Access::kReadWrite, "")) {
                 return false;
             }
         }
@@ -2903,14 +2911,14 @@ bool GeneratorImpl::EmitFunction(const ast::Function* func) {
             first = false;
 
             auto const* type = v->Type();
-            auto address_space = type::AddressSpace::kNone;
-            auto access = type::Access::kUndefined;
+            auto address_space = builtin::AddressSpace::kUndefined;
+            auto access = builtin::Access::kUndefined;
 
             if (auto* ptr = type->As<type::Pointer>()) {
                 type = ptr->StoreType();
                 switch (ptr->AddressSpace()) {
-                    case type::AddressSpace::kStorage:
-                    case type::AddressSpace::kUniform:
+                    case builtin::AddressSpace::kStorage:
+                    case builtin::AddressSpace::kUniform:
                         // Not allowed by WGSL, but is used by certain transforms (e.g. DMA) to pass
                         // storage buffers and uniform buffers down into transform-generated
                         // functions. In this situation we want to generate the parameter without an
@@ -2924,14 +2932,14 @@ bool GeneratorImpl::EmitFunction(const ast::Function* func) {
                 }
             }
 
-            // Note: WGSL only allows for AddressSpace::kNone on parameters, however
+            // Note: WGSL only allows for AddressSpace::kUndefined on parameters, however
             // the sanitizer transforms generates load / store functions for storage
             // or uniform buffers. These functions have a buffer parameter with
             // AddressSpace::kStorage or AddressSpace::kUniform. This is required to
             // correctly translate the parameter to a [RW]ByteAddressBuffer for
             // storage buffers and a uint4[N] for uniform buffers.
             if (!EmitTypeAndName(out, type, address_space, access,
-                                 builder_.Symbols().NameFor(v->Declaration()->symbol))) {
+                                 builder_.Symbols().NameFor(v->Declaration()->name->symbol))) {
                 return false;
             }
         }
@@ -2977,8 +2985,8 @@ bool GeneratorImpl::EmitFunctionBodyWithDiscard(const ast::Function* func) {
     auto name = builder_.Symbols().NameFor(builder_.Symbols().New("unused"));
     {
         auto out = line();
-        if (!EmitTypeAndName(out, sem->ReturnType(), type::AddressSpace::kNone,
-                             type::Access::kReadWrite, name)) {
+        if (!EmitTypeAndName(out, sem->ReturnType(), builtin::AddressSpace::kUndefined,
+                             builtin::Access::kReadWrite, name)) {
             return false;
         }
         out << ";";
@@ -2994,17 +3002,17 @@ bool GeneratorImpl::EmitGlobalVariable(const ast::Variable* global) {
         [&](const ast::Var* var) {
             auto* sem = builder_.Sem().Get(global);
             switch (sem->AddressSpace()) {
-                case type::AddressSpace::kUniform:
+                case builtin::AddressSpace::kUniform:
                     return EmitUniformVariable(var, sem);
-                case type::AddressSpace::kStorage:
+                case builtin::AddressSpace::kStorage:
                     return EmitStorageVariable(var, sem);
-                case type::AddressSpace::kHandle:
+                case builtin::AddressSpace::kHandle:
                     return EmitHandleVariable(var, sem);
-                case type::AddressSpace::kPrivate:
+                case builtin::AddressSpace::kPrivate:
                     return EmitPrivateVariable(sem);
-                case type::AddressSpace::kWorkgroup:
+                case builtin::AddressSpace::kWorkgroup:
                     return EmitWorkgroupVariable(sem);
-                case type::AddressSpace::kPushConstant:
+                case builtin::AddressSpace::kPushConstant:
                     diagnostics_.add_error(
                         diag::System::Writer,
                         "unhandled address space " + utils::ToString(sem->AddressSpace()));
@@ -3037,13 +3045,13 @@ bool GeneratorImpl::EmitGlobalVariable(const ast::Variable* global) {
 bool GeneratorImpl::EmitUniformVariable(const ast::Var* var, const sem::Variable* sem) {
     auto binding_point = sem->As<sem::GlobalVariable>()->BindingPoint();
     auto* type = sem->Type()->UnwrapRef();
-    auto name = builder_.Symbols().NameFor(var->symbol);
+    auto name = builder_.Symbols().NameFor(var->name->symbol);
     line() << "cbuffer cbuffer_" << name << RegisterAndSpace('b', binding_point) << " {";
 
     {
         ScopedIndent si(this);
         auto out = line();
-        if (!EmitTypeAndName(out, type, type::AddressSpace::kUniform, sem->Access(), name)) {
+        if (!EmitTypeAndName(out, type, builtin::AddressSpace::kUniform, sem->Access(), name)) {
             return false;
         }
         out << ";";
@@ -3057,13 +3065,13 @@ bool GeneratorImpl::EmitUniformVariable(const ast::Var* var, const sem::Variable
 bool GeneratorImpl::EmitStorageVariable(const ast::Var* var, const sem::Variable* sem) {
     auto* type = sem->Type()->UnwrapRef();
     auto out = line();
-    if (!EmitTypeAndName(out, type, type::AddressSpace::kStorage, sem->Access(),
-                         builder_.Symbols().NameFor(var->symbol))) {
+    if (!EmitTypeAndName(out, type, builtin::AddressSpace::kStorage, sem->Access(),
+                         builder_.Symbols().NameFor(var->name->symbol))) {
         return false;
     }
 
     auto* global_sem = sem->As<sem::GlobalVariable>();
-    out << RegisterAndSpace(sem->Access() == type::Access::kRead ? 't' : 'u',
+    out << RegisterAndSpace(sem->Access() == builtin::Access::kRead ? 't' : 'u',
                             global_sem->BindingPoint())
         << ";";
 
@@ -3074,7 +3082,7 @@ bool GeneratorImpl::EmitHandleVariable(const ast::Var* var, const sem::Variable*
     auto* unwrapped_type = sem->Type()->UnwrapRef();
     auto out = line();
 
-    auto name = builder_.Symbols().NameFor(var->symbol);
+    auto name = builder_.Symbols().NameFor(var->name->symbol);
     auto* type = sem->Type()->UnwrapRef();
     if (!EmitTypeAndName(out, type, sem->AddressSpace(), sem->Access(), name)) {
         return false;
@@ -3106,7 +3114,7 @@ bool GeneratorImpl::EmitPrivateVariable(const sem::Variable* var) {
 
     out << "static ";
 
-    auto name = builder_.Symbols().NameFor(decl->symbol);
+    auto name = builder_.Symbols().NameFor(decl->name->symbol);
     auto* type = var->Type()->UnwrapRef();
     if (!EmitTypeAndName(out, type, var->AddressSpace(), var->Access(), name)) {
         return false;
@@ -3133,7 +3141,7 @@ bool GeneratorImpl::EmitWorkgroupVariable(const sem::Variable* var) {
 
     out << "groupshared ";
 
-    auto name = builder_.Symbols().NameFor(decl->symbol);
+    auto name = builder_.Symbols().NameFor(decl->name->symbol);
     auto* type = var->Type()->UnwrapRef();
     if (!EmitTypeAndName(out, type, var->AddressSpace(), var->Access(), name)) {
         return false;
@@ -3150,29 +3158,29 @@ bool GeneratorImpl::EmitWorkgroupVariable(const sem::Variable* var) {
     return true;
 }
 
-std::string GeneratorImpl::builtin_to_attribute(ast::BuiltinValue builtin) const {
+std::string GeneratorImpl::builtin_to_attribute(builtin::BuiltinValue builtin) const {
     switch (builtin) {
-        case ast::BuiltinValue::kPosition:
+        case builtin::BuiltinValue::kPosition:
             return "SV_Position";
-        case ast::BuiltinValue::kVertexIndex:
+        case builtin::BuiltinValue::kVertexIndex:
             return "SV_VertexID";
-        case ast::BuiltinValue::kInstanceIndex:
+        case builtin::BuiltinValue::kInstanceIndex:
             return "SV_InstanceID";
-        case ast::BuiltinValue::kFrontFacing:
+        case builtin::BuiltinValue::kFrontFacing:
             return "SV_IsFrontFace";
-        case ast::BuiltinValue::kFragDepth:
+        case builtin::BuiltinValue::kFragDepth:
             return "SV_Depth";
-        case ast::BuiltinValue::kLocalInvocationId:
+        case builtin::BuiltinValue::kLocalInvocationId:
             return "SV_GroupThreadID";
-        case ast::BuiltinValue::kLocalInvocationIndex:
+        case builtin::BuiltinValue::kLocalInvocationIndex:
             return "SV_GroupIndex";
-        case ast::BuiltinValue::kGlobalInvocationId:
+        case builtin::BuiltinValue::kGlobalInvocationId:
             return "SV_DispatchThreadID";
-        case ast::BuiltinValue::kWorkgroupId:
+        case builtin::BuiltinValue::kWorkgroupId:
             return "SV_GroupID";
-        case ast::BuiltinValue::kSampleIndex:
+        case builtin::BuiltinValue::kSampleIndex:
             return "SV_SampleIndex";
-        case ast::BuiltinValue::kSampleMask:
+        case builtin::BuiltinValue::kSampleMask:
             return "SV_Coverage";
         default:
             break;
@@ -3180,31 +3188,32 @@ std::string GeneratorImpl::builtin_to_attribute(ast::BuiltinValue builtin) const
     return "";
 }
 
-std::string GeneratorImpl::interpolation_to_modifiers(ast::InterpolationType type,
-                                                      ast::InterpolationSampling sampling) const {
+std::string GeneratorImpl::interpolation_to_modifiers(
+    builtin::InterpolationType type,
+    builtin::InterpolationSampling sampling) const {
     std::string modifiers;
     switch (type) {
-        case ast::InterpolationType::kPerspective:
+        case builtin::InterpolationType::kPerspective:
             modifiers += "linear ";
             break;
-        case ast::InterpolationType::kLinear:
+        case builtin::InterpolationType::kLinear:
             modifiers += "noperspective ";
             break;
-        case ast::InterpolationType::kFlat:
+        case builtin::InterpolationType::kFlat:
             modifiers += "nointerpolation ";
             break;
-        case ast::InterpolationType::kUndefined:
+        case builtin::InterpolationType::kUndefined:
             break;
     }
     switch (sampling) {
-        case ast::InterpolationSampling::kCentroid:
+        case builtin::InterpolationSampling::kCentroid:
             modifiers += "centroid ";
             break;
-        case ast::InterpolationSampling::kSample:
+        case builtin::InterpolationSampling::kSample:
             modifiers += "sample ";
             break;
-        case ast::InterpolationSampling::kCenter:
-        case ast::InterpolationSampling::kUndefined:
+        case builtin::InterpolationSampling::kCenter:
+        case builtin::InterpolationSampling::kUndefined:
             break;
     }
     return modifiers;
@@ -3235,9 +3244,12 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
             out << ")]" << std::endl;
         }
 
-        out << func->return_type->FriendlyName(builder_.Symbols());
-
-        out << " " << builder_.Symbols().NameFor(func->symbol) << "(";
+        if (!EmitTypeAndName(out, func_sem->ReturnType(), builtin::AddressSpace::kUndefined,
+                             builtin::Access::kUndefined,
+                             builder_.Symbols().NameFor(func->name->symbol))) {
+            return false;
+        }
+        out << "(";
 
         bool first = true;
 
@@ -3257,7 +3269,7 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
             first = false;
 
             if (!EmitTypeAndName(out, type, sem->AddressSpace(), sem->Access(),
-                                 builder_.Symbols().NameFor(var->symbol))) {
+                                 builder_.Symbols().NameFor(var->name->symbol))) {
                 return false;
             }
         }
@@ -3328,7 +3340,8 @@ bool GeneratorImpl::EmitConstant(std::ostream& out,
                 return true;
             }
 
-            if (!EmitType(out, v, type::AddressSpace::kNone, type::Access::kUndefined, "")) {
+            if (!EmitType(out, v, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
+                          "")) {
                 return false;
             }
 
@@ -3345,7 +3358,8 @@ bool GeneratorImpl::EmitConstant(std::ostream& out,
             return true;
         },
         [&](const type::Matrix* m) {
-            if (!EmitType(out, m, type::AddressSpace::kNone, type::Access::kUndefined, "")) {
+            if (!EmitType(out, m, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
+                          "")) {
                 return false;
             }
 
@@ -3364,7 +3378,8 @@ bool GeneratorImpl::EmitConstant(std::ostream& out,
         [&](const type::Array* a) {
             if (constant->AllZero()) {
                 out << "(";
-                if (!EmitType(out, a, type::AddressSpace::kNone, type::Access::kUndefined, "")) {
+                if (!EmitType(out, a, builtin::AddressSpace::kUndefined,
+                              builtin::Access::kUndefined, "")) {
                     return false;
                 }
                 out << ")0";
@@ -3504,7 +3519,8 @@ bool GeneratorImpl::EmitValue(std::ostream& out, const type::Type* type, int val
             return true;
         },
         [&](const type::Vector* vec) {
-            if (!EmitType(out, type, type::AddressSpace::kNone, type::Access::kReadWrite, "")) {
+            if (!EmitType(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite,
+                          "")) {
                 return false;
             }
             ScopedParen sp(out);
@@ -3519,7 +3535,8 @@ bool GeneratorImpl::EmitValue(std::ostream& out, const type::Type* type, int val
             return true;
         },
         [&](const type::Matrix* mat) {
-            if (!EmitType(out, type, type::AddressSpace::kNone, type::Access::kReadWrite, "")) {
+            if (!EmitType(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite,
+                          "")) {
                 return false;
             }
             ScopedParen sp(out);
@@ -3536,12 +3553,14 @@ bool GeneratorImpl::EmitValue(std::ostream& out, const type::Type* type, int val
         [&](const sem::Struct*) {
             out << "(";
             TINT_DEFER(out << ")" << value);
-            return EmitType(out, type, type::AddressSpace::kNone, type::Access::kUndefined, "");
+            return EmitType(out, type, builtin::AddressSpace::kUndefined,
+                            builtin::Access::kUndefined, "");
         },
         [&](const type::Array*) {
             out << "(";
             TINT_DEFER(out << ")" << value);
-            return EmitType(out, type, type::AddressSpace::kNone, type::Access::kUndefined, "");
+            return EmitType(out, type, builtin::AddressSpace::kUndefined,
+                            builtin::Access::kUndefined, "");
         },
         [&](Default) {
             diagnostics_.add_error(
@@ -3742,7 +3761,7 @@ bool GeneratorImpl::EmitWhile(const ast::WhileStatement* stmt) {
 
 bool GeneratorImpl::EmitMemberAccessor(std::ostream& out,
                                        const ast::MemberAccessorExpression* expr) {
-    if (!EmitExpression(out, expr->structure)) {
+    if (!EmitExpression(out, expr->object)) {
         return false;
     }
     out << ".";
@@ -3859,10 +3878,9 @@ bool GeneratorImpl::EmitDefaultOnlySwitch(const ast::SwitchStatement* stmt) {
     // default case body. We work around this here by emitting the default case
     // without the switch.
 
-    // Emit the switch condition as-is in case it has side-effects (e.g.
-    // function call). Note that's it's fine not to assign the result of the
-    // expression.
-    {
+    // Emit the switch condition as-is if it has side-effects (e.g.
+    // function call). Note that we can ignore the result of the expression (if any).
+    if (auto* sem_cond = builder_.Sem().GetVal(stmt->condition); sem_cond->HasSideEffects()) {
         auto out = line();
         if (!EmitExpression(out, stmt->condition)) {
             return false;
@@ -3916,21 +3934,21 @@ bool GeneratorImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
 
 bool GeneratorImpl::EmitType(std::ostream& out,
                              const type::Type* type,
-                             type::AddressSpace address_space,
-                             type::Access access,
+                             builtin::AddressSpace address_space,
+                             builtin::Access access,
                              const std::string& name,
                              bool* name_printed /* = nullptr */) {
     if (name_printed) {
         *name_printed = false;
     }
     switch (address_space) {
-        case type::AddressSpace::kStorage:
-            if (access != type::Access::kRead) {
+        case builtin::AddressSpace::kStorage:
+            if (access != builtin::Access::kRead) {
                 out << "RW";
             }
             out << "ByteAddressBuffer";
             return true;
-        case type::AddressSpace::kUniform: {
+        case builtin::AddressSpace::kUniform: {
             auto array_length = (type->Size() + 15) / 16;
             out << "uint4 " << name << "[" << array_length << "]";
             if (name_printed) {
@@ -4047,7 +4065,7 @@ bool GeneratorImpl::EmitType(std::ostream& out,
             auto* depth_ms = tex->As<type::DepthMultisampledTexture>();
             auto* sampled = tex->As<type::SampledTexture>();
 
-            if (storage && storage->access() != type::Access::kRead) {
+            if (storage && storage->access() != builtin::Access::kRead) {
                 out << "RW";
             }
             out << "Texture";
@@ -4143,8 +4161,8 @@ bool GeneratorImpl::EmitType(std::ostream& out,
 
 bool GeneratorImpl::EmitTypeAndName(std::ostream& out,
                                     const type::Type* type,
-                                    type::AddressSpace address_space,
-                                    type::Access access,
+                                    builtin::AddressSpace address_space,
+                                    builtin::Access access,
                                     const std::string& name) {
     bool name_printed = false;
     if (!EmitType(out, type, address_space, access, name, &name_printed)) {
@@ -4193,16 +4211,30 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
                         } else {
                             TINT_ICE(Writer, diagnostics_) << "invalid use of location attribute";
                         }
-                    } else if (auto* builtin = attr->As<ast::BuiltinAttribute>()) {
-                        auto name = builtin_to_attribute(builtin->builtin);
+                    } else if (auto* builtin_attr = attr->As<ast::BuiltinAttribute>()) {
+                        auto builtin = program_->Sem().Get(builtin_attr)->Value();
+                        auto name = builtin_to_attribute(builtin);
                         if (name.empty()) {
                             diagnostics_.add_error(diag::System::Writer, "unsupported builtin");
                             return false;
                         }
                         post += " : " + name;
                     } else if (auto* interpolate = attr->As<ast::InterpolateAttribute>()) {
-                        auto mod =
-                            interpolation_to_modifiers(interpolate->type, interpolate->sampling);
+                        auto& sem = program_->Sem();
+                        auto i_type =
+                            sem.Get<sem::BuiltinEnumExpression<builtin::InterpolationType>>(
+                                   interpolate->type)
+                                ->Value();
+
+                        auto i_smpl = builtin::InterpolationSampling::kUndefined;
+                        if (interpolate->sampling) {
+                            i_smpl =
+                                sem.Get<sem::BuiltinEnumExpression<builtin::InterpolationSampling>>(
+                                       interpolate->sampling)
+                                    ->Value();
+                        }
+
+                        auto mod = interpolation_to_modifiers(i_type, i_smpl);
                         if (mod.empty()) {
                             diagnostics_.add_error(diag::System::Writer,
                                                    "unsupported interpolation");
@@ -4226,8 +4258,8 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
             }
 
             out << pre;
-            if (!EmitTypeAndName(out, ty, type::AddressSpace::kNone, type::Access::kReadWrite,
-                                 mem_name)) {
+            if (!EmitTypeAndName(out, ty, builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kReadWrite, mem_name)) {
                 return false;
             }
             out << post << ";";
@@ -4270,7 +4302,7 @@ bool GeneratorImpl::EmitVar(const ast::Var* var) {
 
     auto out = line();
     if (!EmitTypeAndName(out, type, sem->AddressSpace(), sem->Access(),
-                         builder_.Symbols().NameFor(var->symbol))) {
+                         builder_.Symbols().NameFor(var->name->symbol))) {
         return false;
     }
 
@@ -4296,8 +4328,8 @@ bool GeneratorImpl::EmitLet(const ast::Let* let) {
 
     auto out = line();
     out << "const ";
-    if (!EmitTypeAndName(out, type, type::AddressSpace::kNone, type::Access::kUndefined,
-                         builder_.Symbols().NameFor(let->symbol))) {
+    if (!EmitTypeAndName(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
+                         builder_.Symbols().NameFor(let->name->symbol))) {
         return false;
     }
     out << " = ";
@@ -4323,8 +4355,8 @@ bool GeneratorImpl::CallBuiltinHelper(std::ostream& out,
         std::vector<std::string> parameter_names;
         {
             auto decl = line(&b);
-            if (!EmitTypeAndName(decl, builtin->ReturnType(), type::AddressSpace::kNone,
-                                 type::Access::kUndefined, fn_name)) {
+            if (!EmitTypeAndName(decl, builtin->ReturnType(), builtin::AddressSpace::kUndefined,
+                                 builtin::Access::kUndefined, fn_name)) {
                 return "";
             }
             {
@@ -4339,8 +4371,8 @@ bool GeneratorImpl::CallBuiltinHelper(std::ostream& out,
                         decl << "inout ";
                         ty = ptr->StoreType();
                     }
-                    if (!EmitTypeAndName(decl, ty, type::AddressSpace::kNone,
-                                         type::Access::kUndefined, param_name)) {
+                    if (!EmitTypeAndName(decl, ty, builtin::AddressSpace::kUndefined,
+                                         builtin::Access::kUndefined, param_name)) {
                         return "";
                     }
                     parameter_names.emplace_back(std::move(param_name));

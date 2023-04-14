@@ -22,6 +22,8 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/builtin.h"
 #include "src/tint/sem/call.h"
+#include "src/tint/sem/type_expression.h"
+#include "src/tint/type/storage_texture.h"
 #include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/map.h"
 
@@ -43,7 +45,7 @@ struct BuiltinPolyfill::State {
     State(CloneContext& c, Builtins p) : ctx(c), polyfill(p) {
         has_full_ptr_params = false;
         for (auto* enable : c.src->AST().Enables()) {
-            if (enable->extension == ast::Extension::kChromiumExperimentalFullPtrParameters) {
+            if (enable->extension == builtin::Extension::kChromiumExperimentalFullPtrParameters) {
                 has_full_ptr_params = true;
             }
         }
@@ -65,7 +67,7 @@ struct BuiltinPolyfill::State {
             if (width == 1) {
                 return expr;
             }
-            return b.Construct(T(ty), expr);
+            return b.Call(T(ty), expr);
         };
 
         utils::Vector<const ast::Statement*, 4> body;
@@ -119,7 +121,7 @@ struct BuiltinPolyfill::State {
             if (width == 1) {
                 return expr;
             }
-            return b.Construct(T(ty), expr);
+            return b.Call(T(ty), expr);
         };
 
         utils::Vector<const ast::Statement*, 1> body;
@@ -174,7 +176,7 @@ struct BuiltinPolyfill::State {
         uint32_t width = WidthOf(ty);
 
         // Returns either u32 or vecN<u32>
-        auto U = [&]() -> const ast::Type* {
+        auto U = [&]() {
             if (width == 1) {
                 return b.ty.u32();
             }
@@ -183,44 +185,44 @@ struct BuiltinPolyfill::State {
         auto V = [&](uint32_t value) -> const ast::Expression* {
             return ScalarOrVector(width, u32(value));
         };
-        b.Func(name,
-               utils::Vector{
-                   b.Param("v", T(ty)),
-               },
-               T(ty),
-               utils::Vector{
-                   // var x = U(v);
-                   b.Decl(b.Var("x", b.Construct(U(), b.Expr("v")))),
-                   // let b16 = select(0, 16, x <= 0x0000ffff);
-                   b.Decl(b.Let(
-                       "b16", b.Call("select", V(0), V(16), b.LessThanEqual("x", V(0x0000ffff))))),
-                   // x = x << b16;
-                   b.Assign("x", b.Shl("x", "b16")),
-                   // let b8  = select(0, 8,  x <= 0x00ffffff);
-                   b.Decl(b.Let("b8",
-                                b.Call("select", V(0), V(8), b.LessThanEqual("x", V(0x00ffffff))))),
-                   // x = x << b8;
-                   b.Assign("x", b.Shl("x", "b8")),
-                   // let b4  = select(0, 4,  x <= 0x0fffffff);
-                   b.Decl(b.Let("b4",
-                                b.Call("select", V(0), V(4), b.LessThanEqual("x", V(0x0fffffff))))),
-                   // x = x << b4;
-                   b.Assign("x", b.Shl("x", "b4")),
-                   // let b2  = select(0, 2,  x <= 0x3fffffff);
-                   b.Decl(b.Let("b2",
-                                b.Call("select", V(0), V(2), b.LessThanEqual("x", V(0x3fffffff))))),
-                   // x = x << b2;
-                   b.Assign("x", b.Shl("x", "b2")),
-                   // let b1  = select(0, 1,  x <= 0x7fffffff);
-                   b.Decl(b.Let("b1",
-                                b.Call("select", V(0), V(1), b.LessThanEqual("x", V(0x7fffffff))))),
-                   // let is_zero  = select(0, 1, x == 0);
-                   b.Decl(b.Let("is_zero", b.Call("select", V(0), V(1), b.Equal("x", V(0))))),
-                   // return R((b16 | b8 | b4 | b2 | b1) + zero);
-                   b.Return(b.Construct(
-                       T(ty),
-                       b.Add(b.Or(b.Or(b.Or(b.Or("b16", "b8"), "b4"), "b2"), "b1"), "is_zero"))),
-               });
+        b.Func(
+            name,
+            utils::Vector{
+                b.Param("v", T(ty)),
+            },
+            T(ty),
+            utils::Vector{
+                // var x = U(v);
+                b.Decl(b.Var("x", b.Call(U(), b.Expr("v")))),
+                // let b16 = select(0, 16, x <= 0x0000ffff);
+                b.Decl(b.Let("b16",
+                             b.Call("select", V(0), V(16), b.LessThanEqual("x", V(0x0000ffff))))),
+                // x = x << b16;
+                b.Assign("x", b.Shl("x", "b16")),
+                // let b8  = select(0, 8,  x <= 0x00ffffff);
+                b.Decl(
+                    b.Let("b8", b.Call("select", V(0), V(8), b.LessThanEqual("x", V(0x00ffffff))))),
+                // x = x << b8;
+                b.Assign("x", b.Shl("x", "b8")),
+                // let b4  = select(0, 4,  x <= 0x0fffffff);
+                b.Decl(
+                    b.Let("b4", b.Call("select", V(0), V(4), b.LessThanEqual("x", V(0x0fffffff))))),
+                // x = x << b4;
+                b.Assign("x", b.Shl("x", "b4")),
+                // let b2  = select(0, 2,  x <= 0x3fffffff);
+                b.Decl(
+                    b.Let("b2", b.Call("select", V(0), V(2), b.LessThanEqual("x", V(0x3fffffff))))),
+                // x = x << b2;
+                b.Assign("x", b.Shl("x", "b2")),
+                // let b1  = select(0, 1,  x <= 0x7fffffff);
+                b.Decl(
+                    b.Let("b1", b.Call("select", V(0), V(1), b.LessThanEqual("x", V(0x7fffffff))))),
+                // let is_zero  = select(0, 1, x == 0);
+                b.Decl(b.Let("is_zero", b.Call("select", V(0), V(1), b.Equal("x", V(0))))),
+                // return R((b16 | b8 | b4 | b2 | b1) + zero);
+                b.Return(b.Call(T(ty), b.Add(b.Or(b.Or(b.Or(b.Or("b16", "b8"), "b4"), "b2"), "b1"),
+                                             "is_zero"))),
+            });
         return name;
     }
 
@@ -232,7 +234,7 @@ struct BuiltinPolyfill::State {
         uint32_t width = WidthOf(ty);
 
         // Returns either u32 or vecN<u32>
-        auto U = [&]() -> const ast::Type* {
+        auto U = [&]() {
             if (width == 1) {
                 return b.ty.u32();
             }
@@ -243,9 +245,9 @@ struct BuiltinPolyfill::State {
         };
         auto B = [&](const ast::Expression* value) -> const ast::Expression* {
             if (width == 1) {
-                return b.Construct<bool>(value);
+                return b.Call<bool>(value);
             }
-            return b.Construct(b.ty.vec<bool>(width), value);
+            return b.Call(b.ty.vec<bool>(width), value);
         };
         b.Func(
             name,
@@ -255,7 +257,7 @@ struct BuiltinPolyfill::State {
             T(ty),
             utils::Vector{
                 // var x = U(v);
-                b.Decl(b.Var("x", b.Construct(U(), b.Expr("v")))),
+                b.Decl(b.Var("x", b.Call(U(), b.Expr("v")))),
                 // let b16 = select(16, 0, bool(x & 0x0000ffff));
                 b.Decl(b.Let("b16", b.Call("select", V(16), V(0), B(b.And("x", V(0x0000ffff)))))),
                 // x = x >> b16;
@@ -277,9 +279,8 @@ struct BuiltinPolyfill::State {
                 // let is_zero  = select(0, 1, x == 0);
                 b.Decl(b.Let("is_zero", b.Call("select", V(0), V(1), b.Equal("x", V(0))))),
                 // return R((b16 | b8 | b4 | b2 | b1) + zero);
-                b.Return(b.Construct(
-                    T(ty),
-                    b.Add(b.Or(b.Or(b.Or(b.Or("b16", "b8"), "b4"), "b2"), "b1"), "is_zero"))),
+                b.Return(b.Call(T(ty), b.Add(b.Or(b.Or(b.Or(b.Or("b16", "b8"), "b4"), "b2"), "b1"),
+                                             "is_zero"))),
             });
         return name;
     }
@@ -297,7 +298,7 @@ struct BuiltinPolyfill::State {
             if (width == 1) {
                 return value;
             }
-            return b.Construct(b.ty.vec<u32>(width), value);
+            return b.Call(b.ty.vec<u32>(width), value);
         };
 
         utils::Vector<const ast::Statement*, 8> body{
@@ -312,7 +313,7 @@ struct BuiltinPolyfill::State {
                 // Here we don't want the shl and shr modulos the rhs, so handle the `rhs >= 32u`
                 // cases using `select`. In order to handle the signed shr `lhs >> rhs` corrently,
                 // use `(lhs >> 31u) >> 1u` if `rhs >= 32u`.
-                body.Push(b.Decl(b.Let("shl_result", b.Call("select", b.Construct(T(ty)),
+                body.Push(b.Decl(b.Let("shl_result", b.Call("select", b.Call(T(ty)),
                                                             b.Shl("v", vecN_u32(b.Expr("shl"))),
                                                             b.LessThan("shl", 32_u)))));
                 body.Push(b.Return(b.Call(
@@ -350,7 +351,7 @@ struct BuiltinPolyfill::State {
         uint32_t width = WidthOf(ty);
 
         // Returns either u32 or vecN<u32>
-        auto U = [&]() -> const ast::Type* {
+        auto U = [&]() {
             if (width == 1) {
                 return b.ty.u32();
             }
@@ -361,9 +362,9 @@ struct BuiltinPolyfill::State {
         };
         auto B = [&](const ast::Expression* value) -> const ast::Expression* {
             if (width == 1) {
-                return b.Construct<bool>(value);
+                return b.Call<bool>(value);
             }
-            return b.Construct(b.ty.vec<bool>(width), value);
+            return b.Call(b.ty.vec<bool>(width), value);
         };
 
         const ast::Expression* x = nullptr;
@@ -371,9 +372,9 @@ struct BuiltinPolyfill::State {
             x = b.Expr("v");
         } else {
             // If ty is signed, then the value is inverted if the sign is negative
-            x = b.Call("select",                             //
-                       b.Construct(U(), "v"),                //
-                       b.Construct(U(), b.Complement("v")),  //
+            x = b.Call("select",                        //
+                       b.Call(U(), "v"),                //
+                       b.Call(U(), b.Complement("v")),  //
                        b.LessThan("v", ScalarOrVector(width, 0_i)));
         }
 
@@ -408,7 +409,7 @@ struct BuiltinPolyfill::State {
                 // let is_zero  = select(0, 0xffffffff, x == 0);
                 b.Decl(b.Let("is_zero", b.Call("select", V(0), V(0xffffffff), b.Equal("x", V(0))))),
                 // return R(b16 | b8 | b4 | b2 | b1 | zero);
-                b.Return(b.Construct(
+                b.Return(b.Call(
                     T(ty), b.Or(b.Or(b.Or(b.Or(b.Or("b16", "b8"), "b4"), "b2"), "b1"), "is_zero"))),
             });
         return name;
@@ -422,7 +423,7 @@ struct BuiltinPolyfill::State {
         uint32_t width = WidthOf(ty);
 
         // Returns either u32 or vecN<u32>
-        auto U = [&]() -> const ast::Type* {
+        auto U = [&]() {
             if (width == 1) {
                 return b.ty.u32();
             }
@@ -433,9 +434,9 @@ struct BuiltinPolyfill::State {
         };
         auto B = [&](const ast::Expression* value) -> const ast::Expression* {
             if (width == 1) {
-                return b.Construct<bool>(value);
+                return b.Call<bool>(value);
             }
-            return b.Construct(b.ty.vec<bool>(width), value);
+            return b.Call(b.ty.vec<bool>(width), value);
         };
         b.Func(
             name,
@@ -445,7 +446,7 @@ struct BuiltinPolyfill::State {
             T(ty),
             utils::Vector{
                 // var x = U(v);
-                b.Decl(b.Var("x", b.Construct(U(), b.Expr("v")))),
+                b.Decl(b.Var("x", b.Call(U(), b.Expr("v")))),
                 // let b16 = select(16, 0, bool(x & 0x0000ffff));
                 b.Decl(b.Let("b16", b.Call("select", V(16), V(0), B(b.And("x", V(0x0000ffff)))))),
                 // x = x >> b16;
@@ -467,7 +468,7 @@ struct BuiltinPolyfill::State {
                 // let is_zero  = select(0, 0xffffffff, x == 0);
                 b.Decl(b.Let("is_zero", b.Call("select", V(0), V(0xffffffff), b.Equal("x", V(0))))),
                 // return R(b16 | b8 | b4 | b2 | b1 | is_zero);
-                b.Return(b.Construct(
+                b.Return(b.Call(
                     T(ty), b.Or(b.Or(b.Or(b.Or(b.Or("b16", "b8"), "b4"), "b2"), "b1"), "is_zero"))),
             });
         return name;
@@ -493,10 +494,10 @@ struct BuiltinPolyfill::State {
         auto V = [&](auto value) -> const ast::Expression* {
             const ast::Expression* expr = b.Expr(value);
             if (!ty->is_unsigned_integer_scalar_or_vector()) {
-                expr = b.Construct<i32>(expr);
+                expr = b.Call<i32>(expr);
             }
             if (ty->Is<type::Vector>()) {
-                expr = b.Construct(T(ty), expr);
+                expr = b.Call(T(ty), expr);
             }
             return expr;
         };
@@ -552,8 +553,8 @@ struct BuiltinPolyfill::State {
 
                 // return ((select(T(), n << offset, offset < 32u) & mask) | (v & ~(mask)));
                 body.Push(
-                    b.Return(b.Or(b.And(b.Call("select", b.Construct(T(ty)),
-                                               b.Shl("n", U("offset")), b.LessThan("offset", 32_u)),
+                    b.Return(b.Or(b.And(b.Call("select", b.Call(T(ty)), b.Shl("n", U("offset")),
+                                               b.LessThan("offset", 32_u)),
                                         V("mask")),
                                   b.And("v", V(b.Complement("mask"))))));
 
@@ -587,7 +588,7 @@ struct BuiltinPolyfill::State {
     Symbol saturate(const type::Type* ty) {
         auto name = b.Symbols().New("tint_saturate");
         auto body = utils::Vector{
-            b.Return(b.Call("clamp", "v", b.Construct(T(ty), 0_a), b.Construct(T(ty), 1_a))),
+            b.Return(b.Call("clamp", "v", b.Call(T(ty), 0_a), b.Call(T(ty), 1_a))),
         };
         b.Func(name,
                utils::Vector{
@@ -630,8 +631,7 @@ struct BuiltinPolyfill::State {
     Symbol textureSampleBaseClampToEdge_2d_f32() {
         auto name = b.Symbols().New("tint_textureSampleBaseClampToEdge");
         auto body = utils::Vector{
-            b.Decl(b.Let("dims",
-                         b.Construct(b.ty.vec2<f32>(), b.Call("textureDimensions", "t", 0_a)))),
+            b.Decl(b.Let("dims", b.Call(b.ty.vec2<f32>(), b.Call("textureDimensions", "t", 0_a)))),
             b.Decl(b.Let("half_texel", b.Div(b.vec2<f32>(0.5_a), "dims"))),
             b.Decl(
                 b.Let("clamped", b.Call("clamp", "coord", "half_texel", b.Sub(1_a, "half_texel")))),
@@ -663,7 +663,7 @@ struct BuiltinPolyfill::State {
                },
                T(vec),
                utils::Vector{
-                   b.Return(b.Construct(T(vec), std::move(args))),
+                   b.Return(b.Call(T(vec), std::move(args))),
                });
         return name;
     }
@@ -673,13 +673,13 @@ struct BuiltinPolyfill::State {
     /// @return the polyfill function name
     Symbol workgroupUniformLoad(const type::Type* type) {
         if (!has_full_ptr_params) {
-            b.Enable(ast::Extension::kChromiumExperimentalFullPtrParameters);
+            b.Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
             has_full_ptr_params = true;
         }
         auto name = b.Symbols().New("tint_workgroupUniformLoad");
         b.Func(name,
                utils::Vector{
-                   b.Param("p", b.ty.pointer(T(type), type::AddressSpace::kWorkgroup)),
+                   b.Param("p", b.ty.pointer(T(type), builtin::AddressSpace::kWorkgroup)),
                },
                T(type),
                utils::Vector{
@@ -705,7 +705,7 @@ struct BuiltinPolyfill::State {
         auto* lhs_el_ty = type::Type::DeepestElementOf(lhs_ty);
         const ast::Expression* mask = b.Expr(AInt(lhs_el_ty->Size() * 8 - 1));
         if (rhs_ty->Is<type::Vector>()) {
-            mask = b.Construct(CreateASTTypeFor(ctx, rhs_ty), mask);
+            mask = b.Call(CreateASTTypeFor(ctx, rhs_ty), mask);
         }
         auto* lhs = ctx.Clone(bin_op->lhs);
         auto* rhs = b.And(ctx.Clone(bin_op->rhs), mask);
@@ -747,18 +747,104 @@ struct BuiltinPolyfill::State {
             }
 
             auto name = b.Symbols().New(is_div ? "tint_div" : "tint_mod");
-            auto* use_one = b.Equal(rhs, ScalarOrVector(width, 0_a));
+
+            auto* rhs_is_zero = b.Equal(rhs, ScalarOrVector(width, 0_a));
+
             if (lhs_ty->is_signed_integer_scalar_or_vector()) {
                 const auto bits = lhs_el_ty->Size() * 8;
                 auto min_int = AInt(AInt::kLowestValue >> (AInt::kNumBits - bits));
                 const ast::Expression* lhs_is_min = b.Equal(lhs, ScalarOrVector(width, min_int));
                 const ast::Expression* rhs_is_minus_one = b.Equal(rhs, ScalarOrVector(width, -1_a));
-                // use_one = use_one | ((lhs == MIN_INT) & (rhs == -1))
-                use_one = b.Or(use_one, b.And(lhs_is_min, rhs_is_minus_one));
-            }
-            auto* select = b.Call("select", rhs, ScalarOrVector(width, 1_a), use_one);
+                // use_one = rhs_is_zero | ((lhs == MIN_INT) & (rhs == -1))
+                auto* use_one = b.Or(rhs_is_zero, b.And(lhs_is_min, rhs_is_minus_one));
 
-            body.Push(b.Return(is_div ? b.Div(lhs, select) : b.Mod(lhs, select)));
+                // Special handling for mod in case either operand is negative, as negative operands
+                // for % is undefined behaviour for most backends (HLSL, MSL, GLSL, SPIR-V).
+                if (!is_div) {
+                    const char* rhs_or_one = "rhs_or_one";
+                    body.Push(b.Decl(b.Let(
+                        rhs_or_one, b.Call("select", rhs, ScalarOrVector(width, 1_a), use_one))));
+
+                    // Is either operand negative?
+                    // (lhs | rhs) & (1<<31)
+                    auto sign_bit_mask = ScalarOrVector(width, u32(1 << (bits - 1)));
+                    auto* lhs_or_rhs = CastScalarOrVector<u32>(width, b.Or(lhs, rhs_or_one));
+                    auto* lhs_or_rhs_is_neg =
+                        b.NotEqual(b.And(lhs_or_rhs, sign_bit_mask), ScalarOrVector(width, 0_u));
+
+                    // lhs - trunc(lhs / rhs) * rhs (note: integral division truncates)
+                    auto* slow_mod = b.Sub(lhs, b.Mul(b.Div(lhs, rhs_or_one), rhs_or_one));
+
+                    // lhs % rhs
+                    auto* fast_mod = b.Mod(lhs, rhs_or_one);
+
+                    auto* use_slow = b.Call("any", lhs_or_rhs_is_neg);
+
+                    body.Push(b.If(use_slow, b.Block(b.Return(slow_mod)),
+                                   b.Else(b.Block(b.Return(fast_mod)))));
+
+                } else {
+                    auto* rhs_or_one = b.Call("select", rhs, ScalarOrVector(width, 1_a), use_one);
+                    body.Push(b.Return(is_div ? b.Div(lhs, rhs_or_one) : b.Mod(lhs, rhs_or_one)));
+                }
+
+            } else {
+                auto* rhs_or_one = b.Call("select", rhs, ScalarOrVector(width, 1_a), rhs_is_zero);
+                body.Push(b.Return(is_div ? b.Div(lhs, rhs_or_one) : b.Mod(lhs, rhs_or_one)));
+            }
+
+            b.Func(name,
+                   utils::Vector{
+                       b.Param("lhs", T(lhs_ty)),
+                       b.Param("rhs", T(rhs_ty)),
+                   },
+                   width == 1 ? T(lhs_ty) : b.ty.vec(T(lhs_el_ty), width),  // return type
+                   std::move(body));
+
+            return name;
+        });
+        auto* lhs = ctx.Clone(bin_op->lhs);
+        auto* rhs = ctx.Clone(bin_op->rhs);
+        return b.Call(fn, lhs, rhs);
+    }
+
+    /// Builds the polyfill inline expression for a precise float modulo, as defined in the spec.
+    /// @param bin_op the original BinaryExpression
+    /// @return the polyfill divide or modulo
+    const ast::Expression* PreciseFloatMod(const ast::BinaryExpression* bin_op) {
+        auto* lhs_ty = ctx.src->TypeOf(bin_op->lhs)->UnwrapRef();
+        auto* rhs_ty = ctx.src->TypeOf(bin_op->rhs)->UnwrapRef();
+        BinaryOpSignature sig{bin_op->op, lhs_ty, rhs_ty};
+        auto fn = binary_op_polyfills.GetOrCreate(sig, [&] {
+            uint32_t lhs_width = 1;
+            uint32_t rhs_width = 1;
+            const auto* lhs_el_ty = type::Type::ElementOf(lhs_ty, &lhs_width);
+            const auto* rhs_el_ty = type::Type::ElementOf(rhs_ty, &rhs_width);
+
+            const uint32_t width = std::max(lhs_width, rhs_width);
+
+            const char* lhs = "lhs";
+            const char* rhs = "rhs";
+
+            utils::Vector<const ast::Statement*, 4> body;
+
+            if (lhs_width < width) {
+                // lhs is scalar, rhs is vector. Convert lhs to vector.
+                body.Push(b.Decl(b.Let("l", b.vec(T(lhs_el_ty), width, b.Expr(lhs)))));
+                lhs = "l";
+            }
+            if (rhs_width < width) {
+                // lhs is vector, rhs is scalar. Convert rhs to vector.
+                body.Push(b.Decl(b.Let("r", b.vec(T(rhs_el_ty), width, b.Expr(rhs)))));
+                rhs = "r";
+            }
+
+            auto name = b.Symbols().New("tint_float_mod");
+
+            // lhs - trunc(lhs / rhs) * rhs
+            auto* precise_mod = b.Sub(lhs, b.Mul(b.Call("trunc", b.Div(lhs, rhs)), rhs));
+            body.Push(b.Return(precise_mod));
+
             b.Func(name,
                    utils::Vector{
                        b.Param("lhs", T(lhs_ty)),
@@ -791,7 +877,7 @@ struct BuiltinPolyfill::State {
     bool has_full_ptr_params;
 
     /// @returns the AST type for the given sem type
-    const ast::Type* T(const type::Type* ty) const { return CreateASTTypeFor(ctx, ty); }
+    ast::Type T(const type::Type* ty) const { return CreateASTTypeFor(ctx, ty); }
 
     /// @returns 1 if `ty` is not a vector, otherwise the vector width
     uint32_t WidthOf(const type::Type* ty) const {
@@ -808,7 +894,15 @@ struct BuiltinPolyfill::State {
         if (width == 1) {
             return b.Expr(value);
         }
-        return b.Construct(b.ty.vec<T>(width), value);
+        return b.Call(b.ty.vec<T>(width), value);
+    }
+
+    template <typename To>
+    const ast::Expression* CastScalarOrVector(uint32_t width, const ast::Expression* e) {
+        if (width == 1) {
+            return b.Call(b.ty.Of<To>(), e);
+        }
+        return b.Call(b.ty.vec<To>(width), e);
     }
 };
 
@@ -946,7 +1040,7 @@ Transform::ApplyResult BuiltinPolyfill::Apply(const Program* src,
                             auto& sig = builtin->Signature();
                             auto* tex = sig.Parameter(sem::ParameterUsage::kTexture);
                             if (auto* stex = tex->Type()->As<type::StorageTexture>()) {
-                                if (stex->texel_format() == type::TexelFormat::kBgra8Unorm) {
+                                if (stex->texel_format() == builtin::TexelFormat::kBgra8Unorm) {
                                     size_t value_idx = static_cast<size_t>(
                                         sig.IndexOf(sem::ParameterUsage::kValue));
                                     ctx.Replace(expr, [&ctx, expr, value_idx] {
@@ -1010,8 +1104,7 @@ Transform::ApplyResult BuiltinPolyfill::Apply(const Program* src,
                         }
                         break;
                     }
-                    case ast::BinaryOp::kDivide:
-                    case ast::BinaryOp::kModulo: {
+                    case ast::BinaryOp::kDivide: {
                         if (polyfill.int_div_mod) {
                             auto* lhs_ty = src->TypeOf(bin_op->lhs)->UnwrapRef();
                             if (lhs_ty->is_integer_scalar_or_vector()) {
@@ -1021,17 +1114,42 @@ Transform::ApplyResult BuiltinPolyfill::Apply(const Program* src,
                         }
                         break;
                     }
+                    case ast::BinaryOp::kModulo: {
+                        if (polyfill.int_div_mod) {
+                            auto* lhs_ty = src->TypeOf(bin_op->lhs)->UnwrapRef();
+                            if (lhs_ty->is_integer_scalar_or_vector()) {
+                                ctx.Replace(bin_op, [bin_op, &s] { return s.IntDivMod(bin_op); });
+                                made_changes = true;
+                            }
+                        }
+                        if (polyfill.precise_float_mod) {
+                            auto* lhs_ty = src->TypeOf(bin_op->lhs)->UnwrapRef();
+                            if (lhs_ty->is_float_scalar_or_vector()) {
+                                ctx.Replace(bin_op,
+                                            [bin_op, &s] { return s.PreciseFloatMod(bin_op); });
+                                made_changes = true;
+                            }
+                        }
+                        break;
+                    }
                     default:
                         break;
                 }
             },
-            [&](const ast::StorageTexture* tex) {
-                if (polyfill.bgra8unorm && tex->format == type::TexelFormat::kBgra8Unorm) {
-                    ctx.Replace(tex, [&ctx, tex] {
-                        return ctx.dst->ty.storage_texture(tex->dim, type::TexelFormat::kRgba8Unorm,
-                                                           tex->access);
-                    });
-                    made_changes = true;
+            [&](const ast::Expression* expr) {
+                if (polyfill.bgra8unorm) {
+                    if (auto* ty_expr = src->Sem().Get<sem::TypeExpression>(expr)) {
+                        if (auto* tex = ty_expr->Type()->As<type::StorageTexture>()) {
+                            if (tex->texel_format() == builtin::TexelFormat::kBgra8Unorm) {
+                                ctx.Replace(expr, [&ctx, tex] {
+                                    return ctx.dst->Expr(ctx.dst->ty.storage_texture(
+                                        tex->dim(), builtin::TexelFormat::kRgba8Unorm,
+                                        tex->access()));
+                                });
+                                made_changes = true;
+                            }
+                        }
+                    }
                 }
             });
     }

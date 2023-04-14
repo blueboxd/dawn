@@ -102,7 +102,7 @@ TEST_F(ResolverConstEvalTest, Scalar_f32) {
 }
 
 TEST_F(ResolverConstEvalTest, Scalar_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* expr = Expr(9.9_h);
     WrapInFunction(expr);
@@ -146,10 +146,10 @@ Case C() {
 }
 using ResolverConstEvalZeroInitTest = ResolverTestWithParam<Case>;
 TEST_P(ResolverConstEvalZeroInitTest, Test) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
     auto& param = GetParam();
-    auto* ty = param.type(*this);
-    auto* expr = Construct(ty);
+    auto ty = param.type(*this);
+    auto* expr = Call(ty);
     auto* a = Const("a", expr);
     WrapInFunction(a);
 
@@ -316,7 +316,7 @@ TEST_F(ResolverConstEvalTest, Vec3_ZeroInit_f32) {
 }
 
 TEST_F(ResolverConstEvalTest, Vec3_ZeroInit_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* expr = vec3<f16>();
     WrapInFunction(expr);
@@ -483,7 +483,7 @@ TEST_F(ResolverConstEvalTest, Vec3_Splat_f32) {
 }
 
 TEST_F(ResolverConstEvalTest, Vec3_Splat_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* expr = vec3<f16>(9.9_h);
     WrapInFunction(expr);
@@ -552,7 +552,7 @@ TEST_F(ResolverConstEvalTest, Vec3_Splat_bool) {
 }
 
 TEST_F(ResolverConstEvalTest, Vec3_FullConstruct_AInt) {
-    auto* expr = vec3<AInt>(1_a, 2_a, 3_a);
+    auto* expr = vec3<Infer>(1_a, 2_a, 3_a);
     auto* a = Const("a", expr);
     WrapInFunction(a);
 
@@ -586,7 +586,7 @@ TEST_F(ResolverConstEvalTest, Vec3_FullConstruct_AInt) {
 }
 
 TEST_F(ResolverConstEvalTest, Vec3_FullConstruct_AFloat) {
-    auto* expr = vec3<AFloat>(1.0_a, 2.0_a, 3.0_a);
+    auto* expr = vec3<Infer>(1.0_a, 2.0_a, 3.0_a);
     auto* a = Const("a", expr);
     WrapInFunction(a);
 
@@ -719,7 +719,7 @@ TEST_F(ResolverConstEvalTest, Vec3_FullConstruct_f32) {
 }
 
 TEST_F(ResolverConstEvalTest, Vec3_FullConstruct_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* expr = vec3<f16>(1_h, 2_h, 3_h);
     WrapInFunction(expr);
@@ -1018,7 +1018,7 @@ TEST_F(ResolverConstEvalTest, Vec3_MixConstruct_f32_mixed_sign_0) {
 }
 
 TEST_F(ResolverConstEvalTest, Vec3_MixConstruct_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* expr = vec3<f16>(1_h, vec2<f16>(2_h, 3_h));
     WrapInFunction(expr);
@@ -1053,7 +1053,7 @@ TEST_F(ResolverConstEvalTest, Vec3_MixConstruct_f16) {
 }
 
 TEST_F(ResolverConstEvalTest, Vec3_MixConstruct_f16_all_10) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* expr = vec3<f16>(10_h, vec2<f16>(10_h, 10_h));
     WrapInFunction(expr);
@@ -1088,7 +1088,7 @@ TEST_F(ResolverConstEvalTest, Vec3_MixConstruct_f16_all_10) {
 }
 
 TEST_F(ResolverConstEvalTest, Vec3_MixConstruct_f16_all_positive_0) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* expr = vec3<f16>(0_h, vec2<f16>(0_h, 0_h));
     WrapInFunction(expr);
@@ -1123,7 +1123,7 @@ TEST_F(ResolverConstEvalTest, Vec3_MixConstruct_f16_all_positive_0) {
 }
 
 TEST_F(ResolverConstEvalTest, Vec3_MixConstruct_f16_all_negative_0) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* expr = vec3<f16>(vec2<f16>(-0_h, -0_h), -0_h);
     WrapInFunction(expr);
@@ -1158,7 +1158,7 @@ TEST_F(ResolverConstEvalTest, Vec3_MixConstruct_f16_all_negative_0) {
 }
 
 TEST_F(ResolverConstEvalTest, Vec3_MixConstruct_f16_mixed_sign_0) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* expr = vec3<f16>(0_h, vec2<f16>(-0_h, 0_h));
     WrapInFunction(expr);
@@ -1341,7 +1341,7 @@ TEST_F(ResolverConstEvalTest, Mat2x3_ZeroInit_f32) {
 }
 
 TEST_F(ResolverConstEvalTest, Mat2x3_ZeroInit_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* expr = mat2x3<f16>();
     WrapInFunction(expr);
@@ -1392,7 +1392,7 @@ TEST_F(ResolverConstEvalTest, Mat2x3_ZeroInit_f16) {
 }
 
 TEST_F(ResolverConstEvalTest, Mat3x2_Construct_Scalars_af) {
-    auto* expr = Construct(ty.mat(nullptr, 3, 2), 1.0_a, 2.0_a, 3.0_a, 4.0_a, 5.0_a, 6.0_a);
+    auto* expr = Call(ty.mat3x2<Infer>(), 1.0_a, 2.0_a, 3.0_a, 4.0_a, 5.0_a, 6.0_a);
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1441,10 +1441,10 @@ TEST_F(ResolverConstEvalTest, Mat3x2_Construct_Scalars_af) {
 }
 
 TEST_F(ResolverConstEvalTest, Mat3x2_Construct_Columns_af) {
-    auto* expr = Construct(ty.mat(nullptr, 3, 2),           //
-                           vec(nullptr, 2u, 1.0_a, 2.0_a),  //
-                           vec(nullptr, 2u, 3.0_a, 4.0_a),  //
-                           vec(nullptr, 2u, 5.0_a, 6.0_a));
+    auto* expr = Call(ty.mat<Infer>(3, 2),        //
+                      vec2<Infer>(1.0_a, 2.0_a),  //
+                      vec2<Infer>(3.0_a, 4.0_a),  //
+                      vec2<Infer>(5.0_a, 6.0_a));
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1493,7 +1493,7 @@ TEST_F(ResolverConstEvalTest, Mat3x2_Construct_Columns_af) {
 }
 
 TEST_F(ResolverConstEvalTest, Array_i32_Zero) {
-    auto* expr = Construct(ty.array<i32, 4>());
+    auto* expr = Call(ty.array<i32, 4>());
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1530,7 +1530,7 @@ TEST_F(ResolverConstEvalTest, Array_i32_Zero) {
 }
 
 TEST_F(ResolverConstEvalTest, Array_f32_Zero) {
-    auto* expr = Construct(ty.array<f32, 4>());
+    auto* expr = Call(ty.array<f32, 4>());
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1567,7 +1567,7 @@ TEST_F(ResolverConstEvalTest, Array_f32_Zero) {
 }
 
 TEST_F(ResolverConstEvalTest, Array_vec3_f32_Zero) {
-    auto* expr = Construct(ty.array(ty.vec3<f32>(), 2_u));
+    auto* expr = Call(ty.array(ty.vec3<f32>(), 2_u));
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1618,7 +1618,7 @@ TEST_F(ResolverConstEvalTest, Array_Struct_f32_Zero) {
                        Member("m1", ty.f32()),
                        Member("m2", ty.f32()),
                    });
-    auto* expr = Construct(ty.array(ty.type_name("S"), 2_u));
+    auto* expr = Call(ty.array(ty("S"), 2_u));
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1655,7 +1655,7 @@ TEST_F(ResolverConstEvalTest, Array_Struct_f32_Zero) {
 }
 
 TEST_F(ResolverConstEvalTest, Array_i32_Elements) {
-    auto* expr = Construct(ty.array<i32, 4>(), 10_i, 20_i, 30_i, 40_i);
+    auto* expr = Call(ty.array<i32, 4>(), 10_i, 20_i, 30_i, 40_i);
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1704,7 +1704,7 @@ static std::ostream& operator<<(std::ostream& o, const Case& c) {
 
 using ResolverConstEvalArrayInitTest = ResolverTestWithParam<Case>;
 TEST_P(ResolverConstEvalArrayInitTest, Test) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
     auto& param = GetParam();
     auto* expr = param.input.Expr(*this);
     auto* a = Const("a", expr);
@@ -1712,7 +1712,7 @@ TEST_P(ResolverConstEvalArrayInitTest, Test) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = Sem().Get(expr);
+    auto* sem = Sem().GetVal(expr);
     ASSERT_NE(sem, nullptr);
     auto* arr = sem->Type()->As<type::Array>();
     ASSERT_NE(arr, nullptr);
@@ -1748,10 +1748,10 @@ TEST_F(ResolverConstEvalTest, ArrayInit_Nested_f32) {
     auto inner_ty = [&] { return ty.array<f32, 2>(); };
     auto outer_ty = ty.array(inner_ty(), Expr(3_i));
 
-    auto* expr = Construct(outer_ty,                         //
-                           Construct(inner_ty(), 1_f, 2_f),  //
-                           Construct(inner_ty(), 3_f, 4_f),  //
-                           Construct(inner_ty(), 5_f, 6_f));
+    auto* expr = Call(outer_ty,                    //
+                      Call(inner_ty(), 1_f, 2_f),  //
+                      Call(inner_ty(), 3_f, 4_f),  //
+                      Call(inner_ty(), 5_f, 6_f));
 
     WrapInFunction(expr);
 
@@ -1788,7 +1788,7 @@ TEST_F(ResolverConstEvalTest, ArrayInit_Nested_f32) {
 }
 
 TEST_F(ResolverConstEvalTest, Array_f32_Elements) {
-    auto* expr = Construct(ty.array<f32, 4>(), 10_f, 20_f, 30_f, 40_f);
+    auto* expr = Call(ty.array<f32, 4>(), 10_f, 20_f, 30_f, 40_f);
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1825,8 +1825,8 @@ TEST_F(ResolverConstEvalTest, Array_f32_Elements) {
 }
 
 TEST_F(ResolverConstEvalTest, Array_vec3_f32_Elements) {
-    auto* expr = Construct(ty.array(ty.vec3<f32>(), 2_u),  //
-                           vec3<f32>(1_f, 2_f, 3_f), vec3<f32>(4_f, 5_f, 6_f));
+    auto* expr = Call(ty.array(ty.vec3<f32>(), 2_u),  //
+                      vec3<f32>(1_f, 2_f, 3_f), vec3<f32>(4_f, 5_f, 6_f));
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1853,9 +1853,9 @@ TEST_F(ResolverConstEvalTest, Array_Struct_f32_Elements) {
                        Member("m1", ty.f32()),
                        Member("m2", ty.f32()),
                    });
-    auto* expr = Construct(ty.array(ty.type_name("S"), 2_u),        //
-                           Construct(ty.type_name("S"), 1_f, 2_f),  //
-                           Construct(ty.type_name("S"), 3_f, 4_f));
+    auto* expr = Call(ty.array(ty("S"), 2_u),  //
+                      Call("S", 1_f, 2_f),     //
+                      Call("S", 3_f, 4_f));
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1892,7 +1892,7 @@ TEST_F(ResolverConstEvalTest, Array_Struct_f32_Elements) {
 }
 
 TEST_F(ResolverConstEvalTest, Struct_ZeroInit) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
     auto* s = Structure("S", utils::Vector{
                                  Member("a", ty.i32()),
                                  Member("b", ty.u32()),
@@ -1901,7 +1901,7 @@ TEST_F(ResolverConstEvalTest, Struct_ZeroInit) {
                                  Member("e", ty.bool_()),
                              });
 
-    auto* expr = Construct(ty.Of(s));
+    auto* expr = Call(ty.Of(s));
     auto* a = Const("a", expr);
     WrapInFunction(a);
 
@@ -1937,7 +1937,7 @@ TEST_F(ResolverConstEvalTest, Struct_ZeroInit) {
 }
 
 TEST_F(ResolverConstEvalTest, Struct_Nested_ZeroInit) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
     auto* inner = Structure("Inner", utils::Vector{
                                          Member("a", ty.i32()),
                                          Member("b", ty.u32()),
@@ -1950,7 +1950,7 @@ TEST_F(ResolverConstEvalTest, Struct_Nested_ZeroInit) {
                             Member("inner", ty.Of(inner)),
                         });
 
-    auto* expr = Construct(ty.Of(s));
+    auto* expr = Call(ty.Of(s));
     auto* a = Const("a", expr);
     WrapInFunction(a);
 
@@ -1992,7 +1992,7 @@ TEST_F(ResolverConstEvalTest, Struct_Nested_ZeroInit) {
 TEST_F(ResolverConstEvalTest, Struct_I32s_ZeroInit) {
     Structure(
         "S", utils::Vector{Member("m1", ty.i32()), Member("m2", ty.i32()), Member("m3", ty.i32())});
-    auto* expr = Construct(ty.type_name("S"));
+    auto* expr = Call("S");
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2028,7 +2028,7 @@ TEST_F(ResolverConstEvalTest, Struct_I32s_ZeroInit) {
 }
 
 TEST_F(ResolverConstEvalTest, Struct_MixedScalars_ZeroInit) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     Structure("S", utils::Vector{
                        Member("m1", ty.i32()),
@@ -2037,7 +2037,7 @@ TEST_F(ResolverConstEvalTest, Struct_MixedScalars_ZeroInit) {
                        Member("m4", ty.f16()),
                        Member("m5", ty.bool_()),
                    });
-    auto* expr = Construct(ty.type_name("S"));
+    auto* expr = Call("S");
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2090,7 +2090,7 @@ TEST_F(ResolverConstEvalTest, Struct_VectorF32s_ZeroInit) {
                        Member("m2", ty.vec3<f32>()),
                        Member("m3", ty.vec3<f32>()),
                    });
-    auto* expr = Construct(ty.type_name("S"));
+    auto* expr = Call("S");
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2138,7 +2138,7 @@ TEST_F(ResolverConstEvalTest, Struct_VectorF32s_ZeroInit) {
 }
 
 TEST_F(ResolverConstEvalTest, Struct_MixedVectors_ZeroInit) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     Structure("S", utils::Vector{
                        Member("m1", ty.vec2<i32>()),
@@ -2147,7 +2147,7 @@ TEST_F(ResolverConstEvalTest, Struct_MixedVectors_ZeroInit) {
                        Member("m4", ty.vec3<f16>()),
                        Member("m5", ty.vec2<bool>()),
                    });
-    auto* expr = Construct(ty.type_name("S"));
+    auto* expr = Call("S");
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2221,10 +2221,10 @@ TEST_F(ResolverConstEvalTest, Struct_Struct_ZeroInit) {
                        });
 
     Structure("Outer", utils::Vector{
-                           Member("m1", ty.type_name("Inner")),
-                           Member("m2", ty.type_name("Inner")),
+                           Member("m1", ty("Inner")),
+                           Member("m2", ty("Inner")),
                        });
-    auto* expr = Construct(ty.type_name("Outer"));
+    auto* expr = Call("Outer");
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2258,7 +2258,7 @@ TEST_F(ResolverConstEvalTest, Struct_Struct_ZeroInit) {
 }
 
 TEST_F(ResolverConstEvalTest, Struct_MixedScalars_Construct) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     Structure("S", utils::Vector{
                        Member("m1", ty.i32()),
@@ -2267,7 +2267,7 @@ TEST_F(ResolverConstEvalTest, Struct_MixedScalars_Construct) {
                        Member("m4", ty.f16()),
                        Member("m5", ty.bool_()),
                    });
-    auto* expr = Construct(ty.type_name("S"), 1_i, 2_u, 3_f, 4_h, false);
+    auto* expr = Call("S", 1_i, 2_u, 3_f, 4_h, false);
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2315,7 +2315,7 @@ TEST_F(ResolverConstEvalTest, Struct_MixedScalars_Construct) {
 }
 
 TEST_F(ResolverConstEvalTest, Struct_MixedVectors_Construct) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     Structure("S", utils::Vector{
                        Member("m1", ty.vec2<i32>()),
@@ -2324,8 +2324,8 @@ TEST_F(ResolverConstEvalTest, Struct_MixedVectors_Construct) {
                        Member("m4", ty.vec3<f16>()),
                        Member("m5", ty.vec2<bool>()),
                    });
-    auto* expr = Construct(ty.type_name("S"), vec2<i32>(1_i), vec3<u32>(2_u), vec4<f32>(3_f),
-                           vec3<f16>(4_h), vec2<bool>(false));
+    auto* expr = Call("S", vec2<i32>(1_i), vec3<u32>(2_u), vec4<f32>(3_f), vec3<f16>(4_h),
+                      vec2<bool>(false));
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2399,12 +2399,11 @@ TEST_F(ResolverConstEvalTest, Struct_Struct_Construct) {
                        });
 
     Structure("Outer", utils::Vector{
-                           Member("m1", ty.type_name("Inner")),
-                           Member("m2", ty.type_name("Inner")),
+                           Member("m1", ty("Inner")),
+                           Member("m2", ty("Inner")),
                        });
-    auto* expr = Construct(ty.type_name("Outer"),  //
-                           Construct(ty.type_name("Inner"), 1_i, 2_u, 3_f),
-                           Construct(ty.type_name("Inner"), 4_i, 0_u, 6_f));
+    auto* expr = Call("Outer",  //
+                      Call("Inner", 1_i, 2_u, 3_f), Call("Inner", 4_i, 0_u, 6_f));
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2442,9 +2441,8 @@ TEST_F(ResolverConstEvalTest, Struct_Array_Construct) {
                        Member("m1", ty.array<i32, 2>()),
                        Member("m2", ty.array<f32, 3>()),
                    });
-    auto* expr = Construct(ty.type_name("S"),  //
-                           Construct(ty.array<i32, 2>(), 1_i, 2_i),
-                           Construct(ty.array<f32, 3>(), 1_f, 2_f, 3_f));
+    auto* expr = Call("S",  //
+                      Call(ty.array<i32, 2>(), 1_i, 2_i), Call(ty.array<f32, 3>(), 1_f, 2_f, 3_f));
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
