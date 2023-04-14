@@ -148,8 +148,14 @@ struct RegisterAndSpace {
 };
 
 utils::StringStream& operator<<(utils::StringStream& s, const RegisterAndSpace& rs) {
-    s << " : register(" << rs.reg << rs.binding_point.binding << ", space" << rs.binding_point.group
-      << ")";
+    s << " : register(" << rs.reg << rs.binding_point.binding;
+    // Omit the space if it's 0, as it's the default.
+    // SM 5.0 doesn't support spaces, so we don't emit them if group is 0 for better compatibility.
+    if (rs.binding_point.group == 0) {
+        s << ")";
+    } else {
+        s << ", space" << rs.binding_point.group << ")";
+    }
     return s;
 }
 
@@ -189,12 +195,10 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         manager.Add<transform::Robustness>();
     }
 
-    if (!options.external_texture_options.bindings_map.empty()) {
-        // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
-        data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(
-            options.external_texture_options.bindings_map);
-        manager.Add<transform::MultiplanarExternalTexture>();
-    }
+    // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
+    data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(
+        options.external_texture_options.bindings_map);
+    manager.Add<transform::MultiplanarExternalTexture>();
 
     // BindingRemapper must come after MultiplanarExternalTexture
     manager.Add<transform::BindingRemapper>();
@@ -2106,12 +2110,13 @@ bool GeneratorImpl::EmitSignCall(utils::StringStream& out,
 bool GeneratorImpl::EmitQuantizeToF16Call(utils::StringStream& out,
                                           const ast::CallExpression* expr,
                                           const sem::Builtin* builtin) {
-    // Emulate by casting to min16float and back again.
+    // Cast to f16 and back
     std::string width;
     if (auto* vec = builtin->ReturnType()->As<type::Vector>()) {
         width = std::to_string(vec->Width());
     }
-    out << "float" << width << "(min16float" << width << "(";
+    out << "f16tof32(f32tof16"
+        << "(";
     if (!EmitExpression(out, expr->args[0])) {
         return false;
     }
@@ -3122,7 +3127,15 @@ bool GeneratorImpl::EmitHandleVariable(const ast::Var* var, const sem::Variable*
 
     if (register_space) {
         auto bp = sem->As<sem::GlobalVariable>()->BindingPoint();
-        out << " : register(" << register_space << bp.binding << ", space" << bp.group << ")";
+        out << " : register(" << register_space << bp.binding;
+        // Omit the space if it's 0, as it's the default.
+        // SM 5.0 doesn't support spaces, so we don't emit them if group is 0 for better
+        // compatibility.
+        if (bp.group == 0) {
+            out << ")";
+        } else {
+            out << ", space" << bp.group << ")";
+        }
     }
 
     out << ";";
