@@ -133,6 +133,7 @@ option_if_not_defined(DAWN_USE_X11 "Enable support for X11 surface" ${USE_X11})
 option_if_not_defined(DAWN_BUILD_SAMPLES "Enables building Dawn's samples" ${BUILD_SAMPLES})
 option_if_not_defined(DAWN_BUILD_NODE_BINDINGS "Enables building Dawn's NodeJS bindings" OFF)
 option_if_not_defined(DAWN_ENABLE_SWIFTSHADER "Enables building Swiftshader as part of the build and Vulkan adapter discovery" OFF)
+option_if_not_defined(DAWN_BUILD_BENCHMARKS "Build Dawn benchmarks" OFF)
 
 option_if_not_defined(DAWN_ENABLE_PIC "Build with Position-Independent-Code enabled" OFF)
 
@@ -164,14 +165,15 @@ option_if_not_defined(TINT_BUILD_FUZZERS "Build fuzzers" OFF)
 option_if_not_defined(TINT_BUILD_SPIRV_TOOLS_FUZZER "Build SPIRV-Tools fuzzer" OFF)
 option_if_not_defined(TINT_BUILD_AST_FUZZER "Build AST fuzzer" OFF)
 option_if_not_defined(TINT_BUILD_REGEX_FUZZER "Build regex fuzzer" OFF)
-option_if_not_defined(TINT_BUILD_BENCHMARKS "Build benchmarks" OFF)
+option_if_not_defined(TINT_BUILD_BENCHMARKS "Build Tint benchmarks" OFF)
 option_if_not_defined(TINT_BUILD_TESTS "Build tests" ON)
 option_if_not_defined(TINT_BUILD_AS_OTHER_OS "Override OS detection to force building of *_other.cc files" OFF)
 option_if_not_defined(TINT_BUILD_REMOTE_COMPILE "Build the remote-compile tool for validating shaders on a remote machine" OFF)
 
+set_if_not_defined(TINT_EXTERNAL_BENCHMARK_CORPUS_DIR "" "Directory that holds a corpus of external shaders to benchmark.")
+
 option_if_not_defined(TINT_ENABLE_BREAK_IN_DEBUGGER "Enable tint::debugger::Break()" OFF)
 option_if_not_defined(TINT_CHECK_CHROMIUM_STYLE "Check for [chromium-style] issues during build" OFF)
-option_if_not_defined(TINT_SYMBOL_STORE_DEBUG_NAME "Enable storing of name in tint::ast::Symbol to help debugging the AST" OFF)
 option_if_not_defined(TINT_RANDOMIZE_HASHES "Randomize the hash seed value to detect non-deterministic output" OFF)
 
 # Recommended setting for compability with future abseil releases.
@@ -277,6 +279,7 @@ message(STATUS "Dawn build X11 support: ${DAWN_USE_X11}")
 message(STATUS "Dawn build samples: ${DAWN_BUILD_SAMPLES}")
 message(STATUS "Dawn build Node bindings: ${DAWN_BUILD_NODE_BINDINGS}")
 message(STATUS "Dawn build Swiftshader: ${DAWN_ENABLE_SWIFTSHADER}")
+message(STATUS "Dawn build benchmarks: ${DAWN_BUILD_BENCHMARKS}")
 
 message(STATUS "Dawn build PIC: ${DAWN_ENABLE_PIC}")
 
@@ -305,6 +308,8 @@ message(STATUS "Tint build benchmarks: ${TINT_BUILD_BENCHMARKS}")
 message(STATUS "Tint build tests: ${TINT_BUILD_TESTS}")
 message(STATUS "Tint build checking [chromium-style]: ${TINT_CHECK_CHROMIUM_STYLE}")
 message(STATUS "Tint build remote-compile tool: ${TINT_BUILD_REMOTE_COMPILE}")
+message(STATUS "Tint external benchmark corpus dir: ${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}")
+
 
 if (NOT ${TINT_LIB_FUZZING_ENGINE_LINK_OPTIONS} STREQUAL "")
   message(STATUS "Using provided LIB_FUZZING_ENGINE options: ${TINT_LIB_FUZZING_ENGINE_LINK_OPTIONS}")

@@ -131,11 +131,9 @@ MaybeError ValidateBufferDescriptor(DeviceBase* device, const BufferDescriptor* 
                     "Buffer is mapped at creation but its size (%u) is not a multiple of 4.",
                     descriptor->size);
 
-    if (descriptor->size > device->GetLimits().v1.maxBufferSize) {
-        DAWN_TRY(DAWN_MAKE_DEPRECATION_ERROR(
-            device, "Buffer size (%u) exceeds the max buffer size limit (%u).", descriptor->size,
-            device->GetLimits().v1.maxBufferSize));
-    }
+    DAWN_INVALID_IF(descriptor->size > device->GetLimits().v1.maxBufferSize,
+                    "Buffer size (%u) exceeds the max buffer size limit (%u).", descriptor->size,
+                    device->GetLimits().v1.maxBufferSize);
 
     return {};
 }
@@ -177,7 +175,7 @@ BufferBase::BufferBase(DeviceBase* device, const BufferDescriptor* descriptor)
 BufferBase::BufferBase(DeviceBase* device,
                        const BufferDescriptor* descriptor,
                        ObjectBase::ErrorTag tag)
-    : ApiObjectBase(device, tag),
+    : ApiObjectBase(device, tag, descriptor->label),
       mSize(descriptor->size),
       mUsage(descriptor->usage),
       mState(BufferState::Unmapped) {
@@ -250,6 +248,9 @@ wgpu::BufferMapState BufferBase::APIGetMapState() const {
             return wgpu::BufferMapState::Pending;
         case BufferState::Unmapped:
         case BufferState::Destroyed:
+            return wgpu::BufferMapState::Unmapped;
+        default:
+            UNREACHABLE();
             return wgpu::BufferMapState::Unmapped;
     }
 }

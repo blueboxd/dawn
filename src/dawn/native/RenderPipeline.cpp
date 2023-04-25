@@ -427,10 +427,23 @@ MaybeError ValidateFragmentState(DeviceBase* device,
     }
     DAWN_TRY(ValidateColorAttachmentBytesPerSample(device, colorAttachmentFormats));
 
-    DAWN_INVALID_IF(fragmentMetadata.usesSampleMaskOutput && alphaToCoverageEnabled,
-                    "alphaToCoverageEnabled is true when the sample_mask builtin is a "
-                    "pipeline output of fragment stage of %s.",
-                    descriptor->module);
+    if (alphaToCoverageEnabled) {
+        DAWN_INVALID_IF(fragmentMetadata.usesSampleMaskOutput,
+                        "alphaToCoverageEnabled is true when the sample_mask builtin is a "
+                        "pipeline output of fragment stage of %s.",
+                        descriptor->module);
+
+        DAWN_INVALID_IF(descriptor->targetCount == 0 ||
+                            descriptor->targets[0].format == wgpu::TextureFormat::Undefined,
+                        "alphaToCoverageEnabled is true when color target[0] is not present.");
+
+        const Format* format;
+        DAWN_TRY_ASSIGN(format, device->GetInternalFormat(descriptor->targets[0].format));
+        DAWN_INVALID_IF(
+            !format->HasAlphaChannel(),
+            "alphaToCoverageEnabled is true when target[0].format (%s) has no alpha channel.",
+            format->format);
+    }
 
     return {};
 }
@@ -532,6 +545,10 @@ MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
 
     DAWN_TRY_CONTEXT(ValidateMultisampleState(&descriptor->multisample),
                      "validating multisample state.");
+
+    DAWN_INVALID_IF(
+        descriptor->multisample.alphaToCoverageEnabled && descriptor->fragment == nullptr,
+        "alphaToCoverageEnabled is true when fragment state is not present.");
 
     if (descriptor->fragment != nullptr) {
         DAWN_TRY_CONTEXT(ValidateFragmentState(device, descriptor->fragment, descriptor->layout,
@@ -713,8 +730,10 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
     StreamIn(&mCacheKey, CacheKey::Type::RenderPipeline, device->GetCacheKey());
 }
 
-RenderPipelineBase::RenderPipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag)
-    : PipelineBase(device, tag) {}
+RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
+                                       ObjectBase::ErrorTag tag,
+                                       const char* label)
+    : PipelineBase(device, tag, label) {}
 
 RenderPipelineBase::~RenderPipelineBase() = default;
 
@@ -730,11 +749,11 @@ void RenderPipelineBase::DestroyImpl() {
 }
 
 // static
-RenderPipelineBase* RenderPipelineBase::MakeError(DeviceBase* device) {
+RenderPipelineBase* RenderPipelineBase::MakeError(DeviceBase* device, const char* label) {
     class ErrorRenderPipeline final : public RenderPipelineBase {
       public:
-        explicit ErrorRenderPipeline(DeviceBase* device)
-            : RenderPipelineBase(device, ObjectBase::kError) {}
+        explicit ErrorRenderPipeline(DeviceBase* device, const char* label)
+            : RenderPipelineBase(device, ObjectBase::kError, label) {}
 
         MaybeError Initialize() override {
             UNREACHABLE();
@@ -742,7 +761,7 @@ RenderPipelineBase* RenderPipelineBase::MakeError(DeviceBase* device) {
         }
     };
 
-    return new ErrorRenderPipeline(device);
+    return new ErrorRenderPipeline(device, label);
 }
 
 ObjectType RenderPipelineBase::GetType() const {

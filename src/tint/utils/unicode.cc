@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/text/unicode.h"
+#include "src/tint/utils/unicode.h"
 
 #include <algorithm>
 
-namespace tint::text {
+namespace tint::utils {
 namespace {
 
 struct CodePointRange {
@@ -336,6 +336,10 @@ std::pair<CodePoint, size_t> Decode(const uint8_t* ptr, size_t len) {
     if (len < 1) {
         return {};
     }
+    // Fast-path ASCII characters as they're always valid
+    if (ptr[0] <= 0x7f) {
+        return {CodePoint{ptr[0]}, 1};
+    }
 
     // Lookup table for the first byte of a UTF-8 sequence.
     // 0 indicates an invalid length.
@@ -418,4 +422,4 @@ bool IsASCII(std::string_view str) {
 
 }  // namespace utf8
 
-}  // namespace tint::text
+}  // namespace tint::utils

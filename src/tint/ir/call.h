@@ -15,16 +15,16 @@
 #ifndef SRC_TINT_IR_CALL_H_
 #define SRC_TINT_IR_CALL_H_
 
-#include "src/tint/castable.h"
 #include "src/tint/ir/instruction.h"
 #include "src/tint/symbol_table.h"
 #include "src/tint/type/type.h"
+#include "src/tint/utils/castable.h"
 #include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
 /// A Call instruction in the IR.
-class Call : public Castable<Call, Instruction> {
+class Call : public utils::Castable<Call, Instruction> {
   public:
     /// Constructor
     /// @param result the result value
@@ -42,8 +42,7 @@ class Call : public Castable<Call, Instruction> {
 
     /// Writes the call arguments to the given stream.
     /// @param out the output stream
-    /// @param st the symbol table
-    void EmitArgs(utils::StringStream& out, const SymbolTable& st) const;
+    void EmitArgs(utils::StringStream& out) const;
 
   private:
     utils::Vector<Value*, 1> args_;

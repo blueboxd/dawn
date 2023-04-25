@@ -22,7 +22,7 @@
 namespace tint::ir {
 
 /// Temporary value in the IR.
-class Temp : public Castable<Temp, Value> {
+class Temp : public utils::Castable<Temp, Value> {
   public:
     /// A value id.
     using Id = uint32_t;
@@ -49,9 +49,8 @@ class Temp : public Castable<Temp, Value> {
 
     /// Write the temp to the given stream
     /// @param out the stream to write to
-    /// @param st the symbol table
     /// @returns the stream
-    utils::StringStream& ToString(utils::StringStream& out, const SymbolTable& st) const override;
+    utils::StringStream& ToString(utils::StringStream& out) const override;
 
   private:
     const type::Type* type_ = nullptr;

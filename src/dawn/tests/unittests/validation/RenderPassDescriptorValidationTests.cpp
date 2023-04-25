@@ -1289,6 +1289,19 @@ TEST_F(RenderPassDescriptorValidationTest, ValidateDepthStencilReadOnly) {
         AssertBeginRenderPassError(&renderPass);
     }
 
+    // Tests that a pass with loadOp set to load, storeOp set to store, and readOnly set to true
+    // fails.
+    {
+        utils::ComboRenderPassDescriptor renderPass({colorView}, depthStencilView);
+        renderPass.cDepthStencilAttachmentInfo.depthLoadOp = wgpu::LoadOp::Load;
+        renderPass.cDepthStencilAttachmentInfo.depthStoreOp = wgpu::StoreOp::Store;
+        renderPass.cDepthStencilAttachmentInfo.depthReadOnly = true;
+        renderPass.cDepthStencilAttachmentInfo.stencilLoadOp = wgpu::LoadOp::Load;
+        renderPass.cDepthStencilAttachmentInfo.stencilStoreOp = wgpu::StoreOp::Store;
+        renderPass.cDepthStencilAttachmentInfo.stencilReadOnly = true;
+        AssertBeginRenderPassError(&renderPass);
+    }
+
     // Tests that a pass with only depthLoadOp set to load and readOnly set to true fails.
     {
         utils::ComboRenderPassDescriptor renderPass({colorView}, depthStencilView);
@@ -1450,7 +1463,7 @@ TEST_F(RenderPassDescriptorValidationTest, ValidateDepthStencilAllAspects) {
 
 // Tests validation for per-pixel accounting for render targets. The tests currently assume that the
 // default maxColorAttachmentBytesPerSample limit of 32 is used.
-TEST_P(DeprecationTests, RenderPassColorAttachmentBytesPerSample) {
+TEST_F(RenderPassDescriptorValidationTest, RenderPassColorAttachmentBytesPerSample) {
     struct TestCase {
         std::vector<wgpu::TextureFormat> formats;
         bool success;
@@ -1506,12 +1519,12 @@ TEST_P(DeprecationTests, RenderPassColorAttachmentBytesPerSample) {
         }
         utils::ComboRenderPassDescriptor descriptor(colorAttachmentInfo);
         wgpu::CommandEncoder commandEncoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder renderPassEncoder = commandEncoder.BeginRenderPass(&descriptor);
+        renderPassEncoder.End();
         if (testCase.success) {
-            wgpu::RenderPassEncoder renderPassEncoder = commandEncoder.BeginRenderPass(&descriptor);
-            renderPassEncoder.End();
             commandEncoder.Finish();
         } else {
-            EXPECT_DEPRECATION_WARNING_ONLY(commandEncoder.BeginRenderPass(&descriptor));
+            ASSERT_DEVICE_ERROR(commandEncoder.Finish());
         }
     }
 }

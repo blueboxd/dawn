@@ -848,7 +848,7 @@ TEST_F(RenderPipelineValidationTest, AlphaToCoverageAndSampleCount) {
 }
 
 // Tests if the sample_mask builtin is a pipeline output of fragment shader,
-// then alphaToCoverageEnabled must be false
+// then alphaToCoverageEnabled must be false.
 TEST_F(RenderPipelineValidationTest, AlphaToCoverageAndSampleMaskOutput) {
     wgpu::ShaderModule fsModuleSampleMaskOutput = utils::CreateShaderModule(device, R"(
         struct Output {
@@ -894,6 +894,84 @@ TEST_F(RenderPipelineValidationTest, AlphaToCoverageAndSampleMaskOutput) {
         descriptor.multisample.alphaToCoverageEnabled = true;
 
         device.CreateRenderPipeline(&descriptor);
+    }
+}
+
+// Tests when alphaToCoverageEnabled is true, targets[0] must exist and have alpha channel.
+TEST_F(RenderPipelineValidationTest, AlphaToCoverageAndColorTargetAlpha) {
+    {
+        // Control case
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsModule;
+        descriptor.cTargets[0].format = wgpu::TextureFormat::RGBA8Unorm;
+        descriptor.multisample.count = 4;
+        descriptor.multisample.alphaToCoverageEnabled = true;
+
+        device.CreateRenderPipeline(&descriptor);
+    }
+
+    {
+        // Fragment state must exist
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.fragment = nullptr;
+        descriptor.multisample.count = 4;
+        descriptor.multisample.alphaToCoverageEnabled = true;
+
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    }
+
+    {
+        // Fragment targets[0] must exist
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsModule;
+        descriptor.cFragment.targetCount = 0;
+        descriptor.cFragment.targets = nullptr;
+        descriptor.multisample.count = 4;
+        descriptor.multisample.alphaToCoverageEnabled = true;
+        descriptor.EnableDepthStencil(wgpu::TextureFormat::Depth32Float);
+
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    }
+
+    {
+        // Fragment targets[0].format must have alpha channel (only 1 target)
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsModule;
+        descriptor.cTargets[0].format = wgpu::TextureFormat::R8Unorm;
+        descriptor.multisample.count = 4;
+        descriptor.multisample.alphaToCoverageEnabled = true;
+
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    }
+
+    wgpu::ShaderModule fsModule2 = utils::CreateShaderModule(device, R"(
+        struct FragmentOut {
+            @location(0) target0 : vec4f,
+            @location(1) target1 : vec4f,
+        }
+        @fragment fn main() -> FragmentOut {
+            var out: FragmentOut;
+            out.target0 = vec4f(0, 0, 0, 1);
+            out.target1 = vec4f(1, 0, 0, 0);
+            return out;
+        })");
+
+    {
+        // Fragment targets[0].format must have alpha channel (2 targets)
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsModule2;
+        descriptor.cFragment.targetCount = 2;
+        descriptor.cTargets[0].format = wgpu::TextureFormat::R8Unorm;
+        descriptor.cTargets[1].format = wgpu::TextureFormat::RGBA8Unorm;
+        descriptor.multisample.count = 4;
+        descriptor.multisample.alphaToCoverageEnabled = true;
+
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
     }
 }
 
@@ -1534,7 +1612,7 @@ TEST_F(RenderPipelineValidationTest, MaxFragmentCombinedOutputResources) {
 
 // Tests validation for per-pixel accounting for render targets. The tests currently assume that the
 // default maxColorAttachmentBytesPerSample limit of 32 is used.
-TEST_P(DeprecationTests, RenderPipelineColorAttachmentBytesPerSample) {
+TEST_F(RenderPipelineValidationTest, RenderPipelineColorAttachmentBytesPerSample) {
     // Creates a fragment shader with maximum number of color attachments to enable testing.
     auto CreateShader = [&](const std::vector<wgpu::TextureFormat>& formats) -> wgpu::ShaderModule {
         // Default type to use when formats.size() < kMaxColorAttachments.
@@ -1612,10 +1690,7 @@ TEST_P(DeprecationTests, RenderPipelineColorAttachmentBytesPerSample) {
 
     for (const TestCase& testCase : kTestCases) {
         utils::ComboRenderPipelineDescriptor descriptor;
-        descriptor.vertex.module = utils::CreateShaderModule(device, R"(
-            @vertex fn main() -> @builtin(position) vec4f {
-                return vec4f(0.0, 0.0, 0.0, 1.0);
-            })");
+        descriptor.vertex.module = vsModule;
         descriptor.vertex.entryPoint = "main";
         descriptor.cFragment.module = CreateShader(testCase.formats);
         descriptor.cFragment.entryPoint = "main";
@@ -1626,7 +1701,7 @@ TEST_P(DeprecationTests, RenderPipelineColorAttachmentBytesPerSample) {
         if (testCase.success) {
             device.CreateRenderPipeline(&descriptor);
         } else {
-            EXPECT_DEPRECATION_ERROR_OR_WARNING(device.CreateRenderPipeline(&descriptor));
+            ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
         }
     }
 }

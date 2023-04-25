@@ -15,16 +15,16 @@
 #ifndef SRC_TINT_IR_BINARY_H_
 #define SRC_TINT_IR_BINARY_H_
 
-#include "src/tint/castable.h"
 #include "src/tint/ir/instruction.h"
 #include "src/tint/symbol_table.h"
 #include "src/tint/type/type.h"
+#include "src/tint/utils/castable.h"
 #include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
 /// An instruction in the IR.
-class Binary : public Castable<Binary, Instruction> {
+class Binary : public utils::Castable<Binary, Instruction> {
   public:
     /// The kind of instruction.
     enum class Kind {
@@ -76,9 +76,8 @@ class Binary : public Castable<Binary, Instruction> {
 
     /// Write the instruction to the given stream
     /// @param out the stream to write to
-    /// @param st the symbol table
     /// @returns the stream
-    utils::StringStream& ToString(utils::StringStream& out, const SymbolTable& st) const override;
+    utils::StringStream& ToString(utils::StringStream& out) const override;
 
   private:
     Kind kind_;
