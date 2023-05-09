@@ -39,6 +39,7 @@
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/switch.h"
 #include "src/tint/type/array.h"
 #include "src/tint/type/bool.h"
 #include "src/tint/type/depth_multisampled_texture.h"
@@ -203,7 +204,11 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
             if (type->is_bool_scalar_or_vector()) {
                 override.type = Override::Type::kBool;
             } else if (type->is_float_scalar()) {
-                override.type = Override::Type::kFloat32;
+                if (type->Is<type::F16>()) {
+                    override.type = Override::Type::kFloat16;
+                } else {
+                    override.type = Override::Type::kFloat32;
+                }
             } else if (type->is_signed_integer_scalar()) {
                 override.type = Override::Type::kInt32;
             } else if (type->is_unsigned_integer_scalar()) {
@@ -269,6 +274,10 @@ std::map<OverrideId, Scalar> Inspector::GetOverrideDefaultValues() {
                     [&](const type::I32*) { return Scalar(value->ValueAs<i32>()); },
                     [&](const type::U32*) { return Scalar(value->ValueAs<u32>()); },
                     [&](const type::F32*) { return Scalar(value->ValueAs<f32>()); },
+                    [&](const type::F16*) {
+                        // Default value of f16 override is also stored as float scalar.
+                        return Scalar(static_cast<float>(value->ValueAs<f16>()));
+                    },
                     [&](const type::Bool*) { return Scalar(value->ValueAs<bool>()); });
                 continue;
             }
@@ -570,8 +579,10 @@ std::vector<std::pair<std::string, Source>> Inspector::GetEnableDirectives() {
     // Ast nodes for enable directive are stored within global declarations list
     auto global_decls = program_->AST().GlobalDeclarations();
     for (auto* node : global_decls) {
-        if (auto* ext = node->As<ast::Enable>()) {
-            result.push_back({utils::ToString(ext->extension), ext->source});
+        if (auto* enable = node->As<ast::Enable>()) {
+            for (auto* ext : enable->extensions) {
+                result.push_back({utils::ToString(ext->name), ext->source});
+            }
         }
     }
 

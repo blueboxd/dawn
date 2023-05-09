@@ -134,6 +134,8 @@ list(APPEND TINT_LIB_SRCS
   ast/enable.h
   ast/expression.cc
   ast/expression.h
+  ast/extension.cc
+  ast/extension.h
   ast/float_literal_expression.cc
   ast/float_literal_expression.h
   ast/for_loop_statement.cc
@@ -280,6 +282,7 @@ list(APPEND TINT_LIB_SRCS
   resolver/validator.cc
   resolver/validator.h
   scope_stack.h
+  switch.h
   sem/array_count.cc
   sem/array_count.h
   sem/behavior.cc
@@ -300,6 +303,7 @@ list(APPEND TINT_LIB_SRCS
   sem/evaluation_stage.h
   sem/expression.cc
   sem/expression.h
+  sem/external_texture.h
   sem/for_loop_statement.cc
   sem/for_loop_statement.h
   sem/function_expression.cc
@@ -530,6 +534,8 @@ list(APPEND TINT_LIB_SRCS
   utils/slice.h
   utils/string.cc
   utils/string.h
+  utils/string_stream.cc
+  utils/string_stream.h
   utils/unique_allocator.h
   utils/unique_vector.h
   utils/vector.h
@@ -537,14 +543,17 @@ list(APPEND TINT_LIB_SRCS
   writer/append_vector.h
   writer/array_length_from_uniform_options.cc
   writer/array_length_from_uniform_options.h
+  writer/binding_point.h
+  writer/binding_remapper_options.cc
+  writer/binding_remapper_options.h
   writer/check_supported_extensions.cc
   writer/check_supported_extensions.h
+  writer/external_texture_options.cc
+  writer/external_texture_options.h
   writer/flatten_bindings.cc
   writer/flatten_bindings.h
   writer/float_to_string.cc
   writer/float_to_string.h
-  writer/generate_external_texture_bindings.cc
-  writer/generate_external_texture_bindings.h
   writer/text_generator.cc
   writer/text_generator.h
   writer/text.cc
@@ -555,17 +564,18 @@ list(APPEND TINT_LIB_SRCS
 
 tint_generated(builtin/access BENCH TEST)
 tint_generated(builtin/address_space BENCH TEST)
+tint_generated(builtin/attribute BENCH TEST)
 tint_generated(builtin/builtin BENCH TEST)
 tint_generated(builtin/builtin_value BENCH TEST)
 tint_generated(builtin/diagnostic_rule BENCH TEST)
 tint_generated(builtin/diagnostic_severity BENCH TEST)
 tint_generated(builtin/extension BENCH TEST)
+tint_generated(builtin/function)
 tint_generated(builtin/interpolation_sampling BENCH TEST)
 tint_generated(builtin/interpolation_type BENCH TEST)
 tint_generated(builtin/texel_format BENCH TEST)
 
 tint_generated(resolver/ctor_conv_intrinsic)
-tint_generated(sem/builtin_type)
 tint_generated(sem/parameter_usage)
 
 if(UNIX)
@@ -674,6 +684,15 @@ if(${TINT_BUILD_HLSL_WRITER})
   )
 endif()
 
+if(${TINT_BUILD_SYNTAX_TREE_WRITER})
+    list(APPEND TINT_LIB_SRCS
+      writer/syntax_tree/generator.cc
+      writer/syntax_tree/generator.h
+      writer/syntax_tree/generator_impl.cc
+      writer/syntax_tree/generator_impl.h
+    )
+endif()
+
 if(${TINT_BUILD_IR})
   list(APPEND TINT_LIB_SRCS
     ir/binary.cc
@@ -686,8 +705,16 @@ if(${TINT_BUILD_IR})
     ir/builder.h
     ir/builder_impl.cc
     ir/builder_impl.h
+    ir/builtin.cc
+    ir/builtin.h
+    ir/call.cc
+    ir/call.h
     ir/constant.cc
     ir/constant.h
+    ir/construct.cc
+    ir/construct.h
+    ir/convert.cc
+    ir/convert.h
     ir/debug.cc
     ir/debug.h
     ir/disassembler.cc
@@ -710,6 +737,8 @@ if(${TINT_BUILD_IR})
     ir/temp.h
     ir/terminator.cc
     ir/terminator.h
+    ir/user_call.cc
+    ir/user_call.h
     ir/value.cc
     ir/value.h
   )
@@ -757,7 +786,7 @@ target_link_libraries(tint_val tint_utils_io)
 ## Tint library
 add_library(libtint ${TINT_LIB_SRCS})
 tint_default_compile_options(libtint)
-target_link_libraries(libtint tint_diagnostic_utils)
+target_link_libraries(libtint tint_diagnostic_utils absl_strings)
 if (${TINT_SYMBOL_STORE_DEBUG_NAME})
     target_compile_definitions(libtint PUBLIC "TINT_SYMBOL_STORE_DEBUG_NAME=1")
 endif()
@@ -767,7 +796,7 @@ if (${TINT_BUILD_FUZZERS})
   # Tint library with fuzzer instrumentation
   add_library(libtint-fuzz ${TINT_LIB_SRCS})
   tint_default_compile_options(libtint-fuzz)
-  target_link_libraries(libtint-fuzz tint_diagnostic_utils)
+  target_link_libraries(libtint-fuzz tint_diagnostic_utils absl_strings)
   if (${COMPILER_IS_LIKE_GNU})
     target_compile_options(libtint-fuzz PRIVATE -fvisibility=hidden)
   endif()
@@ -939,6 +968,7 @@ if(TINT_BUILD_TESTS)
     sem/struct_test.cc
     sem/value_expression_test.cc
     source_test.cc
+    switch_test.cc
     symbol_table_test.cc
     symbol_test.cc
     test_main.cc
@@ -984,6 +1014,7 @@ if(TINT_BUILD_TESTS)
     utils/reverse_test.cc
     utils/scoped_assignment_test.cc
     utils/slice_test.cc
+    utils/string_stream_test.cc
     utils/string_test.cc
     utils/transform_test.cc
     utils/unique_allocator_test.cc
@@ -993,8 +1024,15 @@ if(TINT_BUILD_TESTS)
     writer/check_supported_extensions_test.cc
     writer/flatten_bindings_test.cc
     writer/float_to_string_test.cc
-    writer/generate_external_texture_bindings_test.cc
     writer/text_generator_test.cc
+  )
+
+  # Noet, the source files are included here otherwise the cmd sources would not be included in the
+  # test binary.
+  list(APPEND TINT_TEST_SRCS
+    cmd/generate_external_texture_bindings.cc
+    cmd/generate_external_texture_bindings.h
+    cmd/generate_external_texture_bindings_test.cc
   )
 
   # Uniformity analysis tests depend on WGSL reader
@@ -1066,7 +1104,6 @@ if(TINT_BUILD_TESTS)
       reader/wgsl/parser_impl_break_stmt_test.cc
       reader/wgsl/parser_impl_bug_cases_test.cc
       reader/wgsl/parser_impl_call_stmt_test.cc
-      reader/wgsl/parser_impl_case_body_test.cc
       reader/wgsl/parser_impl_compound_stmt_test.cc
       reader/wgsl/parser_impl_const_literal_test.cc
       reader/wgsl/parser_impl_continue_stmt_test.cc
@@ -1075,7 +1112,6 @@ if(TINT_BUILD_TESTS)
       reader/wgsl/parser_impl_diagnostic_attribute_test.cc
       reader/wgsl/parser_impl_diagnostic_control_test.cc
       reader/wgsl/parser_impl_diagnostic_directive_test.cc
-      reader/wgsl/parser_impl_element_count_expression_test.cc
       reader/wgsl/parser_impl_enable_directive_test.cc
       reader/wgsl/parser_impl_error_msg_test.cc
       reader/wgsl/parser_impl_error_resync_test.cc
@@ -1434,7 +1470,7 @@ if(TINT_BUILD_BENCHMARKS)
   endif()
 
   list(APPEND TINT_BENCHMARK_SRCS
-    "castable_bench.cc"
+    "switch_bench.cc"
     "bench/benchmark.cc"
     "reader/wgsl/parser_bench.cc"
   )

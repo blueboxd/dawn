@@ -20,7 +20,7 @@
 
 #include "dawn/dawn_wsi.h"
 #include "dawn/native/Surface.h"
-#include "dawn/native/d3d12/D3D12Error.h"
+#include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/TextureD3D12.h"
 
@@ -99,7 +99,7 @@ TextureBase* OldSwapChain::GetNextTextureImpl(const TextureDescriptor* descripto
     DawnSwapChainNextTexture next = {};
     DawnSwapChainError error = im.GetNextTexture(im.userData, &next);
     if (error) {
-        device->HandleError(InternalErrorType::Internal, error);
+        device->HandleError(DAWN_INTERNAL_ERROR(error));
         return nullptr;
     }
 

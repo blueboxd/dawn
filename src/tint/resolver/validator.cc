@@ -71,10 +71,14 @@
 #include "src/tint/utils/reverse.h"
 #include "src/tint/utils/scoped_assignment.h"
 #include "src/tint/utils/string.h"
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/utils/transform.h"
 
 namespace tint::resolver {
 namespace {
+
+constexpr size_t kMaxFunctionParameters = 255;
+constexpr size_t kMaxSwitchCaseSelectors = 16383;
 
 bool IsValidStorageTextureDimension(type::TextureDimension dim) {
     switch (dim) {
@@ -369,7 +373,6 @@ bool Validator::Materialize(const type::Type* to,
 }
 
 bool Validator::VariableInitializer(const ast::Variable* v,
-                                    builtin::AddressSpace address_space,
                                     const type::Type* storage_ty,
                                     const sem::ValueExpression* initializer) const {
     auto* initializer_ty = initializer->Type();
@@ -377,28 +380,11 @@ bool Validator::VariableInitializer(const ast::Variable* v,
 
     // Value type has to match storage type
     if (storage_ty != value_type) {
-        std::stringstream s;
+        utils::StringStream s;
         s << "cannot initialize " << v->Kind() << " of type '" << sem_.TypeNameOf(storage_ty)
           << "' with value of type '" << sem_.TypeNameOf(initializer_ty) << "'";
         AddError(s.str(), v->source);
         return false;
-    }
-
-    if (v->Is<ast::Var>()) {
-        switch (address_space) {
-            case builtin::AddressSpace::kPrivate:
-            case builtin::AddressSpace::kFunction:
-                break;  // Allowed an initializer
-            default:
-                // https://gpuweb.github.io/gpuweb/wgsl/#var-and-let
-                // Optionally has an initializer expression, if the variable is in the private or
-                // function address spaces.
-                AddError("var of address space '" + utils::ToString(address_space) +
-                             "' cannot have an initializer. var initializers are only supported "
-                             "for the address spaces 'private' and 'function'",
-                         v->source);
-                return false;
-        }
     }
 
     return true;
@@ -467,7 +453,9 @@ bool Validator::AddressSpaceLayout(const type::Type* store_ty,
             }
 
             // Validate that member is at a valid byte offset
-            if (m->Offset() % required_align != 0) {
+            if (m->Offset() % required_align != 0 &&
+                !enabled_extensions_.Contains(
+                    builtin::Extension::kChromiumInternalRelaxedUniformLayout)) {
                 AddError("the offset of a struct member of type '" +
                              m->Type()->UnwrapRef()->FriendlyName(symbols_) +
                              "' in address space '" + utils::ToString(address_space) +
@@ -493,7 +481,9 @@ bool Validator::AddressSpaceLayout(const type::Type* store_ty,
             auto* const prev_member = (i == 0) ? nullptr : str->Members()[i - 1];
             if (prev_member && is_uniform_struct(prev_member->Type())) {
                 const uint32_t prev_to_curr_offset = m->Offset() - prev_member->Offset();
-                if (prev_to_curr_offset % 16 != 0) {
+                if (prev_to_curr_offset % 16 != 0 &&
+                    !enabled_extensions_.Contains(
+                        builtin::Extension::kChromiumInternalRelaxedUniformLayout)) {
                     AddError(
                         "uniform storage requires that the number of bytes between the "
                         "start of the previous member of type struct and the current "
@@ -526,7 +516,9 @@ bool Validator::AddressSpaceLayout(const type::Type* store_ty,
             return false;
         }
 
-        if (address_space == builtin::AddressSpace::kUniform) {
+        if (address_space == builtin::AddressSpace::kUniform &&
+            !enabled_extensions_.Contains(
+                builtin::Extension::kChromiumInternalRelaxedUniformLayout)) {
             // We already validated that this array member is itself aligned to 16 bytes above, so
             // we only need to validate that stride is a multiple of 16 bytes.
             if (arr->Stride() % 16 != 0) {
@@ -718,6 +710,23 @@ bool Validator::Var(const sem::Variable* v) const {
         }
     }
 
+    if (var->initializer) {
+        switch (v->AddressSpace()) {
+            case builtin::AddressSpace::kPrivate:
+            case builtin::AddressSpace::kFunction:
+                break;  // Allowed an initializer
+            default:
+                // https://gpuweb.github.io/gpuweb/wgsl/#var-and-let
+                // Optionally has an initializer expression, if the variable is in the private or
+                // function address spaces.
+                AddError("var of address space '" + utils::ToString(v->AddressSpace()) +
+                             "' cannot have an initializer. var initializers are only supported "
+                             "for the address spaces 'private' and 'function'",
+                         var->source);
+                return false;
+        }
+    }
+
     if (!CheckTypeAccessAddressSpace(v->Type()->UnwrapRef(), v->Access(), v->AddressSpace(),
                                      var->attributes, var->source)) {
         return false;
@@ -779,11 +788,6 @@ bool Validator::Override(
         return false;
     }
 
-    if (storage_ty->Is<type::F16>()) {
-        AddError("'override' of type f16 is not implemented yet", decl->source);
-        return false;
-    }
-
     return true;
 }
 
@@ -833,7 +837,7 @@ bool Validator::Parameter(const ast::Function* func, const sem::Variable* var) c
                     break;
             }
             if (!ok) {
-                std::stringstream ss;
+                utils::StringStream ss;
                 ss << "function parameter of pointer type cannot be in '" << sc
                    << "' address space";
                 AddError(ss.str(), decl->source);
@@ -861,7 +865,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
                                  ast::PipelineStage stage,
                                  const bool is_input) const {
     auto* type = storage_ty->UnwrapRef();
-    std::stringstream stage_name;
+    utils::StringStream stage_name;
     stage_name << stage;
     bool is_stage_mismatch = false;
     bool is_output = !is_input;
@@ -874,7 +878,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
                 is_stage_mismatch = true;
             }
             if (!(type->is_float_vector() && type->As<type::Vector>()->Width() == 4)) {
-                std::stringstream err;
+                utils::StringStream err;
                 err << "store type of @builtin(" << builtin << ") must be 'vec4<f32>'";
                 AddError(err.str(), attr->source);
                 return false;
@@ -889,7 +893,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
                 is_stage_mismatch = true;
             }
             if (!(type->is_unsigned_integer_vector() && type->As<type::Vector>()->Width() == 3)) {
-                std::stringstream err;
+                utils::StringStream err;
                 err << "store type of @builtin(" << builtin << ") must be 'vec3<u32>'";
                 AddError(err.str(), attr->source);
                 return false;
@@ -901,7 +905,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
                 is_stage_mismatch = true;
             }
             if (!type->Is<type::F32>()) {
-                std::stringstream err;
+                utils::StringStream err;
                 err << "store type of @builtin(" << builtin << ") must be 'f32'";
                 AddError(err.str(), attr->source);
                 return false;
@@ -913,7 +917,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
                 is_stage_mismatch = true;
             }
             if (!type->Is<type::Bool>()) {
-                std::stringstream err;
+                utils::StringStream err;
                 err << "store type of @builtin(" << builtin << ") must be 'bool'";
                 AddError(err.str(), attr->source);
                 return false;
@@ -925,7 +929,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
                 is_stage_mismatch = true;
             }
             if (!type->Is<type::U32>()) {
-                std::stringstream err;
+                utils::StringStream err;
                 err << "store type of @builtin(" << builtin << ") must be 'u32'";
                 AddError(err.str(), attr->source);
                 return false;
@@ -938,7 +942,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
                 is_stage_mismatch = true;
             }
             if (!type->Is<type::U32>()) {
-                std::stringstream err;
+                utils::StringStream err;
                 err << "store type of @builtin(" << builtin << ") must be 'u32'";
                 AddError(err.str(), attr->source);
                 return false;
@@ -949,7 +953,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
                 is_stage_mismatch = true;
             }
             if (!type->Is<type::U32>()) {
-                std::stringstream err;
+                utils::StringStream err;
                 err << "store type of @builtin(" << builtin << ") must be 'u32'";
                 AddError(err.str(), attr->source);
                 return false;
@@ -961,7 +965,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
                 is_stage_mismatch = true;
             }
             if (!type->Is<type::U32>()) {
-                std::stringstream err;
+                utils::StringStream err;
                 err << "store type of @builtin(" << builtin << ") must be 'u32'";
                 AddError(err.str(), attr->source);
                 return false;
@@ -972,7 +976,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
     }
 
     if (is_stage_mismatch) {
-        std::stringstream err;
+        utils::StringStream err;
         err << "@builtin(" << builtin << ") cannot be used in "
             << (is_input ? "input of " : "output of ") << stage_name.str() << " pipeline stage";
         AddError(err.str(), attr->source);
@@ -1040,8 +1044,10 @@ bool Validator::Function(const sem::Function* func, ast::PipelineStage stage) co
         }
     }
 
-    if (decl->params.Length() > 255) {
-        AddError("functions may declare at most 255 parameters", decl->source);
+    if (decl->params.Length() > kMaxFunctionParameters) {
+        AddError("function declares " + std::to_string(decl->params.Length()) +
+                     " parameters, maximum is " + std::to_string(kMaxFunctionParameters),
+                 decl->source);
         return false;
     }
 
@@ -1145,7 +1151,7 @@ bool Validator::EntryPoint(const sem::Function* func, ast::PipelineStage stage) 
                 pipeline_io_attribute = attr;
 
                 if (builtins.Contains(builtin)) {
-                    std::stringstream err;
+                    utils::StringStream err;
                     err << "@builtin(" << builtin << ") appears multiple times as pipeline "
                         << (param_or_ret == ParamOrRetType::kParameter ? "input" : "output");
                     AddError(err.str(), decl->source);
@@ -1938,7 +1944,7 @@ bool Validator::PipelineStages(utils::VectorRef<sem::Function*> entry_points) co
         if (stage != ast::PipelineStage::kCompute) {
             for (auto* var : func->DirectlyReferencedGlobals()) {
                 if (var->AddressSpace() == builtin::AddressSpace::kWorkgroup) {
-                    std::stringstream stage_name;
+                    utils::StringStream stage_name;
                     stage_name << stage;
                     for (auto* user : var->Users()) {
                         if (func == user->Stmt()->Function()) {
@@ -1962,7 +1968,7 @@ bool Validator::PipelineStages(utils::VectorRef<sem::Function*> entry_points) co
         for (auto* builtin : func->DirectlyCalledBuiltins()) {
             if (!builtin->SupportedStages().Contains(stage)) {
                 auto* call = func->FindDirectCallTo(builtin);
-                std::stringstream err;
+                utils::StringStream err;
                 err << "built-in cannot be used by " << stage << " pipeline stage";
                 AddError(err.str(),
                          call ? call->Declaration()->source : func->Declaration()->source);
@@ -1976,7 +1982,7 @@ bool Validator::PipelineStages(utils::VectorRef<sem::Function*> entry_points) co
     auto check_no_discards = [&](const sem::Function* func, const sem::Function* entry_point) {
         if (auto* discard = func->DiscardStatement()) {
             auto stage = entry_point->Declaration()->PipelineStage();
-            std::stringstream err;
+            utils::StringStream err;
             err << "discard statement cannot be used in " << stage << " pipeline stage";
             AddError(err.str(), discard->Declaration()->source);
             backtrace(func, entry_point);
@@ -2272,7 +2278,7 @@ bool Validator::LocationAttribute(const ast::LocationAttribute* loc_attr,
     }
 
     if (!locations.Add(location)) {
-        std::stringstream err;
+        utils::StringStream err;
         err << "@location(" << location << ") appears multiple times";
         AddError(err.str(), loc_attr->source);
         return false;
@@ -2305,6 +2311,13 @@ bool Validator::Return(const ast::ReturnStatement* ret,
 }
 
 bool Validator::SwitchStatement(const ast::SwitchStatement* s) {
+    if (s->body.Length() > kMaxSwitchCaseSelectors) {
+        AddError("switch statement has " + std::to_string(s->body.Length()) +
+                     " case selectors, max is " + std::to_string(kMaxSwitchCaseSelectors),
+                 s->source);
+        return false;
+    }
+
     auto* cond_ty = sem_.TypeOf(s->condition);
     if (!cond_ty->is_integer_scalar()) {
         AddError("switch statement selector expression must be of a scalar integer type",
@@ -2391,26 +2404,47 @@ bool Validator::Assignment(const ast::Statement* a, const type::Type* rhs_ty) co
     }
 
     // https://gpuweb.github.io/gpuweb/wgsl/#assignment-statement
-    auto const* lhs_ty = sem_.TypeOf(lhs);
-
-    if (auto* var_user = sem_.Get<sem::VariableUser>(lhs)) {
-        auto* v = var_user->Variable()->Declaration();
-        const char* err = Switch(
-            v,  //
-            [&](const ast::Parameter*) { return "cannot assign to function parameter"; },
-            [&](const ast::Let*) { return "cannot assign to 'let'"; },
-            [&](const ast::Override*) { return "cannot assign to 'override'"; });
-        if (err) {
-            AddError(err, lhs->source);
-            AddNote("'" + symbols_.NameFor(v->name->symbol) + "' is declared here:", v->source);
-            return false;
-        }
-    }
+    auto const* lhs_sem = sem_.GetVal(lhs);
+    auto const* lhs_ty = lhs_sem->Type();
 
     auto* lhs_ref = lhs_ty->As<type::Reference>();
     if (!lhs_ref) {
         // LHS is not a reference, so it has no storage.
-        AddError("cannot assign to value of type '" + sem_.TypeNameOf(lhs_ty) + "'", lhs->source);
+        AddError("cannot assign to " + sem_.Describe(lhs_sem), lhs->source);
+
+        auto* expr = lhs;
+        while (expr) {
+            expr = Switch(
+                expr,  //
+                [&](const ast::AccessorExpression* e) { return e->object; },
+                [&](const ast::IdentifierExpression* i) {
+                    if (auto user = sem_.Get<sem::VariableUser>(i)) {
+                        Switch(
+                            user->Variable()->Declaration(),  //
+                            [&](const ast::Let* v) {
+                                AddNote("'let' variables are immutable",
+                                        user->Declaration()->source);
+                                sem_.NoteDeclarationSource(v);
+                            },
+                            [&](const ast::Const* v) {
+                                AddNote("'const' variables are immutable",
+                                        user->Declaration()->source);
+                                sem_.NoteDeclarationSource(v);
+                            },
+                            [&](const ast::Override* v) {
+                                AddNote("'override' variables are immutable",
+                                        user->Declaration()->source);
+                                sem_.NoteDeclarationSource(v);
+                            },
+                            [&](const ast::Parameter* v) {
+                                AddNote("parameters are immutable", user->Declaration()->source);
+                                sem_.NoteDeclarationSource(v);
+                            });
+                    }
+                    return nullptr;
+                });
+        }
+
         return false;
     }
 
@@ -2504,12 +2538,12 @@ bool Validator::DiagnosticControls(utils::VectorRef<const ast::DiagnosticControl
         auto diag_added = diagnostics.Add(dc->rule_name->symbol, dc);
         if (!diag_added && (*diag_added.value)->severity != dc->severity) {
             {
-                std::ostringstream ss;
+                utils::StringStream ss;
                 ss << "conflicting diagnostic " << use;
                 AddError(ss.str(), dc->rule_name->source);
             }
             {
-                std::ostringstream ss;
+                utils::StringStream ss;
                 ss << "severity of '" << symbols_.NameFor(dc->rule_name->symbol) << "' set to '"
                    << dc->severity << "' here";
                 AddNote(ss.str(), (*diag_added.value)->rule_name->source);

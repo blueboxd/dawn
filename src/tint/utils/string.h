@@ -15,11 +15,11 @@
 #ifndef SRC_TINT_UTILS_STRING_H_
 #define SRC_TINT_UTILS_STRING_H_
 
-#include <sstream>
 #include <string>
 #include <variant>
 
 #include "src/tint/utils/slice.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::utils {
 
@@ -39,19 +39,19 @@ namespace tint::utils {
 }
 
 /// @param value the value to be printed as a string
-/// @returns value printed as a string via the std::ostream `<<` operator
+/// @returns value printed as a string via the stream `<<` operator
 template <typename T>
 std::string ToString(const T& value) {
-    std::stringstream s;
+    utils::StringStream s;
     s << value;
     return s.str();
 }
 
 /// @param value the variant to be printed as a string
-/// @returns value printed as a string via the std::ostream `<<` operator
+/// @returns value printed as a string via the stream `<<` operator
 template <typename... TYs>
 std::string ToString(const std::variant<TYs...>& value) {
-    std::stringstream s;
+    utils::StringStream s;
     s << std::visit([&](auto& v) { return ToString(v); }, value);
     return s.str();
 }
@@ -74,7 +74,7 @@ size_t Distance(std::string_view a, std::string_view b);
 /// @param ss the stream to write the suggest and list of possible values to
 void SuggestAlternatives(std::string_view got,
                          Slice<char const* const> strings,
-                         std::ostringstream& ss);
+                         utils::StringStream& ss);
 
 }  // namespace tint::utils
 

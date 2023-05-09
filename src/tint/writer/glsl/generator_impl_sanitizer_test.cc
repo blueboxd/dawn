@@ -43,7 +43,7 @@ TEST_F(GlslSanitizerTest, Call_ArrayLength) {
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 layout(binding = 1, std430) buffer my_struct_ssbo {
   float a[];
@@ -83,7 +83,7 @@ TEST_F(GlslSanitizerTest, Call_ArrayLength_OtherMembersInStruct) {
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 layout(binding = 1, std430) buffer my_struct_ssbo {
   float z;
@@ -127,7 +127,7 @@ TEST_F(GlslSanitizerTest, Call_ArrayLength_ViaLets) {
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 layout(binding = 1, std430) buffer my_struct_ssbo {
   float a[];
@@ -164,7 +164,7 @@ TEST_F(GlslSanitizerTest, PromoteArrayInitializerToConstVar) {
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 void tint_symbol() {
   int idx = 3;
@@ -206,7 +206,7 @@ TEST_F(GlslSanitizerTest, PromoteStructInitializerToConstVar) {
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct S {
   int a;
@@ -228,7 +228,7 @@ void main() {
     EXPECT_EQ(expect, got);
 }
 
-TEST_F(GlslSanitizerTest, InlinePtrLetsBasic) {
+TEST_F(GlslSanitizerTest, SimplifyPointersBasic) {
     // var v : i32;
     // let p : ptr<function, i32> = &v;
     // let x : i32 = *p;
@@ -252,7 +252,7 @@ TEST_F(GlslSanitizerTest, InlinePtrLetsBasic) {
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 void tint_symbol() {
   int v = 0;
@@ -267,7 +267,7 @@ void main() {
     EXPECT_EQ(expect, got);
 }
 
-TEST_F(GlslSanitizerTest, InlinePtrLetsComplexChain) {
+TEST_F(GlslSanitizerTest, SimplifyPointersComplexChain) {
     // var a : array<mat4x4<f32>, 4u>;
     // let ap : ptr<function, array<mat4x4<f32>, 4u>> = &a;
     // let mp : ptr<function, mat4x4<f32>> = &(*ap)[3i];
@@ -301,7 +301,7 @@ TEST_F(GlslSanitizerTest, InlinePtrLetsComplexChain) {
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 void tint_symbol() {
   mat4 a[4] = mat4[4](mat4(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f), mat4(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f), mat4(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f), mat4(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f));

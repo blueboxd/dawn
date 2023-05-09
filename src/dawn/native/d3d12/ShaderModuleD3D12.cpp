@@ -14,8 +14,6 @@
 
 #include "dawn/native/d3d12/ShaderModuleD3D12.h"
 
-#include <d3dcompiler.h>
-
 #include <map>
 #include <sstream>
 #include <string>
@@ -29,17 +27,17 @@
 #include "dawn/common/Log.h"
 #include "dawn/common/WindowsUtils.h"
 #include "dawn/native/CacheKey.h"
-#include "dawn/native/CacheRequest.h"
 #include "dawn/native/Pipeline.h"
 #include "dawn/native/TintUtils.h"
+#include "dawn/native/d3d/BlobD3D.h"
+#include "dawn/native/d3d/D3DCompilationRequest.h"
+#include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/AdapterD3D12.h"
 #include "dawn/native/d3d12/BackendD3D12.h"
 #include "dawn/native/d3d12/BindGroupLayoutD3D12.h"
-#include "dawn/native/d3d12/BlobD3D12.h"
-#include "dawn/native/d3d12/D3D12Error.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/PipelineLayoutD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctions.h"
+#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
 #include "dawn/native/stream/BlobSource.h"
 #include "dawn/native/stream/ByteVectorSink.h"
@@ -48,81 +46,9 @@
 
 #include "tint/tint.h"
 
-namespace dawn::native::stream {
-
-// Define no-op serializations for pD3DCompile, IDxcLibrary, and IDxcCompiler.
-// These are output-only interfaces used to generate bytecode.
-template <>
-void Stream<IDxcLibrary*>::Write(Sink*, IDxcLibrary* const&) {}
-template <>
-void Stream<IDxcCompiler*>::Write(Sink*, IDxcCompiler* const&) {}
-template <>
-void Stream<pD3DCompile>::Write(Sink*, pD3DCompile const&) {}
-
-}  // namespace dawn::native::stream
-
 namespace dawn::native::d3d12 {
 
 namespace {
-
-enum class Compiler { FXC, DXC };
-
-#define HLSL_COMPILATION_REQUEST_MEMBERS(X)                                                 \
-    X(const tint::Program*, inputProgram)                                                   \
-    X(std::string_view, entryPointName)                                                     \
-    X(SingleShaderStage, stage)                                                             \
-    X(uint32_t, shaderModel)                                                                \
-    X(uint32_t, compileFlags)                                                               \
-    X(Compiler, compiler)                                                                   \
-    X(uint64_t, compilerVersion)                                                            \
-    X(std::wstring_view, dxcShaderProfile)                                                  \
-    X(std::string_view, fxcShaderProfile)                                                   \
-    X(pD3DCompile, d3dCompile)                                                              \
-    X(IDxcLibrary*, dxcLibrary)                                                             \
-    X(IDxcCompiler*, dxcCompiler)                                                           \
-    X(uint32_t, firstIndexOffsetShaderRegister)                                             \
-    X(uint32_t, firstIndexOffsetRegisterSpace)                                              \
-    X(bool, usesNumWorkgroups)                                                              \
-    X(uint32_t, numWorkgroupsShaderRegister)                                                \
-    X(uint32_t, numWorkgroupsRegisterSpace)                                                 \
-    X(tint::transform::MultiplanarExternalTexture::BindingsMap, newBindingsMap)             \
-    X(tint::writer::ArrayLengthFromUniformOptions, arrayLengthFromUniform)                  \
-    X(tint::transform::BindingRemapper::BindingPoints, remappedBindingPoints)               \
-    X(tint::transform::BindingRemapper::AccessControls, remappedAccessControls)             \
-    X(std::optional<tint::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
-    X(std::bitset<kMaxInterStageShaderVariables>, interstageLocations)                      \
-    X(LimitsForCompilationRequest, limits)                                                  \
-    X(bool, disableSymbolRenaming)                                                          \
-    X(bool, isRobustnessEnabled)                                                            \
-    X(bool, disableWorkgroupInit)                                                           \
-    X(bool, dumpShaders)
-
-#define D3D_BYTECODE_COMPILATION_REQUEST_MEMBERS(X) \
-    X(bool, hasShaderF16Feature)                    \
-    X(uint32_t, compileFlags)                       \
-    X(Compiler, compiler)                           \
-    X(uint64_t, compilerVersion)                    \
-    X(std::wstring_view, dxcShaderProfile)          \
-    X(std::string_view, fxcShaderProfile)           \
-    X(pD3DCompile, d3dCompile)                      \
-    X(IDxcLibrary*, dxcLibrary)                     \
-    X(IDxcCompiler*, dxcCompiler)
-
-DAWN_SERIALIZABLE(struct, HlslCompilationRequest, HLSL_COMPILATION_REQUEST_MEMBERS){};
-#undef HLSL_COMPILATION_REQUEST_MEMBERS
-
-DAWN_SERIALIZABLE(struct,
-                  D3DBytecodeCompilationRequest,
-                  D3D_BYTECODE_COMPILATION_REQUEST_MEMBERS){};
-#undef D3D_BYTECODE_COMPILATION_REQUEST_MEMBERS
-
-#define D3D_COMPILATION_REQUEST_MEMBERS(X)     \
-    X(HlslCompilationRequest, hlsl)            \
-    X(D3DBytecodeCompilationRequest, bytecode) \
-    X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, tracePlatform)
-
-DAWN_MAKE_CACHE_REQUEST(D3DCompilationRequest, D3D_COMPILATION_REQUEST_MEMBERS);
-#undef D3D_COMPILATION_REQUEST_MEMBERS
 
 std::vector<const wchar_t*> GetDXCArguments(uint32_t compileFlags, bool enable16BitTypes) {
     std::vector<const wchar_t*> arguments;
@@ -176,7 +102,7 @@ std::vector<const wchar_t*> GetDXCArguments(uint32_t compileFlags, bool enable16
     return arguments;
 }
 
-ResultOrError<ComPtr<IDxcBlob>> CompileShaderDXC(const D3DBytecodeCompilationRequest& r,
+ResultOrError<ComPtr<IDxcBlob>> CompileShaderDXC(const d3d::D3DBytecodeCompilationRequest& r,
                                                  const std::string& entryPointName,
                                                  const std::string& hlslSource) {
     ComPtr<IDxcBlobEncoding> sourceBlob;
@@ -185,7 +111,7 @@ ResultOrError<ComPtr<IDxcBlob>> CompileShaderDXC(const D3DBytecodeCompilationReq
                           "DXC create blob"));
 
     std::wstring entryPointW;
-    DAWN_TRY_ASSIGN(entryPointW, ConvertStringToWstring(entryPointName));
+    DAWN_TRY_ASSIGN(entryPointW, d3d::ConvertStringToWstring(entryPointName));
 
     std::vector<const wchar_t*> arguments = GetDXCArguments(r.compileFlags, r.hasShaderF16Feature);
 
@@ -273,7 +199,7 @@ std::string CompileFlagsToStringFXC(uint32_t compileFlags) {
     return result;
 }
 
-ResultOrError<ComPtr<ID3DBlob>> CompileShaderFXC(const D3DBytecodeCompilationRequest& r,
+ResultOrError<ComPtr<ID3DBlob>> CompileShaderFXC(const d3d::D3DBytecodeCompilationRequest& r,
                                                  const std::string& entryPointName,
                                                  const std::string& hlslSource) {
     ComPtr<ID3DBlob> compiledShader;
@@ -288,7 +214,7 @@ ResultOrError<ComPtr<ID3DBlob>> CompileShaderFXC(const D3DBytecodeCompilationReq
 }
 
 ResultOrError<std::string> TranslateToHLSL(
-    HlslCompilationRequest r,
+    d3d::HlslCompilationRequest r,
     CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*> tracePlatform,
     std::string* remappedEntryPointName,
     bool* usesVertexOrInstanceIndex) {
@@ -310,12 +236,6 @@ ResultOrError<std::string> TranslateToHLSL(
             tint::transform::Renamer::Target::kHlslKeywords);
     }
 
-    if (!r.newBindingsMap.empty()) {
-        transformManager.Add<tint::transform::MultiplanarExternalTexture>();
-        transformInputs.Add<tint::transform::MultiplanarExternalTexture::NewBindingPoints>(
-            std::move(r.newBindingsMap));
-    }
-
     if (r.stage == SingleShaderStage::Vertex) {
         transformManager.Add<tint::transform::FirstIndexOffset>();
         transformInputs.Add<tint::transform::FirstIndexOffset::BindingPoint>(
@@ -329,19 +249,6 @@ ResultOrError<std::string> TranslateToHLSL(
         transformInputs.Add<tint::transform::SubstituteOverride::Config>(
             std::move(r.substituteOverrideConfig).value());
     }
-
-    if (r.isRobustnessEnabled) {
-        transformManager.Add<tint::transform::Robustness>();
-    }
-
-    transformManager.Add<tint::transform::BindingRemapper>();
-
-    // D3D12 registers like `t3` and `c3` have the same bindingOffset number in
-    // the remapping but should not be considered a collision because they have
-    // different types.
-    const bool mayCollide = true;
-    transformInputs.Add<tint::transform::BindingRemapper::Remappings>(
-        std::move(r.remappedBindingPoints), std::move(r.remappedAccessControls), mayCollide);
 
     tint::Program transformedProgram;
     tint::transform::DataMap transformOutputs;
@@ -382,10 +289,14 @@ ResultOrError<std::string> TranslateToHLSL(
     }
 
     tint::writer::hlsl::Options options;
+    options.disable_robustness = !r.isRobustnessEnabled;
     options.disable_workgroup_init = r.disableWorkgroupInit;
+    options.binding_remapper_options = r.bindingRemapper;
+    options.external_texture_options = r.externalTextureOptions;
+
     if (r.usesNumWorkgroups) {
         options.root_constant_binding_point =
-            tint::sem::BindingPoint{r.numWorkgroupsRegisterSpace, r.numWorkgroupsShaderRegister};
+            tint::writer::BindingPoint{r.numWorkgroupsRegisterSpace, r.numWorkgroupsShaderRegister};
     }
     // TODO(dawn:549): HLSL generation outputs the indices into the
     // array_length_from_uniform buffer that were actually used. When the blob cache can
@@ -401,6 +312,8 @@ ResultOrError<std::string> TranslateToHLSL(
         options.interstage_locations = r.interstageLocations;
     }
 
+    options.polyfill_reflect_vec2_f32 = r.polyfillReflectVec2F32;
+
     TRACE_EVENT0(tracePlatform.UnsafeGetValue(), General, "tint::writer::hlsl::Generate");
     auto result = tint::writer::hlsl::Generate(&transformedProgram, options);
     DAWN_INVALID_IF(!result.success, "An error occured while generating HLSL: %s", result.error);
@@ -408,7 +321,7 @@ ResultOrError<std::string> TranslateToHLSL(
     return std::move(result.hlsl);
 }
 
-ResultOrError<CompiledShader> CompileShader(D3DCompilationRequest r) {
+ResultOrError<CompiledShader> CompileShader(d3d::D3DCompilationRequest r) {
     CompiledShader compiledShader;
     // Compile the source shader to HLSL.
     std::string remappedEntryPoint;
@@ -417,7 +330,7 @@ ResultOrError<CompiledShader> CompileShader(D3DCompilationRequest r) {
                                     &compiledShader.usesVertexOrInstanceIndex));
 
     switch (r.bytecode.compiler) {
-        case Compiler::DXC: {
+        case d3d::Compiler::DXC: {
             TRACE_EVENT0(r.tracePlatform.UnsafeGetValue(), General, "CompileShaderDXC");
             ComPtr<IDxcBlob> compiledDXCShader;
             DAWN_TRY_ASSIGN(compiledDXCShader, CompileShaderDXC(r.bytecode, remappedEntryPoint,
@@ -425,7 +338,7 @@ ResultOrError<CompiledShader> CompileShader(D3DCompilationRequest r) {
             compiledShader.shaderBlob = CreateBlob(std::move(compiledDXCShader));
             break;
         }
-        case Compiler::FXC: {
+        case d3d::Compiler::FXC: {
             TRACE_EVENT0(r.tracePlatform.UnsafeGetValue(), General, "CompileShaderFXC");
             ComPtr<ID3DBlob> compiledFXCShader;
             DAWN_TRY_ASSIGN(compiledFXCShader, CompileShaderFXC(r.bytecode, remappedEntryPoint,
@@ -478,7 +391,7 @@ ResultOrError<CompiledShader> ShaderModule::Compile(
     ScopedTintICEHandler scopedICEHandler(device);
     const EntryPointMetadata& entryPoint = GetEntryPoint(programmableStage.entryPoint);
 
-    D3DCompilationRequest req = {};
+    d3d::D3DCompilationRequest req = {};
     req.tracePlatform = UnsafeUnkeyedValue(device->GetPlatform());
     req.hlsl.shaderModel = device->GetDeviceInfo().shaderModel;
     req.hlsl.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
@@ -498,16 +411,16 @@ ResultOrError<CompiledShader> ShaderModule::Compile(
         // available.
         ASSERT(ToBackend(device->GetAdapter())->GetBackend()->IsDXCAvailable());
         // We can get the DXC version information since IsDXCAvailable() is true.
-        DxcVersionInfo dxcVersionInfo =
+        d3d::DxcVersionInfo dxcVersionInfo =
             ToBackend(device->GetAdapter())->GetBackend()->GetDxcVersion();
 
-        req.bytecode.compiler = Compiler::DXC;
+        req.bytecode.compiler = d3d::Compiler::DXC;
         req.bytecode.dxcLibrary = device->GetDxcLibrary().Get();
         req.bytecode.dxcCompiler = device->GetDxcCompiler().Get();
         req.bytecode.compilerVersion = dxcVersionInfo.DxcCompilerVersion;
         req.bytecode.dxcShaderProfile = device->GetDeviceInfo().shaderProfiles[stage];
     } else {
-        req.bytecode.compiler = Compiler::FXC;
+        req.bytecode.compiler = d3d::Compiler::FXC;
         req.bytecode.d3dCompile = device->GetFunctions()->d3dCompile;
         req.bytecode.compilerVersion = D3D_COMPILER_VERSION;
         switch (stage) {
@@ -523,11 +436,13 @@ ResultOrError<CompiledShader> ShaderModule::Compile(
         }
     }
 
-    using tint::transform::BindingPoint;
-    using tint::transform::BindingRemapper;
+    using tint::writer::BindingPoint;
 
-    BindingRemapper::BindingPoints remappedBindingPoints;
-    BindingRemapper::AccessControls remappedAccessControls;
+    tint::writer::BindingRemapperOptions bindingRemapper;
+    // D3D12 registers like `t3` and `c3` have the same bindingOffset number in
+    // the remapping but should not be considered a collision because they have
+    // different types.
+    bindingRemapper.allow_collisions = true;
 
     tint::writer::ArrayLengthFromUniformOptions arrayLengthFromUniform;
     arrayLengthFromUniform.ubo_binding = {layout->GetDynamicStorageBufferLengthsRegisterSpace(),
@@ -549,7 +464,7 @@ ResultOrError<CompiledShader> ShaderModule::Compile(
             BindingPoint dstBindingPoint{static_cast<uint32_t>(group),
                                          bgl->GetShaderRegister(bindingIndex)};
             if (srcBindingPoint != dstBindingPoint) {
-                remappedBindingPoints.emplace(srcBindingPoint, dstBindingPoint);
+                bindingRemapper.binding_points.emplace(srcBindingPoint, dstBindingPoint);
             }
 
             // Declaring a read-only storage buffer in HLSL but specifying a storage
@@ -562,7 +477,8 @@ ResultOrError<CompiledShader> ShaderModule::Compile(
                       wgpu::BufferBindingType::Storage ||
                   bgl->GetBindingInfo(bindingIndex).buffer.type == kInternalStorageBufferBinding));
             if (forceStorageBufferAsUAV) {
-                remappedAccessControls.emplace(srcBindingPoint, tint::builtin::Access::kReadWrite);
+                bindingRemapper.access_controls.emplace(srcBindingPoint,
+                                                        tint::builtin::Access::kReadWrite);
             }
         }
 
@@ -576,8 +492,8 @@ ResultOrError<CompiledShader> ShaderModule::Compile(
                 BindingPoint bindingPoint{static_cast<uint32_t>(group),
                                           static_cast<uint32_t>(binding)};
                 // Get the renamed binding point if it was remapped.
-                auto it = remappedBindingPoints.find(bindingPoint);
-                if (it != remappedBindingPoints.end()) {
+                auto it = bindingRemapper.binding_points.find(bindingPoint);
+                if (it != bindingRemapper.binding_points.end()) {
                     bindingPoint = it->second;
                 }
 
@@ -600,11 +516,12 @@ ResultOrError<CompiledShader> ShaderModule::Compile(
     req.hlsl.usesNumWorkgroups = entryPoint.usesNumWorkgroups;
     req.hlsl.numWorkgroupsShaderRegister = layout->GetNumWorkgroupsShaderRegister();
     req.hlsl.numWorkgroupsRegisterSpace = layout->GetNumWorkgroupsRegisterSpace();
-    req.hlsl.remappedBindingPoints = std::move(remappedBindingPoints);
-    req.hlsl.remappedAccessControls = std::move(remappedAccessControls);
-    req.hlsl.newBindingsMap = BuildExternalTextureTransformBindings(layout);
+    req.hlsl.bindingRemapper = std::move(bindingRemapper);
+    req.hlsl.externalTextureOptions = BuildExternalTextureTransformBindings(layout);
     req.hlsl.arrayLengthFromUniform = std::move(arrayLengthFromUniform);
     req.hlsl.substituteOverrideConfig = std::move(substituteOverrideConfig);
+
+    req.hlsl.polyfillReflectVec2F32 = device->IsToggleEnabled(Toggle::D3D12PolyfillReflectVec2F32);
 
     const CombinedLimits& limits = device->GetLimits();
     req.hlsl.limits = LimitsForCompilationRequest::Create(limits.v1);

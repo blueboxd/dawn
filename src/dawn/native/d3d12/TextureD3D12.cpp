@@ -25,10 +25,10 @@
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/ResourceMemoryAllocation.h"
 #include "dawn/native/ToBackend.h"
+#include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/BufferD3D12.h"
 #include "dawn/native/d3d12/CommandRecordingContext.h"
 #include "dawn/native/d3d12/D3D11on12Util.h"
-#include "dawn/native/d3d12/D3D12Error.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/Forward.h"
 #include "dawn/native/d3d12/HeapD3D12.h"
@@ -612,7 +612,7 @@ MaybeError Texture::InitializeAsInternalTexture() {
     }
     bool forceAllocateAsCommittedResource =
         (device->IsToggleEnabled(
-            Toggle::D3D12Allocate2DTextureWithCopyDstOrRenderAttachmentAsCommittedResource)) &&
+            Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment)) &&
         GetDimension() == wgpu::TextureDimension::e2D &&
         (GetInternalUsage() & (wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::RenderAttachment));
     DAWN_TRY_ASSIGN(mResourceAllocation,
@@ -1212,17 +1212,17 @@ void Texture::SetLabelImpl() {
     SetLabelHelper("Dawn_InternalTexture");
 }
 
-void Texture::EnsureSubresourceContentInitialized(CommandRecordingContext* commandContext,
-                                                  const SubresourceRange& range) {
+MaybeError Texture::EnsureSubresourceContentInitialized(CommandRecordingContext* commandContext,
+                                                        const SubresourceRange& range) {
     if (!ToBackend(GetDevice())->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
-        return;
+        return {};
     }
     if (!IsSubresourceContentInitialized(range)) {
         // If subresource has not been initialized, clear it to black as it could contain
         // dirty bits from recycled memory
-        GetDevice()->ConsumedError(
-            ClearTexture(commandContext, range, TextureBase::ClearValue::Zero));
+        DAWN_TRY(ClearTexture(commandContext, range, TextureBase::ClearValue::Zero));
     }
+    return {};
 }
 
 bool Texture::StateAndDecay::operator==(const Texture::StateAndDecay& other) const {

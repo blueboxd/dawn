@@ -22,11 +22,11 @@
 #include "dawn/common/Assert.h"
 #include "dawn/common/Log.h"
 #include "dawn/native/CreatePipelineAsyncTask.h"
-#include "dawn/native/d3d12/BlobD3D12.h"
-#include "dawn/native/d3d12/D3D12Error.h"
+#include "dawn/native/d3d/BlobD3D.h"
+#include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/PipelineLayoutD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctions.h"
+#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/ShaderModuleD3D12.h"
 #include "dawn/native/d3d12/TextureD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
@@ -257,6 +257,18 @@ D3D12_RENDER_TARGET_BLEND_DESC ComputeColorDesc(const DeviceBase* device,
         blendDesc.SrcBlendAlpha = D3D12AlphaBlend(state->blend->alpha.srcFactor);
         blendDesc.DestBlendAlpha = D3D12AlphaBlend(state->blend->alpha.dstFactor);
         blendDesc.BlendOpAlpha = D3D12BlendOperation(state->blend->alpha.operation);
+
+        if (device->IsToggleEnabled(
+                Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha) &&
+            blendDesc.SrcBlend == D3D12_BLEND_DEST_ALPHA &&
+            blendDesc.SrcBlendAlpha == D3D12_BLEND_DEST_ALPHA &&
+            blendDesc.BlendOp == D3D12_BLEND_OP_ADD &&
+            blendDesc.BlendOpAlpha == D3D12_BLEND_OP_ADD &&
+            blendDesc.DestBlend == D3D12_BLEND_ZERO &&
+            blendDesc.DestBlendAlpha == D3D12_BLEND_ZERO) {
+            blendDesc.BlendOp = D3D12_BLEND_OP_SUBTRACT;
+            blendDesc.BlendOpAlpha = D3D12_BLEND_OP_SUBTRACT;
+        }
     }
     blendDesc.RenderTargetWriteMask = D3D12RenderTargetWriteMask(state->writeMask);
     blendDesc.LogicOpEnable = false;
