@@ -264,6 +264,8 @@ list(APPEND TINT_LIB_SRCS
   reflection.h
   reader/reader.cc
   reader/reader.h
+  resolver/builtin_structs.cc
+  resolver/builtin_structs.h
   resolver/const_eval.cc
   resolver/const_eval.h
   resolver/dependency_graph.cc
@@ -642,10 +644,19 @@ if(${TINT_BUILD_SPV_WRITER})
     writer/spirv/generator_impl.h
     writer/spirv/instruction.cc
     writer/spirv/instruction.h
+    writer/spirv/module.cc
+    writer/spirv/module.h
     writer/spirv/operand.cc
     writer/spirv/operand.h
     writer/spirv/scalar_constant.h
   )
+
+  if(${TINT_BUILD_IR})
+    list(APPEND TINT_LIB_SRCS
+      writer/spirv/generator_impl_ir.cc
+      writer/spirv/generator_impl_ir.h
+    )
+  endif()
 endif()
 
 if(${TINT_BUILD_WGSL_WRITER})
@@ -720,10 +731,16 @@ if(${TINT_BUILD_IR})
     ir/debug.h
     ir/disassembler.cc
     ir/disassembler.h
+    ir/discard.cc
+    ir/discard.h
+    ir/from_program.cc
+    ir/from_program.h
     ir/flow_node.cc
     ir/flow_node.h
     ir/function.cc
     ir/function.h
+    ir/function_terminator.cc
+    ir/function_terminator.h
     ir/if.cc
     ir/if.h
     ir/instruction.cc
@@ -732,16 +749,20 @@ if(${TINT_BUILD_IR})
     ir/loop.h
     ir/module.cc
     ir/module.h
+    ir/root_terminator.cc
+    ir/root_terminator.h
+    ir/store.cc
+    ir/store.h
     ir/switch.cc
     ir/switch.h
-    ir/temp.cc
-    ir/temp.h
-    ir/terminator.cc
-    ir/terminator.h
+    ir/unary.cc
+    ir/unary.h
     ir/user_call.cc
     ir/user_call.h
     ir/value.cc
     ir/value.h
+    ir/var.cc
+    ir/var.h
   )
 endif()
 
@@ -905,6 +926,7 @@ if(TINT_BUILD_TESTS)
     resolver/attribute_validation_test.cc
     resolver/bitcast_validation_test.cc
     resolver/builtin_enum_test.cc
+    resolver/builtin_structs_test.cc
     resolver/builtin_test.cc
     resolver/builtin_validation_test.cc
     resolver/builtins_validation_test.cc
@@ -1195,12 +1217,22 @@ if(TINT_BUILD_TESTS)
       writer/spirv/builder_type_test.cc
       writer/spirv/builder_unary_op_expression_test.cc
       writer/spirv/instruction_test.cc
+      writer/spirv/module_test.cc
       writer/spirv/operand_test.cc
       writer/spirv/scalar_constant_test.cc
       writer/spirv/spv_dump.cc
       writer/spirv/spv_dump.h
       writer/spirv/test_helper.h
     )
+
+    if(${TINT_BUILD_IR})
+      list(APPEND TINT_TEST_SRCS
+        writer/spirv/generator_impl_function_test.cc
+        writer/spirv/generator_impl_ir_test.cc
+        writer/spirv/generator_impl_type_test.cc
+        writer/spirv/test_helper_ir.h
+      )
+    endif()
   endif()
 
   if(${TINT_BUILD_WGSL_WRITER})
@@ -1411,10 +1443,19 @@ if(TINT_BUILD_TESTS)
     list(APPEND TINT_TEST_SRCS
       ir/binary_test.cc
       ir/bitcast_test.cc
+      ir/builder_impl_binary_test.cc
+      ir/builder_impl_call_test.cc
+      ir/builder_impl_literal_test.cc
+      ir/builder_impl_materialize_test.cc
+      ir/builder_impl_store_test.cc
       ir/builder_impl_test.cc
+      ir/builder_impl_unary_test.cc
+      ir/builder_impl_var_test.cc
       ir/constant_test.cc
-      ir/temp_test.cc
+      ir/discard_test.cc
+      ir/store_test.cc
       ir/test_helper.h
+      ir/unary_test.cc
     )
   endif()
 

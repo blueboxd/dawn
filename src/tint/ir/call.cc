@@ -14,27 +14,19 @@
 
 #include "src/tint/ir/call.h"
 
+#include <utility>
+
 TINT_INSTANTIATE_TYPEINFO(tint::ir::Call);
 
 namespace tint::ir {
 
-Call::Call(Value* result, utils::VectorRef<Value*> args) : Base(result), args_(args) {
+Call::Call(uint32_t identifier, const type::Type* ty, utils::VectorRef<Value*> arguments)
+    : Base(identifier, ty), args(std::move(arguments)) {
     for (auto* arg : args) {
         arg->AddUsage(this);
     }
 }
 
 Call::~Call() = default;
-
-void Call::EmitArgs(utils::StringStream& out) const {
-    bool first = true;
-    for (const auto* arg : args_) {
-        if (!first) {
-            out << ", ";
-        }
-        first = false;
-        arg->ToString(out);
-    }
-}
 
 }  // namespace tint::ir

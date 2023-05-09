@@ -115,7 +115,7 @@ class ComputeDispatchTests : public DawnTest {
 
         wgpu::Buffer indirectBuffer = utils::CreateBufferFromData(
             device, &indirectBufferData[0], indirectBufferData.size() * sizeof(uint32_t),
-            wgpu::BufferUsage::Indirect);
+            wgpu::BufferUsage::Indirect | wgpu::BufferUsage::CopySrc);
 
         uint32_t indirectStart = indirectOffset / sizeof(uint32_t);
 
@@ -171,6 +171,8 @@ class ComputeDispatchTests : public DawnTest {
                             indirectBufferData.begin() + indirectStart + 3);
         }
 
+        // Verify the indirect buffer is not modified
+        EXPECT_BUFFER_U32_RANGE_EQ(&indirectBufferData[0], indirectBuffer, 0, 3);
         // Verify the dispatch got called with group counts in indirect buffer if all group counts
         // are not zero
         EXPECT_BUFFER_U32_RANGE_EQ(&expected[0], dst, 0, 3);
@@ -311,6 +313,7 @@ TEST_P(ComputeDispatchTests, ExceedsMaxWorkgroupsWithOffsetNoop) {
 }
 
 DAWN_INSTANTIATE_TEST(ComputeDispatchTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),

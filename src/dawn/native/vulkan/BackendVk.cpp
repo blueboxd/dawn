@@ -23,8 +23,8 @@
 #include "dawn/common/SystemUtils.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/VulkanBackend.h"
-#include "dawn/native/vulkan/AdapterVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
+#include "dawn/native/vulkan/PhysicalDeviceVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
 #include "dawn/native/vulkan/VulkanError.h"
 
@@ -222,8 +222,8 @@ const VulkanGlobalInfo& VulkanInstance::GetGlobalInfo() const {
     return mGlobalInfo;
 }
 
-const std::vector<VkPhysicalDevice>& VulkanInstance::GetPhysicalDevices() const {
-    return mPhysicalDevices;
+const std::vector<VkPhysicalDevice>& VulkanInstance::GetVkPhysicalDevices() const {
+    return mVkPhysicalDevices;
 }
 
 // static
@@ -308,7 +308,7 @@ MaybeError VulkanInstance::Initialize(const InstanceBase* instance, ICD icd) {
         DAWN_TRY(RegisterDebugUtils());
     }
 
-    DAWN_TRY_ASSIGN(mPhysicalDevices, GatherPhysicalDevices(mInstance, mFunctions));
+    DAWN_TRY_ASSIGN(mVkPhysicalDevices, GatherPhysicalDevices(mInstance, mFunctions));
 
     return {};
 }
@@ -457,7 +457,8 @@ Backend::Backend(InstanceBase* instance) : BackendConnection(instance, wgpu::Bac
 
 Backend::~Backend() = default;
 
-std::vector<Ref<AdapterBase>> Backend::DiscoverDefaultAdapters(const TogglesState& adapterToggles) {
+std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverDefaultAdapters(
+    const TogglesState& adapterToggles) {
     AdapterDiscoveryOptions options;
     auto result = DiscoverAdapters(&options, adapterToggles);
     if (result.IsError()) {
@@ -467,7 +468,7 @@ std::vector<Ref<AdapterBase>> Backend::DiscoverDefaultAdapters(const TogglesStat
     return result.AcquireSuccess();
 }
 
-ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
+ResultOrError<std::vector<Ref<PhysicalDeviceBase>>> Backend::DiscoverAdapters(
     const AdapterDiscoveryOptionsBase* optionsBase,
     const TogglesState& adapterToggles) {
     ASSERT(optionsBase->backendType == WGPUBackendType_Vulkan);
@@ -475,7 +476,7 @@ ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
     const AdapterDiscoveryOptions* options =
         static_cast<const AdapterDiscoveryOptions*>(optionsBase);
 
-    std::vector<Ref<AdapterBase>> adapters;
+    std::vector<Ref<PhysicalDeviceBase>> physicalDevices;
 
     InstanceBase* instance = GetInstance();
     for (ICD icd : kICDs) {
@@ -495,18 +496,18 @@ ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
             // Instance failed to initialize.
             continue;
         }
-        const std::vector<VkPhysicalDevice>& physicalDevices =
-            mVulkanInstances[icd]->GetPhysicalDevices();
-        for (uint32_t i = 0; i < physicalDevices.size(); ++i) {
-            Ref<Adapter> adapter = AcquireRef(new Adapter(instance, mVulkanInstances[icd].Get(),
-                                                          physicalDevices[i], adapterToggles));
-            if (instance->ConsumedError(adapter->Initialize())) {
+        const std::vector<VkPhysicalDevice>& vkPhysicalDevices =
+            mVulkanInstances[icd]->GetVkPhysicalDevices();
+        for (uint32_t i = 0; i < vkPhysicalDevices.size(); ++i) {
+            Ref<PhysicalDevice> physicalDevice = AcquireRef(new PhysicalDevice(
+                instance, mVulkanInstances[icd].Get(), vkPhysicalDevices[i], adapterToggles));
+            if (instance->ConsumedError(physicalDevice->Initialize())) {
                 continue;
             }
-            adapters.push_back(std::move(adapter));
+            physicalDevices.push_back(std::move(physicalDevice));
         }
     }
-    return adapters;
+    return physicalDevices;
 }
 
 BackendConnection* Connect(InstanceBase* instance) {

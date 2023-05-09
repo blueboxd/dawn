@@ -238,6 +238,16 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
     DAWN_TRY(ValidateStoreOp(colorAttachment.storeOp));
     DAWN_INVALID_IF(colorAttachment.loadOp == wgpu::LoadOp::Undefined, "loadOp must be set.");
     DAWN_INVALID_IF(colorAttachment.storeOp == wgpu::StoreOp::Undefined, "storeOp must be set.");
+    if (attachment->GetTexture()->GetUsage() & wgpu::TextureUsage::TransientAttachment) {
+        DAWN_INVALID_IF(colorAttachment.loadOp != wgpu::LoadOp::Clear,
+                        "The color attachment %s has the load op set to %s while its usage (%s) "
+                        "has the transient attachment bit set.",
+                        attachment, wgpu::LoadOp::Load, attachment->GetTexture()->GetUsage());
+        DAWN_INVALID_IF(colorAttachment.storeOp != wgpu::StoreOp::Discard,
+                        "The color attachment %s has the store op set to %s while its usage (%s) "
+                        "has the transient attachment bit set.",
+                        attachment, wgpu::StoreOp::Store, attachment->GetTexture()->GetUsage());
+    }
 
     const dawn::native::Color& clearValue = colorAttachment.clearValue;
     if (colorAttachment.loadOp == wgpu::LoadOp::Clear) {
@@ -626,10 +636,10 @@ Color ClampClearColorValueToLegalRange(const Color& originalColor, const Format&
     double minValue = 0;
     double maxValue = 0;
     switch (aspectInfo.baseType) {
-        case wgpu::TextureComponentType::Float: {
+        case TextureComponentType::Float: {
             return originalColor;
         }
-        case wgpu::TextureComponentType::Sint: {
+        case TextureComponentType::Sint: {
             const uint32_t bitsPerComponent =
                 (aspectInfo.block.byteSize * 8 / format.componentCount);
             maxValue =
@@ -637,16 +647,12 @@ Color ClampClearColorValueToLegalRange(const Color& originalColor, const Format&
             minValue = -static_cast<double>(static_cast<uint64_t>(1) << (bitsPerComponent - 1));
             break;
         }
-        case wgpu::TextureComponentType::Uint: {
+        case TextureComponentType::Uint: {
             const uint32_t bitsPerComponent =
                 (aspectInfo.block.byteSize * 8 / format.componentCount);
             maxValue = static_cast<double>((static_cast<uint64_t>(1) << bitsPerComponent) - 1);
             break;
         }
-        case wgpu::TextureComponentType::DepthComparison:
-        default:
-            UNREACHABLE();
-            break;
     }
 
     return {std::clamp(originalColor.r, minValue, maxValue),
@@ -758,6 +764,7 @@ Ref<ComputePassEncoder> CommandEncoder::BeginComputePass(const ComputePassDescri
             if (descriptor == nullptr) {
                 return {};
             }
+            cmd->label = std::string(descriptor->label ? descriptor->label : "");
 
             // Record timestamp writes at the beginning and end of compute pass. The timestamp write
             // at the end also be needed in BeginComputePassCmd because it's required by compute
@@ -833,6 +840,7 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
             mEncodingContext.WillBeginRenderPass();
             BeginRenderPassCmd* cmd =
                 allocator->Allocate<BeginRenderPassCmd>(Command::BeginRenderPass);
+            cmd->label = std::string(descriptor->label ? descriptor->label : "");
 
             cmd->attachmentState = device->GetOrCreateAttachmentState(descriptor);
             attachmentState = cmd->attachmentState;
@@ -1596,7 +1604,10 @@ CommandBufferBase* CommandEncoder::APIFinish(const CommandBufferDescriptor* desc
 
     Ref<CommandBufferBase> commandBuffer;
     if (GetDevice()->ConsumedError(Finish(descriptor), &commandBuffer)) {
-        return CommandBufferBase::MakeError(GetDevice(), descriptor ? descriptor->label : nullptr);
+        CommandBufferBase* errorCommandBuffer =
+            CommandBufferBase::MakeError(GetDevice(), descriptor ? descriptor->label : nullptr);
+        errorCommandBuffer->SetEncoderLabel(this->GetLabel());
+        return errorCommandBuffer;
     }
     ASSERT(!IsError());
     return commandBuffer.Detach();

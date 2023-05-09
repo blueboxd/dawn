@@ -24,10 +24,10 @@
 #include "dawn/native/TintUtils.h"
 #include "dawn/native/d3d/D3DCompilationRequest.h"
 #include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d12/AdapterD3D12.h"
 #include "dawn/native/d3d12/BackendD3D12.h"
 #include "dawn/native/d3d12/BindGroupLayoutD3D12.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
+#include "dawn/native/d3d12/PhysicalDeviceD3D12.h"
 #include "dawn/native/d3d12/PipelineLayoutD3D12.h"
 #include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
@@ -89,10 +89,10 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     if (device->IsToggleEnabled(Toggle::UseDXC)) {
         // If UseDXC toggle are not forced to be disable, DXC should have been validated to be
         // available.
-        ASSERT(ToBackend(device->GetAdapter())->GetBackend()->IsDXCAvailable());
+        ASSERT(ToBackend(device->GetPhysicalDevice())->GetBackend()->IsDXCAvailable());
         // We can get the DXC version information since IsDXCAvailable() is true.
         d3d::DxcVersionInfo dxcVersionInfo =
-            ToBackend(device->GetAdapter())->GetBackend()->GetDxcVersion();
+            ToBackend(device->GetPhysicalDevice())->GetBackend()->GetDxcVersion();
 
         req.bytecode.compiler = d3d::Compiler::DXC;
         req.bytecode.dxcLibrary = device->GetDxcLibrary().Get();
@@ -207,11 +207,18 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.limits = LimitsForCompilationRequest::Create(limits.v1);
 
     CacheResult<d3d::CompiledShader> compiledShader;
-    DAWN_TRY_LOAD_OR_RUN(compiledShader, device, std::move(req), d3d::CompiledShader::FromBlob,
-                         d3d::CompileShader);
+    MaybeError compileError = [&]() -> MaybeError {
+        DAWN_TRY_LOAD_OR_RUN(compiledShader, device, std::move(req), d3d::CompiledShader::FromBlob,
+                             d3d::CompileShader);
+        return {};
+    }();
 
     if (device->IsToggleEnabled(Toggle::DumpShaders)) {
         d3d::DumpCompiledShader(device, *compiledShader, compileFlags);
+    }
+
+    if (compileError.IsError()) {
+        return {compileError.AcquireError()};
     }
 
     device->GetBlobCache()->EnsureStored(compiledShader);

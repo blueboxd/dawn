@@ -155,6 +155,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     MaybeError ValidateObject(const ApiObjectBase* object) const;
 
     AdapterBase* GetAdapter() const;
+    PhysicalDeviceBase* GetPhysicalDevice() const;
     virtual dawn::platform::Platform* GetPlatform() const;
 
     // Returns the Format corresponding to the wgpu::TextureFormat or an error if the format
@@ -309,7 +310,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     void APISetUncapturedErrorCallback(wgpu::ErrorCallback callback, void* userdata);
     void APISetLoggingCallback(wgpu::LoggingCallback callback, void* userdata);
     void APIPushErrorScope(wgpu::ErrorFilter filter);
-    bool APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata);
+    void APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata);
 
     MaybeError ValidateIsAlive() const;
 
@@ -358,6 +359,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     bool IsToggleEnabled(Toggle toggle) const;
     bool IsValidationEnabled() const;
     bool IsRobustnessEnabled() const;
+    bool AllowUnsafeAPIs() const;
     size_t GetLazyClearCountForTesting();
     void IncrementLazyClearCountForTesting();
     size_t GetDeprecationWarningCountForTesting();

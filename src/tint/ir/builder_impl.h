@@ -26,6 +26,7 @@
 #include "src/tint/ir/flow_node.h"
 #include "src/tint/ir/module.h"
 #include "src/tint/ir/value.h"
+#include "src/tint/scope_stack.h"
 #include "src/tint/utils/result.h"
 
 // Forward Declarations
@@ -34,6 +35,7 @@ class Program;
 }  // namespace tint
 namespace tint::ast {
 class Attribute;
+class AssignmentStatement;
 class BinaryExpression;
 class BitcastExpression;
 class BlockStatement;
@@ -41,7 +43,9 @@ class BreakIfStatement;
 class BreakStatement;
 class CallExpression;
 class CallStatement;
+class CompoundAssignmentStatement;
 class ContinueStatement;
+class DiscardStatement;
 class Expression;
 class ForLoopStatement;
 class Function;
@@ -52,17 +56,10 @@ class Node;
 class ReturnStatement;
 class Statement;
 class SwitchStatement;
+class UnaryOpExpression;
 class WhileStatement;
 class Variable;
 }  // namespace tint::ast
-namespace tint::ir {
-class Block;
-class If;
-class Function;
-class Loop;
-class Switch;
-class Terminator;
-}  // namespace tint::ir
 namespace tint::sem {
 class Builtin;
 }  // namespace tint::sem
@@ -82,73 +79,71 @@ class BuilderImpl {
     /// @returns true on success, false otherwise
     utils::Result<Module> Build();
 
-    /// @returns the error
-    std::string error() const { return diagnostics_.str(); }
+    /// @returns the diagnostics
+    diag::List Diagnostics() const { return diagnostics_; }
 
     /// Emits a function to the IR.
     /// @param func the function to emit
-    /// @returns true if successful, false otherwise
-    bool EmitFunction(const ast::Function* func);
+    void EmitFunction(const ast::Function* func);
 
     /// Emits a set of statements to the IR.
     /// @param stmts the statements to emit
-    /// @returns true if successful, false otherwise.
-    bool EmitStatements(utils::VectorRef<const ast::Statement*> stmts);
+    void EmitStatements(utils::VectorRef<const ast::Statement*> stmts);
 
     /// Emits a statement to the IR
     /// @param stmt the statment to emit
-    /// @returns true on success, false otherwise.
-    bool EmitStatement(const ast::Statement* stmt);
+    void EmitStatement(const ast::Statement* stmt);
 
     /// Emits a block statement to the IR.
     /// @param block the block to emit
-    /// @returns true if successful, false otherwise.
-    bool EmitBlock(const ast::BlockStatement* block);
+    void EmitBlock(const ast::BlockStatement* block);
 
     /// Emits an if control node to the IR.
     /// @param stmt the if statement
-    /// @returns true if successful, false otherwise.
-    bool EmitIf(const ast::IfStatement* stmt);
+    void EmitIf(const ast::IfStatement* stmt);
 
     /// Emits a return node to the IR.
     /// @param stmt the return AST statement
-    /// @returns true if successful, false otherwise.
-    bool EmitReturn(const ast::ReturnStatement* stmt);
+    void EmitReturn(const ast::ReturnStatement* stmt);
 
     /// Emits a loop control node to the IR.
     /// @param stmt the loop statement
-    /// @returns true if successful, false otherwise.
-    bool EmitLoop(const ast::LoopStatement* stmt);
+    void EmitLoop(const ast::LoopStatement* stmt);
 
     /// Emits a loop control node to the IR.
     /// @param stmt the while statement
-    /// @returns true if successful, false otherwise.
-    bool EmitWhile(const ast::WhileStatement* stmt);
+    void EmitWhile(const ast::WhileStatement* stmt);
 
     /// Emits a loop control node to the IR.
     /// @param stmt the for loop statement
-    /// @returns true if successful, false otherwise.
-    bool EmitForLoop(const ast::ForLoopStatement* stmt);
+    void EmitForLoop(const ast::ForLoopStatement* stmt);
 
     /// Emits a switch statement
     /// @param stmt the switch statement
-    /// @returns true if successful, false otherwise.
-    bool EmitSwitch(const ast::SwitchStatement* stmt);
+    void EmitSwitch(const ast::SwitchStatement* stmt);
 
     /// Emits a break statement
     /// @param stmt the break statement
-    /// @returns true if successful, false otherwise.
-    bool EmitBreak(const ast::BreakStatement* stmt);
+    void EmitBreak(const ast::BreakStatement* stmt);
 
     /// Emits a continue statement
     /// @param stmt the continue statement
-    /// @returns true if successful, false otherwise.
-    bool EmitContinue(const ast::ContinueStatement* stmt);
+    void EmitContinue(const ast::ContinueStatement* stmt);
+
+    /// Emits a discard statement
+    void EmitDiscard(const ast::DiscardStatement*);
 
     /// Emits a break-if statement
     /// @param stmt the break-if statement
-    /// @returns true if successful, false otherwise.
-    bool EmitBreakIf(const ast::BreakIfStatement* stmt);
+    void EmitBreakIf(const ast::BreakIfStatement* stmt);
+
+    /// Emits an assignment statement
+    /// @param stmt the statement
+    void EmitAssignment(const ast::AssignmentStatement* stmt);
+
+    /// Emits a compound assignment statement
+    /// @param stmt the statement
+    void EmitCompoundAssignment(const ast::CompoundAssignmentStatement* stmt);
 
     /// Emits an expression
     /// @param expr the expression to emit
@@ -157,8 +152,17 @@ class BuilderImpl {
 
     /// Emits a variable
     /// @param var the variable to emit
-    /// @returns true if successful, false otherwise
-    bool EmitVariable(const ast::Variable* var);
+    void EmitVariable(const ast::Variable* var);
+
+    /// Emits a Unary expression
+    /// @param expr the unary expression
+    /// @returns the value storing the result if successful, utils::Failure otherwise
+    utils::Result<Value*> EmitUnary(const ast::UnaryOpExpression* expr);
+
+    /// Emits a short-circult binary expression
+    /// @param expr the binary expression
+    /// @returns the value storing the result if successful, utils::Failure otherwise
+    utils::Result<Value*> EmitShortCircuit(const ast::BinaryExpression* expr);
 
     /// Emits a binary expression
     /// @param expr the binary expression
@@ -172,8 +176,7 @@ class BuilderImpl {
 
     /// Emits a call expression
     /// @param stmt the call statement
-    /// @returns the value storing the result if successful, utils::Failure otherwise
-    utils::Result<Value*> EmitCall(const ast::CallStatement* stmt);
+    void EmitCall(const ast::CallStatement* stmt);
 
     /// Emits a call expression
     /// @param expr the call expression
@@ -187,13 +190,11 @@ class BuilderImpl {
 
     /// Emits a set of attributes
     /// @param attrs the attributes to emit
-    /// @returns true if successful, false otherwise
-    bool EmitAttributes(utils::VectorRef<const ast::Attribute*> attrs);
+    void EmitAttributes(utils::VectorRef<const ast::Attribute*> attrs);
 
     /// Emits an attribute
     /// @param attr the attribute to emit
-    /// @returns true if successful, false otherwise
-    bool EmitAttribute(const ast::Attribute* attr);
+    void EmitAttribute(const ast::Attribute* attr);
 
     /// Retrieve the IR Flow node for a given AST node.
     /// @param n the node to lookup
@@ -224,19 +225,17 @@ class BuilderImpl {
 
     void add_error(const Source& s, const std::string& err);
 
-    const Program* program_ = nullptr;
-
     Symbol CloneSymbol(Symbol sym) const;
 
-    diag::List diagnostics_;
-
+    const Program* program_ = nullptr;
     Function* current_function_ = nullptr;
+    ScopeStack<Symbol, Value*> scopes_;
+    constant::CloneContext clone_ctx_;
+    diag::List diagnostics_;
 
     /// Map from ast nodes to flow nodes, used to retrieve the flow node for a given AST node.
     /// Used for testing purposes.
     std::unordered_map<const ast::Node*, const FlowNode*> ast_to_flow_;
-
-    constant::CloneContext clone_ctx_;
 };
 
 }  // namespace tint::ir

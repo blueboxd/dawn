@@ -132,10 +132,11 @@ Ref<InstanceBase> InstanceBase::Create(const InstanceDescriptor* descriptor) {
     // Set up the instance toggle state from toggles descriptor
     TogglesState instanceToggles =
         TogglesState::CreateFromTogglesDescriptor(instanceTogglesDesc, ToggleStage::Instance);
-    // By default enable the DisallowUnsafeAPIs instance toggle, it will be inherited to adapters
+    // By default disable the AllowUnsafeAPIs instance toggle, it will be inherited to adapters
     // and devices created by this instance if not overriden.
-    // TODO(dawn:1685): Rename DisallowUnsafeAPIs to AllowUnsafeAPIs, and change relating logic.
+    // TODO(dawn:1685): Remove DisallowUnsafeAPIs.
     instanceToggles.Default(Toggle::DisallowUnsafeAPIs, true);
+    instanceToggles.Default(Toggle::AllowUnsafeAPIs, false);
 
     Ref<InstanceBase> instance = AcquireRef(new InstanceBase(instanceToggles));
     if (instance->ConsumedError(instance->Initialize(descriptor))) {
@@ -254,6 +255,10 @@ ResultOrError<Ref<AdapterBase>> InstanceBase::RequestAdapterInternal(
         AdapterProperties properties;
         mAdapters[i]->APIGetProperties(&properties);
 
+        bool isCompatibility = mAdapters[i]->GetFeatureLevel() == FeatureLevel::Compatibility;
+        if (options->compatibilityMode != isCompatibility) {
+            continue;
+        }
         if (options->forceFallbackAdapter) {
             if (!gpu_info::IsGoogleSwiftshader(properties.vendorID, properties.deviceID)) {
                 continue;
@@ -313,13 +318,18 @@ void InstanceBase::DiscoverDefaultAdapters() {
         TogglesState adapterToggles = TogglesState(ToggleStage::Adapter);
         adapterToggles.InheritFrom(mToggles);
 
-        std::vector<Ref<AdapterBase>> backendAdapters =
+        std::vector<Ref<PhysicalDeviceBase>> physicalDevices =
             backend->DiscoverDefaultAdapters(adapterToggles);
 
-        for (Ref<AdapterBase>& adapter : backendAdapters) {
-            ASSERT(adapter->GetBackendType() == backend->GetType());
-            ASSERT(adapter->GetInstance() == this);
-            mAdapters.push_back(std::move(adapter));
+        for (Ref<PhysicalDeviceBase>& physicalDevice : physicalDevices) {
+            ASSERT(physicalDevice->GetBackendType() == backend->GetType());
+            ASSERT(physicalDevice->GetInstance() == this);
+            for (auto featureLevel : {FeatureLevel::Compatibility, FeatureLevel::Core}) {
+                if (physicalDevice->SupportsFeatureLevel(featureLevel)) {
+                    mAdapters.push_back(
+                        AcquireRef(new AdapterBase(std::move(physicalDevice), featureLevel)));
+                }
+            }
         }
     }
 
@@ -447,13 +457,18 @@ MaybeError InstanceBase::DiscoverAdaptersInternal(const AdapterDiscoveryOptionsB
         TogglesState adapterToggles = TogglesState(ToggleStage::Adapter);
         adapterToggles.InheritFrom(mToggles);
 
-        std::vector<Ref<AdapterBase>> newAdapters;
-        DAWN_TRY_ASSIGN(newAdapters, backend->DiscoverAdapters(options, adapterToggles));
+        std::vector<Ref<PhysicalDeviceBase>> newPhysicalDevices;
+        DAWN_TRY_ASSIGN(newPhysicalDevices, backend->DiscoverAdapters(options, adapterToggles));
 
-        for (Ref<AdapterBase>& adapter : newAdapters) {
-            ASSERT(adapter->GetBackendType() == backend->GetType());
-            ASSERT(adapter->GetInstance() == this);
-            mAdapters.push_back(std::move(adapter));
+        for (Ref<PhysicalDeviceBase>& physicalDevice : newPhysicalDevices) {
+            ASSERT(physicalDevice->GetBackendType() == backend->GetType());
+            ASSERT(physicalDevice->GetInstance() == this);
+            for (auto featureLevel : {FeatureLevel::Compatibility, FeatureLevel::Core}) {
+                if (physicalDevice->SupportsFeatureLevel(featureLevel)) {
+                    mAdapters.push_back(
+                        AcquireRef(new AdapterBase(std::move(physicalDevice), featureLevel)));
+                }
+            }
         }
     }
 

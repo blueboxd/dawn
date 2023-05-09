@@ -284,7 +284,7 @@ TEST_P(BindGroupTests, UBOSamplerAndTexture) {
     wgpu::SamplerDescriptor samplerDescriptor = {};
     samplerDescriptor.minFilter = wgpu::FilterMode::Nearest;
     samplerDescriptor.magFilter = wgpu::FilterMode::Nearest;
-    samplerDescriptor.mipmapFilter = wgpu::FilterMode::Nearest;
+    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
     samplerDescriptor.addressModeU = wgpu::AddressMode::ClampToEdge;
     samplerDescriptor.addressModeV = wgpu::AddressMode::ClampToEdge;
     samplerDescriptor.addressModeW = wgpu::AddressMode::ClampToEdge;
@@ -1507,6 +1507,7 @@ TEST_P(BindGroupTests, CreateWithDestroyedResource) {
 }
 
 DAWN_INSTANTIATE_TEST(BindGroupTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),

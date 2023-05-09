@@ -16,38 +16,40 @@
 #define SRC_TINT_IR_INSTRUCTION_H_
 
 #include "src/tint/ir/value.h"
-#include "src/tint/symbol_table.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
 /// An instruction in the IR.
-class Instruction : public utils::Castable<Instruction> {
+class Instruction : public utils::Castable<Instruction, Value> {
   public:
-    Instruction(const Instruction& instr) = delete;
-    Instruction(Instruction&& instr) = delete;
+    /// The identifier used by instructions that have no value.
+    static constexpr uint32_t kNoID = 0;
+
+    Instruction(const Instruction& inst) = delete;
+    Instruction(Instruction&& inst) = delete;
     /// Destructor
     ~Instruction() override;
 
-    Instruction& operator=(const Instruction& instr) = delete;
-    Instruction& operator=(Instruction&& instr) = delete;
+    Instruction& operator=(const Instruction& inst) = delete;
+    Instruction& operator=(Instruction&& inst) = delete;
 
-    /// @returns the result value for the instruction
-    Value* Result() const { return result_; }
+    /// @returns the type of the value
+    const type::Type* Type() const override { return type; }
 
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @returns the stream
-    virtual utils::StringStream& ToString(utils::StringStream& out) const = 0;
+    /// The instruction identifier
+    const uint32_t id = kNoID;
+
+    /// The instruction type
+    const type::Type* type = nullptr;
 
   protected:
     /// Constructor
-    /// @param result the result value
-    explicit Instruction(Value* result);
-
-  private:
-    Value* result_ = nullptr;
+    Instruction();
+    /// Constructor
+    /// @param id the instruction id
+    /// @param type the result type
+    Instruction(uint32_t id, const type::Type* type);
 };
 
 }  // namespace tint::ir

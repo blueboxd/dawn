@@ -30,8 +30,8 @@ target_sources(dawn_native PRIVATE
     "${DAWN_INCLUDE_DIR}/dawn/native/DawnNative.h"
     "${DAWN_INCLUDE_DIR}/dawn/native/dawn_native_export.h"
     ${DAWN_NATIVE_UTILS_GEN_SOURCES}
-    "Adapter.cpp"
     "Adapter.h"
+    "Adapter.cpp"
     "ApplyClearColorValueWithDrawHelper.cpp"
     "ApplyClearColorValueWithDrawHelper.h"
     "AsyncTask.cpp"
@@ -136,6 +136,8 @@ target_sources(dawn_native PRIVATE
     "PassResourceUsageTracker.h"
     "PerStage.cpp"
     "PerStage.h"
+    "PhysicalDevice.cpp"
+    "PhysicalDevice.h"
     "Pipeline.cpp"
     "Pipeline.h"
     "PipelineCache.cpp"
@@ -254,19 +256,20 @@ endif()
 if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
     target_sources(dawn_native PRIVATE
         "${DAWN_INCLUDE_DIR}/dawn/native/D3DBackend.h"
-        "d3d/AdapterD3D.cpp"
-        "d3d/AdapterD3D.h"
         "d3d/BackendD3D.cpp"
         "d3d/BackendD3D.h"
         "d3d/BlobD3D.cpp"
         "d3d/BlobD3D.h"
-        "d3d/D3DBackend.cpp"
         "d3d/D3DCompilationRequest.h"
         "d3d/D3DError.cpp"
         "d3d/D3DError.h"
         "d3d/DeviceD3D.cpp"
         "d3d/DeviceD3D.h"
+        "d3d/ExternalImageDXGIImpl.cpp"
+        "d3d/ExternalImageDXGIImpl.h"
         "d3d/Forward.h"
+        "d3d/PhysicalDeviceD3D.cpp"
+        "d3d/PhysicalDeviceD3D.h"
         "d3d/PlatformFunctions.cpp"
         "d3d/PlatformFunctions.h"
         "d3d/ShaderUtils.cpp"
@@ -282,14 +285,14 @@ endif()
 if (DAWN_ENABLE_D3D11)
     target_sources(dawn_native PRIVATE
         "${DAWN_INCLUDE_DIR}/dawn/native/D3D11Backend.h"
-        "d3d11/AdapterD3D11.cpp"
-        "d3d11/AdapterD3D11.h"
         "d3d11/BackendD3D11.cpp"
         "d3d11/BackendD3D11.h"
         "d3d11/BindGroupD3D11.cpp"
         "d3d11/BindGroupD3D11.h"
         "d3d11/BindGroupLayoutD3D11.cpp"
         "d3d11/BindGroupLayoutD3D11.h"
+        "d3d11/BindGroupTrackerD3D11.cpp"
+        "d3d11/BindGroupTrackerD3D11.h"
         "d3d11/BufferD3D11.cpp"
         "d3d11/BufferD3D11.h"
         "d3d11/CommandBufferD3D11.cpp"
@@ -298,12 +301,13 @@ if (DAWN_ENABLE_D3D11)
         "d3d11/CommandRecordingContextD3D11.h"
         "d3d11/ComputePipelineD3D11.cpp"
         "d3d11/ComputePipelineD3D11.h"
-        "d3d11/D3D11Backend.cpp"
         "d3d11/DeviceD3D11.cpp"
         "d3d11/DeviceD3D11.h"
         "d3d11/DeviceInfoD3D11.cpp"
         "d3d11/DeviceInfoD3D11.h"
         "d3d11/Forward.h"
+        "d3d11/PhysicalDeviceD3D11.cpp"
+        "d3d11/PhysicalDeviceD3D11.h"
         "d3d11/PipelineLayoutD3D11.cpp"
         "d3d11/PipelineLayoutD3D11.h"
         "d3d11/PlatformFunctionsD3D11.cpp"
@@ -328,8 +332,6 @@ endif()
 if (DAWN_ENABLE_D3D12)
     target_sources(dawn_native PRIVATE
         "${DAWN_INCLUDE_DIR}/dawn/native/D3D12Backend.h"
-        "d3d12/AdapterD3D12.cpp"
-        "d3d12/AdapterD3D12.h"
         "d3d12/BackendD3D12.cpp"
         "d3d12/BackendD3D12.h"
         "d3d12/BindGroupD3D12.cpp"
@@ -348,14 +350,12 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/CommandRecordingContext.h"
         "d3d12/ComputePipelineD3D12.cpp"
         "d3d12/ComputePipelineD3D12.h"
-        "d3d12/D3D11on12Util.cpp"
-        "d3d12/D3D11on12Util.h"
         "d3d12/D3D12Info.cpp"
         "d3d12/D3D12Info.h"
         "d3d12/DeviceD3D12.cpp"
         "d3d12/DeviceD3D12.h"
-        "d3d12/ExternalImageDXGIImpl.cpp"
-        "d3d12/ExternalImageDXGIImpl.h"
+        "d3d12/ExternalImageDXGIImplD3D12.cpp"
+        "d3d12/ExternalImageDXGIImplD3D12.h"
         "d3d12/FenceD3D12.cpp"
         "d3d12/FenceD3D12.h"
         "d3d12/Forward.h"
@@ -368,6 +368,8 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/IntegerTypes.h"
         "d3d12/PageableD3D12.cpp"
         "d3d12/PageableD3D12.h"
+        "d3d12/PhysicalDeviceD3D12.cpp"
+        "d3d12/PhysicalDeviceD3D12.h"
         "d3d12/PipelineLayoutD3D12.cpp"
         "d3d12/PipelineLayoutD3D12.h"
         "d3d12/PlatformFunctionsD3D12.cpp"
@@ -489,8 +491,6 @@ if (DAWN_ENABLE_OPENGL)
     target_sources(dawn_native PRIVATE
         "${DAWN_INCLUDE_DIR}/dawn/native/OpenGLBackend.h"
         ${DAWN_NATIVE_OPENGL_AUTOGEN_SOURCES}
-        "opengl/AdapterGL.cpp"
-        "opengl/AdapterGL.h"
         "opengl/BackendGL.cpp"
         "opengl/BackendGL.h"
         "opengl/BindGroupGL.cpp"
@@ -518,6 +518,8 @@ if (DAWN_ENABLE_OPENGL)
         "opengl/OpenGLVersion.h"
         "opengl/PersistentPipelineStateGL.cpp"
         "opengl/PersistentPipelineStateGL.h"
+        "opengl/PhysicalDeviceGL.cpp"
+        "opengl/PhysicalDeviceGL.h"
         "opengl/PipelineGL.cpp"
         "opengl/PipelineGL.h"
         "opengl/PipelineLayoutGL.cpp"
@@ -552,8 +554,6 @@ endif()
 if (DAWN_ENABLE_VULKAN)
     target_sources(dawn_native PRIVATE
         "${DAWN_INCLUDE_DIR}/dawn/native/VulkanBackend.h"
-        "vulkan/AdapterVk.cpp"
-        "vulkan/AdapterVk.h"
         "vulkan/BackendVk.cpp"
         "vulkan/BackendVk.h"
         "vulkan/BindGroupLayoutVk.cpp"
@@ -576,6 +576,8 @@ if (DAWN_ENABLE_VULKAN)
         "vulkan/FencedDeleter.cpp"
         "vulkan/FencedDeleter.h"
         "vulkan/Forward.h"
+        "vulkan/PhysicalDeviceVk.cpp"
+        "vulkan/PhysicalDeviceVk.h"
         "vulkan/PipelineCacheVk.cpp"
         "vulkan/PipelineCacheVk.h"
         "vulkan/PipelineLayoutVk.cpp"
@@ -627,9 +629,10 @@ if (DAWN_ENABLE_VULKAN)
 
     if (ANDROID)
         target_sources(dawn_native PRIVATE
-            "vulkan/external_memory/MemoryServiceAHardwareBuffer.cpp"
-            "vulkan/external_semaphore/ServiceImplementationFD.cpp"
-            "vulkan/external_semaphore/ServiceImplementationFD.h"
+            "vulkan/external_memory/MemoryServiceImplementationAHardwareBuffer.cpp"
+            "vulkan/external_memory/MemoryServiceImplementationAHardwareBuffer.h"
+            "vulkan/external_semaphore/SemaphoreServiceImplementationFD.cpp"
+            "vulkan/external_semaphore/SemaphoreServiceImplementationFD.h"
         )
     elseif (UNIX AND NOT APPLE)
         target_sources(dawn_native PRIVATE
@@ -645,6 +648,12 @@ endif()
 
 # TODO how to do the component build in CMake?
 target_sources(dawn_native PRIVATE "DawnNative.cpp")
+if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
+    target_sources(dawn_native PRIVATE "d3d/D3DBackend.cpp")
+endif()
+if (DAWN_ENABLE_D3D11)
+    target_sources(dawn_native PRIVATE "d3d11/D3D11Backend.cpp")
+endif()
 if (DAWN_ENABLE_D3D12)
     target_sources(dawn_native PRIVATE "d3d12/D3D12Backend.cpp")
 endif()

@@ -14,50 +14,38 @@
 
 #include "src/tint/ir/instruction.h"
 #include "src/tint/ir/test_helper.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
-                                        //
+
 using IR_InstructionTest = TestHelper;
 
 TEST_F(IR_InstructionTest, Bitcast) {
     auto& b = CreateEmptyBuilder();
-
-    b.builder.next_temp_id = Temp::Id(42);
-    const auto* instr =
+    const auto* inst =
         b.builder.Bitcast(b.builder.ir.types.Get<type::I32>(), b.builder.Constant(4_i));
 
-    ASSERT_TRUE(instr->Result()->Is<Temp>());
-    EXPECT_EQ(Temp::Id(42), instr->Result()->As<Temp>()->AsId());
-    ASSERT_NE(instr->Result()->Type(), nullptr);
+    ASSERT_TRUE(inst->Is<ir::Bitcast>());
+    ASSERT_NE(inst->Type(), nullptr);
 
-    ASSERT_TRUE(instr->Val()->Is<Constant>());
-    auto val = instr->Val()->As<Constant>()->value;
+    ASSERT_EQ(inst->args.Length(), 1u);
+    ASSERT_TRUE(inst->args[0]->Is<Constant>());
+    auto val = inst->args[0]->As<Constant>()->value;
     ASSERT_TRUE(val->Is<constant::Scalar<i32>>());
     EXPECT_EQ(4_i, val->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    instr->ToString(str);
-    EXPECT_EQ(str.str(), "%42 (i32) = bitcast(4)");
 }
 
 TEST_F(IR_InstructionTest, Bitcast_Usage) {
     auto& b = CreateEmptyBuilder();
-
-    b.builder.next_temp_id = Temp::Id(42);
-    const auto* instr =
+    const auto* inst =
         b.builder.Bitcast(b.builder.ir.types.Get<type::I32>(), b.builder.Constant(4_i));
 
-    ASSERT_NE(instr->Result(), nullptr);
-    ASSERT_EQ(instr->Result()->Usage().Length(), 1u);
-    EXPECT_EQ(instr->Result()->Usage()[0], instr);
-
-    ASSERT_NE(instr->Val(), nullptr);
-    ASSERT_EQ(instr->Val()->Usage().Length(), 1u);
-    EXPECT_EQ(instr->Val()->Usage()[0], instr);
+    ASSERT_EQ(inst->args.Length(), 1u);
+    ASSERT_NE(inst->args[0], nullptr);
+    ASSERT_EQ(inst->args[0]->Usage().Length(), 1u);
+    EXPECT_EQ(inst->args[0]->Usage()[0], inst);
 }
 
 }  // namespace

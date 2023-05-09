@@ -24,20 +24,25 @@
 #include "src/tint/ir/constant.h"
 #include "src/tint/ir/construct.h"
 #include "src/tint/ir/convert.h"
+#include "src/tint/ir/discard.h"
 #include "src/tint/ir/function.h"
+#include "src/tint/ir/function_terminator.h"
 #include "src/tint/ir/if.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
+#include "src/tint/ir/root_terminator.h"
+#include "src/tint/ir/store.h"
 #include "src/tint/ir/switch.h"
-#include "src/tint/ir/temp.h"
-#include "src/tint/ir/terminator.h"
+#include "src/tint/ir/unary.h"
 #include "src/tint/ir/user_call.h"
 #include "src/tint/ir/value.h"
+#include "src/tint/ir/var.h"
 #include "src/tint/type/bool.h"
 #include "src/tint/type/f16.h"
 #include "src/tint/type/f32.h"
 #include "src/tint/type/i32.h"
 #include "src/tint/type/u32.h"
+#include "src/tint/type/void.h"
 
 namespace tint::ir {
 
@@ -55,8 +60,11 @@ class Builder {
     /// @returns a new block flow node
     Block* CreateBlock();
 
-    /// @returns a new terminator flow node
-    Terminator* CreateTerminator();
+    /// @returns a new root terminator flow node
+    RootTerminator* CreateRootTerminator();
+
+    /// @returns a new function terminator flow node
+    FunctionTerminator* CreateFunctionTerminator();
 
     /// Creates a function flow node
     /// @returns the flow node
@@ -137,13 +145,6 @@ class Builder {
         return Constant(create<constant::Scalar<bool>>(ir.types.Get<type::Bool>(), v));
     }
 
-    /// Creates a new Temporary
-    /// @param type the type of the temporary
-    /// @returns the new temporary
-    ir::Temp* Temp(const type::Type* type) {
-        return ir.values.Create<ir::Temp>(type, AllocateTempId());
-    }
-
     /// Creates an op for `lhs kind rhs`
     /// @param kind the kind of operation
     /// @param type the result type of the binary expression
@@ -172,20 +173,6 @@ class Builder {
     /// @param rhs the rhs of the add
     /// @returns the operation
     Binary* Xor(const type::Type* type, Value* lhs, Value* rhs);
-
-    /// Creates an LogicalAnd operation
-    /// @param type the result type of the expression
-    /// @param lhs the lhs of the add
-    /// @param rhs the rhs of the add
-    /// @returns the operation
-    Binary* LogicalAnd(const type::Type* type, Value* lhs, Value* rhs);
-
-    /// Creates an LogicalOr operation
-    /// @param type the result type of the expression
-    /// @param lhs the lhs of the add
-    /// @param rhs the rhs of the add
-    /// @returns the operation
-    Binary* LogicalOr(const type::Type* type, Value* lhs, Value* rhs);
 
     /// Creates an Equal operation
     /// @param type the result type of the expression
@@ -278,11 +265,52 @@ class Builder {
     /// @returns the operation
     Binary* Modulo(const type::Type* type, Value* lhs, Value* rhs);
 
+    /// Creates an op for `kind val`
+    /// @param kind the kind of operation
+    /// @param type the result type of the binary expression
+    /// @param val the value of the operation
+    /// @returns the operation
+    Unary* CreateUnary(Unary::Kind kind, const type::Type* type, Value* val);
+
+    /// Creates an AddressOf operation
+    /// @param type the result type of the expression
+    /// @param val the value
+    /// @returns the operation
+    Unary* AddressOf(const type::Type* type, Value* val);
+
+    /// Creates a Complement operation
+    /// @param type the result type of the expression
+    /// @param val the value
+    /// @returns the operation
+    Unary* Complement(const type::Type* type, Value* val);
+
+    /// Creates an Indirection operation
+    /// @param type the result type of the expression
+    /// @param val the value
+    /// @returns the operation
+    Unary* Indirection(const type::Type* type, Value* val);
+
+    /// Creates a Negation operation
+    /// @param type the result type of the expression
+    /// @param val the value
+    /// @returns the operation
+    Unary* Negation(const type::Type* type, Value* val);
+
+    /// Creates a Not operation
+    /// @param type the result type of the expression
+    /// @param val the value
+    /// @returns the operation
+    Binary* Not(const type::Type* type, Value* val);
+
     /// Creates a bitcast instruction
     /// @param type the result type of the bitcast
     /// @param val the value being bitcast
     /// @returns the instruction
     ir::Bitcast* Bitcast(const type::Type* type, Value* val);
+
+    /// Creates a discard instruction
+    /// @returns the instruction
+    ir::Discard* Discard();
 
     /// Creates a user function call instruction
     /// @param type the return type of the call
@@ -315,14 +343,32 @@ class Builder {
                          builtin::Function func,
                          utils::VectorRef<Value*> args);
 
-    /// @returns a unique temp id
-    Temp::Id AllocateTempId();
+    /// Creates an store instruction
+    /// @param to the expression being stored too
+    /// @param from the expression being stored
+    /// @returns the instruction
+    ir::Store* Store(Value* to, Value* from);
+
+    /// Creates a new `var` declaration
+    /// @param type the var type
+    /// @param address_space the address space
+    /// @param access the access mode
+    /// @returns the instruction
+    ir::Var* Declare(const type::Type* type,
+                     builtin::AddressSpace address_space,
+                     builtin::Access access);
+
+    /// Retrieves the root block for the module, creating if necessary
+    /// @returns the root block
+    ir::Block* CreateRootBlockIfNeeded();
 
     /// The IR module.
     Module ir;
 
-    /// The next temporary number to allocate
-    Temp::Id next_temp_id = 1;
+  private:
+    uint32_t next_inst_id() { return next_instruction_id_++; }
+
+    uint32_t next_instruction_id_ = 1;
 };
 
 }  // namespace tint::ir

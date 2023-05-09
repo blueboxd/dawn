@@ -21,7 +21,6 @@
 
 #include "dawn/common/Log.h"
 #include "dawn/common/Version_autogen.h"
-#include "dawn/native/Adapter.h"
 #include "dawn/native/AsyncTask.h"
 #include "dawn/native/AttachmentState.h"
 #include "dawn/native/BindGroup.h"
@@ -42,6 +41,7 @@
 #include "dawn/native/Instance.h"
 #include "dawn/native/InternalPipelineStore.h"
 #include "dawn/native/ObjectType_autogen.h"
+#include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/PipelineCache.h"
 #include "dawn/native/QuerySet.h"
 #include "dawn/native/Queue.h"
@@ -270,7 +270,7 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
             )";
         ShaderModuleDescriptor descriptor;
         ShaderModuleWGSLDescriptor wgslDesc;
-        wgslDesc.source = kEmptyFragmentShader;
+        wgslDesc.code = kEmptyFragmentShader;
         descriptor.nextInChain = &wgslDesc;
 
         DAWN_TRY_ASSIGN(mInternalPipelineStore->placeholderFragmentShader,
@@ -286,7 +286,7 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
     // mAdapter is not set for mock test devices.
     // TODO(crbug.com/dawn/1702): using a mock adapter could avoid the null checking.
     if (mAdapter != nullptr) {
-        mAdapter->GetInstance()->AddDevice(this);
+        mAdapter->GetPhysicalDevice()->GetInstance()->AddDevice(this);
     }
 
     return {};
@@ -344,11 +344,12 @@ void DeviceBase::WillDropLastExternalRef() {
     // mAdapter is not set for mock test devices.
     // TODO(crbug.com/dawn/1702): using a mock adapter could avoid the null checking.
     if (mAdapter != nullptr) {
-        mAdapter->GetInstance()->RemoveDevice(this);
+        mAdapter->GetPhysicalDevice()->GetInstance()->RemoveDevice(this);
 
         // Once last external ref dropped, all callbacks should be forwarded to Instance's callback
         // queue instead.
-        mCallbackTaskManager = mAdapter->GetInstance()->GetCallbackTaskManager();
+        mCallbackTaskManager =
+            mAdapter->GetPhysicalDevice()->GetInstance()->GetCallbackTaskManager();
     }
 }
 
@@ -631,9 +632,7 @@ void DeviceBase::APIPushErrorScope(wgpu::ErrorFilter filter) {
     mErrorScopeStack->Push(filter);
 }
 
-bool DeviceBase::APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata) {
-    // TODO(crbug.com/dawn/1324) Remove return and make function void when users are updated.
-    bool returnValue = true;
+void DeviceBase::APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata) {
     if (callback == nullptr) {
         static wgpu::ErrorCallback defaultCallback = [](WGPUErrorType, char const*, void*) {};
         callback = defaultCallback;
@@ -642,20 +641,18 @@ bool DeviceBase::APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata) 
     if (IsLost()) {
         mCallbackTaskManager->AddCallbackTask(
             std::bind(callback, WGPUErrorType_DeviceLost, "GPU device disconnected", userdata));
-        return returnValue;
+        return;
     }
     if (mErrorScopeStack->Empty()) {
         mCallbackTaskManager->AddCallbackTask(
             std::bind(callback, WGPUErrorType_Unknown, "No error scopes to pop", userdata));
-        return returnValue;
+        return;
     }
     ErrorScope scope = mErrorScopeStack->Pop();
     mCallbackTaskManager->AddCallbackTask(
         [callback, errorType = static_cast<WGPUErrorType>(scope.GetErrorType()),
          message = scope.GetErrorMessage(),
          userdata] { callback(errorType, message.c_str(), userdata); });
-
-    return returnValue;
 }
 
 BlobCache* DeviceBase::GetBlobCache() {
@@ -663,9 +660,10 @@ BlobCache* DeviceBase::GetBlobCache() {
     // TODO(crbug.com/dawn/1481): Shader caching currently has a dependency on the WGSL writer to
     // generate cache keys. We can lift the dependency once we also cache frontend parsing,
     // transformations, and reflection.
-    return mAdapter->GetInstance()->GetBlobCache(!IsToggleEnabled(Toggle::DisableBlobCache));
+    return mAdapter->GetPhysicalDevice()->GetInstance()->GetBlobCache(
+        !IsToggleEnabled(Toggle::DisableBlobCache));
 #else
-    return mAdapter->GetInstance()->GetBlobCache(false);
+    return mAdapter->GetPhysicalDevice()->GetInstance()->GetBlobCache(false);
 #endif
 }
 
@@ -723,8 +721,12 @@ AdapterBase* DeviceBase::GetAdapter() const {
     return mAdapter.Get();
 }
 
+PhysicalDeviceBase* DeviceBase::GetPhysicalDevice() const {
+    return mAdapter->GetPhysicalDevice();
+}
+
 dawn::platform::Platform* DeviceBase::GetPlatform() const {
-    return GetAdapter()->GetInstance()->GetPlatform();
+    return GetPhysicalDevice()->GetInstance()->GetPlatform();
 }
 
 ExecutionSerial DeviceBase::GetCompletedCommandSerial() const {
@@ -1372,7 +1374,7 @@ ExternalTextureBase* DeviceBase::APICreateExternalTexture(
 
 void DeviceBase::ApplyFeatures(const DeviceDescriptor* deviceDescriptor) {
     ASSERT(deviceDescriptor);
-    ASSERT(GetAdapter()->SupportsAllRequiredFeatures(
+    ASSERT(GetPhysicalDevice()->SupportsAllRequiredFeatures(
         {deviceDescriptor->requiredFeatures, deviceDescriptor->requiredFeaturesCount}));
 
     for (uint32_t i = 0; i < deviceDescriptor->requiredFeaturesCount; ++i) {
@@ -1393,7 +1395,7 @@ void DeviceBase::SetWGSLExtensionAllowList() {
     if (mEnabledFeatures.IsEnabled(Feature::ShaderF16)) {
         mWGSLExtensionAllowList.insert("f16");
     }
-    if (!IsToggleEnabled(Toggle::DisallowUnsafeAPIs)) {
+    if (AllowUnsafeAPIs()) {
         mWGSLExtensionAllowList.insert("chromium_disable_uniformity_analysis");
     }
 }
@@ -1408,6 +1410,11 @@ bool DeviceBase::IsValidationEnabled() const {
 
 bool DeviceBase::IsRobustnessEnabled() const {
     return !IsToggleEnabled(Toggle::DisableRobustness);
+}
+
+bool DeviceBase::AllowUnsafeAPIs() const {
+    // TODO(dawn:1685) Currently allows if either toggle are set accordingly.
+    return IsToggleEnabled(Toggle::AllowUnsafeAPIs) || !IsToggleEnabled(Toggle::DisallowUnsafeAPIs);
 }
 
 size_t DeviceBase::GetLazyClearCountForTesting() {

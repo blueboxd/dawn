@@ -119,7 +119,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         polyfills.quantize_to_vec_f16 = true;  // crbug.com/tint/1741
         polyfills.workgroup_uniform_load = true;
         data.Add<transform::BuiltinPolyfill::Config>(polyfills);
-        manager.Add<transform::BuiltinPolyfill>();
+        manager.Add<transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }
 
     bool disable_workgroup_init_in_sanitizer =
@@ -175,23 +175,12 @@ GeneratorImpl::GeneratorImpl(const Program* program, bool zero_initialize_workgr
 
 bool GeneratorImpl::Generate() {
     if (builder_.Build()) {
-        writer_.WriteHeader(builder_.id_bound());
-        writer_.WriteBuilder(&builder_);
+        auto& module = builder_.Module();
+        writer_.WriteHeader(module.IdBound());
+        writer_.WriteModule(&module);
         return true;
     }
     return false;
-}
-
-const std::vector<uint32_t>& GeneratorImpl::result() const {
-    return writer_.result();
-}
-
-std::vector<uint32_t>& GeneratorImpl::result() {
-    return writer_.result();
-}
-
-std::string GeneratorImpl::error() const {
-    return builder_.error();
 }
 
 }  // namespace tint::writer::spirv

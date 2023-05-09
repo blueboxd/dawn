@@ -4075,6 +4075,12 @@ TypedExpression FunctionEmitter::EmitGlslStd450ExtInst(const spvtools::opt::Inst
     // All parameters to GLSL.std.450 extended instructions are IDs.
     for (uint32_t iarg = 2; iarg < inst.NumInOperands(); ++iarg) {
         TypedExpression operand = MakeOperand(inst, iarg);
+        if (!operand.expr) {
+            if (!failed()) {
+                Fail() << "unexpected failure to make an operand";
+            }
+            return {};
+        }
         if (first_operand_type == nullptr) {
             first_operand_type = operand.type;
         }
@@ -5183,6 +5189,9 @@ bool FunctionEmitter::EmitFunctionCall(const spvtools::opt::Instruction& inst) {
             const auto usage = parser_impl_.GetHandleUsage(arg_id);
             const auto* mem_obj_decl =
                 parser_impl_.GetMemoryObjectDeclarationForHandle(arg_id, usage.IsTexture());
+            if (!mem_obj_decl) {
+                return Fail() << "invalid handle object passed as function parameter";
+            }
             expr = MakeExpression(mem_obj_decl->result_id());
             // Pass the handle through instead of a pointer to the handle.
             expr.type = parser_impl_.GetHandleTypeForSpirvHandle(*mem_obj_decl);

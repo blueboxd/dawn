@@ -28,6 +28,10 @@
 #include "dawn/native/VulkanBackend.h"
 #endif  // defined(DAWN_ENABLE_BACKEND_VULKAN)
 
+#if defined(DAWN_ENABLE_BACKEND_D3D11)
+#include "dawn/native/D3D11Backend.h"
+#endif  // defined(DAWN_ENABLE_BACKEND_D3D11)
+
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
 #include "dawn/native/D3D12Backend.h"
 #endif  // defined(DAWN_ENABLE_BACKEND_D3D12)
@@ -61,7 +65,7 @@ TEST(AdapterDiscoveryTests, OnlySwiftShader) {
     instance.DiscoverAdapters(&options);
 
     const auto& adapters = instance.GetAdapters();
-    EXPECT_LE(adapters.size(), 1u);  // 0 or 1 SwiftShader adapters.
+    EXPECT_LE(adapters.size(), 2u);  // 0 or 2 SwiftShader adapters.
     for (const auto& adapter : adapters) {
         wgpu::AdapterProperties properties;
         adapter.GetProperties(&properties);
@@ -89,6 +93,54 @@ TEST(AdapterDiscoveryTests, OnlyVulkan) {
 }
 #endif  // defined(DAWN_ENABLE_BACKEND_VULKAN)
 
+#if defined(DAWN_ENABLE_BACKEND_D3D11)
+// Test discovering only D3D11 adapters
+TEST(AdapterDiscoveryTests, OnlyD3D11) {
+    dawn::native::Instance instance;
+
+    dawn::native::d3d11::AdapterDiscoveryOptions options;
+    instance.DiscoverAdapters(&options);
+
+    const auto& adapters = instance.GetAdapters();
+    for (const auto& adapter : adapters) {
+        wgpu::AdapterProperties properties;
+        adapter.GetProperties(&properties);
+
+        EXPECT_EQ(properties.backendType, wgpu::BackendType::D3D11);
+    }
+}
+
+// Test discovering a D3D11 adapter from a prexisting DXGI adapter
+TEST(AdapterDiscoveryTests, MatchingDXGIAdapterD3D11) {
+    using Microsoft::WRL::ComPtr;
+
+    ComPtr<IDXGIFactory4> dxgiFactory;
+    HRESULT hr = ::CreateDXGIFactory2(0, IID_PPV_ARGS(&dxgiFactory));
+    ASSERT_EQ(hr, S_OK);
+
+    for (uint32_t adapterIndex = 0;; ++adapterIndex) {
+        ComPtr<IDXGIAdapter1> dxgiAdapter = nullptr;
+        if (dxgiFactory->EnumAdapters1(adapterIndex, &dxgiAdapter) == DXGI_ERROR_NOT_FOUND) {
+            break;  // No more adapters to enumerate.
+        }
+
+        dawn::native::Instance instance;
+
+        dawn::native::d3d11::AdapterDiscoveryOptions options;
+        options.dxgiAdapter = std::move(dxgiAdapter);
+        instance.DiscoverAdapters(&options);
+
+        const auto& adapters = instance.GetAdapters();
+        for (const auto& adapter : adapters) {
+            wgpu::AdapterProperties properties;
+            adapter.GetProperties(&properties);
+
+            EXPECT_EQ(properties.backendType, wgpu::BackendType::D3D11);
+        }
+    }
+}
+#endif  // defined(DAWN_ENABLE_BACKEND_D3D11)
+
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
 // Test discovering only D3D12 adapters
 TEST(AdapterDiscoveryTests, OnlyD3D12) {
@@ -107,7 +159,7 @@ TEST(AdapterDiscoveryTests, OnlyD3D12) {
 }
 
 // Test discovering a D3D12 adapter from a prexisting DXGI adapter
-TEST(AdapterDiscoveryTests, MatchingDXGIAdapter) {
+TEST(AdapterDiscoveryTests, MatchingDXGIAdapterD3D12) {
     using Microsoft::WRL::ComPtr;
 
     ComPtr<IDXGIFactory4> dxgiFactory;
@@ -208,6 +260,9 @@ class AdapterCreationTest : public ::testing::Test {
 
                 wgpu::AdapterProperties properties;
                 nativeAdapter.GetProperties(&properties);
+                if (properties.compatibilityMode) {
+                    continue;
+                }
                 swiftShaderAvailable =
                     swiftShaderAvailable ||
                     gpu_info::IsGoogleSwiftshader(properties.vendorID, properties.deviceID);
@@ -333,6 +388,45 @@ TEST_F(AdapterCreationTest, PreferLowPower) {
         adapter.GetProperties(&properties);
         EXPECT_EQ(properties.adapterType, wgpu::AdapterType::IntegratedGPU);
     }
+}
+
+// Test that requesting a Compatibility adapter is supported.
+TEST_F(AdapterCreationTest, Compatibility) {
+    wgpu::RequestAdapterOptions options = {};
+    options.compatibilityMode = true;
+
+    MockCallback<WGPURequestAdapterCallback> cb;
+
+    WGPUAdapter cAdapter = nullptr;
+    EXPECT_CALL(cb, Call(WGPURequestAdapterStatus_Success, _, nullptr, this))
+        .WillOnce(SaveArg<1>(&cAdapter));
+    instance.RequestAdapter(&options, cb.Callback(), cb.MakeUserdata(this));
+
+    wgpu::Adapter adapter = wgpu::Adapter::Acquire(cAdapter);
+    EXPECT_EQ(adapter != nullptr, anyAdapterAvailable);
+
+    wgpu::AdapterProperties properties;
+    adapter.GetProperties(&properties);
+    EXPECT_TRUE(properties.compatibilityMode);
+}
+
+// Test that requesting a Non-Compatibility adapter is supported and is default.
+TEST_F(AdapterCreationTest, NonCompatibility) {
+    wgpu::RequestAdapterOptions options = {};
+
+    MockCallback<WGPURequestAdapterCallback> cb;
+
+    WGPUAdapter cAdapter = nullptr;
+    EXPECT_CALL(cb, Call(WGPURequestAdapterStatus_Success, _, nullptr, this))
+        .WillOnce(SaveArg<1>(&cAdapter));
+    instance.RequestAdapter(&options, cb.Callback(), cb.MakeUserdata(this));
+
+    wgpu::Adapter adapter = wgpu::Adapter::Acquire(cAdapter);
+    EXPECT_EQ(adapter != nullptr, anyAdapterAvailable);
+
+    wgpu::AdapterProperties properties;
+    adapter.GetProperties(&properties);
+    EXPECT_FALSE(properties.compatibilityMode);
 }
 
 // Test that GetInstance() returns the correct Instance.

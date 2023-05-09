@@ -15,9 +15,9 @@
 #include "dawn/native/SwapChain.h"
 
 #include "dawn/common/Constants.h"
-#include "dawn/native/Adapter.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ObjectType_autogen.h"
+#include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/Surface.h"
 #include "dawn/native/Texture.h"
 #include "dawn/native/ValidationUtils_autogen.h"
@@ -233,7 +233,7 @@ bool SwapChainBase::IsAttached() const {
 }
 
 wgpu::BackendType SwapChainBase::GetBackendType() const {
-    return GetDevice()->GetAdapter()->GetBackendType();
+    return GetDevice()->GetPhysicalDevice()->GetBackendType();
 }
 
 MaybeError SwapChainBase::ValidatePresent() const {

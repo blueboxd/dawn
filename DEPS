@@ -136,17 +136,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@22b51592fcb6857d48c813f883d91701af7db162',
+    'url': '{chromium_git}/angle/angle@fbca2b29271c9c209016e7ad047d46056072ec66',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@c0e5813a9b7754690dbae7cd71ce35f21ca9d98c',
+    'url': '{swiftshader_git}/SwiftShader@9ebfb6b54814268d079e0a7084bac82531626f99',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@79949f0f114626c85e1199c70aba085963254d40',
+    'url': '{chromium_git}/vulkan-deps@22678499e76d721738fb28bb2441bd10f29ea347',
     'condition': 'dawn_standalone',
   },
 
@@ -162,7 +162,7 @@ deps = {
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@c7d833badcd37dc46a999ebeebbbde1368ff15b5',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@b83a6ae7088eda73f9d23c81d2e48c0f360eb9e5',
     'condition': 'build_with_chromium',
   },
 

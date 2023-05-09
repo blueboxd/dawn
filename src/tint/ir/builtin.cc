@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "src/tint/ir/builtin.h"
+
+#include <utility>
+
 #include "src/tint/debug.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ir::Builtin);
@@ -20,18 +23,13 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Builtin);
 // \cond DO_NOT_DOCUMENT
 namespace tint::ir {
 
-Builtin::Builtin(Value* result, builtin::Function func, utils::VectorRef<Value*> args)
-    : Base(result, args), func_(func) {}
+Builtin::Builtin(uint32_t identifier,
+                 const type::Type* ty,
+                 builtin::Function func,
+                 utils::VectorRef<Value*> arguments)
+    : Base(identifier, ty, std::move(arguments)), func_(func) {}
 
 Builtin::~Builtin() = default;
-
-utils::StringStream& Builtin::ToString(utils::StringStream& out) const {
-    Result()->ToString(out);
-    out << " = " << builtin::str(func_) << "(";
-    EmitArgs(out);
-    out << ")";
-    return out;
-}
 
 }  // namespace tint::ir
 // \endcond

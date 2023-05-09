@@ -363,7 +363,7 @@ bool GeneratorImpl::Generate() {
 }
 
 bool GeneratorImpl::EmitTypeDecl(const type::Type* ty) {
-    if (auto* str = ty->As<sem::Struct>()) {
+    if (auto* str = ty->As<type::Struct>()) {
         if (!EmitStructType(current_buffer_, str)) {
             return false;
         }
@@ -826,7 +826,7 @@ bool GeneratorImpl::EmitTypeInitializer(utils::StringStream& out,
             terminator = "}";
             return true;
         },
-        [&](const sem::Struct*) {
+        [&](const type::Struct*) {
             out << "{";
             terminator = "}";
             return true;
@@ -848,10 +848,9 @@ bool GeneratorImpl::EmitTypeInitializer(utils::StringStream& out,
             out << ", ";
         }
 
-        if (auto* struct_ty = type->As<sem::Struct>()) {
+        if (auto* struct_ty = type->As<type::Struct>()) {
             // Emit field designators for structures to account for padding members.
-            auto* member = struct_ty->Members()[i]->Declaration();
-            auto name = member->name->symbol.Name();
+            auto name = struct_ty->Members()[i]->Name().Name();
             out << "." << name << "=";
         }
 
@@ -922,11 +921,11 @@ bool GeneratorImpl::EmitAtomicCall(utils::StringStream& out,
         case builtin::Function::kAtomicCompareExchangeWeak: {
             auto* ptr_ty = TypeOf(expr->args[0])->UnwrapRef()->As<type::Pointer>();
             auto sc = ptr_ty->AddressSpace();
-            auto* str = builtin->ReturnType()->As<sem::Struct>();
+            auto* str = builtin->ReturnType()->As<type::Struct>();
 
             auto func = utils::GetOrCreate(
                 atomicCompareExchangeWeak_, ACEWKeyType{{sc, str}}, [&]() -> std::string {
-                    if (!EmitStructType(&helpers_, builtin->ReturnType()->As<sem::Struct>())) {
+                    if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
                         return "";
                     }
 
@@ -937,7 +936,7 @@ bool GeneratorImpl::EmitAtomicCall(utils::StringStream& out,
 
                     {
                         auto f = line(&buf);
-                        auto str_name = StructName(builtin->ReturnType()->As<sem::Struct>());
+                        auto str_name = StructName(builtin->ReturnType()->As<type::Struct>());
                         f << str_name << " " << name << "(";
                         if (!EmitTypeAndName(f, atomic_ty, "atomic")) {
                             return "";
@@ -1361,11 +1360,11 @@ bool GeneratorImpl::EmitModfCall(utils::StringStream& out,
 
             // Emit the builtin return type unique to this overload. This does not
             // exist in the AST, so it will not be generated in Generate().
-            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<sem::Struct>())) {
+            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
                 return false;
             }
 
-            line(b) << StructName(builtin->ReturnType()->As<sem::Struct>()) << " result;";
+            line(b) << StructName(builtin->ReturnType()->As<type::Struct>()) << " result;";
             line(b) << "result.fract = modf(" << in << ", result.whole);";
             line(b) << "return result;";
             return true;
@@ -1387,11 +1386,11 @@ bool GeneratorImpl::EmitFrexpCall(utils::StringStream& out,
 
             // Emit the builtin return type unique to this overload. This does not
             // exist in the AST, so it will not be generated in Generate().
-            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<sem::Struct>())) {
+            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
                 return false;
             }
 
-            line(b) << StructName(builtin->ReturnType()->As<sem::Struct>()) << " result;";
+            line(b) << StructName(builtin->ReturnType()->As<type::Struct>()) << " result;";
             line(b) << "result.fract = frexp(" << in << ", result.exp);";
             line(b) << "return result;";
             return true;
@@ -1658,7 +1657,7 @@ bool GeneratorImpl::EmitZeroValue(utils::StringStream& out, const type::Type* ty
             out << "{}";
             return true;
         },
-        [&](const sem::Struct*) {
+        [&](const type::Struct*) {
             out << "{}";
             return true;
         },
@@ -1763,7 +1762,7 @@ bool GeneratorImpl::EmitConstant(utils::StringStream& out, const constant::Value
 
             return true;
         },
-        [&](const sem::Struct* s) {
+        [&](const type::Struct* s) {
             if (!EmitStructType(&helpers_, s)) {
                 return false;
             }
@@ -1789,9 +1788,8 @@ bool GeneratorImpl::EmitConstant(utils::StringStream& out, const constant::Value
             return true;
         },
         [&](Default) {
-            diagnostics_.add_error(
-                diag::System::Writer,
-                "unhandled constant type: " + builder_.FriendlyName(constant->Type()));
+            diagnostics_.add_error(diag::System::Writer,
+                                   "unhandled constant type: " + constant->Type()->FriendlyName());
             return false;
         });
 }
@@ -2636,7 +2634,7 @@ bool GeneratorImpl::EmitType(utils::StringStream& out,
             out << "sampler";
             return true;
         },
-        [&](const sem::Struct* str) {
+        [&](const type::Struct* str) {
             // The struct type emits as just the name. The declaration would be
             // emitted as part of emitting the declared types.
             out << StructName(str);
@@ -2791,7 +2789,7 @@ bool GeneratorImpl::EmitAddressSpace(utils::StringStream& out, builtin::AddressS
     return false;
 }
 
-bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
+bool GeneratorImpl::EmitStructType(TextBuffer* b, const type::Struct* str) {
     auto it = emitted_structs_.emplace(str);
     if (!it.second) {
         return true;
@@ -2852,88 +2850,51 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
 
         out << " " << mem_name;
         // Emit attributes
-        if (auto* decl = mem->Declaration()) {
-            for (auto* attr : decl->attributes) {
-                bool ok = Switch(
-                    attr,
-                    [&](const ast::BuiltinAttribute* builtin_attr) {
-                        auto builtin = program_->Sem().Get(builtin_attr)->Value();
-                        auto name = builtin_to_attribute(builtin);
-                        if (name.empty()) {
-                            diagnostics_.add_error(diag::System::Writer, "unknown builtin");
-                            return false;
-                        }
-                        out << " [[" << name << "]]";
-                        return true;
-                    },
-                    [&](const ast::LocationAttribute*) {
-                        auto& pipeline_stage_uses = str->PipelineStageUses();
-                        if (TINT_UNLIKELY(pipeline_stage_uses.size() != 1)) {
-                            TINT_ICE(Writer, diagnostics_) << "invalid entry point IO struct uses";
-                            return false;
-                        }
+        auto& attributes = mem->Attributes();
 
-                        uint32_t loc = mem->Location().value();
-                        if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexInput)) {
-                            out << " [[attribute(" + std::to_string(loc) + ")]]";
-                        } else if (pipeline_stage_uses.count(
-                                       type::PipelineStageUsage::kVertexOutput)) {
-                            out << " [[user(locn" + std::to_string(loc) + ")]]";
-                        } else if (pipeline_stage_uses.count(
-                                       type::PipelineStageUsage::kFragmentInput)) {
-                            out << " [[user(locn" + std::to_string(loc) + ")]]";
-                        } else if (TINT_LIKELY(pipeline_stage_uses.count(
-                                       type::PipelineStageUsage::kFragmentOutput))) {
-                            out << " [[color(" + std::to_string(loc) + ")]]";
-                        } else {
-                            TINT_ICE(Writer, diagnostics_) << "invalid use of location decoration";
-                            return false;
-                        }
-                        return true;
-                    },
-                    [&](const ast::InterpolateAttribute* interpolate) {
-                        auto& sem = program_->Sem();
-                        auto i_type =
-                            sem.Get<sem::BuiltinEnumExpression<builtin::InterpolationType>>(
-                                   interpolate->type)
-                                ->Value();
-
-                        auto i_smpl = builtin::InterpolationSampling::kUndefined;
-                        if (interpolate->sampling) {
-                            i_smpl =
-                                sem.Get<sem::BuiltinEnumExpression<builtin::InterpolationSampling>>(
-                                       interpolate->sampling)
-                                    ->Value();
-                        }
-
-                        auto name = interpolation_to_attribute(i_type, i_smpl);
-                        if (name.empty()) {
-                            diagnostics_.add_error(diag::System::Writer,
-                                                   "unknown interpolation attribute");
-                            return false;
-                        }
-                        out << " [[" << name << "]]";
-                        return true;
-                    },
-                    [&](const ast::InvariantAttribute*) {
-                        if (invariant_define_name_.empty()) {
-                            invariant_define_name_ = UniqueIdentifier("TINT_INVARIANT");
-                        }
-                        out << " " << invariant_define_name_;
-                        return true;
-                    },
-                    [&](const ast::StructMemberOffsetAttribute*) { return true; },
-                    [&](const ast::StructMemberAlignAttribute*) { return true; },
-                    [&](const ast::StructMemberSizeAttribute*) { return true; },
-                    [&](Default) {
-                        TINT_ICE(Writer, diagnostics_)
-                            << "unhandled struct member attribute: " << attr->Name();
-                        return false;
-                    });
-                if (!ok) {
-                    return false;
-                }
+        if (auto builtin = attributes.builtin) {
+            auto name = builtin_to_attribute(builtin.value());
+            if (name.empty()) {
+                diagnostics_.add_error(diag::System::Writer, "unknown builtin");
+                return false;
             }
+            out << " [[" << name << "]]";
+        }
+
+        if (auto location = attributes.location) {
+            auto& pipeline_stage_uses = str->PipelineStageUses();
+            if (TINT_UNLIKELY(pipeline_stage_uses.size() != 1)) {
+                TINT_ICE(Writer, diagnostics_) << "invalid entry point IO struct uses";
+                return false;
+            }
+
+            if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexInput)) {
+                out << " [[attribute(" + std::to_string(location.value()) + ")]]";
+            } else if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexOutput)) {
+                out << " [[user(locn" + std::to_string(location.value()) + ")]]";
+            } else if (pipeline_stage_uses.count(type::PipelineStageUsage::kFragmentInput)) {
+                out << " [[user(locn" + std::to_string(location.value()) + ")]]";
+            } else if (TINT_LIKELY(
+                           pipeline_stage_uses.count(type::PipelineStageUsage::kFragmentOutput))) {
+                out << " [[color(" + std::to_string(location.value()) + ")]]";
+            } else {
+                TINT_ICE(Writer, diagnostics_) << "invalid use of location decoration";
+                return false;
+            }
+        }
+
+        if (auto interpolation = attributes.interpolation) {
+            auto name = interpolation_to_attribute(interpolation->type, interpolation->sampling);
+            if (name.empty()) {
+                diagnostics_.add_error(diag::System::Writer, "unknown interpolation attribute");
+                return false;
+            }
+            out << " [[" << name << "]]";
+        }
+
+        if (attributes.invariant) {
+            invariant_define_name_ = UniqueIdentifier("TINT_INVARIANT");
+            out << " " << invariant_define_name_;
         }
 
         out << ";";
@@ -3223,7 +3184,7 @@ GeneratorImpl::SizeAndAlign GeneratorImpl::MslPackedTypeSizeAndAlign(const type:
             return SizeAndAlign{};
         },
 
-        [&](const sem::Struct* str) {
+        [&](const type::Struct* str) {
             // TODO(crbug.com/tint/650): There's an assumption here that MSL's
             // default structure size and alignment matches WGSL's. We need to
             // confirm this.

@@ -24,6 +24,7 @@
 #include "src/tint/ir/disassembler.h"
 #include "src/tint/number.h"
 #include "src/tint/program_builder.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
@@ -79,7 +80,7 @@ class TestHelperBase : public BASE, public ProgramBuilder {
         auto m = b.Build();
 
         // Store the error away in case we need it
-        error_ = b.error();
+        error_ = b.Diagnostics().str();
 
         // Explicitly remove program to guard against pointers back to ast. Note, this does mean the
         // BuilderImpl is pointing to an invalid program. We keep the BuilderImpl around because we

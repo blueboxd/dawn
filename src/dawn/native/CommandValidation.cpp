@@ -22,7 +22,6 @@
 
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Numeric.h"
-#include "dawn/native/Adapter.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/Buffer.h"
 #include "dawn/native/CommandBufferStateTracker.h"
@@ -30,6 +29,7 @@
 #include "dawn/native/Device.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/PassResourceUsage.h"
+#include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/QuerySet.h"
 #include "dawn/native/RenderBundle.h"
 #include "dawn/native/RenderPipeline.h"
@@ -79,7 +79,7 @@ MaybeError ValidateTimestampQuery(const DeviceBase* device,
 
     DAWN_INVALID_IF(!device->HasFeature(requiredFeature),
                     "Timestamp queries used without the %s feature enabled.",
-                    device->GetAdapter()
+                    device->GetPhysicalDevice()
                         ->GetInstance()
                         ->GetFeatureInfo(FeatureEnumToAPIFeature(requiredFeature))
                         ->name);

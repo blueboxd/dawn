@@ -176,8 +176,6 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
 
     manager.Add<transform::Unshadow>();  // Must come before DirectVariableAccess
 
-    manager.Add<transform::DirectVariableAccess>();
-
     // LocalizeStructArrayAssignment must come after:
     // * SimplifyPointers, because it assumes assignment to arrays in structs are
     // done directly, not indirectly.
@@ -229,8 +227,10 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
         data.Add<transform::BuiltinPolyfill::Config>(polyfills);
-        manager.Add<transform::BuiltinPolyfill>();
+        manager.Add<transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }
+
+    manager.Add<transform::DirectVariableAccess>();
 
     if (!options.disable_workgroup_init) {
         // ZeroInitWorkgroupMemory must come before CanonicalizeEntryPointIO as
@@ -1094,7 +1094,7 @@ bool GeneratorImpl::EmitValueConstructor(utils::StringStream& out,
         }
     }
 
-    bool brackets = type->IsAnyOf<type::Array, sem::Struct>();
+    bool brackets = type->IsAnyOf<type::Array, type::Struct>();
 
     // For single-value vector initializers, swizzle the scalar to the right
     // vector dimension using .x
@@ -1887,7 +1887,7 @@ bool GeneratorImpl::EmitWorkgroupAtomicCall(utils::StringStream& out,
             return true;
         }
         case builtin::Function::kAtomicCompareExchangeWeak: {
-            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<sem::Struct>())) {
+            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
                 return false;
             }
 
@@ -2004,7 +2004,7 @@ bool GeneratorImpl::EmitModfCall(utils::StringStream& out,
 
             // Emit the builtin return type unique to this overload. This does not
             // exist in the AST, so it will not be generated in Generate().
-            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<sem::Struct>())) {
+            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
                 return false;
             }
 
@@ -2037,7 +2037,7 @@ bool GeneratorImpl::EmitFrexpCall(utils::StringStream& out,
 
             // Emit the builtin return type unique to this overload. This does not
             // exist in the AST, so it will not be generated in Generate().
-            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<sem::Struct>())) {
+            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
                 return false;
             }
 
@@ -3287,7 +3287,7 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
         for (auto* var : func->params) {
             auto* sem = builder_.Sem().Get(var);
             auto* type = sem->Type();
-            if (TINT_UNLIKELY(!type->Is<sem::Struct>())) {
+            if (TINT_UNLIKELY(!type->Is<type::Struct>())) {
                 // ICE likely indicates that the CanonicalizeEntryPointIO transform was
                 // not run, or a builtin parameter was added after it was run.
                 TINT_ICE(Writer, diagnostics_) << "Unsupported non-struct entry point parameter";
@@ -3437,7 +3437,7 @@ bool GeneratorImpl::EmitConstant(utils::StringStream& out,
 
             return true;
         },
-        [&](const sem::Struct* s) {
+        [&](const type::Struct* s) {
             if (!EmitStructType(&helpers_, s)) {
                 return false;
             }
@@ -3482,9 +3482,8 @@ bool GeneratorImpl::EmitConstant(utils::StringStream& out,
             return true;
         },
         [&](Default) {
-            diagnostics_.add_error(
-                diag::System::Writer,
-                "unhandled constant type: " + builder_.FriendlyName(constant->Type()));
+            diagnostics_.add_error(diag::System::Writer,
+                                   "unhandled constant type: " + constant->Type()->FriendlyName());
             return false;
         });
 }
@@ -3580,7 +3579,7 @@ bool GeneratorImpl::EmitValue(utils::StringStream& out, const type::Type* type, 
             }
             return true;
         },
-        [&](const sem::Struct*) {
+        [&](const type::Struct*) {
             out << "(";
             TINT_DEFER(out << ")" << value);
             return EmitType(out, type, builtin::AddressSpace::kUndefined,
@@ -4077,7 +4076,7 @@ bool GeneratorImpl::EmitType(utils::StringStream& out,
             out << "State";
             return true;
         },
-        [&](const sem::Struct* str) {
+        [&](const type::Struct* str) {
             out << StructName(str);
             return true;
         },
@@ -4202,7 +4201,7 @@ bool GeneratorImpl::EmitTypeAndName(utils::StringStream& out,
     return true;
 }
 
-bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
+bool GeneratorImpl::EmitStructType(TextBuffer* b, const type::Struct* str) {
     auto it = emitted_structs_.emplace(str);
     if (!it.second) {
         return true;
@@ -4216,73 +4215,48 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
             auto* ty = mem->Type();
             auto out = line(b);
             std::string pre, post;
-            if (auto* decl = mem->Declaration()) {
-                for (auto* attr : decl->attributes) {
-                    if (attr->Is<ast::LocationAttribute>()) {
-                        auto& pipeline_stage_uses = str->PipelineStageUses();
-                        if (TINT_UNLIKELY(pipeline_stage_uses.size() != 1)) {
-                            TINT_ICE(Writer, diagnostics_) << "invalid entry point IO struct uses";
-                        }
 
-                        auto loc = mem->Location().value();
-                        if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexInput)) {
-                            post += " : TEXCOORD" + std::to_string(loc);
-                        } else if (pipeline_stage_uses.count(
-                                       type::PipelineStageUsage::kVertexOutput)) {
-                            post += " : TEXCOORD" + std::to_string(loc);
-                        } else if (pipeline_stage_uses.count(
-                                       type::PipelineStageUsage::kFragmentInput)) {
-                            post += " : TEXCOORD" + std::to_string(loc);
-                        } else if (TINT_LIKELY(pipeline_stage_uses.count(
-                                       type::PipelineStageUsage::kFragmentOutput))) {
-                            post += " : SV_Target" + std::to_string(loc);
-                        } else {
-                            TINT_ICE(Writer, diagnostics_) << "invalid use of location attribute";
-                        }
-                    } else if (auto* builtin_attr = attr->As<ast::BuiltinAttribute>()) {
-                        auto builtin = program_->Sem().Get(builtin_attr)->Value();
-                        auto name = builtin_to_attribute(builtin);
-                        if (name.empty()) {
-                            diagnostics_.add_error(diag::System::Writer, "unsupported builtin");
-                            return false;
-                        }
-                        post += " : " + name;
-                    } else if (auto* interpolate = attr->As<ast::InterpolateAttribute>()) {
-                        auto& sem = program_->Sem();
-                        auto i_type =
-                            sem.Get<sem::BuiltinEnumExpression<builtin::InterpolationType>>(
-                                   interpolate->type)
-                                ->Value();
+            auto& attributes = mem->Attributes();
 
-                        auto i_smpl = builtin::InterpolationSampling::kUndefined;
-                        if (interpolate->sampling) {
-                            i_smpl =
-                                sem.Get<sem::BuiltinEnumExpression<builtin::InterpolationSampling>>(
-                                       interpolate->sampling)
-                                    ->Value();
-                        }
-
-                        auto mod = interpolation_to_modifiers(i_type, i_smpl);
-                        if (mod.empty()) {
-                            diagnostics_.add_error(diag::System::Writer,
-                                                   "unsupported interpolation");
-                            return false;
-                        }
-                        pre += mod;
-
-                    } else if (attr->Is<ast::InvariantAttribute>()) {
-                        // Note: `precise` is not exactly the same as `invariant`, but is
-                        // stricter and therefore provides the necessary guarantees.
-                        // See discussion here: https://github.com/gpuweb/gpuweb/issues/893
-                        pre += "precise ";
-                    } else if (TINT_UNLIKELY((!attr->IsAnyOf<ast::StructMemberAlignAttribute,
-                                                             ast::StructMemberOffsetAttribute,
-                                                             ast::StructMemberSizeAttribute>()))) {
-                        TINT_ICE(Writer, diagnostics_)
-                            << "unhandled struct member attribute: " << attr->Name();
-                        return false;
-                    }
+            if (auto location = attributes.location) {
+                auto& pipeline_stage_uses = str->PipelineStageUses();
+                if (TINT_UNLIKELY(pipeline_stage_uses.size() != 1)) {
+                    TINT_ICE(Writer, diagnostics_) << "invalid entry point IO struct uses";
                 }
+                if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexInput)) {
+                    post += " : TEXCOORD" + std::to_string(location.value());
+                } else if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexOutput)) {
+                    post += " : TEXCOORD" + std::to_string(location.value());
+                } else if (pipeline_stage_uses.count(type::PipelineStageUsage::kFragmentInput)) {
+                    post += " : TEXCOORD" + std::to_string(location.value());
+                } else if (TINT_LIKELY(pipeline_stage_uses.count(
+                               type::PipelineStageUsage::kFragmentOutput))) {
+                    post += " : SV_Target" + std::to_string(location.value());
+                } else {
+                    TINT_ICE(Writer, diagnostics_) << "invalid use of location attribute";
+                }
+            }
+            if (auto builtin = attributes.builtin) {
+                auto name = builtin_to_attribute(builtin.value());
+                if (name.empty()) {
+                    diagnostics_.add_error(diag::System::Writer, "unsupported builtin");
+                    return false;
+                }
+                post += " : " + name;
+            }
+            if (auto interpolation = attributes.interpolation) {
+                auto mod = interpolation_to_modifiers(interpolation->type, interpolation->sampling);
+                if (mod.empty()) {
+                    diagnostics_.add_error(diag::System::Writer, "unsupported interpolation");
+                    return false;
+                }
+                pre += mod;
+            }
+            if (attributes.invariant) {
+                // Note: `precise` is not exactly the same as `invariant`, but is
+                // stricter and therefore provides the necessary guarantees.
+                // See discussion here: https://github.com/gpuweb/gpuweb/issues/893
+                pre += "precise ";
             }
 
             out << pre;

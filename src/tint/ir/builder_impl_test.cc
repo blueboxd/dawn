@@ -14,6 +14,7 @@
 
 #include "src/tint/ir/test_helper.h"
 
+#include "gmock/gmock.h"
 #include "src/tint/ast/case_selector.h"
 #include "src/tint/ast/int_literal_expression.h"
 #include "src/tint/constant/scalar.h"
@@ -41,10 +42,10 @@ TEST_F(IR_BuilderImplTest, Func) {
     EXPECT_EQ(1u, f->start_target->inbound_branches.Length());
     EXPECT_EQ(1u, f->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function f
-  %bb1 = Block
-  Return ()
-FunctionEnd
+    EXPECT_EQ(Disassemble(m), R"(%fn0 = func f():void
+  %fn1 = block
+  ret
+func_end
 
 )");
 }
@@ -87,23 +88,24 @@ TEST_F(IR_BuilderImplTest, IfStatement) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = if (true)
+  %fn2 = if true [t: %fn3, f: %fn4, m: %fn5]
     # true branch
-    %bb3 = Block
-    BranchTo %bb4 ()
+    %fn3 = block
+    branch %fn5
 
     # false branch
-    %bb5 = Block
-    BranchTo %bb4 ()
+    %fn4 = block
+    branch %fn5
 
   # if merge
-  %bb4 = Block
-  Return ()
-FunctionEnd
+  %fn5 = block
+  ret
+func_end
 
 )");
 }
@@ -135,22 +137,23 @@ TEST_F(IR_BuilderImplTest, IfStatement_TrueReturns) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(2u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = if (true)
+  %fn2 = if true [t: %fn3, f: %fn4, m: %fn5]
     # true branch
-    %bb3 = Block
-    Return ()
+    %fn3 = block
+    ret
     # false branch
-    %bb4 = Block
-    BranchTo %bb5 ()
+    %fn4 = block
+    branch %fn5
 
   # if merge
-  %bb5 = Block
-  Return ()
-FunctionEnd
+  %fn5 = block
+  ret
+func_end
 
 )");
 }
@@ -182,22 +185,23 @@ TEST_F(IR_BuilderImplTest, IfStatement_FalseReturns) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(2u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = if (true)
+  %fn2 = if true [t: %fn3, f: %fn4, m: %fn5]
     # true branch
-    %bb3 = Block
-    BranchTo %bb4 ()
+    %fn3 = block
+    branch %fn5
 
     # false branch
-    %bb5 = Block
-    Return ()
+    %fn4 = block
+    ret
   # if merge
-  %bb4 = Block
-  Return ()
-FunctionEnd
+  %fn5 = block
+  ret
+func_end
 
 )");
 }
@@ -229,18 +233,19 @@ TEST_F(IR_BuilderImplTest, IfStatement_BothReturn) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(2u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = if (true)
+  %fn2 = if true [t: %fn3, f: %fn4]
     # true branch
-    %bb3 = Block
-    Return ()
+    %fn3 = block
+    ret
     # false branch
-    %bb4 = Block
-    Return ()
-FunctionEnd
+    %fn4 = block
+    ret
+func_end
 
 )");
 }
@@ -272,36 +277,33 @@ TEST_F(IR_BuilderImplTest, IfStatement_JumpChainToMerge) {
     ASSERT_NE(loop_flow->continuing.target, nullptr);
     ASSERT_NE(loop_flow->merge.target, nullptr);
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = if (true)
+  %fn2 = if true [t: %fn3, f: %fn4, m: %fn5]
     # true branch
-    %bb3 = Block
-    BranchTo %bb4 ()
+    %fn3 = block
+    branch %fn6
 
-    %bb4 = loop
+    %fn6 = loop [s: %fn7, m: %fn8]
       # loop start
-      %bb5 = Block
-      BranchTo %bb6 ()
-
-      # loop continuing
-      %bb7 = Block
-      BranchTo %bb5 ()
+      %fn7 = block
+      branch %fn8
 
     # loop merge
-    %bb6 = Block
-    BranchTo %bb8 ()
+    %fn8 = block
+    branch %fn5
 
     # false branch
-    %bb9 = Block
-    BranchTo %bb8 ()
+    %fn4 = block
+    branch %fn5
 
   # if merge
-  %bb8 = Block
-  Return ()
-FunctionEnd
+  %fn5 = block
+  ret
+func_end
 
 )");
 }
@@ -333,23 +335,20 @@ TEST_F(IR_BuilderImplTest, Loop_WithBreak) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3, m: %fn4]
     # loop start
-    %bb3 = Block
-    BranchTo %bb4 ()
-
-    # loop continuing
-    %bb5 = Block
-    BranchTo %bb3 ()
+    %fn3 = block
+    branch %fn4
 
   # loop merge
-  %bb4 = Block
-  Return ()
-FunctionEnd
+  %fn4 = block
+  ret
+func_end
 
 )");
 }
@@ -395,36 +394,37 @@ TEST_F(IR_BuilderImplTest, Loop_WithContinue) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3, c: %fn4, m: %fn5]
     # loop start
-    %bb3 = Block
-    BranchTo %bb4 ()
+    %fn3 = block
+    branch %fn6
 
-    %bb4 = if (true)
+    %fn6 = if true [t: %fn7, f: %fn8, m: %fn9]
       # true branch
-      %bb5 = Block
-      BranchTo %bb6 ()
+      %fn7 = block
+      branch %fn5
 
       # false branch
-      %bb7 = Block
-      BranchTo %bb8 ()
+      %fn8 = block
+      branch %fn9
 
     # if merge
-    %bb8 = Block
-    BranchTo %bb9 ()
+    %fn9 = block
+    branch %fn4
 
     # loop continuing
-    %bb9 = Block
-    BranchTo %bb3 ()
+    %fn4 = block
+    branch %fn3
 
   # loop merge
-  %bb6 = Block
-  Return ()
-FunctionEnd
+  %fn5 = block
+  ret
+func_end
 
 )");
 }
@@ -470,36 +470,37 @@ TEST_F(IR_BuilderImplTest, Loop_WithContinuing_BreakIf) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3, c: %fn4, m: %fn5]
     # loop start
-    %bb3 = Block
-    BranchTo %bb4 ()
+    %fn3 = block
+    branch %fn4
 
     # loop continuing
-    %bb4 = Block
-    BranchTo %bb5 ()
+    %fn4 = block
+    branch %fn6
 
-    %bb5 = if (true)
+    %fn6 = if true [t: %fn7, f: %fn8, m: %fn9]
       # true branch
-      %bb6 = Block
-      BranchTo %bb7 ()
+      %fn7 = block
+      branch %fn5
 
       # false branch
-      %bb8 = Block
-      BranchTo %bb9 ()
+      %fn8 = block
+      branch %fn9
 
     # if merge
-    %bb9 = Block
-    BranchTo %bb3 ()
+    %fn9 = block
+    branch %fn3
 
   # loop merge
-  %bb7 = Block
-  Return ()
-FunctionEnd
+  %fn5 = block
+  ret
+func_end
 
 )");
 }
@@ -545,34 +546,33 @@ TEST_F(IR_BuilderImplTest, Loop_WithReturn) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3, c: %fn4]
     # loop start
-    %bb3 = Block
-    BranchTo %bb4 ()
+    %fn3 = block
+    branch %fn5
 
-    %bb4 = if (true)
+    %fn5 = if true [t: %fn6, f: %fn7, m: %fn8]
       # true branch
-      %bb5 = Block
-      Return ()
+      %fn6 = block
+      ret
       # false branch
-      %bb6 = Block
-      BranchTo %bb7 ()
+      %fn7 = block
+      branch %fn8
 
     # if merge
-    %bb7 = Block
-    BranchTo %bb8 ()
+    %fn8 = block
+    branch %fn4
 
     # loop continuing
-    %bb8 = Block
-    BranchTo %bb3 ()
+    %fn4 = block
+    branch %fn3
 
-  # loop merge
-  # Dead
-FunctionEnd
+func_end
 
 )");
 }
@@ -604,21 +604,16 @@ TEST_F(IR_BuilderImplTest, Loop_WithOnlyReturn) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3]
     # loop start
-    %bb3 = Block
-    Return ()
-    # loop continuing
-    %bb4 = Block
-    BranchTo %bb3 ()
-
-  # loop merge
-  # Dead
-FunctionEnd
+    %fn3 = block
+    ret
+func_end
 
 )");
 }
@@ -628,6 +623,9 @@ TEST_F(IR_BuilderImplTest, Loop_WithOnlyReturn_ContinuingBreakIf) {
     // `ast_if` below), it doesn't get emitted as there is no way to reach the
     // loop merge due to the loop itself doing a `return`. This is why the
     // loop merge gets marked as Dead and the `ast_if` doesn't appear.
+    //
+    // Similar, the continuing block goes away as there is no way to get there, so it's treated
+    // as dead code and dropped.
     auto* ast_break_if = BreakIf(true);
     auto* ast_loop = Loop(Block(Return()), Block(ast_break_if));
     auto* ast_if = If(true, Block(Return()));
@@ -669,34 +667,16 @@ TEST_F(IR_BuilderImplTest, Loop_WithOnlyReturn_ContinuingBreakIf) {
     // This is 1 because only the loop branch happens. The subsequent if return is dead code.
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3]
     # loop start
-    %bb3 = Block
-    Return ()
-    # loop continuing
-    %bb4 = Block
-    BranchTo %bb5 ()
-
-    %bb5 = if (true)
-      # true branch
-      %bb6 = Block
-      BranchTo %bb7 ()
-
-      # false branch
-      %bb8 = Block
-      BranchTo %bb9 ()
-
-    # if merge
-    %bb9 = Block
-    BranchTo %bb3 ()
-
-  # loop merge
-  # Dead
-FunctionEnd
+    %fn3 = block
+    ret
+func_end
 
 )");
 }
@@ -742,32 +722,29 @@ TEST_F(IR_BuilderImplTest, Loop_WithIf_BothBranchesBreak) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3, m: %fn4]
     # loop start
-    %bb3 = Block
-    BranchTo %bb4 ()
+    %fn3 = block
+    branch %fn5
 
-    %bb4 = if (true)
+    %fn5 = if true [t: %fn6, f: %fn7]
       # true branch
-      %bb5 = Block
-      BranchTo %bb6 ()
+      %fn6 = block
+      branch %fn4
 
       # false branch
-      %bb7 = Block
-      BranchTo %bb6 ()
-
-    # loop continuing
-    %bb8 = Block
-    BranchTo %bb3 ()
+      %fn7 = block
+      branch %fn4
 
   # loop merge
-  %bb6 = Block
-  Return ()
-FunctionEnd
+  %fn4 = block
+  ret
+func_end
 
 )");
 }
@@ -892,114 +869,111 @@ TEST_F(IR_BuilderImplTest, Loop_Nested) {
     EXPECT_EQ(1u, func->start_target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3, c: %fn4, m: %fn5]
     # loop start
-    %bb3 = Block
-    BranchTo %bb4 ()
+    %fn3 = block
+    branch %fn6
 
-    %bb4 = loop
+    %fn6 = loop [s: %fn7, c: %fn8, m: %fn9]
       # loop start
-      %bb5 = Block
-      BranchTo %bb6 ()
+      %fn7 = block
+      branch %fn10
 
-      %bb6 = if (true)
+      %fn10 = if true [t: %fn11, f: %fn12, m: %fn13]
         # true branch
-        %bb7 = Block
-        BranchTo %bb8 ()
+        %fn11 = block
+        branch %fn9
 
         # false branch
-        %bb9 = Block
-        BranchTo %bb10 ()
+        %fn12 = block
+        branch %fn13
 
       # if merge
-      %bb10 = Block
-      BranchTo %bb11 ()
+      %fn13 = block
+      branch %fn14
 
-      %bb11 = if (true)
+      %fn14 = if true [t: %fn15, f: %fn16, m: %fn17]
         # true branch
-        %bb12 = Block
-        BranchTo %bb13 ()
+        %fn15 = block
+        branch %fn8
 
         # false branch
-        %bb14 = Block
-        BranchTo %bb15 ()
+        %fn16 = block
+        branch %fn17
 
       # if merge
-      %bb15 = Block
-      BranchTo %bb13 ()
+      %fn17 = block
+      branch %fn8
 
       # loop continuing
-      %bb13 = Block
-      BranchTo %bb16 ()
+      %fn8 = block
+      branch %fn18
 
-      %bb16 = loop
+      %fn18 = loop [s: %fn19, m: %fn20]
         # loop start
-        %bb17 = Block
-        BranchTo %bb18 ()
-
-        # loop continuing
-        %bb19 = Block
-        BranchTo %bb17 ()
+        %fn19 = block
+        branch %fn20
 
       # loop merge
-      %bb18 = Block
-      BranchTo %bb20 ()
+      %fn20 = block
+      branch %fn21
 
-      %bb20 = loop
+      %fn21 = loop [s: %fn22, c: %fn23, m: %fn24]
         # loop start
-        %bb21 = Block
-        BranchTo %bb22 ()
+        %fn22 = block
+        branch %fn23
 
         # loop continuing
-        %bb22 = Block
-        BranchTo %bb23 ()
+        %fn23 = block
+        branch %fn25
 
-        %bb23 = if (true)
+        %fn25 = if true [t: %fn26, f: %fn27, m: %fn28]
           # true branch
-          %bb24 = Block
-          BranchTo %bb25 ()
+          %fn26 = block
+          branch %fn24
 
           # false branch
-          %bb26 = Block
-          BranchTo %bb27 ()
+          %fn27 = block
+          branch %fn28
 
         # if merge
-        %bb27 = Block
-        BranchTo %bb21 ()
+        %fn28 = block
+        branch %fn22
 
       # loop merge
-      %bb25 = Block
-      BranchTo %bb5 ()
+      %fn24 = block
+      branch %fn7
 
     # loop merge
-    %bb8 = Block
-    BranchTo %bb28 ()
+    %fn9 = block
+    branch %fn29
 
-    %bb28 = if (true)
+    %fn29 = if true [t: %fn30, f: %fn31, m: %fn32]
       # true branch
-      %bb29 = Block
-      BranchTo %bb30 ()
+      %fn30 = block
+      branch %fn5
 
       # false branch
-      %bb31 = Block
-      BranchTo %bb32 ()
+      %fn31 = block
+      branch %fn32
 
     # if merge
-    %bb32 = Block
-    BranchTo %bb33 ()
+    %fn32 = block
+    branch %fn4
 
     # loop continuing
-    %bb33 = Block
-    BranchTo %bb3 ()
+    %fn4 = block
+    branch %fn3
 
   # loop merge
-  %bb30 = Block
-  Return ()
-FunctionEnd
+  %fn5 = block
+  ret
+func_end
 
 )");
 }
@@ -1040,36 +1014,37 @@ TEST_F(IR_BuilderImplTest, While) {
     EXPECT_EQ(1u, if_flow->false_.target->inbound_branches.Length());
     EXPECT_EQ(1u, if_flow->merge.target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3, c: %fn4, m: %fn5]
     # loop start
-    %bb3 = Block
-    BranchTo %bb4 ()
+    %fn3 = block
+    branch %fn6
 
-    %bb4 = if (false)
+    %fn6 = if false [t: %fn7, f: %fn8, m: %fn9]
       # true branch
-      %bb5 = Block
-      BranchTo %bb6 ()
+      %fn7 = block
+      branch %fn9
 
       # false branch
-      %bb7 = Block
-      BranchTo %bb8 ()
+      %fn8 = block
+      branch %fn5
 
     # if merge
-    %bb6 = Block
-    BranchTo %bb9 ()
+    %fn9 = block
+    branch %fn4
 
     # loop continuing
-    %bb9 = Block
-    BranchTo %bb3 ()
+    %fn4 = block
+    branch %fn3
 
   # loop merge
-  %bb8 = Block
-  Return ()
-FunctionEnd
+  %fn5 = block
+  ret
+func_end
 
 )");
 }
@@ -1110,35 +1085,32 @@ TEST_F(IR_BuilderImplTest, While_Return) {
     EXPECT_EQ(1u, if_flow->false_.target->inbound_branches.Length());
     EXPECT_EQ(1u, if_flow->merge.target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3, m: %fn4]
     # loop start
-    %bb3 = Block
-    BranchTo %bb4 ()
+    %fn3 = block
+    branch %fn5
 
-    %bb4 = if (true)
+    %fn5 = if true [t: %fn6, f: %fn7, m: %fn8]
       # true branch
-      %bb5 = Block
-      BranchTo %bb6 ()
+      %fn6 = block
+      branch %fn8
 
       # false branch
-      %bb7 = Block
-      BranchTo %bb8 ()
+      %fn7 = block
+      branch %fn4
 
     # if merge
-    %bb6 = Block
-    Return ()
-    # loop continuing
-    %bb9 = Block
-    BranchTo %bb3 ()
-
+    %fn8 = block
+    ret
   # loop merge
-  %bb8 = Block
-  Return ()
-FunctionEnd
+  %fn4 = block
+  ret
+func_end
 
 )");
 }
@@ -1221,23 +1193,20 @@ TEST_F(IR_BuilderImplTest, For_NoInitCondOrContinuing) {
     EXPECT_EQ(1u, flow->merge.target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = loop
+  %fn2 = loop [s: %fn3, m: %fn4]
     # loop start
-    %bb3 = Block
-    BranchTo %bb4 ()
-
-    # loop continuing
-    %bb5 = Block
-    BranchTo %bb3 ()
+    %fn3 = block
+    branch %fn4
 
   # loop merge
-  %bb4 = Block
-  Return ()
-FunctionEnd
+  %fn4 = block
+  ret
+func_end
 
 )");
 }
@@ -1284,27 +1253,85 @@ TEST_F(IR_BuilderImplTest, Switch) {
     EXPECT_EQ(3u, flow->merge.target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = Switch (1)
-    # Case 0
-    %bb3 = Block
-    BranchTo %bb4 ()
+  %fn2 = switch 1i [c: (0i, %fn3), c: (1i, %fn4), c: (default, %fn5), m: %fn6]
+    # case 0i
+    %fn3 = block
+    branch %fn6
 
-    # Case 1
-    %bb5 = Block
-    BranchTo %bb4 ()
+    # case 1i
+    %fn4 = block
+    branch %fn6
 
-    # Case default
-    %bb6 = Block
-    BranchTo %bb4 ()
+    # case default
+    %fn5 = block
+    branch %fn6
 
-  # Switch Merge
-  %bb4 = Block
-  Return ()
-FunctionEnd
+  # switch merge
+  %fn6 = block
+  ret
+func_end
+
+)");
+}
+
+TEST_F(IR_BuilderImplTest, Switch_MultiSelector) {
+    auto* ast_switch = Switch(
+        1_i,
+        utils::Vector{Case(
+            utils::Vector{CaseSelector(0_i), CaseSelector(1_i), DefaultCaseSelector()}, Block())});
+
+    WrapInFunction(ast_switch);
+
+    auto r = Build();
+    ASSERT_TRUE(r) << Error();
+    auto m = r.Move();
+
+    auto* ir_switch = FlowNodeForAstNode(ast_switch);
+    ASSERT_NE(ir_switch, nullptr);
+    ASSERT_TRUE(ir_switch->Is<ir::Switch>());
+
+    auto* flow = ir_switch->As<ir::Switch>();
+    ASSERT_NE(flow->merge.target, nullptr);
+    ASSERT_EQ(1u, flow->cases.Length());
+
+    ASSERT_EQ(1u, m.functions.Length());
+    auto* func = m.functions[0];
+
+    ASSERT_EQ(3u, flow->cases[0].selectors.Length());
+    ASSERT_TRUE(flow->cases[0].selectors[0].val->value->Is<constant::Scalar<tint::i32>>());
+    EXPECT_EQ(0_i,
+              flow->cases[0].selectors[0].val->value->As<constant::Scalar<tint::i32>>()->ValueOf());
+
+    ASSERT_TRUE(flow->cases[0].selectors[1].val->value->Is<constant::Scalar<tint::i32>>());
+    EXPECT_EQ(1_i,
+              flow->cases[0].selectors[1].val->value->As<constant::Scalar<tint::i32>>()->ValueOf());
+
+    EXPECT_TRUE(flow->cases[0].selectors[2].IsDefault());
+
+    EXPECT_EQ(1u, flow->inbound_branches.Length());
+    EXPECT_EQ(1u, flow->cases[0].start.target->inbound_branches.Length());
+    EXPECT_EQ(1u, flow->merge.target->inbound_branches.Length());
+    EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
+
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
+
+  %fn2 = switch 1i [c: (0i 1i default, %fn3), m: %fn4]
+    # case 0i 1i default
+    %fn3 = block
+    branch %fn4
+
+  # switch merge
+  %fn4 = block
+  ret
+func_end
 
 )");
 }
@@ -1336,19 +1363,20 @@ TEST_F(IR_BuilderImplTest, Switch_OnlyDefault) {
     EXPECT_EQ(1u, flow->merge.target->inbound_branches.Length());
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = Switch (1)
-    # Case default
-    %bb3 = Block
-    BranchTo %bb4 ()
+  %fn2 = switch 1i [c: (default, %fn3), m: %fn4]
+    # case default
+    %fn3 = block
+    branch %fn4
 
-  # Switch Merge
-  %bb4 = Block
-  Return ()
-FunctionEnd
+  # switch merge
+  %fn4 = block
+  ret
+func_end
 
 )");
 }
@@ -1389,23 +1417,24 @@ TEST_F(IR_BuilderImplTest, Switch_WithBreak) {
     // This is 1 because the if is dead-code eliminated and the return doesn't happen.
     EXPECT_EQ(1u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
 
-  %bb2 = Switch (1)
-    # Case 0
-    %bb3 = Block
-    BranchTo %bb4 ()
+  %fn2 = switch 1i [c: (0i, %fn3), c: (default, %fn4), m: %fn5]
+    # case 0i
+    %fn3 = block
+    branch %fn5
 
-    # Case default
-    %bb5 = Block
-    BranchTo %bb4 ()
+    # case default
+    %fn4 = block
+    branch %fn5
 
-  # Switch Merge
-  %bb4 = Block
-  Return ()
-FunctionEnd
+  # switch merge
+  %fn5 = block
+  ret
+func_end
 
 )");
 }
@@ -1448,514 +1477,20 @@ TEST_F(IR_BuilderImplTest, Switch_AllReturn) {
     EXPECT_EQ(0u, flow->merge.target->inbound_branches.Length());
     EXPECT_EQ(2u, func->end_target->inbound_branches.Length());
 
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  BranchTo %bb2 ()
+    EXPECT_EQ(Disassemble(m),
+              R"(%fn0 = func test_function():void [@compute @workgroup_size(1, 1, 1)]
+  %fn1 = block
+  branch %fn2
+
+  %fn2 = switch 1i [c: (0i, %fn3), c: (default, %fn4)]
+    # case 0i
+    %fn3 = block
+    ret
+    # case default
+    %fn4 = block
+    ret
+func_end
 
-  %bb2 = Switch (1)
-    # Case 0
-    %bb3 = Block
-    Return ()
-    # Case default
-    %bb4 = Block
-    Return ()
-  # Switch Merge
-  # Dead
-FunctionEnd
-
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitLiteral_Bool_True) {
-    auto* expr = Expr(true);
-    GlobalVar("a", ty.bool_(), builtin::AddressSpace::kPrivate, expr);
-
-    auto& b = CreateBuilder();
-    auto r = b.EmitLiteral(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    ASSERT_TRUE(r.Get()->Is<Constant>());
-    auto* val = r.Get()->As<Constant>()->value;
-    EXPECT_TRUE(val->Is<constant::Scalar<bool>>());
-    EXPECT_TRUE(val->As<constant::Scalar<bool>>()->ValueAs<bool>());
-}
-
-TEST_F(IR_BuilderImplTest, EmitLiteral_Bool_False) {
-    auto* expr = Expr(false);
-    GlobalVar("a", ty.bool_(), builtin::AddressSpace::kPrivate, expr);
-
-    auto& b = CreateBuilder();
-    auto r = b.EmitLiteral(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    ASSERT_TRUE(r.Get()->Is<Constant>());
-    auto* val = r.Get()->As<Constant>()->value;
-    EXPECT_TRUE(val->Is<constant::Scalar<bool>>());
-    EXPECT_FALSE(val->As<constant::Scalar<bool>>()->ValueAs<bool>());
-}
-
-TEST_F(IR_BuilderImplTest, EmitLiteral_F32) {
-    auto* expr = Expr(1.2_f);
-    GlobalVar("a", ty.f32(), builtin::AddressSpace::kPrivate, expr);
-
-    auto& b = CreateBuilder();
-    auto r = b.EmitLiteral(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    ASSERT_TRUE(r.Get()->Is<Constant>());
-    auto* val = r.Get()->As<Constant>()->value;
-    EXPECT_TRUE(val->Is<constant::Scalar<f32>>());
-    EXPECT_EQ(1.2_f, val->As<constant::Scalar<f32>>()->ValueAs<f32>());
-}
-
-TEST_F(IR_BuilderImplTest, EmitLiteral_F16) {
-    Enable(builtin::Extension::kF16);
-    auto* expr = Expr(1.2_h);
-    GlobalVar("a", ty.f16(), builtin::AddressSpace::kPrivate, expr);
-
-    auto& b = CreateBuilder();
-    auto r = b.EmitLiteral(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    ASSERT_TRUE(r.Get()->Is<Constant>());
-    auto* val = r.Get()->As<Constant>()->value;
-    EXPECT_TRUE(val->Is<constant::Scalar<f16>>());
-    EXPECT_EQ(1.2_h, val->As<constant::Scalar<f16>>()->ValueAs<f32>());
-}
-
-TEST_F(IR_BuilderImplTest, EmitLiteral_I32) {
-    auto* expr = Expr(-2_i);
-    GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate, expr);
-
-    auto& b = CreateBuilder();
-    auto r = b.EmitLiteral(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    ASSERT_TRUE(r.Get()->Is<Constant>());
-    auto* val = r.Get()->As<Constant>()->value;
-    EXPECT_TRUE(val->Is<constant::Scalar<i32>>());
-    EXPECT_EQ(-2_i, val->As<constant::Scalar<i32>>()->ValueAs<f32>());
-}
-
-TEST_F(IR_BuilderImplTest, EmitLiteral_U32) {
-    auto* expr = Expr(2_u);
-    GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate, expr);
-
-    auto& b = CreateBuilder();
-    auto r = b.EmitLiteral(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    ASSERT_TRUE(r.Get()->Is<Constant>());
-    auto* val = r.Get()->As<Constant>()->value;
-    EXPECT_TRUE(val->Is<constant::Scalar<u32>>());
-    EXPECT_EQ(2_u, val->As<constant::Scalar<u32>>()->ValueAs<f32>());
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Add) {
-    auto* expr = Add(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 + 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Subtract) {
-    auto* expr = Sub(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 - 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Multiply) {
-    auto* expr = Mul(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 * 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Div) {
-    auto* expr = Div(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 / 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Modulo) {
-    auto* expr = Mod(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 % 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_And) {
-    auto* expr = And(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 & 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Or) {
-    auto* expr = Or(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 | 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Xor) {
-    auto* expr = Xor(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 ^ 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LogicalAnd) {
-    auto* expr = LogicalAnd(true, false);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (bool) = true && false
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LogicalOr) {
-    auto* expr = LogicalOr(false, true);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (bool) = false || true
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Equal) {
-    auto* expr = Equal(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (bool) = 3 == 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_NotEqual) {
-    auto* expr = NotEqual(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (bool) = 3 != 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LessThan) {
-    auto* expr = LessThan(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (bool) = 3 < 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_GreaterThan) {
-    auto* expr = GreaterThan(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (bool) = 3 > 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LessThanEqual) {
-    auto* expr = LessThanEqual(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (bool) = 3 <= 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_GreaterThanEqual) {
-    auto* expr = GreaterThanEqual(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (bool) = 3 >= 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_ShiftLeft) {
-    auto* expr = Shl(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 << 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_ShiftRight) {
-    auto* expr = Shr(3_u, 4_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 >> 4
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Compound) {
-    auto* expr = LogicalAnd(LessThan(1_u, Add(Shr(3_u, 4_u), 9_u)),
-                            GreaterThan(2.5_f, Div(6.7_f, Mul(2.3_f, 5.5_f))));
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (u32) = 3 >> 4
-%2 (u32) = %1 (u32) + 9
-%3 (bool) = 1 < %2 (u32)
-%4 (f32) = 2.29999995231628417969 * 5.5
-%5 (f32) = 6.69999980926513671875 / %4 (f32)
-%6 (bool) = 2.5 > %5 (f32)
-%7 (bool) = %3 (bool) && %6 (bool)
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Bitcast) {
-    auto* expr = Bitcast<f32>(3_u);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (f32) = bitcast(3)
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitStatement_UserFunction) {
-    Func("my_func", utils::Vector{Param("p", ty.f32())}, ty.void_(), utils::Empty);
-
-    auto* stmt = CallStmt(Call("my_func", Mul(2_f, 3_f)));
-    WrapInFunction(stmt);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitStatement(stmt);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (f32) = 2.0 * 3.0
-%2 (void) = call(my_func, %1 (f32))
-)");
-}
-
-// TODO(dsinclair): This needs assignment in order to output correctly. The empty constructor ends
-// up materializing, so there is no expression to emit until there is a usage. When assigment is
-// implemented this can be enabled (and the output updated).
-TEST_F(IR_BuilderImplTest, DISABLED_EmitExpression_ConstructEmpty) {
-    auto* expr = vec3(ty.f32());
-    GlobalVar("i", builtin::AddressSpace::kPrivate, expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%1 (vec3<f32>) = construct(vec3<f32>)
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Construct) {
-    auto i = GlobalVar("i", builtin::AddressSpace::kPrivate, Expr(1_f));
-    auto* expr = vec3(ty.f32(), 2_f, 3_f, i);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%2 (vec3<f32>) = construct(vec3<f32>, 2.0, 3.0, %1 (void))
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Convert) {
-    auto i = GlobalVar("i", builtin::AddressSpace::kPrivate, Expr(1_i));
-    auto* expr = Call(ty.f32(), i);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%2 (f32) = convert(f32, i32, %1 (void))
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_MaterializedCall) {
-    auto* expr = Return(Call("trunc", 2.5_f));
-
-    Func("test_function", {}, ty.f32(), expr, utils::Empty);
-
-    auto r = Build();
-    ASSERT_TRUE(r) << Error();
-    auto m = r.Move();
-
-    EXPECT_EQ(Disassemble(m), R"(%bb0 = Function test_function
-  %bb1 = Block
-  Return (2.0)
-FunctionEnd
-
-)");
-}
-
-TEST_F(IR_BuilderImplTest, EmitExpression_Builtin) {
-    auto i = GlobalVar("i", builtin::AddressSpace::kPrivate, Expr(1_f));
-    auto* expr = Call("asin", i);
-    WrapInFunction(expr);
-
-    auto& b = CreateBuilder();
-    InjectFlowBlock();
-    auto r = b.EmitExpression(expr);
-    ASSERT_TRUE(r) << b.error();
-
-    Disassembler d(b.builder.ir);
-    d.EmitBlockInstructions(b.current_flow_block->As<ir::Block>());
-    EXPECT_EQ(d.AsString(), R"(%2 (f32) = asin(%1 (void))
 )");
 }
 

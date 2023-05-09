@@ -31,7 +31,7 @@ class Fence;
 // Definition of backend types
 class Device final : public d3d::Device {
   public:
-    static ResultOrError<Ref<Device>> Create(Adapter* adapter,
+    static ResultOrError<Ref<Device>> Create(AdapterBase* adapter,
                                              const DeviceDescriptor* descriptor,
                                              const TogglesState& deviceToggles);
     ~Device() override;
@@ -78,6 +78,9 @@ class Device final : public d3d::Device {
     bool MayRequireDuplicationOfIndirectParameters() const override;
     uint64_t GetBufferCopyOffsetAlignmentForDepthStencil() const override;
     void SetLabelImpl() override;
+
+    std::unique_ptr<d3d::ExternalImageDXGIImpl> CreateExternalImageDXGIImpl(
+        const d3d::ExternalImageDescriptorDXGISharedHandle* descriptor) override;
 
   private:
     using Base = d3d::Device;
