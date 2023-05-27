@@ -15,20 +15,32 @@
 #ifndef SRC_TINT_IR_BRANCH_H_
 #define SRC_TINT_IR_BRANCH_H_
 
-#include "src/tint/ir/flow_node.h"
+#include "src/tint/ir/instruction.h"
 #include "src/tint/ir/value.h"
+#include "src/tint/utils/castable.h"
+
+// Forward declarations
+namespace tint::ir {
+class Block;
+}  // namespace tint::ir
 
 namespace tint::ir {
 
-/// A information on a branch to another block
-struct Branch {
-    /// The block being branched too.
-    FlowNode* target = nullptr;
+/// A branch instruction.
+class Branch : public utils::Castable<Branch, Instruction> {
+  public:
+    ~Branch() override;
 
-    /// The arguments provided for that branch. These arguments could be the
-    /// return value in the case of a branch to the function terminator, or they could
-    /// be the basic block arguments passed into the block.
-    utils::Vector<Value*, 2> args;
+    /// @returns the branch arguments
+    utils::VectorRef<Value*> Args() const { return args_; }
+
+  protected:
+    /// Constructor
+    /// @param args the branch arguments
+    explicit Branch(utils::VectorRef<Value*> args);
+
+  private:
+    utils::Vector<Value*, 2> args_;
 };
 
 }  // namespace tint::ir

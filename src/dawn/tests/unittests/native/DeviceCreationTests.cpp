@@ -26,6 +26,7 @@
 #include "dawn/utils/WGPUHelpers.h"
 #include "gtest/gtest.h"
 
+namespace dawn::native {
 namespace {
 
 using testing::Contains;
@@ -42,7 +43,7 @@ class DeviceCreationTest : public testing::Test {
         // Create an instance with default toggles and create an adapter from it.
         WGPUInstanceDescriptor safeInstanceDesc = {};
         instance = std::make_unique<dawn::native::Instance>(&safeInstanceDesc);
-        instance->DiscoverDefaultAdapters();
+        instance->DiscoverDefaultPhysicalDevices();
         for (dawn::native::Adapter& nativeAdapter : instance->GetAdapters()) {
             wgpu::AdapterProperties properties;
             nativeAdapter.GetProperties(&properties);
@@ -66,7 +67,7 @@ class DeviceCreationTest : public testing::Test {
             unsafeInstanceDesc.nextInChain = &unsafeInstanceTogglesDesc.chain;
 
             unsafeInstanceDisallow = std::make_unique<dawn::native::Instance>(&unsafeInstanceDesc);
-            unsafeInstanceDisallow->DiscoverDefaultAdapters();
+            unsafeInstanceDisallow->DiscoverDefaultPhysicalDevices();
             for (dawn::native::Adapter& nativeAdapter : unsafeInstanceDisallow->GetAdapters()) {
                 wgpu::AdapterProperties properties;
                 nativeAdapter.GetProperties(&properties);
@@ -89,7 +90,7 @@ class DeviceCreationTest : public testing::Test {
         unsafeInstanceDesc.nextInChain = &unsafeInstanceTogglesDesc.chain;
 
         unsafeInstance = std::make_unique<dawn::native::Instance>(&unsafeInstanceDesc);
-        unsafeInstance->DiscoverDefaultAdapters();
+        unsafeInstance->DiscoverDefaultPhysicalDevices();
         for (dawn::native::Adapter& nativeAdapter : unsafeInstance->GetAdapters()) {
             wgpu::AdapterProperties properties;
             nativeAdapter.GetProperties(&properties);
@@ -260,6 +261,8 @@ TEST_F(DeviceCreationTest, CreateDeviceRequiringExperimentalFeatures) {
 
         // Test creating device on the adapter with AllowUnsafeApis toggle enabled would succeed.
         {
+            deviceDescriptor.nextInChain = nullptr;
+
             wgpu::Device device = unsafeAdapter.CreateDevice(&deviceDescriptor);
             EXPECT_NE(device, nullptr);
 
@@ -424,3 +427,4 @@ TEST_F(DeviceCreationTest, RequestDeviceFailure) {
 }
 
 }  // anonymous namespace
+}  // namespace dawn::native

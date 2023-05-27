@@ -16,14 +16,17 @@
 #define SRC_TINT_IR_DISASSEMBLER_H_
 
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 
 #include "src/tint/ir/binary.h"
+#include "src/tint/ir/block.h"
 #include "src/tint/ir/call.h"
-#include "src/tint/ir/flow_node.h"
+#include "src/tint/ir/if.h"
+#include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
+#include "src/tint/ir/switch.h"
 #include "src/tint/ir/unary.h"
+#include "src/tint/utils/hashmap.h"
+#include "src/tint/utils/hashset.h"
 #include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
@@ -49,21 +52,29 @@ class Disassembler {
 
   private:
     utils::StringStream& Indent();
-    size_t GetIdForNode(const FlowNode* node);
 
-    void Walk(const FlowNode* node);
+    size_t IdOf(const Block* blk);
+    std::string_view IdOf(const Value* node);
+
+    void Walk(const Block* blk);
+    void WalkInternal(const Block* blk);
+    void EmitFunction(const Function* func);
     void EmitInstruction(const Instruction* inst);
+    void EmitValueWithType(const Value* val);
     void EmitValue(const Value* val);
     void EmitArgs(const Call* call);
     void EmitBinary(const Binary* b);
     void EmitUnary(const Unary* b);
+    void EmitBranch(const Branch* b);
+    void EmitSwitch(const Switch* s);
+    void EmitLoop(const Loop* l);
+    void EmitIf(const If* i);
 
     const Module& mod_;
     utils::StringStream out_;
-    std::unordered_set<const FlowNode*> visited_;
-    std::unordered_set<const FlowNode*> stop_nodes_;
-    std::unordered_map<const FlowNode*, size_t> flow_node_to_id_;
-    size_t next_node_id_ = 0;
+    utils::Hashset<const Block*, 32> visited_;
+    utils::Hashmap<const Block*, size_t, 32> block_ids_;
+    utils::Hashmap<const Value*, std::string, 32> value_ids_;
     uint32_t indent_size_ = 0;
     bool in_function_ = false;
 };

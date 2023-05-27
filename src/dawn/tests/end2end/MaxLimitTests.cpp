@@ -23,6 +23,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class MaxLimitTests : public DawnTest {
   public:
     wgpu::RequiredLimits GetRequiredLimits(const wgpu::SupportedLimits& supported) override {
@@ -702,8 +705,12 @@ TEST_P(MaxLimitTests, MaxBufferSizes) {
 }
 
 DAWN_INSTANTIATE_TEST(MaxLimitTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

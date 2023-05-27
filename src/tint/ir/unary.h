@@ -25,34 +25,32 @@ class Unary : public utils::Castable<Unary, Instruction> {
   public:
     /// The kind of instruction.
     enum class Kind {
-        kAddressOf,
         kComplement,
-        kIndirection,
         kNegation,
     };
 
     /// Constructor
-    /// @param id the instruction id
     /// @param kind the kind of unary instruction
-    /// @param type the result type
-    /// @param val the lhs of the instruction
-    Unary(uint32_t id, Kind kind, const type::Type* type, Value* val);
-    Unary(const Unary& inst) = delete;
-    Unary(Unary&& inst) = delete;
+    /// @param result_type the result type
+    /// @param val the input value for the instruction
+    Unary(enum Kind kind, const type::Type* result_type, Value* val);
     ~Unary() override;
 
-    Unary& operator=(const Unary& inst) = delete;
-    Unary& operator=(Unary&& inst) = delete;
-
-    /// @returns the kind of instruction
-    Kind GetKind() const { return kind_; }
+    /// @returns the type of the value
+    const type::Type* Type() const override { return result_type_; }
 
     /// @returns the value for the instruction
     const Value* Val() const { return val_; }
+    /// @returns the value for the instruction
+    Value* Val() { return val_; }
+
+    /// @returns the kind of unary instruction
+    enum Kind Kind() const { return kind_; }
 
   private:
-    Kind kind_;
-    Value* val_ = nullptr;
+    enum Kind kind_;
+    const type::Type* result_type_;
+    Value* val_;
 };
 
 }  // namespace tint::ir

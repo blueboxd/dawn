@@ -47,21 +47,18 @@ class Binary : public utils::Castable<Binary, Instruction> {
     };
 
     /// Constructor
-    /// @param id the instruction id
     /// @param kind the kind of binary instruction
     /// @param type the result type
     /// @param lhs the lhs of the instruction
     /// @param rhs the rhs of the instruction
-    Binary(uint32_t id, Kind kind, const type::Type* type, Value* lhs, Value* rhs);
-    Binary(const Binary& inst) = delete;
-    Binary(Binary&& inst) = delete;
+    Binary(enum Kind kind, const type::Type* type, Value* lhs, Value* rhs);
     ~Binary() override;
 
-    Binary& operator=(const Binary& inst) = delete;
-    Binary& operator=(Binary&& inst) = delete;
+    /// @returns the kind of the binary instruction
+    enum Kind Kind() const { return kind_; }
 
-    /// @returns the kind of instruction
-    Kind GetKind() const { return kind_; }
+    /// @returns the type of the value
+    const type::Type* Type() const override { return result_type_; }
 
     /// @returns the left-hand-side value for the instruction
     const Value* LHS() const { return lhs_; }
@@ -70,9 +67,10 @@ class Binary : public utils::Castable<Binary, Instruction> {
     const Value* RHS() const { return rhs_; }
 
   private:
-    Kind kind_;
-    Value* lhs_ = nullptr;
-    Value* rhs_ = nullptr;
+    enum Kind kind_;
+    const type::Type* result_type_;
+    Value* lhs_;
+    Value* rhs_;
 };
 
 }  // namespace tint::ir

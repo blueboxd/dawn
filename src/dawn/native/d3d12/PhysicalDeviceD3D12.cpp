@@ -29,10 +29,8 @@
 
 namespace dawn::native::d3d12 {
 
-PhysicalDevice::PhysicalDevice(Backend* backend,
-                               ComPtr<IDXGIAdapter3> hardwareAdapter,
-                               const TogglesState& adapterToggles)
-    : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D12, adapterToggles) {}
+PhysicalDevice::PhysicalDevice(Backend* backend, ComPtr<IDXGIAdapter3> hardwareAdapter)
+    : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D12) {}
 
 PhysicalDevice::~PhysicalDevice() {
     CleanUpDebugLayerFilters();
@@ -126,6 +124,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::RG11B10UfloatRenderable);
     EnableFeature(Feature::DepthClipControl);
     EnableFeature(Feature::SurfaceCapabilities);
+    EnableFeature(Feature::Float32Filterable);
 
     if (AreTimestampQueriesSupported()) {
         EnableFeature(Feature::TimestampQuery);
@@ -308,8 +307,9 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 
     // Max number of "constants" where each constant is a 16-byte float4
     limits->v1.maxUniformBufferBindingSize = D3D12_REQ_CONSTANT_BUFFER_ELEMENT_COUNT * 16;
-    // D3D12 has no documented limit on the size of a storage buffer binding.
-    limits->v1.maxStorageBufferBindingSize = kAssumedMaxBufferSize;
+    // D3D12 limit of number of texels in a buffer == (1 << 27)
+    limits->v1.maxStorageBufferBindingSize = uint64_t(1)
+                                             << D3D12_REQ_BUFFER_RESOURCE_TEXEL_COUNT_2_TO_EXP;
     // D3D12 has no documented limit on the buffer size.
     limits->v1.maxBufferSize = kAssumedMaxBufferSize;
 
@@ -533,6 +533,18 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
             -1) {
             deviceToggles->Default(Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
                                    true);
+        }
+    }
+
+    // D3D driver has a bug resolving overlapping queries to a same buffer on Intel Gen12 GPUs. This
+    // workaround is needed on the driver version >= 30.0.101.3413.
+    // TODO(crbug.com/dawn/1546): Remove the workaround when the bug is fixed in D3D driver.
+    if (gpu_info::IsIntelGen12LP(vendorId, deviceId) ||
+        gpu_info::IsIntelGen12HP(vendorId, deviceId)) {
+        const gpu_info::DriverVersion kDriverVersion = {30, 0, 101, 3413};
+        if (gpu_info::CompareWindowsDriverVersion(vendorId, GetDriverVersion(), kDriverVersion) !=
+            -1) {
+            deviceToggles->Default(Toggle::ClearBufferBeforeResolveQueries, true);
         }
     }
 

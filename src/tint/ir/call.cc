@@ -20,9 +20,9 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Call);
 
 namespace tint::ir {
 
-Call::Call(uint32_t identifier, const type::Type* ty, utils::VectorRef<Value*> arguments)
-    : Base(identifier, ty), args(std::move(arguments)) {
-    for (auto* arg : args) {
+Call::Call(const type::Type* res_ty, utils::VectorRef<Value*> arguments)
+    : result_type_(res_ty), args_(std::move(arguments)) {
+    for (auto* arg : args_) {
         arg->AddUsage(this);
     }
 }

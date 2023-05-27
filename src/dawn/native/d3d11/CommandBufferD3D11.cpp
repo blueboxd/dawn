@@ -32,6 +32,7 @@
 #include "dawn/native/d3d11/ComputePipelineD3D11.h"
 #include "dawn/native/d3d11/DeviceD3D11.h"
 #include "dawn/native/d3d11/Forward.h"
+#include "dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "dawn/native/d3d11/RenderPipelineD3D11.h"
 #include "dawn/native/d3d11/TextureD3D11.h"
 #include "dawn/native/d3d11/UtilsD3D11.h"
@@ -321,7 +322,7 @@ MaybeError CommandBuffer::Execute() {
 
 MaybeError CommandBuffer::ExecuteComputePass(CommandRecordingContext* commandContext) {
     ComputePipeline* lastPipeline = nullptr;
-    BindGroupTracker bindGroupTracker(commandContext);
+    BindGroupTracker bindGroupTracker(commandContext, /*isRenderPass=*/false);
 
     Command type;
     while (mCommands.NextCommandId(&type)) {
@@ -358,7 +359,7 @@ MaybeError CommandBuffer::ExecuteComputePass(CommandRecordingContext* commandCon
                 }
 
                 commandContext->GetD3D11DeviceContext()->DispatchIndirect(
-                    indirectBuffer->GetD3D11Buffer(), dispatch->indirectOffset);
+                    indirectBuffer->GetD3D11NonConstantBuffer(), dispatch->indirectOffset);
 
                 break;
             }
@@ -415,6 +416,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
     ityp::array<ColorAttachmentIndex, ID3D11RenderTargetView*, kMaxColorAttachments>
         d3d11RenderTargetViewPtrs = {};
     ColorAttachmentIndex attachmentCount(uint8_t(0));
+    // TODO(dawn:1815): Shrink the sparse attachments to accommodate more UAVs.
     for (ColorAttachmentIndex i :
          IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         TextureView* colorTextureView = ToBackend(renderPass->colorAttachments[i].view.Get());
@@ -438,7 +440,8 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
         TextureView* depthStencilTextureView =
             ToBackend(renderPass->depthStencilAttachment.view.Get());
         DAWN_TRY_ASSIGN(d3d11DepthStencilView,
-                        depthStencilTextureView->CreateD3D11DepthStencilView(false, false));
+                        depthStencilTextureView->CreateD3D11DepthStencilView(
+                            attachmentInfo->depthReadOnly, attachmentInfo->stencilReadOnly));
         UINT clearFlags = 0;
         if (attachmentFormat.HasDepth() &&
             renderPass->depthStencilAttachment.depthLoadOp == wgpu::LoadOp::Clear) {
@@ -478,7 +481,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
     d3d11DeviceContext1->RSSetScissorRects(1, &scissor);
 
     RenderPipeline* lastPipeline = nullptr;
-    BindGroupTracker bindGroupTracker(commandContext);
+    BindGroupTracker bindGroupTracker(commandContext, /*isRenderPass=*/true);
     VertexBufferTracker vertexBufferTracker(commandContext);
     std::array<float, 4> blendColor = {0.0f, 0.0f, 0.0f, 0.0f};
     uint32_t stencilReference = 0;
@@ -533,7 +536,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 }
 
                 commandContext->GetD3D11DeviceContext()->DrawInstancedIndirect(
-                    indirectBuffer->GetD3D11Buffer(), draw->indirectOffset);
+                    indirectBuffer->GetD3D11NonConstantBuffer(), draw->indirectOffset);
 
                 break;
             }
@@ -559,7 +562,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 }
 
                 commandContext->GetD3D11DeviceContext()->DrawIndexedInstancedIndirect(
-                    indirectBuffer->GetD3D11Buffer(), draw->indirectOffset);
+                    indirectBuffer->GetD3D11NonConstantBuffer(), draw->indirectOffset);
 
                 break;
             }
@@ -594,7 +597,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 DXGI_FORMAT indexBufferFormat = DXGIIndexFormat(cmd->format);
 
                 commandContext->GetD3D11DeviceContext()->IASetIndexBuffer(
-                    ToBackend(cmd->buffer)->GetD3D11Buffer(), indexBufferFormat,
+                    ToBackend(cmd->buffer)->GetD3D11NonConstantBuffer(), indexBufferFormat,
                     indexBufferBaseOffset);
 
                 break;
@@ -602,7 +605,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
 
             case Command::SetVertexBuffer: {
                 SetVertexBufferCmd* cmd = iter->NextCommand<SetVertexBufferCmd>();
-                ID3D11Buffer* buffer = ToBackend(cmd->buffer)->GetD3D11Buffer();
+                ID3D11Buffer* buffer = ToBackend(cmd->buffer)->GetD3D11NonConstantBuffer();
                 vertexBufferTracker.OnSetVertexBuffer(cmd->slot, buffer, cmd->offset);
                 break;
             }
@@ -627,7 +630,38 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
         switch (type) {
             case Command::EndRenderPass: {
                 mCommands.NextCommand<EndRenderPassCmd>();
-                // TODO(dawn:1705): resolve MSAA
+                ID3D11DeviceContext* d3d11DeviceContext = commandContext->GetD3D11DeviceContext();
+                d3d11DeviceContext->OMSetRenderTargets(0, nullptr, nullptr);
+
+                if (renderPass->attachmentState->GetSampleCount() <= 1) {
+                    return {};
+                }
+
+                // Resolve multisampled textures.
+                for (ColorAttachmentIndex i :
+                     IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+                    const auto& attachment = renderPass->colorAttachments[i];
+                    if (!attachment.resolveTarget.Get()) {
+                        continue;
+                    }
+
+                    ASSERT(attachment.view->GetAspects() == Aspect::Color);
+                    ASSERT(attachment.resolveTarget->GetAspects() == Aspect::Color);
+
+                    Texture* resolveTexture = ToBackend(attachment.resolveTarget->GetTexture());
+                    Texture* colorTexture = ToBackend(attachment.view->GetTexture());
+                    uint32_t dstSubresource = resolveTexture->GetSubresourceIndex(
+                        attachment.resolveTarget->GetBaseMipLevel(),
+                        attachment.resolveTarget->GetBaseArrayLayer(), Aspect::Color);
+                    uint32_t srcSubresource = colorTexture->GetSubresourceIndex(
+                        attachment.view->GetBaseMipLevel(), attachment.view->GetBaseArrayLayer(),
+                        Aspect::Color);
+                    d3d11DeviceContext->ResolveSubresource(
+                        resolveTexture->GetD3D11Resource(), dstSubresource,
+                        colorTexture->GetD3D11Resource(), srcSubresource,
+                        d3d::DXGITextureFormat(attachment.resolveTarget->GetFormat().format));
+                }
+
                 return {};
             }
 

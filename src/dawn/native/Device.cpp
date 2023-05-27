@@ -176,6 +176,9 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
     : mAdapter(adapter), mToggles(deviceToggles), mNextPipelineCompatibilityToken(1) {
     ASSERT(descriptor != nullptr);
 
+    mDeviceLostCallback = descriptor->deviceLostCallback;
+    mDeviceLostUserdata = descriptor->deviceLostUserdata;
+
     AdapterProperties adapterProperties;
     adapter->APIGetProperties(&adapterProperties);
 
@@ -234,15 +237,17 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
         }
     };
 
-    mDeviceLostCallback = [](WGPUDeviceLostReason, char const*, void*) {
-        static bool calledOnce = false;
-        if (!calledOnce) {
-            calledOnce = true;
-            dawn::WarningLog() << "No Dawn device lost callback was set. This is probably not "
-                                  "intended. If you really want to ignore device lost "
-                                  "and suppress this message, set the callback to null.";
-        }
-    };
+    if (!mDeviceLostCallback) {
+        mDeviceLostCallback = [](WGPUDeviceLostReason, char const*, void*) {
+            static bool calledOnce = false;
+            if (!calledOnce) {
+                calledOnce = true;
+                dawn::WarningLog() << "No Dawn device lost callback was set. This is probably not "
+                                      "intended. If you really want to ignore device lost "
+                                      "and suppress this message, set the callback to null.";
+            }
+        };
+    }
 #endif  // DAWN_ENABLE_ASSERTS
 
     mCaches = std::make_unique<DeviceBase::Caches>();
@@ -261,6 +266,7 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
     mState = State::Alive;
 
     DAWN_TRY_ASSIGN(mEmptyBindGroupLayout, CreateEmptyBindGroupLayout());
+    DAWN_TRY_ASSIGN(mEmptyPipelineLayout, CreateEmptyPipelineLayout());
 
     // If placeholder fragment shader module is needed, initialize it
     if (IsToggleEnabled(Toggle::UsePlaceholderFragmentInVertexOnlyPipeline)) {
@@ -476,6 +482,7 @@ void DeviceBase::Destroy() {
     // Destroy() via APIGetQueue.
     mDynamicUploader = nullptr;
     mEmptyBindGroupLayout = nullptr;
+    mEmptyPipelineLayout = nullptr;
     mInternalPipelineStore = nullptr;
     mExternalTexturePlaceholderView = nullptr;
 
@@ -611,6 +618,8 @@ void DeviceBase::APISetUncapturedErrorCallback(wgpu::ErrorCallback callback, voi
 }
 
 void DeviceBase::APISetDeviceLostCallback(wgpu::DeviceLostCallback callback, void* userdata) {
+    // TODO(chromium:1234617): Add a deprecation warning.
+
     // The registered callback function and userdata pointer are stored and used by deferred
     // callback tasks, and after setting a different callback (especially in the case of
     // resetting) the resources pointed by such pointer may be freed. Flush all deferred
@@ -843,9 +852,22 @@ ResultOrError<Ref<BindGroupLayoutBase>> DeviceBase::CreateEmptyBindGroupLayout()
     return GetOrCreateBindGroupLayout(&desc);
 }
 
+ResultOrError<Ref<PipelineLayoutBase>> DeviceBase::CreateEmptyPipelineLayout() {
+    PipelineLayoutDescriptor desc = {};
+    desc.bindGroupLayoutCount = 0;
+    desc.bindGroupLayouts = nullptr;
+
+    return GetOrCreatePipelineLayout(&desc);
+}
+
 BindGroupLayoutBase* DeviceBase::GetEmptyBindGroupLayout() {
     ASSERT(mEmptyBindGroupLayout != nullptr);
     return mEmptyBindGroupLayout.Get();
+}
+
+PipelineLayoutBase* DeviceBase::GetEmptyPipelineLayout() {
+    ASSERT(mEmptyPipelineLayout != nullptr);
+    return mEmptyPipelineLayout.Get();
 }
 
 Ref<ComputePipelineBase> DeviceBase::GetCachedComputePipeline(
@@ -1111,7 +1133,7 @@ ComputePipelineBase* DeviceBase::APICreateComputePipeline(
                  utils::GetLabelForTrace(descriptor->label));
 
     Ref<ComputePipelineBase> result;
-    if (ConsumedError(CreateComputePipeline(descriptor), &result,
+    if (ConsumedError(CreateComputePipeline(descriptor), &result, InternalErrorType::Internal,
                       "calling %s.CreateComputePipeline(%s).", this, descriptor)) {
         return ComputePipelineBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
@@ -1201,7 +1223,7 @@ RenderPipelineBase* DeviceBase::APICreateRenderPipeline(
                  utils::GetLabelForTrace(descriptor->label));
 
     Ref<RenderPipelineBase> result;
-    if (ConsumedError(CreateRenderPipeline(descriptor), &result,
+    if (ConsumedError(CreateRenderPipeline(descriptor), &result, InternalErrorType::Internal,
                       "calling %s.CreateRenderPipeline(%s).", this, descriptor)) {
         return RenderPipelineBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
@@ -1226,12 +1248,27 @@ ShaderModuleBase* DeviceBase::APICreateShaderModule(const ShaderModuleDescriptor
 
     return result.Detach();
 }
+ShaderModuleBase* DeviceBase::APICreateErrorShaderModule(const ShaderModuleDescriptor* descriptor,
+                                                         const char* errorMessage) {
+    Ref<ShaderModuleBase> result =
+        ShaderModuleBase::MakeError(this, descriptor ? descriptor->label : nullptr);
+    std::unique_ptr<OwnedCompilationMessages> compilationMessages(
+        std::make_unique<OwnedCompilationMessages>());
+    compilationMessages->AddMessage(errorMessage, wgpu::CompilationMessageType::Error);
+    result->InjectCompilationMessages(std::move(compilationMessages));
+
+    std::unique_ptr<ErrorData> errorData =
+        DAWN_VALIDATION_ERROR("Error in calling %s.CreateShaderModule(%s).", this, descriptor);
+    ConsumeError(std::move(errorData));
+
+    return result.Detach();
+}
 SwapChainBase* DeviceBase::APICreateSwapChain(Surface* surface,
                                               const SwapChainDescriptor* descriptor) {
     Ref<SwapChainBase> result;
     if (ConsumedError(CreateSwapChain(surface, descriptor), &result,
                       "calling %s.CreateSwapChain(%s).", this, descriptor)) {
-        return SwapChainBase::MakeError(this);
+        return SwapChainBase::MakeError(this, descriptor);
     }
     return result.Detach();
 }
@@ -1412,6 +1449,10 @@ bool DeviceBase::IsRobustnessEnabled() const {
     return !IsToggleEnabled(Toggle::DisableRobustness);
 }
 
+bool DeviceBase::IsCompatibilityMode() const {
+    return mAdapter != nullptr && mAdapter->GetFeatureLevel() == FeatureLevel::Compatibility;
+}
+
 bool DeviceBase::AllowUnsafeAPIs() const {
     // TODO(dawn:1685) Currently allows if either toggle are set accordingly.
     return IsToggleEnabled(Toggle::AllowUnsafeAPIs) || !IsToggleEnabled(Toggle::DisallowUnsafeAPIs);
@@ -1433,6 +1474,12 @@ void DeviceBase::EmitDeprecationWarning(const std::string& message) {
     mDeprecationWarnings->count++;
     if (mDeprecationWarnings->emitted.insert(message).second) {
         dawn::WarningLog() << message;
+    }
+}
+
+void DeviceBase::EmitWarningOnce(const std::string& message) {
+    if (mWarnings.insert(message).second) {
+        this->EmitLog(WGPULoggingType_Warning, message.c_str());
     }
 }
 

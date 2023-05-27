@@ -21,6 +21,7 @@
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/id_attribute.h"
 #include "src/tint/ast/internal_attribute.h"
+#include "src/tint/ast/transform/add_block_attribute.h"
 #include "src/tint/ast/traverse_expressions.h"
 #include "src/tint/constant/value.h"
 #include "src/tint/sem/builtin.h"
@@ -36,7 +37,6 @@
 #include "src/tint/sem/value_constructor.h"
 #include "src/tint/sem/value_conversion.h"
 #include "src/tint/sem/variable.h"
-#include "src/tint/transform/add_block_attribute.h"
 #include "src/tint/type/array.h"
 #include "src/tint/type/atomic.h"
 #include "src/tint/type/depth_multisampled_texture.h"
@@ -1032,6 +1032,11 @@ uint32_t Builder::GenerateAccessorExpression(const ast::AccessorExpression* expr
             accessors.insert(accessors.begin(), source);
             source = member->object;
         } else {
+            break;
+        }
+
+        // Stop traversing if we've hit a constant source expression.
+        if (builder_.Sem().GetVal(source)->ConstantValue()) {
             break;
         }
     }
@@ -3883,7 +3888,8 @@ bool Builder::GenerateStructType(const type::Struct* struct_type, const Operand&
 
     if (auto* sem_str = struct_type->As<sem::Struct>()) {
         auto* decl = sem_str->Declaration();
-        if (ast::HasAttribute<transform::AddBlockAttribute::BlockAttribute>(decl->attributes)) {
+        if (ast::HasAttribute<ast::transform::AddBlockAttribute::BlockAttribute>(
+                decl->attributes)) {
             module_.PushAnnot(spv::Op::OpDecorate,
                               {Operand(struct_id), U32Operand(SpvDecorationBlock)});
         }

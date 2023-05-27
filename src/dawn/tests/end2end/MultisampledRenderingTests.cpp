@@ -20,6 +20,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class MultisampledRenderingTest : public DawnTest {
   protected:
     void SetUp() override {
@@ -1189,6 +1192,7 @@ TEST_P(MultisampledRenderingWithTransientAttachmentTest, ResolveTransientAttachm
 }
 
 DAWN_INSTANTIATE_TEST(MultisampledRenderingTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       D3D12Backend({}, {"use_d3d12_resource_heap_tier2"}),
                       D3D12Backend({}, {"use_d3d12_render_pass"}),
@@ -1203,6 +1207,7 @@ DAWN_INSTANTIATE_TEST(MultisampledRenderingTest,
                                     "emulate_store_and_msaa_resolve"}));
 
 DAWN_INSTANTIATE_TEST(MultisampledRenderingWithTransientAttachmentTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       D3D12Backend({}, {"use_d3d12_resource_heap_tier2"}),
                       D3D12Backend({}, {"use_d3d12_render_pass"}),
@@ -1215,3 +1220,6 @@ DAWN_INSTANTIATE_TEST(MultisampledRenderingWithTransientAttachmentTest,
                       MetalBackend({"always_resolve_into_zero_level_and_layer"}),
                       MetalBackend({"always_resolve_into_zero_level_and_layer",
                                     "emulate_store_and_msaa_resolve"}));
+
+}  // anonymous namespace
+}  // namespace dawn

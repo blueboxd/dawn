@@ -16,6 +16,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr wgpu::TextureFormat kDepthFormat = wgpu::TextureFormat::Depth32Float;
 
 class FragDepthTests : public DawnTest {};
@@ -79,6 +82,9 @@ TEST_P(FragDepthTests, FragDepthIsClampedToViewport) {
 TEST_P(FragDepthTests, ChangingPipelineLayoutDoesntInvalidateViewport) {
     // TODO(dawn:1125): Add the shader transform to clamp the frag depth to the GL backend.
     DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
+
+    // TODO(dawn:1805): Load ByteAddressBuffer in Pixel Shader doesn't work with NVIDIA on D3D11
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsNvidia());
 
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         @vertex fn vs() -> @builtin(position) vec4f {
@@ -224,8 +230,12 @@ TEST_P(FragDepthTests, RasterizationClipBeforeFS) {
 }
 
 DAWN_INSTANTIATE_TEST(FragDepthTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

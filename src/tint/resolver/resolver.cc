@@ -3761,8 +3761,9 @@ bool Resolver::DiagnosticControl(const ast::DiagnosticControl& control) {
             } else {
                 utils::StringStream ss;
                 ss << "unrecognized diagnostic rule 'chromium." << name << "'\n";
-                utils::SuggestAlternatives(name, builtin::kChromiumDiagnosticRuleStrings, ss,
-                                           "chromium.");
+                utils::SuggestAlternativeOptions opts;
+                opts.prefix = "chromium.";
+                utils::SuggestAlternatives(name, builtin::kChromiumDiagnosticRuleStrings, ss, opts);
                 AddWarning(ss.str(), control.rule_name->source);
             }
         }
@@ -4479,7 +4480,7 @@ sem::Statement* Resolver::CompoundAssignmentStatement(
             return false;
         }
 
-        auto* rhs = Load(ValueExpression(stmt->rhs));
+        const auto* rhs = ValueExpression(stmt->rhs);
         if (!rhs) {
             return false;
         }
@@ -4491,12 +4492,19 @@ sem::Statement* Resolver::CompoundAssignmentStatement(
         auto* lhs_ty = lhs->Type()->UnwrapRef();
         auto* rhs_ty = rhs->Type()->UnwrapRef();
         auto stage = sem::EarliestStage(lhs->Stage(), rhs->Stage());
-        auto* ty =
-            intrinsic_table_->Lookup(stmt->op, lhs_ty, rhs_ty, stage, stmt->source, true).result;
-        if (!ty) {
+
+        auto op = intrinsic_table_->Lookup(stmt->op, lhs_ty, rhs_ty, stage, stmt->source, true);
+        if (!op.result) {
             return false;
         }
-        return validator_.Assignment(stmt, ty);
+
+        // Load or materialize the RHS if necessary.
+        rhs = Load(Materialize(rhs, op.rhs));
+        if (!rhs) {
+            return false;
+        }
+
+        return validator_.Assignment(stmt, op.result);
     });
 }
 

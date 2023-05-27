@@ -91,11 +91,9 @@ class Backend : public BackendConnection {
 
     MaybeError Initialize();
 
-    std::vector<Ref<PhysicalDeviceBase>> DiscoverDefaultAdapters(
-        const TogglesState& adapterToggles) override;
-    ResultOrError<std::vector<Ref<PhysicalDeviceBase>>> DiscoverAdapters(
-        const AdapterDiscoveryOptionsBase* optionsBase,
-        const TogglesState& adapterToggles) override;
+    std::vector<Ref<PhysicalDeviceBase>> DiscoverDefaultPhysicalDevices() override;
+    ResultOrError<std::vector<Ref<PhysicalDeviceBase>>> DiscoverPhysicalDevices(
+        const PhysicalDeviceDiscoveryOptionsBase* optionsBase) override;
 
   private:
     ityp::array<ICD, Ref<VulkanInstance>, 2> mVulkanInstances = {};

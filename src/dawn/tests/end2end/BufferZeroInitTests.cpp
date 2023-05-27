@@ -20,19 +20,20 @@
 #include "dawn/utils/TestUtils.h"
 #include "dawn/utils/WGPUHelpers.h"
 
-#define EXPECT_LAZY_CLEAR(N, statement)                                                        \
-    do {                                                                                       \
-        if (UsesWire()) {                                                                      \
-            statement;                                                                         \
-        } else {                                                                               \
-            size_t lazyClearsBefore = dawn::native::GetLazyClearCountForTesting(device.Get()); \
-            statement;                                                                         \
-            size_t lazyClearsAfter = dawn::native::GetLazyClearCountForTesting(device.Get());  \
-            EXPECT_EQ(N, lazyClearsAfter - lazyClearsBefore);                                  \
-        }                                                                                      \
-    } while (0)
-
+namespace dawn {
 namespace {
+
+#define EXPECT_LAZY_CLEAR(N, statement)                                                  \
+    do {                                                                                 \
+        if (UsesWire()) {                                                                \
+            statement;                                                                   \
+        } else {                                                                         \
+            size_t lazyClearsBefore = native::GetLazyClearCountForTesting(device.Get()); \
+            statement;                                                                   \
+            size_t lazyClearsAfter = native::GetLazyClearCountForTesting(device.Get());  \
+            EXPECT_EQ(N, lazyClearsAfter - lazyClearsBefore);                            \
+        }                                                                                \
+    } while (0)
 
 struct BufferZeroInitInCopyT2BSpec {
     wgpu::Extent3D textureSize;
@@ -42,8 +43,6 @@ struct BufferZeroInitInCopyT2BSpec {
     uint32_t rowsPerImage;
     uint32_t lazyClearCount;
 };
-
-}  // anonymous namespace
 
 class BufferZeroInitTest : public DawnTest {
   protected:
@@ -169,9 +168,6 @@ class BufferZeroInitTest : public DawnTest {
                                        uint64_t bufferOffset,
                                        uint64_t boundBufferSize,
                                        const std::vector<uint32_t>& expectedBufferData) {
-        // TODO(dawn:1755): Buffer usage can't be both uniform and other accelerated usages with
-        // D3D11.
-        DAWN_SUPPRESS_TEST_IF(IsD3D11());
         wgpu::ComputePipelineDescriptor pipelineDescriptor;
         pipelineDescriptor.layout = nullptr;
         pipelineDescriptor.compute.module = module;
@@ -427,9 +423,6 @@ class BufferZeroInitTest : public DawnTest {
     }
 
     void TestBufferZeroInitAsIndirectBufferForDispatchIndirect(uint64_t indirectBufferOffset) {
-        // TODO(dawn:1798): Support storage textures.
-        DAWN_SUPPRESS_TEST_IF(IsD3D11());
-
         constexpr wgpu::TextureFormat kColorAttachmentFormat = wgpu::TextureFormat::RGBA8Unorm;
         constexpr wgpu::Color kClearColorGreen = {0.f, 1.f, 0.f, 1.f};
 
@@ -1145,9 +1138,6 @@ TEST_P(BufferZeroInitTest, PaddingInitialized) {
     DAWN_SUPPRESS_TEST_IF(IsANGLE());                              // TODO(crbug.com/dawn/1084)
     DAWN_SUPPRESS_TEST_IF(IsLinux() && IsVulkan() && IsNvidia());  // TODO(crbug.com/dawn/1214)
 
-    // TODO(dawn:1755): Buffer usage can't be both uniform and other accelerated usages with D3D11.
-    DAWN_SUPPRESS_TEST_IF(IsD3D11());
-
     constexpr wgpu::TextureFormat kColorAttachmentFormat = wgpu::TextureFormat::RGBA8Unorm;
     // A small sub-4-byte format means a single vertex can fit entirely within the padded buffer,
     // touching some of the padding. Test a small format, as well as larger formats.
@@ -1397,3 +1387,6 @@ DAWN_INSTANTIATE_TEST(BufferZeroInitTest,
                       OpenGLBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       OpenGLESBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       VulkanBackend({"nonzero_clear_resources_on_creation_for_testing"}));
+
+}  // anonymous namespace
+}  // namespace dawn

@@ -20,8 +20,6 @@ namespace tint::ir {
 
 Instruction::Instruction() = default;
 
-Instruction::Instruction(uint32_t identifier, const type::Type* ty) : id(identifier), type(ty) {}
-
 Instruction::~Instruction() = default;
 
 }  // namespace tint::ir

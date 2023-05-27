@@ -18,13 +18,12 @@
 #include "src/tint/ir/block.h"
 #include "src/tint/ir/branch.h"
 #include "src/tint/ir/constant.h"
-#include "src/tint/ir/flow_node.h"
 #include "src/tint/ir/value.h"
 
 namespace tint::ir {
 
 /// Flow node representing a switch statement
-class Switch : public utils::Castable<Switch, FlowNode> {
+class Switch : public utils::Castable<Switch, Branch> {
   public:
     /// A case selector
     struct CaseSelector {
@@ -40,21 +39,39 @@ class Switch : public utils::Castable<Switch, FlowNode> {
         /// The case selector for this node
         utils::Vector<CaseSelector, 4> selectors;
         /// The start block for the case block.
-        Branch start = {};
+        Block* start = nullptr;
+
+        /// @returns the case start target
+        const Block* Start() const { return start; }
+        /// @returns the case start target
+        Block* Start() { return start; }
     };
 
     /// Constructor
-    Switch();
+    /// @param cond the condition
+    /// @param m the merge block
+    explicit Switch(Value* cond, Block* m);
     ~Switch() override;
 
-    /// The switch merge target
-    Branch merge = {};
+    /// @returns the switch merge branch
+    const Block* Merge() const { return merge_; }
+    /// @returns the switch merge branch
+    Block* Merge() { return merge_; }
 
-    /// The switch case statements
-    utils::Vector<Case, 4> cases;
+    /// @returns the switch cases
+    utils::VectorRef<Case> Cases() const { return cases_; }
+    /// @returns the switch cases
+    utils::Vector<Case, 4>& Cases() { return cases_; }
 
-    /// Value holding the condition result
-    const Value* condition = nullptr;
+    /// @returns the condition
+    const Value* Condition() const { return condition_; }
+    /// @returns the condition
+    Value* Condition() { return condition_; }
+
+  private:
+    Value* condition_ = nullptr;
+    Block* merge_ = nullptr;
+    utils::Vector<Case, 4> cases_;
 };
 
 }  // namespace tint::ir

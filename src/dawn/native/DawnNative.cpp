@@ -89,11 +89,11 @@ std::vector<const char*> Adapter::GetSupportedFeatures() const {
 }
 
 bool Adapter::GetLimits(WGPUSupportedLimits* limits) const {
-    return mImpl->GetPhysicalDevice()->GetLimits(FromAPI(limits));
+    return mImpl->APIGetLimits(FromAPI(limits));
 }
 
 void Adapter::SetUseTieredLimits(bool useTieredLimits) {
-    mImpl->GetPhysicalDevice()->SetUseTieredLimits(useTieredLimits);
+    mImpl->SetUseTieredLimits(useTieredLimits);
 }
 
 bool Adapter::SupportsExternalImages() const {
@@ -132,8 +132,21 @@ void Adapter::ResetInternalDeviceForTesting() {
 
 // AdapterDiscoverOptionsBase
 
-AdapterDiscoveryOptionsBase::AdapterDiscoveryOptionsBase(WGPUBackendType type)
+PhysicalDeviceDiscoveryOptionsBase::PhysicalDeviceDiscoveryOptionsBase(WGPUBackendType type)
     : backendType(type) {}
+
+// DawnInstanceDescriptor
+
+DawnInstanceDescriptor::DawnInstanceDescriptor() {
+    sType = wgpu::SType::DawnInstanceDescriptor;
+}
+
+bool DawnInstanceDescriptor::operator==(const DawnInstanceDescriptor& rhs) const {
+    return (nextInChain == rhs.nextInChain) &&
+           std::tie(additionalRuntimeSearchPathsCount, additionalRuntimeSearchPaths, platform) ==
+               std::tie(rhs.additionalRuntimeSearchPathsCount, rhs.additionalRuntimeSearchPaths,
+                        rhs.platform);
+}
 
 // Instance
 
@@ -149,12 +162,22 @@ Instance::~Instance() {
     }
 }
 
-void Instance::DiscoverDefaultAdapters() {
-    mImpl->DiscoverDefaultAdapters();
+void Instance::DiscoverDefaultPhysicalDevices() {
+    mImpl->DiscoverDefaultPhysicalDevices();
 }
 
+bool Instance::DiscoverPhysicalDevices(const PhysicalDeviceDiscoveryOptionsBase* options) {
+    return mImpl->DiscoverPhysicalDevices(options);
+}
+
+// Deprecated.
+void Instance::DiscoverDefaultAdapters() {
+    mImpl->DiscoverDefaultPhysicalDevices();
+}
+
+// Deprecated.
 bool Instance::DiscoverAdapters(const AdapterDiscoveryOptionsBase* options) {
-    return mImpl->DiscoverAdapters(options);
+    return mImpl->DiscoverPhysicalDevices(options);
 }
 
 std::vector<Adapter> Instance::GetAdapters() const {
@@ -190,11 +213,6 @@ void Instance::EnableBeginCaptureOnStartup(bool beginCaptureOnStartup) {
 
 void Instance::EnableAdapterBlocklist(bool enable) {
     mImpl->EnableAdapterBlocklist(enable);
-}
-
-// TODO(dawn:1374) Deprecate this once it is passed via the descriptor.
-void Instance::SetPlatform(dawn::platform::Platform* platform) {
-    mImpl->SetPlatform(platform);
 }
 
 uint64_t Instance::GetDeviceCountForTesting() const {

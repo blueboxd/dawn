@@ -27,17 +27,17 @@ class Store : public utils::Castable<Store, Instruction> {
     /// @param to the value to store too
     /// @param from the value being stored from
     Store(Value* to, Value* from);
-    Store(const Store& inst) = delete;
-    Store(Store&& inst) = delete;
     ~Store() override;
 
-    Store& operator=(const Store& inst) = delete;
-    Store& operator=(Store&& inst) = delete;
+    /// @returns the value being stored too
+    Value* To() const { return to_; }
 
-    /// the value being stored to
-    Value* to = nullptr;
-    /// the value being stored
-    Value* from = nullptr;
+    /// @returns the value being stored
+    Value* From() const { return from_; }
+
+  private:
+    Value* to_;
+    Value* from_;
 };
 
 }  // namespace tint::ir

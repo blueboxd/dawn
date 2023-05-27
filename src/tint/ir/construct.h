@@ -24,16 +24,10 @@ namespace tint::ir {
 class Construct : public utils::Castable<Construct, Call> {
   public:
     /// Constructor
-    /// @param id the instruction id
     /// @param type the result type
     /// @param args the constructor arguments
-    Construct(uint32_t id, const type::Type* type, utils::VectorRef<Value*> args);
-    Construct(const Construct& inst) = delete;
-    Construct(Construct&& inst) = delete;
+    Construct(const type::Type* type, utils::VectorRef<Value*> args);
     ~Construct() override;
-
-    Construct& operator=(const Construct& inst) = delete;
-    Construct& operator=(Construct&& inst) = delete;
 };
 
 }  // namespace tint::ir

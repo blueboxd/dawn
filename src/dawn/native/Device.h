@@ -197,6 +197,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     void UncacheBindGroupLayout(BindGroupLayoutBase* obj);
 
     BindGroupLayoutBase* GetEmptyBindGroupLayout();
+    PipelineLayoutBase* GetEmptyPipelineLayout();
 
     void UncacheComputePipeline(ComputePipelineBase* obj);
 
@@ -284,6 +285,8 @@ class DeviceBase : public RefCountedWithExternalCount {
     ExternalTextureBase* APICreateExternalTexture(const ExternalTextureDescriptor* descriptor);
     SamplerBase* APICreateSampler(const SamplerDescriptor* descriptor);
     ShaderModuleBase* APICreateShaderModule(const ShaderModuleDescriptor* descriptor);
+    ShaderModuleBase* APICreateErrorShaderModule(const ShaderModuleDescriptor* descriptor,
+                                                 const char* errorMessage);
     SwapChainBase* APICreateSwapChain(Surface* surface, const SwapChainDescriptor* descriptor);
     TextureBase* APICreateTexture(const TextureDescriptor* descriptor);
 
@@ -359,11 +362,13 @@ class DeviceBase : public RefCountedWithExternalCount {
     bool IsToggleEnabled(Toggle toggle) const;
     bool IsValidationEnabled() const;
     bool IsRobustnessEnabled() const;
+    bool IsCompatibilityMode() const;
     bool AllowUnsafeAPIs() const;
     size_t GetLazyClearCountForTesting();
     void IncrementLazyClearCountForTesting();
     size_t GetDeprecationWarningCountForTesting();
     void EmitDeprecationWarning(const std::string& warning);
+    void EmitWarningOnce(const std::string& message);
     void EmitLog(const char* message);
     void EmitLog(WGPULoggingType loggingType, const char* message);
     void APIForceLoss(wgpu::DeviceLostReason reason, const char* message);
@@ -505,6 +510,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     void FlushCallbackTaskQueue();
 
     ResultOrError<Ref<BindGroupLayoutBase>> CreateEmptyBindGroupLayout();
+    ResultOrError<Ref<PipelineLayoutBase>> CreateEmptyPipelineLayout();
 
     Ref<ComputePipelineBase> GetCachedComputePipeline(
         ComputePipelineBase* uninitializedComputePipeline);
@@ -587,6 +593,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     std::unique_ptr<Caches> mCaches;
 
     Ref<BindGroupLayoutBase> mEmptyBindGroupLayout;
+    Ref<PipelineLayoutBase> mEmptyPipelineLayout;
 
     Ref<TextureViewBase> mExternalTexturePlaceholderView;
 
@@ -596,6 +603,8 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     struct DeprecationWarnings;
     std::unique_ptr<DeprecationWarnings> mDeprecationWarnings;
+
+    std::unordered_set<std::string> mWarnings;
 
     State mState = State::BeingCreated;
 

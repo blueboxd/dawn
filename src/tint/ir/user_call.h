@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_USER_CALL_H_
 
 #include "src/tint/ir/call.h"
-#include "src/tint/symbol.h"
+#include "src/tint/ir/function.h"
 #include "src/tint/utils/castable.h"
 
 namespace tint::ir {
@@ -25,20 +25,17 @@ namespace tint::ir {
 class UserCall : public utils::Castable<UserCall, Call> {
   public:
     /// Constructor
-    /// @param id the instruction id
     /// @param type the result type
-    /// @param name the function name
+    /// @param func the function being called
     /// @param args the function arguments
-    UserCall(uint32_t id, const type::Type* type, Symbol name, utils::VectorRef<Value*> args);
-    UserCall(const UserCall& inst) = delete;
-    UserCall(UserCall&& inst) = delete;
+    UserCall(const type::Type* type, Function* func, utils::VectorRef<Value*> args);
     ~UserCall() override;
 
-    UserCall& operator=(const UserCall& inst) = delete;
-    UserCall& operator=(UserCall&& inst) = delete;
+    /// @returns the called function name
+    const Function* Func() const { return func_; }
 
-    /// The function name
-    Symbol name;
+  private:
+    const Function* func_ = nullptr;
 };
 
 }  // namespace tint::ir

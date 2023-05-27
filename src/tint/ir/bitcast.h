@@ -24,16 +24,10 @@ namespace tint::ir {
 class Bitcast : public utils::Castable<Bitcast, Call> {
   public:
     /// Constructor
-    /// @param id the instruction id
     /// @param type the result type
     /// @param val the value being bitcast
-    Bitcast(uint32_t id, const type::Type* type, Value* val);
-    Bitcast(const Bitcast& inst) = delete;
-    Bitcast(Bitcast&& inst) = delete;
+    Bitcast(const type::Type* type, Value* val);
     ~Bitcast() override;
-
-    Bitcast& operator=(const Bitcast& inst) = delete;
-    Bitcast& operator=(Bitcast&& inst) = delete;
 };
 
 }  // namespace tint::ir

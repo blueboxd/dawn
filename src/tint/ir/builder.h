@@ -20,17 +20,25 @@
 #include "src/tint/constant/scalar.h"
 #include "src/tint/ir/binary.h"
 #include "src/tint/ir/bitcast.h"
+#include "src/tint/ir/block_param.h"
+#include "src/tint/ir/break_if.h"
 #include "src/tint/ir/builtin.h"
 #include "src/tint/ir/constant.h"
 #include "src/tint/ir/construct.h"
+#include "src/tint/ir/continue.h"
 #include "src/tint/ir/convert.h"
 #include "src/tint/ir/discard.h"
+#include "src/tint/ir/exit_if.h"
+#include "src/tint/ir/exit_loop.h"
+#include "src/tint/ir/exit_switch.h"
 #include "src/tint/ir/function.h"
-#include "src/tint/ir/function_terminator.h"
+#include "src/tint/ir/function_param.h"
 #include "src/tint/ir/if.h"
+#include "src/tint/ir/load.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
-#include "src/tint/ir/root_terminator.h"
+#include "src/tint/ir/next_iteration.h"
+#include "src/tint/ir/return.h"
 #include "src/tint/ir/store.h"
 #include "src/tint/ir/switch.h"
 #include "src/tint/ir/unary.h"
@@ -42,6 +50,7 @@
 #include "src/tint/type/f32.h"
 #include "src/tint/type/i32.h"
 #include "src/tint/type/u32.h"
+#include "src/tint/type/vector.h"
 #include "src/tint/type/void.h"
 
 namespace tint::ir {
@@ -50,37 +59,38 @@ namespace tint::ir {
 class Builder {
   public:
     /// Constructor
-    Builder();
-    /// Constructor
     /// @param mod the ir::Module to wrap with this builder
-    explicit Builder(Module&& mod);
+    explicit Builder(Module& mod);
     /// Destructor
     ~Builder();
 
     /// @returns a new block flow node
     Block* CreateBlock();
 
-    /// @returns a new root terminator flow node
-    RootTerminator* CreateRootTerminator();
-
-    /// @returns a new function terminator flow node
-    FunctionTerminator* CreateFunctionTerminator();
-
     /// Creates a function flow node
+    /// @param name the function name
+    /// @param return_type the function return type
+    /// @param stage the function stage
+    /// @param wg_size the workgroup_size
     /// @returns the flow node
-    Function* CreateFunction();
+    Function* CreateFunction(std::string_view name,
+                             const type::Type* return_type,
+                             Function::PipelineStage stage = Function::PipelineStage::kUndefined,
+                             std::optional<std::array<uint32_t, 3>> wg_size = {});
 
     /// Creates an if flow node
+    /// @param condition the if condition
     /// @returns the flow node
-    If* CreateIf();
+    If* CreateIf(Value* condition);
 
     /// Creates a loop flow node
     /// @returns the flow node
     Loop* CreateLoop();
 
     /// Creates a switch flow node
+    /// @param condition the switch condition
     /// @returns the flow node
-    Switch* CreateSwitch();
+    Switch* CreateSwitch(Value* condition);
 
     /// Creates a case flow node for the given case branch.
     /// @param s the switch to create the case into
@@ -88,62 +98,37 @@ class Builder {
     /// @returns the start block for the case flow node
     Block* CreateCase(Switch* s, utils::VectorRef<Switch::CaseSelector> selectors);
 
-    /// Branches the given block to the given flow node.
-    /// @param from the block to branch from
-    /// @param to the node to branch too
-    /// @param args arguments to the branch
-    void Branch(Block* from, FlowNode* to, utils::VectorRef<Value*> args);
-
-    /// Creates a constant::Value
-    /// @param args the arguments
-    /// @returns the new constant value
-    template <typename T, typename... ARGS>
-    utils::traits::EnableIf<utils::traits::IsTypeOrDerived<T, constant::Value>, const T>* create(
-        ARGS&&... args) {
-        return ir.constants.Create<T>(std::forward<ARGS>(args)...);
-    }
-
     /// Creates a new ir::Constant
     /// @param val the constant value
     /// @returns the new constant
     ir::Constant* Constant(const constant::Value* val) {
-        return ir.values.Create<ir::Constant>(val);
+        return ir.constants.GetOrCreate(val, [&]() { return ir.values.Create<ir::Constant>(val); });
     }
 
     /// Creates a ir::Constant for an i32 Scalar
     /// @param v the value
     /// @returns the new constant
-    ir::Constant* Constant(i32 v) {
-        return Constant(create<constant::Scalar<i32>>(ir.types.Get<type::I32>(), v));
-    }
+    ir::Constant* Constant(i32 v) { return Constant(ir.constant_values.Get(v)); }
 
     /// Creates a ir::Constant for a u32 Scalar
     /// @param v the value
     /// @returns the new constant
-    ir::Constant* Constant(u32 v) {
-        return Constant(create<constant::Scalar<u32>>(ir.types.Get<type::U32>(), v));
-    }
+    ir::Constant* Constant(u32 v) { return Constant(ir.constant_values.Get(v)); }
 
     /// Creates a ir::Constant for a f32 Scalar
     /// @param v the value
     /// @returns the new constant
-    ir::Constant* Constant(f32 v) {
-        return Constant(create<constant::Scalar<f32>>(ir.types.Get<type::F32>(), v));
-    }
+    ir::Constant* Constant(f32 v) { return Constant(ir.constant_values.Get(v)); }
 
     /// Creates a ir::Constant for a f16 Scalar
     /// @param v the value
     /// @returns the new constant
-    ir::Constant* Constant(f16 v) {
-        return Constant(create<constant::Scalar<f16>>(ir.types.Get<type::F16>(), v));
-    }
+    ir::Constant* Constant(f16 v) { return Constant(ir.constant_values.Get(v)); }
 
     /// Creates a ir::Constant for a bool Scalar
     /// @param v the value
     /// @returns the new constant
-    ir::Constant* Constant(bool v) {
-        return Constant(create<constant::Scalar<bool>>(ir.types.Get<type::Bool>(), v));
-    }
+    ir::Constant* Constant(bool v) { return Constant(ir.constant_values.Get(v)); }
 
     /// Creates an op for `lhs kind rhs`
     /// @param kind the kind of operation
@@ -151,7 +136,7 @@ class Builder {
     /// @param lhs the left-hand-side of the operation
     /// @param rhs the right-hand-side of the operation
     /// @returns the operation
-    Binary* CreateBinary(Binary::Kind kind, const type::Type* type, Value* lhs, Value* rhs);
+    Binary* CreateBinary(enum Binary::Kind kind, const type::Type* type, Value* lhs, Value* rhs);
 
     /// Creates an And operation
     /// @param type the result type of the expression
@@ -270,25 +255,13 @@ class Builder {
     /// @param type the result type of the binary expression
     /// @param val the value of the operation
     /// @returns the operation
-    Unary* CreateUnary(Unary::Kind kind, const type::Type* type, Value* val);
-
-    /// Creates an AddressOf operation
-    /// @param type the result type of the expression
-    /// @param val the value
-    /// @returns the operation
-    Unary* AddressOf(const type::Type* type, Value* val);
+    Unary* CreateUnary(enum Unary::Kind kind, const type::Type* type, Value* val);
 
     /// Creates a Complement operation
     /// @param type the result type of the expression
     /// @param val the value
     /// @returns the operation
     Unary* Complement(const type::Type* type, Value* val);
-
-    /// Creates an Indirection operation
-    /// @param type the result type of the expression
-    /// @param val the value
-    /// @returns the operation
-    Unary* Indirection(const type::Type* type, Value* val);
 
     /// Creates a Negation operation
     /// @param type the result type of the expression
@@ -314,10 +287,10 @@ class Builder {
 
     /// Creates a user function call instruction
     /// @param type the return type of the call
-    /// @param name the name of the function being called
+    /// @param func the function being called
     /// @param args the call arguments
     /// @returns the instruction
-    ir::UserCall* UserCall(const type::Type* type, Symbol name, utils::VectorRef<Value*> args);
+    ir::UserCall* UserCall(const type::Type* type, Function* func, utils::VectorRef<Value*> args);
 
     /// Creates a value conversion instruction
     /// @param to the type converted to
@@ -343,7 +316,12 @@ class Builder {
                          builtin::Function func,
                          utils::VectorRef<Value*> args);
 
-    /// Creates an store instruction
+    /// Creates a load instruction
+    /// @param from the expression being loaded from
+    /// @returns the instruction
+    ir::Load* Load(Value* from);
+
+    /// Creates a store instruction
     /// @param to the expression being stored too
     /// @param from the expression being stored
     /// @returns the instruction
@@ -351,24 +329,63 @@ class Builder {
 
     /// Creates a new `var` declaration
     /// @param type the var type
-    /// @param address_space the address space
-    /// @param access the access mode
     /// @returns the instruction
-    ir::Var* Declare(const type::Type* type,
-                     builtin::AddressSpace address_space,
-                     builtin::Access access);
+    ir::Var* Declare(const type::Type* type);
+
+    /// Creates a return instruction
+    /// @param func the function being returned
+    /// @param args the return arguments
+    /// @returns the instruction
+    ir::Return* Return(Function* func, utils::VectorRef<Value*> args = {});
+
+    /// Creates a loop next iteration instruction
+    /// @param loop the loop being iterated
+    /// @returns the instruction
+    ir::NextIteration* NextIteration(Loop* loop);
+
+    /// Creates a loop break-if instruction
+    /// @param condition the break condition
+    /// @param loop the loop being iterated
+    /// @returns the instruction
+    ir::BreakIf* BreakIf(Value* condition, Loop* loop);
+
+    /// Creates a continue instruction
+    /// @param loop the loop being continued
+    /// @returns the instruction
+    ir::Continue* Continue(Loop* loop);
+
+    /// Creates an exit switch instruction
+    /// @param sw the switch being exited
+    /// @returns the instruction
+    ir::ExitSwitch* ExitSwitch(Switch* sw);
+
+    /// Creates an exit loop instruction
+    /// @param loop the loop being exited
+    /// @returns the instruction
+    ir::ExitLoop* ExitLoop(Loop* loop);
+
+    /// Creates an exit if instruction
+    /// @param i the if being exited
+    /// @param args the branch arguments
+    /// @returns the instruction
+    ir::ExitIf* ExitIf(If* i, utils::VectorRef<Value*> args = {});
+
+    /// Creates a new `BlockParam`
+    /// @param type the parameter type
+    /// @returns the value
+    ir::BlockParam* BlockParam(const type::Type* type);
+
+    /// Creates a new `FunctionParam`
+    /// @param type the parameter type
+    /// @returns the value
+    ir::FunctionParam* FunctionParam(const type::Type* type);
 
     /// Retrieves the root block for the module, creating if necessary
     /// @returns the root block
     ir::Block* CreateRootBlockIfNeeded();
 
     /// The IR module.
-    Module ir;
-
-  private:
-    uint32_t next_inst_id() { return next_instruction_id_++; }
-
-    uint32_t next_instruction_id_ = 1;
+    Module& ir;
 };
 
 }  // namespace tint::ir

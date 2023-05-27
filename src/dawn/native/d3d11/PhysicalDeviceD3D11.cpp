@@ -35,6 +35,8 @@ MaybeError InitializeDebugLayerFilters(ComPtr<ID3D11Device> d3d11Device) {
     static D3D11_MESSAGE_ID kDenyIds[] = {
         // D3D11 Debug layer warns no RTV set, however it is allowed.
         D3D11_MESSAGE_ID_DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET,
+        // D3D11 Debug layer warns SetPrivateData() with same name more than once.
+        D3D11_MESSAGE_ID_SETPRIVATEDATA_CHANGINGPARAMS,
     };
 
     // Filter out info/message and only create errors from warnings or worse.
@@ -61,20 +63,25 @@ MaybeError InitializeDebugLayerFilters(ComPtr<ID3D11Device> d3d11Device) {
 
 }  // namespace
 
-PhysicalDevice::PhysicalDevice(Backend* backend,
-                               ComPtr<IDXGIAdapter3> hardwareAdapter,
-                               const TogglesState& adapterToggles)
-    : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D11, adapterToggles) {}
+PhysicalDevice::PhysicalDevice(Backend* backend, ComPtr<IDXGIAdapter3> hardwareAdapter)
+    : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D11) {}
 
 PhysicalDevice::~PhysicalDevice() = default;
 
 bool PhysicalDevice::SupportsExternalImages() const {
-    // TODO(dawn:1724): Implement external images on D3D11.
-    return false;
+    return true;
 }
 
 bool PhysicalDevice::SupportsFeatureLevel(FeatureLevel featureLevel) const {
-    return featureLevel == FeatureLevel::Compatibility;
+    // TODO(dawn:1820): compare D3D11 feature levels with Dawn feature levels.
+    switch (featureLevel) {
+        case FeatureLevel::Core: {
+            return mFeatureLevel >= D3D_FEATURE_LEVEL_11_1;
+        }
+        case FeatureLevel::Compatibility: {
+            return true;
+        }
+    }
 }
 
 const DeviceInfo& PhysicalDevice::GetDeviceInfo() const {
@@ -126,6 +133,8 @@ MaybeError PhysicalDevice::InitializeImpl() {
 }
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
+    EnableFeature(Feature::Depth32FloatStencil8);
+    EnableFeature(Feature::DepthClipControl);
     EnableFeature(Feature::TextureCompressionBC);
     EnableFeature(Feature::SurfaceCapabilities);
 }
@@ -148,6 +157,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     uint32_t maxUAVsAllStages = mFeatureLevel == D3D_FEATURE_LEVEL_11_1
                                     ? D3D11_1_UAV_SLOT_COUNT
                                     : D3D11_PS_CS_UAV_REGISTER_COUNT;
+    mUAVSlotCount = maxUAVsAllStages;
     ASSERT(maxUAVsAllStages / 4 > limits->v1.maxStorageTexturesPerShaderStage);
     ASSERT(maxUAVsAllStages / 4 > limits->v1.maxStorageBuffersPerShaderStage);
     uint32_t maxUAVsPerStage = maxUAVsAllStages / 2;
@@ -184,8 +194,9 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 
     // Max number of "constants" where each constant is a 16-byte float4
     limits->v1.maxUniformBufferBindingSize = D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT * 16;
-    // D3D11 has no documented limit on the size of a storage buffer binding.
-    limits->v1.maxStorageBufferBindingSize = kAssumedMaxBufferSize;
+    // D3D11 limit of number of texels in a buffer == (1 << 27)
+    limits->v1.maxStorageBufferBindingSize = uint64_t(1)
+                                             << D3D11_REQ_BUFFER_RESOURCE_TEXEL_COUNT_2_TO_EXP;
     // D3D11 has no documented limit on the buffer size.
     limits->v1.maxBufferSize = kAssumedMaxBufferSize;
 

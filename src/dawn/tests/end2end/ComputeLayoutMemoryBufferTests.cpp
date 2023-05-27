@@ -22,6 +22,7 @@
 #include "dawn/tests/DawnTest.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
 
 // Helper for replacing all occurrences of substr in str with replacement
@@ -530,10 +531,6 @@ TEST_P(ComputeLayoutMemoryBufferTests, StructMember) {
 
     const bool isUniform = GetParam().mAddressSpace == AddressSpace::Uniform;
 
-    // D3D11 doesn't support storage buffer with uniform address space
-    // TODO(dawn:1792): figure how to support it on D3D11
-    DAWN_SUPPRESS_TEST_IF(IsD3D11() && isUniform);
-
     // Sentinel value markers codes used to check that the start and end of
     // structures are correctly aligned. Each of these codes are distinct and
     // are not likely to be confused with data.
@@ -598,9 +595,9 @@ fn main() {
 })";
 
     // https://www.w3.org/TR/WGSL/#alignment-and-size
-    // Structure size: roundUp(AlignOf(S), OffsetOf(S, L) + SizeOf(S, L))
+    // Structure size: RoundUp(AlignOf(S), OffsetOf(S, L) + SizeOf(S, L))
     // https://www.w3.org/TR/WGSL/#storage-class-constraints
-    // RequiredAlignOf(S, uniform): roundUp(16, max(AlignOf(T0), ..., AlignOf(TN)))
+    // RequiredAlignOf(S, uniform): RoundUp(16, max(AlignOf(T0), ..., AlignOf(TN)))
     uint32_t dataAlign = isUniform ? std::max(size_t(16u), field.GetAlign()) : field.GetAlign();
 
     // https://www.w3.org/TR/WGSL/#structure-layout-rules
@@ -704,10 +701,6 @@ TEST_P(ComputeLayoutMemoryBufferTests, NonStructMember) {
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES() && IsWindows());
 
     const bool isUniform = GetParam().mAddressSpace == AddressSpace::Uniform;
-
-    // D3D11 doesn't support storage buffer with uniform address space
-    // TODO(dawn:1792): figure how to support it on D3D11
-    DAWN_SUPPRESS_TEST_IF(IsD3D11() && isUniform);
 
     auto params = GetParam();
 
@@ -1160,4 +1153,5 @@ INSTANTIATE_TEST_SUITE_P(,
                          DawnTestBase::PrintToStringParamName("ComputeLayoutMemoryBufferTests"));
 GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(ComputeLayoutMemoryBufferTests);
 
-}  // namespace
+}  // anonymous namespace
+}  // namespace dawn

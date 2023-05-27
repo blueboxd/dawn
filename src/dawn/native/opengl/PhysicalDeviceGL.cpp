@@ -53,10 +53,8 @@ uint32_t GetVendorIdFromVendors(const char* vendor) {
 
 }  // anonymous namespace
 
-PhysicalDevice::PhysicalDevice(InstanceBase* instance,
-                               wgpu::BackendType backendType,
-                               const TogglesState& adapterToggle)
-    : PhysicalDeviceBase(instance, backendType, adapterToggle) {}
+PhysicalDevice::PhysicalDevice(InstanceBase* instance, wgpu::BackendType backendType)
+    : PhysicalDeviceBase(instance, backendType) {}
 
 MaybeError PhysicalDevice::InitializeGLFunctions(void* (*getProc)(const char*)) {
     // Use getProc to populate the dispatch table
@@ -215,6 +213,23 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // For OpenGL ES, we must use a placeholder fragment shader for vertex-only render pipeline.
     deviceToggles->Default(Toggle::UsePlaceholderFragmentInVertexOnlyPipeline,
                            gl.GetVersion().IsES());
+    // For OpenGL/OpenGL ES, use compute shader blit to emulate depth16unorm texture to buffer
+    // copies.
+    // Disable Angle on windows as it seems to have side-effect.
+#if DAWN_PLATFORM_IS(WINDOWS)
+    const bool kIsAngleOnWindows = mName.find("ANGLE") != std::string::npos;
+#else
+    constexpr bool kIsAngleOnWindows = false;
+#endif
+    deviceToggles->Default(Toggle::UseBlitForDepth16UnormTextureToBufferCopy, !kIsAngleOnWindows);
+
+    // For OpenGL ES, use compute shader blit to emulate depth32float texture to buffer copies.
+    deviceToggles->Default(Toggle::UseBlitForDepth32FloatTextureToBufferCopy,
+                           gl.GetVersion().IsES() && !kIsAngleOnWindows);
+
+    // For OpenGL ES, use compute shader blit to emulate stencil texture to buffer copies.
+    deviceToggles->Default(Toggle::UseBlitForStencilTextureToBufferCopy,
+                           gl.GetVersion().IsES() && !kIsAngleOnWindows);
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,

@@ -23,33 +23,12 @@ namespace tint::ir {
 /// An instruction in the IR.
 class Instruction : public utils::Castable<Instruction, Value> {
   public:
-    /// The identifier used by instructions that have no value.
-    static constexpr uint32_t kNoID = 0;
-
-    Instruction(const Instruction& inst) = delete;
-    Instruction(Instruction&& inst) = delete;
     /// Destructor
     ~Instruction() override;
-
-    Instruction& operator=(const Instruction& inst) = delete;
-    Instruction& operator=(Instruction&& inst) = delete;
-
-    /// @returns the type of the value
-    const type::Type* Type() const override { return type; }
-
-    /// The instruction identifier
-    const uint32_t id = kNoID;
-
-    /// The instruction type
-    const type::Type* type = nullptr;
 
   protected:
     /// Constructor
     Instruction();
-    /// Constructor
-    /// @param id the instruction id
-    /// @param type the result type
-    Instruction(uint32_t id, const type::Type* type);
 };
 
 }  // namespace tint::ir

@@ -172,6 +172,16 @@ BufferBase::BufferBase(DeviceBase* device, const BufferDescriptor* descriptor)
         mUsage |= kInternalStorageBuffer;
     }
 
+    if (mUsage & wgpu::BufferUsage::CopyDst) {
+        if (device->IsToggleEnabled(Toggle::UseBlitForDepth16UnormTextureToBufferCopy) ||
+            device->IsToggleEnabled(Toggle::UseBlitForDepth32FloatTextureToBufferCopy)) {
+            mUsage |= kInternalStorageBuffer;
+        }
+        if (device->IsToggleEnabled(Toggle::UseBlitForStencilTextureToBufferCopy)) {
+            mUsage |= kInternalStorageBuffer;
+        }
+    }
+
     GetObjectTrackingList()->Track(this);
 }
 

@@ -32,12 +32,6 @@ class Value : public utils::Castable<Value> {
     /// Destructor
     ~Value() override;
 
-    Value(const Value&) = delete;
-    Value(Value&&) = delete;
-
-    Value& operator=(const Value&) = delete;
-    Value& operator=(Value&&) = delete;
-
     /// Adds an instruction which uses this value.
     /// @param inst the instruction
     void AddUsage(const Instruction* inst) { uses_.Add(inst); }
@@ -47,7 +41,7 @@ class Value : public utils::Castable<Value> {
     utils::VectorRef<const Instruction*> Usage() const { return uses_; }
 
     /// @returns the type of the value
-    virtual const type::Type* Type() const = 0;
+    virtual const type::Type* Type() const { return nullptr; }
 
   protected:
     /// Constructor

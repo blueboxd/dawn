@@ -32,7 +32,7 @@ class Queue;
 
 class Device final : public ObjectBase {
   public:
-    explicit Device(const ObjectBaseParams& params);
+    explicit Device(const ObjectBaseParams& params, const WGPUDeviceDescriptor* descriptor);
     ~Device() override;
 
     void SetUncapturedErrorCallback(WGPUErrorCallback errorCallback, void* errorUserdata);
@@ -49,6 +49,7 @@ class Device final : public ObjectBase {
                                    WGPUCreateRenderPipelineAsyncCallback callback,
                                    void* userdata);
     WGPUQuerySet CreateQuerySet(const WGPUQuerySetDescriptor* descriptor);
+    WGPUSwapChain CreateSwapChain(WGPUSurface surface, const WGPUSwapChainDescriptor* descriptor);
     WGPUTexture CreateTexture(const WGPUTextureDescriptor* descriptor);
     WGPUTexture CreateErrorTexture(const WGPUTextureDescriptor* descriptor);
 

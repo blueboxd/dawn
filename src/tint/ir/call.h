@@ -23,24 +23,25 @@ namespace tint::ir {
 /// A Call instruction in the IR.
 class Call : public utils::Castable<Call, Instruction> {
   public:
-    Call(const Call& inst) = delete;
-    Call(Call&& inst) = delete;
     ~Call() override;
 
-    Call& operator=(const Call& inst) = delete;
-    Call& operator=(Call&& inst) = delete;
+    /// @returns the type of the value
+    const type::Type* Type() const override { return result_type_; }
 
-    /// The constructor arguments
-    utils::Vector<Value*, 1> args;
+    /// @returns the call arguments
+    utils::VectorRef<Value*> Args() const { return args_; }
 
   protected:
     /// Constructor
     Call() = delete;
     /// Constructor
-    /// @param id the instruction id
-    /// @param type the result type
+    /// @param result_type the result type
     /// @param args the constructor arguments
-    Call(uint32_t id, const type::Type* type, utils::VectorRef<Value*> args);
+    Call(const type::Type* result_type, utils::VectorRef<Value*> args);
+
+  private:
+    const type::Type* result_type_;
+    utils::Vector<Value*, 1> args_;
 };
 
 }  // namespace tint::ir

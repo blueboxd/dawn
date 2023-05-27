@@ -21,6 +21,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class ShaderModuleValidationTest : public ValidationTest {};
 
 #if TINT_BUILD_SPV_READER
@@ -239,7 +242,7 @@ TEST_F(ShaderModuleValidationTest, OnlySpirvOptionsDescriptor) {
 
 // Tests that shader module compilation messages can be queried.
 TEST_F(ShaderModuleValidationTest, GetCompilationMessages) {
-    // This test works assuming ShaderModule is backed by a dawn::native::ShaderModuleBase, which
+    // This test works assuming ShaderModule is backed by a native::ShaderModuleBase, which
     // is not the case on the wire.
     DAWN_SKIP_TEST_IF(UsesWire());
 
@@ -248,14 +251,13 @@ TEST_F(ShaderModuleValidationTest, GetCompilationMessages) {
             return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
 
-    dawn::native::ShaderModuleBase* shaderModuleBase = dawn::native::FromAPI(shaderModule.Get());
-    dawn::native::OwnedCompilationMessages* messages = shaderModuleBase->GetCompilationMessages();
+    native::ShaderModuleBase* shaderModuleBase = native::FromAPI(shaderModule.Get());
+    native::OwnedCompilationMessages* messages = shaderModuleBase->GetCompilationMessages();
     messages->ClearMessages();
-    messages->AddMessageForTesting("Info Message");
-    messages->AddMessageForTesting("Warning Message", wgpu::CompilationMessageType::Warning);
-    messages->AddMessageForTesting("Error Message", wgpu::CompilationMessageType::Error, 3, 4);
-    messages->AddMessageForTesting("Complete Message", wgpu::CompilationMessageType::Info, 3, 4, 5,
-                                   6);
+    messages->AddMessage("Info Message");
+    messages->AddMessage("Warning Message", wgpu::CompilationMessageType::Warning);
+    messages->AddMessage("Error Message", wgpu::CompilationMessageType::Error, 3, 4);
+    messages->AddMessage("Complete Message", wgpu::CompilationMessageType::Info, 3, 4, 5, 6);
 
     auto callback = [](WGPUCompilationInfoRequestStatus status, const WGPUCompilationInfo* info,
                        void* userdata) {
@@ -703,7 +705,7 @@ TEST_F(ShaderModuleValidationTest, WgslNullptrShader) {
 
 // Tests that WGSL extension with deprecated source member still works but emits warning.
 TEST_F(ShaderModuleValidationTest, SourceToCodeMemberDeprecation) {
-    // This test works assuming ShaderModule is backed by a dawn::native::ShaderModuleBase, which
+    // This test works assuming ShaderModule is backed by a native::ShaderModuleBase, which
     // is not the case on the wire.
     DAWN_SKIP_TEST_IF(UsesWire());
 
@@ -721,6 +723,38 @@ TEST_F(ShaderModuleValidationTest, SourceToCodeMemberDeprecation) {
     wgslDesc.code = "@compute @workgroup_size(1) fn main() {}";
     wgpu::ShaderModule codeShader = device.CreateShaderModule(&descriptor);
 
-    EXPECT_TRUE(dawn::native::ShaderModuleBase::EqualityFunc()(
-        dawn::native::FromAPI(sourceShader.Get()), dawn::native::FromAPI(codeShader.Get())));
+    EXPECT_TRUE(native::ShaderModuleBase::EqualityFunc()(native::FromAPI(sourceShader.Get()),
+                                                         native::FromAPI(codeShader.Get())));
 }
+
+// Test creating an error shader module with device.CreateErrorShaderModule()
+TEST_F(ShaderModuleValidationTest, CreateErrorShaderModule) {
+    wgpu::ShaderModuleWGSLDescriptor wgslDesc = {};
+    wgpu::ShaderModuleDescriptor descriptor = {};
+    descriptor.nextInChain = &wgslDesc;
+    wgslDesc.code = "@compute @workgroup_size(1) fn main() {}";
+
+    wgpu::ShaderModule errorShaderModule;
+    ASSERT_DEVICE_ERROR(errorShaderModule = device.CreateErrorShaderModule(
+                            &descriptor, "Shader compilation error"));
+
+    auto callback = [](WGPUCompilationInfoRequestStatus status, const WGPUCompilationInfo* info,
+                       void* userdata) {
+        ASSERT_EQ(WGPUCompilationInfoRequestStatus_Success, status);
+        ASSERT_NE(nullptr, info);
+        ASSERT_EQ(1u, info->messageCount);
+
+        const WGPUCompilationMessage* message = &info->messages[0];
+        ASSERT_STREQ("Shader compilation error", message->message);
+        ASSERT_EQ(WGPUCompilationMessageType_Error, message->type);
+        ASSERT_EQ(0u, message->lineNum);
+        ASSERT_EQ(0u, message->linePos);
+    };
+
+    errorShaderModule.GetCompilationInfo(callback, nullptr);
+
+    FlushWire();
+}
+
+}  // anonymous namespace
+}  // namespace dawn

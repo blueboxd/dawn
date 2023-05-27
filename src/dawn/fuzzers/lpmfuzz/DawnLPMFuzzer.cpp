@@ -30,6 +30,7 @@
 #include "dawn/webgpu_cpp.h"
 #include "dawn/wire/ChunkedCommandSerializer.h"
 #include "dawn/wire/WireClient.h"
+#include "dawn/wire/WireResult.h"
 #include "dawn/wire/WireServer.h"
 #include "testing/libfuzzer/libfuzzer_exports.h"
 
@@ -63,9 +64,9 @@ namespace DawnLPMFuzzer {
 int Initialize(int* argc, char*** argv) {
     // TODO(crbug.com/1038952): The Instance must be static because destructing the vkInstance with
     // Swiftshader crashes libFuzzer. When this is fixed, move this into Run so that error injection
-    // for adapter discovery can be fuzzed.
+    // for physical device discovery can be fuzzed.
     sInstance = std::make_unique<dawn::native::Instance>();
-    sInstance->DiscoverDefaultAdapters();
+    sInstance->DiscoverDefaultPhysicalDevices();
 
     return 0;
 }
@@ -101,19 +102,20 @@ int Run(const fuzzing::Program& program, bool (*AdapterSupported)(const dawn::na
     std::unique_ptr<dawn::wire::WireServer> wireServer(new dawn_wire::WireServer(serverDesc));
     wireServer->InjectInstance(sInstance->Get(), kInstanceObjectId, 0);
 
-    static utils::TerribleCommandBuffer* mCommandBuffer = new utils::TerribleCommandBuffer();
+    static dawn::utilsTerribleCommandBuffer* mCommandBuffer =
+        new dawn::utilsTerribleCommandBuffer();
     static dawn::wire::ChunkedCommandSerializer mSerializer =
         dawn::wire::ChunkedCommandSerializer(mCommandBuffer);
     mCommandBuffer->SetHandler(wireServer.get());
 
-    dawn::wire::SerializedData(program, mSerializer);
+    dawn::wire::WireResult result = dawn::wire::SerializedData(program, mSerializer);
 
     mCommandBuffer->Flush();
 
     // Note: Deleting the server will release all created objects.
     // Deleted devices will wait for idle on destruction.
     wireServer = nullptr;
-    return 0;
+    return result == dawn::wire::WireResult::FatalError;
 }
 
 }  // namespace DawnLPMFuzzer

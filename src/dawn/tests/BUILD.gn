@@ -327,6 +327,7 @@ dawn_test("dawn_unittests") {
     "unittests/validation/BindGroupValidationTests.cpp",
     "unittests/validation/BufferValidationTests.cpp",
     "unittests/validation/CommandBufferValidationTests.cpp",
+    "unittests/validation/CompatValidationTests.cpp",
     "unittests/validation/ComputeIndirectValidationTests.cpp",
     "unittests/validation/ComputeValidationTests.cpp",
     "unittests/validation/CopyCommandsValidationTests.cpp",
@@ -484,7 +485,7 @@ source_set("end2end_tests_sources") {
   ]
 
   sources = [
-    "end2end/AdapterDiscoveryTests.cpp",
+    "end2end/AdapterCreationTests.cpp",
     "end2end/BasicTests.cpp",
     "end2end/BindGroupTests.cpp",
     "end2end/BufferTests.cpp",
@@ -535,6 +536,7 @@ source_set("end2end_tests_sources") {
     "end2end/NonzeroTextureCreationTests.cpp",
     "end2end/ObjectCachingTests.cpp",
     "end2end/OpArrayLengthTests.cpp",
+    "end2end/PhysicalDeviceDiscoveryTests.cpp",
     "end2end/PipelineCachingTests.cpp",
     "end2end/PipelineLayoutTests.cpp",
     "end2end/PrimitiveStateTests.cpp",
@@ -576,12 +578,13 @@ source_set("end2end_tests_sources") {
       "d3d11.lib",
       "dxgi.lib",
     ]
+
+    sources += [ "end2end/D3DResourceWrappingTests.cpp" ]
   }
 
   if (dawn_enable_d3d12) {
     sources += [
       "end2end/D3D12CachingTests.cpp",
-      "end2end/D3D12ResourceWrappingTests.cpp",
       "end2end/VideoViewsTests_win.cpp",
     ]
   }
@@ -662,6 +665,10 @@ source_set("white_box_tests_sources") {
     "white_box/InternalStorageBufferBindingTests.cpp",
     "white_box/QueryInternalShaderTests.cpp",
   ]
+
+  if (dawn_enable_d3d11) {
+    sources += [ "white_box/D3D11BufferTests.cpp" ]
+  }
 
   if (dawn_enable_d3d12) {
     sources += [
