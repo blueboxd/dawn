@@ -47,8 +47,12 @@ MaybeError ComputePipeline::Initialize() {
         compileFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
     }
 
-    // SPRIV-cross does matrix multiplication expecting row major matrices
+    // Tint does matrix multiplication expecting row major matrices
     compileFlags |= D3DCOMPILE_PACK_MATRIX_ROW_MAJOR;
+
+    // FXC can miscompile code that depends on special float values (NaN, INF, etc) when IEEE
+    // strictness is not enabled. See crbug.com/tint/976.
+    compileFlags |= D3DCOMPILE_IEEE_STRICTNESS;
 
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
     ShaderModule* module = ToBackend(computeStage.module.Get());
@@ -57,10 +61,10 @@ MaybeError ComputePipeline::Initialize() {
     d3dDesc.pRootSignature = ToBackend(GetLayout())->GetRootSignature();
 
     // TODO(dawn:549): Compile shader everytime before we implement compiled shader cache
-    CompiledShader compiledShader;
+    d3d::CompiledShader compiledShader;
     DAWN_TRY_ASSIGN(compiledShader, module->Compile(computeStage, SingleShaderStage::Compute,
                                                     ToBackend(GetLayout()), compileFlags));
-    d3dDesc.CS = compiledShader.GetD3D12ShaderBytecode();
+    d3dDesc.CS = {compiledShader.shaderBlob.Data(), compiledShader.shaderBlob.Size()};
 
     StreamIn(&mCacheKey, d3dDesc, ToBackend(GetLayout())->GetRootSignatureBlob());
 

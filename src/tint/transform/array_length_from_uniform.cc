@@ -65,9 +65,10 @@ struct ArrayLengthFromUniform::State {
     ApplyResult Run() {
         auto* cfg = inputs.Get<Config>();
         if (cfg == nullptr) {
-            b.Diagnostics().add_error(diag::System::Transform,
-                                      "missing transform data for " +
-                                          std::string(TypeInfo::Of<ArrayLengthFromUniform>().name));
+            b.Diagnostics().add_error(
+                diag::System::Transform,
+                "missing transform data for " +
+                    std::string(utils::TypeInfo::Of<ArrayLengthFromUniform>().name));
             return Program(std::move(b));
         }
 
@@ -82,13 +83,14 @@ struct ArrayLengthFromUniform::State {
 
         IterateArrayLengthOnStorageVar([&](const ast::CallExpression*, const sem::VariableUser*,
                                            const sem::GlobalVariable* var) {
-            auto binding = var->BindingPoint();
-            auto idx_itr = cfg->bindpoint_to_size_index.find(binding);
-            if (idx_itr == cfg->bindpoint_to_size_index.end()) {
-                return;
-            }
-            if (idx_itr->second > max_buffer_size_index) {
-                max_buffer_size_index = idx_itr->second;
+            if (auto binding = var->BindingPoint()) {
+                auto idx_itr = cfg->bindpoint_to_size_index.find(*binding);
+                if (idx_itr == cfg->bindpoint_to_size_index.end()) {
+                    return;
+                }
+                if (idx_itr->second > max_buffer_size_index) {
+                    max_buffer_size_index = idx_itr->second;
+                }
             }
         });
 
@@ -120,7 +122,10 @@ struct ArrayLengthFromUniform::State {
                                            const sem::VariableUser* storage_buffer_sem,
                                            const sem::GlobalVariable* var) {
             auto binding = var->BindingPoint();
-            auto idx_itr = cfg->bindpoint_to_size_index.find(binding);
+            if (!binding) {
+                return;
+            }
+            auto idx_itr = cfg->bindpoint_to_size_index.find(*binding);
             if (idx_itr == cfg->bindpoint_to_size_index.end()) {
                 return;
             }

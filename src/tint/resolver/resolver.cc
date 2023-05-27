@@ -128,8 +128,7 @@ bool Resolver::Resolve() {
     // Pre-allocate the marked bitset with the total number of AST nodes.
     marked_.Resize(builder_->ASTNodes().Count());
 
-    if (!DependencyGraph::Build(builder_->AST(), builder_->Symbols(), diagnostics_,
-                                dependencies_)) {
+    if (!DependencyGraph::Build(builder_->AST(), diagnostics_, dependencies_)) {
         return false;
     }
 
@@ -268,8 +267,7 @@ sem::Variable* Resolver::Let(const ast::Let* v, bool is_global) {
 
     if (!ApplyAddressSpaceUsageToType(builtin::AddressSpace::kUndefined,
                                       const_cast<type::Type*>(ty), v->source)) {
-        AddNote("while instantiating 'let' " + builder_->Symbols().NameFor(v->name->symbol),
-                v->source);
+        AddNote("while instantiating 'let' " + v->name->symbol.Name(), v->source);
         return nullptr;
     }
 
@@ -278,7 +276,7 @@ sem::Variable* Resolver::Let(const ast::Let* v, bool is_global) {
         sem = builder_->create<sem::GlobalVariable>(
             v, ty, sem::EvaluationStage::kRuntime, builtin::AddressSpace::kUndefined,
             builtin::Access::kUndefined,
-            /* constant_value */ nullptr, sem::BindingPoint{}, std::nullopt);
+            /* constant_value */ nullptr, std::nullopt, std::nullopt);
     } else {
         sem = builder_->create<sem::LocalVariable>(v, ty, sem::EvaluationStage::kRuntime,
                                                    builtin::AddressSpace::kUndefined,
@@ -331,15 +329,14 @@ sem::Variable* Resolver::Override(const ast::Override* v) {
 
     if (!ApplyAddressSpaceUsageToType(builtin::AddressSpace::kUndefined,
                                       const_cast<type::Type*>(ty), v->source)) {
-        AddNote("while instantiating 'override' " + builder_->Symbols().NameFor(v->name->symbol),
-                v->source);
+        AddNote("while instantiating 'override' " + v->name->symbol.Name(), v->source);
         return nullptr;
     }
 
     auto* sem = builder_->create<sem::GlobalVariable>(
         v, ty, sem::EvaluationStage::kOverride, builtin::AddressSpace::kUndefined,
         builtin::Access::kUndefined,
-        /* constant_value */ nullptr, sem::BindingPoint{}, std::nullopt);
+        /* constant_value */ nullptr, std::nullopt, std::nullopt);
     sem->SetInitializer(rhs);
 
     if (auto* id_attr = ast::GetAttribute<ast::IdAttribute>(v->attributes)) {
@@ -425,8 +422,7 @@ sem::Variable* Resolver::Const(const ast::Const* c, bool is_global) {
 
     if (!ApplyAddressSpaceUsageToType(builtin::AddressSpace::kUndefined,
                                       const_cast<type::Type*>(ty), c->source)) {
-        AddNote("while instantiating 'const' " + builder_->Symbols().NameFor(c->name->symbol),
-                c->source);
+        AddNote("while instantiating 'const' " + c->name->symbol.Name(), c->source);
         return nullptr;
     }
 
@@ -434,7 +430,7 @@ sem::Variable* Resolver::Const(const ast::Const* c, bool is_global) {
     auto* sem = is_global
                     ? static_cast<sem::Variable*>(builder_->create<sem::GlobalVariable>(
                           c, ty, sem::EvaluationStage::kConstant, builtin::AddressSpace::kUndefined,
-                          builtin::Access::kUndefined, value, sem::BindingPoint{}, std::nullopt))
+                          builtin::Access::kUndefined, value, std::nullopt, std::nullopt))
                     : static_cast<sem::Variable*>(builder_->create<sem::LocalVariable>(
                           c, ty, sem::EvaluationStage::kConstant, builtin::AddressSpace::kUndefined,
                           builtin::Access::kUndefined, current_statement_, value));
@@ -526,14 +522,13 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
 
     if (!ApplyAddressSpaceUsageToType(address_space, var_ty,
                                       var->type ? var->type->source : var->source)) {
-        AddNote("while instantiating 'var' " + builder_->Symbols().NameFor(var->name->symbol),
-                var->source);
+        AddNote("while instantiating 'var' " + var->name->symbol.Name(), var->source);
         return nullptr;
     }
 
     sem::Variable* sem = nullptr;
     if (is_global) {
-        sem::BindingPoint binding_point;
+        std::optional<sem::BindingPoint> binding_point;
         if (var->HasBindingPoint()) {
             uint32_t binding = 0;
             {
@@ -613,8 +608,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
     Mark(param->name);
 
     auto add_note = [&] {
-        AddNote("while instantiating parameter " + builder_->Symbols().NameFor(param->name->symbol),
-                param->source);
+        AddNote("while instantiating parameter " + param->name->symbol.Name(), param->source);
     };
 
     for (auto* attr : param->attributes) {
@@ -646,8 +640,9 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
         }
     }
 
-    sem::BindingPoint binding_point;
+    std::optional<sem::BindingPoint> binding_point;
     if (param->HasBindingPoint()) {
+        binding_point = sem::BindingPoint{};
         {
             ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@binding value"};
             TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
@@ -657,7 +652,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
             if (!materialized) {
                 return nullptr;
             }
-            binding_point.binding = materialized->ConstantValue()->ValueAs<u32>();
+            binding_point->binding = materialized->ConstantValue()->ValueAs<u32>();
         }
         {
             ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@group value"};
@@ -668,7 +663,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
             if (!materialized) {
                 return nullptr;
             }
-            binding_point.group = materialized->ConstantValue()->ValueAs<u32>();
+            binding_point->group = materialized->ConstantValue()->ValueAs<u32>();
         }
     }
 
@@ -776,7 +771,7 @@ bool Resolver::AllocateOverridableConstantIds() {
 
 void Resolver::SetShadows() {
     for (auto it : dependencies_.shadows) {
-        CastableBase* b = sem_.Get(it.value);
+        utils::CastableBase* b = sem_.Get(it.value);
         if (TINT_UNLIKELY(!b)) {
             TINT_ICE(Resolver, diagnostics_)
                 << "AST node '" << it.value->TypeInfo().name << "' had no semantic info\n"
@@ -881,7 +876,7 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
 
         {  // Check the parameter name is unique for the function
             if (auto added = parameter_names.Add(param->name->symbol, param->source); !added) {
-                auto name = builder_->Symbols().NameFor(param->name->symbol);
+                auto name = param->name->symbol.Name();
                 AddError("redefinition of parameter '" + name + "'", param->source);
                 AddNote("previous definition is here", *added.value);
                 return nullptr;
@@ -946,8 +941,7 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
 
     if (auto* str = return_type->As<sem::Struct>()) {
         if (!ApplyAddressSpaceUsageToType(builtin::AddressSpace::kUndefined, str, decl->source)) {
-            AddNote("while instantiating return type for " +
-                        builder_->Symbols().NameFor(decl->name->symbol),
+            AddNote("while instantiating return type for " + decl->name->symbol.Name(),
                     decl->source);
             return nullptr;
         }
@@ -1579,7 +1573,7 @@ bool Resolver::AliasAnalysis(const sem::Call* call) {
                 break;
             case Alias::ModuleScope: {
                 auto* func = var.expr->Stmt()->Function();
-                auto func_name = builder_->Symbols().NameFor(func->Declaration()->name->symbol);
+                auto func_name = func->Declaration()->name->symbol.Name();
                 AddNote(
                     "aliases with module-scope variable " + var.access + " in '" + func_name + "'",
                     var.expr->Declaration()->source);
@@ -2149,8 +2143,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
         auto resolved = dependencies_.resolved_identifiers.Get(ident);
         if (!resolved) {
             TINT_ICE(Resolver, diagnostics_)
-                << "identifier '" << builder_->Symbols().NameFor(ident->symbol)
-                << "' was not resolved";
+                << "identifier '" << ident->symbol.Name() << "' was not resolved";
             return nullptr;
         }
 
@@ -2357,27 +2350,27 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
         auto* tmpl_ident = ident->As<ast::TemplatedIdentifier>();
         if (!tmpl_ident) {
             if (TINT_UNLIKELY(min_args != 0)) {
-                AddError("expected '<' for '" + b.Symbols().NameFor(ident->symbol) + "'",
+                AddError("expected '<' for '" + ident->symbol.Name() + "'",
                          Source{ident->source.range.end});
             }
             return nullptr;
         }
         if (min_args == max_args) {
             if (TINT_UNLIKELY(tmpl_ident->arguments.Length() != min_args)) {
-                AddError("'" + b.Symbols().NameFor(ident->symbol) + "' requires " +
-                             std::to_string(min_args) + " template arguments",
+                AddError("'" + ident->symbol.Name() + "' requires " + std::to_string(min_args) +
+                             " template arguments",
                          ident->source);
                 return nullptr;
             }
         } else {
             if (TINT_UNLIKELY(tmpl_ident->arguments.Length() < min_args)) {
-                AddError("'" + b.Symbols().NameFor(ident->symbol) + "' requires at least " +
+                AddError("'" + ident->symbol.Name() + "' requires at least " +
                              std::to_string(min_args) + " template arguments",
                          ident->source);
                 return nullptr;
             }
             if (TINT_UNLIKELY(tmpl_ident->arguments.Length() > max_args)) {
-                AddError("'" + b.Symbols().NameFor(ident->symbol) + "' requires at most " +
+                AddError("'" + ident->symbol.Name() + "' requires at most " +
                              std::to_string(max_args) + " template arguments",
                          ident->source);
                 return nullptr;
@@ -2754,7 +2747,7 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
             break;
     }
 
-    auto name = builder_->Symbols().NameFor(ident->symbol);
+    auto name = ident->symbol.Name();
     TINT_ICE(Resolver, diagnostics_) << ident->source << " unhandled builtin type '" << name << "'";
     return nullptr;
 }
@@ -2942,7 +2935,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
     auto resolved = dependencies_.resolved_identifiers.Get(ident);
     if (!resolved) {
         TINT_ICE(Resolver, diagnostics_)
-            << "identifier '" << builder_->Symbols().NameFor(ident->symbol) << "' was not resolved";
+            << "identifier '" << ident->symbol.Name() << "' was not resolved";
         return nullptr;
     }
 
@@ -2970,12 +2963,11 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
                             if (auto decl = loop_block->Decls().Find(symbol)) {
                                 if (decl->order >= loop_block->NumDeclsAtFirstContinue()) {
                                     AddError("continue statement bypasses declaration of '" +
-                                                 builder_->Symbols().NameFor(symbol) + "'",
+                                                 symbol.Name() + "'",
                                              loop_block->FirstContinue()->source);
-                                    AddNote("identifier '" + builder_->Symbols().NameFor(symbol) +
-                                                "' declared here",
+                                    AddNote("identifier '" + symbol.Name() + "' declared here",
                                             decl->variable->Declaration()->source);
-                                    AddNote("identifier '" + builder_->Symbols().NameFor(symbol) +
+                                    AddNote("identifier '" + symbol.Name() +
                                                 "' referenced in continuing block here",
                                             expr->source);
                                     return nullptr;
@@ -3013,7 +3005,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
                     // Note: The spec is currently vague around the rules here. See
                     // https://github.com/gpuweb/gpuweb/issues/3081. Remove this comment when
                     // resolved.
-                    std::string desc = "var '" + builder_->Symbols().NameFor(symbol) + "' ";
+                    std::string desc = "var '" + symbol.Name() + "' ";
                     AddError(desc + "cannot be referenced at module-scope", expr->source);
                     AddNote(desc + "declared here", variable->Declaration()->source);
                     return nullptr;
@@ -3050,35 +3042,47 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
     }
 
     if (auto access = resolved->Access(); access != builtin::Access::kUndefined) {
-        return builder_->create<sem::BuiltinEnumExpression<builtin::Access>>(
-            expr, current_statement_, access);
+        return CheckNotTemplated("access", ident)
+                   ? builder_->create<sem::BuiltinEnumExpression<builtin::Access>>(
+                         expr, current_statement_, access)
+                   : nullptr;
     }
 
     if (auto addr = resolved->AddressSpace(); addr != builtin::AddressSpace::kUndefined) {
-        return builder_->create<sem::BuiltinEnumExpression<builtin::AddressSpace>>(
-            expr, current_statement_, addr);
+        return CheckNotTemplated("address space", ident)
+                   ? builder_->create<sem::BuiltinEnumExpression<builtin::AddressSpace>>(
+                         expr, current_statement_, addr)
+                   : nullptr;
     }
 
     if (auto builtin = resolved->BuiltinValue(); builtin != builtin::BuiltinValue::kUndefined) {
-        return builder_->create<sem::BuiltinEnumExpression<builtin::BuiltinValue>>(
-            expr, current_statement_, builtin);
+        return CheckNotTemplated("builtin value", ident)
+                   ? builder_->create<sem::BuiltinEnumExpression<builtin::BuiltinValue>>(
+                         expr, current_statement_, builtin)
+                   : nullptr;
     }
 
     if (auto i_smpl = resolved->InterpolationSampling();
         i_smpl != builtin::InterpolationSampling::kUndefined) {
-        return builder_->create<sem::BuiltinEnumExpression<builtin::InterpolationSampling>>(
-            expr, current_statement_, i_smpl);
+        return CheckNotTemplated("interpolation sampling", ident)
+                   ? builder_->create<sem::BuiltinEnumExpression<builtin::InterpolationSampling>>(
+                         expr, current_statement_, i_smpl)
+                   : nullptr;
     }
 
     if (auto i_type = resolved->InterpolationType();
         i_type != builtin::InterpolationType::kUndefined) {
-        return builder_->create<sem::BuiltinEnumExpression<builtin::InterpolationType>>(
-            expr, current_statement_, i_type);
+        return CheckNotTemplated("interpolation type", ident)
+                   ? builder_->create<sem::BuiltinEnumExpression<builtin::InterpolationType>>(
+                         expr, current_statement_, i_type)
+                   : nullptr;
     }
 
     if (auto fmt = resolved->TexelFormat(); fmt != builtin::TexelFormat::kUndefined) {
-        return builder_->create<sem::BuiltinEnumExpression<builtin::TexelFormat>>(
-            expr, current_statement_, fmt);
+        return CheckNotTemplated("texel format", ident)
+                   ? builder_->create<sem::BuiltinEnumExpression<builtin::TexelFormat>>(
+                         expr, current_statement_, fmt)
+                   : nullptr;
     }
 
     if (auto* unresolved = resolved->Unresolved()) {
@@ -3106,17 +3110,18 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
     }
 
     TINT_UNREACHABLE(Resolver, diagnostics_)
-        << "unhandled resolved identifier: " << resolved->String(builder_->Symbols(), diagnostics_);
+        << "unhandled resolved identifier: " << resolved->String(diagnostics_);
     return nullptr;
 }
 
 sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpression* expr) {
-    auto* structure = sem_.TypeOf(expr->object);
-    auto* storage_ty = structure->UnwrapRef();
     auto* object = sem_.GetVal(expr->object);
     if (!object) {
         return nullptr;
     }
+
+    auto* object_ty = object->Type();
+    auto* storage_ty = object_ty->UnwrapRef();
 
     auto* root_ident = object->RootIdentifier();
 
@@ -3141,15 +3146,14 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
             }
 
             if (member == nullptr) {
-                AddError("struct member " + builder_->Symbols().NameFor(symbol) + " not found",
-                         expr->source);
+                AddError("struct member " + symbol.Name() + " not found", expr->source);
                 return nullptr;
             }
 
             ty = member->Type();
 
             // If we're extracting from a reference, we return a reference.
-            if (auto* ref = structure->As<type::Reference>()) {
+            if (auto* ref = object_ty->As<type::Reference>()) {
                 ty = builder_->create<type::Reference>(ty, ref->AddressSpace(), ref->Access());
             }
 
@@ -3163,7 +3167,7 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
         },
 
         [&](const type::Vector* vec) -> sem::ValueExpression* {
-            std::string s = builder_->Symbols().NameFor(expr->member->symbol);
+            std::string s = expr->member->symbol.Name();
             auto size = s.size();
             utils::Vector<uint32_t, 4> swizzle;
             swizzle.Reserve(s.size());
@@ -3218,7 +3222,7 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
                 // A single element swizzle is just the type of the vector.
                 ty = vec->type();
                 // If we're extracting from a reference, we return a reference.
-                if (auto* ref = structure->As<type::Reference>()) {
+                if (auto* ref = object_ty->As<type::Reference>()) {
                     ty = builder_->create<type::Reference>(ty, ref->AddressSpace(), ref->Access());
                 }
             } else {
@@ -3463,15 +3467,33 @@ bool Resolver::InternalAttribute(const ast::InternalAttribute* attr) {
 
 bool Resolver::DiagnosticControl(const ast::DiagnosticControl& control) {
     Mark(control.rule_name);
+    Mark(control.rule_name->name);
+    auto name = control.rule_name->name->symbol.Name();
 
-    auto rule_name = builder_->Symbols().NameFor(control.rule_name->symbol);
-    auto rule = builtin::ParseDiagnosticRule(rule_name);
-    if (rule != builtin::DiagnosticRule::kUndefined) {
+    if (control.rule_name->category) {
+        Mark(control.rule_name->category);
+        if (control.rule_name->category->symbol.Name() == "chromium") {
+            auto rule = builtin::ParseChromiumDiagnosticRule(name);
+            if (rule != builtin::ChromiumDiagnosticRule::kUndefined) {
+                validator_.DiagnosticFilters().Set(rule, control.severity);
+            } else {
+                utils::StringStream ss;
+                ss << "unrecognized diagnostic rule 'chromium." << name << "'\n";
+                utils::SuggestAlternatives(name, builtin::kChromiumDiagnosticRuleStrings, ss,
+                                           "chromium.");
+                AddWarning(ss.str(), control.rule_name->source);
+            }
+        }
+        return true;
+    }
+
+    auto rule = builtin::ParseCoreDiagnosticRule(name);
+    if (rule != builtin::CoreDiagnosticRule::kUndefined) {
         validator_.DiagnosticFilters().Set(rule, control.severity);
     } else {
         utils::StringStream ss;
-        ss << "unrecognized diagnostic rule '" << rule_name << "'\n";
-        utils::SuggestAlternatives(rule_name, builtin::kDiagnosticRuleStrings, ss);
+        ss << "unrecognized diagnostic rule '" << name << "'\n";
+        utils::SuggestAlternatives(name, builtin::kCoreDiagnosticRuleStrings, ss);
         AddWarning(ss.str(), control.rule_name->source);
     }
     return true;
@@ -3636,7 +3658,7 @@ type::Type* Resolver::Alias(const ast::Alias* alias) {
 
 sem::Struct* Resolver::Structure(const ast::Struct* str) {
     auto struct_name = [&] {  //
-        return builder_->Symbols().NameFor(str->name->symbol);
+        return str->name->symbol.Name();
     };
 
     if (validator_.IsValidationEnabled(str->attributes,
@@ -3677,8 +3699,7 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
         Mark(member);
         Mark(member->name);
         if (auto added = member_map.Add(member->name->symbol, member); !added) {
-            AddError("redefinition of '" + builder_->Symbols().NameFor(member->name->symbol) + "'",
-                     member->source);
+            AddError("redefinition of '" + member->name->symbol.Name() + "'", member->source);
             AddNote("previous definition is here", (*added.value)->source);
             return nullptr;
         }
@@ -4220,7 +4241,7 @@ bool Resolver::ApplyAddressSpaceUsageToType(builtin::AddressSpace address_space,
                     address_space, const_cast<type::Type*>(member->Type()), decl->type->source)) {
                 utils::StringStream err;
                 err << "while analyzing structure member " << sem_.TypeNameOf(str) << "."
-                    << builder_->Symbols().NameFor(member->Name());
+                    << member->Name().Name();
                 AddNote(err.str(), member->Source());
                 return false;
             }
@@ -4263,7 +4284,8 @@ template <typename SEM, typename F>
 SEM* Resolver::StatementScope(const ast::Statement* ast, SEM* sem, F&& callback) {
     builder_->Sem().Add(ast, sem);
 
-    auto* as_compound = As<sem::CompoundStatement, CastFlags::kDontErrorOnImpossibleCast>(sem);
+    auto* as_compound =
+        As<sem::CompoundStatement, utils::CastFlags::kDontErrorOnImpossibleCast>(sem);
 
     // Helper to handle attributes that are supported on certain types of statement.
     auto handle_attributes = [&](auto* stmt, sem::Statement* sem_stmt, const char* use) {
@@ -4359,9 +4381,9 @@ void Resolver::ApplyDiagnosticSeverities(NODE* node) {
 
 bool Resolver::CheckNotTemplated(const char* use, const ast::Identifier* ident) {
     if (TINT_UNLIKELY(ident->Is<ast::TemplatedIdentifier>())) {
-        AddError(std::string(use) + " '" + builder_->Symbols().NameFor(ident->symbol) +
-                     "' does not take template arguments",
-                 ident->source);
+        AddError(
+            std::string(use) + " '" + ident->symbol.Name() + "' does not take template arguments",
+            ident->source);
         if (auto resolved = dependencies_.resolved_identifiers.Get(ident)) {
             if (auto* ast_node = resolved->Node()) {
                 sem_.NoteDeclarationSource(ast_node);
@@ -4375,9 +4397,7 @@ bool Resolver::CheckNotTemplated(const char* use, const ast::Identifier* ident) 
 void Resolver::ErrorMismatchedResolvedIdentifier(const Source& source,
                                                  const ResolvedIdentifier& resolved,
                                                  std::string_view wanted) {
-    AddError("cannot use " + resolved.String(builder_->Symbols(), diagnostics_) + " as " +
-                 std::string(wanted),
-             source);
+    AddError("cannot use " + resolved.String(diagnostics_) + " as " + std::string(wanted), source);
     sem_.NoteDeclarationSource(resolved.Node());
 }
 

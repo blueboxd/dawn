@@ -16,12 +16,12 @@
 #define SRC_DAWN_NATIVE_DEVICE_H_
 
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "dawn/common/Mutex.h"
 #include "dawn/native/CacheKey.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/ComputePipeline.h"
@@ -261,6 +261,8 @@ class DeviceBase : public RefCountedWithExternalCount {
     ResultOrError<Ref<TextureViewBase>> CreateTextureView(TextureBase* texture,
                                                           const TextureViewDescriptor* descriptor);
 
+    ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsage(const Surface* surface) const;
+
     // Implementation of API object creation methods. DO NOT use them in a reentrant manner.
     BindGroupBase* APICreateBindGroup(const BindGroupDescriptor* descriptor);
     BindGroupLayoutBase* APICreateBindGroupLayout(const BindGroupLayoutDescriptor* descriptor);
@@ -283,6 +285,8 @@ class DeviceBase : public RefCountedWithExternalCount {
     ShaderModuleBase* APICreateShaderModule(const ShaderModuleDescriptor* descriptor);
     SwapChainBase* APICreateSwapChain(Surface* surface, const SwapChainDescriptor* descriptor);
     TextureBase* APICreateTexture(const TextureDescriptor* descriptor);
+
+    wgpu::TextureUsage APIGetSupportedSurfaceUsage(Surface* surface);
 
     InternalPipelineStore* GetInternalPipelineStore();
 
@@ -424,6 +428,19 @@ class DeviceBase : public RefCountedWithExternalCount {
     // method makes them to be submitted as soon as possbile in next ticks.
     virtual void ForceEventualFlushOfCommands() = 0;
 
+    // It is guaranteed that the wrapped mutex will outlive the Device (if the Device is deleted
+    // before the AutoLockAndHoldRef).
+    [[nodiscard]] Mutex::AutoLockAndHoldRef GetScopedLockSafeForDelete();
+    // This lock won't guarantee the wrapped mutex will be alive if the Device is deleted before the
+    // AutoLock. It would crash if such thing happens.
+    [[nodiscard]] Mutex::AutoLock GetScopedLock();
+
+    // This method returns true if Feature::ImplicitDeviceSynchronization is turned on and the
+    // device is locked by current thread. This method is only enabled when DAWN_ENABLE_ASSERTS is
+    // turned on. Thus it should only be wrapped inside ASSERT() macro. i.e.
+    // ASSERT(device.IsLockedByCurrentThread())
+    bool IsLockedByCurrentThreadIfNeeded() const;
+
     // In the 'Normal' mode, currently recorded commands in the backend normally will be actually
     // submitted in the next Tick. However in the 'Passive' mode, the submission will be postponed
     // as late as possible, for example, until the client has explictly issued a submission.
@@ -463,12 +480,10 @@ class DeviceBase : public RefCountedWithExternalCount {
         const ShaderModuleDescriptor* descriptor,
         ShaderModuleParseResult* parseResult,
         OwnedCompilationMessages* compilationMessages) = 0;
-    virtual ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
-        const SwapChainDescriptor* descriptor) = 0;
     // Note that previousSwapChain may be nullptr, or come from a different backend.
-    virtual ResultOrError<Ref<NewSwapChainBase>> CreateSwapChainImpl(
+    virtual ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
-        NewSwapChainBase* previousSwapChain,
+        SwapChainBase* previousSwapChain,
         const SwapChainDescriptor* descriptor) = 0;
     virtual ResultOrError<Ref<TextureBase>> CreateTextureImpl(
         const TextureDescriptor* descriptor) = 0;
@@ -481,7 +496,11 @@ class DeviceBase : public RefCountedWithExternalCount {
         const RenderPipelineDescriptor* descriptor) = 0;
     virtual void SetLabelImpl();
 
+    virtual ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsageImpl(
+        const Surface* surface) const = 0;
+
     virtual MaybeError TickImpl() = 0;
+    void FlushCallbackTaskQueue();
 
     ResultOrError<Ref<BindGroupLayoutBase>> CreateEmptyBindGroupLayout();
 
@@ -597,6 +616,9 @@ class DeviceBase : public RefCountedWithExternalCount {
     std::unique_ptr<dawn::platform::WorkerTaskPool> mWorkerTaskPool;
     std::string mLabel;
     CacheKey mDeviceCacheKey;
+
+    // This pointer is non-null if Feature::ImplicitDeviceSynchronization is turned on.
+    Ref<Mutex> mMutex = nullptr;
 };
 
 ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetComputePipelineDescriptorWithDefaults(

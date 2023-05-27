@@ -101,7 +101,7 @@ static utils::Vector<const ast::Attribute*, 2> createAttributes(const Source& so
             return {builder.Builtin(source, builtin::BuiltinValue::kPosition)};
         case AttributeKind::kDiagnostic:
             return {builder.DiagnosticAttribute(source, builtin::DiagnosticSeverity::kInfo,
-                                                "chromium_unreachable_code")};
+                                                "chromium", "unreachable_code")};
         case AttributeKind::kGroup:
             return {builder.Group(source, 1_a)};
         case AttributeKind::kId:
@@ -2185,7 +2185,7 @@ TEST_F(MustUseAttributeTest, UsedOnFnWithNoReturnValue) {
 namespace InternalAttributeDeps {
 namespace {
 
-class TestAttribute : public Castable<TestAttribute, ast::InternalAttribute> {
+class TestAttribute : public utils::Castable<TestAttribute, ast::InternalAttribute> {
   public:
     TestAttribute(ProgramID pid, ast::NodeID nid, const ast::IdentifierExpression* dep)
         : Base(pid, nid, utils::Vector{dep}) {}

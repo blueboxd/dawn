@@ -110,6 +110,10 @@ deps = {
     'url': '{chromium_git}/catapult.git@c1e70d412ce01fb194f73f7abfdac710aae87dae',
     'condition': 'dawn_standalone',
   },
+  'third_party/google_benchmark/src': {
+    'url': '{chromium_git}/external/github.com/google/benchmark.git' + '@' + 'efc89f0b524780b1994d5dddd83a92718e5be492',
+    'condition': 'dawn_standalone',
+  },
 
   # Jinja2 and MarkupSafe for the code generator
   'third_party/jinja2': {
@@ -132,17 +136,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@e7b7f977238451a68a235ae2da6d40126b3a7237',
+    'url': '{chromium_git}/angle/angle@97c2cbd64f6e753a194a20053aac2a94a683a772',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@0b87966e0b127ea59f9b00d3c9871665412984d8',
+    'url': '{swiftshader_git}/SwiftShader@23e97b79fb9193bf88e79c16c6a577c680edb2d6',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@20ba3b385ae8479f255b8df07a5037ac63818df7',
+    'url': '{chromium_git}/vulkan-deps@a52479099cf2862650df9dbc12e2e202e345901e',
     'condition': 'dawn_standalone',
   },
 
@@ -158,7 +162,7 @@ deps = {
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@ca81780f0e959aeb07ddd7b0caa8454e0a239c7f',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@c7d833badcd37dc46a999ebeebbbde1368ff15b5',
     'condition': 'build_with_chromium',
   },
 
@@ -172,7 +176,7 @@ deps = {
     'condition': 'dawn_node',
   },
   'third_party/gpuweb': {
-    'url': '{github_git}/gpuweb/gpuweb.git@1f8a05afc72627d9f7f45d6067f3e373d0a81f8e',
+    'url': '{github_git}/gpuweb/gpuweb.git@2e75d5e68e80e4c28575c7836ee00ca22cf4ca63',
     'condition': 'dawn_node',
   },
 
@@ -204,10 +208,6 @@ deps = {
   },
 
   # Misc dependencies inherited from Tint
-  'third_party/benchmark': {
-    'url': '{chromium_git}/external/github.com/google/benchmark.git@e991355c02b93fe17713efe04cbc2e278e00fdbd',
-    'condition': 'dawn_standalone',
-  },
   'third_party/protobuf': {
     'url': '{chromium_git}/external/github.com/protocolbuffers/protobuf.git@fde7cf7358ec7cd69e8db9be4f1fa6a5c431386a',
     'condition': 'dawn_standalone',

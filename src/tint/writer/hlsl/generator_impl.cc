@@ -148,8 +148,14 @@ struct RegisterAndSpace {
 };
 
 utils::StringStream& operator<<(utils::StringStream& s, const RegisterAndSpace& rs) {
-    s << " : register(" << rs.reg << rs.binding_point.binding << ", space" << rs.binding_point.group
-      << ")";
+    s << " : register(" << rs.reg << rs.binding_point.binding;
+    // Omit the space if it's 0, as it's the default.
+    // SM 5.0 doesn't support spaces, so we don't emit them if group is 0 for better compatibility.
+    if (rs.binding_point.group == 0) {
+        s << ")";
+    } else {
+        s << ", space" << rs.binding_point.group << ")";
+    }
     return s;
 }
 
@@ -189,12 +195,10 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         manager.Add<transform::Robustness>();
     }
 
-    if (!options.external_texture_options.bindings_map.empty()) {
-        // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
-        data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(
-            options.external_texture_options.bindings_map);
-        manager.Add<transform::MultiplanarExternalTexture>();
-    }
+    // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
+    data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(
+        options.external_texture_options.bindings_map);
+    manager.Add<transform::MultiplanarExternalTexture>();
 
     // BindingRemapper must come after MultiplanarExternalTexture
     manager.Add<transform::BindingRemapper>();
@@ -237,13 +241,11 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     // CanonicalizeEntryPointIO must come after Robustness
     manager.Add<transform::CanonicalizeEntryPointIO>();
 
-    if (options.interstage_locations.any()) {
+    if (options.truncate_interstage_variables) {
         // When interstage_locations is empty, it means there's no user-defined interstage variables
-        // being used in the next stage. This is treated as a special case.
-        // TruncateInterstageVariables transform is trying to solve the HLSL compiler register
-        // mismatch issue. So it is not needed if no register is assigned to any interstage
-        // variables. As a result we only add this transform when there is at least one interstage
-        // locations being used.
+        // being used in the next stage. Still, HLSL compiler register mismatch could happen, if
+        // there's builtin inputs used in the next stage. So we still run
+        // TruncateInterstageVariables transform.
 
         // TruncateInterstageVariables itself will skip when interstage_locations matches exactly
         // with the current stage output.
@@ -328,7 +330,7 @@ bool GeneratorImpl::Generate() {
         return false;
     }
 
-    const TypeInfo* last_kind = nullptr;
+    const utils::TypeInfo* last_kind = nullptr;
     size_t last_padding_line = 0;
 
     auto* mod = builder_.Sem().Module();
@@ -659,8 +661,8 @@ bool GeneratorImpl::EmitBitcast(utils::StringStream& out, const ast::BitcastExpr
     }
 
     if (!type->is_integer_scalar() && !type->is_float_scalar()) {
-        diagnostics_.add_error(diag::System::Writer, "Unable to do bitcast to type " +
-                                                         type->FriendlyName(builder_.Symbols()));
+        diagnostics_.add_error(diag::System::Writer,
+                               "Unable to do bitcast to type " + type->FriendlyName());
         return false;
     }
 
@@ -948,7 +950,7 @@ bool GeneratorImpl::EmitFunctionCall(utils::StringStream& out,
         }
     }
 
-    out << builder_.Symbols().NameFor(func->Declaration()->name->symbol) << "(";
+    out << func->Declaration()->name->symbol.Name() << "(";
 
     bool first = true;
     for (auto* arg : call->Arguments()) {
@@ -995,6 +997,9 @@ bool GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
     }
     if (type == builtin::Function::kQuantizeToF16) {
         return EmitQuantizeToF16Call(out, expr, builtin);
+    }
+    if (type == builtin::Function::kTrunc) {
+        return EmitTruncCall(out, expr, builtin);
     }
     if (builtin->IsDataPacking()) {
         return EmitDataPackingCall(out, expr, builtin);
@@ -1135,7 +1140,7 @@ bool GeneratorImpl::EmitUniformBufferAccess(
     utils::StringStream& out,
     const ast::CallExpression* expr,
     const transform::DecomposeMemoryAccess::Intrinsic* intrinsic) {
-    auto const buffer = program_->Symbols().NameFor(intrinsic->Buffer()->identifier->symbol);
+    auto const buffer = intrinsic->Buffer()->identifier->symbol.Name();
     auto* const offset = expr->args[0];
 
     // offset in bytes
@@ -1423,7 +1428,7 @@ bool GeneratorImpl::EmitStorageBufferAccess(
     utils::StringStream& out,
     const ast::CallExpression* expr,
     const transform::DecomposeMemoryAccess::Intrinsic* intrinsic) {
-    auto const buffer = program_->Symbols().NameFor(intrinsic->Buffer()->identifier->symbol);
+    auto const buffer = intrinsic->Buffer()->identifier->symbol.Name();
     auto* const offset = expr->args[0];
     auto* const value = expr->args[1];
 
@@ -1588,10 +1593,10 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
 
     const sem::Function* sem_func = builder_.Sem().Get(func);
     auto* result_ty = sem_func->ReturnType();
-    const auto name = builder_.Symbols().NameFor(func->name->symbol);
+    const auto name = func->name->symbol.Name();
     auto& buf = *current_buffer_;
 
-    auto const buffer = program_->Symbols().NameFor(intrinsic->Buffer()->identifier->symbol);
+    auto const buffer = intrinsic->Buffer()->identifier->symbol.Name();
 
     auto rmw = [&](const char* hlsl) -> bool {
         {
@@ -2102,17 +2107,32 @@ bool GeneratorImpl::EmitSignCall(utils::StringStream& out,
 bool GeneratorImpl::EmitQuantizeToF16Call(utils::StringStream& out,
                                           const ast::CallExpression* expr,
                                           const sem::Builtin* builtin) {
-    // Emulate by casting to min16float and back again.
+    // Cast to f16 and back
     std::string width;
     if (auto* vec = builtin->ReturnType()->As<type::Vector>()) {
         width = std::to_string(vec->Width());
     }
-    out << "float" << width << "(min16float" << width << "(";
+    out << "f16tof32(f32tof16"
+        << "(";
     if (!EmitExpression(out, expr->args[0])) {
         return false;
     }
     out << "))";
     return true;
+}
+
+bool GeneratorImpl::EmitTruncCall(utils::StringStream& out,
+                                  const ast::CallExpression* expr,
+                                  const sem::Builtin* builtin) {
+    // HLSL's trunc is broken for very large/small float values.
+    // See crbug.com/tint/1883
+    return CallBuiltinHelper(  //
+        out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
+            // value < 0 ? ceil(value) : floor(value)
+            line(b) << "return " << params[0] << " < 0 ? ceil(" << params[0] << ") : floor("
+                    << params[0] << ");";
+            return true;
+        });
 }
 
 bool GeneratorImpl::EmitDataPackingCall(utils::StringStream& out,
@@ -2703,7 +2723,6 @@ std::string GeneratorImpl::generate_builtin_name(const sem::Builtin* builtin) {
         case builtin::Function::kTan:
         case builtin::Function::kTanh:
         case builtin::Function::kTranspose:
-        case builtin::Function::kTrunc:
             return builtin->str();
         case builtin::Function::kCountOneBits:  // uint
             return "countbits";
@@ -2775,7 +2794,7 @@ bool GeneratorImpl::EmitCase(const ast::SwitchStatement* s, size_t case_idx) {
         return false;
     }
 
-    if (!tint::IsAnyOf<ast::BreakStatement>(stmt->body->Last())) {
+    if (!tint::utils::IsAnyOf<ast::BreakStatement>(stmt->body->Last())) {
         line() << "break;";
     }
 
@@ -2828,7 +2847,7 @@ bool GeneratorImpl::EmitExpression(utils::StringStream& out, const ast::Expressi
 
 bool GeneratorImpl::EmitIdentifier(utils::StringStream& out,
                                    const ast::IdentifierExpression* expr) {
-    out << builder_.Symbols().NameFor(expr->identifier->symbol);
+    out << expr->identifier->symbol.Name();
     return true;
 }
 
@@ -2884,7 +2903,7 @@ bool GeneratorImpl::EmitFunction(const ast::Function* func) {
 
     {
         auto out = line();
-        auto name = builder_.Symbols().NameFor(func->name->symbol);
+        auto name = func->name->symbol.Name();
         // If the function returns an array, then we need to declare a typedef for
         // this.
         if (sem->ReturnType()->Is<type::Array>()) {
@@ -2943,7 +2962,7 @@ bool GeneratorImpl::EmitFunction(const ast::Function* func) {
             // correctly translate the parameter to a [RW]ByteAddressBuffer for
             // storage buffers and a uint4[N] for uniform buffers.
             if (!EmitTypeAndName(out, type, address_space, access,
-                                 builder_.Symbols().NameFor(v->Declaration()->name->symbol))) {
+                                 v->Declaration()->name->symbol.Name())) {
                 return false;
             }
         }
@@ -2986,7 +3005,7 @@ bool GeneratorImpl::EmitFunctionBodyWithDiscard(const ast::Function* func) {
     line() << "}";
 
     // Return an unused result that matches the type of the return value
-    auto name = builder_.Symbols().NameFor(builder_.Symbols().New("unused"));
+    auto name = builder_.Symbols().New("unused").Name();
     {
         auto out = line();
         if (!EmitTypeAndName(out, sem->ReturnType(), builtin::AddressSpace::kUndefined,
@@ -3047,9 +3066,9 @@ bool GeneratorImpl::EmitGlobalVariable(const ast::Variable* global) {
 }
 
 bool GeneratorImpl::EmitUniformVariable(const ast::Var* var, const sem::Variable* sem) {
-    auto binding_point = sem->As<sem::GlobalVariable>()->BindingPoint();
+    auto binding_point = *sem->As<sem::GlobalVariable>()->BindingPoint();
     auto* type = sem->Type()->UnwrapRef();
-    auto name = builder_.Symbols().NameFor(var->name->symbol);
+    auto name = var->name->symbol.Name();
     line() << "cbuffer cbuffer_" << name << RegisterAndSpace('b', binding_point) << " {";
 
     {
@@ -3070,13 +3089,13 @@ bool GeneratorImpl::EmitStorageVariable(const ast::Var* var, const sem::Variable
     auto* type = sem->Type()->UnwrapRef();
     auto out = line();
     if (!EmitTypeAndName(out, type, builtin::AddressSpace::kStorage, sem->Access(),
-                         builder_.Symbols().NameFor(var->name->symbol))) {
+                         var->name->symbol.Name())) {
         return false;
     }
 
     auto* global_sem = sem->As<sem::GlobalVariable>();
     out << RegisterAndSpace(sem->Access() == builtin::Access::kRead ? 't' : 'u',
-                            global_sem->BindingPoint())
+                            *global_sem->BindingPoint())
         << ";";
 
     return true;
@@ -3086,7 +3105,7 @@ bool GeneratorImpl::EmitHandleVariable(const ast::Var* var, const sem::Variable*
     auto* unwrapped_type = sem->Type()->UnwrapRef();
     auto out = line();
 
-    auto name = builder_.Symbols().NameFor(var->name->symbol);
+    auto name = var->name->symbol.Name();
     auto* type = sem->Type()->UnwrapRef();
     if (!EmitTypeAndName(out, type, sem->AddressSpace(), sem->Access(), name)) {
         return false;
@@ -3105,7 +3124,15 @@ bool GeneratorImpl::EmitHandleVariable(const ast::Var* var, const sem::Variable*
 
     if (register_space) {
         auto bp = sem->As<sem::GlobalVariable>()->BindingPoint();
-        out << " : register(" << register_space << bp.binding << ", space" << bp.group << ")";
+        out << " : register(" << register_space << bp->binding;
+        // Omit the space if it's 0, as it's the default.
+        // SM 5.0 doesn't support spaces, so we don't emit them if group is 0 for better
+        // compatibility.
+        if (bp->group == 0) {
+            out << ")";
+        } else {
+            out << ", space" << bp->group << ")";
+        }
     }
 
     out << ";";
@@ -3118,7 +3145,7 @@ bool GeneratorImpl::EmitPrivateVariable(const sem::Variable* var) {
 
     out << "static ";
 
-    auto name = builder_.Symbols().NameFor(decl->name->symbol);
+    auto name = decl->name->symbol.Name();
     auto* type = var->Type()->UnwrapRef();
     if (!EmitTypeAndName(out, type, var->AddressSpace(), var->Access(), name)) {
         return false;
@@ -3145,7 +3172,7 @@ bool GeneratorImpl::EmitWorkgroupVariable(const sem::Variable* var) {
 
     out << "groupshared ";
 
-    auto name = builder_.Symbols().NameFor(decl->name->symbol);
+    auto name = decl->name->symbol.Name();
     auto* type = var->Type()->UnwrapRef();
     if (!EmitTypeAndName(out, type, var->AddressSpace(), var->Access(), name)) {
         return false;
@@ -3249,8 +3276,7 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
         }
 
         if (!EmitTypeAndName(out, func_sem->ReturnType(), builtin::AddressSpace::kUndefined,
-                             builtin::Access::kUndefined,
-                             builder_.Symbols().NameFor(func->name->symbol))) {
+                             builtin::Access::kUndefined, func->name->symbol.Name())) {
             return false;
         }
         out << "(";
@@ -3273,7 +3299,7 @@ bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
             first = false;
 
             if (!EmitTypeAndName(out, type, sem->AddressSpace(), sem->Access(),
-                                 builder_.Symbols().NameFor(var->name->symbol))) {
+                                 var->name->symbol.Name())) {
                 return false;
             }
         }
@@ -3567,9 +3593,8 @@ bool GeneratorImpl::EmitValue(utils::StringStream& out, const type::Type* type, 
                             builtin::Access::kUndefined, "");
         },
         [&](Default) {
-            diagnostics_.add_error(
-                diag::System::Writer,
-                "Invalid type for value emission: " + type->FriendlyName(builder_.Symbols()));
+            diagnostics_.add_error(diag::System::Writer,
+                                   "Invalid type for value emission: " + type->FriendlyName());
             return false;
         });
 }
@@ -3776,11 +3801,11 @@ bool GeneratorImpl::EmitMemberAccessor(utils::StringStream& out,
         sem,
         [&](const sem::Swizzle*) {
             // Swizzles output the name directly
-            out << builder_.Symbols().NameFor(expr->member->symbol);
+            out << expr->member->symbol.Name();
             return true;
         },
         [&](const sem::StructMemberAccess* member_access) {
-            out << program_->Symbols().NameFor(member_access->Member()->Name());
+            out << member_access->Member()->Name().Name();
             return true;
         },
         [&](Default) {
@@ -4187,7 +4212,7 @@ bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
     {
         ScopedIndent si(b);
         for (auto* mem : str->Members()) {
-            auto mem_name = builder_.Symbols().NameFor(mem->Name());
+            auto mem_name = mem->Name().Name();
             auto* ty = mem->Type();
             auto out = line(b);
             std::string pre, post;
@@ -4304,8 +4329,7 @@ bool GeneratorImpl::EmitVar(const ast::Var* var) {
     auto* type = sem->Type()->UnwrapRef();
 
     auto out = line();
-    if (!EmitTypeAndName(out, type, sem->AddressSpace(), sem->Access(),
-                         builder_.Symbols().NameFor(var->name->symbol))) {
+    if (!EmitTypeAndName(out, type, sem->AddressSpace(), sem->Access(), var->name->symbol.Name())) {
         return false;
     }
 
@@ -4332,7 +4356,7 @@ bool GeneratorImpl::EmitLet(const ast::Let* let) {
     auto out = line();
     out << "const ";
     if (!EmitTypeAndName(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
-                         builder_.Symbols().NameFor(let->name->symbol))) {
+                         let->name->symbol.Name())) {
         return false;
     }
     out << " = ";

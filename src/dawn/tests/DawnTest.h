@@ -15,6 +15,7 @@
 #ifndef SRC_DAWN_TESTS_DAWNTEST_H_
 #define SRC_DAWN_TESTS_DAWNTEST_H_
 
+#include <atomic>
 #include <memory>
 #include <queue>
 #include <string>
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include "dawn/common/Log.h"
+#include "dawn/common/Mutex.h"
 #include "dawn/common/Platform.h"
 #include "dawn/common/Preprocessor.h"
 #include "dawn/dawn_proc_table.h"
@@ -166,6 +168,7 @@ class DawnTestEnvironment : public testing::Environment {
     void TearDown() override;
 
     bool UsesWire() const;
+    bool IsImplicitDeviceSyncEnabled() const;
     dawn::native::BackendValidationLevel GetBackendValidationLevel() const;
     dawn::native::Instance* GetInstance() const;
     bool HasVendorIdFilter() const;
@@ -193,6 +196,7 @@ class DawnTestEnvironment : public testing::Environment {
     bool ValidateToggles(dawn::native::Instance* instance) const;
 
     bool mUseWire = false;
+    bool mEnableImplicitDeviceSync = false;
     dawn::native::BackendValidationLevel mBackendValidationLevel =
         dawn::native::BackendValidationLevel::Disabled;
     std::string mANGLEBackend;
@@ -222,6 +226,7 @@ class DawnTestBase {
     void SetUp();
     void TearDown();
 
+    bool IsD3D11() const;
     bool IsD3D12() const;
     bool IsMetal() const;
     bool IsNull() const;
@@ -249,6 +254,7 @@ class DawnTestBase {
     bool IsAndroid() const;
 
     bool UsesWire() const;
+    bool IsImplicitDeviceSyncEnabled() const;
     bool IsBackendValidationEnabled() const;
     bool IsFullBackendValidationEnabled() const;
     bool RunSuppressedTests() const;
@@ -256,6 +262,7 @@ class DawnTestBase {
     bool IsDXC() const;
 
     bool IsAsan() const;
+    bool IsTsan() const;
 
     bool HasToggleEnabled(const char* workaround) const;
 
@@ -618,7 +625,7 @@ class DawnTestBase {
     // Maps all the buffers and fill ReadbackSlot::mappedData
     void MapSlotsSynchronously();
     static void SlotMapCallback(WGPUBufferMapAsyncStatus status, void* userdata);
-    size_t mNumPendingMapOperations = 0;
+    std::atomic<size_t> mNumPendingMapOperations = 0;
 
     // Reserve space where the data for an expectation can be copied
     struct ReadbackReservation {
@@ -651,6 +658,8 @@ class DawnTestBase {
     WGPUDevice mLastCreatedBackendDevice;
 
     std::unique_ptr<dawn::platform::Platform> mTestPlatform;
+
+    dawn::Mutex mMutex;
 };
 
 #define DAWN_SKIP_TEST_IF_BASE(condition, type, reason)   \

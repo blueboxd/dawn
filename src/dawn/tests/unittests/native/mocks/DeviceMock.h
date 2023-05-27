@@ -110,11 +110,7 @@ class DeviceMock : public DeviceBase {
                 (override));
     MOCK_METHOD(ResultOrError<Ref<SwapChainBase>>,
                 CreateSwapChainImpl,
-                (const SwapChainDescriptor*),
-                (override));
-    MOCK_METHOD(ResultOrError<Ref<NewSwapChainBase>>,
-                CreateSwapChainImpl,
-                (Surface*, NewSwapChainBase*, const SwapChainDescriptor*),
+                (Surface*, SwapChainBase*, const SwapChainDescriptor*),
                 (override));
     MOCK_METHOD(ResultOrError<Ref<TextureBase>>,
                 CreateTextureImpl,
@@ -124,6 +120,11 @@ class DeviceMock : public DeviceBase {
                 CreateTextureViewImpl,
                 (TextureBase*, const TextureViewDescriptor*),
                 (override));
+
+    MOCK_METHOD(ResultOrError<wgpu::TextureUsage>,
+                GetSupportedSurfaceUsageImpl,
+                (const Surface*),
+                (const, override));
 
     MOCK_METHOD(MaybeError, TickImpl, (), (override));
 

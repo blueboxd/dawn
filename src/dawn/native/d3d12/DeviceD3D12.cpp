@@ -396,6 +396,8 @@ void Device::ForceEventualFlushOfCommands() {
 }
 
 MaybeError Device::ExecutePendingCommandContext() {
+    ASSERT(IsLockedByCurrentThreadIfNeeded());
+
     return mPendingCommands.ExecuteCommandList(this);
 }
 
@@ -441,12 +443,8 @@ ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     return ShaderModule::Create(this, descriptor, parseResult, compilationMessages);
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
-    const SwapChainDescriptor* descriptor) {
-    return OldSwapChain::Create(this, descriptor);
-}
-ResultOrError<Ref<NewSwapChainBase>> Device::CreateSwapChainImpl(
     Surface* surface,
-    NewSwapChainBase* previousSwapChain,
+    SwapChainBase* previousSwapChain,
     const SwapChainDescriptor* descriptor) {
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
@@ -584,7 +582,7 @@ std::unique_ptr<ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
     const Format* format = GetInternalFormat(textureDescriptor->format).AcquireSuccess();
     if (format->IsMultiPlanar()) {
         if (ConsumedError(ValidateD3D12VideoTextureCanBeShared(
-                this, D3D12TextureFormat(textureDescriptor->format)))) {
+                this, d3d::DXGITextureFormat(textureDescriptor->format)))) {
             return nullptr;
         }
     }
@@ -733,8 +731,8 @@ void Device::DestroyImpl() {
 
     while (!mExternalImageList.empty()) {
         ExternalImageDXGIImpl* externalImage = mExternalImageList.head()->value();
-        // ExternalImageDXGIImpl::Destroy() calls RemoveFromList().
-        externalImage->Destroy();
+        // ExternalImageDXGIImpl::DestroyInternal() calls RemoveFromList().
+        externalImage->DestroyInternal();
     }
 
     mZeroBuffer = nullptr;

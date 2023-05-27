@@ -553,6 +553,7 @@ TEST_P(BufferMappingTests, RegressChromium1421170) {
 }
 
 DAWN_INSTANTIATE_TEST(BufferMappingTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -713,7 +714,11 @@ TEST_P(BufferMappingCallbackTests, EmptySubmissionWriteAndThenMap) {
     buffer.Unmap();
 }
 
-DAWN_INSTANTIATE_TEST(BufferMappingCallbackTests, D3D12Backend(), MetalBackend(), VulkanBackend());
+DAWN_INSTANTIATE_TEST(BufferMappingCallbackTests,
+                      D3D11Backend(),
+                      D3D12Backend(),
+                      MetalBackend(),
+                      VulkanBackend());
 
 class BufferMappedAtCreationTests : public DawnTest {
   protected:
@@ -774,6 +779,10 @@ TEST_P(BufferMappedAtCreationTests, MapReadUsageSmall) {
 
 // Test that the simplest mappedAtCreation works for non-mappable buffers.
 TEST_P(BufferMappedAtCreationTests, NonMappableUsageSmall) {
+    // ID3D11DeviceContext::CopySubresourceRegion doesn't allow copying between mapped buffers.
+    // TODO(dawn:1772): enable this test for D3D11
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsBackendValidationEnabled());
+
     uint32_t myData = 4239;
     wgpu::Buffer buffer = BufferMappedAtCreationWithData(wgpu::BufferUsage::CopySrc, {myData});
     UnmapBuffer(buffer);
@@ -815,6 +824,10 @@ TEST_P(BufferMappedAtCreationTests, MapReadUsageLarge) {
 
 // Test mappedAtCreation for a large non-mappable buffer
 TEST_P(BufferMappedAtCreationTests, NonMappableUsageLarge) {
+    // ID3D11DeviceContext::CopySubresourceRegion doesn't allow copying between mapped buffers.
+    // TODO(dawn:1772): enable this test for D3D11
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsBackendValidationEnabled());
+
     constexpr uint64_t kDataSize = 1000 * 1000;
     std::vector<uint32_t> myData;
     for (uint32_t i = 0; i < kDataSize; ++i) {
@@ -961,6 +974,7 @@ TEST_P(BufferMappedAtCreationTests, GetMappedRangeZeroSized) {
 }
 
 DAWN_INSTANTIATE_TEST(BufferMappedAtCreationTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       D3D12Backend({}, {"use_d3d12_resource_heap_tier2"}),
                       MetalBackend(),
@@ -984,6 +998,7 @@ TEST_P(BufferTests, CreateBufferOOM) {
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
     DAWN_TEST_UNSUPPORTED_IF(IsAsan());
+    DAWN_TEST_UNSUPPORTED_IF(IsTsan());
 
     wgpu::BufferDescriptor descriptor;
     descriptor.usage = wgpu::BufferUsage::CopyDst;
@@ -1010,6 +1025,7 @@ TEST_P(BufferTests, BufferMappedAtCreationOOM) {
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
     DAWN_TEST_UNSUPPORTED_IF(IsAsan());
+    DAWN_TEST_UNSUPPORTED_IF(IsTsan());
 
     // Test non-mappable buffer
     {
@@ -1076,6 +1092,7 @@ TEST_P(BufferTests, CreateBufferOOMMapAsync) {
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
     DAWN_TEST_UNSUPPORTED_IF(IsAsan());
+    DAWN_TEST_UNSUPPORTED_IF(IsTsan());
 
     auto RunTest = [this](const wgpu::BufferDescriptor& descriptor) {
         wgpu::Buffer buffer;
@@ -1108,6 +1125,7 @@ TEST_P(BufferTests, CreateBufferOOMMapAsync) {
 }
 
 DAWN_INSTANTIATE_TEST(BufferTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -1140,6 +1158,7 @@ TEST_P(BufferNoSuballocationTests, WriteBufferThenDestroy) {
 }
 
 DAWN_INSTANTIATE_TEST(BufferNoSuballocationTests,
+                      D3D11Backend({"disable_resource_suballocation"}),
                       D3D12Backend({"disable_resource_suballocation"}),
                       MetalBackend({"disable_resource_suballocation"}),
                       OpenGLBackend({"disable_resource_suballocation"}),

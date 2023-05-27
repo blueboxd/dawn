@@ -43,9 +43,14 @@ struct MapRequestTask : TrackTaskCallback {
 
   private:
     void FinishImpl() override {
-        ASSERT(mSerial != kMaxExecutionSerial);
-        TRACE_EVENT1(mPlatform, General, "Buffer::TaskInFlight::Finished", "serial",
-                     uint64_t(mSerial));
+        {
+            // This is called from a callback, and no lock will be held by default. Hence, we need
+            // to lock the mutex now because mSerial might be changed by another thread.
+            auto deviceLock(buffer->GetDevice()->GetScopedLock());
+            ASSERT(mSerial != kMaxExecutionSerial);
+            TRACE_EVENT1(mPlatform, General, "Buffer::TaskInFlight::Finished", "serial",
+                         uint64_t(mSerial));
+        }
         buffer->CallbackOnMapRequestCompleted(id, WGPUBufferMapAsyncStatus_Success);
     }
     void HandleDeviceLossImpl() override {
@@ -126,11 +131,9 @@ MaybeError ValidateBufferDescriptor(DeviceBase* device, const BufferDescriptor* 
                     "Buffer is mapped at creation but its size (%u) is not a multiple of 4.",
                     descriptor->size);
 
-    if (descriptor->size > device->GetLimits().v1.maxBufferSize) {
-        DAWN_TRY(DAWN_MAKE_DEPRECATION_ERROR(
-            device, "Buffer size (%u) exceeds the max buffer size limit (%u).", descriptor->size,
-            device->GetLimits().v1.maxBufferSize));
-    }
+    DAWN_INVALID_IF(descriptor->size > device->GetLimits().v1.maxBufferSize,
+                    "Buffer size (%u) exceeds the max buffer size limit (%u).", descriptor->size,
+                    device->GetLimits().v1.maxBufferSize);
 
     return {};
 }
@@ -172,7 +175,7 @@ BufferBase::BufferBase(DeviceBase* device, const BufferDescriptor* descriptor)
 BufferBase::BufferBase(DeviceBase* device,
                        const BufferDescriptor* descriptor,
                        ObjectBase::ErrorTag tag)
-    : ApiObjectBase(device, tag),
+    : ApiObjectBase(device, tag, descriptor->label),
       mSize(descriptor->size),
       mUsage(descriptor->usage),
       mState(BufferState::Unmapped) {
@@ -245,6 +248,9 @@ wgpu::BufferMapState BufferBase::APIGetMapState() const {
             return wgpu::BufferMapState::Pending;
         case BufferState::Unmapped:
         case BufferState::Destroyed:
+            return wgpu::BufferMapState::Unmapped;
+        default:
+            UNREACHABLE();
             return wgpu::BufferMapState::Unmapped;
     }
 }
@@ -597,9 +603,14 @@ MaybeError BufferBase::ValidateUnmap() const {
 
 void BufferBase::CallbackOnMapRequestCompleted(MapRequestID mapID,
                                                WGPUBufferMapAsyncStatus status) {
-    if (mapID == mLastMapID && status == WGPUBufferMapAsyncStatus_Success &&
-        mState == BufferState::PendingMap) {
-        mState = BufferState::Mapped;
+    {
+        // This is called from a callback, and no lock will be held by default. Hence, we need to
+        // lock the mutex now because this will modify the buffer's states.
+        auto deviceLock(GetDevice()->GetScopedLock());
+        if (mapID == mLastMapID && status == WGPUBufferMapAsyncStatus_Success &&
+            mState == BufferState::PendingMap) {
+            mState = BufferState::Mapped;
+        }
     }
 
     auto cb = PrepareMappingCallback(mapID, status);

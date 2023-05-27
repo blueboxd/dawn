@@ -24,6 +24,7 @@ group("tests") {
     ":dawn_end2end_tests",
     ":dawn_perf_tests",
     ":dawn_unittests",
+    "${dawn_root}/src/dawn/tests/benchmarks:dawn_benchmarks",
   ]
 }
 
@@ -293,6 +294,7 @@ dawn_test("dawn_unittests") {
     "unittests/LimitsTests.cpp",
     "unittests/LinkedListTests.cpp",
     "unittests/MathTests.cpp",
+    "unittests/MutexTests.cpp",
     "unittests/NumericTests.cpp",
     "unittests/ObjectBaseTests.cpp",
     "unittests/PerStageTests.cpp",
@@ -530,6 +532,7 @@ source_set("end2end_tests_sources") {
     "end2end/MemoryAllocationStressTests.cpp",
     "end2end/MultisampledRenderingTests.cpp",
     "end2end/MultisampledSamplingTests.cpp",
+    "end2end/MultithreadTests.cpp",
     "end2end/NonzeroBufferCreationTests.cpp",
     "end2end/NonzeroTextureCreationTests.cpp",
     "end2end/ObjectCachingTests.cpp",

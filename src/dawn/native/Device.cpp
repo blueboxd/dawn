@@ -277,6 +277,13 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
                         CreateShaderModule(&descriptor));
     }
 
+    if (HasFeature(Feature::ImplicitDeviceSynchronization)) {
+        mMutex = AcquireRef(new Mutex);
+    } else {
+        mMutex = nullptr;
+    }
+
+    // mAdapter is not set for mock test devices.
     // TODO(crbug.com/dawn/1702): using a mock adapter could avoid the null checking.
     if (mAdapter != nullptr) {
         mAdapter->GetInstance()->AddDevice(this);
@@ -286,30 +293,38 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
 }
 
 void DeviceBase::WillDropLastExternalRef() {
-    // DeviceBase uses RefCountedWithExternalCount to break refcycles.
-    //
-    // DeviceBase holds multiple Refs to various API objects (pipelines, buffers, etc.) which are
-    // used to implement various device-level facilities. These objects are cached on the device,
-    // so we want to keep them around instead of making transient allocations. However, many of
-    // the objects also hold a Ref<Device> back to their parent device.
-    //
-    // In order to break this cycle and prevent leaks, when the application drops the last external
-    // ref and WillDropLastExternalRef is called, the device clears out any member refs to API
-    // objects that hold back-refs to the device - thus breaking any reference cycles.
-    //
-    // Currently, this is done by calling Destroy on the device to cease all in-flight work and
-    // drop references to internal objects. We may want to lift this in the future, but it would
-    // make things more complex because there might be pending tasks which hold a ref back to the
-    // device - either directly or indirectly. We would need to ensure those tasks don't create new
-    // reference cycles, and we would need to continuously try draining the pending tasks to clear
-    // out all remaining refs.
-    Destroy();
+    {
+        // This will be invoked by API side, so we need to lock.
+        // Note: we cannot hold the lock when flushing the callbacks so have to limit the scope of
+        // the lock.
+        auto deviceLock(GetScopedLock());
+
+        // DeviceBase uses RefCountedWithExternalCount to break refcycles.
+        //
+        // DeviceBase holds multiple Refs to various API objects (pipelines, buffers, etc.) which
+        // are used to implement various device-level facilities. These objects are cached on the
+        // device, so we want to keep them around instead of making transient allocations. However,
+        // many of the objects also hold a Ref<Device> back to their parent device.
+        //
+        // In order to break this cycle and prevent leaks, when the application drops the last
+        // external ref and WillDropLastExternalRef is called, the device clears out any member refs
+        // to API objects that hold back-refs to the device - thus breaking any reference cycles.
+        //
+        // Currently, this is done by calling Destroy on the device to cease all in-flight work and
+        // drop references to internal objects. We may want to lift this in the future, but it would
+        // make things more complex because there might be pending tasks which hold a ref back to
+        // the device - either directly or indirectly. We would need to ensure those tasks don't
+        // create new reference cycles, and we would need to continuously try draining the pending
+        // tasks to clear out all remaining refs.
+        Destroy();
+    }
 
     // Flush last remaining callback tasks.
     do {
-        mCallbackTaskManager->Flush();
+        FlushCallbackTaskQueue();
     } while (!mCallbackTaskManager->IsEmpty());
 
+    auto deviceLock(GetScopedLock());
     // Drop te device's reference to the queue. Because the application dropped the last external
     // references, they can no longer get the queue from APIGetQueue().
     mQueue = nullptr;
@@ -570,7 +585,8 @@ void DeviceBase::APISetLoggingCallback(wgpu::LoggingCallback callback, void* use
     // resetting) the resources pointed by such pointer may be freed. Flush all deferred
     // callback tasks to guarantee we are never going to use the previous callback after
     // this call.
-    mCallbackTaskManager->Flush();
+    FlushCallbackTaskQueue();
+    auto deviceLock(GetScopedLock());
     if (IsLost()) {
         return;
     }
@@ -584,7 +600,8 @@ void DeviceBase::APISetUncapturedErrorCallback(wgpu::ErrorCallback callback, voi
     // resetting) the resources pointed by such pointer may be freed. Flush all deferred
     // callback tasks to guarantee we are never going to use the previous callback after
     // this call.
-    mCallbackTaskManager->Flush();
+    FlushCallbackTaskQueue();
+    auto deviceLock(GetScopedLock());
     if (IsLost()) {
         return;
     }
@@ -598,7 +615,8 @@ void DeviceBase::APISetDeviceLostCallback(wgpu::DeviceLostCallback callback, voi
     // resetting) the resources pointed by such pointer may be freed. Flush all deferred
     // callback tasks to guarantee we are never going to use the previous callback after
     // this call.
-    mCallbackTaskManager->Flush();
+    FlushCallbackTaskQueue();
+    auto deviceLock(GetScopedLock());
     if (IsLost()) {
         return;
     }
@@ -851,6 +869,7 @@ Ref<RenderPipelineBase> DeviceBase::GetCachedRenderPipeline(
 
 Ref<ComputePipelineBase> DeviceBase::AddOrGetCachedComputePipeline(
     Ref<ComputePipelineBase> computePipeline) {
+    ASSERT(IsLockedByCurrentThreadIfNeeded());
     auto [cachedPipeline, inserted] = mCaches->computePipelines.insert(computePipeline.Get());
     if (inserted) {
         computePipeline->SetIsCachedReference();
@@ -862,6 +881,7 @@ Ref<ComputePipelineBase> DeviceBase::AddOrGetCachedComputePipeline(
 
 Ref<RenderPipelineBase> DeviceBase::AddOrGetCachedRenderPipeline(
     Ref<RenderPipelineBase> renderPipeline) {
+    ASSERT(IsLockedByCurrentThreadIfNeeded());
     auto [cachedPipeline, inserted] = mCaches->renderPipelines.insert(renderPipeline.Get());
     if (inserted) {
         renderPipeline->SetIsCachedReference();
@@ -1053,7 +1073,7 @@ BindGroupBase* DeviceBase::APICreateBindGroup(const BindGroupDescriptor* descrip
     Ref<BindGroupBase> result;
     if (ConsumedError(CreateBindGroup(descriptor), &result, "calling %s.CreateBindGroup(%s).", this,
                       descriptor)) {
-        return BindGroupBase::MakeError(this);
+        return BindGroupBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
     return result.Detach();
 }
@@ -1062,7 +1082,7 @@ BindGroupLayoutBase* DeviceBase::APICreateBindGroupLayout(
     Ref<BindGroupLayoutBase> result;
     if (ConsumedError(CreateBindGroupLayout(descriptor), &result,
                       "calling %s.CreateBindGroupLayout(%s).", this, descriptor)) {
-        return BindGroupLayoutBase::MakeError(this);
+        return BindGroupLayoutBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
     return result.Detach();
 }
@@ -1079,7 +1099,7 @@ CommandEncoder* DeviceBase::APICreateCommandEncoder(const CommandEncoderDescript
     Ref<CommandEncoder> result;
     if (ConsumedError(CreateCommandEncoder(descriptor), &result,
                       "calling %s.CreateCommandEncoder(%s).", this, descriptor)) {
-        return CommandEncoder::MakeError(this);
+        return CommandEncoder::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
     return result.Detach();
 }
@@ -1091,7 +1111,7 @@ ComputePipelineBase* DeviceBase::APICreateComputePipeline(
     Ref<ComputePipelineBase> result;
     if (ConsumedError(CreateComputePipeline(descriptor), &result,
                       "calling %s.CreateComputePipeline(%s).", this, descriptor)) {
-        return ComputePipelineBase::MakeError(this);
+        return ComputePipelineBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
     return result.Detach();
 }
@@ -1122,7 +1142,7 @@ PipelineLayoutBase* DeviceBase::APICreatePipelineLayout(
     Ref<PipelineLayoutBase> result;
     if (ConsumedError(CreatePipelineLayout(descriptor), &result,
                       "calling %s.CreatePipelineLayout(%s).", this, descriptor)) {
-        return PipelineLayoutBase::MakeError(this);
+        return PipelineLayoutBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
     return result.Detach();
 }
@@ -1138,7 +1158,7 @@ SamplerBase* DeviceBase::APICreateSampler(const SamplerDescriptor* descriptor) {
     Ref<SamplerBase> result;
     if (ConsumedError(CreateSampler(descriptor), &result, "calling %s.CreateSampler(%s).", this,
                       descriptor)) {
-        return SamplerBase::MakeError(this);
+        return SamplerBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
     return result.Detach();
 }
@@ -1169,7 +1189,7 @@ RenderBundleEncoder* DeviceBase::APICreateRenderBundleEncoder(
     Ref<RenderBundleEncoder> result;
     if (ConsumedError(CreateRenderBundleEncoder(descriptor), &result,
                       "calling %s.CreateRenderBundleEncoder(%s).", this, descriptor)) {
-        return RenderBundleEncoder::MakeError(this);
+        return RenderBundleEncoder::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
     return result.Detach();
 }
@@ -1181,7 +1201,7 @@ RenderPipelineBase* DeviceBase::APICreateRenderPipeline(
     Ref<RenderPipelineBase> result;
     if (ConsumedError(CreateRenderPipeline(descriptor), &result,
                       "calling %s.CreateRenderPipeline(%s).", this, descriptor)) {
-        return RenderPipelineBase::MakeError(this);
+        return RenderPipelineBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
     return result.Detach();
 }
@@ -1195,7 +1215,7 @@ ShaderModuleBase* DeviceBase::APICreateShaderModule(const ShaderModuleDescriptor
     if (ConsumedError(CreateShaderModule(descriptor, compilationMessages.get()), &result,
                       "calling %s.CreateShaderModule(%s).", this, descriptor)) {
         DAWN_ASSERT(result == nullptr);
-        result = ShaderModuleBase::MakeError(this);
+        result = ShaderModuleBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
     // Move compilation messages into ShaderModuleBase and emit tint errors and warnings
     // after all other operations are finished, even if any of them is failed and result
@@ -1220,6 +1240,15 @@ TextureBase* DeviceBase::APICreateTexture(const TextureDescriptor* descriptor) {
         return TextureBase::MakeError(this, descriptor);
     }
     return result.Detach();
+}
+
+wgpu::TextureUsage DeviceBase::APIGetSupportedSurfaceUsage(Surface* surface) {
+    wgpu::TextureUsage result;
+    if (ConsumedError(GetSupportedSurfaceUsage(surface), &result,
+                      "calling %s.GetSupportedSurfaceUsage().", this)) {
+        return wgpu::TextureUsage::None;
+    }
+    return result;
 }
 
 // For Dawn Wire
@@ -1267,15 +1296,23 @@ bool DeviceBase::APITick() {
     // Tick may trigger callbacks which drop a ref to the device itself. Hold a Ref to ourselves
     // to avoid deleting |this| in the middle of this function call.
     Ref<DeviceBase> self(this);
-    if (ConsumedError(Tick())) {
-        mCallbackTaskManager->Flush();
-        return false;
+    bool tickError;
+    {
+        // Note: we cannot hold the lock when flushing the callbacks so have to limit the scope of
+        // the lock here.
+        auto deviceLock(GetScopedLock());
+        tickError = ConsumedError(Tick());
     }
 
     // We have to check callback tasks in every APITick because it is not related to any global
     // serials.
-    mCallbackTaskManager->Flush();
+    FlushCallbackTaskQueue();
 
+    if (tickError) {
+        return false;
+    }
+
+    auto deviceLock(GetScopedLock());
     // We don't throw an error when device is lost. This allows pending callbacks to be
     // executed even after the Device is lost/destroyed.
     if (IsLost()) {
@@ -1746,27 +1783,20 @@ ResultOrError<Ref<SwapChainBase>> DeviceBase::CreateSwapChain(
                          descriptor);
     }
 
-    // TODO(dawn:269): Remove this code path once implementation-based swapchains are removed.
-    if (surface == nullptr) {
-        return CreateSwapChainImpl(descriptor);
-    } else {
-        ASSERT(descriptor->implementation == 0);
+    SwapChainBase* previousSwapChain = surface->GetAttachedSwapChain();
+    ResultOrError<Ref<SwapChainBase>> maybeNewSwapChain =
+        CreateSwapChainImpl(surface, previousSwapChain, descriptor);
 
-        NewSwapChainBase* previousSwapChain = surface->GetAttachedSwapChain();
-        ResultOrError<Ref<NewSwapChainBase>> maybeNewSwapChain =
-            CreateSwapChainImpl(surface, previousSwapChain, descriptor);
-
-        if (previousSwapChain != nullptr) {
-            previousSwapChain->DetachFromSurface();
-        }
-
-        Ref<NewSwapChainBase> newSwapChain;
-        DAWN_TRY_ASSIGN(newSwapChain, std::move(maybeNewSwapChain));
-
-        newSwapChain->SetIsAttached();
-        surface->SetAttachedSwapChain(newSwapChain.Get());
-        return newSwapChain;
+    if (previousSwapChain != nullptr) {
+        previousSwapChain->DetachFromSurface();
     }
+
+    Ref<SwapChainBase> newSwapChain;
+    DAWN_TRY_ASSIGN(newSwapChain, std::move(maybeNewSwapChain));
+
+    newSwapChain->SetIsAttached();
+    surface->SetAttachedSwapChain(newSwapChain.Get());
+    return newSwapChain;
 }
 
 ResultOrError<Ref<TextureBase>> DeviceBase::CreateTexture(const TextureDescriptor* descriptor) {
@@ -1793,6 +1823,18 @@ ResultOrError<Ref<TextureViewBase>> DeviceBase::CreateTextureView(
     return CreateTextureViewImpl(texture, &desc);
 }
 
+ResultOrError<wgpu::TextureUsage> DeviceBase::GetSupportedSurfaceUsage(
+    const Surface* surface) const {
+    DAWN_TRY(ValidateIsAlive());
+
+    if (IsValidationEnabled()) {
+        DAWN_INVALID_IF(!HasFeature(Feature::SurfaceCapabilities), "%s is not enabled.",
+                        wgpu::FeatureName::SurfaceCapabilities);
+    }
+
+    return GetSupportedSurfaceUsageImpl(surface);
+}
+
 // Other implementation details
 
 DynamicUploader* DeviceBase::GetDynamicUploader() const {
@@ -1811,6 +1853,26 @@ bool DeviceBase::IsToggleEnabled(Toggle toggle) const {
 
 void DeviceBase::ForceSetToggleForTesting(Toggle toggle, bool isEnabled) {
     mToggles.ForceSet(toggle, isEnabled);
+}
+
+void DeviceBase::FlushCallbackTaskQueue() {
+    // Callbacks might cause re-entrances. Mutex shouldn't be locked. So we expect there is no
+    // locked mutex before entering this method.
+    ASSERT(mMutex == nullptr || !mMutex->IsLockedByCurrentThread());
+
+    Ref<CallbackTaskManager> callbackTaskManager;
+
+    {
+        // This is a data race with the assignment to InstanceBase's callback queue manager in
+        // WillDropLastExternalRef(). Need to protect with a lock and keep the old
+        // mCallbackTaskManager alive.
+        // TODO(crbug.com/dawn/752): In future, all devices should use InstanceBase's callback queue
+        // manager from the start. So we won't need to care about data race at that point.
+        auto deviceLock(GetScopedLock());
+        callbackTaskManager = mCallbackTaskManager;
+    }
+
+    callbackTaskManager->Flush();
 }
 
 const CombinedLimits& DeviceBase::GetLimits() const {
@@ -1843,7 +1905,15 @@ void DeviceBase::AddComputePipelineAsyncCallbackTask(
             // CreateComputePipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
             // thread-safe.
             ASSERT(mPipeline != nullptr);
-            mPipeline = mPipeline->GetDevice()->AddOrGetCachedComputePipeline(mPipeline);
+            {
+                // This is called inside a callback, and no lock will be held by default so we have
+                // to lock now to protect the cache.
+                // Note: we don't lock inside AddOrGetCachedComputePipeline() to avoid deadlock
+                // because many places calling that method might already have the lock held. For
+                // example, APICreateComputePipeline()
+                auto deviceLock(mPipeline->GetDevice()->GetScopedLock());
+                mPipeline = mPipeline->GetDevice()->AddOrGetCachedComputePipeline(mPipeline);
+            }
 
             CreateComputePipelineAsyncCallbackTask::FinishImpl();
         }
@@ -1868,6 +1938,12 @@ void DeviceBase::AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipe
             // CreateRenderPipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
             // thread-safe.
             if (mPipeline.Get() != nullptr) {
+                // This is called inside a callback, and no lock will be held by default so we have
+                // to lock now to protect the cache.
+                // Note: we don't lock inside AddOrGetCachedRenderPipeline() to avoid deadlock
+                // because many places calling that method might already have the lock held. For
+                // example, APICreateRenderPipeline()
+                auto deviceLock(mPipeline->GetDevice()->GetScopedLock());
                 mPipeline = mPipeline->GetDevice()->AddOrGetCachedRenderPipeline(mPipeline);
             }
 
@@ -1979,6 +2055,18 @@ MaybeError DeviceBase::CopyFromStagingToTexture(BufferBase* source,
         ForceEventualFlushOfCommands();
     }
     return {};
+}
+
+Mutex::AutoLockAndHoldRef DeviceBase::GetScopedLockSafeForDelete() {
+    return Mutex::AutoLockAndHoldRef(mMutex);
+}
+
+Mutex::AutoLock DeviceBase::GetScopedLock() {
+    return Mutex::AutoLock(mMutex.Get());
+}
+
+bool DeviceBase::IsLockedByCurrentThreadIfNeeded() const {
+    return mMutex == nullptr || mMutex->IsLockedByCurrentThread();
 }
 
 IgnoreLazyClearCountScope::IgnoreLazyClearCountScope(DeviceBase* device)

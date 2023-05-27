@@ -42,6 +42,7 @@ MaybeError AdapterBase::Initialize() {
 
     EnableFeature(Feature::DawnNative);
     EnableFeature(Feature::DawnInternalUsages);
+    EnableFeature(Feature::ImplicitDeviceSynchronization);
     InitializeSupportedFeaturesImpl();
 
     DAWN_TRY_CONTEXT(
@@ -81,6 +82,13 @@ MaybeError AdapterBase::Initialize() {
         std::min(mLimits.v1.maxUniformBufferBindingSize, mLimits.v1.maxBufferSize);
 
     return {};
+}
+
+InstanceBase* AdapterBase::APIGetInstance() const {
+    auto instance = GetInstance();
+    ASSERT(instance != nullptr);
+    instance->APIReference();
+    return instance;
 }
 
 bool AdapterBase::APIGetLimits(SupportedLimits* limits) const {
