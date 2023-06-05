@@ -68,6 +68,12 @@
         //* trusted boundary.
         {%- set Provider = ", provider" if member.type.may_have_dawn_object else "" -%}
         WIRE_TRY({{as_cType(member.type.name)}}Serialize({{in}}, &{{out}}, buffer{{Provider}}));
+    {%- elif member.type.category == "function pointer" -%}
+        //* Function pointers cannot be serialized.
+        if ({{in}} != nullptr) {
+            return WireResult::FatalError;
+        }
+        {{out}} = nullptr;
     {%- else -%}
         {{out}} = {{in}};
     {%- endif -%}
@@ -89,6 +95,12 @@
                 {%- endif -%}
             ));
         {%- endif -%}
+    {%- elif member.type.category == "function pointer" -%}
+        //* Function pointers cannot be deserialized.
+        if ({{in}} != nullptr) {
+            return WireResult::FatalError;
+        }
+        {{out}} = nullptr;
     {%- else -%}
         static_assert(sizeof({{out}}) >= sizeof({{in}}), "Deserialize assignment may not narrow.");
         {{out}} = {{in}};
@@ -435,24 +447,23 @@
     {% set Cmd = Name + "Cmd" %}
 
     size_t {{Cmd}}::GetRequiredSize() const {
-        size_t size = WireAlignSizeof<{{Name}}Transfer>() + {{Name}}GetExtraRequiredSize(*this);
-        return size;
+        return WireAlignSizeof<{{Name}}Transfer>() + {{Name}}GetExtraRequiredSize(*this);
     }
 
     {% if command.may_have_dawn_object %}
         WireResult {{Cmd}}::Serialize(
             size_t commandSize,
-            SerializeBuffer* buffer,
+            SerializeBuffer* serializeBuffer,
             const ObjectIdProvider& provider
         ) const {
             {{Name}}Transfer* transfer;
-            WIRE_TRY(buffer->Next(&transfer));
+            WIRE_TRY(serializeBuffer->Next(&transfer));
             transfer->commandSize = commandSize;
-            return ({{Name}}Serialize(*this, transfer, buffer, provider));
+            return ({{Name}}Serialize(*this, transfer, serializeBuffer, provider));
         }
-        WireResult {{Cmd}}::Serialize(size_t commandSize, SerializeBuffer* buffer) const {
+        WireResult {{Cmd}}::Serialize(size_t commandSize, SerializeBuffer* serializeBuffer) const {
             ErrorObjectIdProvider provider;
-            return Serialize(commandSize, buffer, provider);
+            return Serialize(commandSize, serializeBuffer, provider);
         }
 
         WireResult {{Cmd}}::Deserialize(
@@ -469,18 +480,18 @@
             return Deserialize(deserializeBuffer, allocator, resolver);
         }
     {% else %}
-        WireResult {{Cmd}}::Serialize(size_t commandSize, SerializeBuffer* buffer) const {
+        WireResult {{Cmd}}::Serialize(size_t commandSize, SerializeBuffer* serializeBuffer) const {
             {{Name}}Transfer* transfer;
-            WIRE_TRY(buffer->Next(&transfer));
+            WIRE_TRY(serializeBuffer->Next(&transfer));
             transfer->commandSize = commandSize;
-            return ({{Name}}Serialize(*this, transfer, buffer));
+            return ({{Name}}Serialize(*this, transfer, serializeBuffer));
         }
         WireResult {{Cmd}}::Serialize(
             size_t commandSize,
-            SerializeBuffer* buffer,
+            SerializeBuffer* serializeBuffer,
             const ObjectIdProvider&
         ) const {
-            return Serialize(commandSize, buffer);
+            return Serialize(commandSize, serializeBuffer);
         }
 
         WireResult {{Cmd}}::Deserialize(DeserializeBuffer* deserializeBuffer, DeserializeAllocator* allocator) {

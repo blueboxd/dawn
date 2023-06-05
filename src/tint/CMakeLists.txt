@@ -525,6 +525,8 @@ list(APPEND TINT_LIB_SRCS
   utils/bump_allocator.h
   utils/castable.cc
   utils/castable.h
+  utils/cli.cc
+  utils/cli.h
   utils/compiler_macros.h
   utils/concat.h
   utils/crc32.h
@@ -714,8 +716,11 @@ endif()
 
 if(${TINT_BUILD_IR})
   list(APPEND TINT_LIB_SRCS
+    ir/access.cc
+    ir/access.h
     ir/binary.cc
     ir/binary.h
+    ir/binding_point.h
     ir/bitcast.cc
     ir/bitcast.h
     ir/block.cc
@@ -762,6 +767,7 @@ if(${TINT_BUILD_IR})
     ir/instruction.h
     ir/load.cc
     ir/load.h
+    ir/location.h
     ir/loop.cc
     ir/loop.h
     ir/module.cc
@@ -774,6 +780,8 @@ if(${TINT_BUILD_IR})
     ir/store.h
     ir/switch.cc
     ir/switch.h
+    ir/swizzle.cc
+    ir/swizzle.h
     ir/to_program.cc
     ir/to_program.h
     ir/unary.cc
@@ -936,6 +944,7 @@ if(TINT_BUILD_TESTS)
     constant/manager_test.cc
     constant/scalar_test.cc
     constant/splat_test.cc
+    constant/value_test.cc
     debug_test.cc
     diagnostic/diagnostic_test.cc
     diagnostic/formatter_test.cc
@@ -1046,6 +1055,7 @@ if(TINT_BUILD_TESTS)
     utils/bitset_test.cc
     utils/block_allocator_test.cc
     utils/bump_allocator_test.cc
+    utils/cli_test.cc
     utils/castable_test.cc
     utils/crc32_test.cc
     utils/defer_test.cc
@@ -1261,6 +1271,7 @@ if(TINT_BUILD_TESTS)
         writer/spirv/ir/generator_impl_ir_function_test.cc
         writer/spirv/ir/generator_impl_ir_if_test.cc
         writer/spirv/ir/generator_impl_ir_loop_test.cc
+        writer/spirv/ir/generator_impl_ir_switch_test.cc
         writer/spirv/ir/generator_impl_ir_test.cc
         writer/spirv/ir/generator_impl_ir_type_test.cc
         writer/spirv/ir/generator_impl_ir_var_test.cc
@@ -1477,8 +1488,10 @@ if(TINT_BUILD_TESTS)
     list(APPEND TINT_TEST_SRCS
       ir/binary_test.cc
       ir/bitcast_test.cc
+      ir/block_test.cc
       ir/constant_test.cc
       ir/discard_test.cc
+      ir/from_program_accessor_test.cc
       ir/from_program_binary_test.cc
       ir/from_program_builtin_test.cc
       ir/from_program_call_test.cc
@@ -1489,6 +1502,7 @@ if(TINT_BUILD_TESTS)
       ir/from_program_test.cc
       ir/from_program_unary_test.cc
       ir/from_program_var_test.cc
+      ir/instruction_test.cc
       ir/load_test.cc
       ir/module_test.cc
       ir/store_test.cc

@@ -24,9 +24,9 @@ namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_BuilderImplTest = TestHelper;
+using IR_FromProgramUnaryTest = TestHelper;
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Not) {
+TEST_F(IR_FromProgramUnaryTest, EmitExpression_Unary_Not) {
     Func("my_func", utils::Empty, ty.bool_(), utils::Vector{Return(false)});
     auto* expr = Not(Call("my_func"));
     WrapInFunction(expr);
@@ -39,7 +39,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Not) {
     ret false
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:bool = call %my_func
     %tint_symbol:bool = eq %3, false
@@ -49,7 +49,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Not) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Complement) {
+TEST_F(IR_FromProgramUnaryTest, EmitExpression_Unary_Complement) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(1_u)});
     auto* expr = Complement(Call("my_func"));
     WrapInFunction(expr);
@@ -62,7 +62,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Complement) {
     ret 1u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = complement %3
@@ -72,7 +72,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Complement) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Negation) {
+TEST_F(IR_FromProgramUnaryTest, EmitExpression_Unary_Negation) {
     Func("my_func", utils::Empty, ty.i32(), utils::Vector{Return(1_i)});
     auto* expr = Negation(Call("my_func"));
     WrapInFunction(expr);
@@ -85,7 +85,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Negation) {
     ret 1i
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:i32 = call %my_func
     %tint_symbol:i32 = negation %3
@@ -95,7 +95,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Negation) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Unary_AddressOf) {
+TEST_F(IR_FromProgramUnaryTest, EmitExpression_Unary_AddressOf) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.i32());
 
     auto* expr = Decl(Let("v2", AddressOf("v1")));
@@ -109,7 +109,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Unary_AddressOf) {
   %v2:ptr<private, i32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     ret
   }
@@ -117,7 +117,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Unary_AddressOf) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Indirection) {
+TEST_F(IR_FromProgramUnaryTest, EmitExpression_Unary_Indirection) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.i32());
     utils::Vector stmts = {
         Decl(Let("v3", AddressOf("v1"))),
@@ -133,7 +133,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Unary_Indirection) {
   %v3:ptr<private, i32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     store %v3, 42i
     ret

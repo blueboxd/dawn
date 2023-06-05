@@ -24,9 +24,9 @@ namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_BuilderImplTest = TestHelper;
+using IR_FromProgramStoreTest = TestHelper;
 
-TEST_F(IR_BuilderImplTest, EmitStatement_Assign) {
+TEST_F(IR_FromProgramStoreTest, EmitStatement_Assign) {
     GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Assign("a", 4_u);
@@ -40,7 +40,7 @@ TEST_F(IR_BuilderImplTest, EmitStatement_Assign) {
   %a:ptr<private, u32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     store %a, 4u
     ret

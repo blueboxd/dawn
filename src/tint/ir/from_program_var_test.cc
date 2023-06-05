@@ -24,9 +24,9 @@ namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_BuilderImplTest = TestHelper;
+using IR_FromProgramVarTest = TestHelper;
 
-TEST_F(IR_BuilderImplTest, Emit_GlobalVar_NoInit) {
+TEST_F(IR_FromProgramVarTest, Emit_GlobalVar_NoInit) {
     GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate);
 
     auto m = Build();
@@ -40,7 +40,7 @@ TEST_F(IR_BuilderImplTest, Emit_GlobalVar_NoInit) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, Emit_GlobalVar_Init) {
+TEST_F(IR_FromProgramVarTest, Emit_GlobalVar_Init) {
     auto* expr = Expr(2_u);
     GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate, expr);
 
@@ -55,7 +55,22 @@ TEST_F(IR_BuilderImplTest, Emit_GlobalVar_Init) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, Emit_Var_NoInit) {
+TEST_F(IR_FromProgramVarTest, Emit_GlobalVar_GroupBinding) {
+    GlobalVar("a", ty.u32(), builtin::AddressSpace::kStorage,
+              utils::Vector{Group(2_u), Binding(3_u)});
+
+    auto m = Build();
+    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+
+    EXPECT_EQ(Disassemble(m.Get()), R"(# Root block
+%b1 = block {
+  %a:ptr<storage, u32, read> = var @binding_point(2, 3)
+}
+
+)");
+}
+
+TEST_F(IR_FromProgramVarTest, Emit_Var_NoInit) {
     auto* a = Var("a", ty.u32(), builtin::AddressSpace::kFunction);
     WrapInFunction(a);
 
@@ -63,7 +78,7 @@ TEST_F(IR_BuilderImplTest, Emit_Var_NoInit) {
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
     EXPECT_EQ(Disassemble(m.Get()),
-              R"(%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b1 {
+              R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
   %b1 = block {
     %a:ptr<function, u32, read_write> = var
     ret
@@ -72,7 +87,7 @@ TEST_F(IR_BuilderImplTest, Emit_Var_NoInit) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, Emit_Var_Init_Constant) {
+TEST_F(IR_FromProgramVarTest, Emit_Var_Init_Constant) {
     auto* expr = Expr(2_u);
     auto* a = Var("a", ty.u32(), builtin::AddressSpace::kFunction, expr);
     WrapInFunction(a);
@@ -81,7 +96,7 @@ TEST_F(IR_BuilderImplTest, Emit_Var_Init_Constant) {
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
     EXPECT_EQ(Disassemble(m.Get()),
-              R"(%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b1 {
+              R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
   %b1 = block {
     %a:ptr<function, u32, read_write> = var, 2u
     ret
@@ -90,7 +105,7 @@ TEST_F(IR_BuilderImplTest, Emit_Var_Init_Constant) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, Emit_Var_Init_NonConstant) {
+TEST_F(IR_FromProgramVarTest, Emit_Var_Init_NonConstant) {
     auto* a = Var("a", ty.u32(), builtin::AddressSpace::kFunction);
     auto* b = Var("b", ty.u32(), builtin::AddressSpace::kFunction, Add("a", 2_u));
     WrapInFunction(a, b);
@@ -99,7 +114,7 @@ TEST_F(IR_BuilderImplTest, Emit_Var_Init_NonConstant) {
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
     EXPECT_EQ(Disassemble(m.Get()),
-              R"(%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b1 {
+              R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
   %b1 = block {
     %a:ptr<function, u32, read_write> = var
     %3:u32 = load %a

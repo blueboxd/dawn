@@ -2596,6 +2596,11 @@ TEST_P(CopyToDepthStencilTextureAfterDestroyingBigBufferTests, DoTest) {
     DAWN_TEST_UNSUPPORTED_IF(GetParam().mTextureFormat == wgpu::TextureFormat::Stencil8 &&
                              (IsOpenGL() || IsOpenGLES()));
 
+    // TODO(dawn:1848): support depth-stencil texture write on D3D11.
+    DAWN_TEST_UNSUPPORTED_IF(
+        GetParam().mTextureFormat == wgpu::TextureFormat::Stencil8 &&
+        GetParam().mInitializationMethod == InitializationMethod::WriteTexture && IsD3D11());
+
     wgpu::TextureFormat format = GetParam().mTextureFormat;
 
     const uint32_t texelBlockSize = utils::GetTexelBlockSizeInBytes(format);
@@ -2771,8 +2776,6 @@ class T2TCopyFromDirtyHeapTests : public DawnTest {
     }
 
     wgpu::Buffer GetUploadBufferAndExpectedData(std::vector<uint32_t>* expectedData) {
-        const uint32_t kBytesPerRow =
-            Align(kBytesPerBlock * kTextureSize, kTextureBytesPerRowAlignment);
         const size_t kBufferSize =
             kBytesPerRow * (kTextureSize - 1) + kTextureSize * kBytesPerBlock;
 

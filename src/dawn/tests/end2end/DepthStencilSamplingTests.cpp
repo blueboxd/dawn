@@ -742,6 +742,9 @@ TEST_P(DepthStencilSamplingTest, SampleExtraComponents) {
 
 // Test sampling both depth and stencil with a render/compute pipeline works.
 TEST_P(DepthStencilSamplingTest, SampleDepthAndStencilRender) {
+    // In compat, you can't have different views of the same texture in the same draw command.
+    DAWN_TEST_UNSUPPORTED_IF(IsCompatibilityMode());
+
     wgpu::TextureFormat format = GetParam().mTextureFormat;
 
     wgpu::SamplerDescriptor samplerDesc;
@@ -779,8 +782,10 @@ TEST_P(DepthStencilSamplingTest, SampleDepthAndStencilRender) {
         passDescriptor.cDepthStencilAttachmentInfo.depthClearValue = 0.43f;
         passDescriptor.cDepthStencilAttachmentInfo.stencilClearValue = 31;
 
-        wgpu::RenderPassEncoder pass = commandEncoder.BeginRenderPass(&passDescriptor);
-        pass.End();
+        {
+            wgpu::RenderPassEncoder pass = commandEncoder.BeginRenderPass(&passDescriptor);
+            pass.End();
+        }
 
         // Render into the output textures
         {
@@ -829,8 +834,10 @@ TEST_P(DepthStencilSamplingTest, SampleDepthAndStencilRender) {
         passDescriptor.cDepthStencilAttachmentInfo.depthClearValue = 0.43f;
         passDescriptor.cDepthStencilAttachmentInfo.stencilClearValue = 31;
 
-        wgpu::RenderPassEncoder pass = commandEncoder.BeginRenderPass(&passDescriptor);
-        pass.End();
+        {
+            wgpu::RenderPassEncoder pass = commandEncoder.BeginRenderPass(&passDescriptor);
+            pass.End();
+        }
 
         // Sample into the output buffers
         {

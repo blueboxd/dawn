@@ -18,6 +18,7 @@
 #include "src/tint/constant/composite.h"
 #include "src/tint/constant/scalar.h"
 #include "src/tint/constant/splat.h"
+#include "src/tint/ir/access.h"
 #include "src/tint/ir/binary.h"
 #include "src/tint/ir/bitcast.h"
 #include "src/tint/ir/block.h"
@@ -37,6 +38,7 @@
 #include "src/tint/ir/return.h"
 #include "src/tint/ir/store.h"
 #include "src/tint/ir/switch.h"
+#include "src/tint/ir/swizzle.h"
 #include "src/tint/ir/user_call.h"
 #include "src/tint/ir/var.h"
 #include "src/tint/switch.h"
@@ -70,7 +72,7 @@ utils::StringStream& Disassembler::Indent() {
 }
 
 void Disassembler::EmitBlockInstructions(const Block* b) {
-    for (const auto* inst : b->Instructions()) {
+    for (const auto* inst : *b) {
         Indent();
         EmitInstruction(inst);
     }
@@ -122,12 +124,7 @@ void Disassembler::WalkInternal(const Block* blk) {
     Indent() << "%b" << IdOf(blk) << " = block";
     if (!blk->Params().IsEmpty()) {
         out_ << " (";
-        for (auto* p : blk->Params()) {
-            if (p != blk->Params().Front()) {
-                out_ << ", ";
-            }
-            EmitValue(p);
-        }
+        EmitValueList(blk->Params());
         out_ << ")";
     }
 
@@ -139,39 +136,119 @@ void Disassembler::WalkInternal(const Block* blk) {
     Indent() << "}" << std::endl;
 }
 
+void Disassembler::EmitBindingPoint(BindingPoint p) {
+    out_ << "@binding_point(" << p.group << ", " << p.binding << ")";
+}
+
+void Disassembler::EmitLocation(Location loc) {
+    out_ << "@location(" << loc.value << ")";
+    if (loc.interpolation.has_value()) {
+        out_ << ", @interpolate(";
+        out_ << loc.interpolation->type;
+        if (loc.interpolation->sampling != builtin::InterpolationSampling::kUndefined) {
+            out_ << ", ";
+            out_ << loc.interpolation->sampling;
+        }
+        out_ << ")";
+    }
+}
+
+void Disassembler::EmitParamAttributes(const FunctionParam* p) {
+    if (!p->Invariant() && !p->Location().has_value() && !p->BindingPoint().has_value() &&
+        !p->Builtin().has_value()) {
+        return;
+    }
+
+    out_ << " [";
+
+    bool need_comma = false;
+    auto comma = [&]() {
+        if (need_comma) {
+            out_ << ", ";
+        }
+    };
+
+    if (p->Invariant()) {
+        comma();
+        out_ << "@invariant";
+        need_comma = true;
+    }
+    if (p->Location().has_value()) {
+        EmitLocation(p->Location().value());
+        need_comma = true;
+    }
+    if (p->BindingPoint().has_value()) {
+        comma();
+        EmitBindingPoint(p->BindingPoint().value());
+        need_comma = true;
+    }
+    if (p->Builtin().has_value()) {
+        comma();
+        out_ << "@" << p->Builtin().value();
+        need_comma = true;
+    }
+    out_ << "]";
+}
+
+void Disassembler::EmitReturnAttributes(const Function* func) {
+    if (!func->ReturnInvariant() && !func->ReturnLocation().has_value() &&
+        !func->ReturnBuiltin().has_value()) {
+        return;
+    }
+
+    out_ << " [";
+
+    bool need_comma = false;
+    auto comma = [&]() {
+        if (need_comma) {
+            out_ << ", ";
+        }
+    };
+    if (func->ReturnInvariant()) {
+        comma();
+        out_ << "@invariant";
+        need_comma = true;
+    }
+    if (func->ReturnLocation().has_value()) {
+        comma();
+        EmitLocation(func->ReturnLocation().value());
+        need_comma = true;
+    }
+    if (func->ReturnBuiltin().has_value()) {
+        comma();
+        out_ << "@" << func->ReturnBuiltin().value();
+        need_comma = true;
+    }
+    out_ << "]";
+}
+
 void Disassembler::EmitFunction(const Function* func) {
     in_function_ = true;
 
-    Indent() << "%" << IdOf(func) << " = func(";
-    for (auto* p : func->Params()) {
+    Indent() << "%" << IdOf(func) << " =";
+
+    if (func->Stage() != Function::PipelineStage::kUndefined) {
+        out_ << " @" << func->Stage();
+    }
+    if (func->WorkgroupSize()) {
+        auto arr = func->WorkgroupSize().value();
+        out_ << " @workgroup_size(" << arr[0] << ", " << arr[1] << ", " << arr[2] << ")";
+    }
+
+    out_ << " func(";
+
+    for (const auto* p : func->Params()) {
         if (p != func->Params().Front()) {
             out_ << ", ";
         }
         out_ << "%" << IdOf(p) << ":" << p->Type()->FriendlyName();
+
+        EmitParamAttributes(p);
     }
     out_ << "):" << func->ReturnType()->FriendlyName();
 
-    if (func->Stage() != Function::PipelineStage::kUndefined) {
-        out_ << " [@" << func->Stage();
+    EmitReturnAttributes(func);
 
-        if (func->WorkgroupSize()) {
-            auto arr = func->WorkgroupSize().value();
-            out_ << " @workgroup_size(" << arr[0] << ", " << arr[1] << ", " << arr[2] << ")";
-        }
-
-        if (!func->ReturnAttributes().IsEmpty()) {
-            out_ << " ra:";
-
-            for (auto attr : func->ReturnAttributes()) {
-                out_ << " @" << attr;
-                if (attr == Function::ReturnAttribute::kLocation) {
-                    out_ << "(" << func->ReturnLocation().value() << ")";
-                }
-            }
-        }
-
-        out_ << "]";
-    }
     out_ << " -> %b" << IdOf(func->StartTarget()) << " {" << std::endl;
 
     {
@@ -217,17 +294,19 @@ void Disassembler::EmitValue(const Value* val) {
                         out_ << (scalar->ValueAs<bool>() ? "true" : "false");
                     },
                     [&](const constant::Splat* splat) {
-                        out_ << splat->Type()->FriendlyName() << " ";
+                        out_ << splat->Type()->FriendlyName() << "(";
                         emit(splat->Index(0));
+                        out_ << ")";
                     },
                     [&](const constant::Composite* composite) {
-                        out_ << composite->Type()->FriendlyName() << " ";
+                        out_ << composite->Type()->FriendlyName() << "(";
                         for (const auto* elem : composite->elements) {
                             if (elem != composite->elements[0]) {
                                 out_ << ", ";
                             }
                             emit(elem);
                         }
+                        out_ << ")";
                     });
             };
             emit(constant->Value());
@@ -302,6 +381,47 @@ void Disassembler::EmitInstruction(const Instruction* inst) {
                 out_ << ", ";
                 EmitValue(v->Initializer());
             }
+            if (v->BindingPoint().has_value()) {
+                out_ << " ";
+                EmitBindingPoint(v->BindingPoint().value());
+            }
+
+            out_ << std::endl;
+        },
+        [&](const ir::Access* a) {
+            EmitValueWithType(a);
+            out_ << " = access ";
+            EmitValue(a->Object());
+            out_ << " ";
+            for (size_t i = 0; i < a->Indices().Length(); ++i) {
+                if (i > 0) {
+                    out_ << ", ";
+                }
+                EmitValue(a->Indices()[i]);
+            }
+            out_ << std::endl;
+        },
+        [&](const ir::Swizzle* s) {
+            EmitValueWithType(s);
+            out_ << " = swizzle ";
+            EmitValue(s->Object());
+            out_ << ", ";
+            for (auto idx : s->Indices()) {
+                switch (idx) {
+                    case 0:
+                        out_ << "x";
+                        break;
+                    case 1:
+                        out_ << "y";
+                        break;
+                    case 2:
+                        out_ << "z";
+                        break;
+                    case 3:
+                        out_ << "w";
+                        break;
+                }
+            }
             out_ << std::endl;
         },
         [&](const ir::Branch* b) { EmitBranch(b); },
@@ -350,7 +470,7 @@ void Disassembler::EmitIf(const If* i) {
 }
 
 void Disassembler::EmitLoop(const Loop* l) {
-    out_ << "loop [s: %b" << IdOf(l->Start());
+    out_ << "loop [s: %b" << IdOf(l->Body());
 
     if (l->Continuing()->HasBranchTarget()) {
         out_ << ", c: %b" << IdOf(l->Continuing());
@@ -358,11 +478,18 @@ void Disassembler::EmitLoop(const Loop* l) {
     if (l->Merge()->HasBranchTarget()) {
         out_ << ", m: %b" << IdOf(l->Merge());
     }
-    out_ << "]" << std::endl;
+    out_ << "]";
+
+    if (!l->Args().IsEmpty()) {
+        out_ << " ";
+        EmitValueList(l->Args());
+    }
+
+    out_ << std::endl;
 
     {
         ScopedIndent si(indent_size_);
-        Walk(l->Start());
+        Walk(l->Body());
         out_ << std::endl;
     }
 
@@ -430,36 +557,33 @@ void Disassembler::EmitBranch(const Branch* b) {
         [&](const ir::ExitSwitch* es) { out_ << "exit_switch %b" << IdOf(es->Switch()->Merge()); },
         [&](const ir::ExitLoop* el) { out_ << "exit_loop %b" << IdOf(el->Loop()->Merge()); },
         [&](const ir::NextIteration* ni) {
-            out_ << "next_iteration %b" << IdOf(ni->Loop()->Start());
+            out_ << "next_iteration %b" << IdOf(ni->Loop()->Body());
         },
         [&](const ir::BreakIf* bi) {
             out_ << "break_if ";
             EmitValue(bi->Condition());
-            out_ << " %b" << IdOf(bi->Loop()->Start());
+            out_ << " %b" << IdOf(bi->Loop()->Body());
         },
         [&](Default) { out_ << "Unknown branch " << b->TypeInfo().name; });
 
     if (!b->Args().IsEmpty()) {
         out_ << " ";
-        for (auto* v : b->Args()) {
-            if (v != b->Args().Front()) {
-                out_ << ", ";
-            }
-            EmitValue(v);
-        }
+        EmitValueList(b->Args());
     }
     out_ << std::endl;
 }
 
-void Disassembler::EmitArgs(const Call* call) {
-    bool first = true;
-    for (const auto* arg : call->Args()) {
-        if (!first) {
+void Disassembler::EmitValueList(tint::utils::VectorRef<const tint::ir::Value*> values) {
+    for (auto* v : values) {
+        if (v != values.Front()) {
             out_ << ", ";
         }
-        first = false;
-        EmitValue(arg);
+        EmitValue(v);
     }
+}
+
+void Disassembler::EmitArgs(const Call* call) {
+    EmitValueList(call->Args());
 }
 
 void Disassembler::EmitBinary(const Binary* b) {

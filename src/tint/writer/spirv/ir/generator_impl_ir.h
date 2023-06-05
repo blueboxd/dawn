@@ -31,6 +31,7 @@
 namespace tint::ir {
 class Binary;
 class Block;
+class BlockParam;
 class Branch;
 class Builtin;
 class If;
@@ -39,11 +40,13 @@ class Load;
 class Loop;
 class Module;
 class Store;
+class Switch;
 class UserCall;
 class Value;
 class Var;
 }  // namespace tint::ir
 namespace tint::type {
+class Struct;
 class Type;
 }  // namespace tint::type
 
@@ -75,6 +78,11 @@ class GeneratorImplIr {
     /// @returns the result ID of the constant
     uint32_t Constant(const ir::Constant* constant);
 
+    /// Get the result ID of the OpConstantNull instruction for `type`, emitting it if necessary.
+    /// @param type the type to get the ID for
+    /// @returns the result ID of the OpConstantNull instruction
+    uint32_t ConstantNull(const type::Type* type);
+
     /// Get the result ID of the type `ty`, emitting a type declaration instruction if necessary.
     /// @param ty the type to get the ID for
     /// @returns the result ID of the type
@@ -90,6 +98,11 @@ class GeneratorImplIr {
     /// @returns the ID of the block's label
     uint32_t Label(const ir::Block* block);
 
+    /// Emit a struct type.
+    /// @param id the result ID to use
+    /// @param str the struct type to emit
+    void EmitStructType(uint32_t id, const type::Struct* str);
+
     /// Emit a function.
     /// @param func the function to emit
     void EmitFunction(const ir::Function* func);
@@ -103,24 +116,25 @@ class GeneratorImplIr {
     /// @param block the block to emit
     void EmitBlock(const ir::Block* block);
 
+    /// Emit the root block.
+    /// @param root_block the root block to emit
+    void EmitRootBlock(const ir::Block* root_block);
+
     /// Emit an `if` flow node.
     /// @param i the if node to emit
     void EmitIf(const ir::If* i);
 
     /// Emit a binary instruction.
     /// @param binary the binary instruction to emit
-    /// @returns the result ID of the instruction
-    uint32_t EmitBinary(const ir::Binary* binary);
+    void EmitBinary(const ir::Binary* binary);
 
     /// Emit a builtin function call instruction.
     /// @param call the builtin call instruction to emit
-    /// @returns the result ID of the instruction
-    uint32_t EmitBuiltin(const ir::Builtin* call);
+    void EmitBuiltin(const ir::Builtin* call);
 
     /// Emit a load instruction.
     /// @param load the load instruction to emit
-    /// @returns the result ID of the instruction
-    uint32_t EmitLoad(const ir::Load* load);
+    void EmitLoad(const ir::Load* load);
 
     /// Emit a loop instruction.
     /// @param loop the loop instruction to emit
@@ -130,15 +144,17 @@ class GeneratorImplIr {
     /// @param store the store instruction to emit
     void EmitStore(const ir::Store* store);
 
+    /// Emit a switch instruction.
+    /// @param swtch the switch instruction to emit
+    void EmitSwitch(const ir::Switch* swtch);
+
     /// Emit a user call instruction.
     /// @param call the user call instruction to emit
-    /// @returns the result ID of the instruction
-    uint32_t EmitUserCall(const ir::UserCall* call);
+    void EmitUserCall(const ir::UserCall* call);
 
     /// Emit a var instruction.
     /// @param var the var instruction to emit
-    /// @returns the result ID of the instruction
-    uint32_t EmitVar(const ir::Var* var);
+    void EmitVar(const ir::Var* var);
 
     /// Emit a branch instruction.
     /// @param b the branch instruction to emit
@@ -188,6 +204,9 @@ class GeneratorImplIr {
 
     /// The map of constants to their result IDs.
     utils::Hashmap<const constant::Value*, uint32_t, 16> constants_;
+
+    /// The map of types to the result IDs of their OpConstantNull instructions.
+    utils::Hashmap<const type::Type*, uint32_t, 4> constant_nulls_;
 
     /// The map of non-constant values to their result IDs.
     utils::Hashmap<const ir::Value*, uint32_t, 8> values_;

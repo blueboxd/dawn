@@ -17,7 +17,9 @@
 #include <iostream>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
+#include "src/tint/ast/accessor_expression.h"
 #include "src/tint/ast/alias.h"
 #include "src/tint/ast/assignment_statement.h"
 #include "src/tint/ast/binary_expression.h"
@@ -42,11 +44,14 @@
 #include "src/tint/ast/identifier_expression.h"
 #include "src/tint/ast/if_statement.h"
 #include "src/tint/ast/increment_decrement_statement.h"
+#include "src/tint/ast/index_accessor_expression.h"
 #include "src/tint/ast/int_literal_expression.h"
+#include "src/tint/ast/interpolate_attribute.h"
 #include "src/tint/ast/invariant_attribute.h"
 #include "src/tint/ast/let.h"
 #include "src/tint/ast/literal_expression.h"
 #include "src/tint/ast/loop_statement.h"
+#include "src/tint/ast/member_accessor_expression.h"
 #include "src/tint/ast/override.h"
 #include "src/tint/ast/phony_expression.h"
 #include "src/tint/ast/return_statement.h"
@@ -79,6 +84,7 @@
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/load.h"
 #include "src/tint/sem/materialize.h"
+#include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/module.h"
 #include "src/tint/sem/switch_statement.h"
 #include "src/tint/sem/value_constructor.h"
@@ -88,9 +94,11 @@
 #include "src/tint/switch.h"
 #include "src/tint/type/pointer.h"
 #include "src/tint/type/reference.h"
+#include "src/tint/type/struct.h"
 #include "src/tint/type/void.h"
 #include "src/tint/utils/defer.h"
 #include "src/tint/utils/result.h"
+#include "src/tint/utils/reverse.h"
 #include "src/tint/utils/scoped_assignment.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -140,8 +148,8 @@ class Impl {
     /// The stack of control blocks.
     utils::Vector<Branch*, 8> control_stack_;
 
-    /// The current flow block for expressions.
-    Block* current_flow_block_ = nullptr;
+    /// The current block for expressions.
+    Block* current_block_ = nullptr;
 
     /// The current function being processed.
     Function* current_function_ = nullptr;
@@ -166,14 +174,14 @@ class Impl {
         diagnostics_.add_error(tint::diag::System::IR, err, s);
     }
 
-    bool NeedBranch() { return current_flow_block_ && !current_flow_block_->HasBranchTarget(); }
+    bool NeedBranch() { return current_block_ && !current_block_->HasBranchTarget(); }
 
     void SetBranch(Branch* br) {
-        TINT_ASSERT(IR, current_flow_block_);
-        TINT_ASSERT(IR, !current_flow_block_->HasBranchTarget());
+        TINT_ASSERT(IR, current_block_);
+        TINT_ASSERT(IR, !current_block_->HasBranchTarget());
 
-        current_flow_block_->Instructions().Push(br);
-        current_flow_block_ = nullptr;
+        current_block_->Append(br);
+        current_block_ = nullptr;
     }
 
     Branch* FindEnclosingControl(ControlFlags flags) {
@@ -207,7 +215,7 @@ class Impl {
                 [&](const ast::Variable* var) {
                     // Setup the current flow node to be the root block for the module. The builder
                     // will handle creating it if it doesn't exist already.
-                    TINT_SCOPED_ASSIGNMENT(current_flow_block_, builder_.CreateRootBlockIfNeeded());
+                    TINT_SCOPED_ASSIGNMENT(current_block_, builder_.CreateRootBlockIfNeeded());
                     EmitVariable(var);
                 },
                 [&](const ast::Function* func) { EmitFunction(func); },
@@ -228,6 +236,24 @@ class Impl {
         }
 
         return ResultType{std::move(mod)};
+    }
+
+    builtin::Interpolation ExtractInterpolation(const ast::InterpolateAttribute* interp) {
+        auto type = program_->Sem()
+                        .Get(interp->type)
+                        ->As<sem::BuiltinEnumExpression<builtin::InterpolationType>>();
+        builtin::InterpolationType interpolation_type = type->Value();
+
+        builtin::InterpolationSampling interpolation_sampling =
+            builtin::InterpolationSampling::kUndefined;
+        if (interp->sampling) {
+            auto sampling = program_->Sem()
+                                .Get(interp->sampling)
+                                ->As<sem::BuiltinEnumExpression<builtin::InterpolationSampling>>();
+            interpolation_sampling = sampling->Value();
+        }
+
+        return builtin::Interpolation{interpolation_type, interpolation_sampling};
     }
 
     void EmitFunction(const ast::Function* ast_func) {
@@ -265,16 +291,16 @@ class Impl {
                 }
             }
 
-            utils::Vector<Function::ReturnAttribute, 1> return_attributes;
+            // Note, interpolated is only valid when paired with Location, so it will only be set
+            // when the location is set.
+            std::optional<builtin::Interpolation> interpolation;
             for (auto* attr : ast_func->return_type_attributes) {
                 tint::Switch(
                     attr,  //
-                    [&](const ast::LocationAttribute*) {
-                        return_attributes.Push(Function::ReturnAttribute::kLocation);
+                    [&](const ast::InterpolateAttribute* interp) {
+                        interpolation = ExtractInterpolation(interp);
                     },
-                    [&](const ast::InvariantAttribute*) {
-                        return_attributes.Push(Function::ReturnAttribute::kInvariant);
-                    },
+                    [&](const ast::InvariantAttribute*) { ir_func->SetReturnInvariant(true); },
                     [&](const ast::BuiltinAttribute* b) {
                         if (auto* ident_sem =
                                 program_->Sem()
@@ -282,13 +308,13 @@ class Impl {
                                     ->As<sem::BuiltinEnumExpression<builtin::BuiltinValue>>()) {
                             switch (ident_sem->Value()) {
                                 case builtin::BuiltinValue::kPosition:
-                                    return_attributes.Push(Function::ReturnAttribute::kPosition);
+                                    ir_func->SetReturnBuiltin(Function::ReturnBuiltin::kPosition);
                                     break;
                                 case builtin::BuiltinValue::kFragDepth:
-                                    return_attributes.Push(Function::ReturnAttribute::kFragDepth);
+                                    ir_func->SetReturnBuiltin(Function::ReturnBuiltin::kFragDepth);
                                     break;
                                 case builtin::BuiltinValue::kSampleMask:
-                                    return_attributes.Push(Function::ReturnAttribute::kSampleMask);
+                                    ir_func->SetReturnBuiltin(Function::ReturnBuiltin::kSampleMask);
                                     break;
                                 default:
                                     TINT_ICE(IR, diagnostics_)
@@ -302,18 +328,90 @@ class Impl {
                         }
                     });
             }
-            ir_func->SetReturnAttributes(return_attributes);
+            if (sem->ReturnLocation().has_value()) {
+                ir_func->SetReturnLocation(sem->ReturnLocation().value(), interpolation);
+            }
         }
-        ir_func->SetReturnLocation(sem->ReturnLocation());
 
         scopes_.Push();
         TINT_DEFER(scopes_.Pop());
 
         utils::Vector<FunctionParam*, 1> params;
         for (auto* p : ast_func->params) {
-            const auto* param_sem = program_->Sem().Get(p);
+            const auto* param_sem = program_->Sem().Get(p)->As<sem::Parameter>();
             auto* ty = param_sem->Type()->Clone(clone_ctx_.type_ctx);
             auto* param = builder_.FunctionParam(ty);
+
+            // Note, interpolated is only valid when paired with Location, so it will only be set
+            // when the location is set.
+            std::optional<builtin::Interpolation> interpolation;
+            for (auto* attr : p->attributes) {
+                tint::Switch(
+                    attr,  //
+                    [&](const ast::InterpolateAttribute* interp) {
+                        interpolation = ExtractInterpolation(interp);
+                    },
+                    [&](const ast::InvariantAttribute*) { param->SetInvariant(true); },
+                    [&](const ast::BuiltinAttribute* b) {
+                        if (auto* ident_sem =
+                                program_->Sem()
+                                    .Get(b)
+                                    ->As<sem::BuiltinEnumExpression<builtin::BuiltinValue>>()) {
+                            switch (ident_sem->Value()) {
+                                case builtin::BuiltinValue::kVertexIndex:
+                                    param->SetBuiltin(FunctionParam::Builtin::kVertexIndex);
+                                    break;
+                                case builtin::BuiltinValue::kInstanceIndex:
+                                    param->SetBuiltin(FunctionParam::Builtin::kInstanceIndex);
+                                    break;
+                                case builtin::BuiltinValue::kPosition:
+                                    param->SetBuiltin(FunctionParam::Builtin::kPosition);
+                                    break;
+                                case builtin::BuiltinValue::kFrontFacing:
+                                    param->SetBuiltin(FunctionParam::Builtin::kFrontFacing);
+                                    break;
+                                case builtin::BuiltinValue::kLocalInvocationId:
+                                    param->SetBuiltin(FunctionParam::Builtin::kLocalInvocationId);
+                                    break;
+                                case builtin::BuiltinValue::kLocalInvocationIndex:
+                                    param->SetBuiltin(
+                                        FunctionParam::Builtin::kLocalInvocationIndex);
+                                    break;
+                                case builtin::BuiltinValue::kGlobalInvocationId:
+                                    param->SetBuiltin(FunctionParam::Builtin::kGlobalInvocationId);
+                                    break;
+                                case builtin::BuiltinValue::kWorkgroupId:
+                                    param->SetBuiltin(FunctionParam::Builtin::kWorkgroupId);
+                                    break;
+                                case builtin::BuiltinValue::kNumWorkgroups:
+                                    param->SetBuiltin(FunctionParam::Builtin::kNumWorkgroups);
+                                    break;
+                                case builtin::BuiltinValue::kSampleIndex:
+                                    param->SetBuiltin(FunctionParam::Builtin::kSampleIndex);
+                                    break;
+                                case builtin::BuiltinValue::kSampleMask:
+                                    param->SetBuiltin(FunctionParam::Builtin::kSampleMask);
+                                    break;
+                                default:
+                                    TINT_ICE(IR, diagnostics_)
+                                        << "Unknown builtin value in parameter attributes "
+                                        << ident_sem->Value();
+                                    return;
+                            }
+                        } else {
+                            TINT_ICE(IR, diagnostics_) << "Builtin attribute sem invalid";
+                            return;
+                        }
+                    });
+
+                if (param_sem->Location().has_value()) {
+                    param->SetLocation(param_sem->Location().value(), interpolation);
+                }
+                if (param_sem->BindingPoint().has_value()) {
+                    param->SetBindingPoint(param_sem->BindingPoint()->group,
+                                           param_sem->BindingPoint()->binding);
+                }
+            }
 
             scopes_.Set(p->name->symbol, param);
             builder_.ir.SetName(param, p->name->symbol.NameView());
@@ -321,7 +419,7 @@ class Impl {
         }
         ir_func->SetParams(params);
 
-        current_flow_block_ = ir_func->StartTarget();
+        current_block_ = ir_func->StartTarget();
         EmitBlock(ast_func->body);
 
         // If the branch target has already been set then a `return` was called. Only set in
@@ -331,7 +429,7 @@ class Impl {
         }
 
         TINT_ASSERT(IR, control_stack_.IsEmpty());
-        current_flow_block_ = nullptr;
+        current_block_ = nullptr;
         current_function_ = nullptr;
     }
 
@@ -385,7 +483,6 @@ class Impl {
             (void)EmitExpression(stmt->rhs);
             return;
         }
-
         auto lhs = EmitExpression(stmt->lhs);
         if (!lhs) {
             return;
@@ -396,7 +493,7 @@ class Impl {
             return;
         }
         auto store = builder_.Store(lhs.Get(), rhs.Get());
-        current_flow_block_->Instructions().Push(store);
+        current_block_->Append(store);
     }
 
     void EmitIncrementDecrement(const ast::IncrementDecrementStatement* stmt) {
@@ -407,7 +504,7 @@ class Impl {
 
         // Load from the LHS.
         auto* lhs_value = builder_.Load(lhs.Get());
-        current_flow_block_->Instructions().Push(lhs_value);
+        current_block_->Append(lhs_value);
 
         auto* ty = lhs_value->Type();
 
@@ -420,10 +517,10 @@ class Impl {
         } else {
             inst = builder_.Subtract(ty, lhs_value, rhs);
         }
-        current_flow_block_->Instructions().Push(inst);
+        current_block_->Append(inst);
 
         auto store = builder_.Store(lhs.Get(), inst);
-        current_flow_block_->Instructions().Push(store);
+        current_block_->Append(store);
     }
 
     void EmitCompoundAssignment(const ast::CompoundAssignmentStatement* stmt) {
@@ -439,7 +536,7 @@ class Impl {
 
         // Load from the LHS.
         auto* lhs_value = builder_.Load(lhs.Get());
-        current_flow_block_->Instructions().Push(lhs_value);
+        current_block_->Append(lhs_value);
 
         auto* ty = lhs_value->Type();
 
@@ -489,10 +586,10 @@ class Impl {
                 TINT_ICE(IR, diagnostics_) << "missing binary operand type";
                 return;
         }
-        current_flow_block_->Instructions().Push(inst);
+        current_block_->Append(inst);
 
         auto store = builder_.Store(lhs.Get(), inst);
-        current_flow_block_->Instructions().Push(store);
+        current_block_->Append(store);
     }
 
     void EmitBlock(const ast::BlockStatement* block) {
@@ -512,12 +609,12 @@ class Impl {
             return;
         }
         auto* if_inst = builder_.CreateIf(reg.Get());
-        current_flow_block_->Instructions().Push(if_inst);
+        current_block_->Append(if_inst);
 
         {
             ControlStackScope scope(this, if_inst);
 
-            current_flow_block_ = if_inst->True();
+            current_block_ = if_inst->True();
             EmitBlock(stmt->body);
 
             // If the true branch did not execute control flow, then go to the Merge().target
@@ -525,7 +622,7 @@ class Impl {
                 SetBranch(builder_.ExitIf(if_inst));
             }
 
-            current_flow_block_ = if_inst->False();
+            current_block_ = if_inst->False();
             if (stmt->else_statement) {
                 EmitStatement(stmt->else_statement);
             }
@@ -535,23 +632,23 @@ class Impl {
                 SetBranch(builder_.ExitIf(if_inst));
             }
         }
-        current_flow_block_ = nullptr;
+        current_block_ = nullptr;
 
         // If both branches went somewhere, then they both returned, continued or broke. So,
         // there is no need for the if merge-block and there is nothing to branch to the merge
         // block anyway.
         if (IsConnected(if_inst->Merge())) {
-            current_flow_block_ = if_inst->Merge();
+            current_block_ = if_inst->Merge();
         }
     }
 
     void EmitLoop(const ast::LoopStatement* stmt) {
         auto* loop_inst = builder_.CreateLoop();
-        current_flow_block_->Instructions().Push(loop_inst);
+        current_block_->Append(loop_inst);
 
         {
             ControlStackScope scope(this, loop_inst);
-            current_flow_block_ = loop_inst->Start();
+            current_block_ = loop_inst->Body();
 
             // The loop doesn't use EmitBlock because it needs the scope stack to not get popped
             // until after the continuing block.
@@ -569,7 +666,7 @@ class Impl {
                 // continue so we have to set the current block and then emit the branch if needed
                 // below otherwise empty continuing blocks will fail to branch back to the start
                 // block.
-                current_flow_block_ = loop_inst->Continuing();
+                current_block_ = loop_inst->Continuing();
                 if (stmt->continuing) {
                     EmitBlock(stmt->continuing);
                 }
@@ -583,24 +680,24 @@ class Impl {
         // The loop merge can get disconnected if the loop returns directly, or the continuing
         // target branches, eventually, to the merge, but nothing branched to the
         // Continuing() block.
-        current_flow_block_ = loop_inst->Merge();
+        current_block_ = loop_inst->Merge();
         if (!IsConnected(loop_inst->Merge())) {
-            current_flow_block_ = nullptr;
+            current_block_ = nullptr;
         }
     }
 
     void EmitWhile(const ast::WhileStatement* stmt) {
         auto* loop_inst = builder_.CreateLoop();
-        current_flow_block_->Instructions().Push(loop_inst);
+        current_block_->Append(loop_inst);
 
         // Continue is always empty, just go back to the start
-        current_flow_block_ = loop_inst->Continuing();
+        current_block_ = loop_inst->Continuing();
         SetBranch(builder_.NextIteration(loop_inst));
 
         {
             ControlStackScope scope(this, loop_inst);
 
-            current_flow_block_ = loop_inst->Start();
+            current_block_ = loop_inst->Body();
 
             // Emit the while condition into the Start().target of the loop
             auto reg = EmitExpression(stmt->condition);
@@ -610,15 +707,15 @@ class Impl {
 
             // Create an `if (cond) {} else {break;}` control flow
             auto* if_inst = builder_.CreateIf(reg.Get());
-            current_flow_block_->Instructions().Push(if_inst);
+            current_block_->Append(if_inst);
 
-            current_flow_block_ = if_inst->True();
+            current_block_ = if_inst->True();
             SetBranch(builder_.ExitIf(if_inst));
 
-            current_flow_block_ = if_inst->False();
+            current_block_ = if_inst->False();
             SetBranch(builder_.ExitLoop(loop_inst));
 
-            current_flow_block_ = if_inst->Merge();
+            current_block_ = if_inst->Merge();
             EmitBlock(stmt->body);
 
             if (NeedBranch()) {
@@ -627,12 +724,12 @@ class Impl {
         }
         // The while loop always has a path to the Merge().target as the break statement comes
         // before anything inside the loop.
-        current_flow_block_ = loop_inst->Merge();
+        current_block_ = loop_inst->Merge();
     }
 
     void EmitForLoop(const ast::ForLoopStatement* stmt) {
         auto* loop_inst = builder_.CreateLoop();
-        current_flow_block_->Instructions().Push(loop_inst);
+        current_block_->Append(loop_inst);
 
         // Make sure the initializer ends up in a contained scope
         scopes_.Push();
@@ -646,7 +743,7 @@ class Impl {
         {
             ControlStackScope scope(this, loop_inst);
 
-            current_flow_block_ = loop_inst->Start();
+            current_block_ = loop_inst->Body();
 
             if (stmt->condition) {
                 // Emit the condition into the target target of the loop
@@ -657,15 +754,15 @@ class Impl {
 
                 // Create an `if (cond) {} else {break;}` control flow
                 auto* if_inst = builder_.CreateIf(reg.Get());
-                current_flow_block_->Instructions().Push(if_inst);
+                current_block_->Append(if_inst);
 
-                current_flow_block_ = if_inst->True();
+                current_block_ = if_inst->True();
                 SetBranch(builder_.ExitIf(if_inst));
 
-                current_flow_block_ = if_inst->False();
+                current_block_ = if_inst->False();
                 SetBranch(builder_.ExitLoop(loop_inst));
 
-                current_flow_block_ = if_inst->Merge();
+                current_block_ = if_inst->Merge();
             }
 
             EmitBlock(stmt->body);
@@ -674,7 +771,7 @@ class Impl {
             }
 
             if (stmt->continuing) {
-                current_flow_block_ = loop_inst->Continuing();
+                current_block_ = loop_inst->Continuing();
                 EmitStatement(stmt->continuing);
                 SetBranch(builder_.NextIteration(loop_inst));
             }
@@ -682,7 +779,7 @@ class Impl {
 
         // The while loop always has a path to the Merge().target as the break statement comes
         // before anything inside the loop.
-        current_flow_block_ = loop_inst->Merge();
+        current_block_ = loop_inst->Merge();
     }
 
     void EmitSwitch(const ast::SwitchStatement* stmt) {
@@ -692,7 +789,7 @@ class Impl {
             return;
         }
         auto* switch_inst = builder_.CreateSwitch(reg.Get());
-        current_flow_block_->Instructions().Push(switch_inst);
+        current_block_->Append(switch_inst);
 
         {
             ControlStackScope scope(this, switch_inst);
@@ -708,7 +805,7 @@ class Impl {
                     }
                 }
 
-                current_flow_block_ = builder_.CreateCase(switch_inst, selectors);
+                current_block_ = builder_.CreateCase(switch_inst, selectors);
                 EmitBlock(c->Body()->Declaration());
 
                 if (NeedBranch()) {
@@ -716,10 +813,10 @@ class Impl {
                 }
             }
         }
-        current_flow_block_ = nullptr;
+        current_block_ = nullptr;
 
         if (IsConnected(switch_inst->Merge())) {
-            current_flow_block_ = switch_inst->Merge();
+            current_block_ = switch_inst->Merge();
         }
     }
 
@@ -765,7 +862,7 @@ class Impl {
     // figuring out the multi-level exit that is triggered.
     void EmitDiscard(const ast::DiscardStatement*) {
         auto* inst = builder_.Discard();
-        current_flow_block_->Instructions().Push(inst);
+        current_block_->Append(inst);
     }
 
     void EmitBreakIf(const ast::BreakIfStatement* stmt) {
@@ -777,6 +874,153 @@ class Impl {
             return;
         }
         SetBranch(builder_.BreakIf(cond.Get(), current_control->As<ir::Loop>()));
+    }
+
+    struct AccessorInfo {
+        Value* object = nullptr;
+        Instruction* result = nullptr;
+        const type::Type* result_type = nullptr;
+        utils::Vector<Value*, 1> indices;
+    };
+
+    utils::Result<Value*> EmitAccess(const ast::AccessorExpression* expr) {
+        std::vector<const ast::Expression*> accessors;
+        const ast::Expression* object = expr;
+        while (true) {
+            if (auto* array = object->As<ast::IndexAccessorExpression>()) {
+                accessors.push_back(object);
+                object = array->object;
+            } else if (auto* member = object->As<ast::MemberAccessorExpression>()) {
+                accessors.push_back(object);
+                object = member->object;
+            } else {
+                break;
+            }
+        }
+
+        AccessorInfo info;
+        {
+            auto res = EmitExpression(object);
+            if (!res) {
+                return utils::Failure;
+            }
+            info.object = res.Get();
+        }
+
+        if (auto* sem = program_->Sem().Get(expr)->As<sem::Load>()) {
+            auto* ref = sem->ReferenceType();
+            info.result_type = ref->StoreType()->Clone(clone_ctx_.type_ctx);
+        } else {
+            info.result_type = program_->Sem().Get(expr)->Type()->Clone(clone_ctx_.type_ctx);
+        }
+
+        // The AST chain is `inside-out` compared to what we need, which means the list it generates
+        // is backwards. We need to operate on the list in reverse order to have the correct access
+        // chain.
+        for (auto* accessor : utils::Reverse(accessors)) {
+            bool ok = tint::Switch(
+                accessor,
+                [&](const ast::IndexAccessorExpression* idx) {
+                    return GenerateIndexAccessor(idx, info);
+                },
+                [&](const ast::MemberAccessorExpression* member) {
+                    return GenerateMemberAccessor(member, info);
+                },
+                [&](Default) {
+                    TINT_ICE(Writer, diagnostics_)
+                        << "invalid accessor in list: " + std::string(accessor->TypeInfo().name);
+                    return false;
+                });
+            if (!ok) {
+                return utils::Failure;
+            }
+        }
+
+        if (!info.indices.IsEmpty()) {
+            info.result = GenerateAccess(info);
+        }
+        return info.result;
+    }
+
+    Instruction* GenerateAccess(const AccessorInfo& info) {
+        // The access result type should match the source result type. If the source is a pointer,
+        // we generate a pointer.
+        const type::Type* ty = nullptr;
+        if (info.object->Type()->Is<type::Pointer>() && !info.result_type->Is<type::Pointer>()) {
+            auto* ptr = info.object->Type()->As<type::Pointer>();
+            ty = builder_.ir.Types().pointer(info.result_type, ptr->AddressSpace(), ptr->Access());
+        } else {
+            ty = info.result_type;
+        }
+
+        auto* a = builder_.Access(ty, info.object, info.indices);
+        current_block_->Append(a);
+        return a;
+    }
+
+    bool GenerateIndexAccessor(const ast::IndexAccessorExpression* expr, AccessorInfo& info) {
+        auto res = EmitExpression(expr->index);
+        if (!res) {
+            return false;
+        }
+
+        info.indices.Push(res.Get());
+        return true;
+    }
+
+    bool GenerateMemberAccessor(const ast::MemberAccessorExpression* expr, AccessorInfo& info) {
+        auto* expr_sem = program_->Sem().Get(expr)->UnwrapLoad();
+
+        return tint::Switch(
+            expr_sem,  //
+            [&](const sem::StructMemberAccess* access) {
+                uint32_t idx = access->Member()->Index();
+                info.indices.Push(builder_.Constant(u32(idx)));
+                return true;
+            },
+            [&](const sem::Swizzle* swizzle) {
+                auto& indices = swizzle->Indices();
+
+                // A single element swizzle is just treated as an accessor.
+                if (indices.Length() == 1) {
+                    info.indices.Push(builder_.Constant(u32(indices[0])));
+                    return true;
+                }
+
+                // Store the result type away, this will be the result of the swizzle, but the
+                // intermediate steps need different result types.
+                auto* result_type = info.result_type;
+
+                // Emit any preceeding member/index accessors
+                if (!info.indices.IsEmpty()) {
+                    // The access chain is being split, the initial part of than will have a
+                    // resulting type that matches the object being swizzled.
+                    info.result_type = swizzle->Object()->Type()->Clone(clone_ctx_.type_ctx);
+                    info.object = GenerateAccess(info);
+                    info.indices.Clear();
+
+                    // If the sub-accessor generated a pointer result, make sure a load is emitted
+                    if (auto* ptr = info.object->Type()->As<type::Pointer>()) {
+                        auto* load = builder_.Load(info.object);
+                        info.result_type = ptr->StoreType();
+                        info.object = load;
+                        current_block_->Append(load);
+                    }
+                }
+
+                info.result = builder_.Swizzle(swizzle->Type()->Clone(clone_ctx_.type_ctx),
+                                               info.object, std::move(indices));
+                current_block_->Append(info.result);
+
+                info.object = info.result;
+                info.result_type = result_type;
+                return true;
+            },
+            [&](Default) {
+                TINT_ICE(IR, diagnostics_)
+                    << "unhandled member index type: " << expr_sem->TypeInfo().name;
+                return false;
+            });
     }
 
     utils::Result<Value*> EmitExpression(const ast::Expression* expr) {
@@ -791,10 +1035,8 @@ class Impl {
         }
 
         auto result = tint::Switch(
-            expr,
-            // [&](const ast::IndexAccessorExpression* a) {
-            // TODO(dsinclair): Implement
-            // },
+            expr,  //
+            [&](const ast::AccessorExpression* a) { return EmitAccess(a); },
             [&](const ast::BinaryExpression* b) { return EmitBinary(b); },
             [&](const ast::BitcastExpression* b) { return EmitBitcast(b); },
             [&](const ast::CallExpression* c) { return EmitCall(c); },
@@ -808,9 +1050,6 @@ class Impl {
                 return {v};
             },
             [&](const ast::LiteralExpression* l) { return EmitLiteral(l); },
-            // [&](const ast::MemberAccessorExpression* m) {
-            // TODO(dsinclair): Implement
-            // },
             [&](const ast::UnaryOpExpression* u) { return EmitUnary(u); },
             // Note, ast::PhonyExpression is explicitly not handled here as it should never get
             // into this method. The assignment statement should have filtered it out already.
@@ -823,10 +1062,9 @@ class Impl {
         // If this expression maps to sem::Load, insert a load instruction to get the result.
         if (result && sem->Is<sem::Load>()) {
             auto* load = builder_.Load(result.Get());
-            current_flow_block_->Instructions().Push(load);
+            current_block_->Append(load);
             return load;
         }
-
         return result;
     }
 
@@ -849,7 +1087,12 @@ class Impl {
                     }
                     val->SetInitializer(init.Get());
                 }
-                current_flow_block_->Instructions().Push(val);
+                current_block_->Append(val);
+
+                if (auto* gv = sem->As<sem::GlobalVariable>(); gv && var->HasBindingPoint()) {
+                    val->SetBindingPoint(gv->BindingPoint().value().group,
+                                         gv->BindingPoint().value().binding);
+                }
 
                 // Store the declaration so we can get the instruction to store too
                 scopes_.Set(v->name->symbol, val);
@@ -916,7 +1159,7 @@ class Impl {
                 break;
         }
 
-        current_flow_block_->Instructions().Push(inst);
+        current_block_->Append(inst);
         return inst;
     }
 
@@ -940,7 +1183,7 @@ class Impl {
         }
 
         auto* if_inst = builder_.CreateIf(lhs.Get());
-        current_flow_block_->Instructions().Push(if_inst);
+        current_block_->Append(if_inst);
 
         auto* result = builder_.BlockParam(builder_.ir.Types().bool_());
         if_inst->Merge()->SetParams(utils::Vector{result});
@@ -957,17 +1200,17 @@ class Impl {
             if (expr->op == ast::BinaryOp::kLogicalAnd) {
                 // If the lhs is false, then that is the result we want to pass to the merge
                 // block as our argument
-                current_flow_block_ = if_inst->False();
+                current_block_ = if_inst->False();
                 SetBranch(builder_.ExitIf(if_inst, std::move(alt_args)));
 
-                current_flow_block_ = if_inst->True();
+                current_block_ = if_inst->True();
             } else {
                 // If the lhs is true, then that is the result we want to pass to the merge
                 // block as our argument
-                current_flow_block_ = if_inst->True();
+                current_block_ = if_inst->True();
                 SetBranch(builder_.ExitIf(if_inst, std::move(alt_args)));
 
-                current_flow_block_ = if_inst->False();
+                current_block_ = if_inst->False();
             }
 
             rhs = EmitExpression(expr->rhs);
@@ -979,7 +1222,7 @@ class Impl {
 
             SetBranch(builder_.ExitIf(if_inst, std::move(args)));
         }
-        current_flow_block_ = if_inst->Merge();
+        current_block_ = if_inst->Merge();
 
         return result;
     }
@@ -1061,7 +1304,7 @@ class Impl {
                 return utils::Failure;
         }
 
-        current_flow_block_->Instructions().Push(inst);
+        current_block_->Append(inst);
         return inst;
     }
 
@@ -1075,7 +1318,7 @@ class Impl {
         auto* ty = sem->Type()->Clone(clone_ctx_.type_ctx);
         auto* inst = builder_.Bitcast(ty, val.Get());
 
-        current_flow_block_->Instructions().Push(inst);
+        current_block_->Append(inst);
         return inst;
     }
 
@@ -1139,7 +1382,7 @@ class Impl {
         if (inst == nullptr) {
             return utils::Failure;
         }
-        current_flow_block_->Instructions().Push(inst);
+        current_block_->Append(inst);
         return inst;
     }
 

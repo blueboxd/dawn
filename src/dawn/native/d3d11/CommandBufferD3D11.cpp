@@ -420,7 +420,8 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
     for (ColorAttachmentIndex i :
          IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         TextureView* colorTextureView = ToBackend(renderPass->colorAttachments[i].view.Get());
-        DAWN_TRY_ASSIGN(d3d11RenderTargetViews[i], colorTextureView->CreateD3D11RenderTargetView());
+        DAWN_TRY_ASSIGN(d3d11RenderTargetViews[i], colorTextureView->CreateD3D11RenderTargetView(
+                                                       colorTextureView->GetBaseMipLevel()));
         d3d11RenderTargetViewPtrs[i] = d3d11RenderTargetViews[i].Get();
         if (renderPass->colorAttachments[i].loadOp == wgpu::LoadOp::Clear) {
             std::array<float, 4> clearColor =
@@ -441,7 +442,8 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
             ToBackend(renderPass->depthStencilAttachment.view.Get());
         DAWN_TRY_ASSIGN(d3d11DepthStencilView,
                         depthStencilTextureView->CreateD3D11DepthStencilView(
-                            attachmentInfo->depthReadOnly, attachmentInfo->stencilReadOnly));
+                            attachmentInfo->depthReadOnly, attachmentInfo->stencilReadOnly,
+                            depthStencilTextureView->GetBaseMipLevel()));
         UINT clearFlags = 0;
         if (attachmentFormat.HasDepth() &&
             renderPass->depthStencilAttachment.depthLoadOp == wgpu::LoadOp::Clear) {
@@ -463,14 +465,14 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                                             d3d11DepthStencilView.Get());
 
     // Set viewport
-    D3D11_VIEWPORT viewport;
-    viewport.TopLeftX = 0;
-    viewport.TopLeftY = 0;
-    viewport.Width = renderPass->width;
-    viewport.Height = renderPass->height;
-    viewport.MinDepth = 0.0f;
-    viewport.MaxDepth = 1.0f;
-    d3d11DeviceContext1->RSSetViewports(1, &viewport);
+    D3D11_VIEWPORT defautViewport;
+    defautViewport.TopLeftX = 0;
+    defautViewport.TopLeftY = 0;
+    defautViewport.Width = renderPass->width;
+    defautViewport.Height = renderPass->height;
+    defautViewport.MinDepth = 0.0f;
+    defautViewport.MaxDepth = 1.0f;
+    d3d11DeviceContext1->RSSetViewports(1, &defautViewport);
 
     // Set scissor
     D3D11_RECT scissor;
@@ -524,7 +526,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 DAWN_TRY(bindGroupTracker.Apply());
                 vertexBufferTracker.Apply(lastPipeline);
 
-                if (lastPipeline->GetUsesVertexOrInstanceIndex()) {
+                if (lastPipeline->UsesVertexIndex() || lastPipeline->UsesInstanceIndex()) {
                     // Copy StartVertexLocation and StartInstanceLocation into the uniform buffer
                     // for built-in variables.
                     uint64_t offset =
@@ -550,7 +552,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 DAWN_TRY(bindGroupTracker.Apply());
                 vertexBufferTracker.Apply(lastPipeline);
 
-                if (lastPipeline->GetUsesVertexOrInstanceIndex()) {
+                if (lastPipeline->UsesVertexIndex() || lastPipeline->UsesInstanceIndex()) {
                     // Copy StartVertexLocation and StartInstanceLocation into the uniform buffer
                     // for built-in variables.
                     uint64_t offset =
@@ -771,21 +773,17 @@ MaybeError CommandBuffer::RecordFirstIndexOffset(RenderPipeline* renderPipeline,
                                                  CommandRecordingContext* commandContext,
                                                  uint32_t firstVertex,
                                                  uint32_t firstInstance) {
-    if (!renderPipeline->GetUsesVertexOrInstanceIndex()) {
-        // Vertex and instance index are not used in shader, so we don't need to update the uniform
-        // buffer. The original value in the uniform buffer will not be used, so we don't need to
-        // clear it.
-        return {};
+    constexpr uint32_t kFirstVertexOffset = 0;
+    constexpr uint32_t kFirstInstanceOffset = 1;
+
+    if (renderPipeline->UsesVertexIndex()) {
+        commandContext->WriteUniformBuffer(kFirstVertexOffset, firstVertex);
+    }
+    if (renderPipeline->UsesInstanceIndex()) {
+        commandContext->WriteUniformBuffer(kFirstInstanceOffset, firstInstance);
     }
 
-    // TODO(dawn:1705): only update the uniform buffer when the value changes.
-    uint32_t data[4] = {
-        firstVertex,
-        firstInstance,
-    };
-    DAWN_TRY(commandContext->GetUniformBuffer()->Write(commandContext, 0, data, sizeof(data)));
-
-    return {};
+    return commandContext->FlushUniformBuffer();
 }
 
 MaybeError CommandBuffer::RecordNumWorkgroupsForDispatch(ComputePipeline* computePipeline,
@@ -797,14 +795,10 @@ MaybeError CommandBuffer::RecordNumWorkgroupsForDispatch(ComputePipeline* comput
         return {};
     }
 
-    uint32_t data[4] = {
-        dispatchCmd->x,
-        dispatchCmd->y,
-        dispatchCmd->z,
-    };
-    DAWN_TRY(commandContext->GetUniformBuffer()->Write(commandContext, 0, data, sizeof(data)));
-
-    return {};
+    commandContext->WriteUniformBuffer(/*offset=*/0, dispatchCmd->x);
+    commandContext->WriteUniformBuffer(/*offset=*/1, dispatchCmd->y);
+    commandContext->WriteUniformBuffer(/*offset=*/2, dispatchCmd->z);
+    return commandContext->FlushUniformBuffer();
 }
 
 }  // namespace dawn::native::d3d11

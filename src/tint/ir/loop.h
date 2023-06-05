@@ -24,31 +24,32 @@ namespace tint::ir {
 class Loop : public utils::Castable<Loop, Branch> {
   public:
     /// Constructor
-    /// @param s the start block
+    /// @param b the body block
     /// @param c the continuing block
     /// @param m the merge block
-    Loop(Block* s, Block* c, Block* m);
+    /// @param args the branch arguments
+    Loop(ir::Block* b, ir::Block* c, ir::Block* m, utils::VectorRef<Value*> args = utils::Empty);
     ~Loop() override;
 
     /// @returns the switch start branch
-    const Block* Start() const { return start_; }
+    const ir::Block* Body() const { return body_; }
     /// @returns the switch start branch
-    Block* Start() { return start_; }
+    ir::Block* Body() { return body_; }
 
     /// @returns the switch continuing branch
-    const Block* Continuing() const { return continuing_; }
+    const ir::Block* Continuing() const { return continuing_; }
     /// @returns the switch continuing branch
-    Block* Continuing() { return continuing_; }
+    ir::Block* Continuing() { return continuing_; }
 
     /// @returns the switch merge branch
-    const Block* Merge() const { return merge_; }
+    const ir::Block* Merge() const { return merge_; }
     /// @returns the switch merge branch
-    Block* Merge() { return merge_; }
+    ir::Block* Merge() { return merge_; }
 
   private:
-    Block* start_ = nullptr;
-    Block* continuing_ = nullptr;
-    Block* merge_ = nullptr;
+    ir::Block* body_ = nullptr;
+    ir::Block* continuing_ = nullptr;
+    ir::Block* merge_ = nullptr;
 };
 
 }  // namespace tint::ir

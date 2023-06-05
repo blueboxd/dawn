@@ -24,9 +24,9 @@ namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_BuilderImplTest = TestHelper;
+using IR_FromProgramBinaryTest = TestHelper;
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Add) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Add) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = Add(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -39,7 +39,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Add) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = add %3, 4u
@@ -49,7 +49,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Add) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Increment) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Increment) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
     auto* expr = Increment("v1");
     WrapInFunction(expr);
@@ -62,7 +62,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Increment) {
   %v1:ptr<private, u32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = load %v1
     %4:u32 = add %3, 1u
@@ -73,7 +73,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Increment) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundAdd) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_CompoundAdd) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
     auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kAdd);
     WrapInFunction(expr);
@@ -86,7 +86,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundAdd) {
   %v1:ptr<private, u32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = load %v1
     %4:u32 = add %3, 1u
@@ -97,7 +97,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundAdd) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Subtract) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Subtract) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = Sub(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -110,7 +110,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Subtract) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = sub %3, 4u
@@ -120,7 +120,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Subtract) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Decrement) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Decrement) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.i32());
     auto* expr = Decrement("v1");
     WrapInFunction(expr);
@@ -133,7 +133,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Decrement) {
   %v1:ptr<private, i32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:i32 = load %v1
     %4:i32 = sub %3, 1i
@@ -144,7 +144,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Decrement) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundSubtract) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_CompoundSubtract) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
     auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kSubtract);
     WrapInFunction(expr);
@@ -157,7 +157,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundSubtract) {
   %v1:ptr<private, u32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = load %v1
     %4:u32 = sub %3, 1u
@@ -168,7 +168,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundSubtract) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Multiply) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Multiply) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = Mul(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -181,7 +181,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Multiply) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = mul %3, 4u
@@ -191,7 +191,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Multiply) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundMultiply) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_CompoundMultiply) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
     auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kMultiply);
     WrapInFunction(expr);
@@ -204,7 +204,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundMultiply) {
   %v1:ptr<private, u32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = load %v1
     %4:u32 = mul %3, 1u
@@ -215,7 +215,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundMultiply) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Div) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Div) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = Div(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -228,7 +228,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Div) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = div %3, 4u
@@ -238,7 +238,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Div) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundDiv) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_CompoundDiv) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
     auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kDivide);
     WrapInFunction(expr);
@@ -251,7 +251,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundDiv) {
   %v1:ptr<private, u32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = load %v1
     %4:u32 = div %3, 1u
@@ -262,7 +262,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundDiv) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Modulo) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Modulo) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = Mod(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -275,7 +275,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Modulo) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = mod %3, 4u
@@ -285,7 +285,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Modulo) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundModulo) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_CompoundModulo) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
     auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kModulo);
     WrapInFunction(expr);
@@ -298,7 +298,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundModulo) {
   %v1:ptr<private, u32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = load %v1
     %4:u32 = mod %3, 1u
@@ -309,7 +309,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundModulo) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_And) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_And) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = And(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -322,7 +322,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_And) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = and %3, 4u
@@ -332,7 +332,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_And) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundAnd) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_CompoundAnd) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.bool_());
     auto* expr = CompoundAssign("v1", false, ast::BinaryOp::kAnd);
     WrapInFunction(expr);
@@ -345,7 +345,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundAnd) {
   %v1:ptr<private, bool, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:bool = load %v1
     %4:bool = and %3, false
@@ -356,7 +356,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundAnd) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Or) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Or) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = Or(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -369,7 +369,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Or) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = or %3, 4u
@@ -379,7 +379,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Or) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundOr) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_CompoundOr) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.bool_());
     auto* expr = CompoundAssign("v1", false, ast::BinaryOp::kOr);
     WrapInFunction(expr);
@@ -392,7 +392,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundOr) {
   %v1:ptr<private, bool, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:bool = load %v1
     %4:bool = or %3, false
@@ -403,7 +403,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundOr) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Xor) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Xor) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = Xor(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -416,7 +416,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Xor) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = xor %3, 4u
@@ -426,7 +426,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Xor) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundXor) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_CompoundXor) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
     auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kXor);
     WrapInFunction(expr);
@@ -439,7 +439,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundXor) {
   %v1:ptr<private, u32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = load %v1
     %4:u32 = xor %3, 1u
@@ -450,7 +450,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundXor) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LogicalAnd) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_LogicalAnd) {
     Func("my_func", utils::Empty, ty.bool_(), utils::Vector{Return(true)});
     auto* expr = If(LogicalAnd(Call("my_func"), false), Block());
     WrapInFunction(expr);
@@ -463,7 +463,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LogicalAnd) {
     ret true
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:bool = call %my_func
     if %3 [t: %b3, f: %b4, m: %b5]
@@ -502,7 +502,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LogicalAnd) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LogicalOr) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_LogicalOr) {
     Func("my_func", utils::Empty, ty.bool_(), utils::Vector{Return(true)});
     auto* expr = If(LogicalOr(Call("my_func"), true), Block());
     WrapInFunction(expr);
@@ -515,7 +515,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LogicalOr) {
     ret true
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:bool = call %my_func
     if %3 [t: %b3, f: %b4, m: %b5]
@@ -554,7 +554,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LogicalOr) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Equal) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Equal) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = Equal(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -567,7 +567,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Equal) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:bool = eq %3, 4u
@@ -577,7 +577,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Equal) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_NotEqual) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_NotEqual) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = NotEqual(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -590,7 +590,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_NotEqual) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:bool = neq %3, 4u
@@ -600,7 +600,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_NotEqual) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LessThan) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_LessThan) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = LessThan(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -613,7 +613,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LessThan) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:bool = lt %3, 4u
@@ -623,7 +623,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LessThan) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_GreaterThan) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_GreaterThan) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = GreaterThan(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -636,7 +636,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_GreaterThan) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:bool = gt %3, 4u
@@ -646,7 +646,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_GreaterThan) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LessThanEqual) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_LessThanEqual) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = LessThanEqual(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -659,7 +659,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LessThanEqual) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:bool = lte %3, 4u
@@ -669,7 +669,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_LessThanEqual) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_GreaterThanEqual) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_GreaterThanEqual) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = GreaterThanEqual(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -682,7 +682,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_GreaterThanEqual) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:bool = gte %3, 4u
@@ -692,7 +692,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_GreaterThanEqual) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_ShiftLeft) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_ShiftLeft) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = Shl(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -705,7 +705,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_ShiftLeft) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = shiftl %3, 4u
@@ -715,7 +715,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_ShiftLeft) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundShiftLeft) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_CompoundShiftLeft) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
     auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kShiftLeft);
     WrapInFunction(expr);
@@ -728,7 +728,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundShiftLeft) {
   %v1:ptr<private, u32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = load %v1
     %4:u32 = shiftl %3, 1u
@@ -739,7 +739,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundShiftLeft) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_ShiftRight) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_ShiftRight) {
     Func("my_func", utils::Empty, ty.u32(), utils::Vector{Return(0_u)});
     auto* expr = Shr(Call("my_func"), 4_u);
     WrapInFunction(expr);
@@ -752,7 +752,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_ShiftRight) {
     ret 0u
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
     %tint_symbol:u32 = shiftr %3, 4u
@@ -762,7 +762,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_ShiftRight) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundShiftRight) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_CompoundShiftRight) {
     GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
     auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kShiftRight);
     WrapInFunction(expr);
@@ -775,7 +775,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundShiftRight) {
   %v1:ptr<private, u32, read_write> = var
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = load %v1
     %4:u32 = shiftr %3, 1u
@@ -786,7 +786,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_CompoundShiftRight) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Compound) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Compound) {
     Func("my_func", utils::Empty, ty.f32(), utils::Vector{Return(0_f)});
 
     auto* expr = LogicalAnd(LessThan(Call("my_func"), 2_f),
@@ -801,7 +801,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Compound) {
     ret 0.0f
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:f32 = call %my_func
     %4:bool = lt %3, 2.0f
@@ -831,7 +831,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Compound) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Compound_WithConstEval) {
+TEST_F(IR_FromProgramBinaryTest, EmitExpression_Binary_Compound_WithConstEval) {
     Func("my_func", utils::Vector{Param("p", ty.bool_())}, ty.bool_(), utils::Vector{Return(true)});
     auto* expr = Call("my_func", LogicalAnd(LessThan(2.4_f, 2_f),
                                             GreaterThan(2.5_f, Div(10_f, Mul(2.3_f, 9.4_f)))));
@@ -845,7 +845,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Binary_Compound_WithConstEval) {
     ret true
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %tint_symbol:bool = call %my_func, false
     ret

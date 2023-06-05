@@ -24,9 +24,9 @@ namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_BuilderImplTest = TestHelper;
+using IR_FromProgramCallTest = TestHelper;
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Bitcast) {
+TEST_F(IR_FromProgramCallTest, EmitExpression_Bitcast) {
     Func("my_func", utils::Empty, ty.f32(), utils::Vector{Return(0_f)});
 
     auto* expr = Bitcast<f32>(Call("my_func"));
@@ -40,7 +40,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Bitcast) {
     ret 0.0f
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:f32 = call %my_func
     %tint_symbol:f32 = bitcast %3
@@ -50,7 +50,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Bitcast) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitStatement_Discard) {
+TEST_F(IR_FromProgramCallTest, EmitStatement_Discard) {
     auto* expr = Discard();
     Func("test_function", {}, ty.void_(), expr,
          utils::Vector{
@@ -60,7 +60,7 @@ TEST_F(IR_BuilderImplTest, EmitStatement_Discard) {
     auto m = Build();
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
-    EXPECT_EQ(Disassemble(m.Get()), R"(%test_function = func():void [@fragment] -> %b1 {
+    EXPECT_EQ(Disassemble(m.Get()), R"(%test_function = @fragment func():void -> %b1 {
   %b1 = block {
     discard
     ret
@@ -69,7 +69,7 @@ TEST_F(IR_BuilderImplTest, EmitStatement_Discard) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitStatement_UserFunction) {
+TEST_F(IR_FromProgramCallTest, EmitStatement_UserFunction) {
     Func("my_func", utils::Vector{Param("p", ty.f32())}, ty.void_(), utils::Empty);
 
     auto* stmt = CallStmt(Call("my_func", Mul(2_a, 3_a)));
@@ -82,7 +82,7 @@ TEST_F(IR_BuilderImplTest, EmitStatement_UserFunction) {
     ret
   }
 }
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %4:void = call %my_func, 6.0f
     ret
@@ -91,7 +91,7 @@ TEST_F(IR_BuilderImplTest, EmitStatement_UserFunction) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Convert) {
+TEST_F(IR_FromProgramCallTest, EmitExpression_Convert) {
     auto i = GlobalVar("i", builtin::AddressSpace::kPrivate, Expr(1_i));
     auto* expr = Call(ty.f32(), i);
     WrapInFunction(expr);
@@ -104,7 +104,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Convert) {
   %i:ptr<private, i32, read_write> = var, 1i
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:i32 = load %i
     %tint_symbol:f32 = convert i32, %3
@@ -114,7 +114,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Convert) {
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_ConstructEmpty) {
+TEST_F(IR_FromProgramCallTest, EmitExpression_ConstructEmpty) {
     auto* expr = vec3(ty.f32());
     GlobalVar("i", builtin::AddressSpace::kPrivate, expr);
 
@@ -123,13 +123,13 @@ TEST_F(IR_BuilderImplTest, EmitExpression_ConstructEmpty) {
 
     EXPECT_EQ(Disassemble(m.Get()), R"(# Root block
 %b1 = block {
-  %i:ptr<private, vec3<f32>, read_write> = var, vec3<f32> 0.0f
+  %i:ptr<private, vec3<f32>, read_write> = var, vec3<f32>(0.0f)
 }
 
 )");
 }
 
-TEST_F(IR_BuilderImplTest, EmitExpression_Construct) {
+TEST_F(IR_FromProgramCallTest, EmitExpression_Construct) {
     auto i = GlobalVar("i", builtin::AddressSpace::kPrivate, Expr(1_f));
     auto* expr = vec3(ty.f32(), 2_f, 3_f, i);
     WrapInFunction(expr);
@@ -142,7 +142,7 @@ TEST_F(IR_BuilderImplTest, EmitExpression_Construct) {
   %i:ptr<private, f32, read_write> = var, 1.0f
 }
 
-%test_function = func():void [@compute @workgroup_size(1, 1, 1)] -> %b2 {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:f32 = load %i
     %tint_symbol:vec3<f32> = construct 2.0f, 3.0f, %3
