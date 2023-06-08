@@ -17,10 +17,14 @@
 
 #include <utility>
 
-#include "src/tint/ir/block_param.h"
 #include "src/tint/ir/branch.h"
 #include "src/tint/ir/instruction.h"
 #include "src/tint/utils/vector.h"
+
+// Forward declarations
+namespace tint::ir {
+class ControlInstruction;
+}  // namespace tint::ir
 
 namespace tint::ir {
 
@@ -92,6 +96,12 @@ class Block : public utils::Castable<Block> {
     /// @returns the ending iterator
     Iterator end() const { return Iterator{nullptr}; }
 
+    /// @returns the first instruction in the instruction list
+    Instruction* Front() const { return instructions_.first; }
+
+    /// @returns the last instruction in the instruction list
+    Instruction* Back() const { return instructions_.last; }
+
     /// Adds the instruction to the beginning of the block
     /// @param inst the instruction to add
     void Prepend(Instruction* inst);
@@ -120,20 +130,11 @@ class Block : public utils::Castable<Block> {
     /// @returns the number of instructions in the block
     size_t Length() const { return instructions_.count; }
 
-    /// Sets the params to the block
-    /// @param params the params for the block
-    void SetParams(utils::VectorRef<const BlockParam*> params) { params_ = std::move(params); }
-    /// @return the parameters passed into the block
-    utils::VectorRef<const BlockParam*> Params() const { return params_; }
-    /// @returns the params to the block
-    utils::Vector<const BlockParam*, 0>& Params() { return params_; }
+    /// @return the parent instruction that owns this block
+    ControlInstruction* Parent() const { return parent_; }
 
-    /// @returns the inbound branch list for the block
-    utils::VectorRef<ir::Branch*> InboundBranches() const { return inbound_branches_; }
-
-    /// Adds the given node to the inbound branches
-    /// @param node the node to add
-    void AddInboundBranch(ir::Branch* node) { inbound_branches_.Push(node); }
+    /// @param parent the parent instruction that owns this block
+    void SetParent(ControlInstruction* parent) { parent_ = parent; }
 
   private:
     struct {
@@ -142,14 +143,7 @@ class Block : public utils::Castable<Block> {
         size_t count = 0;
     } instructions_;
 
-    utils::Vector<const BlockParam*, 0> params_;
-
-    /// The list of branches into this node. This list maybe empty for several
-    /// reasons:
-    ///   - Node is a start node
-    ///   - Node is a merge target outside control flow (e.g. an if that returns in both branches)
-    ///   - Node is a continue target outside control flow (e.g. a loop that returns)
-    utils::Vector<ir::Branch*, 2> inbound_branches_;
+    ControlInstruction* parent_ = nullptr;
 };
 
 }  // namespace tint::ir

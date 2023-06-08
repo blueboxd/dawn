@@ -19,8 +19,10 @@
 #include "spirv/unified1/GLSL.std.450.h"
 #include "spirv/unified1/spirv.h"
 #include "src/tint/constant/scalar.h"
+#include "src/tint/ir/access.h"
 #include "src/tint/ir/binary.h"
 #include "src/tint/ir/block.h"
+#include "src/tint/ir/block_param.h"
 #include "src/tint/ir/break_if.h"
 #include "src/tint/ir/builtin.h"
 #include "src/tint/ir/continue.h"
@@ -31,12 +33,16 @@
 #include "src/tint/ir/load.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
+#include "src/tint/ir/multi_in_block.h"
 #include "src/tint/ir/next_iteration.h"
 #include "src/tint/ir/return.h"
 #include "src/tint/ir/store.h"
 #include "src/tint/ir/switch.h"
 #include "src/tint/ir/transform/add_empty_entry_point.h"
+#include "src/tint/ir/transform/block_decorated_structs.h"
+#include "src/tint/ir/transform/var_for_dynamic_index.h"
 #include "src/tint/ir/user_call.h"
+#include "src/tint/ir/validate.h"
 #include "src/tint/ir/var.h"
 #include "src/tint/switch.h"
 #include "src/tint/transform/manager.h"
@@ -64,6 +70,8 @@ void Sanitize(ir::Module* module) {
     transform::DataMap data;
 
     manager.Add<ir::transform::AddEmptyEntryPoint>();
+    manager.Add<ir::transform::BlockDecoratedStructs>();
+    manager.Add<ir::transform::VarForDynamicIndex>();
 
     transform::DataMap outputs;
     manager.Run(module, data, outputs);
@@ -92,6 +100,12 @@ GeneratorImplIr::GeneratorImplIr(ir::Module* module, bool zero_init_workgroup_me
     : ir_(module), zero_init_workgroup_memory_(zero_init_workgroup_mem) {}
 
 bool GeneratorImplIr::Generate() {
+    auto valid = ir::Validate(*ir_);
+    if (!valid) {
+        diagnostics_ = valid.Failure();
+        return false;
+    }
+
     // Run the IR transformations to prepare for SPIR-V emission.
     Sanitize(ir_);
 
@@ -164,6 +178,14 @@ uint32_t GeneratorImplIr::Constant(const constant::Value* constant) {
             [&](const type::Matrix* mat) {
                 OperandList operands = {Type(ty), id};
                 for (uint32_t i = 0; i < mat->columns(); i++) {
+                    operands.push_back(Constant(constant->Index(i)));
+                }
+                module_.PushType(spv::Op::OpConstantComposite, operands);
+            },
+            [&](const type::Array* arr) {
+                TINT_ASSERT(Writer, arr->ConstantCount());
+                OperandList operands = {Type(ty), id};
+                for (uint32_t i = 0; i < arr->ConstantCount(); i++) {
                     operands.push_back(Constant(constant->Index(i)));
                 }
                 module_.PushType(spv::Op::OpConstantComposite, operands);
@@ -283,6 +305,11 @@ void GeneratorImplIr::EmitStructType(uint32_t id, const type::Struct* str) {
     }
     module_.PushType(spv::Op::OpTypeStruct, std::move(operands));
 
+    // Add a Block decoration if necessary.
+    if (str->StructFlags().Contains(type::StructFlag::kBlock)) {
+        module_.PushAnnot(spv::Op::OpDecorate, {id, U32Operand(SpvDecorationBlock)});
+    }
+
     if (str->Name().IsValid()) {
         module_.PushDebug(spv::Op::OpName, {operands[0], Operand(str->Name().Name())});
     }
@@ -401,12 +428,22 @@ void GeneratorImplIr::EmitBlock(const ir::Block* block) {
         return;
     }
 
+    if (auto* mib = block->As<ir::MultiInBlock>()) {
+        // Emit all OpPhi nodes for incoming branches to block.
+        EmitIncomingPhis(mib);
+    }
+
+    // Emit the block's statements.
+    EmitBlockInstructions(block);
+}
+
+void GeneratorImplIr::EmitIncomingPhis(const ir::MultiInBlock* block) {
     // Emit Phi nodes for all the incoming block parameters
     for (size_t param_idx = 0; param_idx < block->Params().Length(); param_idx++) {
         auto* param = block->Params()[param_idx];
         OperandList ops{Type(param->Type()), Value(param)};
 
-        for (auto* incoming : block->InboundBranches()) {
+        for (auto* incoming : block->InboundSiblingBranches()) {
             auto* arg = incoming->Args()[param_idx];
             ops.push_back(Value(arg));
             ops.push_back(Label(incoming->Block()));
@@ -414,11 +451,13 @@ void GeneratorImplIr::EmitBlock(const ir::Block* block) {
 
         current_function_.push_inst(spv::Op::OpPhi, std::move(ops));
     }
+}
 
-    // Emit the instructions.
+void GeneratorImplIr::EmitBlockInstructions(const ir::Block* block) {
     for (auto* inst : *block) {
         Switch(
             inst,                                             //
+            [&](const ir::Access* a) { EmitAccess(a); },      //
             [&](const ir::Binary* b) { EmitBinary(b); },      //
             [&](const ir::Builtin* b) { EmitBuiltin(b); },    //
             [&](const ir::Load* l) { EmitLoad(l); },          //
@@ -516,6 +555,58 @@ void GeneratorImplIr::EmitIf(const ir::If* i) {
 
     // Emit the merge block.
     EmitBlock(merge_block);
+}
+
+void GeneratorImplIr::EmitAccess(const ir::Access* access) {
+    auto id = Value(access);
+    OperandList operands = {Type(access->Type()), id, Value(access->Object())};
+
+    if (access->Type()->Is<type::Pointer>()) {
+        // Use OpAccessChain for accesses into pointer types.
+        for (auto* idx : access->Indices()) {
+            operands.push_back(Value(idx));
+        }
+        current_function_.push_inst(spv::Op::OpAccessChain, std::move(operands));
+        return;
+    }
+
+    // For non-pointer types, we assume that the indices are constants and use OpCompositeExtract.
+    // If we hit a non-constant index into a vector type, use OpVectorExtractDynamic for it.
+    auto* ty = access->Object()->Type();
+    for (auto* idx : access->Indices()) {
+        if (auto* constant = idx->As<ir::Constant>()) {
+            // Push the index to the chain and update the current type.
+            auto i = constant->Value()->ValueAs<u32>();
+            operands.push_back(i);
+            ty = Switch(
+                ty,  //
+                [&](const type::Array* arr) { return arr->ElemType(); },
+                [&](const type::Matrix* mat) { return mat->ColumnType(); },
+                [&](const type::Struct* str) { return str->Members()[i]->Type(); },
+                [&](const type::Vector* vec) { return vec->type(); },
+                [&](Default) { return nullptr; });
+        } else {
+            // The VarForDynamicIndex transform ensures that only value types that are vectors
+            // will be dynamically indexed, as we can use OpVectorExtractDynamic for this case.
+            TINT_ASSERT(Writer, ty->Is<type::Vector>());
+
+            // If this wasn't the first access in the chain then emit the chain so far as an
+            // OpCompositeExtract, creating a new result ID for the resulting vector.
+            auto vec_id = Value(access->Object());
+            if (operands.size() > 3) {
+                vec_id = module_.NextId();
+                operands[0] = Type(ty);
+                operands[1] = vec_id;
+                current_function_.push_inst(spv::Op::OpCompositeExtract, std::move(operands));
+            }
+
+            // Now emit the OpVectorExtractDynamic instruction.
+            operands = {Type(access->Type()), id, vec_id, Value(idx)};
+            current_function_.push_inst(spv::Op::OpVectorExtractDynamic, std::move(operands));
+            return;
+        }
+    }
+    current_function_.push_inst(spv::Op::OpCompositeExtract, std::move(operands));
 }
 
 void GeneratorImplIr::EmitBinary(const ir::Binary* binary) {
@@ -694,24 +785,34 @@ void GeneratorImplIr::EmitLoad(const ir::Load* load) {
 }
 
 void GeneratorImplIr::EmitLoop(const ir::Loop* loop) {
-    auto header_label = module_.NextId();
-    auto body_label = Label(loop->Body());
+    auto init_label = loop->HasInitializer() ? Label(loop->Initializer()) : 0;
+    auto header_label = Label(loop->Body());  // Back-edge needs to branch to the loop header
+    auto body_label = module_.NextId();
     auto continuing_label = Label(loop->Continuing());
     auto merge_label = Label(loop->Merge());
 
-    // Branch to and emit the loop header, which contains OpLoopMerge and OpBranch instructions.
-    current_function_.push_inst(spv::Op::OpBranch, {header_label});
+    if (init_label != 0) {
+        // Emit the loop initializer.
+        current_function_.push_inst(spv::Op::OpBranch, {init_label});
+        EmitBlock(loop->Initializer());
+    } else {
+        // No initializer. Branch to body.
+        current_function_.push_inst(spv::Op::OpBranch, {header_label});
+    }
+
+    // Emit the loop body header, which contains the OpLoopMerge and OpPhis.
+    // This then unconditionally branches to body_label
     current_function_.push_inst(spv::Op::OpLabel, {header_label});
+    EmitIncomingPhis(loop->Body());
     current_function_.push_inst(
         spv::Op::OpLoopMerge, {merge_label, continuing_label, U32Operand(SpvLoopControlMaskNone)});
     current_function_.push_inst(spv::Op::OpBranch, {body_label});
 
-    // Emit the loop body.
-    EmitBlock(loop->Body());
+    // Emit the loop body
+    current_function_.push_inst(spv::Op::OpLabel, {body_label});
+    EmitBlockInstructions(loop->Body());
 
     // Emit the loop continuing block.
-    // The back-edge needs to go to the loop header, so update the label for the start block.
-    block_labels_.Replace(loop->Body(), header_label);
     if (loop->Continuing()->HasBranchTarget()) {
         EmitBlock(loop->Continuing());
     } else {
@@ -778,8 +879,7 @@ void GeneratorImplIr::EmitUserCall(const ir::UserCall* call) {
 
 void GeneratorImplIr::EmitVar(const ir::Var* var) {
     auto id = Value(var);
-    auto* ptr = var->Type()->As<type::Pointer>();
-    TINT_ASSERT(Writer, ptr);
+    auto* ptr = var->Type();
     auto ty = Type(ptr);
 
     switch (ptr->AddressSpace()) {
@@ -799,6 +899,18 @@ void GeneratorImplIr::EmitVar(const ir::Var* var) {
                 operands.push_back(Value(var->Initializer()));
             }
             module_.PushType(spv::Op::OpVariable, operands);
+            break;
+        }
+        case builtin::AddressSpace::kStorage:
+        case builtin::AddressSpace::kUniform: {
+            TINT_ASSERT(Writer, !current_function_);
+            module_.PushType(spv::Op::OpVariable,
+                             {ty, id, U32Operand(StorageClass(ptr->AddressSpace()))});
+            auto bp = var->BindingPoint().value();
+            module_.PushAnnot(spv::Op::OpDecorate,
+                              {id, U32Operand(SpvDecorationDescriptorSet), bp.group});
+            module_.PushAnnot(spv::Op::OpDecorate,
+                              {id, U32Operand(SpvDecorationBinding), bp.binding});
             break;
         }
         case builtin::AddressSpace::kWorkgroup: {

@@ -17,6 +17,8 @@
 namespace tint::writer::spirv {
 namespace {
 
+using namespace tint::number_suffixes;  // NOLINT
+
 TEST_F(SpvGeneratorImplTest, Constant_Bool) {
     generator_.Constant(b.Constant(true));
     generator_.Constant(b.Constant(false));
@@ -65,7 +67,7 @@ TEST_F(SpvGeneratorImplTest, Constant_F16) {
 TEST_F(SpvGeneratorImplTest, Constant_Vec4Bool) {
     auto const_bool = [&](bool val) { return mod.constant_values.Get(val); };
     auto* v = mod.constant_values.Composite(
-        mod.Types().vec4(mod.Types().bool_()),
+        ty.vec4(ty.bool_()),
         utils::Vector{const_bool(true), const_bool(false), const_bool(false), const_bool(true)});
 
     generator_.Constant(b.Constant(v));
@@ -79,7 +81,7 @@ TEST_F(SpvGeneratorImplTest, Constant_Vec4Bool) {
 
 TEST_F(SpvGeneratorImplTest, Constant_Vec2i) {
     auto const_i32 = [&](float val) { return mod.constant_values.Get(i32(val)); };
-    auto* v = mod.constant_values.Composite(mod.Types().vec2(mod.Types().i32()),
+    auto* v = mod.constant_values.Composite(ty.vec2(ty.i32()),
                                             utils::Vector{const_i32(42), const_i32(-1)});
     generator_.Constant(b.Constant(v));
     EXPECT_EQ(DumpTypes(), R"(%3 = OpTypeInt 32 1
@@ -93,8 +95,7 @@ TEST_F(SpvGeneratorImplTest, Constant_Vec2i) {
 TEST_F(SpvGeneratorImplTest, Constant_Vec3u) {
     auto const_u32 = [&](float val) { return mod.constant_values.Get(u32(val)); };
     auto* v = mod.constant_values.Composite(
-        mod.Types().vec3(mod.Types().u32()),
-        utils::Vector{const_u32(42), const_u32(0), const_u32(4000000000)});
+        ty.vec3(ty.u32()), utils::Vector{const_u32(42), const_u32(0), const_u32(4000000000)});
     generator_.Constant(b.Constant(v));
     EXPECT_EQ(DumpTypes(), R"(%3 = OpTypeInt 32 0
 %2 = OpTypeVector %3 3
@@ -108,7 +109,7 @@ TEST_F(SpvGeneratorImplTest, Constant_Vec3u) {
 TEST_F(SpvGeneratorImplTest, Constant_Vec4f) {
     auto const_f32 = [&](float val) { return mod.constant_values.Get(f32(val)); };
     auto* v = mod.constant_values.Composite(
-        mod.Types().vec4(mod.Types().f32()),
+        ty.vec4(ty.f32()),
         utils::Vector{const_f32(42), const_f32(0), const_f32(0.25), const_f32(-1)});
     generator_.Constant(b.Constant(v));
     EXPECT_EQ(DumpTypes(), R"(%3 = OpTypeFloat 32
@@ -123,7 +124,7 @@ TEST_F(SpvGeneratorImplTest, Constant_Vec4f) {
 
 TEST_F(SpvGeneratorImplTest, Constant_Vec2h) {
     auto const_f16 = [&](float val) { return mod.constant_values.Get(f16(val)); };
-    auto* v = mod.constant_values.Composite(mod.Types().vec2(mod.Types().f16()),
+    auto* v = mod.constant_values.Composite(ty.vec2(ty.f16()),
                                             utils::Vector{const_f16(42), const_f16(0.25)});
     generator_.Constant(b.Constant(v));
     EXPECT_EQ(DumpTypes(), R"(%3 = OpTypeFloat 16
@@ -136,16 +137,14 @@ TEST_F(SpvGeneratorImplTest, Constant_Vec2h) {
 
 TEST_F(SpvGeneratorImplTest, Constant_Mat2x3f) {
     auto const_f32 = [&](float val) { return mod.constant_values.Get(f32(val)); };
-    auto* f32 = mod.Types().f32();
+    auto* f32 = ty.f32();
     auto* v = mod.constant_values.Composite(
-        mod.Types().mat2x3(f32),
+        ty.mat2x3(f32),
         utils::Vector{
             mod.constant_values.Composite(
-                mod.Types().vec3(f32),
-                utils::Vector{const_f32(42), const_f32(-1), const_f32(0.25)}),
+                ty.vec3(f32), utils::Vector{const_f32(42), const_f32(-1), const_f32(0.25)}),
             mod.constant_values.Composite(
-                mod.Types().vec3(f32),
-                utils::Vector{const_f32(-42), const_f32(0), const_f32(-0.25)}),
+                ty.vec3(f32), utils::Vector{const_f32(-42), const_f32(0), const_f32(-0.25)}),
         });
     generator_.Constant(b.Constant(v));
     EXPECT_EQ(DumpTypes(), R"(%4 = OpTypeFloat 32
@@ -165,19 +164,18 @@ TEST_F(SpvGeneratorImplTest, Constant_Mat2x3f) {
 
 TEST_F(SpvGeneratorImplTest, Constant_Mat4x2h) {
     auto const_f16 = [&](float val) { return mod.constant_values.Get(f16(val)); };
-    auto* f16 = mod.Types().f16();
+    auto* f16 = ty.f16();
     auto* v = mod.constant_values.Composite(
-        mod.Types().mat4x2(f16),
-        utils::Vector{
-            mod.constant_values.Composite(mod.Types().vec2(f16),
-                                          utils::Vector{const_f16(42), const_f16(-1)}),
-            mod.constant_values.Composite(mod.Types().vec2(f16),
-                                          utils::Vector{const_f16(0), const_f16(0.25)}),
-            mod.constant_values.Composite(mod.Types().vec2(f16),
-                                          utils::Vector{const_f16(-42), const_f16(1)}),
-            mod.constant_values.Composite(mod.Types().vec2(f16),
-                                          utils::Vector{const_f16(0.5), const_f16(-0)}),
-        });
+        ty.mat4x2(f16), utils::Vector{
+                            mod.constant_values.Composite(
+                                ty.vec2(f16), utils::Vector{const_f16(42), const_f16(-1)}),
+                            mod.constant_values.Composite(
+                                ty.vec2(f16), utils::Vector{const_f16(0), const_f16(0.25)}),
+                            mod.constant_values.Composite(
+                                ty.vec2(f16), utils::Vector{const_f16(-42), const_f16(1)}),
+                            mod.constant_values.Composite(
+                                ty.vec2(f16), utils::Vector{const_f16(0.5), const_f16(-0)}),
+                        });
     generator_.Constant(b.Constant(v));
     EXPECT_EQ(DumpTypes(), R"(%4 = OpTypeFloat 16
 %3 = OpTypeVector %4 2
@@ -194,6 +192,56 @@ TEST_F(SpvGeneratorImplTest, Constant_Mat4x2h) {
 %15 = OpConstant %4 0x1p-1
 %14 = OpConstantComposite %3 %15 %9
 %1 = OpConstantComposite %2 %5 %8 %11 %14
+)");
+}
+
+TEST_F(SpvGeneratorImplTest, Constant_Array_I32) {
+    auto* arr =
+        mod.constant_values.Composite(ty.array(ty.i32(), 4), utils::Vector{
+                                                                 mod.constant_values.Get(1_i),
+                                                                 mod.constant_values.Get(2_i),
+                                                                 mod.constant_values.Get(3_i),
+                                                                 mod.constant_values.Get(4_i),
+                                                             });
+    generator_.Constant(b.Constant(arr));
+    EXPECT_EQ(DumpTypes(), R"(%3 = OpTypeInt 32 1
+%5 = OpTypeInt 32 0
+%4 = OpConstant %5 4
+%2 = OpTypeArray %3 %4
+%6 = OpConstant %3 1
+%7 = OpConstant %3 2
+%8 = OpConstant %3 3
+%9 = OpConstant %3 4
+%1 = OpConstantComposite %2 %6 %7 %8 %9
+)");
+}
+
+TEST_F(SpvGeneratorImplTest, Constant_Array_Array_I32) {
+    auto* inner =
+        mod.constant_values.Composite(ty.array(ty.i32(), 4), utils::Vector{
+                                                                 mod.constant_values.Get(1_i),
+                                                                 mod.constant_values.Get(2_i),
+                                                                 mod.constant_values.Get(3_i),
+                                                                 mod.constant_values.Get(4_i),
+                                                             });
+    auto* arr = mod.constant_values.Composite(ty.array(ty.array(ty.i32(), 4), 4), utils::Vector{
+                                                                                      inner,
+                                                                                      inner,
+                                                                                      inner,
+                                                                                      inner,
+                                                                                  });
+    generator_.Constant(b.Constant(arr));
+    EXPECT_EQ(DumpTypes(), R"(%4 = OpTypeInt 32 1
+%6 = OpTypeInt 32 0
+%5 = OpConstant %6 4
+%3 = OpTypeArray %4 %5
+%2 = OpTypeArray %3 %5
+%8 = OpConstant %4 1
+%9 = OpConstant %4 2
+%10 = OpConstant %4 3
+%11 = OpConstant %4 4
+%7 = OpConstantComposite %3 %8 %9 %10 %11
+%1 = OpConstantComposite %2 %7 %7 %7 %7
 )");
 }
 

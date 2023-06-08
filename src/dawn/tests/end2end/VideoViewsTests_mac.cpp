@@ -161,7 +161,7 @@ class VideoViewsTestBackendIOSurface : public VideoViewsTestBackend {
         native::metal::ExternalImageDescriptorIOSurface descriptor = {};
         descriptor.cTextureDescriptor =
             reinterpret_cast<const WGPUTextureDescriptor*>(&textureDesc);
-        descriptor.isInitialized = true;
+        descriptor.isInitialized = initialized;
         descriptor.ioSurface = surface;
 
         return std::make_unique<PlatformTextureIOSurface>(
@@ -178,8 +178,8 @@ class VideoViewsTestBackendIOSurface : public VideoViewsTestBackend {
 }  // anonymous namespace
 
 // static
-BackendTestConfig VideoViewsTestBackend::Backend() {
-    return MetalBackend();
+std::vector<BackendTestConfig> VideoViewsTestBackend::Backends() {
+    return {MetalBackend()};
 }
 
 // static

@@ -19,10 +19,11 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Load);
 
 namespace tint::ir {
 
-Load::Load(const type::Type* type, Value* f) : Base(), result_type_(type), from_(f) {
+Load::Load(const type::Type* type, Value* f) : Base(), result_type_(type) {
     TINT_ASSERT(IR, result_type_);
-    TINT_ASSERT(IR, from_);
-    from_->AddUsage(this);
+    TINT_ASSERT(IR, f);
+
+    AddOperand(f);
 }
 
 Load::~Load() = default;

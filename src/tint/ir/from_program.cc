@@ -109,8 +109,8 @@ namespace {
 
 using ResultType = utils::Result<Module, diag::List>;
 
-bool IsConnected(const Block* b) {
-    return b->InboundBranches().Length() > 0;
+bool IsConnected(const MultiInBlock* b) {
+    return b->InboundSiblingBranches().Length() > 0;
 }
 
 /// Impl is the private-implementation of FromProgram().
@@ -145,8 +145,8 @@ class Impl {
         /* dst */ {builder_.ir.constant_values},
     };
 
-    /// The stack of control blocks.
-    utils::Vector<Branch*, 8> control_stack_;
+    /// The stack of flow control instructions.
+    utils::Vector<ControlInstruction*, 8> control_stack_;
 
     /// The current block for expressions.
     Block* current_block_ = nullptr;
@@ -162,7 +162,9 @@ class Impl {
 
     class ControlStackScope {
       public:
-        ControlStackScope(Impl* impl, Branch* b) : impl_(impl) { impl_->control_stack_.Push(b); }
+        ControlStackScope(Impl* impl, ControlInstruction* b) : impl_(impl) {
+            impl_->control_stack_.Push(b);
+        }
 
         ~ControlStackScope() { impl_->control_stack_.Pop(); }
 
@@ -735,16 +737,17 @@ class Impl {
         scopes_.Push();
         TINT_DEFER(scopes_.Pop());
 
-        if (stmt->initializer) {
-            // Emit the for initializer before branching to the loop
-            EmitStatement(stmt->initializer);
-        }
-
         {
             ControlStackScope scope(this, loop_inst);
 
-            current_block_ = loop_inst->Body();
+            if (stmt->initializer) {
+                // Emit the for initializer before branching to the body
+                current_block_ = loop_inst->Initializer();
+                EmitStatement(stmt->initializer);
+                SetBranch(builder_.NextIteration(loop_inst));
+            }
 
+            current_block_ = loop_inst->Body();
             if (stmt->condition) {
                 // Emit the condition into the target target of the loop
                 auto reg = EmitExpression(stmt->condition);
@@ -906,13 +909,8 @@ class Impl {
             }
             info.object = res.Get();
         }
-
-        if (auto* sem = program_->Sem().Get(expr)->As<sem::Load>()) {
-            auto* ref = sem->ReferenceType();
-            info.result_type = ref->StoreType()->Clone(clone_ctx_.type_ctx);
-        } else {
-            info.result_type = program_->Sem().Get(expr)->Type()->Clone(clone_ctx_.type_ctx);
-        }
+        info.result_type =
+            program_->Sem().Get(expr)->Type()->UnwrapRef()->Clone(clone_ctx_.type_ctx);
 
         // The AST chain is `inside-out` compared to what we need, which means the list it generates
         // is backwards. We need to operate on the list in reverse order to have the correct access
@@ -946,8 +944,8 @@ class Impl {
         // The access result type should match the source result type. If the source is a pointer,
         // we generate a pointer.
         const type::Type* ty = nullptr;
-        if (info.object->Type()->Is<type::Pointer>() && !info.result_type->Is<type::Pointer>()) {
-            auto* ptr = info.object->Type()->As<type::Pointer>();
+        if (auto* ptr = info.object->Type()->As<type::Pointer>();
+            ptr && !info.result_type->Is<type::Pointer>()) {
             ty = builder_.ir.Types().pointer(info.result_type, ptr->AddressSpace(), ptr->Access());
         } else {
             ty = info.result_type;

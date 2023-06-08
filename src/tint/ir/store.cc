@@ -19,11 +19,12 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Store);
 
 namespace tint::ir {
 
-Store::Store(Value* to, Value* from) : Base(), to_(to), from_(from) {
-    TINT_ASSERT(IR, to_);
-    TINT_ASSERT(IR, from_);
-    to_->AddUsage(this);
-    from_->AddUsage(this);
+Store::Store(Value* to, Value* from) {
+    TINT_ASSERT(IR, to);
+    TINT_ASSERT(IR, from);
+
+    AddOperand(to);
+    AddOperand(from);
 }
 
 Store::~Store() = default;

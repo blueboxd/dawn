@@ -84,6 +84,15 @@ MaybeError ValidateLinearTextureCopyOffset(const TextureDataLayout& layout,
     return {};
 }
 
+MaybeError ValidateTextureFormatForTextureToBufferCopyInCompatibilityMode(
+    const TextureBase* texture) {
+    DAWN_INVALID_IF(texture->GetFormat().isCompressed,
+                    "%s with format %s cannot be used as the source in a texture to buffer copy in "
+                    "compatibility mode.",
+                    texture, texture->GetFormat().format);
+    return {};
+}
+
 MaybeError ValidateTextureDepthStencilToBufferCopyRestrictions(const ImageCopyTexture& src) {
     Aspect aspectUsed;
     DAWN_TRY_ASSIGN(aspectUsed, SingleAspectUsedByImageCopyTexture(src));
@@ -1319,6 +1328,11 @@ void CommandEncoder::APICopyTextureToBuffer(const ImageCopyTexture* source,
                 // copyExtent.height by blockHeight while the divisibility conditions are
                 // checked in validating texture copy range.
                 DAWN_TRY(ValidateTextureCopyRange(GetDevice(), *source, *copySize));
+
+                if (GetDevice()->IsCompatibilityMode()) {
+                    DAWN_TRY(ValidateTextureFormatForTextureToBufferCopyInCompatibilityMode(
+                        source->texture));
+                }
             }
             const TexelBlockInfo& blockInfo =
                 source->texture->GetFormat().GetAspectInfo(source->aspect).block;
@@ -1345,6 +1359,11 @@ void CommandEncoder::APICopyTextureToBuffer(const ImageCopyTexture* source,
                     (format.format == wgpu::TextureFormat::Depth32Float &&
                      GetDevice()->IsToggleEnabled(
                          Toggle::UseBlitForDepth32FloatTextureToBufferCopy))) {
+                    // This function might create new resources. Need to lock the Device.
+                    // TODO(crbug.com/dawn/1618): In future, all temp resources should be created at
+                    // Command Submit time, so the locking would be removed from here at that point.
+                    auto deviceLock(GetDevice()->GetScopedLock());
+
                     TextureCopy src;
                     src.texture = source->texture;
                     src.origin = source->origin;
@@ -1364,6 +1383,11 @@ void CommandEncoder::APICopyTextureToBuffer(const ImageCopyTexture* source,
                 }
             } else if (aspect == Aspect::Stencil) {
                 if (GetDevice()->IsToggleEnabled(Toggle::UseBlitForStencilTextureToBufferCopy)) {
+                    // This function might create new resources. Need to lock the Device.
+                    // TODO(crbug.com/dawn/1618): In future, all temp resources should be created at
+                    // Command Submit time, so the locking would be removed from here at that point.
+                    auto deviceLock(GetDevice()->GetScopedLock());
+
                     TextureCopy src;
                     src.texture = source->texture;
                     src.origin = source->origin;

@@ -23,8 +23,17 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Swizzle);
 namespace tint::ir {
 
 Swizzle::Swizzle(const type::Type* ty, Value* object, utils::VectorRef<uint32_t> indices)
-    : result_type_(ty), object_(object), indices_(std::move(indices)) {
-    object_->AddUsage(this);
+    : result_type_(ty), indices_(std::move(indices)) {
+    TINT_ASSERT(IR, object != nullptr);
+    TINT_ASSERT(IR, result_type_ != nullptr);
+    TINT_ASSERT(IR, !indices.IsEmpty());
+    TINT_ASSERT(IR, indices.Length() <= 4);
+
+    AddOperand(object);
+
+    for (auto idx : indices_) {
+        TINT_ASSERT(IR, idx < 4);
+    }
 }
 
 Swizzle::~Swizzle() = default;

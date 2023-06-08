@@ -14,18 +14,74 @@
 
 #include "src/tint/ir/block.h"
 #include "gtest/gtest-spi.h"
-#include "gtest/gtest.h"
-#include "src/tint/ir/builder.h"
-#include "src/tint/ir/module.h"
+#include "src/tint/ir/ir_test_helper.h"
 
 namespace tint::ir {
 namespace {
 
-class IR_BlockTest : public ::testing::Test {
-  public:
-    Module mod;
-    Builder b{mod};
-};
+using namespace tint::number_suffixes;  // NOLINT
+using IR_BlockTest = IRTestHelper;
+
+TEST_F(IR_BlockTest, HasBranchTarget_Empty) {
+    auto* blk = b.CreateBlock();
+    EXPECT_FALSE(blk->HasBranchTarget());
+}
+
+TEST_F(IR_BlockTest, HasBranchTarget_NoBranch) {
+    auto* blk = b.CreateBlock();
+    blk->Append(b.Add(mod.Types().i32(), b.Constant(1_u), b.Constant(2_u)));
+    EXPECT_FALSE(blk->HasBranchTarget());
+}
+
+TEST_F(IR_BlockTest, HasBranchTarget_BreakIf) {
+    auto* blk = b.CreateBlock();
+    auto* loop = b.CreateLoop();
+    blk->Append(b.BreakIf(b.Constant(true), loop));
+    EXPECT_TRUE(blk->HasBranchTarget());
+}
+
+TEST_F(IR_BlockTest, HasBranchTarget_Continue) {
+    auto* blk = b.CreateBlock();
+    auto* loop = b.CreateLoop();
+    blk->Append(b.Continue(loop));
+    EXPECT_TRUE(blk->HasBranchTarget());
+}
+
+TEST_F(IR_BlockTest, HasBranchTarget_ExitIf) {
+    auto* blk = b.CreateBlock();
+    auto* if_ = b.CreateIf(b.Constant(true));
+    blk->Append(b.ExitIf(if_));
+    EXPECT_TRUE(blk->HasBranchTarget());
+}
+
+TEST_F(IR_BlockTest, HasBranchTarget_ExitLoop) {
+    auto* blk = b.CreateBlock();
+    auto* loop = b.CreateLoop();
+    blk->Append(b.ExitLoop(loop));
+    EXPECT_TRUE(blk->HasBranchTarget());
+}
+
+TEST_F(IR_BlockTest, HasBranchTarget_ExitSwitch) {
+    auto* blk = b.CreateBlock();
+    auto* s = b.CreateSwitch(b.Constant(1_u));
+    blk->Append(b.ExitSwitch(s));
+    EXPECT_TRUE(blk->HasBranchTarget());
+}
+
+TEST_F(IR_BlockTest, HasBranchTarget_NextIteration) {
+    auto* blk = b.CreateBlock();
+    auto* loop = b.CreateLoop();
+    blk->Append(b.NextIteration(loop));
+    EXPECT_TRUE(blk->HasBranchTarget());
+}
+
+TEST_F(IR_BlockTest, HasBranchTarget_Return) {
+    auto* f = b.CreateFunction("myFunc", mod.Types().void_());
+
+    auto* blk = b.CreateBlock();
+    blk->Append(b.Return(f));
+    EXPECT_TRUE(blk->HasBranchTarget());
+}
 
 TEST_F(IR_BlockTest, SetInstructions) {
     auto* inst1 = b.CreateLoop();

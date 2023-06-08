@@ -38,6 +38,7 @@
 #include "src/tint/ir/load.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
+#include "src/tint/ir/multi_in_block.h"
 #include "src/tint/ir/next_iteration.h"
 #include "src/tint/ir/return.h"
 #include "src/tint/ir/store.h"
@@ -51,6 +52,7 @@
 #include "src/tint/type/f16.h"
 #include "src/tint/type/f32.h"
 #include "src/tint/type/i32.h"
+#include "src/tint/type/pointer.h"
 #include "src/tint/type/u32.h"
 #include "src/tint/type/vector.h"
 #include "src/tint/type/void.h"
@@ -66,8 +68,11 @@ class Builder {
     /// Destructor
     ~Builder();
 
-    /// @returns a new block flow node
+    /// @returns a new block
     Block* CreateBlock();
+
+    /// @returns a new multi-in block
+    MultiInBlock* CreateMultiInBlock();
 
     /// Creates a function flow node
     /// @param name the function name
@@ -86,9 +91,8 @@ class Builder {
     If* CreateIf(Value* condition);
 
     /// Creates a loop flow node
-    /// @param args the branch arguments
     /// @returns the flow node
-    Loop* CreateLoop(utils::VectorRef<Value*> args = utils::Empty);
+    Loop* CreateLoop();
 
     /// Creates a switch flow node
     /// @param condition the switch condition
@@ -293,7 +297,9 @@ class Builder {
     /// @param func the function being called
     /// @param args the call arguments
     /// @returns the instruction
-    ir::UserCall* UserCall(const type::Type* type, Function* func, utils::VectorRef<Value*> args);
+    ir::UserCall* UserCall(const type::Type* type,
+                           Function* func,
+                           utils::VectorRef<Value*> args = utils::Empty);
 
     /// Creates a value conversion instruction
     /// @param to the type converted to
@@ -308,7 +314,7 @@ class Builder {
     /// @param to the type being converted
     /// @param args the arguments to be converted
     /// @returns the instruction
-    ir::Construct* Construct(const type::Type* to, utils::VectorRef<Value*> args);
+    ir::Construct* Construct(const type::Type* to, utils::VectorRef<Value*> args = utils::Empty);
 
     /// Creates a builtin call instruction
     /// @param type the return type
@@ -317,7 +323,7 @@ class Builder {
     /// @returns the instruction
     ir::Builtin* Builtin(const type::Type* type,
                          builtin::Function func,
-                         utils::VectorRef<Value*> args);
+                         utils::VectorRef<Value*> args = utils::Empty);
 
     /// Creates a load instruction
     /// @param from the expression being loaded from
@@ -333,7 +339,7 @@ class Builder {
     /// Creates a new `var` declaration
     /// @param type the var type
     /// @returns the instruction
-    ir::Var* Declare(const type::Type* type);
+    ir::Var* Declare(const type::Pointer* type);
 
     /// Creates a return instruction
     /// @param func the function being returned

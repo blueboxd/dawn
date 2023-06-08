@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gtest/gtest-spi.h"
 #include "src/tint/ir/builder.h"
-#include "src/tint/ir/test_helper.h"
+#include "src/tint/ir/ir_test_helper.h"
 #include "src/tint/ir/value.h"
 
 namespace tint::ir {
@@ -21,12 +22,9 @@ namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_ConstantTest = TestHelper;
+using IR_ConstantTest = IRTestHelper;
 
 TEST_F(IR_ConstantTest, f32) {
-    Module mod;
-    Builder b{mod};
-
     utils::StringStream str;
 
     auto* c = b.Constant(1.2_f);
@@ -40,9 +38,6 @@ TEST_F(IR_ConstantTest, f32) {
 }
 
 TEST_F(IR_ConstantTest, f16) {
-    Module mod;
-    Builder b{mod};
-
     utils::StringStream str;
 
     auto* c = b.Constant(1.1_h);
@@ -56,9 +51,6 @@ TEST_F(IR_ConstantTest, f16) {
 }
 
 TEST_F(IR_ConstantTest, i32) {
-    Module mod;
-    Builder b{mod};
-
     utils::StringStream str;
 
     auto* c = b.Constant(1_i);
@@ -72,9 +64,6 @@ TEST_F(IR_ConstantTest, i32) {
 }
 
 TEST_F(IR_ConstantTest, u32) {
-    Module mod;
-    Builder b{mod};
-
     utils::StringStream str;
 
     auto* c = b.Constant(2_u);
@@ -88,9 +77,6 @@ TEST_F(IR_ConstantTest, u32) {
 }
 
 TEST_F(IR_ConstantTest, bool) {
-    Module mod;
-    Builder b{mod};
-
     {
         utils::StringStream str;
 
@@ -109,6 +95,20 @@ TEST_F(IR_ConstantTest, bool) {
         EXPECT_FALSE(c->Value()->Is<constant::Scalar<u32>>());
         EXPECT_TRUE(c->Value()->Is<constant::Scalar<bool>>());
     }
+}
+
+TEST_F(IR_ConstantTest, Fail_NullValue) {
+    EXPECT_FATAL_FAILURE({ Constant c(nullptr); }, "");
+}
+
+TEST_F(IR_ConstantTest, Fail_Builder_NullValue) {
+    EXPECT_FATAL_FAILURE(
+        {
+            Module mod;
+            Builder b{mod};
+            b.Constant(nullptr);
+        },
+        "");
 }
 
 }  // namespace

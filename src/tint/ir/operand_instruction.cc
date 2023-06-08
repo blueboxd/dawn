@@ -1,4 +1,4 @@
-// Copyright 2021 The Dawn Authors
+// Copyright 2023 The Tint Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,22 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "dawn/utils/ScopedAutoreleasePool.h"
+#include "src/tint/ir/operand_instruction.h"
 
-#include "dawn/common/Compiler.h"
+TINT_INSTANTIATE_TYPEINFO(tint::ir::OperandInstruction<1>);
+TINT_INSTANTIATE_TYPEINFO(tint::ir::OperandInstruction<2>);
+TINT_INSTANTIATE_TYPEINFO(tint::ir::OperandInstruction<3>);
+TINT_INSTANTIATE_TYPEINFO(tint::ir::OperandInstruction<4>);
+TINT_INSTANTIATE_TYPEINFO(tint::ir::OperandInstruction<8>);
 
-namespace dawn::utils {
-
-ScopedAutoreleasePool::ScopedAutoreleasePool() : mPool(nullptr) {
-    DAWN_UNUSED(mPool);
-}
-
-ScopedAutoreleasePool::~ScopedAutoreleasePool() = default;
-
-ScopedAutoreleasePool::ScopedAutoreleasePool(ScopedAutoreleasePool&& rhs) {}
-
-ScopedAutoreleasePool& ScopedAutoreleasePool::operator=(ScopedAutoreleasePool&& rhs) {
-    return *this;
-}
-
-}  // namespace dawn::utils
+namespace tint::ir {}  // namespace tint::ir

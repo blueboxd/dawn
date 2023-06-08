@@ -18,28 +18,29 @@
 #include "src/tint/builtin/access.h"
 #include "src/tint/builtin/address_space.h"
 #include "src/tint/ir/binding_point.h"
-#include "src/tint/ir/instruction.h"
+#include "src/tint/ir/operand_instruction.h"
+#include "src/tint/type/pointer.h"
 #include "src/tint/utils/castable.h"
 #include "src/tint/utils/vector.h"
 
 namespace tint::ir {
 
-/// An instruction in the IR.
-class Var : public utils::Castable<Var, Instruction> {
+/// A var instruction in the IR.
+class Var : public utils::Castable<Var, OperandInstruction<1>> {
   public:
     /// Constructor
     /// @param type the type of the var
-    explicit Var(const type::Type* type);
+    explicit Var(const type::Pointer* type);
     ~Var() override;
 
     /// @returns the type of the var
-    const type::Type* Type() const override { return type_; }
+    const type::Pointer* Type() const override { return type_; }
 
     /// Sets the var initializer
     /// @param initializer the initializer
     void SetInitializer(Value* initializer);
     /// @returns the initializer
-    const Value* Initializer() const { return initializer_; }
+    const Value* Initializer() const { return operands_[0]; }
 
     /// Sets the binding point
     /// @param group the group
@@ -49,8 +50,7 @@ class Var : public utils::Castable<Var, Instruction> {
     std::optional<struct BindingPoint> BindingPoint() const { return binding_point_; }
 
   private:
-    const type::Type* type_;
-    Value* initializer_ = nullptr;
+    const type::Pointer* type_ = nullptr;
     std::optional<struct BindingPoint> binding_point_;
 };
 

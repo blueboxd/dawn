@@ -109,10 +109,12 @@ ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
                                           NSPRef<id<MTLDevice>> mtlDevice,
                                           const DeviceDescriptor* descriptor,
                                           const TogglesState& deviceToggles) {
-    Ref<Device> device =
-        AcquireRef(new Device(adapter, std::move(mtlDevice), descriptor, deviceToggles));
-    DAWN_TRY(device->Initialize(descriptor));
-    return device;
+    @autoreleasepool {
+        Ref<Device> device =
+            AcquireRef(new Device(adapter, std::move(mtlDevice), descriptor, deviceToggles));
+        DAWN_TRY(device->Initialize(descriptor));
+        return device;
+    }
 }
 
 Device::Device(AdapterBase* adapter,
@@ -424,10 +426,18 @@ Ref<Texture> Device::CreateTextureWrappingIOSurface(
     if (ConsumedError(ValidateIsAlive())) {
         return nullptr;
     }
-    if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor))) {
+    if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor,
+                                                AllowMultiPlanarTextureFormat::Yes))) {
         return nullptr;
     }
     if (ConsumedError(ValidateIOSurfaceCanBeWrapped(this, textureDescriptor, ioSurface))) {
+        return nullptr;
+    }
+    if (GetValidInternalFormat(textureDescriptor->format).IsMultiPlanar() &&
+        !descriptor->isInitialized) {
+        bool consumed = ConsumedError(DAWN_VALIDATION_ERROR(
+            "External textures with multiplanar formats must be initialized."));
+        DAWN_UNUSED(consumed);
         return nullptr;
     }
 

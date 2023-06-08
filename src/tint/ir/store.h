@@ -15,13 +15,13 @@
 #ifndef SRC_TINT_IR_STORE_H_
 #define SRC_TINT_IR_STORE_H_
 
-#include "src/tint/ir/instruction.h"
+#include "src/tint/ir/operand_instruction.h"
 #include "src/tint/utils/castable.h"
 
 namespace tint::ir {
 
-/// An instruction in the IR.
-class Store : public utils::Castable<Store, Instruction> {
+/// A store instruction in the IR.
+class Store : public utils::Castable<Store, OperandInstruction<2>> {
   public:
     /// Constructor
     /// @param to the value to store too
@@ -30,14 +30,10 @@ class Store : public utils::Castable<Store, Instruction> {
     ~Store() override;
 
     /// @returns the value being stored too
-    Value* To() const { return to_; }
+    Value* To() const { return operands_[0]; }
 
     /// @returns the value being stored
-    Value* From() const { return from_; }
-
-  private:
-    Value* to_;
-    Value* from_;
+    Value* From() const { return operands_[1]; }
 };
 
 }  // namespace tint::ir

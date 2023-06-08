@@ -17,16 +17,19 @@
 #include <utility>
 
 #include "src/tint/ir/loop.h"
+#include "src/tint/ir/multi_in_block.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ir::NextIteration);
 
 namespace tint::ir {
 
 NextIteration::NextIteration(ir::Loop* loop, utils::VectorRef<Value*> args /* = utils::Empty */)
-    : Base(std::move(args)), loop_(loop) {
+    : loop_(loop) {
     TINT_ASSERT(IR, loop_);
-    loop_->AddUsage(this);
-    loop_->Body()->AddInboundBranch(this);
+    if (loop_) {
+        loop_->Body()->AddInboundSiblingBranch(this);
+    }
+    AddOperands(std::move(args));
 }
 
 NextIteration::~NextIteration() = default;

@@ -313,6 +313,8 @@ class DepthStencilSamplingTest : public DawnTestWithParams<DepthStencilSamplingT
                 inputViewDesc.aspect = wgpu::TextureAspect::DepthOnly;
                 break;
             case TestAspectAndSamplerType::StencilAsUint:
+                // TODO(dawn:1827): Suport SRV component mapping for stencil on D3D11.
+                DAWN_SUPPRESS_TEST_IF(IsD3D11());
                 inputViewDesc.aspect = wgpu::TextureAspect::StencilOnly;
                 break;
         }
@@ -370,6 +372,8 @@ class DepthStencilSamplingTest : public DawnTestWithParams<DepthStencilSamplingT
                 inputViewDesc.aspect = wgpu::TextureAspect::DepthOnly;
                 break;
             case TestAspectAndSamplerType::StencilAsUint:
+                // TODO(dawn:1827): Suport SRV component mapping for stencil on D3D11.
+                DAWN_SUPPRESS_TEST_IF(IsD3D11());
                 inputViewDesc.aspect = wgpu::TextureAspect::StencilOnly;
                 break;
         }
@@ -418,7 +422,7 @@ class DepthStencilSamplingTest : public DawnTestWithParams<DepthStencilSamplingT
         DoSamplingTestImpl(aspectAndSamplerType, pipeline, format, textureValues, 1,
                            [this, tolerance](T expected, wgpu::Buffer buffer) {
                                EXPECT_BUFFER(buffer, 0, sizeof(T),
-                                             new ::detail::ExpectEq<T>(expected, tolerance));
+                                             new ::dawn::detail::ExpectEq<T>(expected, tolerance));
                            });
     }
 
@@ -431,7 +435,7 @@ class DepthStencilSamplingTest : public DawnTestWithParams<DepthStencilSamplingT
         DoSamplingTestImpl(aspectAndSamplerType, pipeline, format, textureValues, 1,
                            [this, tolerance](T expected, wgpu::Buffer buffer) {
                                EXPECT_BUFFER(buffer, 0, sizeof(T),
-                                             new ::detail::ExpectEq<T>(expected, tolerance));
+                                             new ::dawn::detail::ExpectEq<T>(expected, tolerance));
                            });
     }
 
@@ -745,6 +749,9 @@ TEST_P(DepthStencilSamplingTest, SampleDepthAndStencilRender) {
     // In compat, you can't have different views of the same texture in the same draw command.
     DAWN_TEST_UNSUPPORTED_IF(IsCompatibilityMode());
 
+    // TODO(dawn:1827): Suport SRV component mapping for stencil on D3D11.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
+
     wgpu::TextureFormat format = GetParam().mTextureFormat;
 
     wgpu::SamplerDescriptor samplerDesc;
@@ -805,7 +812,8 @@ TEST_P(DepthStencilSamplingTest, SampleDepthAndStencilRender) {
         float expectedDepth = 0.0f;
         memcpy(&expectedDepth, &passDescriptor.cDepthStencilAttachmentInfo.depthClearValue,
                sizeof(float));
-        EXPECT_BUFFER(depthOutput, 0, sizeof(float), new ::detail::ExpectEq<float>(expectedDepth));
+        EXPECT_BUFFER(depthOutput, 0, sizeof(float),
+                      new ::dawn::detail::ExpectEq<float>(expectedDepth));
 
         uint8_t expectedStencil = 0;
         memcpy(&expectedStencil, &passDescriptor.cDepthStencilAttachmentInfo.stencilClearValue,
@@ -854,7 +862,8 @@ TEST_P(DepthStencilSamplingTest, SampleDepthAndStencilRender) {
         float expectedDepth = 0.0f;
         memcpy(&expectedDepth, &passDescriptor.cDepthStencilAttachmentInfo.depthClearValue,
                sizeof(float));
-        EXPECT_BUFFER(depthOutput, 0, sizeof(float), new ::detail::ExpectEq<float>(expectedDepth));
+        EXPECT_BUFFER(depthOutput, 0, sizeof(float),
+                      new ::dawn::detail::ExpectEq<float>(expectedDepth));
 
         uint8_t expectedStencil = 0;
         memcpy(&expectedStencil, &passDescriptor.cDepthStencilAttachmentInfo.stencilClearValue,
@@ -928,19 +937,19 @@ TEST_P(StencilSamplingTest, SampleStencilOnly) {
 }
 
 DAWN_INSTANTIATE_TEST_P(DepthStencilSamplingTest,
-                        {D3D12Backend(), MetalBackend(), OpenGLBackend(), OpenGLESBackend(),
-                         VulkanBackend()},
+                        {D3D11Backend(), D3D12Backend(), MetalBackend(), OpenGLBackend(),
+                         OpenGLESBackend(), VulkanBackend()},
                         std::vector<wgpu::TextureFormat>(utils::kDepthAndStencilFormats.begin(),
                                                          utils::kDepthAndStencilFormats.end()));
 
 DAWN_INSTANTIATE_TEST_P(DepthSamplingTest,
-                        {D3D12Backend(), MetalBackend(), OpenGLBackend(), OpenGLESBackend(),
-                         VulkanBackend()},
+                        {D3D11Backend(), D3D12Backend(), MetalBackend(), OpenGLBackend(),
+                         OpenGLESBackend(), VulkanBackend()},
                         std::vector<wgpu::TextureFormat>(utils::kDepthFormats.begin(),
                                                          utils::kDepthFormats.end()));
 
 DAWN_INSTANTIATE_TEST_P(StencilSamplingTest,
-                        {D3D12Backend(), MetalBackend(),
+                        {D3D11Backend(), D3D12Backend(), MetalBackend(),
                          MetalBackend({"metal_use_combined_depth_stencil_format_for_stencil8"}),
                          OpenGLBackend(), OpenGLESBackend(), VulkanBackend()},
                         std::vector<wgpu::TextureFormat>(utils::kStencilFormats.begin(),

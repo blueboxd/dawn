@@ -37,11 +37,13 @@ using Builtin_1arg = SpvGeneratorImplTestWithParam<BuiltinTestCase>;
 TEST_P(Builtin_1arg, Scalar) {
     auto params = GetParam();
 
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
     func->StartTarget()->SetInstructions(
         utils::Vector{b.Builtin(MakeScalarType(params.type), params.function,
                                 utils::Vector{MakeScalarValue(params.type)}),
                       b.Return(func)});
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_THAT(DumpModule(generator_.Module()), ::testing::HasSubstr(params.spirv_inst));
@@ -49,12 +51,14 @@ TEST_P(Builtin_1arg, Scalar) {
 TEST_P(Builtin_1arg, Vector) {
     auto params = GetParam();
 
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
     func->StartTarget()->SetInstructions(
         utils::Vector{b.Builtin(MakeVectorType(params.type), params.function,
                                 utils::Vector{MakeVectorValue(params.type)}),
 
                       b.Return(func)});
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_THAT(DumpModule(generator_.Module()), ::testing::HasSubstr(params.spirv_inst));
@@ -71,6 +75,8 @@ TEST_F(SpvGeneratorImplTest, Builtin_Abs_u32) {
     auto* func = b.CreateFunction("foo", MakeScalarType(kU32));
     func->StartTarget()->SetInstructions(
         utils::Vector{result, b.Return(func, utils::Vector{result})});
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
@@ -89,6 +95,8 @@ TEST_F(SpvGeneratorImplTest, Builtin_Abs_vec2u) {
     auto* func = b.CreateFunction("foo", MakeVectorType(kU32));
     func->StartTarget()->SetInstructions(
         utils::Vector{result, b.Return(func, utils::Vector{result})});
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
@@ -110,11 +118,13 @@ using Builtin_2arg = SpvGeneratorImplTestWithParam<BuiltinTestCase>;
 TEST_P(Builtin_2arg, Scalar) {
     auto params = GetParam();
 
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
     func->StartTarget()->SetInstructions(utils::Vector{
         b.Builtin(MakeScalarType(params.type), params.function,
                   utils::Vector{MakeScalarValue(params.type), MakeScalarValue(params.type)}),
         b.Return(func)});
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_THAT(DumpModule(generator_.Module()), ::testing::HasSubstr(params.spirv_inst));
@@ -122,12 +132,14 @@ TEST_P(Builtin_2arg, Scalar) {
 TEST_P(Builtin_2arg, Vector) {
     auto params = GetParam();
 
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
     func->StartTarget()->SetInstructions(utils::Vector{
         b.Builtin(MakeVectorType(params.type), params.function,
                   utils::Vector{MakeVectorValue(params.type), MakeVectorValue(params.type)}),
 
         b.Return(func)});
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_THAT(DumpModule(generator_.Module()), ::testing::HasSubstr(params.spirv_inst));

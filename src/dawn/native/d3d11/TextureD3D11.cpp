@@ -101,8 +101,19 @@ MaybeError ValidateTextureCanBeWrapped(ID3D11Resource* d3d11Resource,
 }
 
 MaybeError ValidateVideoTextureCanBeShared(Device* device, DXGI_FORMAT textureFormat) {
-    // TODO(dawn:1724): support video textures
-    return DAWN_UNIMPLEMENTED_ERROR("Video textures are not supported.");
+    const bool supportsSharedResourceCapabilityTier2 =
+        device->GetDeviceInfo().supportsSharedResourceCapabilityTier2;
+    switch (textureFormat) {
+        case DXGI_FORMAT_NV12:
+            if (supportsSharedResourceCapabilityTier2) {
+                return {};
+            }
+            break;
+        default:
+            break;
+    }
+
+    return DAWN_VALIDATION_ERROR("DXGI format does not support cross-API sharing.");
 }
 
 // static
@@ -778,7 +789,8 @@ ResultOrError<ComPtr<ID3D11ShaderResourceView>> TextureView::CreateD3D11ShaderRe
                         break;
                     case Aspect::Stencil:
                         srvDesc.Format = DXGI_FORMAT_X24_TYPELESS_G8_UINT;
-                        break;
+                        // TODO(dawn:1827) Support sampling the stencil component.
+                        return DAWN_UNIMPLEMENTED_ERROR("Sampling the stencil component.");
                     default:
                         UNREACHABLE();
                         break;
@@ -801,7 +813,8 @@ ResultOrError<ComPtr<ID3D11ShaderResourceView>> TextureView::CreateD3D11ShaderRe
                         break;
                     case Aspect::Stencil:
                         srvDesc.Format = DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
-                        break;
+                        // TODO(dawn:1827) Support sampling the stencil component.
+                        return DAWN_UNIMPLEMENTED_ERROR("Sampling the stencil component.");
                     default:
                         UNREACHABLE();
                         break;

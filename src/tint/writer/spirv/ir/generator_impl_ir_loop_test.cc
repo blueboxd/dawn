@@ -20,7 +20,7 @@ namespace tint::writer::spirv {
 namespace {
 
 TEST_F(SpvGeneratorImplTest, Loop_BreakIf) {
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
 
     auto* loop = b.CreateLoop();
 
@@ -29,6 +29,8 @@ TEST_F(SpvGeneratorImplTest, Loop_BreakIf) {
     loop->Merge()->Append(b.Return(func));
 
     func->StartTarget()->Append(loop);
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
@@ -54,7 +56,7 @@ OpFunctionEnd
 
 // Test that we still emit the continuing block with a back-edge, even when it is unreachable.
 TEST_F(SpvGeneratorImplTest, Loop_UnconditionalBreakInBody) {
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
 
     auto* loop = b.CreateLoop();
 
@@ -62,6 +64,8 @@ TEST_F(SpvGeneratorImplTest, Loop_UnconditionalBreakInBody) {
     loop->Merge()->Append(b.Return(func));
 
     func->StartTarget()->Append(loop);
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
@@ -84,7 +88,7 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, Loop_ConditionalBreakInBody) {
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
 
     auto* loop = b.CreateLoop();
 
@@ -98,6 +102,8 @@ TEST_F(SpvGeneratorImplTest, Loop_ConditionalBreakInBody) {
     loop->Merge()->Append(b.Return(func));
 
     func->StartTarget()->Append(loop);
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
@@ -127,7 +133,7 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, Loop_ConditionalContinueInBody) {
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
 
     auto* loop = b.CreateLoop();
 
@@ -141,6 +147,8 @@ TEST_F(SpvGeneratorImplTest, Loop_ConditionalContinueInBody) {
     loop->Merge()->Append(b.Return(func));
 
     func->StartTarget()->Append(loop);
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
@@ -172,13 +180,15 @@ OpFunctionEnd
 // Test that we still emit the continuing block with a back-edge, and the merge block, even when
 // they are unreachable.
 TEST_F(SpvGeneratorImplTest, Loop_UnconditionalReturnInBody) {
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
 
     auto* loop = b.CreateLoop();
 
     loop->Body()->Append(b.Return(func));
 
     func->StartTarget()->Append(loop);
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
@@ -201,17 +211,19 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, Loop_UseResultFromBodyInContinuing) {
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
 
     auto* loop = b.CreateLoop();
 
-    auto* result = b.Equal(mod.Types().i32(), b.Constant(1_i), b.Constant(2_i));
+    auto* result = b.Equal(ty.i32(), b.Constant(1_i), b.Constant(2_i));
 
     loop->Body()->Append(result);
     loop->Continuing()->Append(b.BreakIf(result, loop));
     loop->Merge()->Append(b.Return(func));
 
     func->StartTarget()->Append(loop);
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
@@ -237,7 +249,7 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, Loop_NestedLoopInBody) {
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
 
     auto* outer_loop = b.CreateLoop();
     auto* inner_loop = b.CreateLoop();
@@ -251,6 +263,8 @@ TEST_F(SpvGeneratorImplTest, Loop_NestedLoopInBody) {
     outer_loop->Merge()->Append(b.Return(func));
 
     func->StartTarget()->Append(outer_loop);
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
@@ -284,7 +298,7 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, Loop_NestedLoopInContinuing) {
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
 
     auto* outer_loop = b.CreateLoop();
     auto* inner_loop = b.CreateLoop();
@@ -298,6 +312,8 @@ TEST_F(SpvGeneratorImplTest, Loop_NestedLoopInContinuing) {
     outer_loop->Merge()->Append(b.Return(func));
 
     func->StartTarget()->Append(outer_loop);
+
+    ASSERT_TRUE(IRIsValid()) << Error();
 
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
@@ -331,10 +347,12 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, Loop_Phi_SingleValue) {
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
 
-    auto* l = b.CreateLoop(utils::Vector{b.Constant(1_i)});
+    auto* l = b.CreateLoop();
     func->StartTarget()->Append(l);
+
+    l->Initializer()->Append(b.NextIteration(l, utils::Vector{b.Constant(1_i)}));
 
     auto* loop_param = b.BlockParam(b.ir.Types().i32());
     l->Body()->SetParams(utils::Vector{loop_param});
@@ -348,39 +366,45 @@ TEST_F(SpvGeneratorImplTest, Loop_Phi_SingleValue) {
     l->Continuing()->Append(cmp);
     l->Continuing()->Append(b.BreakIf(cmp, l, utils::Vector{cont_param}));
 
+    ASSERT_TRUE(IRIsValid()) << Error();
+
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
 %2 = OpTypeVoid
 %3 = OpTypeFunction %2
-%9 = OpTypeInt 32 1
-%11 = OpConstant %9 1
+%10 = OpTypeInt 32 1
+%12 = OpConstant %10 1
 %16 = OpTypeBool
-%17 = OpConstant %9 5
+%17 = OpConstant %10 5
 %1 = OpFunction %2 None %3
 %4 = OpLabel
 OpBranch %5
 %5 = OpLabel
-OpLoopMerge %8 %7 None
 OpBranch %6
 %6 = OpLabel
-%10 = OpPhi %9 %11 %12 %13 %7
-%14 = OpIAdd %9 %10 %11
+%11 = OpPhi %10 %12 %5 %13 %8
+OpLoopMerge %9 %8 None
 OpBranch %7
 %7 = OpLabel
-%13 = OpPhi %9 %14 %5
-%15 = OpSGreaterThan %16 %13 %17
-OpBranchConditional %15 %8 %5
+%14 = OpIAdd %10 %11 %12
+OpBranch %8
 %8 = OpLabel
+%13 = OpPhi %10 %14 %6
+%15 = OpSGreaterThan %16 %13 %17
+OpBranchConditional %15 %9 %6
+%9 = OpLabel
 OpUnreachable
 OpFunctionEnd
 )");
 }
 
 TEST_F(SpvGeneratorImplTest, Loop_Phi_MultipleValue) {
-    auto* func = b.CreateFunction("foo", mod.Types().void_());
+    auto* func = b.CreateFunction("foo", ty.void_());
 
-    auto* l = b.CreateLoop(utils::Vector{b.Constant(1_i), b.Constant(false)});
+    auto* l = b.CreateLoop();
     func->StartTarget()->Append(l);
+
+    l->Initializer()->Append(b.NextIteration(l, utils::Vector{b.Constant(1_i), b.Constant(false)}));
 
     auto* loop_param_a = b.BlockParam(b.ir.Types().i32());
     auto* loop_param_b = b.BlockParam(b.ir.Types().bool_());
@@ -398,33 +422,37 @@ TEST_F(SpvGeneratorImplTest, Loop_Phi_MultipleValue) {
     l->Continuing()->Append(not_b);
     l->Continuing()->Append(b.BreakIf(cmp, l, utils::Vector{cont_param_a, not_b}));
 
+    ASSERT_TRUE(IRIsValid()) << Error();
+
     generator_.EmitFunction(func);
     EXPECT_EQ(DumpModule(generator_.Module()), R"(OpName %1 "foo"
 %2 = OpTypeVoid
 %3 = OpTypeFunction %2
-%9 = OpTypeInt 32 1
-%11 = OpConstant %9 1
+%10 = OpTypeInt 32 1
+%12 = OpConstant %10 1
 %14 = OpTypeBool
 %16 = OpConstantFalse %14
-%21 = OpConstant %9 5
+%21 = OpConstant %10 5
 %1 = OpFunction %2 None %3
 %4 = OpLabel
 OpBranch %5
 %5 = OpLabel
-OpLoopMerge %8 %7 None
 OpBranch %6
 %6 = OpLabel
-%10 = OpPhi %9 %11 %12 %13 %7
-%15 = OpPhi %14 %16 %12 %17 %7
-%18 = OpIAdd %9 %10 %11
+%11 = OpPhi %10 %12 %5 %13 %8
+%15 = OpPhi %14 %16 %5 %17 %8
+OpLoopMerge %9 %8 None
 OpBranch %7
 %7 = OpLabel
-%13 = OpPhi %9 %18 %5
-%19 = OpPhi %14 %15 %5
+%18 = OpIAdd %10 %11 %12
+OpBranch %8
+%8 = OpLabel
+%13 = OpPhi %10 %18 %6
+%19 = OpPhi %14 %15 %6
 %20 = OpSGreaterThan %14 %13 %21
 %17 = OpLogicalEqual %14 %19 %16
-OpBranchConditional %20 %8 %5
-%8 = OpLabel
+OpBranchConditional %20 %9 %6
+%9 = OpLabel
 OpUnreachable
 OpFunctionEnd
 )");

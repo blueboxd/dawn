@@ -21,14 +21,16 @@
 
 namespace tint::ir {
 
-/// A value conversion instruction in the IR.
+/// A builtin call instruction in the IR.
 class Builtin : public utils::Castable<Builtin, Call> {
   public:
     /// Constructor
     /// @param res_type the result type
     /// @param func the builtin function
     /// @param args the conversion arguments
-    Builtin(const type::Type* res_type, builtin::Function func, utils::VectorRef<Value*> args);
+    Builtin(const type::Type* res_type,
+            builtin::Function func,
+            utils::VectorRef<Value*> args = utils::Empty);
     ~Builtin() override;
 
     /// @returns the builtin function

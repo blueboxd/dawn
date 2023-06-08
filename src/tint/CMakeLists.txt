@@ -743,6 +743,8 @@ if(${TINT_BUILD_IR})
     ir/construct.h
     ir/continue.cc
     ir/continue.h
+    ir/control_instruction.cc
+    ir/control_instruction.h
     ir/convert.cc
     ir/convert.h
     ir/disassembler.cc
@@ -772,8 +774,12 @@ if(${TINT_BUILD_IR})
     ir/loop.h
     ir/module.cc
     ir/module.h
+    ir/multi_in_block.cc
+    ir/multi_in_block.h
     ir/next_iteration.cc
     ir/next_iteration.h
+    ir/operand_instruction.cc
+    ir/operand_instruction.h
     ir/return.cc
     ir/return.h
     ir/store.cc
@@ -788,14 +794,20 @@ if(${TINT_BUILD_IR})
     ir/unary.h
     ir/user_call.cc
     ir/user_call.h
+    ir/validate.cc
+    ir/validate.h
     ir/value.cc
     ir/value.h
     ir/var.cc
     ir/var.h
     ir/transform/add_empty_entry_point.cc
     ir/transform/add_empty_entry_point.h
+    ir/transform/block_decorated_structs.cc
+    ir/transform/block_decorated_structs.h
     ir/transform/transform.cc
     ir/transform/transform.h
+    ir/transform/var_for_dynamic_index.cc
+    ir/transform/var_for_dynamic_index.h
   )
 endif()
 
@@ -1265,6 +1277,7 @@ if(TINT_BUILD_TESTS)
 
     if(${TINT_BUILD_IR})
       list(APPEND TINT_TEST_SRCS
+        writer/spirv/ir/generator_impl_ir_access_test.cc
         writer/spirv/ir/generator_impl_ir_binary_test.cc
         writer/spirv/ir/generator_impl_ir_builtin_test.cc
         writer/spirv/ir/generator_impl_ir_constant_test.cc
@@ -1486,11 +1499,21 @@ if(TINT_BUILD_TESTS)
 
   if (${TINT_BUILD_IR})
     list(APPEND TINT_TEST_SRCS
+      ir/access_test.cc
       ir/binary_test.cc
       ir/bitcast_test.cc
+      ir/block_param_test.cc
       ir/block_test.cc
+      ir/break_if_test.cc
+      ir/builtin_test.cc
       ir/constant_test.cc
+      ir/construct_test.cc
+      ir/continue_test.cc
+      ir/convert_test.cc
       ir/discard_test.cc
+      ir/exit_if_test.cc
+      ir/exit_loop_test.cc
+      ir/exit_switch_test.cc
       ir/from_program_accessor_test.cc
       ir/from_program_binary_test.cc
       ir/from_program_builtin_test.cc
@@ -1502,13 +1525,28 @@ if(TINT_BUILD_TESTS)
       ir/from_program_test.cc
       ir/from_program_unary_test.cc
       ir/from_program_var_test.cc
+      ir/function_param_test.cc
+      ir/function_test.cc
+      ir/if_test.cc
       ir/instruction_test.cc
+      ir/ir_test_helper.h
       ir/load_test.cc
+      ir/loop_test.cc
       ir/module_test.cc
+      ir/multi_in_block_test.cc
+      ir/next_iteration_test.cc
+      ir/program_test_helper.h
+      ir/return_test.cc
       ir/store_test.cc
-      ir/test_helper.h
+      ir/switch_test.cc
+      ir/swizzle_test.cc
       ir/transform/add_empty_entry_point_test.cc
+      ir/transform/block_decorated_structs_test.cc
+      ir/transform/var_for_dynamic_index_test.cc
       ir/unary_test.cc
+      ir/user_call_test.cc
+      ir/validate_test.cc
+      ir/var_test.cc
     )
   endif()
 

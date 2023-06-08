@@ -13,19 +13,15 @@
 // limitations under the License.
 
 #include "gtest/gtest-spi.h"
-#include "gtest/gtest.h"
 #include "src/tint/ir/block.h"
 #include "src/tint/ir/builder.h"
+#include "src/tint/ir/ir_test_helper.h"
 #include "src/tint/ir/module.h"
 
 namespace tint::ir {
 namespace {
 
-class IR_InstructionTest : public ::testing::Test {
-  public:
-    Module mod;
-    Builder b{mod};
-};
+using IR_InstructionTest = IRTestHelper;
 
 TEST_F(IR_InstructionTest, InsertBefore) {
     auto* inst1 = b.CreateLoop();
@@ -97,18 +93,18 @@ TEST_F(IR_InstructionTest, Fail_InsertAfterNotInserted) {
         "");
 }
 
-TEST_F(IR_InstructionTest, Replace) {
+TEST_F(IR_InstructionTest, ReplaceWith) {
     auto* inst1 = b.CreateLoop();
     auto* inst2 = b.CreateLoop();
     auto* blk = b.CreateBlock();
     blk->Append(inst2);
-    inst2->Replace(inst1);
+    inst2->ReplaceWith(inst1);
     EXPECT_EQ(1u, blk->Length());
     EXPECT_EQ(inst1->Block(), blk);
     EXPECT_EQ(inst2->Block(), nullptr);
 }
 
-TEST_F(IR_InstructionTest, Fail_ReplaceNullptr) {
+TEST_F(IR_InstructionTest, Fail_ReplaceWithNullptr) {
     EXPECT_FATAL_FAILURE(
         {
             Module mod;
@@ -117,12 +113,12 @@ TEST_F(IR_InstructionTest, Fail_ReplaceNullptr) {
             auto* inst1 = b.CreateLoop();
             auto* blk = b.CreateBlock();
             blk->Append(inst1);
-            inst1->Replace(nullptr);
+            inst1->ReplaceWith(nullptr);
         },
         "");
 }
 
-TEST_F(IR_InstructionTest, Fail_ReplaceNotInserted) {
+TEST_F(IR_InstructionTest, Fail_ReplaceWithNotInserted) {
     EXPECT_FATAL_FAILURE(
         {
             Module mod;
@@ -130,7 +126,7 @@ TEST_F(IR_InstructionTest, Fail_ReplaceNotInserted) {
 
             auto* inst1 = b.CreateLoop();
             auto* inst2 = b.CreateLoop();
-            inst1->Replace(inst2);
+            inst1->ReplaceWith(inst2);
         },
         "");
 }

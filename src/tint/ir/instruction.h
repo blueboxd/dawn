@@ -48,9 +48,14 @@ class Instruction : public utils::Castable<Instruction, Value> {
     void InsertAfter(Instruction* after);
     /// Replaces this instruction with @p replacement in the owning block owning this instruction
     /// @param replacement the instruction to replace with
-    void Replace(Instruction* replacement);
+    void ReplaceWith(Instruction* replacement);
     /// Removes this instruction from the owning block
     void Remove();
+
+    /// Set an operand at a given index.
+    /// @param index the operand index
+    /// @param value the value to use
+    virtual void SetOperand(uint32_t index, ir::Value* value) = 0;
 
     /// Pointer to the next instruction in the list
     Instruction* next = nullptr;

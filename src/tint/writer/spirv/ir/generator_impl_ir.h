@@ -29,16 +29,18 @@
 
 // Forward declarations
 namespace tint::ir {
+class Access;
 class Binary;
 class Block;
 class BlockParam;
 class Branch;
 class Builtin;
-class If;
 class Function;
+class If;
 class Load;
 class Loop;
 class Module;
+class MultiInBlock;
 class Store;
 class Switch;
 class UserCall;
@@ -112,9 +114,17 @@ class GeneratorImplIr {
     /// @param id the result ID of the function declaration
     void EmitEntryPoint(const ir::Function* func, uint32_t id);
 
-    /// Emit a block.
+    /// Emit a block, including the initial OpLabel, OpPhis and instructions.
     /// @param block the block to emit
     void EmitBlock(const ir::Block* block);
+
+    /// Emit all OpPhi nodes for incoming branches to @p block.
+    /// @param block the block to emit the OpPhis for
+    void EmitIncomingPhis(const ir::MultiInBlock* block);
+
+    /// Emit all instructions of @p block.
+    /// @param block the block's instructions to emit
+    void EmitBlockInstructions(const ir::Block* block);
 
     /// Emit the root block.
     /// @param root_block the root block to emit
@@ -123,6 +133,10 @@ class GeneratorImplIr {
     /// Emit an `if` flow node.
     /// @param i the if node to emit
     void EmitIf(const ir::If* i);
+
+    /// Emit an access instruction
+    /// @param access the access instruction to emit
+    void EmitAccess(const ir::Access* access);
 
     /// Emit a binary instruction.
     /// @param binary the binary instruction to emit

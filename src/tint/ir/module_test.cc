@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "src/tint/ir/module.h"
-#include "src/tint/ir/test_helper.h"
+#include "src/tint/ir/ir_test_helper.h"
 #include "src/tint/ir/var.h"
 
 namespace tint::ir {
@@ -21,34 +21,35 @@ namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_ModuleTest = TestHelper;
+class IR_ModuleTest : public IRTestHelper {
+  protected:
+    const type::Pointer* ptr(const type::Type* elem) {
+        return ty.pointer(elem, builtin::AddressSpace::kFunction, builtin::Access::kReadWrite);
+    }
+};
 
 TEST_F(IR_ModuleTest, NameOfUnnamed) {
-    Module mod;
-    auto* v = mod.values.Create<ir::Var>(mod.Types().i32());
+    auto* v = mod.values.Create<ir::Var>(ptr(ty.i32()));
     EXPECT_FALSE(mod.NameOf(v).IsValid());
 }
 
 TEST_F(IR_ModuleTest, SetName) {
-    Module mod;
-    auto* v = mod.values.Create<ir::Var>(mod.Types().i32());
+    auto* v = mod.values.Create<ir::Var>(ptr(ty.i32()));
     EXPECT_EQ(mod.SetName(v, "a").Name(), "a");
     EXPECT_EQ(mod.NameOf(v).Name(), "a");
 }
 
 TEST_F(IR_ModuleTest, SetNameRename) {
-    Module mod;
-    auto* v = mod.values.Create<ir::Var>(mod.Types().i32());
+    auto* v = mod.values.Create<ir::Var>(ptr(ty.i32()));
     EXPECT_EQ(mod.SetName(v, "a").Name(), "a");
     EXPECT_EQ(mod.SetName(v, "b").Name(), "b");
     EXPECT_EQ(mod.NameOf(v).Name(), "b");
 }
 
 TEST_F(IR_ModuleTest, SetNameCollision) {
-    Module mod;
-    auto* a = mod.values.Create<ir::Var>(mod.Types().i32());
-    auto* b = mod.values.Create<ir::Var>(mod.Types().i32());
-    auto* c = mod.values.Create<ir::Var>(mod.Types().i32());
+    auto* a = mod.values.Create<ir::Var>(ptr(ty.i32()));
+    auto* b = mod.values.Create<ir::Var>(ptr(ty.i32()));
+    auto* c = mod.values.Create<ir::Var>(ptr(ty.i32()));
     EXPECT_EQ(mod.SetName(a, "x").Name(), "x");
     EXPECT_EQ(mod.SetName(b, "x_1").Name(), "x_1");
     EXPECT_EQ(mod.SetName(c, "x").Name(), "x_2");

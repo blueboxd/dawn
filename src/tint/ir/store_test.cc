@@ -12,24 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gmock/gmock.h"
+#include "gtest/gtest-spi.h"
 #include "src/tint/ir/builder.h"
 #include "src/tint/ir/instruction.h"
-#include "src/tint/ir/test_helper.h"
+#include "src/tint/ir/ir_test_helper.h"
 
 namespace tint::ir {
 namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_StoreTest = TestHelper;
+using IR_StoreTest = IRTestHelper;
 
 TEST_F(IR_StoreTest, CreateStore) {
-    Module mod;
-    Builder b{mod};
-
-    // TODO(dsinclair): This is wrong, but we don't have anything correct to store too at the
-    // moment.
-    auto* to = b.Discard();
+    auto* to = b.Declare(mod.Types().pointer(mod.Types().i32(), builtin::AddressSpace::kPrivate,
+                                             builtin::Access::kReadWrite));
     const auto* inst = b.Store(to, b.Constant(4_i));
 
     ASSERT_TRUE(inst->Is<Store>());
@@ -42,19 +40,36 @@ TEST_F(IR_StoreTest, CreateStore) {
 }
 
 TEST_F(IR_StoreTest, Store_Usage) {
-    Module mod;
-    Builder b{mod};
-
     auto* to = b.Discard();
-    const auto* inst = b.Store(to, b.Constant(4_i));
+    auto* inst = b.Store(to, b.Constant(4_i));
 
     ASSERT_NE(inst->To(), nullptr);
-    ASSERT_EQ(inst->To()->Usage().Length(), 1u);
-    EXPECT_EQ(inst->To()->Usage()[0], inst);
+    EXPECT_THAT(inst->To()->Usages(), testing::UnorderedElementsAre(Usage{inst, 0u}));
 
     ASSERT_NE(inst->From(), nullptr);
-    ASSERT_EQ(inst->From()->Usage().Length(), 1u);
-    EXPECT_EQ(inst->From()->Usage()[0], inst);
+    EXPECT_THAT(inst->From()->Usages(), testing::UnorderedElementsAre(Usage{inst, 1u}));
+}
+
+TEST_F(IR_StoreTest, Fail_NullTo) {
+    EXPECT_FATAL_FAILURE(
+        {
+            Module mod;
+            Builder b{mod};
+            b.Store(nullptr, b.Constant(1_u));
+        },
+        "");
+}
+
+TEST_F(IR_StoreTest, Fail_NullFrom) {
+    EXPECT_FATAL_FAILURE(
+        {
+            Module mod;
+            Builder b{mod};
+            auto* to = b.Declare(mod.Types().pointer(
+                mod.Types().i32(), builtin::AddressSpace::kPrivate, builtin::Access::kReadWrite));
+            b.Store(to, nullptr);
+        },
+        "");
 }
 
 }  // namespace

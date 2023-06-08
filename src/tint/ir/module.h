@@ -15,6 +15,7 @@
 #ifndef SRC_TINT_IR_MODULE_H_
 #define SRC_TINT_IR_MODULE_H_
 
+#include <memory>
 #include <string>
 
 #include "src/tint/constant/manager.h"
@@ -67,6 +68,9 @@ class Module {
     Symbol SetName(const Value* value, std::string_view name);
 
     /// @return the type manager for the module
+    const type::Manager& Types() const { return constant_values.types; }
+
+    /// @return the type manager for the module
     type::Manager& Types() { return constant_values.types; }
 
     /// The block allocator
@@ -89,6 +93,9 @@ class Module {
 
     /// The map of constant::Value to their ir::Constant.
     utils::Hashmap<const constant::Value*, ir::Constant*, 16> constants;
+
+    /// If the module generated a validation error, will store the file for the disassembly text.
+    std::unique_ptr<Source::File> disassembly_file;
 };
 
 }  // namespace tint::ir
