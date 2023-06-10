@@ -12,25 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef SRC_TINT_IR_CONVERT_H_
-#define SRC_TINT_IR_CONVERT_H_
+#include "src/tint/ir/builtin_call.h"
 
-#include "src/tint/ir/call.h"
-#include "src/tint/type/type.h"
-#include "src/tint/utils/castable.h"
+#include <utility>
+
+#include "src/tint/debug.h"
+
+TINT_INSTANTIATE_TYPEINFO(tint::ir::BuiltinCall);
 
 namespace tint::ir {
 
-/// A value conversion instruction in the IR.
-class Convert : public utils::Castable<Convert, Call> {
-  public:
-    /// Constructor
-    /// @param to_type the target conversion type
-    /// @param value the value to convert
-    Convert(const type::Type* to_type, Value* value);
-    ~Convert() override;
-};
+BuiltinCall::BuiltinCall(const type::Type* ty,
+                         builtin::Function func,
+                         utils::VectorRef<Value*> arguments)
+    : Base(ty), func_(func) {
+    TINT_ASSERT(IR, func != builtin::Function::kNone);
+    TINT_ASSERT(IR, func != builtin::Function::kTintMaterialize);
+    AddOperands(std::move(arguments));
+}
+
+BuiltinCall::~BuiltinCall() = default;
 
 }  // namespace tint::ir
-
-#endif  // SRC_TINT_IR_CONVERT_H_

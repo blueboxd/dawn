@@ -192,6 +192,12 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         // Robustness must come after PromoteSideEffectsToDecl
         // Robustness must come before BuiltinPolyfill and CanonicalizeEntryPointIO
         manager.Add<ast::transform::Robustness>();
+
+        ast::transform::Robustness::Config config = {};
+        config.bindings_ignored = std::unordered_set<sem::BindingPoint>(
+            options.binding_points_ignored_in_robustness_transform.cbegin(),
+            options.binding_points_ignored_in_robustness_transform.cend());
+        data.Add<ast::transform::Robustness::Config>(config);
     }
 
     // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
@@ -1101,7 +1107,7 @@ bool GeneratorImpl::EmitValueConstructor(utils::StringStream& out,
     // vector dimension using .x
     const bool is_single_value_vector_init = type->is_scalar_vector() &&
                                              call->Arguments().Length() == 1 &&
-                                             ctor->Parameters()[0]->Type()->is_scalar();
+                                             ctor->Parameters()[0]->Type()->Is<type::Scalar>();
 
     if (brackets) {
         out << "{";
@@ -2043,7 +2049,7 @@ bool GeneratorImpl::EmitFrexpCall(utils::StringStream& out,
             }
 
             std::string member_type;
-            if (Is<type::F16>(type::Type::DeepestElementOf(ty))) {
+            if (Is<type::F16>(ty->DeepestElement())) {
                 member_type = width.empty() ? "float16_t" : ("vector<float16_t, " + width + ">");
             } else {
                 member_type = "float" + width;

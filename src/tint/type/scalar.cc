@@ -12,25 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef SRC_TINT_IR_CONVERT_H_
-#define SRC_TINT_IR_CONVERT_H_
+#include "src/tint/type/scalar.h"
 
-#include "src/tint/ir/call.h"
-#include "src/tint/type/type.h"
-#include "src/tint/utils/castable.h"
+TINT_INSTANTIATE_TYPEINFO(tint::type::Scalar);
 
-namespace tint::ir {
+namespace tint::type {
 
-/// A value conversion instruction in the IR.
-class Convert : public utils::Castable<Convert, Call> {
-  public:
-    /// Constructor
-    /// @param to_type the target conversion type
-    /// @param value the value to convert
-    Convert(const type::Type* to_type, Value* value);
-    ~Convert() override;
-};
+Scalar::Scalar(size_t hash, type::Flags flags) : Base(hash, flags) {}
 
-}  // namespace tint::ir
+Scalar::~Scalar() = default;
 
-#endif  // SRC_TINT_IR_CONVERT_H_
+bool Scalar::Equals(const UniqueNode& other) const {
+    return &other.TypeInfo() == &TypeInfo();
+}
+
+}  // namespace tint::type

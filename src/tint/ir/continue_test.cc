@@ -25,11 +25,11 @@ using namespace tint::number_suffixes;  // NOLINT
 using IR_ContinueTest = IRTestHelper;
 
 TEST_F(IR_ContinueTest, Usage) {
-    auto* loop = b.CreateLoop();
+    auto* loop = b.Loop();
     auto* arg1 = b.Constant(1_u);
     auto* arg2 = b.Constant(2_u);
 
-    auto* brk = b.Continue(loop, utils::Vector{arg1, arg2});
+    auto* brk = b.Continue(loop, arg1, arg2);
 
     EXPECT_THAT(arg1->Usages(), testing::UnorderedElementsAre(Usage{brk, 0u}));
     EXPECT_THAT(arg2->Usages(), testing::UnorderedElementsAre(Usage{brk, 1u}));
@@ -50,7 +50,7 @@ TEST_F(IR_ContinueTest, Fail_NullArg) {
         {
             Module mod;
             Builder b{mod};
-            b.Continue(b.CreateLoop(), utils::Vector<Value*, 1>{nullptr});
+            b.Continue(b.Loop(), nullptr);
         },
         "");
 }

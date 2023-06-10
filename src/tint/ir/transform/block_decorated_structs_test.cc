@@ -29,7 +29,7 @@ using IR_BlockDecoratedStructsTest = TransformTest;
 using namespace tint::number_suffixes;  // NOLINT
 
 TEST_F(IR_BlockDecoratedStructsTest, NoRootBlock) {
-    auto* func = b.CreateFunction("foo", ty.void_());
+    auto* func = b.Function("foo", ty.void_());
     func->StartTarget()->Append(b.Return(func));
     mod.functions.Push(func);
 
@@ -47,15 +47,14 @@ TEST_F(IR_BlockDecoratedStructsTest, NoRootBlock) {
 }
 
 TEST_F(IR_BlockDecoratedStructsTest, Scalar_Uniform) {
-    auto* buffer = b.Declare(
-        ty.pointer(ty.i32(), builtin::AddressSpace::kUniform, builtin::Access::kReadWrite));
+    auto* buffer = b.Var(ty.ptr<uniform, i32>());
     buffer->SetBindingPoint(0, 0);
-    b.CreateRootBlockIfNeeded()->Append(buffer);
+    b.RootBlock()->Append(buffer);
 
-    auto* func = b.CreateFunction("foo", ty.i32());
-    auto* load = b.Load(buffer);
-    func->StartTarget()->Append(load);
-    func->StartTarget()->Append(b.Return(func, utils::Vector{load}));
+    auto* func = b.Function("foo", ty.i32());
+    auto* block = func->StartTarget();
+    auto* load = block->Append(b.Load(buffer));
+    block->Append(b.Return(func, load));
     mod.functions.Push(func);
 
     auto* expect = R"(
@@ -83,13 +82,12 @@ tint_symbol_1 = struct @align(4), @block {
 }
 
 TEST_F(IR_BlockDecoratedStructsTest, Scalar_Storage) {
-    auto* buffer = b.Declare(
-        ty.pointer(ty.i32(), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite));
+    auto* buffer = b.Var(ty.ptr<storage, i32>());
     buffer->SetBindingPoint(0, 0);
-    b.CreateRootBlockIfNeeded()->Append(buffer);
+    b.RootBlock()->Append(buffer);
 
-    auto* func = b.CreateFunction("foo", ty.void_());
-    func->StartTarget()->Append(b.Store(buffer, b.Constant(42_i)));
+    auto* func = b.Function("foo", ty.void_());
+    func->StartTarget()->Append(b.Store(buffer, 42_i));
     func->StartTarget()->Append(b.Return(func));
     mod.functions.Push(func);
 
@@ -118,18 +116,16 @@ tint_symbol_1 = struct @align(4), @block {
 }
 
 TEST_F(IR_BlockDecoratedStructsTest, RuntimeArray) {
-    auto* buffer = b.Declare(ty.pointer(ty.runtime_array(ty.i32()), builtin::AddressSpace::kStorage,
-                                        builtin::Access::kReadWrite));
+    auto* buffer =
+        b.Var(ty.pointer(ty.runtime_array(ty.i32()), storage, builtin::Access::kReadWrite));
     buffer->SetBindingPoint(0, 0);
-    b.CreateRootBlockIfNeeded()->Append(buffer);
+    b.RootBlock()->Append(buffer);
 
-    auto* func = b.CreateFunction("foo", ty.void_());
-    auto* access =
-        b.Access(ty.pointer(ty.i32(), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite),
-                 buffer, utils::Vector{b.Constant(1_u)});
-    func->StartTarget()->Append(access);
-    func->StartTarget()->Append(b.Store(access, b.Constant(42_i)));
-    func->StartTarget()->Append(b.Return(func));
+    auto* func = b.Function("foo", ty.void_());
+    auto* block = func->StartTarget();
+    auto* access = block->Append(b.Access(ty.ptr<storage, i32>(), buffer, 1_u));
+    block->Append(b.Store(access, 42_i));
+    block->Append(b.Return(func));
     mod.functions.Push(func);
 
     auto* expect = R"(
@@ -165,23 +161,19 @@ TEST_F(IR_BlockDecoratedStructsTest, RuntimeArray_InStruct) {
                                             4u, 4u, type::StructMemberAttributes{}));
     auto* structure = ty.Get<type::Struct>(mod.symbols.New(), members, 4u, 8u, 8u);
 
-    auto* buffer = b.Declare(
-        ty.pointer(structure, builtin::AddressSpace::kStorage, builtin::Access::kReadWrite));
+    auto* buffer = b.Var(ty.pointer(structure, storage, builtin::Access::kReadWrite));
     buffer->SetBindingPoint(0, 0);
-    b.CreateRootBlockIfNeeded()->Append(buffer);
+    b.RootBlock()->Append(buffer);
 
-    auto* i32_ptr =
-        ty.pointer(ty.i32(), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite);
+    auto* i32_ptr = ty.ptr<storage, i32>();
 
-    auto* func = b.CreateFunction("foo", ty.void_());
-    auto* val_ptr = b.Access(i32_ptr, buffer, utils::Vector{b.Constant(0_u)});
-    auto* load = b.Load(val_ptr);
-    auto* elem_ptr = b.Access(i32_ptr, buffer, utils::Vector{b.Constant(1_u), b.Constant(3_u)});
-    func->StartTarget()->Append(val_ptr);
-    func->StartTarget()->Append(load);
-    func->StartTarget()->Append(elem_ptr);
-    func->StartTarget()->Append(b.Store(elem_ptr, load));
-    func->StartTarget()->Append(b.Return(func));
+    auto* func = b.Function("foo", ty.void_());
+    auto* block = func->StartTarget();
+    auto* val_ptr = block->Append(b.Access(i32_ptr, buffer, 0_u));
+    auto* load = block->Append(b.Load(val_ptr));
+    auto* elem_ptr = block->Append(b.Access(i32_ptr, buffer, 1_u, 3_u));
+    block->Append(b.Store(elem_ptr, load));
+    block->Append(b.Return(func));
     mod.functions.Push(func);
 
     auto* expect = R"(
@@ -224,16 +216,15 @@ TEST_F(IR_BlockDecoratedStructsTest, StructUsedElsewhere) {
                                             type::StructMemberAttributes{}));
     auto* structure = ty.Get<type::Struct>(mod.symbols.New(), members, 4u, 8u, 8u);
 
-    auto* buffer = b.Declare(
-        ty.pointer(structure, builtin::AddressSpace::kStorage, builtin::Access::kReadWrite));
+    auto* buffer = b.Var(ty.pointer(structure, storage, builtin::Access::kReadWrite));
     buffer->SetBindingPoint(0, 0);
-    b.CreateRootBlockIfNeeded()->Append(buffer);
+    b.RootBlock()->Append(buffer);
 
-    auto* private_var = b.Declare(
-        ty.pointer(structure, builtin::AddressSpace::kPrivate, builtin::Access::kReadWrite));
-    b.CreateRootBlockIfNeeded()->Append(private_var);
+    auto* private_var =
+        b.Var(ty.pointer(structure, builtin::AddressSpace::kPrivate, builtin::Access::kReadWrite));
+    b.RootBlock()->Append(private_var);
 
-    auto* func = b.CreateFunction("foo", ty.void_());
+    auto* func = b.Function("foo", ty.void_());
     func->StartTarget()->Append(b.Store(buffer, private_var));
     func->StartTarget()->Append(b.Return(func));
     mod.functions.Push(func);
@@ -269,27 +260,23 @@ tint_symbol_4 = struct @align(4), @block {
 }
 
 TEST_F(IR_BlockDecoratedStructsTest, MultipleBuffers) {
-    auto* buffer_a = b.Declare(
-        ty.pointer(ty.i32(), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite));
-    auto* buffer_b = b.Declare(
-        ty.pointer(ty.i32(), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite));
-    auto* buffer_c = b.Declare(
-        ty.pointer(ty.i32(), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite));
+    auto* buffer_a = b.Var(ty.ptr<storage, i32>());
+    auto* buffer_b = b.Var(ty.ptr<storage, i32>());
+    auto* buffer_c = b.Var(ty.ptr<storage, i32>());
     buffer_a->SetBindingPoint(0, 0);
     buffer_b->SetBindingPoint(0, 1);
     buffer_c->SetBindingPoint(0, 2);
-    auto* root = b.CreateRootBlockIfNeeded();
+    auto* root = b.RootBlock();
     root->Append(buffer_a);
     root->Append(buffer_b);
     root->Append(buffer_c);
 
-    auto* func = b.CreateFunction("foo", ty.void_());
-    auto* load_b = b.Load(buffer_b);
-    auto* load_c = b.Load(buffer_c);
-    func->StartTarget()->Append(load_b);
-    func->StartTarget()->Append(load_c);
-    func->StartTarget()->Append(b.Store(buffer_a, b.Add(ty.i32(), load_b, load_c)));
-    func->StartTarget()->Append(b.Return(func));
+    auto* func = b.Function("foo", ty.void_());
+    auto* block = func->StartTarget();
+    auto* load_b = block->Append(b.Load(buffer_b));
+    auto* load_c = block->Append(b.Load(buffer_c));
+    block->Append(b.Store(buffer_a, b.Add(ty.i32(), load_b, load_c)));
+    block->Append(b.Return(func));
     mod.functions.Push(func);
 
     auto* expect = R"(

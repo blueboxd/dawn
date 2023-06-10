@@ -29,8 +29,8 @@ TEST_F(IR_MultiInBlockTest, Fail_NullBlockParam) {
             Module mod;
             Builder b{mod};
 
-            auto* blk = b.CreateMultiInBlock();
-            blk->SetParams(utils::Vector<const BlockParam*, 1>{nullptr});
+            auto* blk = b.MultiInBlock();
+            blk->SetParams({nullptr});
         },
         "");
 }
@@ -41,7 +41,7 @@ TEST_F(IR_MultiInBlockTest, Fail_NullInboundBranch) {
             Module mod;
             Builder b{mod};
 
-            auto* blk = b.CreateMultiInBlock();
+            auto* blk = b.MultiInBlock();
             blk->AddInboundSiblingBranch(nullptr);
         },
         "");

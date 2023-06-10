@@ -24,7 +24,7 @@
 #include "src/tint/ir/block.h"
 #include "src/tint/ir/block_param.h"
 #include "src/tint/ir/break_if.h"
-#include "src/tint/ir/builtin.h"
+#include "src/tint/ir/builtin_call.h"
 #include "src/tint/ir/continue.h"
 #include "src/tint/ir/exit_if.h"
 #include "src/tint/ir/exit_loop.h"
@@ -138,7 +138,7 @@ bool GeneratorImplIr::Generate() {
     return true;
 }
 
-uint32_t GeneratorImplIr::Constant(const ir::Constant* constant) {
+uint32_t GeneratorImplIr::Constant(ir::Constant* constant) {
     return Constant(constant->Value());
 }
 
@@ -256,16 +256,14 @@ uint32_t GeneratorImplIr::Type(const type::Type* ty) {
     });
 }
 
-uint32_t GeneratorImplIr::Value(const ir::Value* value) {
+uint32_t GeneratorImplIr::Value(ir::Value* value) {
     return Switch(
         value,  //
-        [&](const ir::Constant* constant) { return Constant(constant); },
-        [&](const ir::Value*) {
-            return values_.GetOrCreate(value, [&] { return module_.NextId(); });
-        });
+        [&](ir::Constant* constant) { return Constant(constant); },
+        [&](ir::Value*) { return values_.GetOrCreate(value, [&] { return module_.NextId(); }); });
 }
 
-uint32_t GeneratorImplIr::Label(const ir::Block* block) {
+uint32_t GeneratorImplIr::Label(ir::Block* block) {
     return block_labels_.GetOrCreate(block, [&]() { return module_.NextId(); });
 }
 
@@ -315,7 +313,7 @@ void GeneratorImplIr::EmitStructType(uint32_t id, const type::Struct* str) {
     }
 }
 
-void GeneratorImplIr::EmitFunction(const ir::Function* func) {
+void GeneratorImplIr::EmitFunction(ir::Function* func) {
     auto id = Value(func);
 
     // Emit the function name.
@@ -370,7 +368,7 @@ void GeneratorImplIr::EmitFunction(const ir::Function* func) {
     module_.PushFunction(current_function_);
 }
 
-void GeneratorImplIr::EmitEntryPoint(const ir::Function* func, uint32_t id) {
+void GeneratorImplIr::EmitEntryPoint(ir::Function* func, uint32_t id) {
     SpvExecutionModel stage = SpvExecutionModelMax;
     switch (func->Stage()) {
         case ir::Function::PipelineStage::kCompute: {
@@ -402,11 +400,11 @@ void GeneratorImplIr::EmitEntryPoint(const ir::Function* func, uint32_t id) {
                            {U32Operand(stage), id, ir_->NameOf(func).Name()});
 }
 
-void GeneratorImplIr::EmitRootBlock(const ir::Block* root_block) {
+void GeneratorImplIr::EmitRootBlock(ir::Block* root_block) {
     for (auto* inst : *root_block) {
         Switch(
             inst,  //
-            [&](const ir::Var* v) { return EmitVar(v); },
+            [&](ir::Var* v) { return EmitVar(v); },
             [&](Default) {
                 TINT_ICE(Writer, diagnostics_)
                     << "unimplemented root block instruction: " << inst->TypeInfo().name;
@@ -414,7 +412,7 @@ void GeneratorImplIr::EmitRootBlock(const ir::Block* root_block) {
     }
 }
 
-void GeneratorImplIr::EmitBlock(const ir::Block* block) {
+void GeneratorImplIr::EmitBlock(ir::Block* block) {
     // Emit the label.
     // Skip if this is the function's entry block, as it will be emitted by the function object.
     if (!current_function_.instructions().empty()) {
@@ -437,7 +435,7 @@ void GeneratorImplIr::EmitBlock(const ir::Block* block) {
     EmitBlockInstructions(block);
 }
 
-void GeneratorImplIr::EmitIncomingPhis(const ir::MultiInBlock* block) {
+void GeneratorImplIr::EmitIncomingPhis(ir::MultiInBlock* block) {
     // Emit Phi nodes for all the incoming block parameters
     for (size_t param_idx = 0; param_idx < block->Params().Length(); param_idx++) {
         auto* param = block->Params()[param_idx];
@@ -453,21 +451,21 @@ void GeneratorImplIr::EmitIncomingPhis(const ir::MultiInBlock* block) {
     }
 }
 
-void GeneratorImplIr::EmitBlockInstructions(const ir::Block* block) {
+void GeneratorImplIr::EmitBlockInstructions(ir::Block* block) {
     for (auto* inst : *block) {
         Switch(
             inst,                                             //
-            [&](const ir::Access* a) { EmitAccess(a); },      //
-            [&](const ir::Binary* b) { EmitBinary(b); },      //
-            [&](const ir::Builtin* b) { EmitBuiltin(b); },    //
-            [&](const ir::Load* l) { EmitLoad(l); },          //
-            [&](const ir::Loop* l) { EmitLoop(l); },          //
-            [&](const ir::Switch* sw) { EmitSwitch(sw); },    //
-            [&](const ir::Store* s) { EmitStore(s); },        //
-            [&](const ir::UserCall* c) { EmitUserCall(c); },  //
-            [&](const ir::Var* v) { EmitVar(v); },            //
-            [&](const ir::If* i) { EmitIf(i); },              //
-            [&](const ir::Branch* b) { EmitBranch(b); },      //
+            [&](ir::Access* a) { EmitAccess(a); },            //
+            [&](ir::Binary* b) { EmitBinary(b); },            //
+            [&](ir::BuiltinCall* b) { EmitBuiltinCall(b); },  //
+            [&](ir::Load* l) { EmitLoad(l); },                //
+            [&](ir::Loop* l) { EmitLoop(l); },                //
+            [&](ir::Switch* sw) { EmitSwitch(sw); },          //
+            [&](ir::Store* s) { EmitStore(s); },              //
+            [&](ir::UserCall* c) { EmitUserCall(c); },        //
+            [&](ir::Var* v) { EmitVar(v); },                  //
+            [&](ir::If* i) { EmitIf(i); },                    //
+            [&](ir::Branch* b) { EmitBranch(b); },            //
             [&](Default) {
                 TINT_ICE(Writer, diagnostics_)
                     << "unimplemented instruction: " << inst->TypeInfo().name;
@@ -475,10 +473,10 @@ void GeneratorImplIr::EmitBlockInstructions(const ir::Block* block) {
     }
 }
 
-void GeneratorImplIr::EmitBranch(const ir::Branch* b) {
+void GeneratorImplIr::EmitBranch(ir::Branch* b) {
     tint::Switch(  //
         b,         //
-        [&](const ir::Return*) {
+        [&](ir::Return*) {
             if (!b->Args().IsEmpty()) {
                 TINT_ASSERT(Writer, b->Args().Length() == 1u);
                 OperandList operands;
@@ -489,7 +487,7 @@ void GeneratorImplIr::EmitBranch(const ir::Branch* b) {
             }
             return;
         },
-        [&](const ir::BreakIf* breakif) {
+        [&](ir::BreakIf* breakif) {
             current_function_.push_inst(spv::Op::OpBranchConditional,
                                         {
                                             Value(breakif->Condition()),
@@ -497,19 +495,19 @@ void GeneratorImplIr::EmitBranch(const ir::Branch* b) {
                                             Label(breakif->Loop()->Body()),
                                         });
         },
-        [&](const ir::Continue* cont) {
+        [&](ir::Continue* cont) {
             current_function_.push_inst(spv::Op::OpBranch, {Label(cont->Loop()->Continuing())});
         },
-        [&](const ir::ExitIf* if_) {
+        [&](ir::ExitIf* if_) {
             current_function_.push_inst(spv::Op::OpBranch, {Label(if_->If()->Merge())});
         },
-        [&](const ir::ExitLoop* loop) {
+        [&](ir::ExitLoop* loop) {
             current_function_.push_inst(spv::Op::OpBranch, {Label(loop->Loop()->Merge())});
         },
-        [&](const ir::ExitSwitch* swtch) {
+        [&](ir::ExitSwitch* swtch) {
             current_function_.push_inst(spv::Op::OpBranch, {Label(swtch->Switch()->Merge())});
         },
-        [&](const ir::NextIteration* loop) {
+        [&](ir::NextIteration* loop) {
             current_function_.push_inst(spv::Op::OpBranch, {Label(loop->Loop()->Body())});
         },
         [&](Default) {
@@ -517,7 +515,7 @@ void GeneratorImplIr::EmitBranch(const ir::Branch* b) {
         });
 }
 
-void GeneratorImplIr::EmitIf(const ir::If* i) {
+void GeneratorImplIr::EmitIf(ir::If* i) {
     auto* merge_block = i->Merge();
     auto* true_block = i->True();
     auto* false_block = i->False();
@@ -557,7 +555,7 @@ void GeneratorImplIr::EmitIf(const ir::If* i) {
     EmitBlock(merge_block);
 }
 
-void GeneratorImplIr::EmitAccess(const ir::Access* access) {
+void GeneratorImplIr::EmitAccess(ir::Access* access) {
     auto id = Value(access);
     OperandList operands = {Type(access->Type()), id, Value(access->Object())};
 
@@ -572,30 +570,24 @@ void GeneratorImplIr::EmitAccess(const ir::Access* access) {
 
     // For non-pointer types, we assume that the indices are constants and use OpCompositeExtract.
     // If we hit a non-constant index into a vector type, use OpVectorExtractDynamic for it.
-    auto* ty = access->Object()->Type();
+    auto* source_ty = access->Object()->Type();
     for (auto* idx : access->Indices()) {
         if (auto* constant = idx->As<ir::Constant>()) {
             // Push the index to the chain and update the current type.
             auto i = constant->Value()->ValueAs<u32>();
             operands.push_back(i);
-            ty = Switch(
-                ty,  //
-                [&](const type::Array* arr) { return arr->ElemType(); },
-                [&](const type::Matrix* mat) { return mat->ColumnType(); },
-                [&](const type::Struct* str) { return str->Members()[i]->Type(); },
-                [&](const type::Vector* vec) { return vec->type(); },
-                [&](Default) { return nullptr; });
+            source_ty = source_ty->Element(i);
         } else {
             // The VarForDynamicIndex transform ensures that only value types that are vectors
             // will be dynamically indexed, as we can use OpVectorExtractDynamic for this case.
-            TINT_ASSERT(Writer, ty->Is<type::Vector>());
+            TINT_ASSERT(Writer, source_ty->Is<type::Vector>());
 
             // If this wasn't the first access in the chain then emit the chain so far as an
             // OpCompositeExtract, creating a new result ID for the resulting vector.
             auto vec_id = Value(access->Object());
             if (operands.size() > 3) {
                 vec_id = module_.NextId();
-                operands[0] = Type(ty);
+                operands[0] = Type(source_ty);
                 operands[1] = vec_id;
                 current_function_.push_inst(spv::Op::OpCompositeExtract, std::move(operands));
             }
@@ -609,7 +601,7 @@ void GeneratorImplIr::EmitAccess(const ir::Access* access) {
     current_function_.push_inst(spv::Op::OpCompositeExtract, std::move(operands));
 }
 
-void GeneratorImplIr::EmitBinary(const ir::Binary* binary) {
+void GeneratorImplIr::EmitBinary(ir::Binary* binary) {
     auto id = Value(binary);
     auto* lhs_ty = binary->LHS()->Type();
 
@@ -710,7 +702,7 @@ void GeneratorImplIr::EmitBinary(const ir::Binary* binary) {
         op, {Type(binary->Type()), id, Value(binary->LHS()), Value(binary->RHS())});
 }
 
-void GeneratorImplIr::EmitBuiltin(const ir::Builtin* builtin) {
+void GeneratorImplIr::EmitBuiltinCall(ir::BuiltinCall* builtin) {
     auto* result_ty = builtin->Type();
 
     if (builtin->Func() == builtin::Function::kAbs &&
@@ -779,12 +771,12 @@ void GeneratorImplIr::EmitBuiltin(const ir::Builtin* builtin) {
     current_function_.push_inst(op, operands);
 }
 
-void GeneratorImplIr::EmitLoad(const ir::Load* load) {
+void GeneratorImplIr::EmitLoad(ir::Load* load) {
     current_function_.push_inst(spv::Op::OpLoad,
                                 {Type(load->Type()), Value(load), Value(load->From())});
 }
 
-void GeneratorImplIr::EmitLoop(const ir::Loop* loop) {
+void GeneratorImplIr::EmitLoop(ir::Loop* loop) {
     auto init_label = loop->HasInitializer() ? Label(loop->Initializer()) : 0;
     auto header_label = Label(loop->Body());  // Back-edge needs to branch to the loop header
     auto body_label = module_.NextId();
@@ -825,7 +817,7 @@ void GeneratorImplIr::EmitLoop(const ir::Loop* loop) {
     EmitBlock(loop->Merge());
 }
 
-void GeneratorImplIr::EmitSwitch(const ir::Switch* swtch) {
+void GeneratorImplIr::EmitSwitch(ir::Switch* swtch) {
     // Find the default selector. There must be exactly one.
     uint32_t default_label = 0u;
     for (auto& c : swtch->Cases()) {
@@ -864,11 +856,11 @@ void GeneratorImplIr::EmitSwitch(const ir::Switch* swtch) {
     EmitBlock(swtch->Merge());
 }
 
-void GeneratorImplIr::EmitStore(const ir::Store* store) {
+void GeneratorImplIr::EmitStore(ir::Store* store) {
     current_function_.push_inst(spv::Op::OpStore, {Value(store->To()), Value(store->From())});
 }
 
-void GeneratorImplIr::EmitUserCall(const ir::UserCall* call) {
+void GeneratorImplIr::EmitUserCall(ir::UserCall* call) {
     auto id = Value(call);
     OperandList operands = {Type(call->Type()), id, Value(call->Func())};
     for (auto* arg : call->Args()) {
@@ -877,7 +869,7 @@ void GeneratorImplIr::EmitUserCall(const ir::UserCall* call) {
     current_function_.push_inst(spv::Op::OpFunctionCall, operands);
 }
 
-void GeneratorImplIr::EmitVar(const ir::Var* var) {
+void GeneratorImplIr::EmitVar(ir::Var* var) {
     auto id = Value(var);
     auto* ptr = var->Type();
     auto ty = Type(ptr);

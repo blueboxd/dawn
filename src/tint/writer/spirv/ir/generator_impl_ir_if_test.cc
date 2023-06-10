@@ -20,14 +20,14 @@ namespace tint::writer::spirv {
 namespace {
 
 TEST_F(SpvGeneratorImplTest, If_TrueEmpty_FalseEmpty) {
-    auto* func = b.CreateFunction("foo", ty.void_());
+    auto* func = b.Function("foo", ty.void_());
 
-    auto* i = b.CreateIf(b.Constant(true));
-    i->True()->SetInstructions(utils::Vector{b.ExitIf(i)});
-    i->False()->SetInstructions(utils::Vector{b.ExitIf(i)});
-    i->Merge()->SetInstructions(utils::Vector{b.Return(func)});
+    auto* i = b.If(true);
+    i->True()->SetInstructions({b.ExitIf(i)});
+    i->False()->SetInstructions({b.ExitIf(i)});
+    i->Merge()->SetInstructions({b.Return(func)});
 
-    func->StartTarget()->SetInstructions(utils::Vector{i});
+    func->StartTarget()->SetInstructions({i});
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -48,17 +48,16 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, If_FalseEmpty) {
-    auto* func = b.CreateFunction("foo", ty.void_());
+    auto* func = b.Function("foo", ty.void_());
 
-    auto* i = b.CreateIf(b.Constant(true));
-    i->False()->SetInstructions(utils::Vector{b.ExitIf(i)});
-    i->Merge()->SetInstructions(utils::Vector{b.Return(func)});
+    auto* i = b.If(true);
+    i->False()->SetInstructions({b.ExitIf(i)});
+    i->Merge()->SetInstructions({b.Return(func)});
 
     auto* true_block = i->True();
-    true_block->SetInstructions(
-        utils::Vector{b.Add(ty.i32(), b.Constant(1_i), b.Constant(1_i)), b.ExitIf(i)});
+    true_block->SetInstructions({b.Add(ty.i32(), 1_i, 1_i), b.ExitIf(i)});
 
-    func->StartTarget()->SetInstructions(utils::Vector{i});
+    func->StartTarget()->SetInstructions({i});
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -84,17 +83,16 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, If_TrueEmpty) {
-    auto* func = b.CreateFunction("foo", ty.void_());
+    auto* func = b.Function("foo", ty.void_());
 
-    auto* i = b.CreateIf(b.Constant(true));
-    i->True()->SetInstructions(utils::Vector{b.ExitIf(i)});
-    i->Merge()->SetInstructions(utils::Vector{b.Return(func)});
+    auto* i = b.If(true);
+    i->True()->SetInstructions({b.ExitIf(i)});
+    i->Merge()->SetInstructions({b.Return(func)});
 
     auto* false_block = i->False();
-    false_block->SetInstructions(
-        utils::Vector{b.Add(ty.i32(), b.Constant(1_i), b.Constant(1_i)), b.ExitIf(i)});
+    false_block->SetInstructions({b.Add(ty.i32(), 1_i, 1_i), b.ExitIf(i)});
 
-    func->StartTarget()->SetInstructions(utils::Vector{i});
+    func->StartTarget()->SetInstructions({i});
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -120,13 +118,13 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, If_BothBranchesReturn) {
-    auto* func = b.CreateFunction("foo", ty.void_());
+    auto* func = b.Function("foo", ty.void_());
 
-    auto* i = b.CreateIf(b.Constant(true));
-    i->True()->SetInstructions(utils::Vector{b.Return(func)});
-    i->False()->SetInstructions(utils::Vector{b.Return(func)});
+    auto* i = b.If(true);
+    i->True()->SetInstructions({b.Return(func)});
+    i->False()->SetInstructions({b.Return(func)});
 
-    func->StartTarget()->SetInstructions(utils::Vector{i});
+    func->StartTarget()->SetInstructions({i});
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -151,17 +149,17 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, If_Phi_SingleValue) {
-    auto* func = b.CreateFunction("foo", ty.void_());
+    auto* func = b.Function("foo", ty.void_());
 
     auto* merge_param = b.BlockParam(b.ir.Types().i32());
 
-    auto* i = b.CreateIf(b.Constant(true));
-    i->True()->SetInstructions(utils::Vector{b.ExitIf(i, utils::Vector{b.Constant(10_i)})});
-    i->False()->SetInstructions(utils::Vector{b.ExitIf(i, utils::Vector{b.Constant(20_i)})});
-    i->Merge()->SetParams(utils::Vector{merge_param});
-    i->Merge()->SetInstructions(utils::Vector{b.Return(func, utils::Vector{merge_param})});
+    auto* i = b.If(true);
+    i->True()->SetInstructions({b.ExitIf(i, 10_i)});
+    i->False()->SetInstructions({b.ExitIf(i, 20_i)});
+    i->Merge()->SetParams({merge_param});
+    i->Merge()->SetInstructions({b.Return(func, merge_param)});
 
-    func->StartTarget()->SetInstructions(utils::Vector{i});
+    func->StartTarget()->SetInstructions({i});
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -190,17 +188,17 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, If_Phi_SingleValue_TrueReturn) {
-    auto* func = b.CreateFunction("foo", ty.void_());
+    auto* func = b.Function("foo", ty.void_());
 
     auto* merge_param = b.BlockParam(b.ir.Types().i32());
 
-    auto* i = b.CreateIf(b.Constant(true));
-    i->True()->SetInstructions(utils::Vector{b.Return(func, utils::Vector{b.Constant(42_i)})});
-    i->False()->SetInstructions(utils::Vector{b.ExitIf(i, utils::Vector{b.Constant(20_i)})});
-    i->Merge()->SetParams(utils::Vector{merge_param});
-    i->Merge()->SetInstructions(utils::Vector{b.Return(func, utils::Vector{merge_param})});
+    auto* i = b.If(true);
+    i->True()->SetInstructions({b.Return(func, 42_i)});
+    i->False()->SetInstructions({b.ExitIf(i, 20_i)});
+    i->Merge()->SetParams({merge_param});
+    i->Merge()->SetInstructions({b.Return(func, merge_param)});
 
-    func->StartTarget()->SetInstructions(utils::Vector{i});
+    func->StartTarget()->SetInstructions({i});
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -229,17 +227,17 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, If_Phi_SingleValue_FalseReturn) {
-    auto* func = b.CreateFunction("foo", ty.void_());
+    auto* func = b.Function("foo", ty.void_());
 
     auto* merge_param = b.BlockParam(b.ir.Types().i32());
 
-    auto* i = b.CreateIf(b.Constant(true));
-    i->True()->SetInstructions(utils::Vector{b.ExitIf(i, utils::Vector{b.Constant(10_i)})});
-    i->False()->SetInstructions(utils::Vector{b.Return(func, utils::Vector{b.Constant(42_i)})});
-    i->Merge()->SetParams(utils::Vector{merge_param});
-    i->Merge()->SetInstructions(utils::Vector{b.Return(func, utils::Vector{merge_param})});
+    auto* i = b.If(true);
+    i->True()->SetInstructions({b.ExitIf(i, 10_i)});
+    i->False()->SetInstructions({b.Return(func, 42_i)});
+    i->Merge()->SetParams({merge_param});
+    i->Merge()->SetInstructions({b.Return(func, merge_param)});
 
-    func->StartTarget()->SetInstructions(utils::Vector{i});
+    func->StartTarget()->SetInstructions({i});
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -268,22 +266,18 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest, If_Phi_MultipleValue) {
-    auto* func = b.CreateFunction("foo", ty.void_());
+    auto* func = b.Function("foo", ty.void_());
 
     auto* merge_param_0 = b.BlockParam(b.ir.Types().i32());
     auto* merge_param_1 = b.BlockParam(b.ir.Types().bool_());
 
-    auto* i = b.CreateIf(b.Constant(true));
-    i->True()->SetInstructions(
-        utils::Vector{b.ExitIf(i, utils::Vector{b.Constant(10_i), b.Constant(true)})});
-    i->False()->SetInstructions(
-        utils::Vector{b.ExitIf(i, utils::Vector{b.Constant(20_i), b.Constant(false)})});
-    i->Merge()->SetParams(utils::Vector{merge_param_0, merge_param_1});
-    i->Merge()->SetInstructions(utils::Vector{
-        b.Return(func, utils::Vector{merge_param_0}),
-    });
+    auto* i = b.If(true);
+    i->True()->SetInstructions({b.ExitIf(i, 10_i, true)});
+    i->False()->SetInstructions({b.ExitIf(i, 20_i, false)});
+    i->Merge()->SetParams({merge_param_0, merge_param_1});
+    i->Merge()->SetInstructions({b.Return(func, merge_param_0)});
 
-    func->StartTarget()->SetInstructions(utils::Vector{i});
+    func->StartTarget()->SetInstructions({i});
 
     ASSERT_TRUE(IRIsValid()) << Error();
 

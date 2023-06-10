@@ -12,25 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/ir/builtin.h"
+#include "src/tint/type/numeric_scalar.h"
 
-#include <utility>
+TINT_INSTANTIATE_TYPEINFO(tint::type::NumericScalar);
 
-#include "src/tint/debug.h"
+namespace tint::type {
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Builtin);
+NumericScalar::NumericScalar(size_t hash, type::Flags flags) : Base(hash, flags) {}
 
-// \cond DO_NOT_DOCUMENT
-namespace tint::ir {
+NumericScalar::~NumericScalar() = default;
 
-Builtin::Builtin(const type::Type* ty, builtin::Function func, utils::VectorRef<Value*> arguments)
-    : Base(ty), func_(func) {
-    TINT_ASSERT(IR, func != builtin::Function::kNone);
-    TINT_ASSERT(IR, func != builtin::Function::kTintMaterialize);
-    AddOperands(std::move(arguments));
-}
-
-Builtin::~Builtin() = default;
-
-}  // namespace tint::ir
-// \endcond
+}  // namespace tint::type
