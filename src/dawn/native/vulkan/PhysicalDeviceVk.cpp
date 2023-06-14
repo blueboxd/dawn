@@ -226,6 +226,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::ShaderIntegerDotProduct) &&
+        mDeviceInfo.shaderIntegerDotProductFeatures.shaderIntegerDotProduct == VK_TRUE &&
         mDeviceInfo.shaderIntegerDotProductProperties
                 .integerDotProduct4x8BitPackedSignedAccelerated == VK_TRUE &&
         mDeviceInfo.shaderIntegerDotProductProperties
@@ -421,14 +422,14 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
         return DAWN_INTERNAL_ERROR("Insufficient Vulkan limits for framebufferDepthSampleCounts");
     }
 
-    if (mDeviceInfo.HasExt(DeviceExt::Maintenance3)) {
+    limits->v1.maxBufferSize = kAssumedMaxBufferSize;
+    if (mDeviceInfo.HasExt(DeviceExt::Maintenance4)) {
+        limits->v1.maxBufferSize = mDeviceInfo.propertiesMaintenance4.maxBufferSize;
+    } else if (mDeviceInfo.HasExt(DeviceExt::Maintenance3)) {
         limits->v1.maxBufferSize = mDeviceInfo.propertiesMaintenance3.maxMemoryAllocationSize;
-        if (mDeviceInfo.propertiesMaintenance3.maxMemoryAllocationSize <
-            baseLimits.v1.maxBufferSize) {
-            return DAWN_INTERNAL_ERROR("Insufficient Vulkan maxBufferSize limit");
-        }
-    } else {
-        limits->v1.maxBufferSize = kAssumedMaxBufferSize;
+    }
+    if (limits->v1.maxBufferSize < baseLimits.v1.maxBufferSize) {
+        return DAWN_INTERNAL_ERROR("Insufficient Vulkan maxBufferSize limit");
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) {
@@ -534,8 +535,11 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     deviceToggles->Default(Toggle::VulkanUseS8, true);
 
     // The environment can only request to use VK_KHR_zero_initialize_workgroup_memory when the
-    // extension is available. Override the decision if it is no applicable.
-    if (!GetDeviceInfo().HasExt(DeviceExt::ZeroInitializeWorkgroupMemory)) {
+    // extension is available. Override the decision if it is no applicable or
+    // zeroInitializeWorkgroupMemoryFeatures.shaderZeroInitializeWorkgroupMemory == VK_FALSE.
+    if (!GetDeviceInfo().HasExt(DeviceExt::ZeroInitializeWorkgroupMemory) ||
+        GetDeviceInfo().zeroInitializeWorkgroupMemoryFeatures.shaderZeroInitializeWorkgroupMemory ==
+            VK_FALSE) {
         deviceToggles->ForceSet(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, false);
     }
     // By default try to initialize workgroup memory with OpConstantNull according to the Vulkan

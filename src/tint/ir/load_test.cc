@@ -26,9 +26,9 @@ using namespace tint::number_suffixes;  // NOLINT
 using IR_LoadTest = IRTestHelper;
 
 TEST_F(IR_LoadTest, Create) {
-    auto* store_type = mod.Types().i32();
-    auto* var = b.Var(mod.Types().pointer(store_type, builtin::AddressSpace::kFunction,
-                                          builtin::Access::kReadWrite));
+    auto* store_type = ty.i32();
+    auto* var =
+        b.Var(ty.ptr(builtin::AddressSpace::kFunction, store_type, builtin::Access::kReadWrite));
     auto* inst = b.Load(var);
 
     ASSERT_TRUE(inst->Is<Load>());
@@ -41,27 +41,13 @@ TEST_F(IR_LoadTest, Create) {
 }
 
 TEST_F(IR_LoadTest, Usage) {
-    auto* store_type = mod.Types().i32();
-    auto* var = b.Var(mod.Types().pointer(store_type, builtin::AddressSpace::kFunction,
-                                          builtin::Access::kReadWrite));
+    auto* store_type = ty.i32();
+    auto* var =
+        b.Var(ty.ptr(builtin::AddressSpace::kFunction, store_type, builtin::Access::kReadWrite));
     auto* inst = b.Load(var);
 
     ASSERT_NE(inst->From(), nullptr);
     EXPECT_THAT(inst->From()->Usages(), testing::UnorderedElementsAre(Usage{inst, 0u}));
-}
-
-TEST_F(IR_LoadTest, Fail_NullType) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-
-            auto* store_type = mod.Types().i32();
-            auto* var = b.Var(mod.Types().pointer(store_type, builtin::AddressSpace::kFunction,
-                                                  builtin::Access::kReadWrite));
-            Load l(nullptr, var);
-        },
-        "");
 }
 
 TEST_F(IR_LoadTest, Fail_NonPtr_Builder) {
@@ -89,7 +75,7 @@ TEST_F(IR_LoadTest, Fail_NullValue) {
         {
             Module mod;
             Builder b{mod};
-            Load l(mod.Types().f32(), nullptr);
+            Load l(nullptr);
         },
         "");
 }
