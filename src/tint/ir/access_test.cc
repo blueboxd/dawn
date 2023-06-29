@@ -18,6 +18,8 @@
 #include "gtest/gtest-spi.h"
 #include "src/tint/ir/ir_test_helper.h"
 
+using namespace tint::builtin::fluent_types;  // NOLINT
+
 namespace tint::ir {
 namespace {
 
@@ -29,8 +31,21 @@ TEST_F(IR_AccessTest, SetsUsage) {
     auto* idx = b.Constant(u32(1));
     auto* a = b.Access(ty.i32(), var, idx);
 
-    EXPECT_THAT(var->Usages(), testing::UnorderedElementsAre(Usage{a, 0u}));
+    EXPECT_THAT(var->Result()->Usages(), testing::UnorderedElementsAre(Usage{a, 0u}));
     EXPECT_THAT(idx->Usages(), testing::UnorderedElementsAre(Usage{a, 1u}));
+}
+
+TEST_F(IR_AccessTest, Result) {
+    auto* type = ty.ptr<function, i32>();
+    auto* var = b.Var(type);
+    auto* idx = b.Constant(u32(1));
+    auto* a = b.Access(ty.i32(), var, idx);
+
+    EXPECT_TRUE(a->HasResults());
+    EXPECT_FALSE(a->HasMultiResults());
+
+    EXPECT_TRUE(a->Result()->Is<InstructionResult>());
+    EXPECT_EQ(a, a->Result()->Source());
 }
 
 TEST_F(IR_AccessTest, Fail_NullType) {
@@ -41,40 +56,6 @@ TEST_F(IR_AccessTest, Fail_NullType) {
             auto* ty = (mod.Types().ptr<function, i32>());
             auto* var = b.Var(ty);
             b.Access(nullptr, var, u32(1));
-        },
-        "");
-}
-
-TEST_F(IR_AccessTest, Fail_NullObject) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            b.Access(mod.Types().i32(), nullptr, u32(1));
-        },
-        "");
-}
-
-TEST_F(IR_AccessTest, Fail_EmptyIndices) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            auto* ty = (mod.Types().ptr<function, i32>());
-            auto* var = b.Var(ty);
-            b.Access(mod.Types().i32(), var, utils::Empty);
-        },
-        "");
-}
-
-TEST_F(IR_AccessTest, Fail_NullIndex) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            auto* ty = (mod.Types().ptr<function, i32>());
-            auto* var = b.Var(ty);
-            b.Access(mod.Types().i32(), var, nullptr);
         },
         "");
 }

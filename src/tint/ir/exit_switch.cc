@@ -23,16 +23,19 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::ExitSwitch);
 
 namespace tint::ir {
 
-ExitSwitch::ExitSwitch(ir::Switch* sw, utils::VectorRef<Value*> args /* = utils::Empty */)
-    : switch_(sw) {
-    TINT_ASSERT(IR, switch_);
-
-    if (switch_) {
-        switch_->Merge()->AddInboundSiblingBranch(this);
-    }
-    AddOperands(std::move(args));
+ExitSwitch::ExitSwitch(ir::Switch* sw, utils::VectorRef<Value*> args /* = utils::Empty */) {
+    SetSwitch(sw);
+    AddOperands(ExitSwitch::kArgsOperandOffset, std::move(args));
 }
 
 ExitSwitch::~ExitSwitch() = default;
+
+void ExitSwitch::SetSwitch(ir::Switch* s) {
+    SetControlInstruction(s);
+}
+
+ir::Switch* ExitSwitch::Switch() {
+    return static_cast<ir::Switch*>(ControlInstruction());
+}
 
 }  // namespace tint::ir

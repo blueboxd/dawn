@@ -18,6 +18,8 @@
 #include "gtest/gtest-spi.h"
 #include "src/tint/ir/ir_test_helper.h"
 
+using namespace tint::builtin::fluent_types;  // NOLINT
+
 namespace tint::ir {
 namespace {
 
@@ -27,7 +29,17 @@ TEST_F(IR_SwizzleTest, SetsUsage) {
     auto* var = b.Var(ty.ptr<function, i32>());
     auto* a = b.Swizzle(mod.Types().i32(), var, {1u});
 
-    EXPECT_THAT(var->Usages(), testing::UnorderedElementsAre(Usage{a, 0u}));
+    EXPECT_THAT(var->Result()->Usages(), testing::UnorderedElementsAre(Usage{a, 0u}));
+}
+
+TEST_F(IR_SwizzleTest, Results) {
+    auto* var = b.Var(ty.ptr<function, i32>());
+    auto* a = b.Swizzle(mod.Types().i32(), var, {1u});
+
+    EXPECT_TRUE(a->HasResults());
+    EXPECT_FALSE(a->HasMultiResults());
+    EXPECT_TRUE(a->Result()->Is<InstructionResult>());
+    EXPECT_EQ(a->Result()->Source(), a);
 }
 
 TEST_F(IR_SwizzleTest, Fail_NullType) {
@@ -37,16 +49,6 @@ TEST_F(IR_SwizzleTest, Fail_NullType) {
             Builder b{mod};
             auto* var = b.Var(mod.Types().ptr<function, i32>());
             b.Swizzle(nullptr, var, {1u});
-        },
-        "");
-}
-
-TEST_F(IR_SwizzleTest, Fail_NullObject) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            b.Swizzle(mod.Types().i32(), nullptr, {1u});
         },
         "");
 }

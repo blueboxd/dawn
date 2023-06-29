@@ -21,17 +21,17 @@
 namespace tint::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 using IR_StoreTest = IRTestHelper;
 
 TEST_F(IR_StoreTest, CreateStore) {
-    auto* to = b.Var(mod.Types().ptr(builtin::AddressSpace::kPrivate, mod.Types().i32(),
-                                     builtin::Access::kReadWrite));
+    auto* to = b.Var(ty.ptr<private_, i32>());
     auto* inst = b.Store(to, 4_i);
 
     ASSERT_TRUE(inst->Is<Store>());
-    ASSERT_EQ(inst->To(), to);
+    ASSERT_EQ(inst->To(), to->Result());
 
     ASSERT_TRUE(inst->From()->Is<Constant>());
     auto lhs = inst->From()->As<Constant>()->Value();
@@ -39,8 +39,8 @@ TEST_F(IR_StoreTest, CreateStore) {
     EXPECT_EQ(4_i, lhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
 }
 
-TEST_F(IR_StoreTest, Store_Usage) {
-    auto* to = b.Discard();
+TEST_F(IR_StoreTest, Usage) {
+    auto* to = b.Var(ty.ptr<private_, i32>());
     auto* inst = b.Store(to, 4_i);
 
     ASSERT_NE(inst->To(), nullptr);
@@ -50,26 +50,12 @@ TEST_F(IR_StoreTest, Store_Usage) {
     EXPECT_THAT(inst->From()->Usages(), testing::UnorderedElementsAre(Usage{inst, 1u}));
 }
 
-TEST_F(IR_StoreTest, Fail_NullTo) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            b.Store(nullptr, 1_u);
-        },
-        "");
-}
+TEST_F(IR_StoreTest, Result) {
+    auto* to = b.Var(ty.ptr<private_, i32>());
+    auto* inst = b.Store(to, 4_i);
 
-TEST_F(IR_StoreTest, Fail_NullFrom) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            auto* to = b.Var(mod.Types().ptr(builtin::AddressSpace::kPrivate, mod.Types().i32(),
-                                             builtin::Access::kReadWrite));
-            b.Store(to, nullptr);
-        },
-        "");
+    EXPECT_FALSE(inst->HasResults());
+    EXPECT_FALSE(inst->HasMultiResults());
 }
 
 }  // namespace

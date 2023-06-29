@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "dawn/common/ContentLessObjectCache.h"
 #include "dawn/common/Mutex.h"
 #include "dawn/native/CacheKey.h"
 #include "dawn/native/Commands.h"
@@ -201,6 +202,10 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     void UncacheComputePipeline(ComputePipelineBase* obj);
 
+    ResultOrError<Ref<TextureViewBase>> CreateImplicitMSAARenderTextureViewFor(
+        const TextureBase* singleSampledTexture,
+        uint32_t sampleCount);
+
     ResultOrError<Ref<TextureViewBase>> GetOrCreatePlaceholderTextureViewForExternalTexture();
 
     ResultOrError<Ref<PipelineLayoutBase>> GetOrCreatePipelineLayout(
@@ -239,10 +244,8 @@ class DeviceBase : public RefCountedWithExternalCount {
         const CommandEncoderDescriptor* descriptor = nullptr);
     ResultOrError<Ref<ComputePipelineBase>> CreateComputePipeline(
         const ComputePipelineDescriptor* descriptor);
-    MaybeError CreateComputePipelineAsync(const ComputePipelineDescriptor* descriptor,
-                                          WGPUCreateComputePipelineAsyncCallback callback,
-                                          void* userdata);
-
+    ResultOrError<Ref<ComputePipelineBase>> CreateUninitializedComputePipeline(
+        const ComputePipelineDescriptor* descriptor);
     ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayout(
         const PipelineLayoutDescriptor* descriptor);
     ResultOrError<Ref<QuerySetBase>> CreateQuerySet(const QuerySetDescriptor* descriptor);
@@ -250,9 +253,8 @@ class DeviceBase : public RefCountedWithExternalCount {
         const RenderBundleEncoderDescriptor* descriptor);
     ResultOrError<Ref<RenderPipelineBase>> CreateRenderPipeline(
         const RenderPipelineDescriptor* descriptor);
-    MaybeError CreateRenderPipelineAsync(const RenderPipelineDescriptor* descriptor,
-                                         WGPUCreateRenderPipelineAsyncCallback callback,
-                                         void* userdata);
+    ResultOrError<Ref<RenderPipelineBase>> CreateUninitializedRenderPipeline(
+        const RenderPipelineDescriptor* descriptor);
     ResultOrError<Ref<SamplerBase>> CreateSampler(const SamplerDescriptor* descriptor = nullptr);
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModule(
         const ShaderModuleDescriptor* descriptor,
@@ -397,6 +399,10 @@ class DeviceBase : public RefCountedWithExternalCount {
     virtual bool ShouldDuplicateParametersForDrawIndirect(
         const RenderPipelineBase* renderPipelineBase) const;
 
+    // Whether the backend supports blitting the resolve texture with draw calls in the same render
+    // pass that it will be resolved into.
+    virtual bool IsResolveTextureBlitWithDrawSupported() const;
+
     bool HasFeature(Feature feature) const;
 
     const CombinedLimits& GetLimits() const;
@@ -405,10 +411,23 @@ class DeviceBase : public RefCountedWithExternalCount {
     CallbackTaskManager* GetCallbackTaskManager() const;
     dawn::platform::WorkerTaskPool* GetWorkerTaskPool() const;
 
+    // Enqueue a successfully-create async pipeline creation callback.
     void AddComputePipelineAsyncCallbackTask(Ref<ComputePipelineBase> pipeline,
                                              WGPUCreateComputePipelineAsyncCallback callback,
                                              void* userdata);
     void AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipeline,
+                                            WGPUCreateRenderPipelineAsyncCallback callback,
+                                            void* userdata);
+    // Enqueue a failed async pipeline creation callback.
+    // If the device is lost, then further errors should not be reported to
+    // the application. Instead of an error, a successful callback is enqueued, using
+    // an error pipeline created with `label`.
+    void AddComputePipelineAsyncCallbackTask(std::unique_ptr<ErrorData> error,
+                                             const char* label,
+                                             WGPUCreateComputePipelineAsyncCallback callback,
+                                             void* userdata);
+    void AddRenderPipelineAsyncCallbackTask(std::unique_ptr<ErrorData> error,
+                                            const char* label,
                                             WGPUCreateRenderPipelineAsyncCallback callback,
                                             void* userdata);
 

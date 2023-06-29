@@ -19,7 +19,7 @@
 #include "dawn/common/ityp_bitset.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/Buffer.h"
-#include "dawn/native/ChainUtils_autogen.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ExternalTexture.h"
@@ -140,13 +140,20 @@ MaybeError ValidateTextureBinding(DeviceBase* device,
         case BindingInfoType::Texture: {
             SampleTypeBit supportedTypes =
                 texture->GetFormat().GetAspectInfo(aspect).supportedSampleTypes;
-            SampleTypeBit requiredType = SampleTypeToSampleTypeBit(bindingInfo.texture.sampleType);
-
             DAWN_TRY(ValidateCanUseAs(texture, wgpu::TextureUsage::TextureBinding, mode));
 
             DAWN_INVALID_IF(texture->IsMultisampledTexture() != bindingInfo.texture.multisampled,
                             "Sample count (%u) of %s doesn't match expectation (multisampled: %d).",
                             texture->GetSampleCount(), texture, bindingInfo.texture.multisampled);
+
+            SampleTypeBit requiredType;
+            if (bindingInfo.texture.sampleType == kInternalResolveAttachmentSampleType) {
+                // If the binding's sample type is kInternalResolveAttachmentSampleType,
+                // then the supported types must contain float.
+                requiredType = SampleTypeBit::UnfilterableFloat;
+            } else {
+                requiredType = SampleTypeToSampleTypeBit(bindingInfo.texture.sampleType);
+            }
 
             DAWN_INVALID_IF(
                 !(supportedTypes & requiredType),

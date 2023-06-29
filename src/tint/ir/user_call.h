@@ -24,20 +24,26 @@ namespace tint::ir {
 /// A user call instruction in the IR.
 class UserCall : public utils::Castable<UserCall, Call> {
   public:
+    /// The offset in Operands() for the function being called
+    static constexpr size_t kFunctionOperandOffset = 0;
+
+    /// The base offset in Operands() for the call arguments
+    static constexpr size_t kArgsOperandOffset = 1;
+
     /// Constructor
-    /// @param type the result type
+    /// @param result the result value
     /// @param func the function being called
     /// @param args the function arguments
-    UserCall(const type::Type* type, Function* func, utils::VectorRef<Value*> args);
+    UserCall(InstructionResult* result, Function* func, utils::VectorRef<Value*> args);
     ~UserCall() override;
 
     /// @returns the call arguments
-    utils::Slice<Value* const> Args() override { return operands_.Slice().Offset(1); }
+    utils::Slice<Value* const> Args() override {
+        return operands_.Slice().Offset(kArgsOperandOffset);
+    }
 
     /// @returns the called function name
-    Function* Func() { return operands_.Front()->As<ir::Function>(); }
-
-  private:
+    Function* Func() { return operands_[kFunctionOperandOffset]->As<ir::Function>(); }
 };
 
 }  // namespace tint::ir

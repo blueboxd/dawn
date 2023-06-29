@@ -32,9 +32,10 @@
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::VertexPulling);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::VertexPulling::Config);
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::ast::transform {
+
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 namespace {
 
@@ -576,71 +577,71 @@ struct VertexPulling::State {
 
             case VertexFormat::kUint8x2: {
                 // yyxx0000, yyxx0000
-                auto* u16s = b.vec2<u32>(load_u16_h());
+                auto* u16s = b.Call<vec2<u32>>(load_u16_h());
                 // xx000000, yyxx0000
-                auto* shl = b.Shl(u16s, b.vec2<u32>(8_u, 0_u));
+                auto* shl = b.Shl(u16s, b.Call<vec2<u32>>(8_u, 0_u));
                 // 000000xx, 000000yy
-                return b.Shr(shl, b.vec2<u32>(24_u));
+                return b.Shr(shl, b.Call<vec2<u32>>(24_u));
             }
             case VertexFormat::kUint8x4: {
                 // wwzzyyxx, wwzzyyxx, wwzzyyxx, wwzzyyxx
-                auto* u32s = b.vec4<u32>(load_u32());
+                auto* u32s = b.Call<vec4<u32>>(load_u32());
                 // xx000000, yyxx0000, zzyyxx00, wwzzyyxx
-                auto* shl = b.Shl(u32s, b.vec4<u32>(24_u, 16_u, 8_u, 0_u));
+                auto* shl = b.Shl(u32s, b.Call<vec4<u32>>(24_u, 16_u, 8_u, 0_u));
                 // 000000xx, 000000yy, 000000zz, 000000ww
-                return b.Shr(shl, b.vec4<u32>(24_u));
+                return b.Shr(shl, b.Call<vec4<u32>>(24_u));
             }
             case VertexFormat::kUint16x2: {
                 // yyyyxxxx, yyyyxxxx
-                auto* u32s = b.vec2<u32>(load_u32());
+                auto* u32s = b.Call<vec2<u32>>(load_u32());
                 // xxxx0000, yyyyxxxx
-                auto* shl = b.Shl(u32s, b.vec2<u32>(16_u, 0_u));
+                auto* shl = b.Shl(u32s, b.Call<vec2<u32>>(16_u, 0_u));
                 // 0000xxxx, 0000yyyy
-                return b.Shr(shl, b.vec2<u32>(16_u));
+                return b.Shr(shl, b.Call<vec2<u32>>(16_u));
             }
             case VertexFormat::kUint16x4: {
                 // yyyyxxxx, wwwwzzzz
-                auto* u32s = b.vec2<u32>(load_u32(), load_next_u32());
+                auto* u32s = b.Call<vec2<u32>>(load_u32(), load_next_u32());
                 // yyyyxxxx, yyyyxxxx, wwwwzzzz, wwwwzzzz
                 auto* xxyy = b.MemberAccessor(u32s, "xxyy");
                 // xxxx0000, yyyyxxxx, zzzz0000, wwwwzzzz
-                auto* shl = b.Shl(xxyy, b.vec4<u32>(16_u, 0_u, 16_u, 0_u));
+                auto* shl = b.Shl(xxyy, b.Call<vec4<u32>>(16_u, 0_u, 16_u, 0_u));
                 // 0000xxxx, 0000yyyy, 0000zzzz, 0000wwww
-                return b.Shr(shl, b.vec4<u32>(16_u));
+                return b.Shr(shl, b.Call<vec4<u32>>(16_u));
             }
             case VertexFormat::kSint8x2: {
                 // yyxx0000, yyxx0000
-                auto* i16s = b.vec2<i32>(load_i16_h());
+                auto* i16s = b.Call<vec2<i32>>(load_i16_h());
                 // xx000000, yyxx0000
-                auto* shl = b.Shl(i16s, b.vec2<u32>(8_u, 0_u));
+                auto* shl = b.Shl(i16s, b.Call<vec2<u32>>(8_u, 0_u));
                 // ssssssxx, ssssssyy
-                return b.Shr(shl, b.vec2<u32>(24_u));
+                return b.Shr(shl, b.Call<vec2<u32>>(24_u));
             }
             case VertexFormat::kSint8x4: {
                 // wwzzyyxx, wwzzyyxx, wwzzyyxx, wwzzyyxx
-                auto* i32s = b.vec4<i32>(load_i32());
+                auto* i32s = b.Call<vec4<i32>>(load_i32());
                 // xx000000, yyxx0000, zzyyxx00, wwzzyyxx
-                auto* shl = b.Shl(i32s, b.vec4<u32>(24_u, 16_u, 8_u, 0_u));
+                auto* shl = b.Shl(i32s, b.Call<vec4<u32>>(24_u, 16_u, 8_u, 0_u));
                 // ssssssxx, ssssssyy, sssssszz, ssssssww
-                return b.Shr(shl, b.vec4<u32>(24_u));
+                return b.Shr(shl, b.Call<vec4<u32>>(24_u));
             }
             case VertexFormat::kSint16x2: {
                 // yyyyxxxx, yyyyxxxx
-                auto* i32s = b.vec2<i32>(load_i32());
+                auto* i32s = b.Call<vec2<i32>>(load_i32());
                 // xxxx0000, yyyyxxxx
-                auto* shl = b.Shl(i32s, b.vec2<u32>(16_u, 0_u));
+                auto* shl = b.Shl(i32s, b.Call<vec2<u32>>(16_u, 0_u));
                 // ssssxxxx, ssssyyyy
-                return b.Shr(shl, b.vec2<u32>(16_u));
+                return b.Shr(shl, b.Call<vec2<u32>>(16_u));
             }
             case VertexFormat::kSint16x4: {
                 // yyyyxxxx, wwwwzzzz
-                auto* i32s = b.vec2<i32>(load_i32(), load_next_i32());
+                auto* i32s = b.Call<vec2<i32>>(load_i32(), load_next_i32());
                 // yyyyxxxx, yyyyxxxx, wwwwzzzz, wwwwzzzz
                 auto* xxyy = b.MemberAccessor(i32s, "xxyy");
                 // xxxx0000, yyyyxxxx, zzzz0000, wwwwzzzz
-                auto* shl = b.Shl(xxyy, b.vec4<u32>(16_u, 0_u, 16_u, 0_u));
+                auto* shl = b.Shl(xxyy, b.Call<vec4<u32>>(16_u, 0_u, 16_u, 0_u));
                 // ssssxxxx, ssssyyyy, sssszzzz, sssswwww
-                return b.Shr(shl, b.vec4<u32>(16_u));
+                return b.Shr(shl, b.Call<vec4<u32>>(16_u));
             }
             case VertexFormat::kUnorm8x2:
                 return b.MemberAccessor(b.Call("unpack4x8unorm", load_u16_l()), "xy");
@@ -657,14 +658,14 @@ struct VertexPulling::State {
             case VertexFormat::kFloat16x2:
                 return b.Call("unpack2x16float", load_u32());
             case VertexFormat::kUnorm16x4:
-                return b.vec4<f32>(b.Call("unpack2x16unorm", load_u32()),
-                                   b.Call("unpack2x16unorm", load_next_u32()));
+                return b.Call<vec4<f32>>(b.Call("unpack2x16unorm", load_u32()),
+                                         b.Call("unpack2x16unorm", load_next_u32()));
             case VertexFormat::kSnorm16x4:
-                return b.vec4<f32>(b.Call("unpack2x16snorm", load_u32()),
-                                   b.Call("unpack2x16snorm", load_next_u32()));
+                return b.Call<vec4<f32>>(b.Call("unpack2x16snorm", load_u32()),
+                                         b.Call("unpack2x16snorm", load_next_u32()));
             case VertexFormat::kFloat16x4:
-                return b.vec4<f32>(b.Call("unpack2x16float", load_u32()),
-                                   b.Call("unpack2x16float", load_next_u32()));
+                return b.Call<vec4<f32>>(b.Call("unpack2x16float", load_u32()),
+                                         b.Call("unpack2x16float", load_next_u32()));
         }
 
         TINT_UNREACHABLE(Transform, b.Diagnostics()) << "format " << static_cast<int>(format);
@@ -765,7 +766,7 @@ struct VertexPulling::State {
             ctx.InsertFront(func->body->statements, b.Decl(func_var));
             // Capture mapping from location to the new variable.
             LocationInfo info;
-            info.expr = [this, func_var]() { return b.Expr(func_var); };
+            info.expr = [this, func_var] { return b.Expr(func_var); };
 
             auto* sem = src->Sem().Get<sem::Parameter>(param);
             info.type = sem->Type();
@@ -784,11 +785,11 @@ struct VertexPulling::State {
             auto builtin = src->Sem().Get(builtin_attr)->Value();
             // Check for existing vertex_index and instance_index builtins.
             if (builtin == builtin::BuiltinValue::kVertexIndex) {
-                vertex_index_expr = [this, param]() {
+                vertex_index_expr = [this, param] {
                     return b.Expr(ctx.Clone(param->name->symbol));
                 };
             } else if (builtin == builtin::BuiltinValue::kInstanceIndex) {
-                instance_index_expr = [this, param]() {
+                instance_index_expr = [this, param] {
                     return b.Expr(ctx.Clone(param->name->symbol));
                 };
             }
@@ -814,7 +815,7 @@ struct VertexPulling::State {
         utils::Vector<const StructMember*, 8> members_to_clone;
         for (auto* member : struct_ty->members) {
             auto member_sym = ctx.Clone(member->name->symbol);
-            std::function<const Expression*()> member_expr = [this, param_sym, member_sym]() {
+            std::function<const Expression*()> member_expr = [this, param_sym, member_sym] {
                 return b.MemberAccessor(param_sym, member_sym);
             };
 
@@ -906,7 +907,7 @@ struct VertexPulling::State {
                     new_function_parameters.Push(
                         b.Param(name, b.ty.u32(),
                                 utils::Vector{b.Builtin(builtin::BuiltinValue::kVertexIndex)}));
-                    vertex_index_expr = [this, name]() { return b.Expr(name); };
+                    vertex_index_expr = [this, name] { return b.Expr(name); };
                     break;
                 }
             }
@@ -918,7 +919,7 @@ struct VertexPulling::State {
                     new_function_parameters.Push(
                         b.Param(name, b.ty.u32(),
                                 utils::Vector{b.Builtin(builtin::BuiltinValue::kInstanceIndex)}));
-                    instance_index_expr = [this, name]() { return b.Expr(name); };
+                    instance_index_expr = [this, name] { return b.Expr(name); };
                     break;
                 }
             }

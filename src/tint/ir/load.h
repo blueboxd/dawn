@@ -21,22 +21,20 @@
 namespace tint::ir {
 
 /// A load instruction in the IR.
-class Load : public utils::Castable<Load, OperandInstruction<1>> {
+class Load : public utils::Castable<Load, OperandInstruction<1, 1>> {
   public:
+    /// The offset in Operands() for the from value
+    static constexpr size_t kFromOperandOffset = 0;
+
     /// Constructor (infers type)
+    /// @param result the result value
     /// @param from the value being loaded from
-    explicit Load(Value* from);
+    Load(InstructionResult* result, Value* from);
 
     ~Load() override;
 
-    /// @returns the type of the value
-    const type::Type* Type() override { return result_type_; }
-
     /// @returns the value being loaded from
-    Value* From() { return operands_[0]; }
-
-  private:
-    const type::Type* result_type_ = nullptr;
+    Value* From() { return operands_[kFromOperandOffset]; }
 };
 
 }  // namespace tint::ir

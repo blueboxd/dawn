@@ -19,10 +19,11 @@
 
 #include "gmock/gmock.h"
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::writer::glsl {
 namespace {
+
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 using GlslGeneratorImplTest_Binary = TestHelper;
 
@@ -160,7 +161,7 @@ INSTANTIATE_TEST_SUITE_P(
                     BinaryData{"(left % right)", ast::BinaryOp::kModulo}));
 
 TEST_F(GlslGeneratorImplTest_Binary, Multiply_VectorScalar_f32) {
-    GlobalVar("a", vec3<f32>(1_f, 1_f, 1_f), builtin::AddressSpace::kPrivate);
+    GlobalVar("a", Call<vec3<f32>>(1_f, 1_f, 1_f), builtin::AddressSpace::kPrivate);
     auto* lhs = Expr("a");
     auto* rhs = Expr(1_f);
 
@@ -179,7 +180,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Multiply_VectorScalar_f32) {
 TEST_F(GlslGeneratorImplTest_Binary, Multiply_VectorScalar_f16) {
     Enable(builtin::Extension::kF16);
 
-    GlobalVar("a", vec3<f16>(1_h, 1_h, 1_h), builtin::AddressSpace::kPrivate);
+    GlobalVar("a", Call<vec3<f16>>(1_h, 1_h, 1_h), builtin::AddressSpace::kPrivate);
     auto* lhs = Expr("a");
     auto* rhs = Expr(1_h);
 
@@ -196,7 +197,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Multiply_VectorScalar_f16) {
 }
 
 TEST_F(GlslGeneratorImplTest_Binary, Multiply_ScalarVector_f32) {
-    GlobalVar("a", vec3<f32>(1_f, 1_f, 1_f), builtin::AddressSpace::kPrivate);
+    GlobalVar("a", Call<vec3<f32>>(1_f, 1_f, 1_f), builtin::AddressSpace::kPrivate);
     auto* lhs = Expr(1_f);
     auto* rhs = Expr("a");
 
@@ -215,7 +216,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Multiply_ScalarVector_f32) {
 TEST_F(GlslGeneratorImplTest_Binary, Multiply_ScalarVector_f16) {
     Enable(builtin::Extension::kF16);
 
-    GlobalVar("a", vec3<f16>(1_h, 1_h, 1_h), builtin::AddressSpace::kPrivate);
+    GlobalVar("a", Call<vec3<f16>>(1_h, 1_h, 1_h), builtin::AddressSpace::kPrivate);
     auto* lhs = Expr(1_h);
     auto* rhs = Expr("a");
 
@@ -302,7 +303,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Multiply_ScalarMatrix_f16) {
 TEST_F(GlslGeneratorImplTest_Binary, Multiply_MatrixVector_f32) {
     GlobalVar("mat", ty.mat3x3<f32>(), builtin::AddressSpace::kPrivate);
     auto* lhs = Expr("mat");
-    auto* rhs = vec3<f32>(1_f, 1_f, 1_f);
+    auto* rhs = Call<vec3<f32>>(1_f, 1_f, 1_f);
 
     auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, lhs, rhs);
     WrapInFunction(expr);
@@ -320,7 +321,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Multiply_MatrixVector_f16) {
 
     GlobalVar("mat", ty.mat3x3<f16>(), builtin::AddressSpace::kPrivate);
     auto* lhs = Expr("mat");
-    auto* rhs = vec3<f16>(1_h, 1_h, 1_h);
+    auto* rhs = Call<vec3<f16>>(1_h, 1_h, 1_h);
 
     auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, lhs, rhs);
     WrapInFunction(expr);
@@ -335,7 +336,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Multiply_MatrixVector_f16) {
 
 TEST_F(GlslGeneratorImplTest_Binary, Multiply_VectorMatrix_f32) {
     GlobalVar("mat", ty.mat3x3<f32>(), builtin::AddressSpace::kPrivate);
-    auto* lhs = vec3<f32>(1_f, 1_f, 1_f);
+    auto* lhs = Call<vec3<f32>>(1_f, 1_f, 1_f);
     auto* rhs = Expr("mat");
 
     auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, lhs, rhs);
@@ -353,7 +354,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Multiply_VectorMatrix_f16) {
     Enable(builtin::Extension::kF16);
 
     GlobalVar("mat", ty.mat3x3<f16>(), builtin::AddressSpace::kPrivate);
-    auto* lhs = vec3<f16>(1_h, 1_h, 1_h);
+    auto* lhs = Call<vec3<f16>>(1_h, 1_h, 1_h);
     auto* rhs = Expr("mat");
 
     auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, lhs, rhs);
@@ -543,7 +544,7 @@ TEST_F(GlslGeneratorImplTest_Binary, ModMixedVec3ScalarF32) {
 
     gen.Generate();
     EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
-    EXPECT_EQ(gen.result(), R"(#version 310 es
+    EXPECT_EQ(gen.Result(), R"(#version 310 es
 
 vec3 tint_float_modulo(vec3 lhs, vec3 rhs) {
   return (lhs - rhs * trunc(lhs / rhs));
@@ -588,7 +589,7 @@ TEST_F(GlslGeneratorImplTest_Binary, ModMixedVec3ScalarF16) {
 
     gen.Generate();
     EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
-    EXPECT_EQ(gen.result(), R"(#version 310 es
+    EXPECT_EQ(gen.Result(), R"(#version 310 es
 #extension GL_AMD_gpu_shader_half_float : require
 
 f16vec3 tint_float_modulo(f16vec3 lhs, f16vec3 rhs) {
@@ -629,7 +630,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Logical_And) {
     gen.EmitExpression(out, expr);
     EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "(tint_tmp)");
-    EXPECT_EQ(gen.result(), R"(bool tint_tmp = a;
+    EXPECT_EQ(gen.Result(), R"(bool tint_tmp = a;
 if (tint_tmp) {
   tint_tmp = b;
 }
@@ -655,7 +656,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Logical_Multi) {
     gen.EmitExpression(out, expr);
     EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "(tint_tmp)");
-    EXPECT_EQ(gen.result(), R"(bool tint_tmp_1 = a;
+    EXPECT_EQ(gen.Result(), R"(bool tint_tmp_1 = a;
 if (tint_tmp_1) {
   tint_tmp_1 = b;
 }
@@ -683,7 +684,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Logical_Or) {
     gen.EmitExpression(out, expr);
     EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "(tint_tmp)");
-    EXPECT_EQ(gen.result(), R"(bool tint_tmp = a;
+    EXPECT_EQ(gen.Result(), R"(bool tint_tmp = a;
 if (!tint_tmp) {
   tint_tmp = b;
 }
@@ -714,7 +715,7 @@ TEST_F(GlslGeneratorImplTest_Binary, If_WithLogical) {
 
     gen.EmitStatement(expr);
     EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
-    EXPECT_EQ(gen.result(), R"(bool tint_tmp = a;
+    EXPECT_EQ(gen.Result(), R"(bool tint_tmp = a;
 if (tint_tmp) {
   tint_tmp = b;
 }
@@ -751,7 +752,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Return_WithLogical) {
 
     gen.EmitStatement(expr);
     EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
-    EXPECT_EQ(gen.result(), R"(bool tint_tmp_1 = a;
+    EXPECT_EQ(gen.Result(), R"(bool tint_tmp_1 = a;
 if (tint_tmp_1) {
   tint_tmp_1 = b;
 }
@@ -783,7 +784,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Assign_WithLogical) {
 
     gen.EmitStatement(expr);
     EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
-    EXPECT_EQ(gen.result(), R"(bool tint_tmp_1 = b;
+    EXPECT_EQ(gen.Result(), R"(bool tint_tmp_1 = b;
 if (!tint_tmp_1) {
   tint_tmp_1 = c;
 }
@@ -816,7 +817,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Decl_WithLogical) {
 
     gen.EmitStatement(decl);
     EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
-    EXPECT_EQ(gen.result(), R"(bool tint_tmp_1 = b;
+    EXPECT_EQ(gen.Result(), R"(bool tint_tmp_1 = b;
 if (tint_tmp_1) {
   tint_tmp_1 = c;
 }
@@ -859,7 +860,7 @@ TEST_F(GlslGeneratorImplTest_Binary, Call_WithLogical) {
 
     gen.EmitStatement(expr);
     EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
-    EXPECT_EQ(gen.result(), R"(bool tint_tmp = a;
+    EXPECT_EQ(gen.Result(), R"(bool tint_tmp = a;
 if (tint_tmp) {
   tint_tmp = b;
 }

@@ -41,6 +41,7 @@
 #include "src/tint/ir/switch.h"
 #include "src/tint/ir/swizzle.h"
 #include "src/tint/ir/unary.h"
+#include "src/tint/ir/unreachable.h"
 #include "src/tint/ir/user_call.h"
 #include "src/tint/ir/var.h"
 #include "src/tint/switch.h"
@@ -65,12 +66,9 @@ class Validator {
         }
 
         if (diagnostics_.contains_errors()) {
-            // If a diassembly file was generated then one of the diagnostics referenced the
-            // disasembly. Emit the entire disassembly file at the end of the messages.
-            if (mod_.disassembly_file) {
-                diagnostics_.add_note(tint::diag::System::IR,
-                                      "# Disassembly\n" + mod_.disassembly_file->content.data, {});
-            }
+            DisassembleIfNeeded();
+            diagnostics_.add_note(tint::diag::System::IR,
+                                  "# Disassembly\n" + mod_.disassembly_file->content.data, {});
             return std::move(diagnostics_);
         }
         return Success{};
@@ -82,6 +80,7 @@ class Validator {
     Disassembler dis_{mod_};
 
     Block* current_block_ = nullptr;
+    utils::Hashset<Function*, 4> seen_functions_;
 
     void DisassembleIfNeeded() {
         if (mod_.disassembly_file) {
@@ -104,6 +103,17 @@ class Validator {
     void AddError(Instruction* inst, size_t idx, std::string err) {
         DisassembleIfNeeded();
         auto src = dis_.OperandSource(Usage{inst, static_cast<uint32_t>(idx)});
+        src.file = mod_.disassembly_file.get();
+        AddError(std::move(err), src);
+
+        if (current_block_) {
+            AddNote(current_block_, "In block");
+        }
+    }
+
+    void AddResultError(Instruction* inst, size_t idx, std::string err) {
+        DisassembleIfNeeded();
+        auto src = dis_.ResultSource(Usage{inst, static_cast<uint32_t>(idx)});
         src.file = mod_.disassembly_file.get();
         AddError(std::move(err), src);
 
@@ -141,7 +151,30 @@ class Validator {
         diagnostics_.add_note(tint::diag::System::IR, std::move(note), src);
     }
 
-    // std::string Name(Value* v) { return mod_.NameOf(v).Name(); }
+    std::string Name(Value* v) { return mod_.NameOf(v).Name(); }
+
+    template <typename FUNC>
+    void CheckOperandNotNull(ir::Instruction* inst,
+                             ir::Value* operand,
+                             size_t idx,
+                             std::string_view name,
+                             FUNC&& cb) {
+        if (operand == nullptr) {
+            AddError(inst, idx, std::string(name) + ": " + cb(idx) + " operand is undefined");
+        }
+    }
+
+    template <typename FUNC>
+    void CheckOperandsNotNull(ir::Instruction* inst,
+                              size_t start_operand,
+                              size_t end_operand,
+                              std::string_view name,
+                              FUNC&& cb) {
+        auto operands = inst->Operands();
+        for (size_t i = start_operand; i <= end_operand; i++) {
+            CheckOperandNotNull(inst, operands[i], i, name, cb);
+        }
+    }
 
     void CheckRootBlock(Block* blk) {
         if (!blk) {
@@ -157,21 +190,28 @@ class Validator {
                          std::string("root block: invalid instruction: ") + inst->TypeInfo().name);
                 continue;
             }
+            CheckInstruction(var);
         }
     }
 
-    void CheckFunction(Function* func) { CheckBlock(func->StartTarget()); }
+    void CheckFunction(Function* func) {
+        if (!seen_functions_.Add(func)) {
+            AddError("function '" + Name(func) + "' added to module multiple times");
+        }
+
+        CheckBlock(func->Block());
+    }
 
     void CheckBlock(Block* blk) {
         TINT_SCOPED_ASSIGNMENT(current_block_, blk);
 
-        if (!blk->HasBranchTarget()) {
-            AddError(blk, "block: does not end in a branch");
+        if (!blk->HasTerminator()) {
+            AddError(blk, "block: does not end in a terminator instruction");
         }
 
         for (auto* inst : *blk) {
-            if (inst->Is<ir::Branch>() && inst != blk->Branch()) {
-                AddError(inst, "block: branch which isn't the final instruction");
+            if (inst->Is<ir::Terminator>() && inst != blk->Terminator()) {
+                AddError(inst, "block: terminator which isn't the final instruction");
                 continue;
             }
 
@@ -180,17 +220,58 @@ class Validator {
     }
 
     void CheckInstruction(Instruction* inst) {
+        if (!inst->Alive()) {
+            AddError(inst, "destroyed instruction found in instruction list");
+        }
+        if (inst->HasResults()) {
+            auto results = inst->Results();
+            for (size_t i = 0; i < results.Length(); ++i) {
+                auto* res = results[i];
+                if (!res) {
+                    AddResultError(inst, i, "instruction result is undefined");
+                    continue;
+                }
+
+                if (res->Source() == nullptr) {
+                    AddResultError(inst, i, "instruction result source is undefined");
+                } else if (res->Source() != inst) {
+                    AddResultError(inst, i, "instruction result source has wrong instruction");
+                }
+            }
+        }
+
+        auto ops = inst->Operands();
+        for (size_t i = 0; i < ops.Length(); ++i) {
+            auto* op = ops[i];
+            if (!op) {
+                continue;
+            }
+
+            // Note, a `nullptr` is a valid operand in some cases, like `var` so we can't just check
+            // for `nullptr` here.
+            if (!op->Alive()) {
+                AddError(inst, i, "instruction has operand which is not alive");
+            }
+
+            if (!op->Usages().Contains({inst, i})) {
+                AddError(inst, i, "instruction operand missing usage");
+            }
+        }
+
         tint::Switch(
-            inst,                                //
-            [&](Access* a) { CheckAccess(a); },  //
-            [&](Binary*) {},                     //
-            [&](Branch* b) { CheckBranch(b); },  //
-            [&](Call* c) { CheckCall(c); },      //
-            [&](Load*) {},                       //
-            [&](Store*) {},                      //
-            [&](Swizzle*) {},                    //
-            [&](Unary*) {},                      //
-            [&](Var*) {},                        //
+            inst,                                        //
+            [&](Access* a) { CheckAccess(a); },          //
+            [&](Binary* b) { CheckBinary(b); },          //
+            [&](Call* c) { CheckCall(c); },              //
+            [&](If* if_) { CheckIf(if_); },              //
+            [&](Load*) {},                               //
+            [&](Loop*) {},                               //
+            [&](Store*) {},                              //
+            [&](Switch*) {},                             //
+            [&](Swizzle*) {},                            //
+            [&](Terminator* b) { CheckTerminator(b); },  //
+            [&](Unary* u) { CheckUnary(u); },            //
+            [&](Var* var) { CheckVar(var); },            //
             [&](Default) {
                 AddError(std::string("missing validation of: ") + inst->TypeInfo().name);
             });
@@ -267,8 +348,8 @@ class Validator {
             }
         }
 
-        auto* want_ty = a->Type()->UnwrapPtr();
-        bool want_ptr = a->Type()->Is<type::Pointer>();
+        auto* want_ty = a->Result()->Type()->UnwrapPtr();
+        bool want_ptr = a->Result()->Type()->Is<type::Pointer>();
         if (TINT_UNLIKELY(ty != want_ty || is_ptr != want_ptr)) {
             std::string want =
                 want_ptr ? "ptr<" + want_ty->FriendlyName() + ">" : want_ty->FriendlyName();
@@ -278,34 +359,58 @@ class Validator {
         }
     }
 
-    void CheckBranch(ir::Branch* b) {
+    void CheckBinary(ir::Binary* b) {
+        CheckOperandsNotNull(b, Binary::kLhsOperandOffset, Binary::kRhsOperandOffset, "binary",
+                             [](size_t err_idx) {
+                                 return (err_idx == Binary::kLhsOperandOffset) ? "left" : "right";
+                             });
+    }
+
+    void CheckUnary(ir::Unary* u) {
+        CheckOperandNotNull(u, u->Val(), Unary::kValueOperandOffset, "unary",
+                            [](size_t) { return "value"; });
+
+        if (u->Result() && u->Val()) {
+            if (u->Result()->Type() != u->Val()->Type()) {
+                AddError(u, "unary: result type must match value type");
+            }
+        }
+    }
+
+    void CheckTerminator(ir::Terminator* b) {
         tint::Switch(
-            b,                               //
-            [&](BreakIf*) {},                //
-            [&](Continue*) {},               //
-            [&](ExitIf*) {},                 //
-            [&](ExitLoop*) {},               //
-            [&](ExitSwitch*) {},             //
-            [&](If* if_) { CheckIf(if_); },  //
-            [&](Loop*) {},                   //
-            [&](NextIteration*) {},          //
-            [&](Return* ret) {
+            b,                           //
+            [&](ir::BreakIf*) {},        //
+            [&](ir::Continue*) {},       //
+            [&](ir::ExitIf*) {},         //
+            [&](ir::ExitLoop*) {},       //
+            [&](ir::ExitSwitch*) {},     //
+            [&](ir::NextIteration*) {},  //
+            [&](ir::Return* ret) {
                 if (ret->Func() == nullptr) {
                     AddError("return: null function");
                 }
-            },                //
-            [&](Switch*) {},  //
+            },
+            [&](ir::Unreachable*) {},  //
             [&](Default) {
-                AddError(std::string("missing validation of branch: ") + b->TypeInfo().name);
+                AddError(std::string("missing validation of terminator: ") + b->TypeInfo().name);
             });
     }
 
     void CheckIf(If* if_) {
-        if (!if_->Condition()) {
-            AddError(if_, "if: condition is nullptr");
-        }
+        CheckOperandNotNull(if_, if_->Condition(), If::kConditionOperandOffset, "if",
+                            [](size_t) { return "condition"; });
+
         if (if_->Condition() && !if_->Condition()->Type()->Is<type::Bool>()) {
             AddError(if_, If::kConditionOperandOffset, "if: condition must be a `bool` type");
+        }
+    }
+
+    void CheckVar(Var* var) {
+        if (var->Result() && var->Initializer()) {
+            if (var->Initializer()->Type() != var->Result()->Type()->UnwrapPtr()) {
+                AddError(var, "var initializer has incorrect type");
+            }
         }
     }
 };  // namespace

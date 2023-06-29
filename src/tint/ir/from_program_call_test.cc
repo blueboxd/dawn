@@ -21,7 +21,8 @@
 namespace tint::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 using IR_FromProgramCallTest = ProgramTestHelper;
 
@@ -92,14 +93,13 @@ TEST_F(IR_FromProgramCallTest, EmitStatement_UserFunction) {
 
 TEST_F(IR_FromProgramCallTest, EmitExpression_Convert) {
     auto i = GlobalVar("i", builtin::AddressSpace::kPrivate, Expr(1_i));
-    auto* expr = Call(ty.f32(), i);
+    auto* expr = Call<f32>(i);
     WrapInFunction(expr);
 
     auto m = Build();
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
-    EXPECT_EQ(Disassemble(m.Get()), R"(# Root block
-%b1 = block {
+    EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %i:ptr<private, i32, read_write> = var, 1i
 }
 
@@ -114,14 +114,13 @@ TEST_F(IR_FromProgramCallTest, EmitExpression_Convert) {
 }
 
 TEST_F(IR_FromProgramCallTest, EmitExpression_ConstructEmpty) {
-    auto* expr = vec3(ty.f32());
+    auto* expr = Call<vec3<f32>>();
     GlobalVar("i", builtin::AddressSpace::kPrivate, expr);
 
     auto m = Build();
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
-    EXPECT_EQ(Disassemble(m.Get()), R"(# Root block
-%b1 = block {
+    EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %i:ptr<private, vec3<f32>, read_write> = var, vec3<f32>(0.0f)
 }
 
@@ -130,14 +129,13 @@ TEST_F(IR_FromProgramCallTest, EmitExpression_ConstructEmpty) {
 
 TEST_F(IR_FromProgramCallTest, EmitExpression_Construct) {
     auto i = GlobalVar("i", builtin::AddressSpace::kPrivate, Expr(1_f));
-    auto* expr = vec3(ty.f32(), 2_f, 3_f, i);
+    auto* expr = Call<vec3<f32>>(2_f, 3_f, i);
     WrapInFunction(expr);
 
     auto m = Build();
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
-    EXPECT_EQ(Disassemble(m.Get()), R"(# Root block
-%b1 = block {
+    EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %i:ptr<private, f32, read_write> = var, 1.0f
 }
 

@@ -495,6 +495,9 @@ MaybeError CommandBufferStateTracker::ValidateOperation(ValidationAspects requir
 
     DAWN_TRY(CheckMissingAspects(requiredAspects & ~mAspects));
 
+    // Validation for kMaxBindGroupsPlusVertexBuffers is skipped because it is not necessary so far.
+    static_assert(kMaxBindGroups + kMaxVertexBuffers <= kMaxBindGroupsPlusVertexBuffers);
+
     return {};
 }
 
@@ -728,6 +731,10 @@ void CommandBufferStateTracker::SetRenderPipeline(RenderPipelineBase* pipeline) 
     SetPipelineCommon(pipeline);
 }
 
+void CommandBufferStateTracker::UnsetBindGroup(BindGroupIndex index) {
+    mBindgroups[index] = nullptr;
+    mAspects.reset(VALIDATION_ASPECT_BIND_GROUPS);
+}
 void CommandBufferStateTracker::SetBindGroup(BindGroupIndex index,
                                              BindGroupBase* bindgroup,
                                              uint32_t dynamicOffsetCount,

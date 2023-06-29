@@ -23,7 +23,9 @@
 namespace tint::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
+
 using IR_VarTest = IRTestHelper;
 
 TEST_F(IR_VarTest, Fail_NullType) {
@@ -34,6 +36,14 @@ TEST_F(IR_VarTest, Fail_NullType) {
             b.Var(nullptr);
         },
         "");
+}
+
+TEST_F(IR_VarTest, Results) {
+    auto* var = b.Var(ty.ptr<function, f32>());
+    EXPECT_TRUE(var->HasResults());
+    EXPECT_FALSE(var->HasMultiResults());
+    EXPECT_TRUE(var->Result()->Is<InstructionResult>());
+    EXPECT_EQ(var->Result()->Source(), var);
 }
 
 TEST_F(IR_VarTest, Initializer_Usage) {

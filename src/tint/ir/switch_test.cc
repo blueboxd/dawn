@@ -30,31 +30,17 @@ TEST_F(IR_SwitchTest, Usage) {
     EXPECT_THAT(cond->Usages(), testing::UnorderedElementsAre(Usage{switch_, 0u}));
 }
 
+TEST_F(IR_SwitchTest, Results) {
+    auto* cond = b.Constant(true);
+    auto* switch_ = b.Switch(cond);
+    EXPECT_FALSE(switch_->HasResults());
+    EXPECT_FALSE(switch_->HasMultiResults());
+}
+
 TEST_F(IR_SwitchTest, Parent) {
     auto* switch_ = b.Switch(1_i);
     b.Case(switch_, {Switch::CaseSelector{nullptr}});
-    EXPECT_THAT(switch_->Merge()->Parent(), switch_);
-    EXPECT_THAT(switch_->Cases().Front().Start()->Parent(), switch_);
-}
-
-TEST_F(IR_SwitchTest, Fail_NullCondition) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            b.Switch(nullptr);
-        },
-        "");
-}
-
-TEST_F(IR_SwitchTest, Fail_NullMultiInBlock) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            Switch switch_(b.Constant(false), nullptr);
-        },
-        "");
+    EXPECT_THAT(switch_->Cases().Front().Block()->Parent(), switch_);
 }
 
 }  // namespace

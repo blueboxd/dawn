@@ -21,33 +21,42 @@
 namespace tint::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 using IR_LoadTest = IRTestHelper;
 
 TEST_F(IR_LoadTest, Create) {
     auto* store_type = ty.i32();
-    auto* var =
-        b.Var(ty.ptr(builtin::AddressSpace::kFunction, store_type, builtin::Access::kReadWrite));
+    auto* var = b.Var(ty.ptr<function, i32>());
     auto* inst = b.Load(var);
 
     ASSERT_TRUE(inst->Is<Load>());
-    ASSERT_EQ(inst->From(), var);
+    ASSERT_EQ(inst->From(), var->Result());
+    EXPECT_EQ(inst->Result()->Type(), store_type);
 
-    EXPECT_EQ(inst->Type(), store_type);
-
-    ASSERT_TRUE(inst->From()->Is<ir::Var>());
-    EXPECT_EQ(inst->From(), var);
+    auto* result = inst->From()->As<InstructionResult>();
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->Source()->Is<ir::Var>());
+    EXPECT_EQ(result->Source(), var);
 }
 
 TEST_F(IR_LoadTest, Usage) {
-    auto* store_type = ty.i32();
-    auto* var =
-        b.Var(ty.ptr(builtin::AddressSpace::kFunction, store_type, builtin::Access::kReadWrite));
+    auto* var = b.Var(ty.ptr<function, i32>());
     auto* inst = b.Load(var);
 
     ASSERT_NE(inst->From(), nullptr);
     EXPECT_THAT(inst->From()->Usages(), testing::UnorderedElementsAre(Usage{inst, 0u}));
+}
+
+TEST_F(IR_LoadTest, Results) {
+    auto* var = b.Var(ty.ptr<function, i32>());
+    auto* inst = b.Load(var);
+
+    EXPECT_TRUE(inst->HasResults());
+    EXPECT_FALSE(inst->HasMultiResults());
+    EXPECT_TRUE(inst->Result()->Is<InstructionResult>());
+    EXPECT_EQ(inst->Result()->Source(), inst);
 }
 
 TEST_F(IR_LoadTest, Fail_NonPtr_Builder) {
@@ -56,26 +65,6 @@ TEST_F(IR_LoadTest, Fail_NonPtr_Builder) {
             Module mod;
             Builder b{mod};
             b.Load(b.Constant(1_i));
-        },
-        "");
-}
-
-TEST_F(IR_LoadTest, Fail_NullValue_Builder) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            b.Load(nullptr);
-        },
-        "");
-}
-
-TEST_F(IR_LoadTest, Fail_NullValue) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            Load l(nullptr);
         },
         "");
 }

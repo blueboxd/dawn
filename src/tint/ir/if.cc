@@ -20,25 +20,29 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::If);
 
 namespace tint::ir {
 
-If::If(Value* cond, ir::Block* t, ir::Block* f, ir::MultiInBlock* m)
-    : true_(t), false_(f), merge_(m) {
-    TINT_ASSERT(IR, cond);
+If::If(Value* cond, ir::Block* t, ir::Block* f) : true_(t), false_(f) {
     TINT_ASSERT(IR, true_);
     TINT_ASSERT(IR, false_);
-    TINT_ASSERT(IR, merge_);
 
-    AddOperand(cond);
+    AddOperand(If::kConditionOperandOffset, cond);
+
     if (true_) {
         true_->SetParent(this);
     }
     if (false_) {
         false_->SetParent(this);
     }
-    if (merge_) {
-        merge_->SetParent(this);
-    }
 }
 
 If::~If() = default;
+
+void If::ForeachBlock(const std::function<void(ir::Block*)>& cb) {
+    if (true_) {
+        cb(true_);
+    }
+    if (false_) {
+        cb(false_);
+    }
+}
 
 }  // namespace tint::ir

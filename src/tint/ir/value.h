@@ -31,7 +31,7 @@ struct Usage {
     /// The instruction that is using the value;
     Instruction* instruction = nullptr;
     /// The index of the operand that is the value being used.
-    uint32_t operand_index = 0u;
+    size_t operand_index = 0u;
 
     /// A specialization of utils::Hasher for Usage.
     struct Hasher {
@@ -56,6 +56,16 @@ class Value : public utils::Castable<Value> {
     /// Destructor
     ~Value() override;
 
+    /// @returns the type of the value
+    virtual const type::Type* Type() { return nullptr; }
+
+    /// Destroys the Value. Once called, the Value must not be used again.
+    /// The Value must not be in use by any instruction.
+    virtual void Destroy();
+
+    /// @returns true if the Value has not been destroyed with Destroy()
+    bool Alive() const { return !flags_.Contains(Flag::kDead); }
+
     /// Adds a usage of this value.
     /// @param u the usage
     void AddUsage(Usage u) { uses_.Add(u); }
@@ -68,19 +78,29 @@ class Value : public utils::Castable<Value> {
     /// uses the value for multiple different operands.
     const utils::Hashset<Usage, 4, Usage::Hasher>& Usages() { return uses_; }
 
-    /// @returns the type of the value
-    virtual const type::Type* Type() { return nullptr; }
-
     /// Replace all uses of the value.
     /// @param replacer a function which returns a replacement for a given use
     void ReplaceAllUsesWith(std::function<Value*(Usage use)> replacer);
+
+    /// Replace all uses of the value.
+    /// @param replacement the replacement value
+    void ReplaceAllUsesWith(Value* replacement);
 
   protected:
     /// Constructor
     Value();
 
   private:
+    /// Flags applied to an Value
+    enum class Flag {
+        /// The value has been destroyed
+        kDead,
+    };
+
     utils::Hashset<Usage, 4, Usage::Hasher> uses_;
+
+    /// Bitset of value flags
+    utils::EnumSet<Flag> flags_;
 };
 }  // namespace tint::ir
 

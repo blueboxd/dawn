@@ -319,6 +319,23 @@ class Vector {
         return val;
     }
 
+    /// Removes @p count elements from the vector
+    /// @param start the index of the first element to remove
+    /// @param count the number of elements to remove
+    void Erase(size_t start, size_t count = 1) {
+        // Shuffle
+        for (size_t i = start + count; i < impl_.slice.len; i++) {
+            auto& src = impl_.slice.data[i];
+            auto& dst = impl_.slice.data[i - count];
+            dst = std::move(src);
+        }
+        // Pop
+        for (size_t i = 0; i < count; i++) {
+            auto& el = impl_.slice.data[--impl_.slice.len];
+            el.~T();
+        }
+    }
+
     /// Sort sorts the vector in-place using the predicate function @p pred
     /// @param pred a function that has the signature `bool(const T& a, const T& b)` which returns
     /// true if `a` is ordered before `b`.
@@ -571,7 +588,7 @@ struct VectorCommonType</*IS_CASTABLE*/ true, Ts...> {
 /// Helper for determining the Vector element type (`T`) from the vector's constuctor arguments
 template <typename... Ts>
 using VectorCommonType =
-    typename detail::VectorCommonType<IsCastable<std::remove_pointer_t<Ts>...>, Ts...>::type;
+    typename utils::detail::VectorCommonType<IsCastable<std::remove_pointer_t<Ts>...>, Ts...>::type;
 
 /// Deduction guide for Vector
 template <typename... Ts>
@@ -792,7 +809,7 @@ struct IsVectorLike<utils::VectorRef<T>> {
 
 /// True if T is a Vector<T, N> or VectorRef<T>
 template <typename T>
-static constexpr bool IsVectorLike = detail::IsVectorLike<T>::value;
+static constexpr bool IsVectorLike = utils::detail::IsVectorLike<T>::value;
 
 }  // namespace tint::utils
 

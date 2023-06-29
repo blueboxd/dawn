@@ -53,6 +53,7 @@
         "members": [
             {"name": "compatible surface", "type": "surface", "optional": true},
             {"name": "power preference", "type": "power preference", "default": "undefined"},
+            {"name": "backend type", "type": "backend type", "default": "undefined"},
             {"name": "force fallback adapter", "type": "bool", "default": "false"},
             {"name": "compatibility mode", "type": "bool", "default": "false", "tags": ["dawn", "emscripten"]}
         ]
@@ -172,7 +173,7 @@
         "tags": ["dawn", "native"],
         "category": "structure",
         "chained": "in",
-        "chain roots": ["instance descriptor", "device descriptor"],
+        "chain roots": ["instance descriptor", "request adapter options", "device descriptor"],
         "members": [
             {"name": "enabled toggles count", "type": "size_t", "default": 0},
             {"name": "enabled toggles", "type": "char", "annotation": "const*const*", "length": "enabled toggles count"},
@@ -201,14 +202,15 @@
         "category": "enum",
         "emscripten_no_enum_table": true,
         "values": [
-            {"value": 0, "name": "null"},
-            {"value": 1, "name": "WebGPU"},
-            {"value": 2, "name": "D3D11"},
-            {"value": 3, "name": "D3D12"},
-            {"value": 4, "name": "metal"},
-            {"value": 5, "name": "vulkan"},
-            {"value": 6, "name": "openGL"},
-            {"value": 7, "name": "openGLES"}
+            {"value": 0, "name": "undefined", "jsrepr": "undefined", "valid": false},
+            {"value": 1, "name": "null"},
+            {"value": 2, "name": "WebGPU"},
+            {"value": 3, "name": "D3D11"},
+            {"value": 4, "name": "D3D12"},
+            {"value": 5, "name": "metal"},
+            {"value": 6, "name": "vulkan"},
+            {"value": 7, "name": "openGL"},
+            {"value": 8, "name": "openGLES"}
         ]
     },
     "bind group": {
@@ -817,7 +819,7 @@
                 "name": "set bind group",
                 "args": [
                     {"name": "group index", "type": "uint32_t"},
-                    {"name": "group", "type": "bind group"},
+                    {"name": "group", "type": "bind group", "optional": true},
                     {"name": "dynamic offset count", "type": "size_t", "default": "0"},
                     {"name": "dynamic offsets", "type": "uint32_t", "annotation": "const*", "length": "dynamic offset count", "default": "nullptr"}
                 ]
@@ -1280,6 +1282,7 @@
             {"name": "max texture dimension 3D", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max texture array layers", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max bind groups", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
+            {"name": "max bind groups plus vertex buffers", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max bindings per bind group", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max dynamic uniform buffers per pipeline layout", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max dynamic storage buffers per pipeline layout", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
@@ -1460,7 +1463,8 @@
             {"value": 1006, "name": "timestamp query inside passes", "tags": ["dawn"]},
             {"value": 1007, "name": "implicit device synchronization", "tags": ["dawn", "native"]},
             {"value": 1008, "name": "surface capabilities", "tags": ["dawn"]},
-            {"value": 1009, "name": "transient attachments", "tags": ["dawn"]}
+            {"value": 1009, "name": "transient attachments", "tags": ["dawn"]},
+            {"value": 1010, "name": "MSAA render to single sampled", "tags": ["dawn"]}
         ]
     },
     "filter mode": {
@@ -1858,7 +1862,7 @@
                 "name": "set bind group",
                 "args": [
                     {"name": "group index", "type": "uint32_t"},
-                    {"name": "group", "type": "bind group"},
+                    {"name": "group", "type": "bind group", "optional": true},
                     {"name": "dynamic offset count", "type": "size_t", "default": "0"},
                     {"name": "dynamic offsets", "type": "uint32_t", "annotation": "const*", "length": "dynamic offset count", "default": "nullptr"}
                 ]
@@ -1971,6 +1975,7 @@
 
     "render pass color attachment": {
         "category": "structure",
+        "extensible": "in",
         "members": [
             {"name": "view", "type": "texture view", "optional": true},
             {"name": "resolve target", "type": "texture view", "optional": true},
@@ -1979,7 +1984,15 @@
             {"name": "clear value", "type": "color"}
         ]
     },
-
+    "dawn render pass color attachment render to single sampled": {
+        "tags": ["dawn"],
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["render pass color attachment"],
+        "members": [
+            {"name": "implicit sample count", "type": "uint32_t", "default": 1}
+        ]
+    },
     "render pass depth stencil attachment": {
         "category": "structure",
         "members": [
@@ -2030,7 +2043,7 @@
                 "name": "set bind group",
                 "args": [
                     {"name": "group index", "type": "uint32_t"},
-                    {"name": "group", "type": "bind group"},
+                    {"name": "group", "type": "bind group", "optional": true},
                     {"name": "dynamic offset count", "type": "size_t", "default": "0"},
                     {"name": "dynamic offsets", "type": "uint32_t", "annotation": "const*", "length": "dynamic offset count", "default": "nullptr"}
                 ]
@@ -2295,6 +2308,16 @@
             {"name": "count", "type": "uint32_t", "default": "1"},
             {"name": "mask", "type": "uint32_t", "default": "0xFFFFFFFF"},
             {"name": "alpha to coverage enabled", "type": "bool", "default": "false"}
+        ]
+    },
+
+    "dawn multisample state render to single sampled": {
+        "tags": ["dawn"],
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["multisample state"],
+        "members": [
+            {"name": "enabled", "type": "bool", "default": "false"}
         ]
     },
 
@@ -2618,7 +2641,11 @@
             {"value": 1006, "name": "dawn adapter properties power preference", "tags": ["dawn", "native"]},
             {"value": 1007, "name": "dawn buffer descriptor error info from wire client", "tags": ["dawn"]},
             {"value": 1008, "name": "dawn toggles descriptor", "tags": ["dawn", "native"]},
-            {"value": 1009, "name": "dawn shader module SPIRV options descriptor", "tags": ["dawn"]}
+            {"value": 1009, "name": "dawn shader module SPIRV options descriptor", "tags": ["dawn"]},
+            {"value": 1010, "name": "request adapter options LUID", "tags": ["dawn", "native"]},
+            {"value": 1011, "name": "request adapter options get GL proc", "tags": ["dawn", "native"]},
+            {"value": 1012, "name": "dawn multisample state render to single sampled", "tags": ["dawn"]},
+            {"value": 1013, "name": "dawn render pass color attachment render to single sampled", "tags": ["dawn"]}
         ]
     },
     "texture": {

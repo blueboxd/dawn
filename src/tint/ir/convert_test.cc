@@ -32,14 +32,13 @@ TEST_F(IR_ConvertTest, Fail_NullToType) {
         "");
 }
 
-TEST_F(IR_ConvertTest, Fail_NoArg) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            b.Convert(mod.Types().f32(), nullptr);
-        },
-        "");
+TEST_F(IR_ConvertTest, Results) {
+    auto* c = b.Convert(mod.Types().i32(), 1_u);
+
+    EXPECT_TRUE(c->HasResults());
+    EXPECT_FALSE(c->HasMultiResults());
+    EXPECT_TRUE(c->Result()->Is<InstructionResult>());
+    EXPECT_EQ(c->Result()->Source(), c);
 }
 
 }  // namespace

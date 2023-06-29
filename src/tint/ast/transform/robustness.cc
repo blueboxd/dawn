@@ -35,9 +35,10 @@
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::Robustness);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::Robustness::Config);
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::ast::transform {
+
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 /// PIMPL state for the transform
 struct Robustness::State {

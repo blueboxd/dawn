@@ -24,16 +24,19 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::ExitLoop);
 
 namespace tint::ir {
 
-ExitLoop::ExitLoop(ir::Loop* loop, utils::VectorRef<Value*> args /* = utils::Empty */)
-    : loop_(loop) {
-    TINT_ASSERT(IR, loop_);
-
-    if (loop_) {
-        loop_->Merge()->AddInboundSiblingBranch(this);
-    }
-    AddOperands(std::move(args));
+ExitLoop::ExitLoop(ir::Loop* loop, utils::VectorRef<Value*> args /* = utils::Empty */) {
+    SetLoop(loop);
+    AddOperands(ExitLoop::kArgsOperandOffset, std::move(args));
 }
 
 ExitLoop::~ExitLoop() = default;
+
+void ExitLoop::SetLoop(ir::Loop* l) {
+    SetControlInstruction(l);
+}
+
+ir::Loop* ExitLoop::Loop() {
+    return static_cast<ir::Loop*>(ControlInstruction());
+}
 
 }  // namespace tint::ir

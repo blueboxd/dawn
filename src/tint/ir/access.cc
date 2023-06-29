@@ -23,14 +23,10 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Access);
 namespace tint::ir {
 
 //! @cond Doxygen_Suppress
-Access::Access(const type::Type* ty, Value* object, utils::VectorRef<Value*> indices)
-    : result_type_(ty) {
-    TINT_ASSERT(IR, object);
-    TINT_ASSERT(IR, result_type_);
-    TINT_ASSERT(IR, !indices.IsEmpty());
-
-    AddOperand(object);
-    AddOperands(std::move(indices));
+Access::Access(InstructionResult* result, Value* object, utils::VectorRef<Value*> indices) {
+    AddOperand(Access::kObjectOperandOffset, object);
+    AddOperands(Access::kIndicesOperandOffset, std::move(indices));
+    AddResult(result);
 }
 
 Access::~Access() = default;

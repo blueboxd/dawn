@@ -27,17 +27,11 @@ TEST_F(IR_DiscardTest, Discard) {
     ASSERT_TRUE(inst->Is<ir::Discard>());
 }
 
-TEST_F(IR_DiscardTest, Fail_NullType) {
-    EXPECT_FATAL_FAILURE({ Discard d(nullptr); }, "");
-}
+TEST_F(IR_DiscardTest, Result) {
+    auto* inst = b.Discard();
 
-TEST_F(IR_DiscardTest, Fail_NonVoidType) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Discard d(mod.Types().i32());
-        },
-        "");
+    EXPECT_FALSE(inst->HasResults());
+    EXPECT_FALSE(inst->HasMultiResults());
 }
 
 }  // namespace

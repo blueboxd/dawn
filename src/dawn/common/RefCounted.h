@@ -17,8 +17,7 @@
 
 #include <atomic>
 #include <cstdint>
-
-#include "dawn/common/RefBase.h"
+#include <type_traits>
 
 namespace dawn {
 
@@ -32,6 +31,9 @@ class RefCount {
 
     // Add a reference.
     void Increment();
+    // Tries to add a reference. Returns false if the ref count is already at 0. This is used when
+    // operating on a raw pointer to a RefCounted instead of a valid Ref that may be soon deleted.
+    bool TryIncrement();
 
     // Remove a reference. Returns true if this was the last reference.
     bool Decrement();
@@ -39,6 +41,19 @@ class RefCount {
   private:
     std::atomic<uint64_t> mRefCount;
 };
+
+// Forward declaration for Ref needed until TryGetRef can be removed with WeakRefs.
+// TODO(dawn:1769) Remove once WeakRef implementation is complete with cache.
+template <typename T>
+class Ref;
+
+// TODO(dawn:1769) Move to Ref.h once TryGetRef can be removed.
+template <typename T>
+Ref<T> AcquireRef(T* pointee) {
+    Ref<T> ref;
+    ref.Acquire(pointee);
+    return ref;
+}
 
 class RefCounted {
   public:
@@ -51,6 +66,20 @@ class RefCounted {
     // Release() is called by internal code, so it's assumed that there is already a thread
     // synchronization in place for destruction.
     void Release();
+
+    // Tries to return a valid Ref to `object` if it's internal refcount is not already 0. If the
+    // internal refcount has already reached 0, returns nullptr instead.
+    // TODO(dawn:1769) Remove this once ContentLessObjectCache is converted to use WeakRefs.
+    template <typename T, typename = typename std::is_convertible<T, RefCounted>>
+    friend Ref<T> TryGetRef(T* object) {
+        // Since this is called on the RefCounted class directly, and can race with destruction, we
+        // verify that we can safely increment the refcount first, create the Ref, then decrement
+        // the refcount in that order to ensure that the resultant Ref is a valid Ref.
+        if (!object->mRefCount.TryIncrement()) {
+            return nullptr;
+        }
+        return AcquireRef(object);
+    }
 
     void APIReference() { Reference(); }
     // APIRelease() can be called without any synchronization guarantees so we need to use a Release
@@ -69,26 +98,6 @@ class RefCounted {
 
     RefCount mRefCount;
 };
-
-template <typename T>
-struct RefCountedTraits {
-    static constexpr T* kNullValue = nullptr;
-    static void Reference(T* value) { value->Reference(); }
-    static void Release(T* value) { value->Release(); }
-};
-
-template <typename T>
-class Ref : public RefBase<T*, RefCountedTraits<T>> {
-  public:
-    using RefBase<T*, RefCountedTraits<T>>::RefBase;
-};
-
-template <typename T>
-Ref<T> AcquireRef(T* pointee) {
-    Ref<T> ref;
-    ref.Acquire(pointee);
-    return ref;
-}
 
 }  // namespace dawn
 

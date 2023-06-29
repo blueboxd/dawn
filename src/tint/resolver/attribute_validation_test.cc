@@ -22,25 +22,14 @@
 
 #include "gmock/gmock.h"
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::resolver {
+
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 // Helpers and typedefs
 template <typename T>
 using DataType = builder::DataType<T>;
-template <typename T>
-using vec2 = builder::vec2<T>;
-template <typename T>
-using vec3 = builder::vec3<T>;
-template <typename T>
-using vec4 = builder::vec4<T>;
-template <typename T>
-using mat2x2 = builder::mat2x2<T>;
-template <typename T>
-using mat3x3 = builder::mat3x3<T>;
-template <typename T>
-using mat4x4 = builder::mat4x4<T>;
 template <typename T, int ID = 0>
 using alias = builder::alias<T, ID>;
 template <typename T>
@@ -59,6 +48,7 @@ enum class AttributeKind {
     kDiagnostic,
     kGroup,
     kId,
+    kIndex,
     kInterpolate,
     kInvariant,
     kLocation,
@@ -87,7 +77,13 @@ struct TestParams {
     AttributeKind kind;
     bool should_pass;
 };
-struct TestWithParams : ResolverTestWithParam<TestParams> {};
+struct TestWithParams : ResolverTestWithParam<TestParams> {
+    void EnableExtensionIfNecessary(AttributeKind attributeKind) {
+        if (attributeKind == AttributeKind::kIndex) {
+            Enable(builtin::Extension::kChromiumInternalDualSourceBlending);
+        }
+    }
+};
 
 static utils::Vector<const ast::Attribute*, 2> createAttributes(const Source& source,
                                                                 ProgramBuilder& builder,
@@ -106,6 +102,8 @@ static utils::Vector<const ast::Attribute*, 2> createAttributes(const Source& so
             return {builder.Group(source, 1_a)};
         case AttributeKind::kId:
             return {builder.Id(source, 0_a)};
+        case AttributeKind::kIndex:
+            return {builder.Index(source, 0_a)};
         case AttributeKind::kInterpolate:
             return {builder.Interpolate(source, builtin::InterpolationType::kLinear,
                                         builtin::InterpolationSampling::kCenter)};
@@ -145,6 +143,8 @@ static std::string name(AttributeKind kind) {
             return "@group";
         case AttributeKind::kId:
             return "@id";
+        case AttributeKind::kIndex:
+            return "@index";
         case AttributeKind::kInterpolate:
             return "@interpolate";
         case AttributeKind::kInvariant:
@@ -172,6 +172,7 @@ namespace FunctionInputAndOutputTests {
 using FunctionParameterAttributeTest = TestWithParams;
 TEST_P(FunctionParameterAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     Func("main",
          utils::Vector{
@@ -201,6 +202,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -215,6 +217,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using FunctionReturnTypeAttributeTest = TestWithParams;
 TEST_P(FunctionReturnTypeAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     Func("main", utils::Empty, ty.f32(),
          utils::Vector{
@@ -239,6 +242,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -255,6 +259,7 @@ namespace EntryPointInputAndOutputTests {
 using ComputeShaderParameterAttributeTest = TestWithParams;
 TEST_P(ComputeShaderParameterAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
     Func("main",
          utils::Vector{
              Param("a", ty.vec4<f32>(), createAttributes(Source{{12, 34}}, *this, params.kind)),
@@ -292,6 +297,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -306,6 +312,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using FragmentShaderParameterAttributeTest = TestWithParams;
 TEST_P(FragmentShaderParameterAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
     auto attrs = createAttributes(Source{{12, 34}}, *this, params.kind);
     if (params.kind != AttributeKind::kBuiltin && params.kind != AttributeKind::kLocation) {
         attrs.Push(Builtin(Source{{34, 56}}, builtin::BuiltinValue::kPosition));
@@ -332,6 +339,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          // kInterpolate tested separately (requires @location)
                                          TestParams{AttributeKind::kInvariant, true},
                                          TestParams{AttributeKind::kLocation, true},
@@ -346,6 +354,8 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using VertexShaderParameterAttributeTest = TestWithParams;
 TEST_P(VertexShaderParameterAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
+
     auto attrs = createAttributes(Source{{12, 34}}, *this, params.kind);
     if (params.kind != AttributeKind::kLocation) {
         attrs.Push(Location(Source{{34, 56}}, 2_a));
@@ -353,7 +363,7 @@ TEST_P(VertexShaderParameterAttributeTest, IsValid) {
     auto* p = Param("a", ty.vec4<f32>(), attrs);
     Func("vertex_main", utils::Vector{p}, ty.vec4<f32>(),
          utils::Vector{
-             Return(Call(ty.vec4<f32>())),
+             Return(Call<vec4<f32>>()),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),
@@ -388,6 +398,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, true},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, true},
@@ -402,9 +413,11 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using ComputeShaderReturnTypeAttributeTest = TestWithParams;
 TEST_P(ComputeShaderReturnTypeAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
+
     Func("main", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
-             Return(Call(ty.vec4<f32>(), 1_f)),
+             Return(Call<vec4<f32>>(1_f)),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -422,7 +435,8 @@ TEST_P(ComputeShaderReturnTypeAttributeTest, IsValid) {
                 R"(12:34 error: @builtin(position) cannot be used in output of compute pipeline stage)");
         } else if (params.kind == AttributeKind::kInterpolate ||
                    params.kind == AttributeKind::kLocation ||
-                   params.kind == AttributeKind::kInvariant) {
+                   params.kind == AttributeKind::kInvariant ||
+                   params.kind == AttributeKind::kIndex) {
             EXPECT_EQ(r()->error(), "12:34 error: " + name(params.kind) +
                                         " is not valid for compute shader output");
         } else {
@@ -440,6 +454,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -454,9 +469,11 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using FragmentShaderReturnTypeAttributeTest = TestWithParams;
 TEST_P(FragmentShaderReturnTypeAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
+
     auto attrs = createAttributes(Source{{12, 34}}, *this, params.kind);
     attrs.Push(Location(Source{{34, 56}}, 2_a));
-    Func("frag_main", utils::Empty, ty.vec4<f32>(), utils::Vector{Return(Call(ty.vec4<f32>()))},
+    Func("frag_main", utils::Empty, ty.vec4<f32>(), utils::Vector{Return(Call<vec4<f32>>())},
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          },
@@ -492,6 +509,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, true},
                                          TestParams{AttributeKind::kInterpolate, true},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -506,6 +524,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using VertexShaderReturnTypeAttributeTest = TestWithParams;
 TEST_P(VertexShaderReturnTypeAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
     auto attrs = createAttributes(Source{{12, 34}}, *this, params.kind);
     // a vertex shader must include the 'position' builtin in its return type
     if (params.kind != AttributeKind::kBuiltin) {
@@ -513,7 +532,7 @@ TEST_P(VertexShaderReturnTypeAttributeTest, IsValid) {
     }
     Func("vertex_main", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
-             Return(Call(ty.vec4<f32>())),
+             Return(Call<vec4<f32>>()),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),
@@ -528,6 +547,8 @@ TEST_P(VertexShaderReturnTypeAttributeTest, IsValid) {
             EXPECT_EQ(r()->error(),
                       R"(34:56 error: multiple entry point IO attributes
 12:34 note: previously consumed @location)");
+        } else if (params.kind == AttributeKind::kIndex) {
+            EXPECT_EQ(r()->error(), R"(12:34 error: @index is not valid for vertex shader output)");
         } else {
             EXPECT_EQ(r()->error(), "12:34 error: " + name(params.kind) +
                                         " is not valid for entry point return types");
@@ -542,6 +563,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          // kInterpolate tested separately (requires @location)
                                          TestParams{AttributeKind::kInvariant, true},
                                          TestParams{AttributeKind::kLocation, false},
@@ -628,6 +650,7 @@ using StructAttributeTest = TestWithParams;
 using SpirvBlockAttribute = ast::transform::AddBlockAttribute::BlockAttribute;
 TEST_P(StructAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     Structure("mystruct", utils::Vector{Member("a", ty.f32())},
               createAttributes(Source{{12, 34}}, *this, params.kind));
@@ -648,6 +671,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -662,6 +686,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using StructMemberAttributeTest = TestWithParams;
 TEST_P(StructMemberAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
     utils::Vector<const ast::StructMember*, 1> members;
     if (params.kind == AttributeKind::kBuiltin) {
         members.Push(
@@ -686,6 +711,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         // kIndex tested separately (requires @location)
                                          // kInterpolate tested separately (requires @location)
                                          // kInvariant tested separately (requires position builtin)
                                          TestParams{AttributeKind::kLocation, true},
@@ -908,6 +934,7 @@ TEST_F(StructMemberAttributeTest, Size_On_RuntimeSizedArray) {
 using ArrayAttributeTest = TestWithParams;
 TEST_P(ArrayAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     auto arr = ty.array(ty.f32(), createAttributes(Source{{12, 34}}, *this, params.kind));
     Structure("mystruct", utils::Vector{
@@ -930,6 +957,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -944,6 +972,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using VariableAttributeTest = TestWithParams;
 TEST_P(VariableAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     auto attrs = createAttributes(Source{{12, 34}}, *this, params.kind);
     if (IsBindingAttribute(params.kind)) {
@@ -970,6 +999,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -1012,6 +1042,7 @@ TEST_F(VariableAttributeTest, LocalLet) {
 using ConstantAttributeTest = TestWithParams;
 TEST_P(ConstantAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     GlobalConst("a", ty.f32(), Expr(1.23_f),
                 createAttributes(Source{{12, 34}}, *this, params.kind));
@@ -1032,6 +1063,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -1056,6 +1088,7 @@ TEST_F(ConstantAttributeTest, InvalidAttribute) {
 using OverrideAttributeTest = TestWithParams;
 TEST_P(OverrideAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     Override("a", ty.f32(), Expr(1.23_f), createAttributes(Source{{12, 34}}, *this, params.kind));
 
@@ -1074,6 +1107,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kBuiltin, false},
                                          TestParams{AttributeKind::kDiagnostic, false},
                                          TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kId, true},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
@@ -1102,6 +1136,7 @@ TEST_F(OverrideAttributeTest, DuplicateAttribute) {
 using SwitchStatementAttributeTest = TestWithParams;
 TEST_P(SwitchStatementAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     WrapInFunction(Switch(Expr(0_a), utils::Vector{DefaultCase()},
                           createAttributes(Source{{12, 34}}, *this, params.kind)));
@@ -1122,6 +1157,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, true},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -1136,6 +1172,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using SwitchBodyAttributeTest = TestWithParams;
 TEST_P(SwitchBodyAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     WrapInFunction(Switch(Expr(0_a), utils::Vector{DefaultCase()}, utils::Empty,
                           createAttributes(Source{{12, 34}}, *this, params.kind)));
@@ -1156,6 +1193,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, true},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -1170,6 +1208,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using IfStatementAttributeTest = TestWithParams;
 TEST_P(IfStatementAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     WrapInFunction(If(Expr(true), Block(), ElseStmt(),
                       createAttributes(Source{{12, 34}}, *this, params.kind)));
@@ -1190,6 +1229,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, true},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -1204,6 +1244,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using ForStatementAttributeTest = TestWithParams;
 TEST_P(ForStatementAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     WrapInFunction(For(nullptr, Expr(false), nullptr, Block(),
                        createAttributes(Source{{12, 34}}, *this, params.kind)));
@@ -1223,6 +1264,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kBuiltin, false},
                                          TestParams{AttributeKind::kDiagnostic, true},
                                          TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kId, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
@@ -1238,6 +1280,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using LoopStatementAttributeTest = TestWithParams;
 TEST_P(LoopStatementAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     WrapInFunction(
         Loop(Block(Return()), Block(), createAttributes(Source{{12, 34}}, *this, params.kind)));
@@ -1257,6 +1300,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kBuiltin, false},
                                          TestParams{AttributeKind::kDiagnostic, true},
                                          TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kId, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
@@ -1272,6 +1316,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
 using WhileStatementAttributeTest = TestWithParams;
 TEST_P(WhileStatementAttributeTest, IsValid) {
     auto& params = GetParam();
+    EnableExtensionIfNecessary(params.kind);
 
     WrapInFunction(
         While(Expr(false), Block(), createAttributes(Source{{12, 34}}, *this, params.kind)));
@@ -1291,6 +1336,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kBuiltin, false},
                                          TestParams{AttributeKind::kDiagnostic, true},
                                          TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kId, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
@@ -1315,6 +1361,9 @@ class BlockStatementTest : public TestWithParams {
                       "error: " + name(GetParam().kind) + " is not valid for block statements");
         }
     }
+
+  public:
+    BlockStatementTest() { EnableExtensionIfNecessary(GetParam().kind); }
 };
 TEST_P(BlockStatementTest, CompoundStatement) {
     Func("foo", utils::Empty, ty.void_(),
@@ -1394,6 +1443,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kDiagnostic, true},
                                          TestParams{AttributeKind::kGroup, false},
                                          TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kIndex, false},
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
@@ -1602,8 +1652,10 @@ TEST_F(ResourceAttributeTest, BindingPointUsedTwiceByEntryPoint) {
 
     Func("F", utils::Empty, ty.void_(),
          utils::Vector{
-             Decl(Var("a", ty.vec4<f32>(), Call("textureLoad", "A", vec2<i32>(1_i, 2_i), 0_i))),
-             Decl(Var("b", ty.vec4<f32>(), Call("textureLoad", "B", vec2<i32>(1_i, 2_i), 0_i))),
+             Decl(Var("a", ty.vec4<f32>(),
+                      Call("textureLoad", "A", Call<vec2<i32>>(1_i, 2_i), 0_i))),
+             Decl(Var("b", ty.vec4<f32>(),
+                      Call("textureLoad", "B", Call<vec2<i32>>(1_i, 2_i), 0_i))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -1624,14 +1676,16 @@ TEST_F(ResourceAttributeTest, BindingPointUsedTwiceByDifferentEntryPoints) {
 
     Func("F_A", utils::Empty, ty.void_(),
          utils::Vector{
-             Decl(Var("a", ty.vec4<f32>(), Call("textureLoad", "A", vec2<i32>(1_i, 2_i), 0_i))),
+             Decl(Var("a", ty.vec4<f32>(),
+                      Call("textureLoad", "A", Call<vec2<i32>>(1_i, 2_i), 0_i))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          });
     Func("F_B", utils::Empty, ty.void_(),
          utils::Vector{
-             Decl(Var("b", ty.vec4<f32>(), Call("textureLoad", "B", vec2<i32>(1_i, 2_i), 0_i))),
+             Decl(Var("b", ty.vec4<f32>(),
+                      Call("textureLoad", "B", Call<vec2<i32>>(1_i, 2_i), 0_i))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -1663,7 +1717,7 @@ TEST_F(InvariantAttributeTests, InvariantWithPosition) {
                         });
     Func("main", utils::Vector{param}, ty.vec4<f32>(),
          utils::Vector{
-             Return(Call(ty.vec4<f32>())),
+             Return(Call<vec4<f32>>()),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -1682,7 +1736,7 @@ TEST_F(InvariantAttributeTests, InvariantWithoutPosition) {
                         });
     Func("main", utils::Vector{param}, ty.vec4<f32>(),
          utils::Vector{
-             Return(Call(ty.vec4<f32>())),
+             Return(Call<vec4<f32>>()),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -1705,7 +1759,7 @@ using MustUseAttributeTests = ResolverTest;
 TEST_F(MustUseAttributeTests, MustUse) {
     Func("main", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
-             Return(Call(ty.vec4<f32>())),
+             Return(Call<vec4<f32>>()),
          },
          utils::Vector{
              MustUse(Source{{12, 34}}),
@@ -1964,7 +2018,7 @@ TEST_F(InterpolateTest, MissingLocationAttribute_Parameter) {
 TEST_F(InterpolateTest, MissingLocationAttribute_ReturnType) {
     Func("main", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
-             Return(Call(ty.vec4<f32>())),
+             Return(Call<vec4<f32>>()),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),

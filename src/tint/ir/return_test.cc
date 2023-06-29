@@ -24,37 +24,42 @@ namespace {
 using namespace tint::number_suffixes;  // NOLINT
 using IR_ReturnTest = IRTestHelper;
 
-TEST_F(IR_ReturnTest, Fail_NullFunction) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            b.Return(nullptr);
-        },
-        "");
-}
-
-TEST_F(IR_ReturnTest, Fail_NullValue) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            mod.values.Create<Return>(b.Function("myfunc", mod.Types().void_()), nullptr);
-        },
-        "");
-}
-
 TEST_F(IR_ReturnTest, ImplicitNoValue) {
-    auto* ret = b.Return(b.Function("myfunc", ty.void_()));
+    auto* func = b.Function("myfunc", ty.void_());
+    auto* ret = b.Return(func);
+    ASSERT_EQ(ret->Func(), func);
     EXPECT_TRUE(ret->Args().IsEmpty());
+    EXPECT_EQ(ret->Value(), nullptr);
+    EXPECT_THAT(func->Usages(), testing::UnorderedElementsAre(Usage{ret, 0u}));
 }
 
 TEST_F(IR_ReturnTest, WithValue) {
+    auto* func = b.Function("myfunc", ty.i32());
     auto* val = b.Constant(42_i);
-    auto* ret = b.Return(b.Function("myfunc", ty.i32()), val);
+    auto* ret = b.Return(func, val);
+    ASSERT_EQ(ret->Func(), func);
     ASSERT_EQ(ret->Args().Length(), 1u);
     EXPECT_EQ(ret->Args()[0], val);
-    EXPECT_THAT(val->Usages(), testing::UnorderedElementsAre(Usage{ret, 0u}));
+    EXPECT_EQ(ret->Value(), val);
+    EXPECT_THAT(func->Usages(), testing::UnorderedElementsAre(Usage{ret, 0u}));
+    EXPECT_THAT(val->Usages(), testing::UnorderedElementsAre(Usage{ret, 1u}));
+}
+
+TEST_F(IR_ReturnTest, Result) {
+    auto* vfunc = b.Function("vfunc", ty.void_());
+    auto* ifunc = b.Function("ifunc", ty.i32());
+
+    {
+        auto* ret1 = b.Return(vfunc);
+        EXPECT_FALSE(ret1->HasResults());
+        EXPECT_FALSE(ret1->HasMultiResults());
+    }
+
+    {
+        auto* ret2 = b.Return(ifunc, b.Constant(42_i));
+        EXPECT_FALSE(ret2->HasResults());
+        EXPECT_FALSE(ret2->HasMultiResults());
+    }
 }
 
 }  // namespace

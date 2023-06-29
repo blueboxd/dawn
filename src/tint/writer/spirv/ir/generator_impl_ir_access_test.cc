@@ -14,26 +14,23 @@
 
 #include "src/tint/writer/spirv/ir/test_helper_ir.h"
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::writer::spirv {
 namespace {
 
-class SpvGeneratorImplTest_Access : public SpvGeneratorImplTest {
-  protected:
-    const type::Pointer* ptr(const type::Type* elem) {
-        return ty.ptr(builtin::AddressSpace::kFunction, elem, builtin::Access::kReadWrite);
-    }
-};
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
+
+using SpvGeneratorImplTest_Access = SpvGeneratorImplTest;
 
 TEST_F(SpvGeneratorImplTest_Access, Array_Value_ConstantIndex) {
     auto* arr_val = b.FunctionParam(ty.array(ty.i32(), 4));
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({arr_val});
 
-    auto sb = b.With(func->StartTarget());
-    sb.Access(ty.i32(), arr_val, 1_u);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        b.Access(ty.i32(), arr_val, 1_u);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -58,10 +55,11 @@ OpFunctionEnd
 TEST_F(SpvGeneratorImplTest_Access, Array_Pointer_ConstantIndex) {
     auto* func = b.Function("foo", ty.void_());
 
-    auto sb = b.With(func->StartTarget());
-    auto* arr_var = sb.Var(ptr(ty.array(ty.i32(), 4)));
-    sb.Access(ptr(ty.i32()), arr_var, 1_u);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        auto* arr_var = b.Var(ty.ptr<function, array<i32, 4>>());
+        b.Access(ty.ptr<function, i32>(), arr_var, 1_u);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -89,12 +87,13 @@ OpFunctionEnd
 TEST_F(SpvGeneratorImplTest_Access, Array_Pointer_DynamicIndex) {
     auto* func = b.Function("foo", ty.void_());
 
-    auto sb = b.With(func->StartTarget());
-    auto* idx_var = sb.Var(ptr(ty.i32()));
-    auto* idx = sb.Load(idx_var);
-    auto* arr_var = sb.Var(ptr(ty.array(ty.i32(), 4)));
-    sb.Access(ptr(ty.i32()), arr_var, idx);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        auto* idx_var = b.Var(ty.ptr<function, i32>());
+        auto* idx = b.Load(idx_var);
+        auto* arr_var = b.Var(ty.ptr<function, array<i32, 4>>());
+        b.Access(ty.ptr<function, i32>(), arr_var, idx);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -125,10 +124,11 @@ TEST_F(SpvGeneratorImplTest_Access, Matrix_Value_ConstantIndex) {
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({mat_val});
 
-    auto sb = b.With(func->StartTarget());
-    sb.Access(ty.vec2(ty.f32()), mat_val, 1_u);
-    sb.Access(ty.f32(), mat_val, 1_u, 0_u);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        b.Access(ty.vec2(ty.f32()), mat_val, 1_u);
+        b.Access(ty.f32(), mat_val, 1_u, 0_u);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -152,11 +152,12 @@ OpFunctionEnd
 TEST_F(SpvGeneratorImplTest_Access, Matrix_Pointer_ConstantIndex) {
     auto* func = b.Function("foo", ty.void_());
 
-    auto sb = b.With(func->StartTarget());
-    auto* mat_var = sb.Var(ptr(ty.mat2x2(ty.f32())));
-    sb.Access(ptr(ty.vec2(ty.f32())), mat_var, 1_u);
-    sb.Access(ptr(ty.f32()), mat_var, 1_u, 0_u);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        auto* mat_var = b.Var(ty.ptr<function, mat2x2<f32>>());
+        b.Access(ty.ptr<function, vec2<f32>>(), mat_var, 1_u);
+        b.Access(ty.ptr<function, f32>(), mat_var, 1_u, 0_u);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -186,13 +187,14 @@ OpFunctionEnd
 TEST_F(SpvGeneratorImplTest_Access, Matrix_Pointer_DynamicIndex) {
     auto* func = b.Function("foo", ty.void_());
 
-    auto sb = b.With(func->StartTarget());
-    auto* idx_var = sb.Var(ptr(ty.i32()));
-    auto* idx = sb.Load(idx_var);
-    auto* mat_var = sb.Var(ptr(ty.mat2x2(ty.f32())));
-    sb.Access(ptr(ty.vec2(ty.f32())), mat_var, idx);
-    sb.Access(ptr(ty.f32()), mat_var, idx, idx);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        auto* idx_var = b.Var(ty.ptr<function, i32>());
+        auto* idx = b.Load(idx_var);
+        auto* mat_var = b.Var(ty.ptr<function, mat2x2<f32>>());
+        b.Access(ty.ptr<function, vec2<f32>>(), mat_var, idx);
+        b.Access(ty.ptr<function, f32>(), mat_var, idx, idx);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -225,9 +227,10 @@ TEST_F(SpvGeneratorImplTest_Access, Vector_Value_ConstantIndex) {
     auto* vec_val = b.FunctionParam(ty.vec4(ty.i32()));
     func->SetParams({vec_val});
 
-    auto sb = b.With(func->StartTarget());
-    sb.Access(ty.i32(), vec_val, 1_u);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        b.Access(ty.i32(), vec_val, 1_u);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -251,11 +254,12 @@ TEST_F(SpvGeneratorImplTest_Access, Vector_Value_DynamicIndex) {
     auto* vec_val = b.FunctionParam(ty.vec4(ty.i32()));
     func->SetParams({vec_val});
 
-    auto sb = b.With(func->StartTarget());
-    auto* idx_var = sb.Var(ptr(ty.i32()));
-    auto* idx = sb.Load(idx_var);
-    sb.Access(ty.i32(), vec_val, idx);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        auto* idx_var = b.Var(ty.ptr<function, i32>());
+        auto* idx = b.Load(idx_var);
+        b.Access(ty.i32(), vec_val, idx);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -280,10 +284,11 @@ OpFunctionEnd
 TEST_F(SpvGeneratorImplTest_Access, Vector_Pointer_ConstantIndex) {
     auto* func = b.Function("foo", ty.void_());
 
-    auto sb = b.With(func->StartTarget());
-    auto* vec_var = sb.Var(ptr(ty.vec4(ty.i32())));
-    sb.Access(ptr(ty.i32()), vec_var, 1_u);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        auto* vec_var = b.Var(ty.ptr<function, vec4<i32>>());
+        b.Access(ty.ptr<function, i32>(), vec_var, 1_u);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -309,12 +314,13 @@ OpFunctionEnd
 TEST_F(SpvGeneratorImplTest_Access, Vector_Pointer_DynamicIndex) {
     auto* func = b.Function("foo", ty.void_());
 
-    auto sb = b.With(func->StartTarget());
-    auto* idx_var = sb.Var(ptr(ty.i32()));
-    auto* idx = sb.Load(idx_var);
-    auto* vec_var = sb.Var(ptr(ty.vec4(ty.i32())));
-    sb.Access(ptr(ty.i32()), vec_var, idx);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        auto* idx_var = b.Var(ty.ptr<function, i32>());
+        auto* idx = b.Load(idx_var);
+        auto* vec_var = b.Var(ty.ptr<function, vec4<i32>>());
+        b.Access(ty.ptr<function, i32>(), vec_var, idx);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -342,11 +348,12 @@ TEST_F(SpvGeneratorImplTest_Access, NestedVector_Value_DynamicIndex) {
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({val});
 
-    auto sb = b.With(func->StartTarget());
-    auto* idx_var = sb.Var(ptr(ty.i32()));
-    auto* idx = sb.Load(idx_var);
-    sb.Access(ty.i32(), val, 1_u, 2_u, idx);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        auto* idx_var = b.Var(ty.ptr<function, i32>());
+        auto* idx = b.Load(idx_var);
+        b.Access(ty.i32(), val, 1_u, 2_u, idx);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -376,23 +383,20 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest_Access, Struct_Value_ConstantIndex) {
-    auto* str = ty.Get<type::Struct>(
-        mod.symbols.Register("MyStruct"),
-        utils::Vector{
-            ty.Get<type::StructMember>(mod.symbols.Register("a"), ty.f32(), 0u, 0u, 4u, 4u,
-                                       type::StructMemberAttributes{}),
-            ty.Get<type::StructMember>(mod.symbols.Register("b"), ty.vec4(ty.i32()), 1u, 16u, 16u,
-                                       16u, type::StructMemberAttributes{}),
-        },
-        16u, 32u, 32u);
+    auto* str =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.Register("a"), ty.f32()},
+                                                   {mod.symbols.Register("b"), ty.vec4<i32>()},
+                                               });
     auto* str_val = b.FunctionParam(str);
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({str_val});
 
-    auto sb = b.With(func->StartTarget());
-    sb.Access(ty.i32(), str_val, 1_u);
-    sb.Access(ty.i32(), str_val, 1_u, 2_u);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        b.Access(ty.f32(), str_val, 0_u);
+        b.Access(ty.i32(), str_val, 1_u, 2_u);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -412,7 +416,7 @@ OpMemberDecorate %3 1 Offset 16
 %1 = OpFunction %2 None %8
 %7 = OpFunctionParameter %3
 %9 = OpLabel
-%10 = OpCompositeExtract %6 %7 1
+%10 = OpCompositeExtract %4 %7 0
 %11 = OpCompositeExtract %6 %7 1 2
 OpReturn
 OpFunctionEnd
@@ -420,23 +424,19 @@ OpFunctionEnd
 }
 
 TEST_F(SpvGeneratorImplTest_Access, Struct_Pointer_ConstantIndex) {
-    auto* str = ty.Get<type::Struct>(
-        mod.symbols.Register("MyStruct"),
-        utils::Vector{
-            ty.Get<type::StructMember>(mod.symbols.Register("a"), ty.f32(), 0u, 0u, 4u, 4u,
-                                       type::StructMemberAttributes{}),
-            ty.Get<type::StructMember>(mod.symbols.Register("b"), ty.vec4(ty.i32()), 1u, 16u, 16u,
-                                       16u, type::StructMemberAttributes{}),
-        },
-        16u, 32u, 32u);
-
+    auto* str =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.Register("a"), ty.f32()},
+                                                   {mod.symbols.Register("b"), ty.vec4<i32>()},
+                                               });
     auto* func = b.Function("foo", ty.void_());
 
-    auto sb = b.With(func->StartTarget());
-    auto* str_var = sb.Var(ptr(str));
-    sb.Access(ptr(ty.i32()), str_var, 1_u);
-    sb.Access(ptr(ty.i32()), str_var, 1_u, 2_u);
-    sb.Return(func);
+    b.With(func->Block(), [&] {
+        auto* str_var = b.Var(ty.ptr(function, str, read_write));
+        b.Access(ty.ptr<function, f32>(), str_var, 0_u);
+        b.Access(ty.ptr<function, i32>(), str_var, 1_u, 2_u);
+        b.Return(func);
+    });
 
     ASSERT_TRUE(IRIsValid()) << Error();
 
@@ -454,15 +454,17 @@ OpMemberDecorate %7 1 Offset 16
 %9 = OpTypeVector %10 4
 %7 = OpTypeStruct %8 %9
 %6 = OpTypePointer Function %7
-%12 = OpTypePointer Function %10
+%12 = OpTypePointer Function %8
 %14 = OpTypeInt 32 0
-%13 = OpConstant %14 1
-%16 = OpConstant %14 2
+%13 = OpConstant %14 0
+%16 = OpTypePointer Function %10
+%17 = OpConstant %14 1
+%18 = OpConstant %14 2
 %1 = OpFunction %2 None %3
 %4 = OpLabel
 %5 = OpVariable %6 Function
 %11 = OpAccessChain %12 %5 %13
-%15 = OpAccessChain %12 %5 %13 %16
+%15 = OpAccessChain %16 %5 %17 %18
 OpReturn
 OpFunctionEnd
 )");

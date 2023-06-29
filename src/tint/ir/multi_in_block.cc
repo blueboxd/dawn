@@ -26,17 +26,13 @@ MultiInBlock::~MultiInBlock() = default;
 
 void MultiInBlock::SetParams(utils::VectorRef<BlockParam*> params) {
     params_ = std::move(params);
-
-    TINT_ASSERT(IR, !params_.Any(utils::IsNull));
 }
 
 void MultiInBlock::SetParams(std::initializer_list<BlockParam*> params) {
     params_ = std::move(params);
-
-    TINT_ASSERT(IR, !params_.Any(utils::IsNull));
 }
 
-void MultiInBlock::AddInboundSiblingBranch(ir::Branch* node) {
+void MultiInBlock::AddInboundSiblingBranch(ir::Terminator* node) {
     TINT_ASSERT(IR, node != nullptr);
 
     if (node) {

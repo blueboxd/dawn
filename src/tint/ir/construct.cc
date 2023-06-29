@@ -22,8 +22,9 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Construct);
 
 namespace tint::ir {
 
-Construct::Construct(const type::Type* ty, utils::VectorRef<Value*> arguments) : Base(ty) {
-    AddOperands(std::move(arguments));
+Construct::Construct(InstructionResult* result, utils::VectorRef<Value*> arguments) {
+    AddOperands(Construct::kArgsOperandOffset, std::move(arguments));
+    AddResult(result);
 }
 
 Construct::~Construct() = default;

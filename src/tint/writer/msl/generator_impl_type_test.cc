@@ -26,12 +26,12 @@
 #include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/msl/test_helper.h"
 
-using ::testing::HasSubstr;
-
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::writer::msl {
 namespace {
+
+using ::testing::HasSubstr;
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 void FormatMSLField(utils::StringStream& out,
                     const char* addr,
@@ -96,7 +96,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Array) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "ary")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type))) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "tint_array<bool, 4>");
 }
 
@@ -108,7 +108,7 @@ TEST_F(MslGeneratorImplTest, EmitType_ArrayOfArray) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "ary")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type))) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "tint_array<tint_array<bool, 4>, 5>");
 }
 
@@ -121,7 +121,7 @@ TEST_F(MslGeneratorImplTest, EmitType_ArrayOfArrayOfArray) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "ary")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type))) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "tint_array<tint_array<tint_array<bool, 4>, 5>, 6>");
 }
 
@@ -132,7 +132,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Array_WithoutName) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type))) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "tint_array<bool, 4>");
 }
 
@@ -143,7 +143,7 @@ TEST_F(MslGeneratorImplTest, EmitType_RuntimeArray) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "ary")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type))) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "tint_array<bool, 1>");
 }
 
@@ -153,7 +153,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Bool) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, bool_, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, bool_)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "bool");
 }
 
@@ -163,7 +163,7 @@ TEST_F(MslGeneratorImplTest, EmitType_F32) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, f32, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, f32)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "float");
 }
 
@@ -173,7 +173,7 @@ TEST_F(MslGeneratorImplTest, EmitType_F16) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, f16, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, f16)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "half");
 }
 
@@ -183,7 +183,7 @@ TEST_F(MslGeneratorImplTest, EmitType_I32) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, i32, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, i32)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "int");
 }
 
@@ -195,7 +195,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Matrix_F32) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, mat2x3, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, mat2x3)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "float2x3");
 }
 
@@ -207,7 +207,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Matrix_F16) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, mat2x3, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, mat2x3)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "half2x3");
 }
 
@@ -219,8 +219,8 @@ TEST_F(MslGeneratorImplTest, EmitType_Pointer) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, p, "")) << gen.Diagnostics();
-    EXPECT_EQ(out.str(), "threadgroup float* ");
+    ASSERT_TRUE(gen.EmitType(out, p)) << gen.Diagnostics();
+    EXPECT_EQ(out.str(), "threadgroup float*");
 }
 
 TEST_F(MslGeneratorImplTest, EmitType_Struct) {
@@ -232,7 +232,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(s), "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(s))) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "S");
 }
 
@@ -562,7 +562,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayDefaultStride) {
 
 TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayVec3DefaultStride) {
     // array: size(64), align(16)
-    auto array = ty.array(ty.vec3<f32>(), 4_u);
+    auto array = ty.array<vec3<f32>, 4>();
 
     auto* s = Structure("S", utils::Vector{
                                  Member("a", ty.i32()),
@@ -713,7 +713,7 @@ TEST_F(MslGeneratorImplTest, EmitType_U32) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, u32, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, u32)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "uint");
 }
 
@@ -724,7 +724,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Vector) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, vec3, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, vec3)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "float3");
 }
 
@@ -734,7 +734,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Void) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, void_, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, void_)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "void");
 }
 
@@ -744,7 +744,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Sampler) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, sampler, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, sampler)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "sampler");
 }
 
@@ -754,7 +754,7 @@ TEST_F(MslGeneratorImplTest, EmitType_SamplerComparison) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, sampler, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, sampler)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "sampler");
 }
 
@@ -777,7 +777,7 @@ TEST_P(MslDepthTexturesTest, Emit) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, &s, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, &s)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), params.result);
 }
 INSTANTIATE_TEST_SUITE_P(
@@ -798,7 +798,7 @@ TEST_F(MslDepthMultisampledTexturesTest, Emit) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, &s, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, &s)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "depth2d_ms<float, access::read>");
 }
 
@@ -822,7 +822,7 @@ TEST_P(MslSampledtexturesTest, Emit) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, s, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, s)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), params.result);
 }
 INSTANTIATE_TEST_SUITE_P(
@@ -844,7 +844,7 @@ TEST_F(MslGeneratorImplTest, Emit_TypeMultisampledTexture) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, ms, "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, ms)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "texture2d_ms<uint, access::read>");
 }
 
@@ -868,7 +868,7 @@ TEST_P(MslStorageTexturesTest, Emit) {
     GeneratorImpl& gen = Build();
 
     utils::StringStream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "")) << gen.Diagnostics();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type))) << gen.Diagnostics();
     EXPECT_EQ(out.str(), params.result);
 }
 INSTANTIATE_TEST_SUITE_P(

@@ -20,8 +20,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Call);
 
 namespace tint::ir {
 
-Call::Call(const type::Type* res_ty) : result_type_(res_ty) {
-    TINT_ASSERT(IR, result_type_);
+Call::Call() {
+    flags_.Add(Flag::kSequenced);
 }
 
 Call::~Call() = default;

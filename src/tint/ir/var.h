@@ -26,21 +26,21 @@
 namespace tint::ir {
 
 /// A var instruction in the IR.
-class Var : public utils::Castable<Var, OperandInstruction<1>> {
+class Var : public utils::Castable<Var, OperandInstruction<1, 1>> {
   public:
-    /// Constructor
-    /// @param type the type of the var
-    explicit Var(const type::Pointer* type);
-    ~Var() override;
+    /// The offset in Operands() for the initializer
+    static constexpr size_t kInitializerOperandOffset = 0;
 
-    /// @returns the type of the var
-    const type::Pointer* Type() override { return type_; }
+    /// Constructor
+    /// @param result the result value
+    explicit Var(InstructionResult* result);
+    ~Var() override;
 
     /// Sets the var initializer
     /// @param initializer the initializer
     void SetInitializer(Value* initializer);
     /// @returns the initializer
-    Value* Initializer() { return operands_[0]; }
+    Value* Initializer() { return operands_[kInitializerOperandOffset]; }
 
     /// Sets the binding point
     /// @param group the group
@@ -49,8 +49,10 @@ class Var : public utils::Castable<Var, OperandInstruction<1>> {
     /// @returns the binding points if `Attributes` contains `kBindingPoint`
     std::optional<struct BindingPoint> BindingPoint() { return binding_point_; }
 
+    /// Destroys this instruction along with any assignment instructions, if the var is never read.
+    void DestroyIfOnlyAssigned();
+
   private:
-    const type::Pointer* type_ = nullptr;
     std::optional<struct BindingPoint> binding_point_;
 };
 

@@ -30,6 +30,8 @@
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::ModuleScopeVarToEntryPointParam);
 
+using namespace tint::builtin::fluent_types;  // NOLINT
+
 namespace tint::ast::transform {
 namespace {
 
@@ -120,7 +122,7 @@ struct ModuleScopeVarToEntryPointParam::State {
         auto* ty = var->Type()->UnwrapRef();
 
         // Helper to create an AST node for the store type of the variable.
-        auto store_type = [&]() { return CreateASTTypeFor(ctx, ty); };
+        auto store_type = [&] { return CreateASTTypeFor(ctx, ty); };
 
         builtin::AddressSpace sc = var->AddressSpace();
         switch (sc) {
@@ -183,9 +185,7 @@ struct ModuleScopeVarToEntryPointParam::State {
                     auto* member_ptr = ctx.dst->AddressOf(
                         ctx.dst->MemberAccessor(ctx.dst->Deref(workgroup_param()), member));
                     auto* local_var = ctx.dst->Let(
-                        new_var_symbol,
-                        ctx.dst->ty.ptr(builtin::AddressSpace::kWorkgroup, store_type()),
-                        member_ptr);
+                        new_var_symbol, ctx.dst->ty.ptr<workgroup>(store_type()), member_ptr);
                     ctx.InsertFront(func->body->statements, ctx.dst->Decl(local_var));
                     is_pointer = true;
                 } else {
@@ -324,7 +324,7 @@ struct ModuleScopeVarToEntryPointParam::State {
 
                     // Create a statement to assign the initializer if present.
                     if (var->initializer) {
-                        private_initializers.Push([&, name, var]() {
+                        private_initializers.Push([&, name, var] {
                             return ctx.dst->Assign(
                                 ctx.dst->MemberAccessor(PrivateStructVariableName(), name),
                                 ctx.Clone(var->initializer));
@@ -401,7 +401,7 @@ struct ModuleScopeVarToEntryPointParam::State {
             // threadgroup memory arguments.
             Symbol workgroup_parameter_symbol;
             StructMemberList workgroup_parameter_members;
-            auto workgroup_param = [&]() {
+            auto workgroup_param = [&] {
                 if (!workgroup_parameter_symbol.IsValid()) {
                     workgroup_parameter_symbol = ctx.dst->Sym();
                 }
@@ -427,8 +427,7 @@ struct ModuleScopeVarToEntryPointParam::State {
                     }
                 } else {
                     // Create a parameter that is a pointer to the private variable struct.
-                    auto ptr = ctx.dst->ty.ptr(builtin::AddressSpace::kPrivate,
-                                               ctx.dst->ty(PrivateStructName()));
+                    auto ptr = ctx.dst->ty.ptr<private_>(ctx.dst->ty(PrivateStructName()));
                     auto* param = ctx.dst->Param(PrivateStructVariableName(), ptr);
                     ctx.InsertBack(func_ast->params, param);
                 }
@@ -489,8 +488,7 @@ struct ModuleScopeVarToEntryPointParam::State {
                 // The parameter is a struct that contains members for each workgroup variable.
                 auto* str =
                     ctx.dst->Structure(ctx.dst->Sym(), std::move(workgroup_parameter_members));
-                auto param_type =
-                    ctx.dst->ty.ptr(builtin::AddressSpace::kWorkgroup, ctx.dst->ty.Of(str));
+                auto param_type = ctx.dst->ty.ptr(workgroup, ctx.dst->ty.Of(str));
                 auto* param =
                     ctx.dst->Param(workgroup_param(), param_type,
                                    utils::Vector{

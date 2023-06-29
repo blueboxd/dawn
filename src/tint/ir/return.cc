@@ -22,19 +22,13 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Return);
 
 namespace tint::ir {
 
-Return::Return(Function* func) : func_(func) {
-    TINT_ASSERT_OR_RETURN(IR, func_);
-
-    func_->AddUsage({this, 0u});
+Return::Return(Function* func) {
+    AddOperand(Return::kFunctionOperandOffset, func);
 }
 
-Return::Return(Function* func, Value* arg) : func_(func) {
-    TINT_ASSERT_OR_RETURN(IR, func_);
-    TINT_ASSERT_OR_RETURN(IR, arg);
-
-    func_->AddUsage({this, 0u});
-
-    AddOperand(arg);
+Return::Return(Function* func, ir::Value* arg) {
+    AddOperand(Return::kFunctionOperandOffset, func);
+    AddOperand(Return::kArgOperandOffset, arg);
 }
 
 Return::~Return() = default;

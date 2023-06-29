@@ -15,7 +15,6 @@
 #include "src/tint/ir/exit_switch.h"
 
 #include "gmock/gmock.h"
-#include "gtest/gtest-spi.h"
 #include "src/tint/ir/ir_test_helper.h"
 
 namespace tint::ir {
@@ -32,26 +31,26 @@ TEST_F(IR_ExitSwitchTest, Usage) {
 
     EXPECT_THAT(arg1->Usages(), testing::UnorderedElementsAre(Usage{e, 0u}));
     EXPECT_THAT(arg2->Usages(), testing::UnorderedElementsAre(Usage{e, 1u}));
+    EXPECT_EQ(switch_->Result(), nullptr);
 }
 
-TEST_F(IR_ExitSwitchTest, Fail_NullSwitch) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            b.ExitSwitch(nullptr);
-        },
-        "");
+TEST_F(IR_ExitSwitchTest, Result) {
+    auto* arg1 = b.Constant(1_u);
+    auto* arg2 = b.Constant(2_u);
+    auto* switch_ = b.Switch(true);
+    auto* e = b.ExitSwitch(switch_, arg1, arg2);
+
+    EXPECT_FALSE(e->HasResults());
+    EXPECT_FALSE(e->HasMultiResults());
 }
 
-TEST_F(IR_ExitSwitchTest, Fail_NullArg) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            b.ExitSwitch(b.Switch(false), nullptr);
-        },
-        "");
+TEST_F(IR_ExitSwitchTest, Destroy) {
+    auto* swch = b.Switch(1_i);
+    auto* exit = b.ExitSwitch(swch);
+    EXPECT_THAT(swch->Exits(), testing::UnorderedElementsAre(exit));
+    exit->Destroy();
+    EXPECT_TRUE(swch->Exits().IsEmpty());
+    EXPECT_FALSE(exit->Alive());
 }
 
 }  // namespace

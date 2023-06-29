@@ -48,10 +48,6 @@ class Disassembler {
     /// @returns the string representation of the module
     std::string Disassemble();
 
-    /// Writes the block instructions to the stream
-    /// @param b the block containing the instructions
-    void EmitBlockInstructions(Block* b);
-
     /// @returns the string representation
     std::string AsString() const { return out_.str(); }
 
@@ -64,6 +60,10 @@ class Disassembler {
     /// @param operand the operand to retrieve
     /// @returns the source for the operand
     Source OperandSource(Usage operand) { return operand_to_src_.Get(operand).value_or(Source{}); }
+
+    /// @param result the result to retrieve
+    /// @returns the source for the result
+    Source ResultSource(Usage result) { return result_to_src_.Get(result).value_or(Source{}); }
 
     /// @param blk teh block to retrieve
     /// @returns the source for the block
@@ -84,6 +84,11 @@ class Disassembler {
     /// @param src the source location
     void SetSource(Usage op, Source src) { operand_to_src_.Add(op, src); }
 
+    /// Stores the given @p src location for @p result
+    /// @param result the result to store
+    /// @param src the source location
+    void SetResultSource(Usage result, Source src) { result_to_src_.Add(result, src); }
+
     /// @returns the source location for the current emission location
     Source::Location MakeCurrentLocation();
 
@@ -99,6 +104,8 @@ class Disassembler {
 
         void Store(Usage operand) { dis_->SetSource(operand, MakeSource()); }
 
+        void StoreResult(Usage result) { dis_->SetResultSource(result, MakeSource()); }
+
         Source MakeSource() const {
             return Source(Source::Range(begin_, dis_->MakeCurrentLocation()));
         }
@@ -112,22 +119,25 @@ class Disassembler {
 
     size_t IdOf(Block* blk);
     std::string_view IdOf(Value* node);
+    std::string_view NameOf(If* inst);
+    std::string_view NameOf(Loop* inst);
+    std::string_view NameOf(Switch* inst);
 
-    void Walk(Block* blk);
-    void WalkInternal(Block* blk);
+    void EmitBlock(Block* blk, std::string_view comment = "");
     void EmitFunction(Function* func);
     void EmitParamAttributes(FunctionParam* p);
     void EmitReturnAttributes(Function* func);
     void EmitBindingPoint(BindingPoint p);
     void EmitLocation(Location loc);
     void EmitInstruction(Instruction* inst);
+    void EmitValueWithType(Instruction* val);
     void EmitValueWithType(Value* val);
     void EmitValue(Value* val);
     void EmitValueList(utils::Slice<ir::Value* const> values);
     void EmitArgs(Call* call);
     void EmitBinary(Binary* b);
     void EmitUnary(Unary* b);
-    void EmitBranch(Branch* b);
+    void EmitTerminator(Terminator* b);
     void EmitSwitch(Switch* s);
     void EmitLoop(Loop* l);
     void EmitIf(If* i);
@@ -141,7 +151,6 @@ class Disassembler {
 
     Module& mod_;
     utils::StringStream out_;
-    utils::Hashset<Block*, 32> visited_;
     utils::Hashmap<Block*, size_t, 32> block_ids_;
     utils::Hashmap<Value*, std::string, 32> value_ids_;
     uint32_t indent_size_ = 0;
@@ -153,6 +162,10 @@ class Disassembler {
     utils::Hashmap<Block*, Source, 8> block_to_src_;
     utils::Hashmap<Instruction*, Source, 8> instruction_to_src_;
     utils::Hashmap<Usage, Source, 8, Usage::Hasher> operand_to_src_;
+    utils::Hashmap<Usage, Source, 8, Usage::Hasher> result_to_src_;
+    utils::Hashmap<If*, std::string, 8> if_names_;
+    utils::Hashmap<Loop*, std::string, 8> loop_names_;
+    utils::Hashmap<Switch*, std::string, 8> switch_names_;
 };
 
 }  // namespace tint::ir

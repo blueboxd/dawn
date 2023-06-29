@@ -58,14 +58,14 @@ endfunction()
 add_library(tint_diagnostic_utils
   debug.cc
   debug.h
-  source.h
-  source.cc
   diagnostic/diagnostic.cc
   diagnostic/diagnostic.h
   diagnostic/formatter.cc
   diagnostic/formatter.h
   diagnostic/printer.cc
   diagnostic/printer.h
+  source.cc
+  source.h
   utils/debugger.cc
   utils/debugger.h
   utils/unicode.cc
@@ -158,6 +158,8 @@ list(APPEND TINT_LIB_SRCS
   ast/increment_decrement_statement.h
   ast/index_accessor_expression.cc
   ast/index_accessor_expression.h
+  ast/index_attribute.cc
+  ast/index_attribute.h
   ast/int_literal_expression.cc
   ast/int_literal_expression.h
   ast/internal_attribute.cc
@@ -232,6 +234,9 @@ list(APPEND TINT_LIB_SRCS
   ast/while_statement.h
   ast/workgroup_attribute.cc
   ast/workgroup_attribute.h
+  builtin/fluent_types.h
+  builtin/number.cc
+  builtin/number.h
   clone_context.cc
   clone_context.h
   constant/clone_context.h
@@ -255,8 +260,6 @@ list(APPEND TINT_LIB_SRCS
   inspector/resource_binding.h
   inspector/scalar.cc
   inspector/scalar.h
-  number.cc
-  number.h
   program_builder.cc
   program_builder.h
   program_id.cc
@@ -559,6 +562,8 @@ list(APPEND TINT_LIB_SRCS
   writer/append_vector.h
   writer/array_length_from_uniform_options.cc
   writer/array_length_from_uniform_options.h
+  writer/ast_text_generator.cc
+  writer/ast_text_generator.h
   writer/binding_point.h
   writer/binding_remapper_options.cc
   writer/binding_remapper_options.h
@@ -570,6 +575,8 @@ list(APPEND TINT_LIB_SRCS
   writer/flatten_bindings.h
   writer/float_to_string.cc
   writer/float_to_string.h
+  writer/ir_text_generator.cc
+  writer/ir_text_generator.h
   writer/text_generator.cc
   writer/text_generator.h
   writer/text.cc
@@ -687,7 +694,16 @@ if(${TINT_BUILD_MSL_WRITER})
     writer/msl/generator.h
     writer/msl/generator_impl.cc
     writer/msl/generator_impl.h
+    writer/msl/generator_support.cc
+    writer/msl/generator_support.h
   )
+
+  if(${TINT_BUILD_IR})
+    list(APPEND TINT_LIB_SRCS
+      writer/msl/ir/generator_impl_ir.cc
+      writer/msl/ir/generator_impl_ir.h
+    )
+  endif()
 endif()
 
 if(${TINT_BUILD_GLSL_WRITER})
@@ -731,8 +747,6 @@ if(${TINT_BUILD_IR})
     ir/block.h
     ir/block_param.cc
     ir/block_param.h
-    ir/branch.cc
-    ir/branch.h
     ir/break_if.cc
     ir/break_if.h
     ir/builder.cc
@@ -761,6 +775,8 @@ if(${TINT_BUILD_IR})
     ir/exit_loop.h
     ir/exit_switch.cc
     ir/exit_switch.h
+    ir/exit.cc
+    ir/exit.h
     ir/from_program.cc
     ir/from_program.h
     ir/function.cc
@@ -771,6 +787,8 @@ if(${TINT_BUILD_IR})
     ir/if.h
     ir/instruction.cc
     ir/instruction.h
+    ir/instruction_result.cc
+    ir/instruction_result.h
     ir/load.cc
     ir/load.h
     ir/location.h
@@ -792,10 +810,14 @@ if(${TINT_BUILD_IR})
     ir/switch.h
     ir/swizzle.cc
     ir/swizzle.h
+    ir/terminator.cc
+    ir/terminator.h
     ir/to_program.cc
     ir/to_program.h
     ir/unary.cc
     ir/unary.h
+    ir/unreachable.cc
+    ir/unreachable.h
     ir/user_call.cc
     ir/user_call.h
     ir/validate.cc
@@ -808,6 +830,12 @@ if(${TINT_BUILD_IR})
     ir/transform/add_empty_entry_point.h
     ir/transform/block_decorated_structs.cc
     ir/transform/block_decorated_structs.h
+    ir/transform/merge_return.cc
+    ir/transform/merge_return.h
+    ir/transform/shader_io.cc
+    ir/transform/shader_io.h
+    ir/transform/shader_io_spirv.cc
+    ir/transform/shader_io_spirv.h
     ir/transform/transform.cc
     ir/transform/transform.h
     ir/transform/var_for_dynamic_index.cc
@@ -930,6 +958,7 @@ if(TINT_BUILD_TESTS)
     ast/if_statement_test.cc
     ast/increment_decrement_statement_test.cc
     ast/index_accessor_expression_test.cc
+    ast/index_attribute_test.cc
     ast/int_literal_expression_test.cc
     ast/interpolate_attribute_test.cc
     ast/location_attribute_test.cc
@@ -955,6 +984,7 @@ if(TINT_BUILD_TESTS)
     ast/variable_test.cc
     ast/while_statement_test.cc
     ast/workgroup_attribute_test.cc
+    builtin/number_test.cc
     clone_context_test.cc
     constant/composite_test.cc
     constant/manager_test.cc
@@ -965,7 +995,6 @@ if(TINT_BUILD_TESTS)
     diagnostic/diagnostic_test.cc
     diagnostic/formatter_test.cc
     diagnostic/printer_test.cc
-    number_test.cc
     program_builder_test.cc
     program_test.cc
     reflection_test.cc
@@ -999,6 +1028,7 @@ if(TINT_BUILD_TESTS)
     resolver/control_block_validation_test.cc
     resolver/dependency_graph_test.cc
     resolver/diagnostic_control_test.cc
+    resolver/dual_source_blending_extension_test.cc
     resolver/entry_point_validation_test.cc
     resolver/evaluation_stage_test.cc
     resolver/expression_kind_test.cc
@@ -1097,10 +1127,10 @@ if(TINT_BUILD_TESTS)
     utils/unique_vector_test.cc
     utils/vector_test.cc
     writer/append_vector_test.cc
+    writer/ast_text_generator_test.cc
     writer/check_supported_extensions_test.cc
     writer/flatten_bindings_test.cc
     writer/float_to_string_test.cc
-    writer/text_generator_test.cc
   )
 
   # Noet, the source files are included here otherwise the cmd sources would not be included in the
@@ -1285,6 +1315,7 @@ if(TINT_BUILD_TESTS)
         writer/spirv/ir/generator_impl_ir_binary_test.cc
         writer/spirv/ir/generator_impl_ir_builtin_test.cc
         writer/spirv/ir/generator_impl_ir_constant_test.cc
+        writer/spirv/ir/generator_impl_ir_construct_test.cc
         writer/spirv/ir/generator_impl_ir_function_test.cc
         writer/spirv/ir/generator_impl_ir_if_test.cc
         writer/spirv/ir/generator_impl_ir_loop_test.cc
@@ -1424,8 +1455,18 @@ if(TINT_BUILD_TESTS)
       writer/msl/generator_impl_type_test.cc
       writer/msl/generator_impl_unary_op_test.cc
       writer/msl/generator_impl_variable_decl_statement_test.cc
+      writer/msl/generator_support_test.cc
       writer/msl/test_helper.h
     )
+
+    if(${TINT_BUILD_IR})
+      list(APPEND TINT_TEST_SRCS
+        writer/msl/ir/generator_impl_ir_constant_test.cc
+        writer/msl/ir/generator_impl_ir_function_test.cc
+        writer/msl/ir/generator_impl_ir_type_test.cc
+        writer/msl/ir/test_helper_ir.h
+      )
+    endif()
   endif()
 
   if (${TINT_BUILD_GLSL_WRITER})
@@ -1532,6 +1573,7 @@ if(TINT_BUILD_TESTS)
       ir/function_param_test.cc
       ir/function_test.cc
       ir/if_test.cc
+      ir/instruction_result_test.cc
       ir/instruction_test.cc
       ir/ir_test_helper.h
       ir/load_test.cc
@@ -1539,6 +1581,7 @@ if(TINT_BUILD_TESTS)
       ir/module_test.cc
       ir/multi_in_block_test.cc
       ir/next_iteration_test.cc
+      ir/operand_instruction_test.cc
       ir/program_test_helper.h
       ir/return_test.cc
       ir/store_test.cc
@@ -1546,10 +1589,13 @@ if(TINT_BUILD_TESTS)
       ir/swizzle_test.cc
       ir/transform/add_empty_entry_point_test.cc
       ir/transform/block_decorated_structs_test.cc
+      ir/transform/merge_return_test.cc
+      ir/transform/shader_io_test.cc
       ir/transform/var_for_dynamic_index_test.cc
       ir/unary_test.cc
       ir/user_call_test.cc
       ir/validate_test.cc
+      ir/value_test.cc
       ir/var_test.cc
     )
   endif()
@@ -1560,6 +1606,11 @@ if(TINT_BUILD_TESTS)
     )
   endif()
 
+  if (${TINT_BUILD_IR} AND ${TINT_BUILD_WGSL_WRITER})
+    list(APPEND TINT_TEST_SRCS
+      ir/to_program_test.cc
+    )
+  endif()
 
   if (${TINT_BUILD_FUZZERS})
     list(APPEND TINT_TEST_SRCS

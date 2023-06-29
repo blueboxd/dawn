@@ -32,6 +32,17 @@ TEST_F(IR_BuiltinCallTest, Usage) {
     EXPECT_THAT(arg2->Usages(), testing::UnorderedElementsAre(Usage{builtin, 1u}));
 }
 
+TEST_F(IR_BuiltinCallTest, Result) {
+    auto* arg1 = b.Constant(1_u);
+    auto* arg2 = b.Constant(2_u);
+    auto* builtin = b.Call(mod.Types().f32(), builtin::Function::kAbs, arg1, arg2);
+
+    EXPECT_TRUE(builtin->HasResults());
+    EXPECT_FALSE(builtin->HasMultiResults());
+    EXPECT_TRUE(builtin->Result()->Is<InstructionResult>());
+    EXPECT_EQ(builtin->Result()->Source(), builtin);
+}
+
 TEST_F(IR_BuiltinCallTest, Fail_NullType) {
     EXPECT_FATAL_FAILURE(
         {
@@ -58,16 +69,6 @@ TEST_F(IR_BuiltinCallTest, Fail_TintMaterializeFunction) {
             Module mod;
             Builder b{mod};
             b.Call(mod.Types().f32(), builtin::Function::kTintMaterialize);
-        },
-        "");
-}
-
-TEST_F(IR_BuiltinCallTest, Fail_NullArg) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            b.Call(mod.Types().f32(), builtin::Function::kAbs, nullptr);
         },
         "");
 }

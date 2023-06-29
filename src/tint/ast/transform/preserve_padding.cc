@@ -26,9 +26,10 @@
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::PreservePadding);
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::ast::transform {
+
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 PreservePadding::PreservePadding() = default;
 
@@ -118,12 +119,11 @@ struct PreservePadding::State {
         const char* kValueParamName = "value";
         auto call_helper = [&](auto&& body) {
             EnableExtension();
-            auto helper = helpers.GetOrCreate(ty, [&]() {
+            auto helper = helpers.GetOrCreate(ty, [&] {
                 auto helper_name = b.Symbols().New("assign_and_preserve_padding");
                 utils::Vector<const Parameter*, 2> params = {
                     b.Param(kDestParamName,
-                            b.ty.ptr(builtin::AddressSpace::kStorage, CreateASTTypeFor(ctx, ty),
-                                     builtin::Access::kReadWrite)),
+                            b.ty.ptr<storage, read_write>(CreateASTTypeFor(ctx, ty))),
                     b.Param(kValueParamName, CreateASTTypeFor(ctx, ty)),
                 };
                 b.Func(helper_name, params, b.ty.void_(), body());
@@ -136,7 +136,7 @@ struct PreservePadding::State {
             ty,  //
             [&](const type::Array* arr) {
                 // Call a helper function that uses a loop to assigns each element separately.
-                return call_helper([&]() {
+                return call_helper([&] {
                     utils::Vector<const Statement*, 8> body;
                     auto* idx = b.Var("i", b.Expr(0_u));
                     body.Push(
@@ -150,7 +150,7 @@ struct PreservePadding::State {
             },
             [&](const type::Matrix* mat) {
                 // Call a helper function that assigns each column separately.
-                return call_helper([&]() {
+                return call_helper([&] {
                     utils::Vector<const Statement*, 4> body;
                     for (uint32_t i = 0; i < mat->columns(); i++) {
                         body.Push(MakeAssignment(mat->ColumnType(),
@@ -162,7 +162,7 @@ struct PreservePadding::State {
             },
             [&](const type::Struct* str) {
                 // Call a helper function that assigns each member separately.
-                return call_helper([&]() {
+                return call_helper([&] {
                     utils::Vector<const Statement*, 8> body;
                     for (auto member : str->Members()) {
                         auto name = member->Name().Name();
