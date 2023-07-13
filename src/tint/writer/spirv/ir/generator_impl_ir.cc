@@ -31,6 +31,7 @@
 #include "src/tint/ir/exit_loop.h"
 #include "src/tint/ir/exit_switch.h"
 #include "src/tint/ir/if.h"
+#include "src/tint/ir/let.h"
 #include "src/tint/ir/load.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
@@ -39,9 +40,12 @@
 #include "src/tint/ir/return.h"
 #include "src/tint/ir/store.h"
 #include "src/tint/ir/switch.h"
+#include "src/tint/ir/terminate_invocation.h"
 #include "src/tint/ir/terminator.h"
 #include "src/tint/ir/transform/add_empty_entry_point.h"
 #include "src/tint/ir/transform/block_decorated_structs.h"
+#include "src/tint/ir/transform/builtin_polyfill_spirv.h"
+#include "src/tint/ir/transform/demote_to_helper.h"
 #include "src/tint/ir/transform/merge_return.h"
 #include "src/tint/ir/transform/shader_io_spirv.h"
 #include "src/tint/ir/transform/var_for_dynamic_index.h"
@@ -53,12 +57,19 @@
 #include "src/tint/transform/manager.h"
 #include "src/tint/type/array.h"
 #include "src/tint/type/bool.h"
+#include "src/tint/type/depth_multisampled_texture.h"
+#include "src/tint/type/depth_texture.h"
 #include "src/tint/type/f16.h"
 #include "src/tint/type/f32.h"
 #include "src/tint/type/i32.h"
 #include "src/tint/type/matrix.h"
+#include "src/tint/type/multisampled_texture.h"
 #include "src/tint/type/pointer.h"
+#include "src/tint/type/sampled_texture.h"
+#include "src/tint/type/sampler.h"
+#include "src/tint/type/storage_texture.h"
 #include "src/tint/type/struct.h"
+#include "src/tint/type/texture.h"
 #include "src/tint/type/type.h"
 #include "src/tint/type/u32.h"
 #include "src/tint/type/vector.h"
@@ -71,12 +82,18 @@ namespace tint::writer::spirv {
 
 namespace {
 
+using namespace tint::number_suffixes;  // NOLINT
+
+constexpr uint32_t kGeneratorVersion = 1;
+
 void Sanitize(ir::Module* module) {
     transform::Manager manager;
     transform::DataMap data;
 
     manager.Add<ir::transform::AddEmptyEntryPoint>();
     manager.Add<ir::transform::BlockDecoratedStructs>();
+    manager.Add<ir::transform::BuiltinPolyfillSpirv>();
+    manager.Add<ir::transform::DemoteToHelper>();
     manager.Add<ir::transform::MergeReturn>();
     manager.Add<ir::transform::ShaderIOSpirv>();
     manager.Add<ir::transform::VarForDynamicIndex>();
@@ -89,6 +106,8 @@ void Sanitize(ir::Module* module) {
 
 SpvStorageClass StorageClass(builtin::AddressSpace addrspace) {
     switch (addrspace) {
+        case builtin::AddressSpace::kHandle:
+            return SpvStorageClassUniformConstant;
         case builtin::AddressSpace::kFunction:
             return SpvStorageClassFunction;
         case builtin::AddressSpace::kIn:
@@ -146,7 +165,7 @@ bool GeneratorImplIr::Generate() {
     }
 
     // Serialize the module into binary SPIR-V.
-    writer_.WriteHeader(module_.IdBound());
+    writer_.WriteHeader(module_.IdBound(), kGeneratorVersion);
     writer_.WriteModule(&module_);
 
     return true;
@@ -194,7 +213,14 @@ uint32_t GeneratorImplIr::Builtin(builtin::BuiltinValue builtin, builtin::Addres
 }
 
 uint32_t GeneratorImplIr::Constant(ir::Constant* constant) {
-    return Constant(constant->Value());
+    auto id = Constant(constant->Value());
+
+    // Set the name for the SPIR-V result ID if provided in the module.
+    if (auto name = ir_->NameOf(constant)) {
+        module_.PushDebug(spv::Op::OpName, {id, Operand(name.Name())});
+    }
+
+    return id;
 }
 
 uint32_t GeneratorImplIr::Constant(const constant::Value* constant) {
@@ -267,6 +293,14 @@ uint32_t GeneratorImplIr::ConstantNull(const type::Type* type) {
     });
 }
 
+uint32_t GeneratorImplIr::Undef(const type::Type* type) {
+    return undef_values_.GetOrCreate(type, [&] {
+        auto id = module_.NextId();
+        module_.PushType(spv::Op::OpUndef, {Type(type), id});
+        return id;
+    });
+}
+
 uint32_t GeneratorImplIr::Type(const type::Type* ty,
                                builtin::AddressSpace addrspace /* = kUndefined */) {
     return types_.GetOrCreate(ty, [&] {
@@ -316,6 +350,18 @@ uint32_t GeneratorImplIr::Type(const type::Type* ty,
                                   Type(ptr->StoreType(), ptr->AddressSpace())});
             },
             [&](const type::Struct* str) { EmitStructType(id, str, addrspace); },
+            [&](const type::Texture* tex) { EmitTextureType(id, tex); },
+            [&](const type::Sampler* s) {
+                module_.PushType(spv::Op::OpTypeSampler, {id});
+
+                // Register both of the sampler types, as they're the same in SPIR-V.
+                if (s->kind() == type::SamplerKind::kSampler) {
+                    types_.Add(
+                        ir_->Types().Get<type::Sampler>(type::SamplerKind::kComparisonSampler), id);
+                } else {
+                    types_.Add(ir_->Types().Get<type::Sampler>(type::SamplerKind::kSampler), id);
+                }
+            },
             [&](Default) {
                 TINT_ICE(Writer, diagnostics_) << "unhandled type: " << ty->FriendlyName();
             });
@@ -434,6 +480,82 @@ void GeneratorImplIr::EmitStructType(uint32_t id,
     if (str->Name().IsValid()) {
         module_.PushDebug(spv::Op::OpName, {operands[0], Operand(str->Name().Name())});
     }
+}
+
+void GeneratorImplIr::EmitTextureType(uint32_t id, const type::Texture* texture) {
+    uint32_t sampled_type = Switch(
+        texture,  //
+        [&](const type::DepthTexture*) { return Type(ir_->Types().f32()); },
+        [&](const type::DepthMultisampledTexture*) { return Type(ir_->Types().f32()); },
+        [&](const type::SampledTexture* t) { return Type(t->type()); },
+        [&](const type::MultisampledTexture* t) { return Type(t->type()); },
+        [&](const type::StorageTexture* t) { return Type(t->type()); });
+
+    uint32_t dim = SpvDimMax;
+    uint32_t array = 0u;
+    switch (texture->dim()) {
+        case type::TextureDimension::kNone: {
+            break;
+        }
+        case type::TextureDimension::k1d: {
+            dim = SpvDim1D;
+            if (texture->Is<type::SampledTexture>()) {
+                module_.PushCapability(SpvCapabilitySampled1D);
+            } else if (texture->Is<type::StorageTexture>()) {
+                module_.PushCapability(SpvCapabilityImage1D);
+            }
+            break;
+        }
+        case type::TextureDimension::k2d: {
+            dim = SpvDim2D;
+            break;
+        }
+        case type::TextureDimension::k2dArray: {
+            dim = SpvDim2D;
+            array = 1u;
+            break;
+        }
+        case type::TextureDimension::k3d: {
+            dim = SpvDim3D;
+            break;
+        }
+        case type::TextureDimension::kCube: {
+            dim = SpvDimCube;
+            break;
+        }
+        case type::TextureDimension::kCubeArray: {
+            dim = SpvDimCube;
+            array = 1u;
+            if (texture->IsAnyOf<type::SampledTexture, type::DepthTexture>()) {
+                module_.PushCapability(SpvCapabilitySampledCubeArray);
+            }
+            break;
+        }
+    }
+
+    // The Vulkan spec says: The "Depth" operand of OpTypeImage is ignored.
+    // In SPIRV, 0 means not depth, 1 means depth, and 2 means unknown.
+    // Using anything other than 0 is problematic on various Vulkan drivers.
+    uint32_t depth = 0u;
+
+    uint32_t ms = 0u;
+    if (texture->IsAnyOf<type::MultisampledTexture, type::DepthMultisampledTexture>()) {
+        ms = 1u;
+    }
+
+    uint32_t sampled = 2u;
+    if (texture->IsAnyOf<type::MultisampledTexture, type::SampledTexture, type::DepthTexture,
+                         type::DepthMultisampledTexture>()) {
+        sampled = 1u;
+    }
+
+    uint32_t format = SpvImageFormat_::SpvImageFormatUnknown;
+    if (auto* st = texture->As<type::StorageTexture>()) {
+        format = TexelFormat(st->texel_format());
+    }
+
+    module_.PushType(spv::Op::OpTypeImage,
+                     {id, sampled_type, dim, depth, array, ms, sampled, format});
 }
 
 void GeneratorImplIr::EmitFunction(ir::Function* func) {
@@ -619,23 +741,38 @@ void GeneratorImplIr::EmitIncomingPhis(ir::MultiInBlock* block) {
 void GeneratorImplIr::EmitBlockInstructions(ir::Block* block) {
     for (auto* inst : *block) {
         Switch(
-            inst,                                             //
-            [&](ir::Access* a) { EmitAccess(a); },            //
-            [&](ir::Binary* b) { EmitBinary(b); },            //
-            [&](ir::BuiltinCall* b) { EmitBuiltinCall(b); },  //
-            [&](ir::Construct* c) { EmitConstruct(c); },      //
-            [&](ir::Load* l) { EmitLoad(l); },                //
-            [&](ir::Loop* l) { EmitLoop(l); },                //
-            [&](ir::Switch* sw) { EmitSwitch(sw); },          //
-            [&](ir::Store* s) { EmitStore(s); },              //
-            [&](ir::UserCall* c) { EmitUserCall(c); },        //
-            [&](ir::Var* v) { EmitVar(v); },                  //
-            [&](ir::If* i) { EmitIf(i); },                    //
-            [&](ir::Terminator* t) { EmitTerminator(t); },    //
+            inst,                                                           //
+            [&](ir::Access* a) { EmitAccess(a); },                          //
+            [&](ir::Binary* b) { EmitBinary(b); },                          //
+            [&](ir::Bitcast* b) { EmitBitcast(b); },                        //
+            [&](ir::BuiltinCall* b) { EmitBuiltinCall(b); },                //
+            [&](ir::Construct* c) { EmitConstruct(c); },                    //
+            [&](ir::Convert* c) { EmitConvert(c); },                        //
+            [&](ir::IntrinsicCall* i) { EmitIntrinsicCall(i); },            //
+            [&](ir::Load* l) { EmitLoad(l); },                              //
+            [&](ir::LoadVectorElement* l) { EmitLoadVectorElement(l); },    //
+            [&](ir::Loop* l) { EmitLoop(l); },                              //
+            [&](ir::Switch* sw) { EmitSwitch(sw); },                        //
+            [&](ir::Swizzle* s) { EmitSwizzle(s); },                        //
+            [&](ir::Store* s) { EmitStore(s); },                            //
+            [&](ir::StoreVectorElement* s) { EmitStoreVectorElement(s); },  //
+            [&](ir::UserCall* c) { EmitUserCall(c); },                      //
+            [&](ir::Unary* u) { EmitUnary(u); },                            //
+            [&](ir::Var* v) { EmitVar(v); },                                //
+            [&](ir::Let* l) { EmitLet(l); },                                //
+            [&](ir::If* i) { EmitIf(i); },                                  //
+            [&](ir::Terminator* t) { EmitTerminator(t); },                  //
             [&](Default) {
                 TINT_ICE(Writer, diagnostics_)
                     << "unimplemented instruction: " << inst->TypeInfo().name;
             });
+
+        // Set the name for the SPIR-V result ID if provided in the module.
+        if (inst->Result() && !inst->Is<ir::Var>()) {
+            if (auto name = ir_->NameOf(inst)) {
+                module_.PushDebug(spv::Op::OpName, {Value(inst), Operand(name.Name())});
+            }
+        }
     }
 
     if (block->IsEmpty()) {
@@ -663,7 +800,7 @@ void GeneratorImplIr::EmitTerminator(ir::Terminator* t) {
                                         {
                                             Value(breakif->Condition()),
                                             loop_merge_label_,
-                                            Label(breakif->Loop()->Body()),
+                                            loop_header_label_,
                                         });
         },
         [&](ir::Continue* cont) {
@@ -674,9 +811,10 @@ void GeneratorImplIr::EmitTerminator(ir::Terminator* t) {
         [&](ir::ExitSwitch*) {
             current_function_.push_inst(spv::Op::OpBranch, {switch_merge_label_});
         },
-        [&](ir::NextIteration* loop) {
-            current_function_.push_inst(spv::Op::OpBranch, {Label(loop->Loop()->Body())});
+        [&](ir::NextIteration*) {
+            current_function_.push_inst(spv::Op::OpBranch, {loop_header_label_});
         },
+        [&](ir::TerminateInvocation*) { current_function_.push_inst(spv::Op::OpKill, {}); },
         [&](ir::Unreachable*) { current_function_.push_inst(spv::Op::OpUnreachable, {}); },
 
         [&](Default) {
@@ -777,8 +915,11 @@ void GeneratorImplIr::EmitAccess(ir::Access* access) {
 
 void GeneratorImplIr::EmitBinary(ir::Binary* binary) {
     auto id = Value(binary);
+    auto lhs = Value(binary->LHS());
+    auto rhs = Value(binary->RHS());
     auto* ty = binary->Result()->Type();
     auto* lhs_ty = binary->LHS()->Type();
+    auto* rhs_ty = binary->RHS()->Type();
 
     // Determine the opcode.
     spv::Op op = spv::Op::Max;
@@ -787,8 +928,64 @@ void GeneratorImplIr::EmitBinary(ir::Binary* binary) {
             op = ty->is_integer_scalar_or_vector() ? spv::Op::OpIAdd : spv::Op::OpFAdd;
             break;
         }
+        case ir::Binary::Kind::kDivide: {
+            if (ty->is_signed_integer_scalar_or_vector()) {
+                op = spv::Op::OpSDiv;
+            } else if (ty->is_unsigned_integer_scalar_or_vector()) {
+                op = spv::Op::OpUDiv;
+            } else if (ty->is_float_scalar_or_vector()) {
+                op = spv::Op::OpFDiv;
+            }
+            break;
+        }
+        case ir::Binary::Kind::kMultiply: {
+            if (ty->is_integer_scalar_or_vector()) {
+                // If the result is an integer then we can only use OpIMul.
+                op = spv::Op::OpIMul;
+            } else if (lhs_ty->is_float_scalar() && rhs_ty->is_float_scalar()) {
+                // Two float scalars multiply with OpFMul.
+                op = spv::Op::OpFMul;
+            } else if (lhs_ty->is_float_vector() && rhs_ty->is_float_vector()) {
+                // Two float vectors multiply with OpFMul.
+                op = spv::Op::OpFMul;
+            } else if (lhs_ty->is_float_scalar() && rhs_ty->is_float_vector()) {
+                // Use OpVectorTimesScalar for scalar * vector, and swap the operand order.
+                std::swap(lhs, rhs);
+                op = spv::Op::OpVectorTimesScalar;
+            } else if (lhs_ty->is_float_vector() && rhs_ty->is_float_scalar()) {
+                // Use OpVectorTimesScalar for scalar * vector.
+                op = spv::Op::OpVectorTimesScalar;
+            } else if (lhs_ty->is_float_scalar() && rhs_ty->is_float_matrix()) {
+                // Use OpMatrixTimesScalar for scalar * matrix, and swap the operand order.
+                std::swap(lhs, rhs);
+                op = spv::Op::OpMatrixTimesScalar;
+            } else if (lhs_ty->is_float_matrix() && rhs_ty->is_float_scalar()) {
+                // Use OpMatrixTimesScalar for scalar * matrix.
+                op = spv::Op::OpMatrixTimesScalar;
+            } else if (lhs_ty->is_float_vector() && rhs_ty->is_float_matrix()) {
+                // Use OpVectorTimesMatrix for vector * matrix.
+                op = spv::Op::OpVectorTimesMatrix;
+            } else if (lhs_ty->is_float_matrix() && rhs_ty->is_float_vector()) {
+                // Use OpMatrixTimesVector for matrix * vector.
+                op = spv::Op::OpMatrixTimesVector;
+            } else if (lhs_ty->is_float_matrix() && rhs_ty->is_float_matrix()) {
+                // Use OpMatrixTimesMatrix for matrix * vector.
+                op = spv::Op::OpMatrixTimesMatrix;
+            }
+            break;
+        }
         case ir::Binary::Kind::kSubtract: {
             op = ty->is_integer_scalar_or_vector() ? spv::Op::OpISub : spv::Op::OpFSub;
+            break;
+        }
+        case ir::Binary::Kind::kModulo: {
+            if (ty->is_signed_integer_scalar_or_vector()) {
+                op = spv::Op::OpSRem;
+            } else if (ty->is_unsigned_integer_scalar_or_vector()) {
+                op = spv::Op::OpUMod;
+            } else if (ty->is_float_scalar_or_vector()) {
+                op = spv::Op::OpFRem;
+            }
             break;
         }
 
@@ -802,6 +999,19 @@ void GeneratorImplIr::EmitBinary(ir::Binary* binary) {
         }
         case ir::Binary::Kind::kXor: {
             op = spv::Op::OpBitwiseXor;
+            break;
+        }
+
+        case ir::Binary::Kind::kShiftLeft: {
+            op = spv::Op::OpShiftLeftLogical;
+            break;
+        }
+        case ir::Binary::Kind::kShiftRight: {
+            if (ty->is_signed_integer_scalar_or_vector()) {
+                op = spv::Op::OpShiftRightArithmetic;
+            } else if (ty->is_unsigned_integer_scalar_or_vector()) {
+                op = spv::Op::OpShiftRightLogical;
+            }
             break;
         }
 
@@ -865,15 +1075,20 @@ void GeneratorImplIr::EmitBinary(ir::Binary* binary) {
             }
             break;
         }
-
-        default: {
-            TINT_ICE(Writer, diagnostics_)
-                << "unimplemented binary instruction: " << static_cast<uint32_t>(binary->Kind());
-        }
     }
 
     // Emit the instruction.
-    current_function_.push_inst(op, {Type(ty), id, Value(binary->LHS()), Value(binary->RHS())});
+    current_function_.push_inst(op, {Type(ty), id, lhs, rhs});
+}
+
+void GeneratorImplIr::EmitBitcast(ir::Bitcast* bitcast) {
+    auto* ty = bitcast->Result()->Type();
+    if (ty == bitcast->Val()->Type()) {
+        values_.Add(bitcast->Result(), Value(bitcast->Val()));
+        return;
+    }
+    current_function_.push_inst(spv::Op::OpBitcast,
+                                {Type(ty), Value(bitcast), Value(bitcast->Val())});
 }
 
 void GeneratorImplIr::EmitBuiltinCall(ir::BuiltinCall* builtin) {
@@ -882,6 +1097,12 @@ void GeneratorImplIr::EmitBuiltinCall(ir::BuiltinCall* builtin) {
     if (builtin->Func() == builtin::Function::kAbs &&
         result_ty->is_unsigned_integer_scalar_or_vector()) {
         // abs() is a no-op for unsigned integers.
+        values_.Add(builtin->Result(), Value(builtin->Args()[0]));
+        return;
+    }
+    if (builtin->Func() == builtin::Function::kAny &&
+        builtin->Args()[0]->Type()->Is<type::Bool>()) {
+        // any() is a passthrough for a scalar argument.
         values_.Add(builtin->Result(), Value(builtin->Args()[0]));
         return;
     }
@@ -913,6 +1134,105 @@ void GeneratorImplIr::EmitBuiltinCall(ir::BuiltinCall* builtin) {
                 glsl_ext_inst(GLSLstd450SAbs);
             }
             break;
+        case builtin::Function::kAny:
+            op = spv::Op::OpAny;
+            break;
+        case builtin::Function::kAcos:
+            glsl_ext_inst(GLSLstd450Acos);
+            break;
+        case builtin::Function::kAcosh:
+            glsl_ext_inst(GLSLstd450Acosh);
+            break;
+        case builtin::Function::kAsin:
+            glsl_ext_inst(GLSLstd450Asin);
+            break;
+        case builtin::Function::kAsinh:
+            glsl_ext_inst(GLSLstd450Asinh);
+            break;
+        case builtin::Function::kAtan:
+            glsl_ext_inst(GLSLstd450Atan);
+            break;
+        case builtin::Function::kAtan2:
+            glsl_ext_inst(GLSLstd450Atan2);
+            break;
+        case builtin::Function::kAtanh:
+            glsl_ext_inst(GLSLstd450Atanh);
+            break;
+        case builtin::Function::kClamp:
+            if (result_ty->is_float_scalar_or_vector()) {
+                glsl_ext_inst(GLSLstd450NClamp);
+            } else if (result_ty->is_unsigned_integer_scalar_or_vector()) {
+                glsl_ext_inst(GLSLstd450UClamp);
+            } else if (result_ty->is_signed_integer_scalar_or_vector()) {
+                glsl_ext_inst(GLSLstd450SClamp);
+            }
+            break;
+        case builtin::Function::kCeil:
+            glsl_ext_inst(GLSLstd450Ceil);
+            break;
+        case builtin::Function::kCos:
+            glsl_ext_inst(GLSLstd450Cos);
+            break;
+        case builtin::Function::kCosh:
+            glsl_ext_inst(GLSLstd450Cosh);
+            break;
+        case builtin::Function::kCross:
+            glsl_ext_inst(GLSLstd450Cross);
+            break;
+        case builtin::Function::kDistance:
+            glsl_ext_inst(GLSLstd450Distance);
+            break;
+        case builtin::Function::kDpdx:
+            module_.PushCapability(SpvCapabilityDerivativeControl);
+            op = spv::Op::OpDPdx;
+            break;
+        case builtin::Function::kDpdxCoarse:
+            module_.PushCapability(SpvCapabilityDerivativeControl);
+            op = spv::Op::OpDPdxCoarse;
+            break;
+        case builtin::Function::kDpdxFine:
+            module_.PushCapability(SpvCapabilityDerivativeControl);
+            op = spv::Op::OpDPdxFine;
+            break;
+        case builtin::Function::kDpdy:
+            module_.PushCapability(SpvCapabilityDerivativeControl);
+            op = spv::Op::OpDPdy;
+            break;
+        case builtin::Function::kDpdyCoarse:
+            module_.PushCapability(SpvCapabilityDerivativeControl);
+            op = spv::Op::OpDPdyCoarse;
+            break;
+        case builtin::Function::kDpdyFine:
+            module_.PushCapability(SpvCapabilityDerivativeControl);
+            op = spv::Op::OpDPdyFine;
+            break;
+        case builtin::Function::kExp:
+            glsl_ext_inst(GLSLstd450Exp);
+            break;
+        case builtin::Function::kExp2:
+            glsl_ext_inst(GLSLstd450Exp2);
+            break;
+        case builtin::Function::kFloor:
+            glsl_ext_inst(GLSLstd450Floor);
+            break;
+        case builtin::Function::kFract:
+            glsl_ext_inst(GLSLstd450Fract);
+            break;
+        case builtin::Function::kFrexp:
+            glsl_ext_inst(GLSLstd450FrexpStruct);
+            break;
+        case builtin::Function::kInverseSqrt:
+            glsl_ext_inst(GLSLstd450InverseSqrt);
+            break;
+        case builtin::Function::kLength:
+            glsl_ext_inst(GLSLstd450Length);
+            break;
+        case builtin::Function::kLog:
+            glsl_ext_inst(GLSLstd450Log);
+            break;
+        case builtin::Function::kLog2:
+            glsl_ext_inst(GLSLstd450Log2);
+            break;
         case builtin::Function::kMax:
             if (result_ty->is_float_scalar_or_vector()) {
                 glsl_ext_inst(GLSLstd450FMax);
@@ -930,6 +1250,30 @@ void GeneratorImplIr::EmitBuiltinCall(ir::BuiltinCall* builtin) {
             } else if (result_ty->is_unsigned_integer_scalar_or_vector()) {
                 glsl_ext_inst(GLSLstd450UMin);
             }
+            break;
+        case builtin::Function::kModf:
+            glsl_ext_inst(GLSLstd450ModfStruct);
+            break;
+        case builtin::Function::kNormalize:
+            glsl_ext_inst(GLSLstd450Normalize);
+            break;
+        case builtin::Function::kSin:
+            glsl_ext_inst(GLSLstd450Sin);
+            break;
+        case builtin::Function::kSinh:
+            glsl_ext_inst(GLSLstd450Sinh);
+            break;
+        case builtin::Function::kSqrt:
+            glsl_ext_inst(GLSLstd450Sqrt);
+            break;
+        case builtin::Function::kTan:
+            glsl_ext_inst(GLSLstd450Tan);
+            break;
+        case builtin::Function::kTanh:
+            glsl_ext_inst(GLSLstd450Tanh);
+            break;
+        case builtin::Function::kTrunc:
+            glsl_ext_inst(GLSLstd450Trunc);
             break;
         default:
             TINT_ICE(Writer, diagnostics_) << "unimplemented builtin function: " << builtin->Func();
@@ -953,18 +1297,134 @@ void GeneratorImplIr::EmitConstruct(ir::Construct* construct) {
     current_function_.push_inst(spv::Op::OpCompositeConstruct, std::move(operands));
 }
 
+void GeneratorImplIr::EmitConvert(ir::Convert* convert) {
+    auto* res_ty = convert->Result()->Type();
+    auto* arg_ty = convert->Args()[0]->Type();
+
+    OperandList operands = {Type(convert->Result()->Type()), Value(convert)};
+    for (auto* arg : convert->Args()) {
+        operands.push_back(Value(arg));
+    }
+
+    spv::Op op = spv::Op::Max;
+    if (res_ty->is_signed_integer_scalar_or_vector() && arg_ty->is_float_scalar_or_vector()) {
+        // float to signed int.
+        op = spv::Op::OpConvertFToS;
+    } else if (res_ty->is_unsigned_integer_scalar_or_vector() &&
+               arg_ty->is_float_scalar_or_vector()) {
+        // float to unsigned int.
+        op = spv::Op::OpConvertFToU;
+    } else if (res_ty->is_float_scalar_or_vector() &&
+               arg_ty->is_signed_integer_scalar_or_vector()) {
+        // signed int to float.
+        op = spv::Op::OpConvertSToF;
+    } else if (res_ty->is_float_scalar_or_vector() &&
+               arg_ty->is_unsigned_integer_scalar_or_vector()) {
+        // unsigned int to float.
+        op = spv::Op::OpConvertUToF;
+    } else if (res_ty->is_float_scalar_or_vector() && arg_ty->is_float_scalar_or_vector() &&
+               res_ty->Size() != arg_ty->Size()) {
+        // float to float (different bitwidth).
+        op = spv::Op::OpFConvert;
+    } else if (res_ty->is_integer_scalar_or_vector() && arg_ty->is_integer_scalar_or_vector() &&
+               res_ty->Size() == arg_ty->Size()) {
+        // int to int (same bitwidth, different signedness).
+        op = spv::Op::OpBitcast;
+    } else if (res_ty->is_bool_scalar_or_vector()) {
+        if (arg_ty->is_integer_scalar_or_vector()) {
+            // int to bool.
+            op = spv::Op::OpINotEqual;
+        } else {
+            // float to bool.
+            op = spv::Op::OpFUnordNotEqual;
+        }
+        operands.push_back(ConstantNull(arg_ty));
+    } else if (arg_ty->is_bool_scalar_or_vector()) {
+        // Select between constant one and zero, splatting them to vectors if necessary.
+        const constant::Value* one = nullptr;
+        const constant::Value* zero = nullptr;
+        Switch(
+            res_ty->DeepestElement(),  //
+            [&](const type::F32*) {
+                one = ir_->constant_values.Get(1_f);
+                zero = ir_->constant_values.Get(0_f);
+            },
+            [&](const type::F16*) {
+                one = ir_->constant_values.Get(1_h);
+                zero = ir_->constant_values.Get(0_h);
+            },
+            [&](const type::I32*) {
+                one = ir_->constant_values.Get(1_i);
+                zero = ir_->constant_values.Get(0_i);
+            },
+            [&](const type::U32*) {
+                one = ir_->constant_values.Get(1_u);
+                zero = ir_->constant_values.Get(0_u);
+            });
+        TINT_ASSERT_OR_RETURN(Writer, one && zero);
+
+        if (auto* vec = res_ty->As<type::Vector>()) {
+            // Splat the scalars into vectors.
+            one = ir_->constant_values.Splat(vec, one, vec->Width());
+            zero = ir_->constant_values.Splat(vec, zero, vec->Width());
+        }
+
+        op = spv::Op::OpSelect;
+        operands.push_back(Constant(one));
+        operands.push_back(Constant(zero));
+    } else {
+        TINT_ICE(Writer, diagnostics_) << "unhandled convert instruction";
+    }
+
+    current_function_.push_inst(op, std::move(operands));
+}
+
+void GeneratorImplIr::EmitIntrinsicCall(ir::IntrinsicCall* call) {
+    auto id = Value(call);
+
+    spv::Op op = spv::Op::Max;
+    switch (call->Kind()) {
+        case ir::IntrinsicCall::Kind::kSpirvDot:
+            op = spv::Op::OpDot;
+            break;
+        case ir::IntrinsicCall::Kind::kSpirvSelect:
+            op = spv::Op::OpSelect;
+            break;
+    }
+
+    OperandList operands = {Type(call->Result()->Type()), id};
+    for (auto* arg : call->Args()) {
+        operands.push_back(Value(arg));
+    }
+    current_function_.push_inst(op, operands);
+}
+
 void GeneratorImplIr::EmitLoad(ir::Load* load) {
     current_function_.push_inst(spv::Op::OpLoad,
                                 {Type(load->Result()->Type()), Value(load), Value(load->From())});
 }
 
+void GeneratorImplIr::EmitLoadVectorElement(ir::LoadVectorElement* load) {
+    auto* vec_ptr_ty = load->From()->Type()->As<type::Pointer>();
+    auto* el_ty = load->Result()->Type();
+    auto* el_ptr_ty = ir_->Types().ptr(vec_ptr_ty->AddressSpace(), el_ty, vec_ptr_ty->Access());
+    auto el_ptr_id = module_.NextId();
+    current_function_.push_inst(
+        spv::Op::OpAccessChain,
+        {Type(el_ptr_ty), el_ptr_id, Value(load->From()), Value(load->Index())});
+    current_function_.push_inst(spv::Op::OpLoad,
+                                {Type(load->Result()->Type()), Value(load), el_ptr_id});
+}
+
 void GeneratorImplIr::EmitLoop(ir::Loop* loop) {
     auto init_label = loop->HasInitializer() ? Label(loop->Initializer()) : 0;
-    auto header_label = Label(loop->Body());  // Back-edge needs to branch to the loop header
-    auto body_label = module_.NextId();
+    auto body_label = Label(loop->Body());
     auto continuing_label = Label(loop->Continuing());
 
-    uint32_t merge_label = module_.NextId();
+    auto header_label = module_.NextId();
+    TINT_SCOPED_ASSIGNMENT(loop_header_label_, header_label);
+
+    auto merge_label = module_.NextId();
     TINT_SCOPED_ASSIGNMENT(loop_merge_label_, merge_label);
 
     if (init_label != 0) {
@@ -1049,8 +1509,48 @@ void GeneratorImplIr::EmitSwitch(ir::Switch* swtch) {
     EmitExitPhis(swtch);
 }
 
+void GeneratorImplIr::EmitSwizzle(ir::Swizzle* swizzle) {
+    auto id = Value(swizzle);
+    auto obj = Value(swizzle->Object());
+    OperandList operands = {Type(swizzle->Result()->Type()), id, obj, obj};
+    for (auto idx : swizzle->Indices()) {
+        operands.push_back(idx);
+    }
+    current_function_.push_inst(spv::Op::OpVectorShuffle, operands);
+}
+
 void GeneratorImplIr::EmitStore(ir::Store* store) {
     current_function_.push_inst(spv::Op::OpStore, {Value(store->To()), Value(store->From())});
+}
+
+void GeneratorImplIr::EmitStoreVectorElement(ir::StoreVectorElement* store) {
+    auto* vec_ptr_ty = store->To()->Type()->As<type::Pointer>();
+    auto* el_ty = store->Value()->Type();
+    auto* el_ptr_ty = ir_->Types().ptr(vec_ptr_ty->AddressSpace(), el_ty, vec_ptr_ty->Access());
+    auto el_ptr_id = module_.NextId();
+    current_function_.push_inst(
+        spv::Op::OpAccessChain,
+        {Type(el_ptr_ty), el_ptr_id, Value(store->To()), Value(store->Index())});
+    current_function_.push_inst(spv::Op::OpStore, {el_ptr_id, Value(store->Value())});
+}
+
+void GeneratorImplIr::EmitUnary(ir::Unary* unary) {
+    auto id = Value(unary);
+    auto* ty = unary->Result()->Type();
+    spv::Op op = spv::Op::Max;
+    switch (unary->Kind()) {
+        case ir::Unary::Kind::kComplement:
+            op = spv::Op::OpNot;
+            break;
+        case ir::Unary::Kind::kNegation:
+            if (ty->is_float_scalar_or_vector()) {
+                op = spv::Op::OpFNegate;
+            } else if (ty->is_signed_integer_scalar_or_vector()) {
+                op = spv::Op::OpSNegate;
+            }
+            break;
+    }
+    current_function_.push_inst(op, {Type(ty), id, Value(unary->Val())});
 }
 
 void GeneratorImplIr::EmitUserCall(ir::UserCall* call) {
@@ -1096,6 +1596,7 @@ void GeneratorImplIr::EmitVar(ir::Var* var) {
             module_.PushType(spv::Op::OpVariable, {ty, id, U32Operand(SpvStorageClassOutput)});
             break;
         }
+        case builtin::AddressSpace::kHandle:
         case builtin::AddressSpace::kStorage:
         case builtin::AddressSpace::kUniform: {
             TINT_ASSERT(Writer, !current_function_);
@@ -1131,6 +1632,11 @@ void GeneratorImplIr::EmitVar(ir::Var* var) {
     }
 }
 
+void GeneratorImplIr::EmitLet(ir::Let* let) {
+    auto id = Value(let->Value());
+    values_.Add(let->Result(), id);
+}
+
 void GeneratorImplIr::EmitExitPhis(ir::ControlInstruction* inst) {
     struct Branch {
         uint32_t label = 0;
@@ -1152,11 +1658,62 @@ void GeneratorImplIr::EmitExitPhis(ir::ControlInstruction* inst) {
 
         OperandList ops{Type(ty), Value(result)};
         for (auto& branch : branches) {
-            ops.push_back(Value(branch.value));
+            if (branch.value == nullptr) {
+                ops.push_back(Undef(ty));
+            } else {
+                ops.push_back(Value(branch.value));
+            }
             ops.push_back(branch.label);
         }
         current_function_.push_inst(spv::Op::OpPhi, std::move(ops));
     }
+}
+
+uint32_t GeneratorImplIr::TexelFormat(const builtin::TexelFormat format) {
+    switch (format) {
+        case builtin::TexelFormat::kBgra8Unorm:
+            TINT_ICE(Writer, diagnostics_)
+                << "bgra8unorm should have been polyfilled to rgba8unorm";
+            return SpvImageFormatUnknown;
+        case builtin::TexelFormat::kR32Uint:
+            return SpvImageFormatR32ui;
+        case builtin::TexelFormat::kR32Sint:
+            return SpvImageFormatR32i;
+        case builtin::TexelFormat::kR32Float:
+            return SpvImageFormatR32f;
+        case builtin::TexelFormat::kRgba8Unorm:
+            return SpvImageFormatRgba8;
+        case builtin::TexelFormat::kRgba8Snorm:
+            return SpvImageFormatRgba8Snorm;
+        case builtin::TexelFormat::kRgba8Uint:
+            return SpvImageFormatRgba8ui;
+        case builtin::TexelFormat::kRgba8Sint:
+            return SpvImageFormatRgba8i;
+        case builtin::TexelFormat::kRg32Uint:
+            module_.PushCapability(SpvCapabilityStorageImageExtendedFormats);
+            return SpvImageFormatRg32ui;
+        case builtin::TexelFormat::kRg32Sint:
+            module_.PushCapability(SpvCapabilityStorageImageExtendedFormats);
+            return SpvImageFormatRg32i;
+        case builtin::TexelFormat::kRg32Float:
+            module_.PushCapability(SpvCapabilityStorageImageExtendedFormats);
+            return SpvImageFormatRg32f;
+        case builtin::TexelFormat::kRgba16Uint:
+            return SpvImageFormatRgba16ui;
+        case builtin::TexelFormat::kRgba16Sint:
+            return SpvImageFormatRgba16i;
+        case builtin::TexelFormat::kRgba16Float:
+            return SpvImageFormatRgba16f;
+        case builtin::TexelFormat::kRgba32Uint:
+            return SpvImageFormatRgba32ui;
+        case builtin::TexelFormat::kRgba32Sint:
+            return SpvImageFormatRgba32i;
+        case builtin::TexelFormat::kRgba32Float:
+            return SpvImageFormatRgba32f;
+        case builtin::TexelFormat::kUndefined:
+            return SpvImageFormatUnknown;
+    }
+    return SpvImageFormatUnknown;
 }
 
 }  // namespace tint::writer::spirv

@@ -159,8 +159,9 @@ class InstanceBase final : public RefCountedWithExternalCount {
     MaybeError Initialize(const InstanceDescriptor* descriptor);
     void SetPlatform(dawn::platform::Platform* platform);
 
-    // Lazily creates connections to all backends that have been compiled.
-    void EnsureBackendConnection(wgpu::BackendType backendType);
+    // Lazily creates connections to all backends that have been compiled, may return null even for
+    // compiled in backends.
+    BackendConnection* GetBackendConnection(wgpu::BackendType backendType);
 
     // Deprecated: Discover physical devices with options, and save them on the instance.
     void DeprecatedDiscoverPhysicalDevices(const RequestAdapterOptions* options);
@@ -172,15 +173,14 @@ class InstanceBase final : public RefCountedWithExternalCount {
     // toggles descriptor.
     Ref<AdapterBase> CreateAdapter(Ref<PhysicalDeviceBase> physicalDevice,
                                    FeatureLevel featureLevel,
-                                   const DawnTogglesDescriptor* requiredAdapterToggles) const;
+                                   const DawnTogglesDescriptor* requiredAdapterToggles,
+                                   wgpu::PowerPreference powerPreference) const;
 
     void ConsumeError(std::unique_ptr<ErrorData> error);
 
     std::unordered_set<std::string> warningMessages;
 
     std::vector<std::string> mRuntimeSearchPaths;
-
-    BackendsBitset mBackendsConnected;
 
     bool mBeginCaptureOnStartup = false;
     bool mEnableAdapterBlocklist = false;
@@ -192,6 +192,8 @@ class InstanceBase final : public RefCountedWithExternalCount {
     BlobCache mPassthroughBlobCache;
 
     BackendsArray mBackends;
+    BackendsBitset mBackendsTried;
+
     std::vector<Ref<PhysicalDeviceBase>> mDeprecatedPhysicalDevices;
     bool mDeprecatedDiscoveredDefaultPhysicalDevices = false;
 

@@ -82,6 +82,7 @@
 #include "src/tint/sem/builtin.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/function.h"
+#include "src/tint/sem/index_accessor_expression.h"
 #include "src/tint/sem/load.h"
 #include "src/tint/sem/materialize.h"
 #include "src/tint/sem/member_accessor_expression.h"
@@ -468,6 +469,14 @@ class Impl {
     }
 
     void EmitAssignment(const ast::AssignmentStatement* stmt) {
+        auto b = builder_.With(current_block_);
+        if (auto access = AsVectorRefElementAccess(stmt->lhs)) {
+            if (auto rhs = EmitExpression(stmt->rhs)) {
+                b.StoreVectorElement(access->vector, access->index, rhs.Get());
+            }
+            return;
+        }
+
         // If assigning to a phony, just generate the RHS and we're done. Note that, because
         // this isn't used, a subsequent transform could remove it due to it being dead code.
         // This could then change the interface for the program (i.e. a global var no longer
@@ -486,104 +495,56 @@ class Impl {
         if (!rhs) {
             return;
         }
-        auto store = builder_.Store(lhs.Get(), rhs.Get());
-        current_block_->Append(store);
+        b.Store(lhs.Get(), rhs.Get());
     }
 
     void EmitIncrementDecrement(const ast::IncrementDecrementStatement* stmt) {
-        auto lhs = EmitExpression(stmt->lhs);
-        if (!lhs) {
-            return;
-        }
+        auto* one = program_->TypeOf(stmt->lhs)->UnwrapRef()->is_signed_integer_scalar()
+                        ? builder_.Constant(1_i)
+                        : builder_.Constant(1_u);
+        auto emit_rhs = [one] { return one; };
 
-        // Load from the LHS.
-        auto* lhs_value = builder_.Load(lhs.Get());
-        current_block_->Append(lhs_value);
-
-        auto* ty = lhs_value->Result()->Type();
-
-        auto* rhs =
-            ty->is_signed_integer_scalar() ? builder_.Constant(1_i) : builder_.Constant(1_u);
-
-        Binary* inst = nullptr;
-        if (stmt->increment) {
-            inst = builder_.Add(ty, lhs_value, rhs);
-        } else {
-            inst = builder_.Subtract(ty, lhs_value, rhs);
-        }
-        current_block_->Append(inst);
-
-        auto store = builder_.Store(lhs.Get(), inst);
-        current_block_->Append(store);
+        EmitCompoundAssignment(stmt->lhs, emit_rhs,
+                               stmt->increment ? ast::BinaryOp::kAdd : ast::BinaryOp::kSubtract);
     }
 
     void EmitCompoundAssignment(const ast::CompoundAssignmentStatement* stmt) {
-        auto lhs = EmitExpression(stmt->lhs);
+        auto emit_rhs = [this, stmt] {
+            auto rhs = EmitExpression(stmt->rhs);
+            return rhs ? rhs.Get() : nullptr;
+        };
+        EmitCompoundAssignment(stmt->lhs, emit_rhs, stmt->op);
+    }
+
+    template <typename EMIT_RHS>
+    void EmitCompoundAssignment(const ast::Expression* lhs_expr,
+                                EMIT_RHS&& emit_rhs,
+                                ast::BinaryOp op) {
+        auto b = builder_.With(current_block_);
+        if (auto access = AsVectorRefElementAccess(lhs_expr)) {
+            // Compound assignment of vector element needs to use LoadVectorElement() and
+            // StoreVectorElement().
+            if (auto rhs = emit_rhs()) {
+                auto* load = b.LoadVectorElement(access->vector, access->index);
+                auto* ty = load->Result()->Type();
+                auto* inst = b.Append(BinaryOp(ty, load->Result(), rhs, op));
+                b.StoreVectorElement(access->vector, access->index, inst);
+            }
+            return;
+        }
+
+        auto lhs = EmitExpression(lhs_expr);
         if (!lhs) {
             return;
         }
-
-        auto rhs = EmitExpression(stmt->rhs);
+        auto rhs = emit_rhs();
         if (!rhs) {
             return;
         }
-
-        // Load from the LHS.
-        auto* lhs_value = builder_.Load(lhs.Get());
-        current_block_->Append(lhs_value);
-
-        auto* ty = lhs_value->Result()->Type();
-
-        Binary* inst = nullptr;
-        switch (stmt->op) {
-            case ast::BinaryOp::kAnd:
-                inst = builder_.And(ty, lhs_value, rhs.Get());
-                break;
-            case ast::BinaryOp::kOr:
-                inst = builder_.Or(ty, lhs_value, rhs.Get());
-                break;
-            case ast::BinaryOp::kXor:
-                inst = builder_.Xor(ty, lhs_value, rhs.Get());
-                break;
-            case ast::BinaryOp::kShiftLeft:
-                inst = builder_.ShiftLeft(ty, lhs_value, rhs.Get());
-                break;
-            case ast::BinaryOp::kShiftRight:
-                inst = builder_.ShiftRight(ty, lhs_value, rhs.Get());
-                break;
-            case ast::BinaryOp::kAdd:
-                inst = builder_.Add(ty, lhs_value, rhs.Get());
-                break;
-            case ast::BinaryOp::kSubtract:
-                inst = builder_.Subtract(ty, lhs_value, rhs.Get());
-                break;
-            case ast::BinaryOp::kMultiply:
-                inst = builder_.Multiply(ty, lhs_value, rhs.Get());
-                break;
-            case ast::BinaryOp::kDivide:
-                inst = builder_.Divide(ty, lhs_value, rhs.Get());
-                break;
-            case ast::BinaryOp::kModulo:
-                inst = builder_.Modulo(ty, lhs_value, rhs.Get());
-                break;
-            case ast::BinaryOp::kLessThanEqual:
-            case ast::BinaryOp::kGreaterThanEqual:
-            case ast::BinaryOp::kGreaterThan:
-            case ast::BinaryOp::kLessThan:
-            case ast::BinaryOp::kNotEqual:
-            case ast::BinaryOp::kEqual:
-            case ast::BinaryOp::kLogicalAnd:
-            case ast::BinaryOp::kLogicalOr:
-                TINT_ICE(IR, diagnostics_) << "invalid compound assignment";
-                return;
-            case ast::BinaryOp::kNone:
-                TINT_ICE(IR, diagnostics_) << "missing binary operand type";
-                return;
-        }
-        current_block_->Append(inst);
-
-        auto store = builder_.Store(lhs.Get(), inst);
-        current_block_->Append(store);
+        auto* load = b.Load(lhs.Get());
+        auto* ty = load->Result()->Type();
+        auto* inst = current_block_->Append(BinaryOp(ty, load->Result(), rhs, op));
+        b.Store(lhs.Get(), inst);
     }
 
     void EmitBlock(const ast::BlockStatement* block) {
@@ -853,7 +814,7 @@ class Impl {
         if (!cond) {
             return;
         }
-        SetTerminator(builder_.BreakIf(cond.Get(), current_control->As<ir::Loop>()));
+        SetTerminator(builder_.BreakIf(current_control->As<ir::Loop>(), cond.Get()));
     }
 
     struct AccessorInfo {
@@ -864,9 +825,19 @@ class Impl {
     };
 
     utils::Result<Value*> EmitAccess(const ast::AccessorExpression* expr) {
+        if (auto vec_access = AsVectorRefElementAccess(expr)) {
+            // Vector reference accesses need to map to LoadVectorElement()
+            auto* load = builder_.LoadVectorElement(vec_access->vector, vec_access->index);
+            current_block_->Append(load);
+            return load->Result();
+        }
+
         std::vector<const ast::Expression*> accessors;
         const ast::Expression* object = expr;
         while (true) {
+            if (program_->Sem().GetVal(object)->ConstantValue()) {
+                break;  // Reached a constant expression. Stop traversal.
+            }
             if (auto* array = object->As<ast::IndexAccessorExpression>()) {
                 accessors.push_back(object);
                 object = array->object;
@@ -944,7 +915,7 @@ class Impl {
     }
 
     bool GenerateMemberAccessor(const ast::MemberAccessorExpression* expr, AccessorInfo& info) {
-        auto* expr_sem = program_->Sem().Get(expr)->UnwrapLoad();
+        auto* expr_sem = program_->Sem().Get(expr)->Unwrap();
 
         return tint::Switch(
             expr_sem,  //
@@ -966,7 +937,7 @@ class Impl {
                 // intermediate steps need different result types.
                 auto* result_type = info.result_type;
 
-                // Emit any preceeding member/index accessors
+                // Emit any preceding member/index accessors
                 if (!info.indices.IsEmpty()) {
                     // The access chain is being split, the initial part of than will have a
                     // resulting type that matches the object being swizzled.
@@ -1036,7 +1007,7 @@ class Impl {
             });
 
         // If this expression maps to sem::Load, insert a load instruction to get the result.
-        if (result && sem->Is<sem::Load>()) {
+        if (result && result.Get()->Type()->Is<type::Pointer>() && sem->Is<sem::Load>()) {
             auto* load = builder_.Load(result.Get());
             current_block_->Append(load);
             return load->Result();
@@ -1077,18 +1048,28 @@ class Impl {
                 builder_.ir.SetName(val, v->name->symbol.Name());
             },
             [&](const ast::Let* l) {
-                // A `let` doesn't exist as a standalone item in the IR, it's just the result of
-                // the initializer.
+                auto* last_stmt = current_block_->Back();
+
                 auto init = EmitExpression(l->initializer);
                 if (!init) {
                     return;
                 }
 
-                // Store the results of the initialization
-                scopes_.Set(l->name->symbol, init.Get());
+                auto* value = init.Get();
+                if (current_block_->Back() == last_stmt) {
+                    // Emitting the let's initializer didn't create an instruction.
+                    // Create an ir::Let to give the let an instruction. This gives the let a
+                    // place of declaration and name, which preserves runtime semantics of the let,
+                    // and can be used by consumers of the IR to produce a variable or debug info.
+                    auto* let = current_block_->Append(builder_.Let(l->name->symbol.Name(), value));
+                    value = let->Result();
+                } else {
+                    // Record the original name of the let
+                    builder_.ir.SetName(value, l->name->symbol.Name());
+                }
 
-                // Record the original name of the let
-                builder_.ir.SetName(init.Get(), l->name->symbol.Name());
+                // Store the results of the initialization
+                scopes_.Set(l->name->symbol, value);
             },
             [&](const ast::Override*) {
                 add_error(var->source,
@@ -1227,63 +1208,9 @@ class Impl {
         auto* sem = program_->Sem().Get(expr);
         auto* ty = sem->Type()->Clone(clone_ctx_.type_ctx);
 
-        Binary* inst = nullptr;
-        switch (expr->op) {
-            case ast::BinaryOp::kAnd:
-                inst = builder_.And(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kOr:
-                inst = builder_.Or(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kXor:
-                inst = builder_.Xor(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kEqual:
-                inst = builder_.Equal(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kNotEqual:
-                inst = builder_.NotEqual(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kLessThan:
-                inst = builder_.LessThan(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kGreaterThan:
-                inst = builder_.GreaterThan(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kLessThanEqual:
-                inst = builder_.LessThanEqual(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kGreaterThanEqual:
-                inst = builder_.GreaterThanEqual(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kShiftLeft:
-                inst = builder_.ShiftLeft(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kShiftRight:
-                inst = builder_.ShiftRight(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kAdd:
-                inst = builder_.Add(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kSubtract:
-                inst = builder_.Subtract(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kMultiply:
-                inst = builder_.Multiply(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kDivide:
-                inst = builder_.Divide(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kModulo:
-                inst = builder_.Modulo(ty, lhs.Get(), rhs.Get());
-                break;
-            case ast::BinaryOp::kLogicalAnd:
-            case ast::BinaryOp::kLogicalOr:
-                TINT_ICE(IR, diagnostics_) << "short circuit op should have already been handled";
-                return utils::Failure;
-            case ast::BinaryOp::kNone:
-                TINT_ICE(IR, diagnostics_) << "missing binary operand type";
-                return utils::Failure;
+        Binary* inst = BinaryOp(ty, lhs.Get(), rhs.Get(), expr->op);
+        if (!inst) {
+            return utils::Failure;
         }
 
         current_block_->Append(inst);
@@ -1382,6 +1309,97 @@ class Impl {
             return utils::Failure;
         }
         return builder_.Constant(cv);
+    }
+
+    ir::Binary* BinaryOp(const type::Type* ty, ir::Value* lhs, ir::Value* rhs, ast::BinaryOp op) {
+        switch (op) {
+            case ast::BinaryOp::kAnd:
+                return builder_.And(ty, lhs, rhs);
+            case ast::BinaryOp::kOr:
+                return builder_.Or(ty, lhs, rhs);
+            case ast::BinaryOp::kXor:
+                return builder_.Xor(ty, lhs, rhs);
+            case ast::BinaryOp::kEqual:
+                return builder_.Equal(ty, lhs, rhs);
+            case ast::BinaryOp::kNotEqual:
+                return builder_.NotEqual(ty, lhs, rhs);
+            case ast::BinaryOp::kLessThan:
+                return builder_.LessThan(ty, lhs, rhs);
+            case ast::BinaryOp::kGreaterThan:
+                return builder_.GreaterThan(ty, lhs, rhs);
+            case ast::BinaryOp::kLessThanEqual:
+                return builder_.LessThanEqual(ty, lhs, rhs);
+            case ast::BinaryOp::kGreaterThanEqual:
+                return builder_.GreaterThanEqual(ty, lhs, rhs);
+            case ast::BinaryOp::kShiftLeft:
+                return builder_.ShiftLeft(ty, lhs, rhs);
+            case ast::BinaryOp::kShiftRight:
+                return builder_.ShiftRight(ty, lhs, rhs);
+            case ast::BinaryOp::kAdd:
+                return builder_.Add(ty, lhs, rhs);
+            case ast::BinaryOp::kSubtract:
+                return builder_.Subtract(ty, lhs, rhs);
+            case ast::BinaryOp::kMultiply:
+                return builder_.Multiply(ty, lhs, rhs);
+            case ast::BinaryOp::kDivide:
+                return builder_.Divide(ty, lhs, rhs);
+            case ast::BinaryOp::kModulo:
+                return builder_.Modulo(ty, lhs, rhs);
+            case ast::BinaryOp::kLogicalAnd:
+            case ast::BinaryOp::kLogicalOr:
+                TINT_ICE(IR, diagnostics_) << "short circuit op should have already been handled";
+                return nullptr;
+            case ast::BinaryOp::kNone:
+                TINT_ICE(IR, diagnostics_) << "missing binary operand type";
+                return nullptr;
+        }
+        TINT_UNREACHABLE(IR, diagnostics_);
+        return nullptr;
+    }
+
+    struct VectorRefElementAccess {
+        ir::Value* vector = nullptr;
+        ir::Value* index = nullptr;
+    };
+
+    std::optional<VectorRefElementAccess> AsVectorRefElementAccess(const ast::Expression* expr) {
+        return AsVectorRefElementAccess(
+            program_->Sem().Get<sem::ValueExpression>(expr)->UnwrapLoad());
+    }
+
+    std::optional<VectorRefElementAccess> AsVectorRefElementAccess(
+        const sem::ValueExpression* expr) {
+        auto* access = As<sem::AccessorExpression>(expr);
+        if (!access) {
+            return std::nullopt;
+        }
+
+        auto* ref = access->Object()->Type()->As<type::Reference>();
+        if (!ref) {
+            return std::nullopt;
+        }
+
+        if (!ref->StoreType()->Is<type::Vector>()) {
+            return std::nullopt;
+        }
+
+        return tint::Switch(
+            access,
+            [&](const sem::Swizzle* s) -> std::optional<VectorRefElementAccess> {
+                if (auto vec = EmitExpression(access->Object()->Declaration())) {
+                    return VectorRefElementAccess{vec.Get(),
+                                                  builder_.Constant(u32(s->Indices()[0]))};
+                }
+                return std::nullopt;
+            },
+            [&](const sem::IndexAccessorExpression* i) -> std::optional<VectorRefElementAccess> {
+                if (auto vec = EmitExpression(access->Object()->Declaration())) {
+                    if (auto idx = EmitExpression(i->Index()->Declaration())) {
+                        return VectorRefElementAccess{vec.Get(), idx.Get()};
+                    }
+                }
+                return std::nullopt;
+            });
     }
 };
 

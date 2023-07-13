@@ -20,39 +20,19 @@
 #include <vector>
 
 #include "dawn/common/ContentLessObjectCache.h"
+#include "dawn/utils/BinarySemaphore.h"
 #include "gtest/gtest.h"
 
 namespace dawn {
 namespace {
 
-using ::testing::Test;
-using ::testing::Types;
+using utils::BinarySemaphore;
 
-class BlueprintT {
+class RefCountedT : public RefCounted {
   public:
-    explicit BlueprintT(size_t value) : mValue(value) {}
-
-    size_t GetValue() const { return mValue; }
-
-    struct HashFunc {
-        size_t operator()(const BlueprintT* x) const { return x->mValue; }
-    };
-
-    struct EqualityFunc {
-        bool operator()(const BlueprintT* l, const BlueprintT* r) const {
-            return l->mValue == r->mValue;
-        }
-    };
-
-  protected:
-    size_t mValue;
-};
-
-class RefCountedT : public BlueprintT, public RefCounted {
-  public:
-    explicit RefCountedT(size_t value) : BlueprintT(value) {}
+    explicit RefCountedT(size_t value) : mValue(value) {}
     RefCountedT(size_t value, std::function<void(RefCountedT*)> deleteFn)
-        : BlueprintT(value), mDeleteFn(deleteFn) {}
+        : mValue(value), mDeleteFn(deleteFn) {}
 
     ~RefCountedT() override { mDeleteFn(this); }
 
@@ -67,36 +47,19 @@ class RefCountedT : public BlueprintT, public RefCounted {
     };
 
   private:
+    size_t mValue;
     std::function<void(RefCountedT*)> mDeleteFn = [](RefCountedT*) -> void {};
 };
 
-template <typename Blueprint>
-class ContentLessObjectCacheTest : public Test {};
-
-class BlueprintTypeNames {
-  public:
-    template <typename T>
-    static std::string GetName(int) {
-        if (std::is_same<T, RefCountedT>()) {
-            return "RefCountedT";
-        }
-        if (std::is_same<T, BlueprintT>()) {
-            return "BlueprintT";
-        }
-    }
-};
-using BlueprintTypes = Types<RefCountedT, BlueprintT>;
-TYPED_TEST_SUITE(ContentLessObjectCacheTest, BlueprintTypes, BlueprintTypeNames);
-
 // Empty cache returns true on Empty().
-TYPED_TEST(ContentLessObjectCacheTest, Empty) {
-    ContentLessObjectCache<RefCountedT, TypeParam> cache;
+TEST(ContentLessObjectCacheTest, Empty) {
+    ContentLessObjectCache<RefCountedT> cache;
     EXPECT_TRUE(cache.Empty());
 }
 
 // Non-empty cache returns false on Empty().
-TYPED_TEST(ContentLessObjectCacheTest, NonEmpty) {
-    ContentLessObjectCache<RefCountedT, TypeParam> cache;
+TEST(ContentLessObjectCacheTest, NonEmpty) {
+    ContentLessObjectCache<RefCountedT> cache;
     Ref<RefCountedT> object =
         AcquireRef(new RefCountedT(1, [&](RefCountedT* x) { cache.Erase(x); }));
     EXPECT_TRUE(cache.Insert(object.Get()).second);
@@ -104,20 +67,20 @@ TYPED_TEST(ContentLessObjectCacheTest, NonEmpty) {
 }
 
 // Object inserted into the cache are findable.
-TYPED_TEST(ContentLessObjectCacheTest, Insert) {
-    ContentLessObjectCache<RefCountedT, TypeParam> cache;
+TEST(ContentLessObjectCacheTest, Insert) {
+    ContentLessObjectCache<RefCountedT> cache;
     Ref<RefCountedT> object =
         AcquireRef(new RefCountedT(1, [&](RefCountedT* x) { cache.Erase(x); }));
     EXPECT_TRUE(cache.Insert(object.Get()).second);
 
-    TypeParam blueprint(1);
+    RefCountedT blueprint(1);
     Ref<RefCountedT> cached = cache.Find(&blueprint);
     EXPECT_TRUE(object.Get() == cached.Get());
 }
 
 // Duplicate insert calls on different objects with the same hash only inserts the first.
-TYPED_TEST(ContentLessObjectCacheTest, InsertDuplicate) {
-    ContentLessObjectCache<RefCountedT, TypeParam> cache;
+TEST(ContentLessObjectCacheTest, InsertDuplicate) {
+    ContentLessObjectCache<RefCountedT> cache;
     Ref<RefCountedT> object1 =
         AcquireRef(new RefCountedT(1, [&](RefCountedT* x) { cache.Erase(x); }));
     EXPECT_TRUE(cache.Insert(object1.Get()).second);
@@ -125,14 +88,14 @@ TYPED_TEST(ContentLessObjectCacheTest, InsertDuplicate) {
     Ref<RefCountedT> object2 = AcquireRef(new RefCountedT(1));
     EXPECT_FALSE(cache.Insert(object2.Get()).second);
 
-    TypeParam blueprint(1);
+    RefCountedT blueprint(1);
     Ref<RefCountedT> cached = cache.Find(&blueprint);
     EXPECT_TRUE(object1.Get() == cached.Get());
 }
 
 // Erasing the only entry leaves the cache empty.
-TYPED_TEST(ContentLessObjectCacheTest, Erase) {
-    ContentLessObjectCache<RefCountedT, TypeParam> cache;
+TEST(ContentLessObjectCacheTest, Erase) {
+    ContentLessObjectCache<RefCountedT> cache;
     Ref<RefCountedT> object = AcquireRef(new RefCountedT(1));
     EXPECT_TRUE(cache.Insert(object.Get()).second);
     EXPECT_FALSE(cache.Empty());
@@ -142,8 +105,8 @@ TYPED_TEST(ContentLessObjectCacheTest, Erase) {
 }
 
 // Erasing a hash equivalent but not pointer equivalent entry is a no-op.
-TYPED_TEST(ContentLessObjectCacheTest, EraseDuplicate) {
-    ContentLessObjectCache<RefCountedT, TypeParam> cache;
+TEST(ContentLessObjectCacheTest, EraseDuplicate) {
+    ContentLessObjectCache<RefCountedT> cache;
     Ref<RefCountedT> object1 =
         AcquireRef(new RefCountedT(1, [&](RefCountedT* x) { cache.Erase(x); }));
     EXPECT_TRUE(cache.Insert(object1.Get()).second);
@@ -154,31 +117,11 @@ TYPED_TEST(ContentLessObjectCacheTest, EraseDuplicate) {
     EXPECT_FALSE(cache.Empty());
 }
 
-// Helper struct that basically acts as a semaphore to allow for flow control in multiple threads.
-struct Signal {
-    std::mutex mutex;
-    std::condition_variable cv;
-    bool signaled = false;
-
-    void Fire() {
-        std::lock_guard<std::mutex> lock(mutex);
-        signaled = true;
-        cv.notify_one();
-    }
-    void Wait() {
-        std::unique_lock<std::mutex> lock(mutex);
-        while (!signaled) {
-            cv.wait(lock);
-        }
-        signaled = false;
-    }
-};
-
 // Inserting and finding elements should respect the results from the insert call.
-TYPED_TEST(ContentLessObjectCacheTest, InsertingAndFinding) {
+TEST(ContentLessObjectCacheTest, InsertingAndFinding) {
     constexpr size_t kNumObjects = 100;
     constexpr size_t kNumThreads = 8;
-    ContentLessObjectCache<RefCountedT, TypeParam> cache;
+    ContentLessObjectCache<RefCountedT> cache;
     std::vector<Ref<RefCountedT>> objects(kNumObjects);
 
     auto f = [&] {
@@ -191,7 +134,7 @@ TYPED_TEST(ContentLessObjectCacheTest, InsertingAndFinding) {
             }
         }
         for (size_t i = 0; i < kNumObjects; i++) {
-            TypeParam blueprint(i);
+            RefCountedT blueprint(i);
             Ref<RefCountedT> cached = cache.Find(&blueprint);
             EXPECT_NE(cached.Get(), nullptr);
             EXPECT_EQ(cached.Get(), objects[i].Get());
@@ -208,13 +151,13 @@ TYPED_TEST(ContentLessObjectCacheTest, InsertingAndFinding) {
 }
 
 // Finding an element that is in the process of deletion should return nullptr.
-TYPED_TEST(ContentLessObjectCacheTest, FindDeleting) {
-    Signal signalA, signalB;
+TEST(ContentLessObjectCacheTest, FindDeleting) {
+    BinarySemaphore semA, semB;
 
-    ContentLessObjectCache<RefCountedT, TypeParam> cache;
+    ContentLessObjectCache<RefCountedT> cache;
     Ref<RefCountedT> object = AcquireRef(new RefCountedT(1, [&](RefCountedT* x) {
-        signalA.Fire();
-        signalB.Wait();
+        semA.Release();
+        semB.Acquire();
         cache.Erase(x);
     }));
     EXPECT_TRUE(cache.Insert(object.Get()).second);
@@ -223,10 +166,10 @@ TYPED_TEST(ContentLessObjectCacheTest, FindDeleting) {
     auto threadA = [&] { object = nullptr; };
     // Thread B will try to Find the entry before it is completely destroyed.
     auto threadB = [&] {
-        signalA.Wait();
-        TypeParam blueprint(1);
+        semA.Acquire();
+        RefCountedT blueprint(1);
         EXPECT_TRUE(cache.Find(&blueprint) == nullptr);
-        signalB.Fire();
+        semB.Release();
     };
 
     std::thread tA(threadA);
@@ -237,13 +180,13 @@ TYPED_TEST(ContentLessObjectCacheTest, FindDeleting) {
 
 // Inserting an element that has an entry which is in process of deletion should insert the new
 // object.
-TYPED_TEST(ContentLessObjectCacheTest, InsertDeleting) {
-    Signal signalA, signalB;
+TEST(ContentLessObjectCacheTest, InsertDeleting) {
+    BinarySemaphore semA, semB;
 
-    ContentLessObjectCache<RefCountedT, TypeParam> cache;
+    ContentLessObjectCache<RefCountedT> cache;
     Ref<RefCountedT> object1 = AcquireRef(new RefCountedT(1, [&](RefCountedT* x) {
-        signalA.Fire();
-        signalB.Wait();
+        semA.Release();
+        semB.Acquire();
         cache.Erase(x);
     }));
     EXPECT_TRUE(cache.Insert(object1.Get()).second);
@@ -256,9 +199,9 @@ TYPED_TEST(ContentLessObjectCacheTest, InsertDeleting) {
     // Thread B will try to Insert a hash equivalent entry before the original is completely
     // destroyed.
     auto threadB = [&] {
-        signalA.Wait();
+        semA.Acquire();
         EXPECT_TRUE(cache.Insert(object2.Get()).second);
-        signalB.Fire();
+        semB.Release();
     };
 
     std::thread tA(threadA);
@@ -266,7 +209,7 @@ TYPED_TEST(ContentLessObjectCacheTest, InsertDeleting) {
     tA.join();
     tB.join();
 
-    TypeParam blueprint(1);
+    RefCountedT blueprint(1);
     Ref<RefCountedT> cached = cache.Find(&blueprint);
     EXPECT_TRUE(object2.Get() == cached.Get());
 }

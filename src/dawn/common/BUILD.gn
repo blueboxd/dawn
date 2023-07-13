@@ -97,6 +97,9 @@ config("internal_config") {
   if (dawn_use_x11) {
     defines += [ "DAWN_USE_X11" ]
   }
+  if (dawn_use_windows_ui) {
+    defines += [ "DAWN_USE_WINDOWS_UI" ]
+  }
 
   if (dawn_enable_error_injection) {
     defines += [ "DAWN_ENABLE_ERROR_INJECTION" ]
@@ -223,7 +226,8 @@ dawn_generator("dawn_gpu_info_gen") {
 # This GN file is discovered by all Chromium builds, but common doesn't support
 # all of Chromium's OSes so we explicitly make the target visible only on
 # systems we know Dawn is able to compile on.
-if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android) {
+if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
+    is_ios) {
   static_library("common") {
     sources = [
       "Alloc.h",
@@ -271,6 +275,9 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android) {
       "TypeTraits.h",
       "TypedInteger.h",
       "UnderlyingType.h",
+      "WeakRef.h",
+      "WeakRefSupport.cpp",
+      "WeakRefSupport.h",
       "ityp_array.h",
       "ityp_bitset.h",
       "ityp_span.h",

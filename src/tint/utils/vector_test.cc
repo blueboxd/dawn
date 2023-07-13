@@ -151,6 +151,29 @@ TEST(TintVectorTest, Push_NoSmallArray) {
     EXPECT_TRUE(AllExternallyHeld(vec));
 }
 
+TEST(TintVectorTest, Insert) {
+    Vector<std::string, 3> vec;
+    EXPECT_THAT(vec, testing::ElementsAre());
+
+    vec.Insert(0, "six");
+    EXPECT_THAT(vec, testing::ElementsAre("six"));
+
+    vec.Insert(0, "three");
+    EXPECT_THAT(vec, testing::ElementsAre("three", "six"));
+
+    vec.Insert(1, "five");
+    EXPECT_THAT(vec, testing::ElementsAre("three", "five", "six"));
+
+    vec.Insert(0, "two");
+    EXPECT_THAT(vec, testing::ElementsAre("two", "three", "five", "six"));
+
+    vec.Insert(2, "four");
+    EXPECT_THAT(vec, testing::ElementsAre("two", "three", "four", "five", "six"));
+
+    vec.Insert(0, "one");
+    EXPECT_THAT(vec, testing::ElementsAre("one", "two", "three", "four", "five", "six"));
+}
+
 TEST(TintVectorTest, Erase_Front) {
     Vector<std::string, 3> vec;
     vec.Push("one");
@@ -1909,6 +1932,18 @@ TEST(TintVectorTest, Sort) {
     Vector vec{1, 5, 3, 4, 2};
     vec.Sort();
     EXPECT_THAT(vec, testing::ElementsAre(1, 2, 3, 4, 5));
+}
+
+TEST(TintVectorTest, ReverseOdd) {
+    Vector vec{1, 5, 3, 4, 2};
+    vec.Reverse();
+    EXPECT_THAT(vec, testing::ElementsAre(2, 4, 3, 5, 1));
+}
+
+TEST(TintVectorTest, ReverseEven) {
+    Vector vec{1, 5, 3, 4, 2, 9};
+    vec.Reverse();
+    EXPECT_THAT(vec, testing::ElementsAre(9, 2, 4, 3, 5, 1));
 }
 
 TEST(TintVectorTest, Any) {

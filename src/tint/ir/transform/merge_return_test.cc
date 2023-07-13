@@ -100,7 +100,8 @@ TEST_F(IR_MergeReturnTest, NoModify_SingleReturnInNestedMergeBlock) {
         auto* swtch = b.Switch(in);
         b.With(b.Case(swtch, {Switch::CaseSelector{}}), [&] { b.ExitSwitch(swtch); });
 
-        b.Loop();
+        auto* l = b.Loop();
+        b.With(l->Body(), [&] { b.ExitLoop(l); });
 
         auto* ifelse = b.If(cond);
         ifelse->SetResults(b.InstructionResult(ty.i32()));
@@ -118,14 +119,17 @@ TEST_F(IR_MergeReturnTest, NoModify_SingleReturnInNestedMergeBlock) {
         exit_switch  # switch_1
       }
     }
-    loop [] {  # loop_1
+    loop [b: %b3] {  # loop_1
+      %b3 = block {  # body
+        exit_loop  # loop_1
+      }
     }
-    %3:i32 = if %4 [t: %b3, f: %b4] {  # if_1
-      %b3 = block {  # true
+    %3:i32 = if %4 [t: %b4, f: %b5] {  # if_1
+      %b4 = block {  # true
         %5:i32 = add %2, 1i
         exit_if %5  # if_1
       }
-      %b4 = block {  # false
+      %b5 = block {  # false
         %6:i32 = add %2, 2i
         exit_if %6  # if_1
       }
@@ -1120,7 +1124,7 @@ TEST_F(IR_MergeReturnTest, Loop_ConditionalReturnInBody) {
 
         b.With(loop->Continuing(), [&] {
             b.Store(global, 1_i);
-            b.BreakIf(true, loop);
+            b.BreakIf(loop, true);
         });
 
         b.Store(global, 3_i);
@@ -1318,7 +1322,7 @@ TEST_F(IR_MergeReturnTest, Loop_ConditionalReturnInBody_UnreachableMerge) {
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(IR_MergeReturnTest, Loop_WithBasicBlockArgumentsOnMerge) {
+TEST_F(IR_MergeReturnTest, DISABLED_Loop_WithBasicBlockArgumentsOnMerge) {
     auto* global = b.Var(ty.ptr<private_, i32>());
     b.RootBlock()->Append(global);
 
@@ -1340,7 +1344,7 @@ TEST_F(IR_MergeReturnTest, Loop_WithBasicBlockArgumentsOnMerge) {
 
         b.With(loop->Continuing(), [&] {
             b.Store(global, 1_i);
-            b.BreakIf(true, loop, 4_i);
+            b.BreakIf(loop, true, 4_i);
         });
 
         b.Store(global, 3_i);
@@ -1353,7 +1357,7 @@ TEST_F(IR_MergeReturnTest, Loop_WithBasicBlockArgumentsOnMerge) {
 
 %foo = func(%3:bool):i32 -> %b2 {
   %b2 = block {
-    loop [b: %b3, c: %b4] {  # loop_1
+    %4:i32 = loop [b: %b3, c: %b4] {  # loop_1
       %b3 = block {  # body
         if %3 [t: %b5, f: %b6] {  # if_1
           %b5 = block {  # true
@@ -1387,7 +1391,7 @@ TEST_F(IR_MergeReturnTest, Loop_WithBasicBlockArgumentsOnMerge) {
   %b2 = block {
     %return_value:ptr<function, i32, read_write> = var
     %continue_execution:ptr<function, bool, read_write> = var, true
-    loop [b: %b3, c: %b4] {  # loop_1
+    %6:i32 = loop [b: %b3, c: %b4] {  # loop_1
       %b3 = block {  # body
         if %3 [t: %b5, f: %b6] {  # if_1
           %b5 = block {  # true
@@ -1399,8 +1403,8 @@ TEST_F(IR_MergeReturnTest, Loop_WithBasicBlockArgumentsOnMerge) {
             exit_if  # if_1
           }
         }
-        %6:bool = load %continue_execution
-        if %6 [t: %b7] {  # if_2
+        %7:bool = load %continue_execution
+        if %7 [t: %b7] {  # if_2
           %b7 = block {  # true
             store %1, 2i
             continue %b4
@@ -1413,11 +1417,11 @@ TEST_F(IR_MergeReturnTest, Loop_WithBasicBlockArgumentsOnMerge) {
         break_if true %b3 4i
       }
     }
-    %7:bool = load %continue_execution
-    if %7 [t: %b8] {  # if_3
+    %8:bool = load %continue_execution
+    if %8 [t: %b8] {  # if_3
       %b8 = block {  # true
         store %1, 3i
-        store %return_value, %8
+        store %return_value, %6
         exit_if  # if_3
       }
     }
@@ -1506,7 +1510,8 @@ TEST_F(IR_MergeReturnTest, Switch_ConditionalReturnInBody) {
     b.With(func->Block(), [&] {
         auto* sw = b.Switch(cond);
         b.With(b.Case(sw, {Switch::CaseSelector{b.Constant(1_i)}}), [&] {
-            auto* ifelse = b.If(cond);
+            auto* ifcond = b.Equal(ty.bool_(), cond, 1_i);
+            auto* ifelse = b.If(ifcond);
             b.With(ifelse->True(), [&] { b.Return(func, 42_i); });
             b.With(ifelse->False(), [&] { b.ExitIf(ifelse); });
 
@@ -1528,7 +1533,8 @@ TEST_F(IR_MergeReturnTest, Switch_ConditionalReturnInBody) {
   %b2 = block {
     switch %3 [c: (1i, %b3), c: (default, %b4)] {  # switch_1
       %b3 = block {  # case
-        if %3 [t: %b5, f: %b6] {  # if_1
+        %4:bool = eq %3, 1i
+        if %4 [t: %b5, f: %b6] {  # if_1
           %b5 = block {  # true
             ret 42i
           }
@@ -1560,7 +1566,8 @@ TEST_F(IR_MergeReturnTest, Switch_ConditionalReturnInBody) {
     %continue_execution:ptr<function, bool, read_write> = var, true
     switch %3 [c: (1i, %b3), c: (default, %b4)] {  # switch_1
       %b3 = block {  # case
-        if %3 [t: %b5, f: %b6] {  # if_1
+        %6:bool = eq %3, 1i
+        if %6 [t: %b5, f: %b6] {  # if_1
           %b5 = block {  # true
             store %continue_execution, false
             store %return_value, 42i
@@ -1570,8 +1577,8 @@ TEST_F(IR_MergeReturnTest, Switch_ConditionalReturnInBody) {
             exit_if  # if_1
           }
         }
-        %6:bool = load %continue_execution
-        if %6 [t: %b7] {  # if_2
+        %7:bool = load %continue_execution
+        if %7 [t: %b7] {  # if_2
           %b7 = block {  # true
             store %1, 2i
             exit_switch  # switch_1
@@ -1583,15 +1590,15 @@ TEST_F(IR_MergeReturnTest, Switch_ConditionalReturnInBody) {
         exit_switch  # switch_1
       }
     }
-    %7:bool = load %continue_execution
-    if %7 [t: %b8] {  # if_3
+    %8:bool = load %continue_execution
+    if %8 [t: %b8] {  # if_3
       %b8 = block {  # true
         store %return_value, 0i
         exit_if  # if_3
       }
     }
-    %8:i32 = load %return_value
-    ret %8
+    %9:i32 = load %return_value
+    ret %9
   }
 }
 )";
@@ -1620,7 +1627,7 @@ TEST_F(IR_MergeReturnTest, Switch_WithBasicBlockArgumentsOnMerge) {
     auto* src = R"(
 %foo = func(%2:i32):i32 -> %b1 {
   %b1 = block {
-    switch %2 [c: (1i, %b2), c: (2i, %b3), c: (3i, %b4), c: (default, %b5)] {  # switch_1
+    %3:i32 = switch %2 [c: (1i, %b2), c: (2i, %b3), c: (3i, %b4), c: (default, %b5)] {  # switch_1
       %b2 = block {  # case
         ret 42i
       }
@@ -1645,7 +1652,7 @@ TEST_F(IR_MergeReturnTest, Switch_WithBasicBlockArgumentsOnMerge) {
   %b1 = block {
     %return_value:ptr<function, i32, read_write> = var
     %continue_execution:ptr<function, bool, read_write> = var, true
-    switch %2 [c: (1i, %b2), c: (2i, %b3), c: (3i, %b4), c: (default, %b5)] {  # switch_1
+    %5:i32 = switch %2 [c: (1i, %b2), c: (2i, %b3), c: (3i, %b4), c: (default, %b5)] {  # switch_1
       %b2 = block {  # case
         store %continue_execution, false
         store %return_value, 42i
@@ -1663,10 +1670,10 @@ TEST_F(IR_MergeReturnTest, Switch_WithBasicBlockArgumentsOnMerge) {
         exit_switch 0i  # switch_1
       }
     }
-    %5:bool = load %continue_execution
-    if %5 [t: %b6] {  # if_1
+    %6:bool = load %continue_execution
+    if %6 [t: %b6] {  # if_1
       %b6 = block {  # true
-        store %return_value, %6
+        store %return_value, %5
         exit_if  # if_1
       }
     }

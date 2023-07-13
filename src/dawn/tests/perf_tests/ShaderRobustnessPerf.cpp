@@ -406,9 +406,6 @@ class ShaderRobustnessPerf : public DawnPerfTestWithParams<ShaderRobustnessParam
 void ShaderRobustnessPerf::SetUp() {
     DawnPerfTestWithParams<ShaderRobustnessParams>::SetUp();
 
-    // TODO(crbug.com/dawn/786): D3D12_Microsoft_Basic_Render_Driver_CPU
-    DAWN_SUPPRESS_TEST_IF(IsD3D12() && IsWARP());
-
     const size_t dataASize = mDimAOuter * mDimInner;
     std::vector<float> dataA(dataASize);
     uint64_t byteASize = sizeof(float) * dataA.size();
@@ -477,6 +474,9 @@ void ShaderRobustnessPerf::Step() {
     wgpu::CommandBuffer commands;
     {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        if (SupportsTimestampQuery()) {
+            RecordBeginTimestamp(encoder);
+        }
         wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
         pass.SetPipeline(mPipeline);
         pass.SetBindGroup(0, mBindGroup);
@@ -485,11 +485,18 @@ void ShaderRobustnessPerf::Step() {
                                     ceil(static_cast<float>(mDimAOuter) / float{kTileSize}), 1);
         }
         pass.End();
+        if (SupportsTimestampQuery()) {
+            RecordEndTimestampAndResolveQuerySet(encoder);
+        }
 
         commands = encoder.Finish();
     }
 
     queue.Submit(1, &commands);
+
+    if (SupportsTimestampQuery()) {
+        ComputeGPUElapsedTime();
+    }
 }
 
 TEST_P(ShaderRobustnessPerf, Run) {

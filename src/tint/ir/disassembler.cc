@@ -34,14 +34,19 @@
 #include "src/tint/ir/exit_switch.h"
 #include "src/tint/ir/if.h"
 #include "src/tint/ir/instruction_result.h"
+#include "src/tint/ir/intrinsic_call.h"
+#include "src/tint/ir/let.h"
 #include "src/tint/ir/load.h"
+#include "src/tint/ir/load_vector_element.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/multi_in_block.h"
 #include "src/tint/ir/next_iteration.h"
 #include "src/tint/ir/return.h"
 #include "src/tint/ir/store.h"
+#include "src/tint/ir/store_vector_element.h"
 #include "src/tint/ir/switch.h"
 #include "src/tint/ir/swizzle.h"
+#include "src/tint/ir/terminate_invocation.h"
 #include "src/tint/ir/unreachable.h"
 #include "src/tint/ir/user_call.h"
 #include "src/tint/ir/var.h"
@@ -99,18 +104,27 @@ std::string_view Disassembler::IdOf(Value* value) {
 }
 
 std::string_view Disassembler::NameOf(If* inst) {
-    TINT_ASSERT(IR, inst);
+    if (!inst) {
+        return "undef";
+    }
+
     return if_names_.GetOrCreate(inst, [&] { return "if_" + std::to_string(if_names_.Count()); });
 }
 
 std::string_view Disassembler::NameOf(Loop* inst) {
-    TINT_ASSERT(IR, inst);
+    if (!inst) {
+        return "undef";
+    }
+
     return loop_names_.GetOrCreate(inst,
                                    [&] { return "loop_" + std::to_string(loop_names_.Count()); });
 }
 
 std::string_view Disassembler::NameOf(Switch* inst) {
-    TINT_ASSERT(IR, inst);
+    if (!inst) {
+        return "undef";
+    }
+
     return switch_names_.GetOrCreate(
         inst, [&] { return "switch_" + std::to_string(switch_names_.Count()); });
 }
@@ -304,6 +318,11 @@ void Disassembler::EmitValueWithType(Instruction* val) {
 }
 
 void Disassembler::EmitValueWithType(Value* val) {
+    if (!val) {
+        out_ << "undef";
+        return;
+    }
+
     EmitValue(val);
     out_ << ":" << val->Type()->FriendlyName();
 }
@@ -373,6 +392,13 @@ void Disassembler::EmitInstructionName(std::string_view name, Instruction* inst)
 }
 
 void Disassembler::EmitInstruction(Instruction* inst) {
+    if (!inst->Alive()) {
+        SourceMarker sm(this);
+        out_ << "<destroyed " << inst->TypeInfo().name << " " << utils::ToString(inst) << ">";
+        sm.Store(inst);
+        EmitLine();
+        return;
+    }
     tint::Switch(
         inst,                               //
         [&](Switch* s) { EmitSwitch(s); },  //
@@ -385,7 +411,7 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             out_ << " = ";
             EmitInstructionName("bitcast", b);
             out_ << " ";
-            EmitArgs(b);
+            EmitOperandList(b);
             EmitLine();
         },
         [&](Discard* d) {
@@ -397,7 +423,7 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             out_ << " = ";
             EmitInstructionName(builtin::str(b->Func()), b);
             out_ << " ";
-            EmitArgs(b);
+            EmitOperandList(b);
             EmitLine();
         },
         [&](Construct* c) {
@@ -405,7 +431,7 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             out_ << " = ";
             EmitInstructionName("construct", c);
             out_ << " ";
-            EmitArgs(c);
+            EmitOperandList(c);
             EmitLine();
         },
         [&](Convert* c) {
@@ -413,7 +439,15 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             out_ << " = ";
             EmitInstructionName("convert", c);
             out_ << " ";
-            EmitArgs(c);
+            EmitOperandList(c);
+            EmitLine();
+        },
+        [&](IntrinsicCall* i) {
+            EmitValueWithType(i);
+            out_ << " = ";
+            EmitInstructionName(utils::ToString(i->Kind()), i);
+            out_ << " ";
+            EmitOperandList(i);
             EmitLine();
         },
         [&](Load* l) {
@@ -432,6 +466,22 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             EmitValue(s->From());
             EmitLine();
         },
+        [&](LoadVectorElement* l) {
+            EmitValueWithType(l);
+            out_ << " = ";
+            EmitInstructionName("load_vector_element", l);
+            out_ << " ";
+            EmitOperandList(l);
+            EmitLine();
+        },
+        [&](StoreVectorElement* s) {
+            EmitInstructionName("store_vector_element", s);
+            out_ << " ";
+            EmitValue(s->To());
+            out_ << " ";
+            EmitOperandList(s);
+            EmitLine();
+        },
         [&](UserCall* uc) {
             EmitValueWithType(uc);
             out_ << " = ";
@@ -440,7 +490,7 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             if (!uc->Args().IsEmpty()) {
                 out_ << ", ";
             }
-            EmitArgs(uc);
+            EmitOperandList(uc, UserCall::kArgsOperandOffset);
             EmitLine();
         },
         [&](Var* v) {
@@ -449,7 +499,7 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             EmitInstructionName("var", v);
             if (v->Initializer()) {
                 out_ << ", ";
-                EmitOperand(v, v->Initializer(), Var::kInitializerOperandOffset);
+                EmitOperand(v, Var::kInitializerOperandOffset);
             }
             if (v->BindingPoint().has_value()) {
                 out_ << " ";
@@ -457,14 +507,20 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             }
             EmitLine();
         },
+        [&](Let* l) {
+            EmitValueWithType(l);
+            out_ << " = ";
+            EmitInstructionName("let", l);
+            out_ << " ";
+            EmitOperandList(l);
+            EmitLine();
+        },
         [&](Access* a) {
             EmitValueWithType(a);
             out_ << " = ";
             EmitInstructionName("access", a);
             out_ << " ";
-            EmitOperand(a, a->Object(), Access::kObjectOperandOffset);
-            out_ << ", ";
-            EmitOperandList(a, a->Indices(), Access::kIndicesOperandOffset);
+            EmitOperandList(a);
             EmitLine();
         },
         [&](Swizzle* s) {
@@ -496,21 +552,18 @@ void Disassembler::EmitInstruction(Instruction* inst) {
         [&](Default) { out_ << "Unknown instruction: " << inst->TypeInfo().name; });
 }
 
-void Disassembler::EmitOperand(Instruction* inst, Value* val, size_t index) {
+void Disassembler::EmitOperand(Instruction* inst, size_t index) {
     SourceMarker condMarker(this);
-    EmitValue(val);
+    EmitValue(inst->Operands()[index]);
     condMarker.Store(Usage{inst, static_cast<uint32_t>(index)});
 }
 
-void Disassembler::EmitOperandList(Instruction* inst,
-                                   utils::Slice<Value* const> operands,
-                                   size_t start_index) {
-    size_t index = start_index;
-    for (auto* operand : operands) {
-        if (index != start_index) {
+void Disassembler::EmitOperandList(Instruction* inst, size_t start_index /* = 0 */) {
+    for (size_t i = start_index, n = inst->Operands().Length(); i < n; i++) {
+        if (i != start_index) {
             out_ << ", ";
         }
-        EmitOperand(inst, operand, index++);
+        EmitOperand(inst, i);
     }
 }
 
@@ -529,20 +582,13 @@ void Disassembler::EmitIf(If* if_) {
         out_ << " = ";
     }
     out_ << "if ";
-    EmitOperand(if_, if_->Condition(), If::kConditionOperandOffset);
+    EmitOperand(if_, If::kConditionOperandOffset);
 
-    bool has_true = !if_->True()->IsEmpty();
     bool has_false = !if_->False()->IsEmpty();
 
-    out_ << " [";
-    if (has_true) {
-        out_ << "t: %b" << IdOf(if_->True());
-    }
+    out_ << " [t: %b" << IdOf(if_->True());
     if (has_false) {
-        if (has_true) {
-            out_ << ", ";
-        }
-        out_ << "f: %b" << IdOf(if_->False());
+        out_ << ", f: %b" << IdOf(if_->False());
     }
     out_ << "]";
     sm.Store(if_);
@@ -550,10 +596,12 @@ void Disassembler::EmitIf(If* if_) {
     out_ << " {  # " << NameOf(if_);
     EmitLine();
 
-    if (has_true) {
+    // True block is assumed to have instructions
+    {
         ScopedIndent si(indent_size_);
         EmitBlock(if_->True(), "true");
     }
+
     if (has_false) {
         ScopedIndent si(indent_size_);
         EmitBlock(if_->False(), "false");
@@ -577,14 +625,24 @@ void Disassembler::EmitLoop(Loop* l) {
     if (!l->Initializer()->IsEmpty()) {
         parts.Push("i: %b" + std::to_string(IdOf(l->Initializer())));
     }
-    if (!l->Body()->IsEmpty()) {
-        parts.Push("b: %b" + std::to_string(IdOf(l->Body())));
-    }
+    parts.Push("b: %b" + std::to_string(IdOf(l->Body())));
 
     if (!l->Continuing()->IsEmpty()) {
         parts.Push("c: %b" + std::to_string(IdOf(l->Continuing())));
     }
     SourceMarker sm(this);
+    if (l->HasResults()) {
+        auto res = l->Results();
+        for (size_t i = 0; i < res.Length(); ++i) {
+            if (i > 0) {
+                out_ << ", ";
+            }
+            SourceMarker rs(this);
+            EmitValueWithType(res[i]);
+            rs.StoreResult(Usage{l, i});
+        }
+        out_ << " = ";
+    }
     out_ << "loop [" << utils::Join(parts, ", ") << "]";
     sm.Store(l);
 
@@ -596,7 +654,8 @@ void Disassembler::EmitLoop(Loop* l) {
         EmitBlock(l->Initializer(), "initializer");
     }
 
-    if (!l->Body()->IsEmpty()) {
+    // Loop is assumed to always have a body
+    {
         ScopedIndent si(indent_size_);
         EmitBlock(l->Body(), "body");
     }
@@ -612,6 +671,19 @@ void Disassembler::EmitLoop(Loop* l) {
 }
 
 void Disassembler::EmitSwitch(Switch* s) {
+    SourceMarker sm(this);
+    if (s->HasResults()) {
+        auto res = s->Results();
+        for (size_t i = 0; i < res.Length(); ++i) {
+            if (i > 0) {
+                out_ << ", ";
+            }
+            SourceMarker rs(this);
+            EmitValueWithType(res[i]);
+            rs.StoreResult(Usage{s, i});
+        }
+        out_ << " = ";
+    }
     out_ << "switch ";
     EmitValue(s->Condition());
     out_ << " [";
@@ -633,7 +705,10 @@ void Disassembler::EmitSwitch(Switch* s) {
         }
         out_ << ", %b" << IdOf(c.Block()) << ")";
     }
-    out_ << "] {  # " << NameOf(s);
+    out_ << "]";
+    sm.Store(s);
+
+    out_ << " {  # " << NameOf(s);
     EmitLine();
 
     for (auto& c : s->Cases()) {
@@ -648,26 +723,46 @@ void Disassembler::EmitSwitch(Switch* s) {
 
 void Disassembler::EmitTerminator(Terminator* b) {
     SourceMarker sm(this);
+    size_t args_offset = 0;
     tint::Switch(
-        b,                                                                                        //
-        [&](ir::Return*) { out_ << "ret"; },                                                      //
-        [&](ir::Continue* cont) { out_ << "continue %b" << IdOf(cont->Loop()->Continuing()); },   //
-        [&](ir::ExitIf*) { out_ << "exit_if"; },                                                  //
-        [&](ir::ExitSwitch*) { out_ << "exit_switch"; },                                          //
-        [&](ir::ExitLoop*) { out_ << "exit_loop"; },                                              //
-        [&](ir::NextIteration* ni) { out_ << "next_iteration %b" << IdOf(ni->Loop()->Body()); },  //
-        [&](ir::Unreachable*) { out_ << "unreachable"; },                                         //
+        b,
+        [&](ir::Return*) {
+            out_ << "ret";
+            args_offset = ir::Return::kArgOperandOffset;
+        },
+        [&](ir::Continue* cont) {
+            out_ << "continue %b" << IdOf(cont->Loop()->Continuing());
+            args_offset = ir::Continue::kArgsOperandOffset;
+        },
+        [&](ir::ExitIf*) {
+            out_ << "exit_if";
+            args_offset = ir::ExitIf::kArgsOperandOffset;
+        },
+        [&](ir::ExitSwitch*) {
+            out_ << "exit_switch";
+            args_offset = ir::ExitSwitch::kArgsOperandOffset;
+        },
+        [&](ir::ExitLoop*) {
+            out_ << "exit_loop";
+            args_offset = ir::ExitLoop::kArgsOperandOffset;
+        },
+        [&](ir::NextIteration* ni) {
+            out_ << "next_iteration %b" << IdOf(ni->Loop()->Body());
+            args_offset = ir::NextIteration::kArgsOperandOffset;
+        },
+        [&](ir::Unreachable*) { out_ << "unreachable"; },
         [&](ir::BreakIf* bi) {
             out_ << "break_if ";
             EmitValue(bi->Condition());
             out_ << " %b" << IdOf(bi->Loop()->Body());
+            args_offset = ir::BreakIf::kArgsOperandOffset;
         },
-        [&](Unreachable*) { out_ << "unreachable"; },
+        [&](ir::TerminateInvocation*) { out_ << "terminate_invocation"; },
         [&](Default) { out_ << "unknown terminator " << b->TypeInfo().name; });
 
     if (!b->Args().IsEmpty()) {
         out_ << " ";
-        EmitValueList(b->Args());
+        EmitOperandList(b, args_offset);
     }
     sm.Store(b);
 
@@ -677,20 +772,17 @@ void Disassembler::EmitTerminator(Terminator* b) {
         [&](ir::ExitSwitch* e) { out_ << "  # " << NameOf(e->Switch()); },  //
         [&](ir::ExitLoop* e) { out_ << "  # " << NameOf(e->Loop()); }       //
     );
+
     EmitLine();
 }
 
 void Disassembler::EmitValueList(utils::Slice<Value* const> values) {
-    for (auto* v : values) {
-        if (v != values.Front()) {
+    for (size_t i = 0, n = values.Length(); i < n; i++) {
+        if (i > 0) {
             out_ << ", ";
         }
-        EmitValue(v);
+        EmitValue(values[i]);
     }
-}
-
-void Disassembler::EmitArgs(Call* call) {
-    EmitValueList(call->Args());
 }
 
 void Disassembler::EmitBinary(Binary* b) {
@@ -748,9 +840,7 @@ void Disassembler::EmitBinary(Binary* b) {
             break;
     }
     out_ << " ";
-    EmitOperand(b, b->LHS(), Binary::kLhsOperandOffset);
-    out_ << ", ";
-    EmitOperand(b, b->RHS(), Binary::kRhsOperandOffset);
+    EmitOperandList(b);
 
     sm.Store(b);
     EmitLine();
@@ -769,7 +859,7 @@ void Disassembler::EmitUnary(Unary* u) {
             break;
     }
     out_ << " ";
-    EmitOperand(u, u->Val(), Unary::kValueOperandOffset);
+    EmitOperandList(u);
 
     sm.Store(u);
     EmitLine();

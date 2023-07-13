@@ -23,9 +23,11 @@
 #include <utility>
 #include <vector>
 
+#include "src/tint/debug.h"
 #include "src/tint/utils/bitcast.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/slice.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::utils {
 
@@ -61,7 +63,11 @@ namespace tint::utils {
 template <typename T, size_t N>
 class Vector {
   public:
-    /// Type of `T`.
+    /// Alias to `T*`.
+    using iterator = T*;
+    /// Alias to `const T*`.
+    using const_iterator = const T*;
+    /// Alias to `T`.
     using value_type = T;
     /// Value of `N`
     static constexpr size_t static_length = N;
@@ -209,12 +215,18 @@ class Vector {
     /// Index operator
     /// @param i the element index. Must be less than `len`.
     /// @returns a reference to the i'th element.
-    T& operator[](size_t i) { return impl_.slice[i]; }
+    T& operator[](size_t i) {
+        TINT_ASSERT(Utils, i < Length());
+        return impl_.slice[i];
+    }
 
     /// Index operator
     /// @param i the element index. Must be less than `len`.
     /// @returns a reference to the i'th element.
-    const T& operator[](size_t i) const { return impl_.slice[i]; }
+    const T& operator[](size_t i) const {
+        TINT_ASSERT(Utils, i < Length());
+        return impl_.slice[i];
+    }
 
     /// @return the number of elements in the vector
     size_t Length() const { return impl_.slice.len; }
@@ -313,16 +325,37 @@ class Vector {
     /// Removes and returns the last element from the vector.
     /// @returns the popped element
     T Pop() {
+        TINT_ASSERT(Utils, !IsEmpty());
         auto& el = impl_.slice.data[--impl_.slice.len];
         auto val = std::move(el);
         el.~T();
         return val;
     }
 
+    /// Inserts the element @p element before the element at @p before
+    /// @param before the index of the element to insert before
+    /// @param element the element to insert
+    template <typename EL>
+    void Insert(size_t before, EL&& element) {
+        TINT_ASSERT(Utils, before <= Length());
+        size_t n = Length();
+        Resize(Length() + 1);
+        // Shuffle
+        for (size_t i = n; i > before; i--) {
+            auto& src = impl_.slice.data[i - 1];
+            auto& dst = impl_.slice.data[i];
+            dst = std::move(src);
+        }
+        // Insert
+        impl_.slice.data[before] = std::forward<EL>(element);
+    }
+
     /// Removes @p count elements from the vector
     /// @param start the index of the first element to remove
     /// @param count the number of elements to remove
     void Erase(size_t start, size_t count = 1) {
+        TINT_ASSERT(Utils, start < Length());
+        TINT_ASSERT(Utils, (start + count) <= Length());
         // Shuffle
         for (size_t i = start + count; i < impl_.slice.len; i++) {
             auto& src = impl_.slice.data[i];
@@ -347,6 +380,16 @@ class Vector {
     /// Sort sorts the vector in-place using `T::operator<()`
     void Sort() {
         Sort([](auto& a, auto& b) { return a < b; });
+    }
+
+    /// Reverse reversed the vector in-place
+    void Reverse() {
+        size_t n = Length();
+        size_t mid = n / 2;
+        auto& self = *this;
+        for (size_t i = 0; i < mid; i++) {
+            std::swap(self[i], self[n - i - 1]);
+        }
     }
 
     /// @returns true if the predicate function returns true for any of the elements of the vector
@@ -781,6 +824,44 @@ Vector<T, N> ToVector(const std::vector<T>& vector) {
         out.Push(el);
     }
     return out;
+}
+
+/// Prints the vector @p vec to @p o
+/// @param o the stream to write to
+/// @param vec the vector
+/// @return the stream so calls can be chained
+template <typename T, size_t N>
+inline StringStream& operator<<(StringStream& o, const Vector<T, N>& vec) {
+    o << "[";
+    bool first = true;
+    for (auto& el : vec) {
+        if (!first) {
+            o << ", ";
+        }
+        first = false;
+        o << el;
+    }
+    o << "]";
+    return o;
+}
+
+/// Prints the vector @p vec to @p o
+/// @param o the stream to write to
+/// @param vec the vector reference
+/// @return the stream so calls can be chained
+template <typename T>
+inline StringStream& operator<<(StringStream& o, VectorRef<T> vec) {
+    o << "[";
+    bool first = true;
+    for (auto& el : vec) {
+        if (!first) {
+            o << ", ";
+        }
+        first = false;
+        o << el;
+    }
+    o << "]";
+    return o;
 }
 
 namespace detail {

@@ -21,7 +21,6 @@ vars = {
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
   'dawn_ninja_version': 'version:2@1.11.1.chromium.6',
   'dawn_go_version': 'version:2@1.18.4',
-  'dawn_build_dxc': True,
 
   'node_darwin_arm64_sha': '31859fc1fa0994a95f44f09c367d6ff63607cfde',
   'node_darwin_x64_sha': '16dfd094763b71988933a31735f9dea966f9abd6',
@@ -137,17 +136,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@ed391dae33e6a511e8c669e7e0e7abcfa6d0ae78',
+    'url': '{chromium_git}/angle/angle@0312c76fcfd0d1b815c3437fe4a7749ce0754cfe',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@47b5898a4fa760bc3c61e0f30107d83c0afa766b',
+    'url': '{swiftshader_git}/SwiftShader@151fa797ee3e2d5595ab74b7b1167fa5ae5aebb4',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@aa464922ff7777fe07f3f1e72aaaa7f22e060848',
+    'url': '{chromium_git}/vulkan-deps@df22aa218f6a30f857c705374f06cbe539ff2270',
     'condition': 'dawn_standalone',
   },
 
@@ -163,17 +162,16 @@ deps = {
 
   'third_party/dxc': {
     'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@5e080a772910f147cc447fc34e8eb489f0761144',
-    'condition': 'dawn_build_dxc',
   },
   'third_party/dxheaders': {
     # The non-Windows build of DXC depends on DirectX-Headers, and at a specific commit (not ToT)
     'url': '{chromium_git}/external/github.com/microsoft/DirectX-Headers@980971e835876dc0cde415e8f9bc646e64667bf7',
-    'condition': 'dawn_build_dxc and host_os != "win"',
+    'condition': 'host_os != "win"',
   },
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@7ea4404fa9d9b526f6e6675dbbd7618f9b14e756',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@82a512494491d0e22a166d5291c86a4bf5a27172',
     'condition': 'build_with_chromium',
   },
 

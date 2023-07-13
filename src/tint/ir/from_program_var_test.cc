@@ -21,7 +21,8 @@
 namespace tint::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 using IR_FromProgramVarTest = ProgramTestHelper;
 
@@ -116,6 +117,250 @@ TEST_F(IR_FromProgramVarTest, Emit_Var_Init_NonConstant) {
     %3:u32 = load %a
     %4:u32 = add %3, 2u
     %b:ptr<function, u32, read_write> = var, %4
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_FromProgramVarTest, Emit_Var_Assign_42i) {
+    WrapInFunction(Var("a", ty.i32(), builtin::AddressSpace::kFunction),  //
+                   Assign("a", 42_i));
+
+    auto m = Build();
+    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+
+    EXPECT_EQ(Disassemble(m.Get()),
+              R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
+  %b1 = block {
+    %a:ptr<function, i32, read_write> = var
+    store %a, 42i
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_FromProgramVarTest, Emit_Var_Assign_ArrayOfArray_EvalOrder) {
+    Func("f", utils::Vector{Param("p", ty.i32())}, ty.i32(), utils::Vector{Return("p")});
+
+    auto* lhs =                                 //
+        IndexAccessor(                          //
+            IndexAccessor(                      //
+                IndexAccessor("a",              //
+                              Call("f", 1_i)),  //
+                Call("f", 2_i)),                //
+            Call("f", 3_i));
+
+    auto* rhs =                                 //
+        IndexAccessor(                          //
+            IndexAccessor(                      //
+                IndexAccessor("a",              //
+                              Call("f", 4_i)),  //
+                Call("f", 5_i)),                //
+            Call("f", 6_i));
+
+    WrapInFunction(
+        Var("a", ty.array<array<array<i32, 5>, 5>, 5>(), builtin::AddressSpace::kFunction),  //
+        Assign(lhs, rhs));
+
+    auto m = Build();
+    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+
+    EXPECT_EQ(Disassemble(m.Get()),
+              R"(%f = func(%p:i32):i32 -> %b1 {
+  %b1 = block {
+    ret %p
+  }
+}
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
+  %b2 = block {
+    %a:ptr<function, array<array<array<i32, 5>, 5>, 5>, read_write> = var
+    %5:i32 = call %f, 1i
+    %6:i32 = call %f, 2i
+    %7:i32 = call %f, 3i
+    %8:ptr<function, i32, read_write> = access %a, %5, %6, %7
+    %9:i32 = call %f, 4i
+    %10:i32 = call %f, 5i
+    %11:i32 = call %f, 6i
+    %12:ptr<function, i32, read_write> = access %a, %9, %10, %11
+    %13:i32 = load %12
+    store %8, %13
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_FromProgramVarTest, Emit_Var_Assign_ArrayOfMatrix_EvalOrder) {
+    Func("f", utils::Vector{Param("p", ty.i32())}, ty.i32(), utils::Vector{Return("p")});
+
+    auto* lhs =                                 //
+        IndexAccessor(                          //
+            IndexAccessor(                      //
+                IndexAccessor("a",              //
+                              Call("f", 1_i)),  //
+                Call("f", 2_i)),                //
+            Call("f", 3_i));
+
+    auto* rhs =                                 //
+        IndexAccessor(                          //
+            IndexAccessor(                      //
+                IndexAccessor("a",              //
+                              Call("f", 4_i)),  //
+                Call("f", 5_i)),                //
+            Call("f", 6_i));
+
+    WrapInFunction(Var("a", ty.array<mat3x4<f32>, 5>(), builtin::AddressSpace::kFunction),  //
+                   Assign(lhs, rhs));
+
+    auto m = Build();
+    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+
+    EXPECT_EQ(Disassemble(m.Get()),
+              R"(%f = func(%p:i32):i32 -> %b1 {
+  %b1 = block {
+    ret %p
+  }
+}
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
+  %b2 = block {
+    %a:ptr<function, array<mat3x4<f32>, 5>, read_write> = var
+    %5:i32 = call %f, 1i
+    %6:i32 = call %f, 2i
+    %7:ptr<function, vec4<f32>, read_write> = access %a, %5, %6
+    %8:i32 = call %f, 3i
+    %9:i32 = call %f, 4i
+    %10:i32 = call %f, 5i
+    %11:ptr<function, vec4<f32>, read_write> = access %a, %9, %10
+    %12:i32 = call %f, 6i
+    %13:f32 = load_vector_element %11, %12
+    store_vector_element %7 %7, %8, %13
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_FromProgramVarTest, Emit_Var_CompoundAssign_42i) {
+    WrapInFunction(Var("a", ty.i32(), builtin::AddressSpace::kFunction),  //
+                   CompoundAssign("a", 42_i, ast::BinaryOp::kAdd));
+
+    auto m = Build();
+    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+
+    EXPECT_EQ(Disassemble(m.Get()),
+              R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
+  %b1 = block {
+    %a:ptr<function, i32, read_write> = var
+    %3:i32 = load %a
+    %4:i32 = add %3, 42i
+    store %a, %4
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_FromProgramVarTest, Emit_Var_CompoundAssign_ArrayOfArray_EvalOrder) {
+    Func("f", utils::Vector{Param("p", ty.i32())}, ty.i32(), utils::Vector{Return("p")});
+
+    auto* lhs =                                 //
+        IndexAccessor(                          //
+            IndexAccessor(                      //
+                IndexAccessor("a",              //
+                              Call("f", 1_i)),  //
+                Call("f", 2_i)),                //
+            Call("f", 3_i));
+
+    auto* rhs =                                 //
+        IndexAccessor(                          //
+            IndexAccessor(                      //
+                IndexAccessor("a",              //
+                              Call("f", 4_i)),  //
+                Call("f", 5_i)),                //
+            Call("f", 6_i));
+
+    WrapInFunction(
+        Var("a", ty.array<array<array<i32, 5>, 5>, 5>(), builtin::AddressSpace::kFunction),  //
+        CompoundAssign(lhs, rhs, ast::BinaryOp::kAdd));
+
+    auto m = Build();
+    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+
+    EXPECT_EQ(Disassemble(m.Get()),
+              R"(%f = func(%p:i32):i32 -> %b1 {
+  %b1 = block {
+    ret %p
+  }
+}
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
+  %b2 = block {
+    %a:ptr<function, array<array<array<i32, 5>, 5>, 5>, read_write> = var
+    %5:i32 = call %f, 1i
+    %6:i32 = call %f, 2i
+    %7:i32 = call %f, 3i
+    %8:ptr<function, i32, read_write> = access %a, %5, %6, %7
+    %9:i32 = call %f, 4i
+    %10:i32 = call %f, 5i
+    %11:i32 = call %f, 6i
+    %12:ptr<function, i32, read_write> = access %a, %9, %10, %11
+    %13:i32 = load %12
+    %14:i32 = load %8
+    %15:i32 = add %14, %13
+    store %8, %15
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_FromProgramVarTest, Emit_Var_CompoundAssign_ArrayOfMatrix_EvalOrder) {
+    Func("f", utils::Vector{Param("p", ty.i32())}, ty.i32(), utils::Vector{Return("p")});
+
+    auto* lhs =                                 //
+        IndexAccessor(                          //
+            IndexAccessor(                      //
+                IndexAccessor("a",              //
+                              Call("f", 1_i)),  //
+                Call("f", 2_i)),                //
+            Call("f", 3_i));
+
+    auto* rhs =                                 //
+        IndexAccessor(                          //
+            IndexAccessor(                      //
+                IndexAccessor("a",              //
+                              Call("f", 4_i)),  //
+                Call("f", 5_i)),                //
+            Call("f", 6_i));
+
+    WrapInFunction(Var("a", ty.array<mat3x4<f32>, 5>(), builtin::AddressSpace::kFunction),  //
+                   CompoundAssign(lhs, rhs, ast::BinaryOp::kAdd));
+
+    auto m = Build();
+    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+
+    EXPECT_EQ(Disassemble(m.Get()),
+              R"(%f = func(%p:i32):i32 -> %b1 {
+  %b1 = block {
+    ret %p
+  }
+}
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
+  %b2 = block {
+    %a:ptr<function, array<mat3x4<f32>, 5>, read_write> = var
+    %5:i32 = call %f, 1i
+    %6:i32 = call %f, 2i
+    %7:ptr<function, vec4<f32>, read_write> = access %a, %5, %6
+    %8:i32 = call %f, 3i
+    %9:i32 = call %f, 4i
+    %10:i32 = call %f, 5i
+    %11:ptr<function, vec4<f32>, read_write> = access %a, %9, %10
+    %12:i32 = call %f, 6i
+    %13:f32 = load_vector_element %11, %12
+    %14:f32 = load_vector_element %7, %8
+    %15:f32 = add %14, %13
+    store_vector_element %7 %7, %8, %15
     ret
   }
 }

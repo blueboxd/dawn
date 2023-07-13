@@ -18,27 +18,39 @@
 #include <tuple>
 #include <utility>
 
+#include "src/tint/constant/splat.h"
 #include "src/tint/ir/access.h"
 #include "src/tint/ir/binary.h"
+#include "src/tint/ir/bitcast.h"
 #include "src/tint/ir/block.h"
+#include "src/tint/ir/break_if.h"
+#include "src/tint/ir/builtin_call.h"
 #include "src/tint/ir/call.h"
 #include "src/tint/ir/constant.h"
+#include "src/tint/ir/construct.h"
 #include "src/tint/ir/continue.h"
+#include "src/tint/ir/convert.h"
+#include "src/tint/ir/discard.h"
 #include "src/tint/ir/exit_if.h"
 #include "src/tint/ir/exit_loop.h"
 #include "src/tint/ir/exit_switch.h"
 #include "src/tint/ir/if.h"
 #include "src/tint/ir/instruction.h"
+#include "src/tint/ir/let.h"
 #include "src/tint/ir/load.h"
+#include "src/tint/ir/load_vector_element.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
 #include "src/tint/ir/multi_in_block.h"
 #include "src/tint/ir/next_iteration.h"
 #include "src/tint/ir/return.h"
 #include "src/tint/ir/store.h"
+#include "src/tint/ir/store_vector_element.h"
 #include "src/tint/ir/switch.h"
 #include "src/tint/ir/unary.h"
+#include "src/tint/ir/unreachable.h"
 #include "src/tint/ir/user_call.h"
+#include "src/tint/ir/validate.h"
 #include "src/tint/ir/var.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/switch.h"
@@ -72,16 +84,20 @@ namespace tint::ir {
 
 namespace {
 
-/// Empty struct used as a sentinel value to indicate that an ast::Value has been consumed by its
-/// single place of usage. Attempting to use this value a second time should result in an ICE.
-struct ConsumedValue {};
-
 class State {
   public:
     explicit State(Module& m) : mod(m) {}
 
     Program Run() {
-        // TODO(crbug.com/tint/1902): Emit root block
+        if (auto res = Validate(mod); !res) {
+            // IR module failed validation.
+            b.Diagnostics() = res.Failure();
+            return Program{std::move(b)};
+        }
+
+        if (mod.root_block) {
+            RootBlock(mod.root_block);
+        }
         // TODO(crbug.com/tint/1902): Emit user-declared types
         for (auto* fn : mod.functions) {
             Fn(fn);
@@ -90,20 +106,42 @@ class State {
     }
 
   private:
+    /// The AST representation for an IR pointer type
+    enum class PtrKind {
+        kPtr,  // IR pointer is represented in the AST as a pointer
+        kRef,  // IR pointer is represented in the AST as a reference
+    };
+
     /// The source IR module
     Module& mod;
 
     /// The target ProgramBuilder
     ProgramBuilder b;
 
-    using ValueBinding = std::variant<Symbol, const ast::Expression*, ConsumedValue>;
+    /// The structure for a value held by a 'let', 'var' or parameter.
+    struct VariableValue {
+        Symbol name;  // Name of the variable
+        PtrKind ptr_kind = PtrKind::kRef;
+    };
 
-    /// A hashmap of value to one of:
-    /// * Symbol           - Name of 'let' (non-inlinable value), 'var' or parameter.
-    /// * ast::Expression* - single use, inlined expression.
-    /// * ConsumedValue    - a special value used to indicate that the value has already been
-    ///                      consumed.
+    /// The structure for an inlined value
+    struct InlinedValue {
+        const ast::Expression* expr = nullptr;
+        PtrKind ptr_kind = PtrKind::kRef;
+    };
+
+    /// Empty struct used as a sentinel value to indicate that an ast::Value has been consumed by
+    /// its single place of usage. Attempting to use this value a second time should result in an
+    /// ICE.
+    struct ConsumedValue {};
+
+    using ValueBinding = std::variant<VariableValue, InlinedValue, ConsumedValue>;
+
+    /// IR values to their representation
     utils::Hashmap<Value*, ValueBinding, 32> bindings_;
+
+    /// Names for values
+    utils::Hashmap<Value*, Symbol, 32> names_;
 
     /// The nesting depth of the currently generated AST
     /// 0  is module scope
@@ -118,18 +156,36 @@ class State {
     /// The current switch case block
     ir::Block* current_switch_case_ = nullptr;
 
+    /// Values that can be inlined.
+    utils::Hashset<ir::Value*, 64> can_inline_;
+
+    /// Set of enable directives emitted.
+    utils::Hashset<builtin::Extension, 4> enables_;
+
+    /// Map of struct to output program name.
+    utils::Hashmap<const type::Struct*, Symbol, 8> structs_;
+
+    void RootBlock(ir::Block* root) {
+        for (auto* inst : *root) {
+            tint::Switch(
+                inst,                             //
+                [&](ir::Var* var) { Var(var); },  //
+                [&](Default) { UNHANDLED_CASE(inst); });
+        }
+    }
     const ast::Function* Fn(ir::Function* fn) {
         SCOPED_NESTING();
 
         // TODO(crbug.com/tint/1915): Properly implement this when we've fleshed out Function
         static constexpr size_t N = decltype(ast::Function::params)::static_length;
         auto params = utils::Transform<N>(fn->Params(), [&](FunctionParam* param) {
-            auto name = BindName(param);
+            auto name = NameFor(param);
+            Bind(param, name, PtrKind::kPtr);
             auto ty = Type(param->Type());
             return b.Param(name, ty);
         });
 
-        auto name = BindName(fn);
+        auto name = NameFor(fn);
         auto ret_ty = Type(fn->ReturnType());
         auto* body = Block(fn->Block());
         utils::Vector<const ast::Attribute*, 1> attrs{};
@@ -146,6 +202,7 @@ class State {
     StatementList Statements(ir::Block* block) {
         StatementList stmts;
         if (block) {
+            MarkInlinable(block);
             TINT_SCOPED_ASSIGNMENT(statements_, &stmts);
             for (auto* inst : *block) {
                 Instruction(inst);
@@ -154,26 +211,99 @@ class State {
         return stmts;
     }
 
+    void MarkInlinable(ir::Block* block) {
+        // An ordered list of possibly-inlinable values returned by sequenced instructions that have
+        // not yet been marked-for or ruled-out-for inlining.
+        utils::UniqueVector<ir::Value*, 32> pending_resolution;
+
+        // Walk the instructions of the block starting with the first.
+        for (auto* inst : *block) {
+            // Is the instruction sequenced?
+            bool sequenced = inst->Sequenced();
+
+            // Walk the instruction's operands starting with the right-most.
+            auto operands = inst->Operands();
+            for (auto* operand : utils::Reverse(operands)) {
+                if (!pending_resolution.Contains(operand)) {
+                    continue;
+                }
+                // Operand is in 'pending_resolution'
+
+                if (pending_resolution.TryPop(operand)) {
+                    // Operand was the last sequenced value to be added to 'pending_resolution'
+                    // This operand can be inlined as it does not change the sequencing order.
+                    can_inline_.Add(operand);
+                    sequenced = true;  // Inherit the 'sequenced' flag from the inlined value
+                } else {
+                    // Operand was in 'pending_resolution', but was not the last sequenced value to
+                    // be added. Inlining this operand would break the sequencing order, so must be
+                    // emitted as a let. All preceding pending values must also be emitted as a
+                    // let to prevent them being inlined and breaking the sequencing order.
+                    // Remove all the values in pending upto and including 'operand'.
+                    for (size_t i = 0; i < pending_resolution.Length(); i++) {
+                        if (pending_resolution[i] == operand) {
+                            pending_resolution.Erase(0, i + 1);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (inst->Results().Length() == 1) {
+                // Instruction has a single result value.
+                // Check to see if the result of this instruction is a candidate for inlining.
+                auto* result = inst->Result();
+                // Only values with a single usage can be inlined.
+                // Named values are not inlined, as we want to emit the name for a let.
+                if (result->Usages().Count() == 1 && !mod.NameOf(result).IsValid()) {
+                    if (sequenced) {
+                        // The value comes from a sequenced instruction. We need to ensure
+                        // instruction ordering so add it to 'pending_resolution'.
+                        pending_resolution.Add(result);
+                    } else {
+                        // The value comes from an unsequenced instruction. Just inline.
+                        can_inline_.Add(result);
+                    }
+                    continue;
+                }
+            }
+
+            // At this point the value has been ruled out for inlining.
+
+            if (sequenced) {
+                // A sequenced instruction with zero or multiple return values cannot be inlined.
+                // All preceding sequenced instructions cannot be inlined past this point.
+                pending_resolution.Clear();
+            }
+        }
+    }
+
     void Append(const ast::Statement* inst) { statements_->Push(inst); }
 
     void Instruction(ir::Instruction* inst) {
         tint::Switch(
-            inst,                                       //
-            [&](ir::Binary* u) { Binary(u); },          //
-            [&](ir::Call* i) { Call(i); },              //
-            [&](ir::ExitIf*) {},                        //
-            [&](ir::ExitSwitch* i) { ExitSwitch(i); },  //
-            [&](ir::ExitLoop* i) { ExitLoop(i); },      //
-            [&](ir::If* i) { If(i); },                  //
-            [&](ir::Load* l) { Load(l); },              //
-            [&](ir::Loop* l) { Loop(l); },              //
-            [&](ir::Return* i) { Return(i); },          //
-            [&](ir::Store* i) { Store(i); },            //
-            [&](ir::Switch* i) { Switch(i); },          //
-            [&](ir::Unary* u) { Unary(u); },            //
-            [&](ir::Var* i) { Var(i); },                //
-            [&](ir::NextIteration*) {},                 //
-            [&](ir::Continue*) {},                      //
+            inst,                                                       //
+            [&](ir::Access* i) { Access(i); },                          //
+            [&](ir::Binary* i) { Binary(i); },                          //
+            [&](ir::BreakIf* i) { BreakIf(i); },                        //
+            [&](ir::Call* i) { Call(i); },                              //
+            [&](ir::Continue*) {},                                      //
+            [&](ir::ExitIf*) {},                                        //
+            [&](ir::ExitLoop* i) { ExitLoop(i); },                      //
+            [&](ir::ExitSwitch* i) { ExitSwitch(i); },                  //
+            [&](ir::If* i) { If(i); },                                  //
+            [&](ir::Let* i) { Let(i); },                                //
+            [&](ir::Load* l) { Load(l); },                              //
+            [&](ir::LoadVectorElement* i) { LoadVectorElement(i); },    //
+            [&](ir::Loop* l) { Loop(l); },                              //
+            [&](ir::NextIteration*) {},                                 //
+            [&](ir::Return* i) { Return(i); },                          //
+            [&](ir::Store* i) { Store(i); },                            //
+            [&](ir::StoreVectorElement* i) { StoreVectorElement(i); },  //
+            [&](ir::Switch* i) { Switch(i); },                          //
+            [&](ir::Unary* u) { Unary(u); },                            //
+            [&](ir::Unreachable*) {},                                   //
+            [&](ir::Var* i) { Var(i); },                                //
             [&](Default) { UNHANDLED_CASE(inst); });
     }
 
@@ -206,14 +336,30 @@ class State {
     }
 
     void Loop(ir::Loop* l) {
+        // Build all the initializer statements
         auto init_stmts = Statements(l->Initializer());
-        auto* init = init_stmts.Length() == 1 ? init_stmts.Front()->As<ast::VariableDeclStatement>()
-                                              : nullptr;
 
+        // If there's a single initializer statement and meets the WGSL 'for_init' pattern, then
+        // this can be used as the initializer for a for-loop.
+        // @see https://www.w3.org/TR/WGSL/#syntax-for_init
+        auto* init = (init_stmts.Length() == 1) &&
+                             init_stmts.Front()
+                                 ->IsAnyOf<ast::VariableDeclStatement, ast::AssignmentStatement,
+                                           ast::CompoundAssignmentStatement,
+                                           ast::IncrementDecrementStatement, ast::CallStatement>()
+                         ? init_stmts.Front()
+                         : nullptr;
+
+        // Build the loop body statements. If the loop body starts with a if with the following
+        // pattern, then treat it as the loop condition:
+        //   if cond {
+        //     block { exit_if   }
+        //     block { exit_loop }
+        //   }
         const ast::Expression* cond = nullptr;
-
         StatementList body_stmts;
         {
+            MarkInlinable(l->Body());
             TINT_SCOPED_ASSIGNMENT(statements_, &body_stmts);
             for (auto* inst : *l->Body()) {
                 if (body_stmts.IsEmpty()) {
@@ -223,31 +369,59 @@ class State {
                             if_->False()->Length() == 1 &&                 //
                             tint::Is<ir::ExitIf>(if_->True()->Front()) &&  //
                             tint::Is<ir::ExitLoop>(if_->False()->Front())) {
+                            // Matched the loop condition.
                             cond = Expr(if_->Condition());
-                            continue;
+                            continue;  // Don't emit this as an instruction in the body.
                         }
                     }
                 }
 
+                // Process the loop body instruction. Append to 'body_stmts'
                 Instruction(inst);
             }
         }
 
+        // Build any continuing statements
         auto cont_stmts = Statements(l->Continuing());
-        auto* cont = cont_stmts.Length() == 1 ? cont_stmts.Front() : nullptr;
+        // If there's a single continuing statement and meets the WGSL 'for_update' pattern then
+        // this can be used as the continuing for a for-loop.
+        // @see https://www.w3.org/TR/WGSL/#syntax-for_update
+        auto* cont =
+            (cont_stmts.Length() == 1) &&
+                    cont_stmts.Front()
+                        ->IsAnyOf<ast::AssignmentStatement, ast::CompoundAssignmentStatement,
+                                  ast::IncrementDecrementStatement, ast::CallStatement>()
+                ? cont_stmts.Front()
+                : nullptr;
 
-        auto* body = b.Block(std::move(body_stmts));
-
+        // Depending on 'init', 'cond' and 'cont', build a 'for', 'while' or 'loop'
         const ast::Statement* loop = nullptr;
-        if (cond) {
-            if (init || cont) {
-                loop = b.For(init, cond, cont, body);
-            } else {
-                loop = b.While(cond, body);
+        if ((!cont && !cont_stmts.IsEmpty())  // Non-trivial continuing
+            || !cond                          // or non-trivial or no condition
+        ) {
+            // Build a loop
+            if (cond) {
+                body_stmts.Insert(0, b.If(b.Not(cond), b.Block(b.Break())));
             }
-        } else {
+            auto* body = b.Block(std::move(body_stmts));
             loop = cont_stmts.IsEmpty() ? b.Loop(body)  //
                                         : b.Loop(body, b.Block(std::move(cont_stmts)));
+            if (!init_stmts.IsEmpty()) {
+                init_stmts.Push(loop);
+                loop = b.Block(std::move(init_stmts));
+            }
+        } else if (init || cont) {
+            // Build a for-loop
+            auto* body = b.Block(std::move(body_stmts));
+            loop = b.For(init, cond, cont, body);
+            if (!init && !init_stmts.IsEmpty()) {
+                init_stmts.Push(loop);
+                loop = b.Block(std::move(init_stmts));
+            }
+        } else {
+            // Build a while-loop
+            auto* body = b.Block(std::move(body_stmts));
+            loop = b.While(cond, body);
             if (!init_stmts.IsEmpty()) {
                 init_stmts.Push(loop);
                 loop = b.Block(std::move(init_stmts));
@@ -293,6 +467,14 @@ class State {
 
     void ExitLoop(const ir::ExitLoop*) { Append(b.Break()); }
 
+    void BreakIf(ir::BreakIf* i) {
+        auto* cond = i->Condition();
+        if (IsConstant(cond, false)) {
+            return;
+        }
+        Append(b.BreakIf(Expr(cond)));
+    }
+
     void Return(ir::Return* ret) {
         if (ret->Args().IsEmpty()) {
             // Return has no arguments.
@@ -317,24 +499,41 @@ class State {
 
     void Var(ir::Var* var) {
         auto* val = var->Result();
-        Symbol name = BindName(val);
+        Symbol name = NameFor(var->Result());
+        Bind(var->Result(), name, PtrKind::kRef);
         auto* ptr = As<type::Pointer>(val->Type());
         auto ty = Type(ptr->StoreType());
+
+        utils::Vector<const ast::Attribute*, 4> attrs;
+        if (auto bp = var->BindingPoint()) {
+            attrs.Push(b.Group(AInt(bp->group)));
+            attrs.Push(b.Binding(AInt(bp->binding)));
+        }
+
         const ast::Expression* init = nullptr;
         if (var->Initializer()) {
             init = Expr(var->Initializer());
         }
         switch (ptr->AddressSpace()) {
             case builtin::AddressSpace::kFunction:
-                Append(b.Decl(b.Var(name, ty, init)));
+                Append(b.Decl(b.Var(name, ty, init, std::move(attrs))));
                 return;
             case builtin::AddressSpace::kStorage:
-                Append(b.Decl(b.Var(name, ty, init, ptr->Access(), ptr->AddressSpace())));
+                b.GlobalVar(name, ty, init, ptr->Access(), ptr->AddressSpace(), std::move(attrs));
+                return;
+            case builtin::AddressSpace::kHandle:
+                b.GlobalVar(name, ty, init, std::move(attrs));
                 return;
             default:
-                Append(b.Decl(b.Var(name, ty, init, ptr->AddressSpace())));
+                b.GlobalVar(name, ty, init, ptr->AddressSpace(), std::move(attrs));
                 return;
         }
+    }
+
+    void Let(ir::Let* let) {
+        Symbol name = NameFor(let->Result());
+        Append(b.Decl(b.Let(name, Expr(let->Value(), PtrKind::kPtr))));
+        Bind(let->Result(), name, PtrKind::kPtr);
     }
 
     void Store(ir::Store* store) {
@@ -343,22 +542,57 @@ class State {
         Append(b.Assign(dst, src));
     }
 
+    void StoreVectorElement(ir::StoreVectorElement* store) {
+        auto* ptr = Expr(store->To());
+        auto* val = Expr(store->Value());
+        Append(b.Assign(VectorMemberAccess(ptr, store->Index()), val));
+    }
+
     void Call(ir::Call* call) {
-        auto args = utils::Transform<2>(call->Args(), [&](ir::Value* arg) { return Expr(arg); });
+        auto args = utils::Transform<4>(call->Args(), [&](ir::Value* arg) {
+            // Pointer-like arguments are passed by pointer, never reference.
+            return Expr(arg, PtrKind::kPtr);
+        });
         tint::Switch(
             call,  //
             [&](ir::UserCall* c) {
-                auto* expr = b.Call(BindName(c->Func()), std::move(args));
+                auto* expr = b.Call(NameFor(c->Func()), std::move(args));
                 if (!call->HasResults() || call->Result()->Usages().IsEmpty()) {
                     Append(b.CallStmt(expr));
                     return;
                 }
-                Bind(c->Result(), expr);
+                Bind(c->Result(), expr, PtrKind::kPtr);
             },
+            [&](ir::BuiltinCall* c) {
+                auto* expr = b.Call(c->Func(), std::move(args));
+                if (!call->HasResults() || call->Result()->Type()->Is<type::Void>()) {
+                    Append(b.CallStmt(expr));
+                    return;
+                }
+                Bind(c->Result(), expr, PtrKind::kPtr);
+            },
+            [&](ir::Construct* c) {
+                auto ty = Type(c->Result()->Type());
+                Bind(c->Result(), b.Call(ty, std::move(args)), PtrKind::kPtr);
+            },
+            [&](ir::Convert* c) {
+                auto ty = Type(c->Result()->Type());
+                Bind(c->Result(), b.Call(ty, std::move(args)), PtrKind::kPtr);
+            },
+            [&](ir::Bitcast* c) {
+                auto ty = Type(c->Result()->Type());
+                Bind(c->Result(), b.Bitcast(ty, args[0]), PtrKind::kPtr);
+            },
+            [&](ir::Discard*) { Append(b.Discard()); },  //
             [&](Default) { UNHANDLED_CASE(call); });
     }
 
     void Load(ir::Load* l) { Bind(l->Result(), Expr(l->From())); }
+
+    void LoadVectorElement(ir::LoadVectorElement* load) {
+        auto* ptr = Expr(load->From());
+        Bind(load->Result(), VectorMemberAccess(ptr, load->Index()));
+    }
 
     void Unary(ir::Unary* u) {
         const ast::Expression* expr = nullptr;
@@ -371,6 +605,41 @@ class State {
                 break;
         }
         Bind(u->Result(), expr);
+    }
+
+    void Access(ir::Access* a) {
+        auto* expr = Expr(a->Object());
+        auto* obj_ty = a->Object()->Type()->UnwrapPtr();
+        for (auto* index : a->Indices()) {
+            tint::Switch(
+                obj_ty,
+                [&](const type::Vector* vec) {
+                    TINT_DEFER(obj_ty = vec->type());
+                    expr = VectorMemberAccess(expr, index);
+                },
+                [&](const type::Matrix* mat) {
+                    obj_ty = mat->ColumnType();
+                    expr = b.IndexAccessor(expr, Expr(index));
+                },
+                [&](const type::Array* arr) {
+                    obj_ty = arr->ElemType();
+                    expr = b.IndexAccessor(expr, Expr(index));
+                },
+                [&](const type::Struct* s) {
+                    if (auto* c = index->As<ir::Constant>()) {
+                        auto i = c->Value()->ValueAs<uint32_t>();
+                        TINT_ASSERT_OR_RETURN(IR, i < s->Members().Length());
+                        auto* member = s->Members()[i];
+                        obj_ty = member->Type();
+                        expr = b.MemberAccessor(expr, member->Name().NameView());
+                    } else {
+                        TINT_ICE(IR, b.Diagnostics())
+                            << "invalid index for struct type: " << index->TypeInfo().name;
+                    }
+                },
+                [&](Default) { UNHANDLED_CASE(obj_ty); });
+        }
+        Bind(a->Result(), expr);
     }
 
     void Binary(ir::Binary* e) {
@@ -440,31 +709,35 @@ class State {
 
     TINT_BEGIN_DISABLE_WARNING(UNREACHABLE_CODE);
 
-    const ast::Expression* Expr(ir::Value* value) {
-        return tint::Switch(
-            value,                                         //
-            [&](ir::Constant* c) { return Constant(c); },  //
-            [&](Default) -> const ast::Expression* {
+    const ast::Expression* Expr(ir::Value* value, PtrKind want_ptr_kind = PtrKind::kRef) {
+        using ExprAndPtrKind = std::pair<const ast::Expression*, PtrKind>;
+
+        auto [expr, got_ptr_kind] = tint::Switch(
+            value,
+            [&](ir::Constant* c) -> ExprAndPtrKind {
+                return {Constant(c), PtrKind::kRef};
+            },
+            [&](Default) -> ExprAndPtrKind {
                 auto lookup = bindings_.Find(value);
                 if (TINT_UNLIKELY(!lookup)) {
                     TINT_ICE(IR, b.Diagnostics())
                         << "Expr(" << (value ? value->TypeInfo().name : "null")
                         << ") value has no expression";
-                    return b.Expr("<error>");
+                    return {};
                 }
                 return std::visit(
-                    [&](auto&& got) -> const ast::Expression* {
+                    [&](auto&& got) -> ExprAndPtrKind {
                         using T = std::decay_t<decltype(got)>;
 
-                        if constexpr (std::is_same_v<T, Symbol>) {
-                            return b.Expr(got);  // var, let or parameter.
+                        if constexpr (std::is_same_v<T, VariableValue>) {
+                            return {b.Expr(got.name), got.ptr_kind};
                         }
 
-                        if constexpr (std::is_same_v<T, const ast::Expression*>) {
+                        if constexpr (std::is_same_v<T, InlinedValue>) {
                             // Single use (inlined) expression.
                             // Mark the bindings_ map entry as consumed.
                             *lookup = ConsumedValue{};
-                            return got;
+                            return {got.expr, got.ptr_kind};
                         }
 
                         if constexpr (std::is_same_v<T, ConsumedValue>) {
@@ -474,26 +747,66 @@ class State {
                             TINT_ICE(IR, b.Diagnostics())
                                 << "Expr(" << value->TypeInfo().name << ") has unhandled value";
                         }
-                        return b.Expr("<error>");
+                        return {};
                     },
                     *lookup);
             });
+
+        if (!expr) {
+            return b.Expr("<error>");
+        }
+
+        if (value->Type()->Is<type::Pointer>()) {
+            return ToPtrKind(expr, got_ptr_kind, want_ptr_kind);
+        }
+
+        return expr;
     }
 
     TINT_END_DISABLE_WARNING(UNREACHABLE_CODE);
 
-    const ast::Expression* Constant(ir::Constant* c) {
+    const ast::Expression* Constant(ir::Constant* c) { return Constant(c->Value()); }
+
+    const ast::Expression* Constant(const constant::Value* c) {
+        auto composite = [&](bool can_splat) {
+            auto ty = Type(c->Type());
+            if (c->AllZero()) {
+                return b.Call(ty);
+            }
+            if (can_splat && c->Is<constant::Splat>()) {
+                return b.Call(ty, Constant(c->Index(0)));
+            }
+
+            utils::Vector<const ast::Expression*, 8> els;
+            for (size_t i = 0, n = c->NumElements(); i < n; i++) {
+                els.Push(Constant(c->Index(i)));
+            }
+            return b.Call(ty, std::move(els));
+        };
         return tint::Switch(
             c->Type(),  //
-            [&](const type::I32*) { return b.Expr(c->Value()->ValueAs<i32>()); },
-            [&](const type::U32*) { return b.Expr(c->Value()->ValueAs<u32>()); },
-            [&](const type::F32*) { return b.Expr(c->Value()->ValueAs<f32>()); },
-            [&](const type::F16*) { return b.Expr(c->Value()->ValueAs<f16>()); },
-            [&](const type::Bool*) { return b.Expr(c->Value()->ValueAs<bool>()); },
+            [&](const type::I32*) { return b.Expr(c->ValueAs<i32>()); },
+            [&](const type::U32*) { return b.Expr(c->ValueAs<u32>()); },
+            [&](const type::F32*) { return b.Expr(c->ValueAs<f32>()); },
+            [&](const type::F16*) {
+                Enable(builtin::Extension::kF16);
+                return b.Expr(c->ValueAs<f16>());
+            },
+            [&](const type::Bool*) { return b.Expr(c->ValueAs<bool>()); },
+            [&](const type::Array*) { return composite(/* can_splat */ false); },
+            [&](const type::Vector*) { return composite(/* can_splat */ true); },
+            [&](const type::Matrix*) { return composite(/* can_splat */ false); },
+            [&](const type::Struct*) { return composite(/* can_splat */ false); },
             [&](Default) {
-                UNHANDLED_CASE(c);
+                UNHANDLED_CASE(c->Type());
                 return b.Expr("<error>");
             });
+    }
+
+    void Enable(builtin::Extension ext) {
+        if (enables_.Add(ext)) {
+            b.Enable(ext);
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -515,8 +828,11 @@ class State {
             [&](const type::Void*) { return ast::Type{}; },  //
             [&](const type::I32*) { return b.ty.i32(); },    //
             [&](const type::U32*) { return b.ty.u32(); },    //
-            [&](const type::F16*) { return b.ty.f16(); },    //
-            [&](const type::F32*) { return b.ty.f32(); },    //
+            [&](const type::F16*) {
+                Enable(builtin::Extension::kF16);
+                return b.ty.f16();
+            },
+            [&](const type::F32*) { return b.ty.f32(); },  //
             [&](const type::Bool*) { return b.ty.bool_(); },
             [&](const type::Matrix* m) {
                 return b.ty.mat(Type(m->type()), m->columns(), m->rows());
@@ -546,7 +862,7 @@ class State {
                 }
                 return b.ty.array(el, u32(count.value()), std::move(attrs));
             },
-            [&](const type::Struct* s) { return b.ty(s->Name().NameView()); },
+            [&](const type::Struct* s) { return Struct(s); },
             [&](const type::Atomic* a) { return b.ty.atomic(Type(a->Type())); },
             [&](const type::DepthTexture* t) { return b.ty.depth_texture(t->dim()); },
             [&](const type::DepthMultisampledTexture* t) {
@@ -585,16 +901,44 @@ class State {
             });
     }
 
+    ast::Type Struct(const type::Struct* s) {
+        auto n = structs_.GetOrCreate(s, [&] {
+            auto members = utils::Transform<8>(s->Members(), [&](const type::StructMember* m) {
+                auto ty = Type(m->Type());
+                // TODO(crbug.com/tint/1902): Emit structure member attributes
+                utils::Vector<const ast::Attribute*, 2> attrs;
+                return b.Member(m->Name().NameView(), ty, std::move(attrs));
+            });
+
+            // TODO(crbug.com/tint/1902): Emit structure attributes
+            utils::Vector<const ast::Attribute*, 2> attrs;
+
+            auto name = b.Symbols().New(s->Name().NameView());
+            b.Structure(name, std::move(members), std::move(attrs));
+            return name;
+        });
+
+        return b.ty(n);
+    }
+
+    const ast::Expression* ToPtrKind(const ast::Expression* in, PtrKind got, PtrKind want) {
+        if (want == PtrKind::kRef && got == PtrKind::kPtr) {
+            return b.Deref(in);
+        }
+        if (want == PtrKind::kPtr && got == PtrKind::kRef) {
+            return b.AddressOf(in);
+        }
+        return in;
+    }
+
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // Bindings
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
-    /// Creates and returns a new, unique name for the given value, or returns the previously
-    /// created name.
-    /// @return the value's name
-    Symbol BindName(Value* value, std::string_view suggested = {}) {
-        TINT_ASSERT(IR, value);
-        auto& existing = bindings_.GetOrCreate(value, [&] {
+    /// @returns the AST name for the given value, creating and returning a new name on the first
+    /// call.
+    Symbol NameFor(Value* value, std::string_view suggested = {}) {
+        return names_.GetOrCreate(value, [&] {
             if (!suggested.empty()) {
                 return b.Symbols().New(suggested);
             }
@@ -603,35 +947,51 @@ class State {
             }
             return b.Symbols().New("v");
         });
-        if (auto* name = std::get_if<Symbol>(&existing); TINT_LIKELY(name)) {
-            return *name;
-        }
-
-        TINT_ICE(IR, b.Diagnostics()) << "BindName(" << value->TypeInfo().name
-                                      << ") called on value that has non-name binding";
-        return {};
     }
 
-    template <typename T>
-    void Bind(ir::Value* value, const T* expr) {
+    /// Associates the IR value @p value with the AST expression @p expr.
+    /// @p ptr_kind defines how pointer values are represented by @p expr.
+    void Bind(ir::Value* value, const ast::Expression* expr, PtrKind ptr_kind = PtrKind::kRef) {
         TINT_ASSERT(IR, value);
-        if (CanInline(value)) {
+        if (can_inline_.Remove(value)) {
             // Value will be inlined at its place of usage.
-            bool added = bindings_.Add(value, expr);
-            if (TINT_UNLIKELY(!added)) {
-                TINT_ICE(IR, b.Diagnostics())
-                    << "Bind(" << value->TypeInfo().name << ") called twice for same node";
+            if (TINT_LIKELY(bindings_.Add(value, InlinedValue{expr, ptr_kind}))) {
+                return;
             }
         } else {
-            Append(b.Decl(b.Let(BindName(value), expr)));
+            if (value->Type()->Is<type::Pointer>()) {
+                expr = ToPtrKind(expr, ptr_kind, PtrKind::kPtr);
+            }
+            auto mod_name = mod.NameOf(value);
+            if (value->Usages().IsEmpty() && !mod_name.IsValid()) {
+                // Value has no usages and no name.
+                // Assign to a phony. These support more data types than a 'let', and avoids
+                // allocation of unused names.
+                Append(b.Assign(b.Phony(), expr));
+            } else {
+                Symbol name = NameFor(value, mod_name.NameView());
+                Append(b.Decl(b.Let(name, expr)));
+                Bind(value, name, PtrKind::kPtr);
+            }
+            return;
         }
+
+        TINT_ICE(IR, b.Diagnostics())
+            << "Bind(" << value->TypeInfo().name << ") called twice for same value";
     }
 
-    /// @returns true if the if the value can be inlined into its single place
-    /// of usage. Currently a value is inlined if it has a single usage and is unnamed.
-    /// TODO(crbug.com/tint/1902): This logic needs to check that the sequence of side-effecting
-    /// expressions is not changed by inlining the expression. This needs fixing.
-    bool CanInline(Value* val) { return val->Usages().Count() == 1 && !mod.NameOf(val).IsValid(); }
+    /// Associates the IR value @p value with the AST 'var', 'let' or parameter with the name @p
+    /// name.
+    /// @p ptr_kind defines how pointer values are represented by @p expr.
+    void Bind(ir::Value* value, Symbol name, PtrKind ptr_kind) {
+        TINT_ASSERT(IR, value);
+
+        bool added = bindings_.Add(value, VariableValue{name, ptr_kind});
+        if (TINT_UNLIKELY(!added)) {
+            TINT_ICE(IR, b.Diagnostics())
+                << "Bind(" << value->TypeInfo().name << ") called twice for same value";
+        }
+    }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // Helpers
@@ -704,6 +1064,22 @@ class State {
             }
         }
         return false;
+    }
+
+    const ast::Expression* VectorMemberAccess(const ast::Expression* expr, ir::Value* index) {
+        if (auto* c = index->As<ir::Constant>()) {
+            switch (c->Value()->ValueAs<int>()) {
+                case 0:
+                    return b.MemberAccessor(expr, "x");
+                case 1:
+                    return b.MemberAccessor(expr, "y");
+                case 2:
+                    return b.MemberAccessor(expr, "z");
+                case 3:
+                    return b.MemberAccessor(expr, "w");
+            }
+        }
+        return b.IndexAccessor(expr, Expr(index));
     }
 };
 
