@@ -251,12 +251,12 @@ DAWN_NOINLINE bool IsGPUCounterSupported(id<MTLDevice> device,
 
 }  // anonymous namespace
 
-// The Metal backend's Adapter.
+// The Metal backend's PhysicalDevice.
 
-class Adapter : public AdapterBase {
+class PhysicalDevice : public PhysicalDeviceBase {
   public:
-    Adapter(InstanceBase* instance, id<MTLDevice> device, const TogglesState& requiredAdapterToggle)
-        : AdapterBase(instance, wgpu::BackendType::Metal, requiredAdapterToggle), mDevice(device) {
+    PhysicalDevice(InstanceBase* instance, id<MTLDevice> device)
+        : PhysicalDeviceBase(instance, wgpu::BackendType::Metal), mDevice(device) {
         mName = std::string([[*mDevice name] UTF8String]);
 
         PCIIDs ids;
@@ -283,16 +283,19 @@ class Adapter : public AdapterBase {
         mDriverDescription = "Metal driver on " + std::string(systemName) + [osVersion UTF8String];
     }
 
-    // AdapterBase Implementation
+    // PhysicalDeviceBase Implementation
     bool SupportsExternalImages() const override {
         // Via dawn::native::metal::WrapIOSurface
         return true;
     }
 
+    bool SupportsFeatureLevel(FeatureLevel) const override { return true; }
+
   private:
-    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(const DeviceDescriptor* descriptor,
+    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(AdapterBase* adapter,
+                                                    const DeviceDescriptor* descriptor,
                                                     const TogglesState& deviceToggles) override {
-        return Device::Create(this, mDevice, descriptor, deviceToggles);
+        return Device::Create(adapter, mDevice, descriptor, deviceToggles);
     }
 
     void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override {
@@ -432,10 +435,15 @@ class Adapter : public AdapterBase {
     MaybeError InitializeImpl() override { return {}; }
 
     void InitializeSupportedFeaturesImpl() override {
-        // Check compressed texture format with deprecated MTLFeatureSet way.
+        // Check texture formats with deprecated MTLFeatureSet way.
 #if DAWN_PLATFORM_IS(MACOS)
         if ([*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v1]) {
             EnableFeature(Feature::TextureCompressionBC);
+        }
+        if (@available(macOS 10.14, *)) {
+            if ([*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily2_v1]) {
+                EnableFeature(Feature::Float32Filterable);
+            }
         }
 #endif
 #if DAWN_PLATFORM_IS(IOS)
@@ -447,10 +455,13 @@ class Adapter : public AdapterBase {
         }
 #endif
 
-        // Check compressed texture format with MTLGPUFamily
+        // Check texture formats with MTLGPUFamily
         if (@available(macOS 10.15, iOS 13.0, *)) {
             if ([*mDevice supportsFamily:MTLGPUFamilyMac1]) {
                 EnableFeature(Feature::TextureCompressionBC);
+            }
+            if ([*mDevice supportsFamily:MTLGPUFamilyMac2]) {
+                EnableFeature(Feature::Float32Filterable);
             }
             if ([*mDevice supportsFamily:MTLGPUFamilyApple2]) {
                 EnableFeature(Feature::TextureCompressionETC2);
@@ -461,6 +472,28 @@ class Adapter : public AdapterBase {
         }
 
         if (@available(macOS 10.15, iOS 14.0, *)) {
+            auto ShouldLeakCounterSets = [this]() {
+                // Intentionally leak counterSets to workaround an issue where the driver
+                // over-releases the handle if it is accessed more than once. It becomes a zombie.
+                // For more information, see crbug.com/1443658.
+                // Appears to occur on Intel prior to MacOS 11, and continuing on Intel Gen 7 after
+                // that OS version.
+                uint32_t vendorId = GetVendorId();
+                uint32_t deviceId = GetDeviceId();
+                if (gpu_info::IsIntelGen7(vendorId, deviceId)) {
+                    return true;
+                }
+                if (gpu_info::IsIntelGen11(vendorId, deviceId)) {
+                    return true;
+                }
+                if (gpu_info::IsIntel(vendorId) && !IsMacOSVersionAtLeast(11)) {
+                    return true;
+                }
+                return false;
+            };
+            if (ShouldLeakCounterSets()) {
+                [[*mDevice counterSets] retain];
+            }
             if (IsGPUCounterSupported(
                     *mDevice, MTLCommonCounterSetStatistic,
                     {MTLCommonCounterVertexInvocations, MTLCommonCounterClipperInvocations,
@@ -511,6 +544,14 @@ class Adapter : public AdapterBase {
         // on ios 11.0+ and macOS 11.0+
         if (@available(macOS 10.11, iOS 11.0, *)) {
             EnableFeature(Feature::MultiPlanarFormats);
+        }
+
+        if (@available(macOS 11.0, iOS 10.0, *)) {
+            // Memoryless storage mode for Metal textures is available only
+            // from the Apple2 family of GPUs on.
+            if ([*mDevice supportsFamily:MTLGPUFamilyApple2]) {
+                EnableFeature(Feature::TransientAttachments);
+            }
         }
 
         EnableFeature(Feature::IndirectFirstInstance);
@@ -592,7 +633,7 @@ class Adapter : public AdapterBase {
             }
         }
 
-#if TARGET_OS_OSX
+#if DAWN_PLATFORM_IS(MACOS)
         if (@available(macOS 10.14, *)) {
             if ([*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily2_v1]) {
                 return MTLGPUFamily::Mac2;
@@ -601,7 +642,7 @@ class Adapter : public AdapterBase {
         if ([*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v1]) {
             return MTLGPUFamily::Mac1;
         }
-#elif TARGET_OS_IOS
+#elif DAWN_PLATFORM_IS(IOS)
         if (@available(iOS 10.11, *)) {
             if ([*mDevice supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily4_v1]) {
                 return MTLGPUFamily::Apple4;
@@ -711,10 +752,6 @@ class Adapter : public AdapterBase {
             limits->v1.maxStorageTexturesPerShaderStage += (additional - additional / 2);
         }
 
-        limits->v1.maxFragmentCombinedOutputResources = limits->v1.maxColorAttachments +
-                                                        limits->v1.maxStorageBuffersPerShaderStage +
-                                                        limits->v1.maxStorageTexturesPerShaderStage;
-
         limits->v1.maxSamplersPerShaderStage = mtlLimits.maxSamplerStateArgumentEntriesPerFunc;
 
         // Metal limits are per-function, so the layout limits are the same as the stage
@@ -782,9 +819,9 @@ Backend::Backend(InstanceBase* instance) : BackendConnection(instance, wgpu::Bac
 
 Backend::~Backend() = default;
 
-std::vector<Ref<AdapterBase>> Backend::DiscoverDefaultAdapters(const TogglesState& adapterToggles) {
+std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverDefaultAdapters() {
     AdapterDiscoveryOptions options;
-    auto result = DiscoverAdapters(&options, adapterToggles);
+    auto result = DiscoverAdapters(&options);
     if (result.IsError()) {
         GetInstance()->ConsumedError(result.AcquireError());
         return {};
@@ -792,20 +829,19 @@ std::vector<Ref<AdapterBase>> Backend::DiscoverDefaultAdapters(const TogglesStat
     return result.AcquireSuccess();
 }
 
-ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
-    const AdapterDiscoveryOptionsBase* optionsBase,
-    const TogglesState& adapterToggles) {
+ResultOrError<std::vector<Ref<PhysicalDeviceBase>>> Backend::DiscoverAdapters(
+    const AdapterDiscoveryOptionsBase* optionsBase) {
     ASSERT(optionsBase->backendType == WGPUBackendType_Metal);
 
-    std::vector<Ref<AdapterBase>> adapters;
+    std::vector<Ref<PhysicalDeviceBase>> physicalDevices;
 #if DAWN_PLATFORM_IS(MACOS)
     if(@available(macOS 10.11,*)) {
       NSRef<NSArray<id<MTLDevice>>> devices = AcquireNSRef(MTLCopyAllDevices());
 
       for (id<MTLDevice> device in devices.Get()) {
-          Ref<Adapter> adapter = AcquireRef(new Adapter(GetInstance(), device, adapterToggles));
-          if (!GetInstance()->ConsumedError(adapter->Initialize())) {
-              adapters.push_back(std::move(adapter));
+          Ref<PhysicalDevice> physicalDevice = AcquireRef(new PhysicalDevice(GetInstance(), device));
+          if (!GetInstance()->ConsumedError(physicalDevice->Initialize())) {
+              physicalDevices.push_back(std::move(physicalDevice));
           }
       }
     }
@@ -813,14 +849,14 @@ ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
 
     // iOS only has a single device so MTLCopyAllDevices doesn't exist there.
 #if defined(DAWN_PLATFORM_IOS)
-    Ref<Adapter> adapter =
-        AcquireRef(new Adapter(GetInstance(), MTLCreateSystemDefaultDevice(), adapterToggles));
-    if (!GetInstance()->ConsumedError(adapter->Initialize())) {
-        adapters.push_back(std::move(adapter));
+    Ref<PhysicalDevice> physicalDevice =
+        AcquireRef(new PhysicalDevice(GetInstance(), MTLCreateSystemDefaultDevice()));
+    if (!GetInstance()->ConsumedError(physicalDevice->Initialize())) {
+        physicalDevices.push_back(std::move(physicalDevice));
     }
 #endif
 
-    return adapters;
+    return physicalDevices;
 }
 
 BackendConnection* Connect(InstanceBase* instance) {

@@ -21,7 +21,6 @@
 
 #include "dawn/common/Log.h"
 #include "dawn/common/Version_autogen.h"
-#include "dawn/native/Adapter.h"
 #include "dawn/native/AsyncTask.h"
 #include "dawn/native/AttachmentState.h"
 #include "dawn/native/BindGroup.h"
@@ -42,6 +41,7 @@
 #include "dawn/native/Instance.h"
 #include "dawn/native/InternalPipelineStore.h"
 #include "dawn/native/ObjectType_autogen.h"
+#include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/PipelineCache.h"
 #include "dawn/native/QuerySet.h"
 #include "dawn/native/Queue.h"
@@ -176,6 +176,9 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
     : mAdapter(adapter), mToggles(deviceToggles), mNextPipelineCompatibilityToken(1) {
     ASSERT(descriptor != nullptr);
 
+    mDeviceLostCallback = descriptor->deviceLostCallback;
+    mDeviceLostUserdata = descriptor->deviceLostUserdata;
+
     AdapterProperties adapterProperties;
     adapter->APIGetProperties(&adapterProperties);
 
@@ -234,15 +237,17 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
         }
     };
 
-    mDeviceLostCallback = [](WGPUDeviceLostReason, char const*, void*) {
-        static bool calledOnce = false;
-        if (!calledOnce) {
-            calledOnce = true;
-            dawn::WarningLog() << "No Dawn device lost callback was set. This is probably not "
-                                  "intended. If you really want to ignore device lost "
-                                  "and suppress this message, set the callback to null.";
-        }
-    };
+    if (!mDeviceLostCallback) {
+        mDeviceLostCallback = [](WGPUDeviceLostReason, char const*, void*) {
+            static bool calledOnce = false;
+            if (!calledOnce) {
+                calledOnce = true;
+                dawn::WarningLog() << "No Dawn device lost callback was set. This is probably not "
+                                      "intended. If you really want to ignore device lost "
+                                      "and suppress this message, set the callback to null.";
+            }
+        };
+    }
 #endif  // DAWN_ENABLE_ASSERTS
 
     mCaches = std::make_unique<DeviceBase::Caches>();
@@ -261,6 +266,7 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
     mState = State::Alive;
 
     DAWN_TRY_ASSIGN(mEmptyBindGroupLayout, CreateEmptyBindGroupLayout());
+    DAWN_TRY_ASSIGN(mEmptyPipelineLayout, CreateEmptyPipelineLayout());
 
     // If placeholder fragment shader module is needed, initialize it
     if (IsToggleEnabled(Toggle::UsePlaceholderFragmentInVertexOnlyPipeline)) {
@@ -270,7 +276,7 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
             )";
         ShaderModuleDescriptor descriptor;
         ShaderModuleWGSLDescriptor wgslDesc;
-        wgslDesc.source = kEmptyFragmentShader;
+        wgslDesc.code = kEmptyFragmentShader;
         descriptor.nextInChain = &wgslDesc;
 
         DAWN_TRY_ASSIGN(mInternalPipelineStore->placeholderFragmentShader,
@@ -286,7 +292,7 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
     // mAdapter is not set for mock test devices.
     // TODO(crbug.com/dawn/1702): using a mock adapter could avoid the null checking.
     if (mAdapter != nullptr) {
-        mAdapter->GetInstance()->AddDevice(this);
+        mAdapter->GetPhysicalDevice()->GetInstance()->AddDevice(this);
     }
 
     return {};
@@ -344,11 +350,12 @@ void DeviceBase::WillDropLastExternalRef() {
     // mAdapter is not set for mock test devices.
     // TODO(crbug.com/dawn/1702): using a mock adapter could avoid the null checking.
     if (mAdapter != nullptr) {
-        mAdapter->GetInstance()->RemoveDevice(this);
+        mAdapter->GetPhysicalDevice()->GetInstance()->RemoveDevice(this);
 
         // Once last external ref dropped, all callbacks should be forwarded to Instance's callback
         // queue instead.
-        mCallbackTaskManager = mAdapter->GetInstance()->GetCallbackTaskManager();
+        mCallbackTaskManager =
+            mAdapter->GetPhysicalDevice()->GetInstance()->GetCallbackTaskManager();
     }
 }
 
@@ -475,6 +482,7 @@ void DeviceBase::Destroy() {
     // Destroy() via APIGetQueue.
     mDynamicUploader = nullptr;
     mEmptyBindGroupLayout = nullptr;
+    mEmptyPipelineLayout = nullptr;
     mInternalPipelineStore = nullptr;
     mExternalTexturePlaceholderView = nullptr;
 
@@ -610,6 +618,8 @@ void DeviceBase::APISetUncapturedErrorCallback(wgpu::ErrorCallback callback, voi
 }
 
 void DeviceBase::APISetDeviceLostCallback(wgpu::DeviceLostCallback callback, void* userdata) {
+    // TODO(chromium:1234617): Add a deprecation warning.
+
     // The registered callback function and userdata pointer are stored and used by deferred
     // callback tasks, and after setting a different callback (especially in the case of
     // resetting) the resources pointed by such pointer may be freed. Flush all deferred
@@ -631,9 +641,7 @@ void DeviceBase::APIPushErrorScope(wgpu::ErrorFilter filter) {
     mErrorScopeStack->Push(filter);
 }
 
-bool DeviceBase::APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata) {
-    // TODO(crbug.com/dawn/1324) Remove return and make function void when users are updated.
-    bool returnValue = true;
+void DeviceBase::APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata) {
     if (callback == nullptr) {
         static wgpu::ErrorCallback defaultCallback = [](WGPUErrorType, char const*, void*) {};
         callback = defaultCallback;
@@ -642,20 +650,18 @@ bool DeviceBase::APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata) 
     if (IsLost()) {
         mCallbackTaskManager->AddCallbackTask(
             std::bind(callback, WGPUErrorType_DeviceLost, "GPU device disconnected", userdata));
-        return returnValue;
+        return;
     }
     if (mErrorScopeStack->Empty()) {
         mCallbackTaskManager->AddCallbackTask(
             std::bind(callback, WGPUErrorType_Unknown, "No error scopes to pop", userdata));
-        return returnValue;
+        return;
     }
     ErrorScope scope = mErrorScopeStack->Pop();
     mCallbackTaskManager->AddCallbackTask(
         [callback, errorType = static_cast<WGPUErrorType>(scope.GetErrorType()),
          message = scope.GetErrorMessage(),
          userdata] { callback(errorType, message.c_str(), userdata); });
-
-    return returnValue;
 }
 
 BlobCache* DeviceBase::GetBlobCache() {
@@ -663,9 +669,10 @@ BlobCache* DeviceBase::GetBlobCache() {
     // TODO(crbug.com/dawn/1481): Shader caching currently has a dependency on the WGSL writer to
     // generate cache keys. We can lift the dependency once we also cache frontend parsing,
     // transformations, and reflection.
-    return mAdapter->GetInstance()->GetBlobCache(!IsToggleEnabled(Toggle::DisableBlobCache));
+    return mAdapter->GetPhysicalDevice()->GetInstance()->GetBlobCache(
+        !IsToggleEnabled(Toggle::DisableBlobCache));
 #else
-    return mAdapter->GetInstance()->GetBlobCache(false);
+    return mAdapter->GetPhysicalDevice()->GetInstance()->GetBlobCache(false);
 #endif
 }
 
@@ -723,8 +730,12 @@ AdapterBase* DeviceBase::GetAdapter() const {
     return mAdapter.Get();
 }
 
+PhysicalDeviceBase* DeviceBase::GetPhysicalDevice() const {
+    return mAdapter->GetPhysicalDevice();
+}
+
 dawn::platform::Platform* DeviceBase::GetPlatform() const {
-    return GetAdapter()->GetInstance()->GetPlatform();
+    return GetPhysicalDevice()->GetInstance()->GetPlatform();
 }
 
 ExecutionSerial DeviceBase::GetCompletedCommandSerial() const {
@@ -841,9 +852,22 @@ ResultOrError<Ref<BindGroupLayoutBase>> DeviceBase::CreateEmptyBindGroupLayout()
     return GetOrCreateBindGroupLayout(&desc);
 }
 
+ResultOrError<Ref<PipelineLayoutBase>> DeviceBase::CreateEmptyPipelineLayout() {
+    PipelineLayoutDescriptor desc = {};
+    desc.bindGroupLayoutCount = 0;
+    desc.bindGroupLayouts = nullptr;
+
+    return GetOrCreatePipelineLayout(&desc);
+}
+
 BindGroupLayoutBase* DeviceBase::GetEmptyBindGroupLayout() {
     ASSERT(mEmptyBindGroupLayout != nullptr);
     return mEmptyBindGroupLayout.Get();
+}
+
+PipelineLayoutBase* DeviceBase::GetEmptyPipelineLayout() {
+    ASSERT(mEmptyPipelineLayout != nullptr);
+    return mEmptyPipelineLayout.Get();
 }
 
 Ref<ComputePipelineBase> DeviceBase::GetCachedComputePipeline(
@@ -1109,7 +1133,7 @@ ComputePipelineBase* DeviceBase::APICreateComputePipeline(
                  utils::GetLabelForTrace(descriptor->label));
 
     Ref<ComputePipelineBase> result;
-    if (ConsumedError(CreateComputePipeline(descriptor), &result,
+    if (ConsumedError(CreateComputePipeline(descriptor), &result, InternalErrorType::Internal,
                       "calling %s.CreateComputePipeline(%s).", this, descriptor)) {
         return ComputePipelineBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
@@ -1199,7 +1223,7 @@ RenderPipelineBase* DeviceBase::APICreateRenderPipeline(
                  utils::GetLabelForTrace(descriptor->label));
 
     Ref<RenderPipelineBase> result;
-    if (ConsumedError(CreateRenderPipeline(descriptor), &result,
+    if (ConsumedError(CreateRenderPipeline(descriptor), &result, InternalErrorType::Internal,
                       "calling %s.CreateRenderPipeline(%s).", this, descriptor)) {
         return RenderPipelineBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
@@ -1372,7 +1396,7 @@ ExternalTextureBase* DeviceBase::APICreateExternalTexture(
 
 void DeviceBase::ApplyFeatures(const DeviceDescriptor* deviceDescriptor) {
     ASSERT(deviceDescriptor);
-    ASSERT(GetAdapter()->SupportsAllRequiredFeatures(
+    ASSERT(GetPhysicalDevice()->SupportsAllRequiredFeatures(
         {deviceDescriptor->requiredFeatures, deviceDescriptor->requiredFeaturesCount}));
 
     for (uint32_t i = 0; i < deviceDescriptor->requiredFeaturesCount; ++i) {
@@ -1393,7 +1417,7 @@ void DeviceBase::SetWGSLExtensionAllowList() {
     if (mEnabledFeatures.IsEnabled(Feature::ShaderF16)) {
         mWGSLExtensionAllowList.insert("f16");
     }
-    if (!IsToggleEnabled(Toggle::DisallowUnsafeAPIs)) {
+    if (AllowUnsafeAPIs()) {
         mWGSLExtensionAllowList.insert("chromium_disable_uniformity_analysis");
     }
 }
@@ -1408,6 +1432,11 @@ bool DeviceBase::IsValidationEnabled() const {
 
 bool DeviceBase::IsRobustnessEnabled() const {
     return !IsToggleEnabled(Toggle::DisableRobustness);
+}
+
+bool DeviceBase::AllowUnsafeAPIs() const {
+    // TODO(dawn:1685) Currently allows if either toggle are set accordingly.
+    return IsToggleEnabled(Toggle::AllowUnsafeAPIs) || !IsToggleEnabled(Toggle::DisallowUnsafeAPIs);
 }
 
 size_t DeviceBase::GetLazyClearCountForTesting() {
@@ -1426,6 +1455,12 @@ void DeviceBase::EmitDeprecationWarning(const std::string& message) {
     mDeprecationWarnings->count++;
     if (mDeprecationWarnings->emitted.insert(message).second) {
         dawn::WarningLog() << message;
+    }
+}
+
+void DeviceBase::EmitWarningOnce(const std::string& message) {
+    if (mWarnings.insert(message).second) {
+        this->EmitLog(WGPULoggingType_Warning, message.c_str());
     }
 }
 

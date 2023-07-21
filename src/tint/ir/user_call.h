@@ -16,10 +16,8 @@
 #define SRC_TINT_IR_USER_CALL_H_
 
 #include "src/tint/ir/call.h"
-#include "src/tint/symbol_table.h"
-#include "src/tint/type/type.h"
+#include "src/tint/symbol.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
@@ -27,27 +25,17 @@ namespace tint::ir {
 class UserCall : public utils::Castable<UserCall, Call> {
   public:
     /// Constructor
-    /// @param result the result value
+    /// @param type the result type
     /// @param name the function name
     /// @param args the function arguments
-    UserCall(Value* result, Symbol name, utils::VectorRef<Value*> args);
-    UserCall(const UserCall& instr) = delete;
-    UserCall(UserCall&& instr) = delete;
+    UserCall(const type::Type* type, Symbol name, utils::VectorRef<Value*> args);
     ~UserCall() override;
 
-    UserCall& operator=(const UserCall& instr) = delete;
-    UserCall& operator=(UserCall&& instr) = delete;
-
-    /// @returns the function name
+    /// @returns the called function name
     Symbol Name() const { return name_; }
 
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @returns the stream
-    utils::StringStream& ToString(utils::StringStream& out) const override;
-
   private:
-    Symbol name_{};
+    Symbol name_;
 };
 
 }  // namespace tint::ir

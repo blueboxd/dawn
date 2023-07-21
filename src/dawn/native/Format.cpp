@@ -205,20 +205,20 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
                 switch (sampleTypes) {
                     case SampleTypeBit::Float:
                     case SampleTypeBit::UnfilterableFloat:
-                        firstAspect->baseType = wgpu::TextureComponentType::Float;
+                        firstAspect->baseType = TextureComponentType::Float;
                         break;
                     case SampleTypeBit::Sint:
-                        firstAspect->baseType = wgpu::TextureComponentType::Sint;
+                        firstAspect->baseType = TextureComponentType::Sint;
                         break;
                     case SampleTypeBit::Uint:
-                        firstAspect->baseType = wgpu::TextureComponentType::Uint;
+                        firstAspect->baseType = TextureComponentType::Uint;
                         break;
                     default:
                         UNREACHABLE();
                 }
             } else {
                 ASSERT(sampleTypes & SampleTypeBit::Float);
-                firstAspect->baseType = wgpu::TextureComponentType::Float;
+                firstAspect->baseType = TextureComponentType::Float;
             }
             firstAspect->supportedSampleTypes = sampleTypes;
             firstAspect->format = format;
@@ -243,7 +243,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         firstAspect->block.byteSize = byteSize;
         firstAspect->block.width = 1;
         firstAspect->block.height = 1;
-        firstAspect->baseType = wgpu::TextureComponentType::Float;
+        firstAspect->baseType = TextureComponentType::Float;
         firstAspect->supportedSampleTypes = SampleTypeBit::Depth | SampleTypeBit::UnfilterableFloat;
         firstAspect->format = format;
         AddFormat(internalFormat);
@@ -272,7 +272,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         internalFormat.aspectInfo[0].block.byteSize = 1;
         internalFormat.aspectInfo[0].block.width = 1;
         internalFormat.aspectInfo[0].block.height = 1;
-        internalFormat.aspectInfo[0].baseType = wgpu::TextureComponentType::Uint;
+        internalFormat.aspectInfo[0].baseType = TextureComponentType::Uint;
         internalFormat.aspectInfo[0].supportedSampleTypes = SampleTypeBit::Uint;
         internalFormat.aspectInfo[0].format = format;
 
@@ -307,7 +307,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
             firstAspect->block.byteSize = byteSize;
             firstAspect->block.width = width;
             firstAspect->block.height = height;
-            firstAspect->baseType = wgpu::TextureComponentType::Float;
+            firstAspect->baseType = TextureComponentType::Float;
             firstAspect->supportedSampleTypes = kAnyFloat;
             firstAspect->format = format;
             AddFormat(internalFormat);
@@ -362,9 +362,10 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         AddColorFormat(wgpu::TextureFormat::RG8Sint, true, false, true, false, 2, SampleTypeBit::Sint, 2, 2, 1);
 
         // 4 bytes color formats
+        SampleTypeBit sampleTypeFor32BitFloatFormats = device->HasFeature(Feature::Float32Filterable) ? kAnyFloat : SampleTypeBit::UnfilterableFloat;
         AddColorFormat(wgpu::TextureFormat::R32Uint, true, true, false, false, 4, SampleTypeBit::Uint, 1, 4, 4);
         AddColorFormat(wgpu::TextureFormat::R32Sint, true, true, false, false, 4, SampleTypeBit::Sint, 1, 4, 4);
-        AddColorFormat(wgpu::TextureFormat::R32Float, true, true, true, false, 4, SampleTypeBit::UnfilterableFloat, 1, 4, 4);
+        AddColorFormat(wgpu::TextureFormat::R32Float, true, true, true, false, 4, sampleTypeFor32BitFloatFormats, 1, 4, 4);
         AddColorFormat(wgpu::TextureFormat::RG16Uint, true, false, true, false, 4, SampleTypeBit::Uint, 2, 4, 2);
         AddColorFormat(wgpu::TextureFormat::RG16Sint, true, false, true, false, 4, SampleTypeBit::Sint, 2, 4, 2);
         AddColorFormat(wgpu::TextureFormat::RG16Float, true, false, true, true, 4, kAnyFloat, 2, 4, 2);
@@ -386,7 +387,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         // 8 bytes color formats
         AddColorFormat(wgpu::TextureFormat::RG32Uint, true, true, false, false, 8, SampleTypeBit::Uint, 2, 8, 4);
         AddColorFormat(wgpu::TextureFormat::RG32Sint, true, true, false, false, 8, SampleTypeBit::Sint, 2, 8, 4);
-        AddColorFormat(wgpu::TextureFormat::RG32Float, true, true, false, false, 8, SampleTypeBit::UnfilterableFloat, 2, 8, 4);
+        AddColorFormat(wgpu::TextureFormat::RG32Float, true, true, false, false, 8, sampleTypeFor32BitFloatFormats, 2, 8, 4);
         AddColorFormat(wgpu::TextureFormat::RGBA16Uint, true, true, true, false, 8, SampleTypeBit::Uint, 4, 8, 2);
         AddColorFormat(wgpu::TextureFormat::RGBA16Sint, true, true, true, false, 8, SampleTypeBit::Sint, 4, 8, 2);
         AddColorFormat(wgpu::TextureFormat::RGBA16Float, true, true, true, true, 8, kAnyFloat, 4, 8, 2);
@@ -394,7 +395,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         // 16 bytes color formats
         AddColorFormat(wgpu::TextureFormat::RGBA32Uint, true, true, false, false, 16, SampleTypeBit::Uint, 4, 16, 4);
         AddColorFormat(wgpu::TextureFormat::RGBA32Sint, true, true, false, false, 16, SampleTypeBit::Sint, 4, 16, 4);
-        AddColorFormat(wgpu::TextureFormat::RGBA32Float, true, true, false, false, 16, SampleTypeBit::UnfilterableFloat, 4, 16, 4);
+        AddColorFormat(wgpu::TextureFormat::RGBA32Float, true, true, false, false, 16, sampleTypeFor32BitFloatFormats, 4, 16, 4);
 
         // Depth-stencil formats
         AddStencilFormat(wgpu::TextureFormat::Stencil8, true);

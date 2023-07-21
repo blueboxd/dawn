@@ -18,6 +18,7 @@
 #include "dawn/common/Assert.h"
 #include "dawn/common/SystemUtils.h"
 #include "dawn/dawn_proc.h"
+#include "dawn/native/Adapter.h"
 #include "dawn/native/NullBackend.h"
 #include "dawn/tests/ToggleParser.h"
 #include "dawn/tests/unittests/validation/ValidationTest.h"
@@ -110,29 +111,32 @@ ValidationTest::ValidationTest() {
         UNREACHABLE();
     };
 
-    procs.adapterRequestDevice = [](WGPUAdapter adapter, const WGPUDeviceDescriptor*,
+    procs.adapterRequestDevice = [](WGPUAdapter adapter, const WGPUDeviceDescriptor* descriptor,
                                     WGPURequestDeviceCallback callback, void* userdata) {
         ASSERT(gCurrentTest);
+        wgpu::DeviceDescriptor deviceDesc =
+            *(reinterpret_cast<const wgpu::DeviceDescriptor*>(descriptor));
         WGPUDevice cDevice = gCurrentTest->CreateTestDevice(
-            dawn::native::Adapter(reinterpret_cast<dawn::native::AdapterBase*>(adapter)));
+            dawn::native::Adapter(reinterpret_cast<dawn::native::AdapterBase*>(adapter)),
+            deviceDesc);
         ASSERT(cDevice != nullptr);
         gCurrentTest->mLastCreatedBackendDevice = cDevice;
         callback(WGPURequestDeviceStatus_Success, cDevice, nullptr, userdata);
     };
 
-    mWireHelper = utils::CreateWireHelper(procs, gUseWire, gWireTraceDir.c_str());
+    mWireHelper = dawn::utils::CreateWireHelper(procs, gUseWire, gWireTraceDir.c_str());
 }
 
 void ValidationTest::SetUp() {
-    // Create an instance with toggle DisallowUnsafeApis disabled, which would be inherited to
+    // Create an instance with toggle AllowUnsafeAPIs enabled, which would be inherited to
     // adapter and device toggles and allow us to test unsafe apis (including experimental
-    // features). To test device of DisallowUnsafeApis enabled, require it in device toggles
+    // features). To test device with AllowUnsafeAPIs disabled, require it in device toggles
     // descriptor to override the inheritance.
-    const char* disallowUnsafeApisToggle = "disallow_unsafe_apis";
+    const char* allowUnsafeApisToggle = "allow_unsafe_apis";
     WGPUDawnTogglesDescriptor instanceToggles = {};
     instanceToggles.chain.sType = WGPUSType::WGPUSType_DawnTogglesDescriptor;
-    instanceToggles.disabledTogglesCount = 1;
-    instanceToggles.disabledToggles = &disallowUnsafeApisToggle;
+    instanceToggles.enabledTogglesCount = 1;
+    instanceToggles.enabledToggles = &allowUnsafeApisToggle;
 
     WGPUInstanceDescriptor instanceDesc = {};
     instanceDesc.nextInChain = &instanceToggles.chain;
@@ -159,11 +163,14 @@ void ValidationTest::SetUp() {
     FlushWire();
     ASSERT(adapter);
 
-    device = RequestDeviceSync(wgpu::DeviceDescriptor{});
+    wgpu::DeviceDescriptor deviceDescriptor = {};
+    deviceDescriptor.deviceLostCallback = ValidationTest::OnDeviceLost;
+    deviceDescriptor.deviceLostUserdata = this;
+
+    device = RequestDeviceSync(deviceDescriptor);
     backendDevice = mLastCreatedBackendDevice;
 
     device.SetUncapturedErrorCallback(ValidationTest::OnDeviceError, this);
-    device.SetDeviceLostCallback(ValidationTest::OnDeviceLost, this);
 }
 
 ValidationTest::~ValidationTest() {
@@ -280,7 +287,8 @@ dawn::native::Adapter& ValidationTest::GetBackendAdapter() {
     return mBackendAdapter;
 }
 
-WGPUDevice ValidationTest::CreateTestDevice(dawn::native::Adapter dawnAdapter) {
+WGPUDevice ValidationTest::CreateTestDevice(dawn::native::Adapter dawnAdapter,
+                                            wgpu::DeviceDescriptor deviceDescriptor) {
     std::vector<const char*> enabledToggles;
     std::vector<const char*> disabledToggles;
 
@@ -292,7 +300,6 @@ WGPUDevice ValidationTest::CreateTestDevice(dawn::native::Adapter dawnAdapter) {
         disabledToggles.push_back(toggle.c_str());
     }
 
-    wgpu::DeviceDescriptor deviceDescriptor;
     wgpu::DawnTogglesDescriptor deviceTogglesDesc;
     deviceDescriptor.nextInChain = &deviceTogglesDesc;
 

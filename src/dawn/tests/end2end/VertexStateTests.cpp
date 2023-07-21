@@ -20,6 +20,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 using wgpu::VertexFormat;
 using wgpu::VertexStepMode;
 
@@ -645,6 +648,7 @@ TEST_P(VertexStateTest, OverlappingVertexAttributes) {
 }
 
 DAWN_INSTANTIATE_TEST(VertexStateTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -691,8 +695,12 @@ TEST_P(OptionalVertexStateTest, Basic) {
 }
 
 DAWN_INSTANTIATE_TEST(OptionalVertexStateTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

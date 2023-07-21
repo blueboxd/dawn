@@ -16,10 +16,7 @@
 #define SRC_TINT_IR_BINARY_H_
 
 #include "src/tint/ir/instruction.h"
-#include "src/tint/symbol_table.h"
-#include "src/tint/type/type.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
@@ -38,9 +35,6 @@ class Binary : public utils::Castable<Binary, Instruction> {
         kOr,
         kXor,
 
-        kLogicalAnd,
-        kLogicalOr,
-
         kEqual,
         kNotEqual,
         kLessThan,
@@ -54,19 +48,17 @@ class Binary : public utils::Castable<Binary, Instruction> {
 
     /// Constructor
     /// @param kind the kind of binary instruction
-    /// @param result the result value
+    /// @param type the result type
     /// @param lhs the lhs of the instruction
     /// @param rhs the rhs of the instruction
-    Binary(Kind kind, Value* result, Value* lhs, Value* rhs);
-    Binary(const Binary& instr) = delete;
-    Binary(Binary&& instr) = delete;
+    Binary(enum Kind kind, const type::Type* type, Value* lhs, Value* rhs);
     ~Binary() override;
 
-    Binary& operator=(const Binary& instr) = delete;
-    Binary& operator=(Binary&& instr) = delete;
+    /// @returns the kind of the binary instruction
+    enum Kind Kind() const { return kind_; }
 
-    /// @returns the kind of instruction
-    Kind GetKind() const { return kind_; }
+    /// @returns the type of the value
+    const type::Type* Type() const override { return result_type_; }
 
     /// @returns the left-hand-side value for the instruction
     const Value* LHS() const { return lhs_; }
@@ -74,15 +66,11 @@ class Binary : public utils::Castable<Binary, Instruction> {
     /// @returns the right-hand-side value for the instruction
     const Value* RHS() const { return rhs_; }
 
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @returns the stream
-    utils::StringStream& ToString(utils::StringStream& out) const override;
-
   private:
-    Kind kind_;
-    Value* lhs_ = nullptr;
-    Value* rhs_ = nullptr;
+    enum Kind kind_;
+    const type::Type* result_type_;
+    Value* lhs_;
+    Value* rhs_;
 };
 
 }  // namespace tint::ir

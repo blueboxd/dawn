@@ -24,11 +24,13 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr static unsigned int kRTSize = 64;
 constexpr wgpu::TextureFormat kDefaultFormat = wgpu::TextureFormat::RGBA8Unorm;
 constexpr uint32_t kBytesPerTexel = 4;
 
-namespace {
 wgpu::Texture Create2DTexture(wgpu::Device device,
                               uint32_t width,
                               uint32_t height,
@@ -91,7 +93,6 @@ wgpu::ShaderModule CreateDefaultVertexShaderModule(wgpu::Device device) {
             }
         )");
 }
-}  // anonymous namespace
 
 class TextureViewSamplingTest : public DawnTest {
   protected:
@@ -107,12 +108,13 @@ class TextureViewSamplingTest : public DawnTest {
         mRenderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
 
         wgpu::FilterMode kFilterMode = wgpu::FilterMode::Nearest;
+        wgpu::MipmapFilterMode kMipmapFilterMode = wgpu::MipmapFilterMode::Nearest;
         wgpu::AddressMode kAddressMode = wgpu::AddressMode::ClampToEdge;
 
         wgpu::SamplerDescriptor samplerDescriptor = {};
         samplerDescriptor.minFilter = kFilterMode;
         samplerDescriptor.magFilter = kFilterMode;
-        samplerDescriptor.mipmapFilter = kFilterMode;
+        samplerDescriptor.mipmapFilter = kMipmapFilterMode;
         samplerDescriptor.addressModeU = kAddressMode;
         samplerDescriptor.addressModeV = kAddressMode;
         samplerDescriptor.addressModeW = kAddressMode;
@@ -440,6 +442,9 @@ TEST_P(TextureViewSamplingTest, SRGBReinterpretation) {
     // TODO(crbug.com/dawn/1360): OpenGLES doesn't support view format reinterpretation.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
 
+    // TODO(dawn:1810): D3D11 doesn't support view format reinterpretation.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
+
     wgpu::TextureViewDescriptor viewDesc = {};
     viewDesc.format = wgpu::TextureFormat::RGBA8UnormSrgb;
 
@@ -539,6 +544,9 @@ TEST_P(TextureViewSamplingTest, TextureCubeMapViewOnPartOfTexture) {
 
 // Test sampling from a cube map texture view that covers the last layer of a 2D array texture.
 TEST_P(TextureViewSamplingTest, TextureCubeMapViewCoveringLastLayer) {
+    // TODO(dawn:1812): the test fails with DXGI_ERROR_DEVICE_HUNG on Intel D3D11 driver.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntel());
+
     constexpr uint32_t kTotalLayers = 10;
     constexpr uint32_t kBaseLayer = 4;
     TextureCubeMapTest(kTotalLayers, kBaseLayer, kTotalLayers - kBaseLayer, false);
@@ -695,6 +703,9 @@ TEST_P(TextureViewRenderingTest, Texture2DViewOnALevelOfRectangular2DTextureAsCo
 
 // Test rendering into a 2D texture view created on a layer of a 2D array texture.
 TEST_P(TextureViewRenderingTest, Texture2DViewOnALayerOf2DArrayTextureAsColorAttachment) {
+    // TODO(dawn:1812): the test fails with DXGI_ERROR_DEVICE_HUNG on Intel D3D11 driver.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntel());
+
     constexpr uint32_t kMipLevels = 1;
     constexpr uint32_t kBaseLevel = 0;
     constexpr uint32_t kLayers = 10;
@@ -737,6 +748,9 @@ TEST_P(TextureViewRenderingTest, Texture2DArrayViewOnALevelOf2DTextureAsColorAtt
 
 // Test rendering into a 1-layer 2D array texture view created on a layer of a 2D array texture.
 TEST_P(TextureViewRenderingTest, Texture2DArrayViewOnALayerOf2DArrayTextureAsColorAttachment) {
+    // TODO(dawn:1812): the test fails with DXGI_ERROR_DEVICE_HUNG on Intel D3D11 driver.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntel());
+
     constexpr uint32_t kMipLevels = 1;
     constexpr uint32_t kBaseLevel = 0;
     constexpr uint32_t kLayers = 10;
@@ -761,6 +775,9 @@ TEST_P(TextureViewRenderingTest, Texture2DArrayViewOnALayerOf2DArrayTextureAsCol
 TEST_P(TextureViewRenderingTest, SRGBReinterpretationRenderAttachment) {
     // TODO(crbug.com/dawn/1360): OpenGLES doesn't support view format reinterpretation.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
+
+    // TODO(dawn:1810): D3D11 doesn't support view format reinterpretation.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
 
     // Test will render into an SRGB view
     wgpu::TextureViewDescriptor viewDesc = {};
@@ -867,6 +884,9 @@ TEST_P(TextureViewRenderingTest, SRGBReinterpretationRenderAttachment) {
 TEST_P(TextureViewRenderingTest, SRGBReinterpretionResolveAttachment) {
     // TODO(crbug.com/dawn/1360): OpenGLES doesn't support view format reinterpretation.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
+
+    // TODO(dawn:1810): D3D11 doesn't support view format reinterpretation.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
 
     // Test will resolve into an SRGB view
     wgpu::TextureViewDescriptor viewDesc = {};
@@ -977,6 +997,7 @@ TEST_P(TextureViewRenderingTest, SRGBReinterpretionResolveAttachment) {
 }
 
 DAWN_INSTANTIATE_TEST(TextureViewSamplingTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -984,6 +1005,7 @@ DAWN_INSTANTIATE_TEST(TextureViewSamplingTest,
                       VulkanBackend());
 
 DAWN_INSTANTIATE_TEST(TextureViewRenderingTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       D3D12Backend({}, {"use_d3d12_render_pass"}),
                       MetalBackend(),
@@ -1024,6 +1046,7 @@ TEST_P(TextureViewTest, DestroyedTexture) {
 }
 
 DAWN_INSTANTIATE_TEST(TextureViewTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -1040,6 +1063,7 @@ TEST_P(TextureView3DTest, BasicTest) {
 }
 
 DAWN_INSTANTIATE_TEST(TextureView3DTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -1114,8 +1138,12 @@ TEST_P(TextureView1DTest, Sampling) {
 }
 
 DAWN_INSTANTIATE_TEST(TextureView1DTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       VulkanBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

@@ -61,7 +61,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     void DiscoverDefaultAdapters();
     bool DiscoverAdapters(const AdapterDiscoveryOptionsBase* options);
 
-    const std::vector<Ref<AdapterBase>>& GetAdapters() const;
+    std::vector<Ref<AdapterBase>> GetAdapters() const;
 
     // Used to handle error that happen up to device creation.
     bool ConsumedError(MaybeError maybeError);
@@ -99,9 +99,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     void EnableAdapterBlocklist(bool enable);
     bool IsAdapterBlocklistEnabled() const;
 
-    // TODO(dawn:1374): SetPlatform should become a private helper, and SetPlatformForTesting
-    // will become the NOT thread-safe testing version exposed for special testing cases.
-    void SetPlatform(dawn::platform::Platform* platform);
+    // Testing only API that is NOT thread-safe.
     void SetPlatformForTesting(dawn::platform::Platform* platform);
     dawn::platform::Platform* GetPlatform();
     BlobCache* GetBlobCache(bool enabled = true);
@@ -131,6 +129,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     InstanceBase& operator=(const InstanceBase& other) = delete;
 
     MaybeError Initialize(const InstanceDescriptor* descriptor);
+    void SetPlatform(dawn::platform::Platform* platform);
 
     // Lazily creates connections to all backends that have been compiled.
     void EnsureBackendConnection(wgpu::BackendType backendType);
@@ -157,7 +156,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     BlobCache mPassthroughBlobCache;
 
     std::vector<std::unique_ptr<BackendConnection>> mBackends;
-    std::vector<Ref<AdapterBase>> mAdapters;
+    std::vector<Ref<PhysicalDeviceBase>> mPhysicalDevices;
 
     TogglesState mToggles;
 

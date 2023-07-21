@@ -14,15 +14,13 @@
 
 #include <vector>
 
-#include "dawn/tests/unittests/validation/DeprecatedAPITests.h"
-#include "dawn/tests/unittests/validation/ValidationTest.h"
-
 #include "dawn/common/Constants.h"
-
+#include "dawn/tests/unittests/validation/ValidationTest.h"
 #include "dawn/utils/ComboRenderBundleEncoderDescriptor.h"
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
 
 class RenderBundleValidationTest : public ValidationTest {
@@ -123,8 +121,6 @@ class RenderBundleValidationTest : public ValidationTest {
     wgpu::BindGroup bg1;
     wgpu::BindGroup bg1Vertex;
 };
-
-}  // anonymous namespace
 
 // Test creating and encoding an empty render bundle.
 TEST_F(RenderBundleValidationTest, Empty) {
@@ -1207,3 +1203,6 @@ TEST_F(RenderBundleValidationTest, RenderBundleColorFormatsBytesPerSample) {
         }
     }
 }
+
+}  // anonymous namespace
+}  // namespace dawn

@@ -77,6 +77,7 @@ function (set_if_not_defined name value description)
 endfunction()
 
 # Default values for the backend-enabling options
+set(ENABLE_D3D11 OFF)
 set(ENABLE_D3D12 OFF)
 set(ENABLE_METAL OFF)
 set(ENABLE_OPENGLES OFF)
@@ -86,6 +87,7 @@ set(USE_WAYLAND OFF)
 set(USE_X11 OFF)
 set(BUILD_SAMPLES OFF)
 if (WIN32)
+    set(ENABLE_D3D11 ON)
     set(ENABLE_D3D12 ON)
     if (NOT WINDOWS_STORE)
         # Enable Vulkan in win32 compilation only
@@ -119,6 +121,7 @@ option_if_not_defined(DAWN_ENABLE_TSAN "Enable thread sanitizer" OFF)
 option_if_not_defined(DAWN_ENABLE_MSAN "Enable memory sanitizer" OFF)
 option_if_not_defined(DAWN_ENABLE_UBSAN "Enable undefined behaviour sanitizer" OFF)
 
+option_if_not_defined(DAWN_ENABLE_D3D11 "Enable compilation of the D3D11 backend" ${ENABLE_D3D11})
 option_if_not_defined(DAWN_ENABLE_D3D12 "Enable compilation of the D3D12 backend" ${ENABLE_D3D12})
 option_if_not_defined(DAWN_ENABLE_METAL "Enable compilation of the Metal backend" ${ENABLE_METAL})
 option_if_not_defined(DAWN_ENABLE_NULL "Enable compilation of the Null backend" ON)
@@ -200,6 +203,8 @@ set_if_not_defined(NODE_API_HEADERS_DIR "${DAWN_THIRD_PARTY_DIR}/node-api-header
 set_if_not_defined(WEBGPU_IDL_PATH "${DAWN_THIRD_PARTY_DIR}/gpuweb/webgpu.idl" "Path to the webgpu.idl definition file")
 set_if_not_defined(GO_EXECUTABLE "go" "Golang executable for running the IDL generator")
 
+option_if_not_defined(DAWN_FETCH_DEPENDENCIES "Use fetch_dawn_dependencies.py as an alternative to using depot_tools" OFF)
+
 # Much of the backend code is shared among desktop OpenGL and OpenGL ES
 if (${DAWN_ENABLE_DESKTOP_GL} OR ${DAWN_ENABLE_OPENGLES})
     set(DAWN_ENABLE_OPENGL ON)
@@ -265,6 +270,7 @@ if (${TINT_BUILD_REGEX_FUZZER})
       set(TINT_BUILD_HLSL_WRITER ON CACHE BOOL "Build HLSL writer" FORCE)
 endif()
 
+message(STATUS "Dawn build D3D11 backend: ${DAWN_ENABLE_D3D11}")
 message(STATUS "Dawn build D3D12 backend: ${DAWN_ENABLE_D3D12}")
 message(STATUS "Dawn build Metal backend: ${DAWN_ENABLE_METAL}")
 message(STATUS "Dawn build Vulkan backend: ${DAWN_ENABLE_VULKAN}")
@@ -398,6 +404,9 @@ target_link_libraries(dawn_internal_config INTERFACE dawn_public_config)
 # Compile definitions for the internal config
 if (DAWN_ALWAYS_ASSERT OR IS_DEBUG_BUILD)
     target_compile_definitions(dawn_internal_config INTERFACE "DAWN_ENABLE_ASSERTS")
+endif()
+if (DAWN_ENABLE_D3D11)
+    target_compile_definitions(dawn_internal_config INTERFACE "DAWN_ENABLE_BACKEND_D3D11")
 endif()
 if (DAWN_ENABLE_D3D12)
     target_compile_definitions(dawn_internal_config INTERFACE "DAWN_ENABLE_BACKEND_D3D12")

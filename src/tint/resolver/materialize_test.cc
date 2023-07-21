@@ -75,8 +75,6 @@ static std::ostream& operator<<(std::ostream& o, Expectation m) {
 template <typename CASE>
 class MaterializeTest : public resolver::ResolverTestWithParam<CASE> {
   protected:
-    using ProgramBuilder::FriendlyName;
-
     void CheckTypesAndValues(const sem::ValueExpression* expr,
                              const tint::type::Type* expected_sem_ty,
                              const std::variant<AInt, AFloat>& expected_value) {
@@ -213,6 +211,10 @@ enum class Method {
 
     // abstract_expr[runtime-index]
     kRuntimeIndex,
+
+    // var a : target_type;
+    // a += abstract_expr;
+    kCompoundAssign,
 };
 
 static std::ostream& operator<<(std::ostream& o, Method m) {
@@ -249,6 +251,8 @@ static std::ostream& operator<<(std::ostream& o, Method m) {
             return o << "workgroup-size";
         case Method::kRuntimeIndex:
             return o << "runtime-index";
+        case Method::kCompoundAssign:
+            return o << "compound-assign";
     }
     return o << "<unknown>";
 }
@@ -389,9 +393,14 @@ TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
                  utils::Vector{WorkgroupSize(target_expr(), abstract_expr, Expr(123_a)),
                                Stage(ast::PipelineStage::kCompute)});
             break;
-        case Method::kRuntimeIndex:
+        case Method::kRuntimeIndex: {
             auto* runtime_index = Var("runtime_index", Expr(1_i));
             WrapInFunction(runtime_index, IndexAccessor(abstract_expr, runtime_index));
+            break;
+        }
+        case Method::kCompoundAssign:
+            WrapInFunction(Decl(Var("a", target_ty())),
+                           CompoundAssign("a", abstract_expr, ast::BinaryOp::kAdd));
             break;
     }
 
@@ -423,6 +432,10 @@ TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
                     expect = "error: no matching overload for operator + (" +
                              data.target_type_name + ", " + data.abstract_type_name + ")";
                     break;
+                case Method::kCompoundAssign:
+                    expect = "error: no matching overload for operator += (" +
+                             data.target_type_name + ", " + data.abstract_type_name + ")";
+                    break;
                 default:
                     expect = "error: cannot convert value of type '" + data.abstract_type_name +
                              "' to type '" + data.target_type_name + "'";
@@ -442,13 +455,13 @@ TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
 /// Methods that support scalar materialization
 constexpr Method kScalarMethods[] = {
     Method::kLet,    Method::kVar,   Method::kAssign, Method::kFnArg,    Method::kBuiltinArg,
-    Method::kReturn, Method::kArray, Method::kStruct, Method::kBinaryOp,
+    Method::kReturn, Method::kArray, Method::kStruct, Method::kBinaryOp, Method::kCompoundAssign,
 };
 
 /// Methods that support vector materialization
 constexpr Method kVectorMethods[] = {
     Method::kLet,    Method::kVar,   Method::kAssign, Method::kFnArg,    Method::kBuiltinArg,
-    Method::kReturn, Method::kArray, Method::kStruct, Method::kBinaryOp,
+    Method::kReturn, Method::kArray, Method::kStruct, Method::kBinaryOp, Method::kCompoundAssign,
 };
 
 /// Methods that support matrix materialization
@@ -1253,11 +1266,11 @@ TEST_F(MaterializeAbstractStructure, Modf_Scalar_DefaultType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<sem::Struct>());
-    auto* concrete_str = materialize->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
+    auto* concrete_str = materialize->Type()->As<type::Struct>();
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::F32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<sem::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
     ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::AbstractFloat>());
 }
 
@@ -1269,12 +1282,12 @@ TEST_F(MaterializeAbstractStructure, Modf_Vector_DefaultType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<sem::Struct>());
-    auto* concrete_str = materialize->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
+    auto* concrete_str = materialize->Type()->As<type::Struct>();
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::Vector>());
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::F32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<sem::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
     ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::Vector>());
     ASSERT_TRUE(
         abstract_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::AbstractFloat>());
@@ -1291,11 +1304,11 @@ TEST_F(MaterializeAbstractStructure, Modf_Scalar_ExplicitType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<sem::Struct>());
-    auto* concrete_str = materialize->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
+    auto* concrete_str = materialize->Type()->As<type::Struct>();
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::F16>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<sem::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
     ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::AbstractFloat>());
 }
 
@@ -1309,12 +1322,12 @@ TEST_F(MaterializeAbstractStructure, Modf_Vector_ExplicitType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<sem::Struct>());
-    auto* concrete_str = materialize->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
+    auto* concrete_str = materialize->Type()->As<type::Struct>();
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::Vector>());
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::F16>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<sem::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
     ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::Vector>());
     ASSERT_TRUE(
         abstract_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::AbstractFloat>());
@@ -1328,12 +1341,12 @@ TEST_F(MaterializeAbstractStructure, Frexp_Scalar_DefaultType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<sem::Struct>());
-    auto* concrete_str = materialize->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
+    auto* concrete_str = materialize->Type()->As<type::Struct>();
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::F32>());
     ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<type::I32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<sem::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
     ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::AbstractFloat>());
     ASSERT_TRUE(abstract_str->Members()[1]->Type()->Is<type::AbstractInt>());
 }
@@ -1346,14 +1359,14 @@ TEST_F(MaterializeAbstractStructure, Frexp_Vector_DefaultType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<sem::Struct>());
-    auto* concrete_str = materialize->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
+    auto* concrete_str = materialize->Type()->As<type::Struct>();
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::Vector>());
     ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<type::Vector>());
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::F32>());
     ASSERT_TRUE(concrete_str->Members()[1]->Type()->As<type::Vector>()->type()->Is<type::I32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<sem::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
     ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::Vector>());
     ASSERT_TRUE(
         abstract_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::AbstractFloat>());
@@ -1372,12 +1385,12 @@ TEST_F(MaterializeAbstractStructure, Frexp_Scalar_ExplicitType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<sem::Struct>());
-    auto* concrete_str = materialize->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
+    auto* concrete_str = materialize->Type()->As<type::Struct>();
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::F16>());
     ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<type::I32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<sem::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
     ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::AbstractFloat>());
     ASSERT_TRUE(abstract_str->Members()[1]->Type()->Is<type::AbstractInt>());
 }
@@ -1392,14 +1405,14 @@ TEST_F(MaterializeAbstractStructure, Frexp_Vector_ExplicitType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<sem::Struct>());
-    auto* concrete_str = materialize->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
+    auto* concrete_str = materialize->Type()->As<type::Struct>();
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::Vector>());
     ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<type::Vector>());
     ASSERT_TRUE(concrete_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::F16>());
     ASSERT_TRUE(concrete_str->Members()[1]->Type()->As<type::Vector>()->type()->Is<type::I32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<sem::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<sem::Struct>();
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
     ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::Vector>());
     ASSERT_TRUE(
         abstract_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::AbstractFloat>());

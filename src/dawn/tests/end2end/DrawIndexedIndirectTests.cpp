@@ -19,6 +19,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr uint32_t kRTSize = 4;
 
 class DrawIndexedIndirectTest : public DawnTest {
@@ -710,8 +713,12 @@ TEST_P(DrawIndexedIndirectTest, ValidateReusedBundleWithChangingParams) {
 }
 
 DAWN_INSTANTIATE_TEST(DrawIndexedIndirectTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

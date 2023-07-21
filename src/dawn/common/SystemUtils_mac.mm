@@ -19,6 +19,8 @@
 #import <Foundation/Foundation.h>
 #import <Foundation/NSProcessInfo.h>
 
+namespace dawn {
+
 void GetMacOSVersion(int32_t* majorVersion, int32_t* minorVersion) {
     if (@available(macOS 10.10, *)) {
       NSOperatingSystemVersion version = [[NSProcessInfo processInfo] operatingSystemVersion];
@@ -53,3 +55,5 @@ bool IsMacOSVersionAtLeast(uint32_t majorVersion, uint32_t minorVersion) {
       return false;
     }
 }
+
+}  // namespace dawn

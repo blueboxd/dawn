@@ -30,6 +30,7 @@ namespace dawn::native::d3d11 {
 MaybeError CommandRecordingContext::Open(Device* device) {
     ASSERT(!IsOpen());
     ASSERT(device);
+    mDevice = device;
 
     if (!mD3D11DeviceContext4) {
         ID3D11Device* d3d11Device = device->GetD3D11Device();
@@ -63,8 +64,10 @@ MaybeError CommandRecordingContext::Open(Device* device) {
 
         // Always bind the uniform buffer to the reserved slot for all pipelines.
         // This buffer will be updated with the correct values before each draw or dispatch call.
-        ID3D11Buffer* bufferPtr = mUniformBuffer->GetD3D11Buffer();
+        ID3D11Buffer* bufferPtr = mUniformBuffer->GetD3D11ConstantBuffer();
         mD3D11DeviceContext4->VSSetConstantBuffers(PipelineLayout::kReservedConstantBufferSlot, 1,
+                                                   &bufferPtr);
+        mD3D11DeviceContext4->CSSetConstantBuffers(PipelineLayout::kReservedConstantBufferSlot, 1,
                                                    &bufferPtr);
     }
 
@@ -104,13 +107,21 @@ Buffer* CommandRecordingContext::GetUniformBuffer() const {
     return mUniformBuffer.Get();
 }
 
+Device* CommandRecordingContext::GetDevice() const {
+    ASSERT(mDevice.Get());
+    return mDevice.Get();
+}
+
 void CommandRecordingContext::Release() {
     if (mIsOpen) {
         mIsOpen = false;
         mNeedsSubmit = false;
         mUniformBuffer = nullptr;
+        mDevice = nullptr;
         ID3D11Buffer* nullBuffer = nullptr;
         mD3D11DeviceContext4->VSSetConstantBuffers(PipelineLayout::kReservedConstantBufferSlot, 1,
+                                                   &nullBuffer);
+        mD3D11DeviceContext4->CSSetConstantBuffers(PipelineLayout::kReservedConstantBufferSlot, 1,
                                                    &nullBuffer);
         mD3D11DeviceContext4 = nullptr;
         mD3D11Device = nullptr;

@@ -22,9 +22,9 @@
 #include "dawn/common/SystemUtils.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/OpenGLBackend.h"
-#include "dawn/native/opengl/AdapterGL.h"
 #include "dawn/native/opengl/ContextEGL.h"
 #include "dawn/native/opengl/EGLFunctions.h"
+#include "dawn/native/opengl/PhysicalDeviceGL.h"
 
 namespace dawn::native::opengl {
 
@@ -33,8 +33,8 @@ namespace dawn::native::opengl {
 Backend::Backend(InstanceBase* instance, wgpu::BackendType backendType)
     : BackendConnection(instance, backendType) {}
 
-std::vector<Ref<AdapterBase>> Backend::DiscoverDefaultAdapters(const TogglesState& adapterToggles) {
-    std::vector<Ref<AdapterBase>> adapters;
+std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverDefaultAdapters() {
+    std::vector<Ref<PhysicalDeviceBase>> adapters;
 #if DAWN_PLATFORM_IS(WINDOWS)
     const char* eglLib = "libEGL.dll";
 #elif DAWN_PLATFORM_IS(MACOS)
@@ -69,7 +69,7 @@ std::vector<Ref<AdapterBase>> Backend::DiscoverDefaultAdapters(const TogglesStat
 
     context->MakeCurrent();
 
-    auto result = DiscoverAdapters(&options, adapterToggles);
+    auto result = DiscoverAdapters(&options);
 
     if (result.IsError()) {
         GetInstance()->ConsumedError(result.AcquireError());
@@ -83,9 +83,8 @@ std::vector<Ref<AdapterBase>> Backend::DiscoverDefaultAdapters(const TogglesStat
     return adapters;
 }
 
-ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
-    const AdapterDiscoveryOptionsBase* optionsBase,
-    const TogglesState& adapterToggles) {
+ResultOrError<std::vector<Ref<PhysicalDeviceBase>>> Backend::DiscoverAdapters(
+    const AdapterDiscoveryOptionsBase* optionsBase) {
     // TODO(cwallez@chromium.org): For now only create a single OpenGL adapter because don't
     // know how to handle MakeCurrent.
     DAWN_INVALID_IF(mCreatedAdapter, "The OpenGL backend can only create a single adapter.");
@@ -96,13 +95,13 @@ ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
 
     DAWN_INVALID_IF(options->getProc == nullptr, "AdapterDiscoveryOptions::getProc must be set");
 
-    Ref<Adapter> adapter = AcquireRef(new Adapter(
-        GetInstance(), static_cast<wgpu::BackendType>(optionsBase->backendType), adapterToggles));
+    Ref<PhysicalDevice> adapter = AcquireRef(new PhysicalDevice(
+        GetInstance(), static_cast<wgpu::BackendType>(optionsBase->backendType)));
     DAWN_TRY(adapter->InitializeGLFunctions(options->getProc));
     DAWN_TRY(adapter->Initialize());
 
     mCreatedAdapter = true;
-    std::vector<Ref<AdapterBase>> adapters{std::move(adapter)};
+    std::vector<Ref<PhysicalDeviceBase>> adapters{std::move(adapter)};
     return std::move(adapters);
 }
 

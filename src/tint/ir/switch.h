@@ -41,20 +41,35 @@ class Switch : public utils::Castable<Switch, FlowNode> {
         utils::Vector<CaseSelector, 4> selectors;
         /// The start block for the case block.
         Branch start = {};
+
+        /// @returns the case start target
+        const Branch& Start() const { return start; }
+        /// @returns the case start target
+        Branch& Start() { return start; }
     };
 
     /// Constructor
-    Switch();
+    /// @param cond the condition
+    explicit Switch(Value* cond);
     ~Switch() override;
 
-    /// The switch merge target
-    Branch merge = {};
+    /// @returns the switch merge branch
+    const Branch& Merge() const { return merge_; }
+    /// @returns the switch merge branch
+    Branch& Merge() { return merge_; }
 
-    /// The switch case statements
-    utils::Vector<Case, 4> cases;
+    /// @returns the switch cases
+    utils::VectorRef<Case> Cases() const { return cases_; }
+    /// @returns the switch cases
+    utils::Vector<Case, 4>& Cases() { return cases_; }
 
-    /// Value holding the condition result
-    const Value* condition = nullptr;
+    /// @returns the condition
+    const Value* Condition() const { return condition_; }
+
+  private:
+    Branch merge_ = {};
+    utils::Vector<Case, 4> cases_;
+    Value* condition_;
 };
 
 }  // namespace tint::ir

@@ -19,6 +19,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr static unsigned int kRTSize = 64;
 
 class DepthStencilStateTest : public DawnTest {
@@ -840,9 +843,13 @@ TEST_P(DepthStencilStateTest, StencilReferenceInitialized) {
 }
 
 DAWN_INSTANTIATE_TEST(DepthStencilStateTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend({"vulkan_use_d32s8"}, {}),
                       VulkanBackend({}, {"vulkan_use_d32s8"}));
+
+}  // anonymous namespace
+}  // namespace dawn

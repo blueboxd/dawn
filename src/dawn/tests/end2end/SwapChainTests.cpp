@@ -23,6 +23,9 @@
 
 #include "GLFW/glfw3.h"
 
+namespace dawn {
+namespace {
+
 class SwapChainTests : public DawnTest {
   public:
     void SetUp() override {
@@ -30,7 +33,7 @@ class SwapChainTests : public DawnTest {
         DAWN_TEST_UNSUPPORTED_IF(UsesWire());
 
         glfwSetErrorCallback([](int code, const char* message) {
-            dawn::ErrorLog() << "GLFW error " << code << " " << message;
+            ErrorLog() << "GLFW error " << code << " " << message;
         });
 
         // GLFW can fail to start in headless environments, in which SwapChainTests are
@@ -216,11 +219,6 @@ TEST_P(SwapChainTests, ResizingWindowAndSwapChain) {
 
 // Test switching devices on the same adapter.
 TEST_P(SwapChainTests, SwitchingDevice) {
-    // The Vulkan Validation Layers incorrectly disallow gracefully passing a swapchain between two
-    // VkDevices using "vkSwapchainCreateInfoKHR::oldSwapchain".
-    // See https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/2256
-    DAWN_SUPPRESS_TEST_IF(IsVulkan() && IsBackendValidationEnabled());
-
     wgpu::Device device2 = CreateDevice();
 
     for (int i = 0; i < 3; i++) {
@@ -397,3 +395,6 @@ DAWN_INSTANTIATE_TEST(SwapChainWithAdditionalUsageTests,
                       MetalBackend(),
                       NullBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <functional>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #include "src/tint/utils/crc32.h"
@@ -73,7 +74,9 @@ static constexpr bool IsCastable =
         tint::utils::TypeInfo::HashCodeOf<CLASS>(),                           \
         tint::utils::TypeInfo::FullHashCodeOf<CLASS>(),                       \
     };                                                                        \
-    TINT_CASTABLE_POP_DISABLE_WARNINGS()
+    TINT_CASTABLE_POP_DISABLE_WARNINGS();                                     \
+    static_assert(std::is_same_v<CLASS, CLASS::Base::Class>,                  \
+                  #CLASS " does not derive from Castable<" #CLASS "[, BASE]>")
 
 /// Bit flags that can be passed to the template parameter `FLAGS` of Is() and As().
 enum CastFlags {
@@ -414,18 +417,20 @@ class CastableBase {
 template <typename CLASS, typename BASE = CastableBase>
 class Castable : public BASE {
   public:
-    /// A type alias for `CLASS` to easily access the `BASE` class members.
-    /// Base actually aliases to the Castable instead of `BASE` so that you can
-    /// use Base in the `CLASS` constructor.
+    /// A type alias to this Castable. Commonly used in derived type constructors to forward
+    /// constructor arguments to BASE.
     using Base = Castable;
 
     /// A type alias for `BASE`.
     using TrueBase = BASE;
 
+    /// A type alias for `CLASS`.
+    using Class = CLASS;
+
     /// Constructor
-    /// @param args the arguments to forward to the base class.
+    /// @param arguments the arguments to forward to the base class.
     template <typename... ARGS>
-    inline explicit Castable(ARGS&&... args) : TrueBase(std::forward<ARGS>(args)...) {
+    inline explicit Castable(ARGS&&... arguments) : TrueBase(std::forward<ARGS>(arguments)...) {
         this->type_info_ = &TypeInfo::Of<CLASS>();
     }
 

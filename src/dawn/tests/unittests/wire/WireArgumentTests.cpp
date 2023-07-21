@@ -19,6 +19,7 @@
 #include "dawn/tests/unittests/wire/WireTest.h"
 
 namespace dawn::wire {
+namespace {
 
 using testing::_;
 using testing::Return;
@@ -240,7 +241,7 @@ TEST_F(WireArgumentTests, StructureOfValuesArgument) {
     WGPUSamplerDescriptor descriptor = {};
     descriptor.magFilter = WGPUFilterMode_Linear;
     descriptor.minFilter = WGPUFilterMode_Nearest;
-    descriptor.mipmapFilter = WGPUFilterMode_Linear;
+    descriptor.mipmapFilter = WGPUMipmapFilterMode_Linear;
     descriptor.addressModeU = WGPUAddressMode_ClampToEdge;
     descriptor.addressModeV = WGPUAddressMode_Repeat;
     descriptor.addressModeW = WGPUAddressMode_MirrorRepeat;
@@ -256,7 +257,7 @@ TEST_F(WireArgumentTests, StructureOfValuesArgument) {
                              return desc->nextInChain == nullptr &&
                                     desc->magFilter == WGPUFilterMode_Linear &&
                                     desc->minFilter == WGPUFilterMode_Nearest &&
-                                    desc->mipmapFilter == WGPUFilterMode_Linear &&
+                                    desc->mipmapFilter == WGPUMipmapFilterMode_Linear &&
                                     desc->addressModeU == WGPUAddressMode_ClampToEdge &&
                                     desc->addressModeV == WGPUAddressMode_Repeat &&
                                     desc->addressModeW == WGPUAddressMode_MirrorRepeat &&
@@ -369,4 +370,5 @@ TEST_F(WireArgumentTests, DISABLED_NullptrInArray) {
     FlushClient();
 }
 
+}  // anonymous namespace
 }  // namespace dawn::wire

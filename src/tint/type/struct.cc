@@ -52,14 +52,12 @@ type::Flags FlagsFrom(utils::VectorRef<const StructMember*> members) {
 
 }  // namespace
 
-Struct::Struct(tint::Source source,
-               Symbol name,
+Struct::Struct(Symbol name,
                utils::VectorRef<const StructMember*> members,
                uint32_t align,
                uint32_t size,
                uint32_t size_no_padding)
     : Base(utils::Hash(utils::TypeInfo::Of<Struct>().full_hashcode, name), FlagsFrom(members)),
-      source_(source),
       name_(name),
       members_(std::move(members)),
       align_(align),
@@ -169,33 +167,30 @@ Struct* Struct::Clone(CloneContext& ctx) const {
     for (const auto& mem : members_) {
         members.Push(mem->Clone(ctx));
     }
-    return ctx.dst.mgr->Get<Struct>(source_, sym, members, align_, size_, size_no_padding_);
+    return ctx.dst.mgr->Get<Struct>(sym, members, align_, size_, size_no_padding_);
 }
 
-StructMember::StructMember(tint::Source source,
-                           Symbol name,
+StructMember::StructMember(Symbol name,
                            const type::Type* type,
                            uint32_t index,
                            uint32_t offset,
                            uint32_t align,
                            uint32_t size,
-                           std::optional<uint32_t> location)
-    : source_(source),
-      name_(name),
+                           const StructMemberAttributes& attributes)
+    : name_(name),
       type_(type),
       index_(index),
       offset_(offset),
       align_(align),
       size_(size),
-      location_(location) {}
+      attributes_(attributes) {}
 
 StructMember::~StructMember() = default;
 
 StructMember* StructMember::Clone(CloneContext& ctx) const {
     auto sym = ctx.dst.st->Register(name_.Name());
     auto* ty = type_->Clone(ctx);
-    return ctx.dst.mgr->Get<StructMember>(source_, sym, ty, index_, offset_, align_, size_,
-                                          location_);
+    return ctx.dst.mgr->Get<StructMember>(sym, ty, index_, offset_, align_, size_, attributes_);
 }
 
 }  // namespace tint::type
