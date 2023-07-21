@@ -17,19 +17,16 @@
 
 #include <utility>
 
-#include "src/tint/constant/composite.h"
-#include "src/tint/constant/scalar.h"
-#include "src/tint/constant/splat.h"
 #include "src/tint/ir/access.h"
 #include "src/tint/ir/binary.h"
 #include "src/tint/ir/bitcast.h"
 #include "src/tint/ir/block_param.h"
 #include "src/tint/ir/break_if.h"
-#include "src/tint/ir/builtin_call.h"
 #include "src/tint/ir/constant.h"
 #include "src/tint/ir/construct.h"
 #include "src/tint/ir/continue.h"
 #include "src/tint/ir/convert.h"
+#include "src/tint/ir/core_builtin_call.h"
 #include "src/tint/ir/discard.h"
 #include "src/tint/ir/exit_if.h"
 #include "src/tint/ir/exit_loop.h"
@@ -57,16 +54,19 @@
 #include "src/tint/ir/user_call.h"
 #include "src/tint/ir/value.h"
 #include "src/tint/ir/var.h"
-#include "src/tint/switch.h"
-#include "src/tint/type/bool.h"
-#include "src/tint/type/f16.h"
-#include "src/tint/type/f32.h"
-#include "src/tint/type/i32.h"
-#include "src/tint/type/pointer.h"
-#include "src/tint/type/u32.h"
-#include "src/tint/type/vector.h"
-#include "src/tint/type/void.h"
-#include "src/tint/utils/scoped_assignment.h"
+#include "src/tint/lang/core/constant/composite.h"
+#include "src/tint/lang/core/constant/scalar.h"
+#include "src/tint/lang/core/constant/splat.h"
+#include "src/tint/lang/core/type/bool.h"
+#include "src/tint/lang/core/type/f16.h"
+#include "src/tint/lang/core/type/f32.h"
+#include "src/tint/lang/core/type/i32.h"
+#include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/lang/core/type/u32.h"
+#include "src/tint/lang/core/type/vector.h"
+#include "src/tint/lang/core/type/void.h"
+#include "src/tint/utils/macros/scoped_assignment.h"
+#include "src/tint/utils/rtti/switch.h"
 
 namespace tint::ir {
 
@@ -504,7 +504,13 @@ class Builder {
     /// @returns the operation
     template <typename VAL>
     ir::Binary* Not(const type::Type* type, VAL&& val) {
-        return Equal(type, std::forward<VAL>(val), Constant(false));
+        if (auto* vec = type->As<type::Vector>()) {
+            return Equal(type, std::forward<VAL>(val),
+                         Constant(ir.constant_values.Splat(vec, ir.constant_values.Get(false),
+                                                           vec->Width())));
+        } else {
+            return Equal(type, std::forward<VAL>(val), Constant(false));
+        }
     }
 
     /// Creates a bitcast instruction
@@ -532,15 +538,15 @@ class Builder {
                                                            Values(std::forward<ARGS>(args)...)));
     }
 
-    /// Creates a builtin call instruction
+    /// Creates a core builtin call instruction
     /// @param type the return type of the call
     /// @param func the builtin function to call
     /// @param args the call arguments
     /// @returns the instruction
     template <typename... ARGS>
-    ir::BuiltinCall* Call(const type::Type* type, builtin::Function func, ARGS&&... args) {
-        return Append(ir.instructions.Create<ir::BuiltinCall>(InstructionResult(type), func,
-                                                              Values(std::forward<ARGS>(args)...)));
+    ir::CoreBuiltinCall* Call(const type::Type* type, builtin::Function func, ARGS&&... args) {
+        return Append(ir.instructions.Create<ir::CoreBuiltinCall>(
+            InstructionResult(type), func, Values(std::forward<ARGS>(args)...)));
     }
 
     /// Creates an intrinsic call instruction

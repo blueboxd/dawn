@@ -17,7 +17,7 @@
 
 #include "src/tint/ir/operand_instruction.h"
 #include "src/tint/ir/value.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
 namespace tint::ir {

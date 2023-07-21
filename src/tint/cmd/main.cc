@@ -30,7 +30,7 @@
 #endif  // TINT_BUILD_GLSL_WRITER
 
 #if TINT_BUILD_SYNTAX_TREE_WRITER
-#include "src/tint/writer/syntax_tree/generator.h"  // nogncheck
+#include "src/tint/lang/wgsl/syntax_tree_writer/generator.h"  // nogncheck
 
 #endif  // TINT_BUILD_SYNTAX_TREE_WRITER
 
@@ -38,16 +38,17 @@
 #include "spirv-tools/libspirv.hpp"
 #endif  // TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 
-#include "src/tint/ast/module.h"
 #include "src/tint/cmd/generate_external_texture_bindings.h"
 #include "src/tint/cmd/helper.h"
-#include "src/tint/utils/cli.h"
-#include "src/tint/utils/defer.h"
-#include "src/tint/utils/io/command.h"
-#include "src/tint/utils/string.h"
-#include "src/tint/utils/string_stream.h"
-#include "src/tint/utils/transform.h"
-#include "src/tint/val/val.h"
+#include "src/tint/lang/hlsl/validate/val.h"
+#include "src/tint/lang/msl/validate/val.h"
+#include "src/tint/lang/wgsl/ast/module.h"
+#include "src/tint/utils/cli/cli.h"
+#include "src/tint/utils/command/command.h"
+#include "src/tint/utils/containers/transform.h"
+#include "src/tint/utils/macros/defer.h"
+#include "src/tint/utils/text/string.h"
+#include "src/tint/utils/text/string_stream.h"
 #include "tint/tint.h"
 
 #if TINT_BUILD_IR
@@ -648,9 +649,9 @@ bool GenerateMsl(const tint::Program* program, const Options& options) {
     }
 
     if (options.validate && options.skip_hash.count(hash) == 0) {
-        tint::val::Result res;
+        tint::msl::validate::Result res;
 #ifdef TINT_ENABLE_MSL_VALIDATION_USING_METAL_API
-        res = tint::val::MslUsingMetalAPI(result.msl);
+        res = tint::msl::validate::UsingMetalAPI(result.msl);
 #else
 #ifdef _WIN32
         const char* default_xcrun_exe = "metal.exe";
@@ -660,7 +661,7 @@ bool GenerateMsl(const tint::Program* program, const Options& options) {
         auto xcrun = tint::utils::Command::LookPath(
             options.xcrun_path.empty() ? default_xcrun_exe : std::string(options.xcrun_path));
         if (xcrun.Found()) {
-            res = tint::val::Msl(xcrun.Path(), result.msl);
+            res = tint::msl::validate::Msl(xcrun.Path(), result.msl);
         } else {
             res.output = "xcrun executable not found. Cannot validate.";
             res.failed = true;
@@ -716,7 +717,7 @@ bool GenerateHlsl(const tint::Program* program, const Options& options) {
     const bool must_validate_fxc = !options.fxc_path.empty();
     if ((options.validate || must_validate_dxc || must_validate_fxc) &&
         (options.skip_hash.count(hash) == 0)) {
-        tint::val::Result dxc_res;
+        tint::hlsl::validate::Result dxc_res;
         bool dxc_found = false;
         if (options.validate || must_validate_dxc) {
             auto dxc = tint::utils::Command::LookPath(
@@ -733,8 +734,8 @@ bool GenerateHlsl(const tint::Program* program, const Options& options) {
                     }
                 }
 
-                dxc_res = tint::val::HlslUsingDXC(dxc.Path(), result.hlsl, result.entry_points,
-                                                  dxc_require_16bit_types);
+                dxc_res = tint::hlsl::validate::UsingDXC(
+                    dxc.Path(), result.hlsl, result.entry_points, dxc_require_16bit_types);
             } else if (must_validate_dxc) {
                 // DXC was explicitly requested. Error if it could not be found.
                 dxc_res.failed = true;
@@ -743,16 +744,18 @@ bool GenerateHlsl(const tint::Program* program, const Options& options) {
             }
         }
 
-        tint::val::Result fxc_res;
+        tint::hlsl::validate::Result fxc_res;
         bool fxc_found = false;
         if (options.validate || must_validate_fxc) {
-            auto fxc = tint::utils::Command::LookPath(
-                options.fxc_path.empty() ? tint::val::kFxcDLLName : std::string(options.fxc_path));
+            auto fxc = tint::utils::Command::LookPath(options.fxc_path.empty()
+                                                          ? tint::hlsl::validate::kFxcDLLName
+                                                          : std::string(options.fxc_path));
 
 #ifdef _WIN32
             if (fxc.Found()) {
                 fxc_found = true;
-                fxc_res = tint::val::HlslUsingFXC(fxc.Path(), result.hlsl, result.entry_points);
+                fxc_res =
+                    tint::hlsl::validate::UsingFXC(fxc.Path(), result.hlsl, result.entry_points);
             } else if (must_validate_fxc) {
                 // FXC was explicitly requested. Error if it could not be found.
                 fxc_res.failed = true;

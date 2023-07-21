@@ -18,10 +18,10 @@
 #include <stddef.h>
 #include <string>
 
-#include "src/tint/builtin/number.h"
-#include "src/tint/type/type.h"
-#include "src/tint/utils/result.h"
-#include "src/tint/utils/vector.h"
+#include "src/tint/lang/core/builtin/number.h"
+#include "src/tint/lang/core/type/type.h"
+#include "src/tint/utils/containers/vector.h"
+#include "src/tint/utils/result/result.h"
 
 // Forward declarations
 namespace tint {

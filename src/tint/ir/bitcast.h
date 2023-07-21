@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_BITCAST_H_
 
 #include "src/tint/ir/call.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -34,6 +34,9 @@ class Bitcast : public utils::Castable<Bitcast, Call> {
 
     /// @returns the operand value
     Value* Val() { return operands_[kValueOperandOffset]; }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "bitcast"; }
 };
 
 }  // namespace tint::ir

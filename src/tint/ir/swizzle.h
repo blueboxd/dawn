@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_SWIZZLE_H_
 
 #include "src/tint/ir/operand_instruction.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -38,6 +38,9 @@ class Swizzle : public utils::Castable<Swizzle, OperandInstruction<1, 1>> {
 
     /// @returns the swizzle indices
     utils::VectorRef<uint32_t> Indices() { return indices_; }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "swizzle"; }
 
   private:
     utils::Vector<uint32_t, 4> indices_;

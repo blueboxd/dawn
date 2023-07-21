@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/constant/splat.h"
+#include "src/tint/lang/core/constant/splat.h"
+#include "src/tint/lang/wgsl/sem/materialize.h"
 #include "src/tint/resolver/const_eval_test.h"
-#include "src/tint/sem/materialize.h"
 
 namespace tint::resolver {
 namespace {

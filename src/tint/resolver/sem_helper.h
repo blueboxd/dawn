@@ -17,16 +17,16 @@
 
 #include <string>
 
-#include "src/tint/builtin/builtin_value.h"
-#include "src/tint/builtin/interpolation_sampling.h"
-#include "src/tint/builtin/interpolation_type.h"
-#include "src/tint/diagnostic/diagnostic.h"
-#include "src/tint/program_builder.h"
+#include "src/tint/lang/core/builtin/builtin_value.h"
+#include "src/tint/lang/core/builtin/interpolation_sampling.h"
+#include "src/tint/lang/core/builtin/interpolation_type.h"
+#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/sem/builtin_enum_expression.h"
+#include "src/tint/lang/wgsl/sem/function_expression.h"
+#include "src/tint/lang/wgsl/sem/type_expression.h"
 #include "src/tint/resolver/dependency_graph.h"
-#include "src/tint/sem/builtin_enum_expression.h"
-#include "src/tint/sem/function_expression.h"
-#include "src/tint/sem/type_expression.h"
-#include "src/tint/utils/map.h"
+#include "src/tint/utils/containers/map.h"
+#include "src/tint/utils/diagnostic/diagnostic.h"
 
 namespace tint::resolver {
 

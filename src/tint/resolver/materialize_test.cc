@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/sem/materialize.h"
+#include "src/tint/lang/wgsl/sem/materialize.h"
 
+#include "src/tint/lang/core/type/test_helper.h"
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
-#include "src/tint/switch.h"
-#include "src/tint/type/test_helper.h"
+#include "src/tint/utils/rtti/switch.h"
 
 #include "gmock/gmock.h"
 

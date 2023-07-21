@@ -16,8 +16,8 @@
 #define SRC_TINT_IR_CONVERT_H_
 
 #include "src/tint/ir/call.h"
-#include "src/tint/type/type.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/lang/core/type/type.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -32,6 +32,9 @@ class Convert : public utils::Castable<Convert, Call> {
     /// @param value the value to convert
     Convert(InstructionResult* result, Value* value);
     ~Convert() override;
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "convert"; }
 };
 
 }  // namespace tint::ir

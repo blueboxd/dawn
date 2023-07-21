@@ -18,9 +18,9 @@
 
 #include "src/tint/ir/builder.h"
 #include "src/tint/ir/module.h"
-#include "src/tint/switch.h"
-#include "src/tint/utils/reverse.h"
-#include "src/tint/utils/transform.h"
+#include "src/tint/utils/containers/reverse.h"
+#include "src/tint/utils/containers/transform.h"
+#include "src/tint/utils/rtti/switch.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ir::transform::MergeReturn);
 

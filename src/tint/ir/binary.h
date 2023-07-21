@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_BINARY_H_
 
 #include "src/tint/ir/operand_instruction.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -68,6 +68,9 @@ class Binary : public utils::Castable<Binary, OperandInstruction<2, 1>> {
 
     /// @returns the right-hand-side value for the instruction
     Value* RHS() { return operands_[kRhsOperandOffset]; }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "binary"; }
 
   private:
     enum Kind kind_;

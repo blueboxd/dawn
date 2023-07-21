@@ -20,11 +20,13 @@
 #include <utility>
 
 #include "gtest/gtest.h"
-#include "src/tint/builtin/number.h"
 #include "src/tint/ir/disassembler.h"
 #include "src/tint/ir/from_program.h"
-#include "src/tint/program_builder.h"
-#include "src/tint/utils/string_stream.h"
+#include "src/tint/ir/validator.h"
+#include "src/tint/lang/core/builtin/number.h"
+#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/reader/parser.h"
+#include "src/tint/utils/text/string_stream.h"
 
 namespace tint::ir {
 
@@ -40,13 +42,43 @@ class ProgramTestHelperBase : public BASE, public ProgramBuilder {
     utils::Result<Module, std::string> Build() {
         SetResolveOnBuild(true);
 
-        auto program = std::make_unique<Program>(std::move(*this));
-        [&] {
-            diag::Formatter formatter;
-            ASSERT_TRUE(program->IsValid()) << formatter.format(program->Diagnostics());
-        }();
+        Program program{std::move(*this)};
+        if (!program.IsValid()) {
+            return program.Diagnostics().str();
+        }
 
-        return FromProgram(program.get());
+        auto result = FromProgram(&program);
+        if (result) {
+            auto validated = ir::Validate(result.Get());
+            if (!validated) {
+                return validated.Failure().str();
+            }
+        }
+        return result;
+    }
+
+    /// Build the module from the given WGSL.
+    /// @param wgsl the WGSL to convert to IR
+    /// @returns the generated module
+    utils::Result<Module, std::string> Build(std::string wgsl) {
+#if TINT_BUILD_WGSL_READER
+        Source::File file("test.wgsl", std::move(wgsl));
+        auto program = reader::wgsl::Parse(&file);
+        if (!program.IsValid()) {
+            return program.Diagnostics().str();
+        }
+
+        auto result = FromProgram(&program);
+        if (result) {
+            auto validated = ir::Validate(result.Get());
+            if (!validated) {
+                return validated.Failure().str();
+            }
+        }
+        return result;
+#else
+        return std::string("error: Tint not built with the WGSL reader");
+#endif
     }
 
     /// @param mod the module

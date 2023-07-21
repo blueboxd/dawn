@@ -32,6 +32,18 @@ vars = {
 
   # Fetch clang-tidy into the same bin/ directory as our clang binary.
   'checkout_clang_tidy': False,
+
+  # Fetch configuration files required for the 'use_remoteexec' gn arg
+  'download_remoteexec_cfg': False,
+  # RBE instance to use for running remote builds
+  'rbe_instance': Str('projects/rbe-chrome-untrusted/instances/default_instance'),
+  # RBE project to download rewrapper config files for. Only needed if
+  # different from the project used in 'rbe_instance'
+  'rewrapper_cfg_project': Str(''),
+  # reclient CIPD package
+  'reclient_package': 'infra/rbe/client/',
+  # reclient CIPD package version
+  'reclient_version': 're_client_version:0.108.0.7cdbbe9-gomaip',
 }
 
 deps = {
@@ -41,7 +53,7 @@ deps = {
     'condition': 'dawn_standalone',
   },
   'buildtools': {
-    'url': '{chromium_git}/chromium/src/buildtools@2ff42d2008f09f65de12e70c6ff0ad58ddb090ad',
+    'url': '{chromium_git}/chromium/src/buildtools@f841f2b2fdde3c8dbe069abf83fa78ab430b34a2',
     'condition': 'dawn_standalone',
   },
   'third_party/clang-format/script': {
@@ -74,12 +86,12 @@ deps = {
   },
 
   'buildtools/third_party/libc++/trunk': {
-    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxx.git@c1341b9a1a7de7c193a23bf003d5479c48957f7d',
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxx.git@0e4617cf8c09a8e2b6704a51a8a0a9560715cf70',
     'condition': 'dawn_standalone',
   },
 
   'buildtools/third_party/libc++abi/trunk': {
-    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxxabi.git@f7460fc60ab56553f0b3b0853f1ea60aa51b9478',
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxxabi.git@307bd163607c315d46103ebe1d68aab44bf93986',
     'condition': 'dawn_standalone',
   },
 
@@ -131,22 +143,22 @@ deps = {
   },
 
   'third_party/vulkan_memory_allocator': {
-    'url': '{chromium_git}/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@5e49f57a6e71a026a54eb42e366de09a4142d24e',
+    'url': '{chromium_git}/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@e87036508bb156f9986ea959323de1869e328f58',
     'condition': 'dawn_standalone',
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@0312c76fcfd0d1b815c3437fe4a7749ce0754cfe',
+    'url': '{chromium_git}/angle/angle@e1887773b151333c7c7d46f621607bbf5c37cad8',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@151fa797ee3e2d5595ab74b7b1167fa5ae5aebb4',
+    'url': '{swiftshader_git}/SwiftShader@3516534244606b5c46561194354683285e8fd0f7',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@df22aa218f6a30f857c705374f06cbe539ff2270',
+    'url': '{chromium_git}/vulkan-deps@20c969bbf8f946cc1f4b52dd21645c0fa0b1ed21',
     'condition': 'dawn_standalone',
   },
 
@@ -161,7 +173,7 @@ deps = {
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@5e080a772910f147cc447fc34e8eb489f0761144',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@af0b809140d45c5e56b13a11598a452bc2ed3b20',
   },
   'third_party/dxheaders': {
     # The non-Windows build of DXC depends on DirectX-Headers, and at a specific commit (not ToT)
@@ -171,7 +183,7 @@ deps = {
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@82a512494491d0e22a166d5291c86a4bf5a27172',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@60af227cf8b517c4be79c7af0d8238034f052d34',
     'condition': 'build_with_chromium',
   },
 
@@ -214,6 +226,18 @@ deps = {
       }
     ],
     'dep_type': 'cipd',
+  },
+
+  # RBE dependencies
+  'buildtools/reclient': {
+    'packages': [
+      {
+        'package': Var('reclient_package') + '${{platform}}',
+        'version': Var('reclient_version'),
+      }
+    ],
+    'dep_type': 'cipd',
+    'condition': 'dawn_standalone',
   },
 
   # Misc dependencies inherited from Tint
@@ -437,7 +461,23 @@ hooks = [
                 '-o', 'third_party/node/node.exe',
     ],
   },
-
+ {
+   # Download remote exec cfg files
+   'name': 'fetch_reclient_cfgs',
+   'pattern': '.',
+   'condition': 'download_remoteexec_cfg and dawn_standalone',
+   'action': ['python3',
+              'buildtools/reclient_cfgs/fetch_reclient_cfgs.py',
+              '--rbe_instance',
+              Var('rbe_instance'),
+              '--reproxy_cfg_template',
+              'reproxy.cfg.template',
+              '--rewrapper_cfg_project',
+              Var('rewrapper_cfg_project'),
+              '--quiet',
+              '--hook',
+              ],
+ },
 ]
 
 recursedeps = [

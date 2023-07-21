@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_EXIT_IF_H_
 
 #include "src/tint/ir/exit.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
 namespace tint::ir {
@@ -43,6 +43,9 @@ class ExitIf : public utils::Castable<ExitIf, Exit> {
 
     /// @returns the if being exited
     ir::If* If();
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "exit-if"; }
 };
 
 }  // namespace tint::ir

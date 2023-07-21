@@ -17,20 +17,20 @@
 #include <utility>
 
 #include "gmock/gmock.h"
-#include "src/tint/program_builder.h"
+#include "src/tint/lang/core/type/atomic.h"
+#include "src/tint/lang/core/type/depth_multisampled_texture.h"
+#include "src/tint/lang/core/type/depth_texture.h"
+#include "src/tint/lang/core/type/external_texture.h"
+#include "src/tint/lang/core/type/multisampled_texture.h"
+#include "src/tint/lang/core/type/reference.h"
+#include "src/tint/lang/core/type/sampled_texture.h"
+#include "src/tint/lang/core/type/storage_texture.h"
+#include "src/tint/lang/core/type/test_helper.h"
+#include "src/tint/lang/core/type/texture_dimension.h"
+#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/sem/value_constructor.h"
+#include "src/tint/lang/wgsl/sem/value_conversion.h"
 #include "src/tint/resolver/resolver_test_helper.h"
-#include "src/tint/sem/value_constructor.h"
-#include "src/tint/sem/value_conversion.h"
-#include "src/tint/type/atomic.h"
-#include "src/tint/type/depth_multisampled_texture.h"
-#include "src/tint/type/depth_texture.h"
-#include "src/tint/type/external_texture.h"
-#include "src/tint/type/multisampled_texture.h"
-#include "src/tint/type/reference.h"
-#include "src/tint/type/sampled_texture.h"
-#include "src/tint/type/storage_texture.h"
-#include "src/tint/type/test_helper.h"
-#include "src/tint/type/texture_dimension.h"
 
 namespace tint::resolver {
 namespace {

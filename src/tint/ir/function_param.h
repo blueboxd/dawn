@@ -20,8 +20,8 @@
 #include "src/tint/ir/binding_point.h"
 #include "src/tint/ir/location.h"
 #include "src/tint/ir/value.h"
-#include "src/tint/utils/castable.h"
-#include "src/tint/utils/vector.h"
+#include "src/tint/utils/containers/vector.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 

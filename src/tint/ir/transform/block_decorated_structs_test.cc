@@ -17,9 +17,9 @@
 #include <utility>
 
 #include "src/tint/ir/transform/test_helper.h"
-#include "src/tint/type/array.h"
-#include "src/tint/type/pointer.h"
-#include "src/tint/type/struct.h"
+#include "src/tint/lang/core/type/array.h"
+#include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/lang/core/type/struct.h"
 
 namespace tint::ir::transform {
 namespace {
@@ -103,6 +103,38 @@ tint_symbol_1 = struct @align(4), @block {
     %3:ptr<storage, i32, read_write> = access %1, 0u
     store %3, 42i
     ret
+  }
+}
+)";
+
+    Run<BlockDecoratedStructs>();
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_BlockDecoratedStructsTest, Scalar_PushConstant) {
+    auto* buffer = b.Var(ty.ptr<push_constant, i32>());
+    b.RootBlock()->Append(buffer);
+
+    auto* func = b.Function("foo", ty.i32());
+    b.With(func->Block(), [&] {  //
+        b.Return(func, b.Load(buffer));
+    });
+
+    auto* expect = R"(
+tint_symbol_1 = struct @align(4), @block {
+  tint_symbol:i32 @offset(0)
+}
+
+%b1 = block {  # root
+  %1:ptr<push_constant, tint_symbol_1, read_write> = var
+}
+
+%foo = func():i32 -> %b2 {
+  %b2 = block {
+    %3:ptr<push_constant, i32, read_write> = access %1, 0u
+    %4:i32 = load %3
+    ret %4
   }
 }
 )";

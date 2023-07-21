@@ -16,19 +16,13 @@
 
 #include <utility>
 
-#include "src/tint/debug.h"
+#include "src/tint/utils/debug/debug.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ir::BuiltinCall);
 
 namespace tint::ir {
 
-BuiltinCall::BuiltinCall(InstructionResult* result,
-                         builtin::Function func,
-                         utils::VectorRef<Value*> arguments)
-    : func_(func) {
-    TINT_ASSERT(IR, func != builtin::Function::kNone);
-    TINT_ASSERT(IR, func != builtin::Function::kTintMaterialize);
-
+BuiltinCall::BuiltinCall(InstructionResult* result, utils::VectorRef<Value*> arguments) {
     AddOperands(BuiltinCall::kArgsOperandOffset, std::move(arguments));
     AddResult(result);
 }

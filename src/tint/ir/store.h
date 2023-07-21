@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_STORE_H_
 
 #include "src/tint/ir/operand_instruction.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -40,6 +40,9 @@ class Store : public utils::Castable<Store, OperandInstruction<2, 0>> {
 
     /// @returns the value being stored
     Value* From() { return operands_[kFromOperandOffset]; }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "store"; }
 };
 
 }  // namespace tint::ir

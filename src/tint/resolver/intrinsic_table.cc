@@ -18,30 +18,30 @@
 #include <limits>
 #include <utility>
 
-#include "src/tint/ast/binary_expression.h"
-#include "src/tint/program_builder.h"
-#include "src/tint/resolver/builtin_structs.h"
-#include "src/tint/sem/evaluation_stage.h"
-#include "src/tint/sem/pipeline_stage_set.h"
-#include "src/tint/sem/value_constructor.h"
-#include "src/tint/sem/value_conversion.h"
-#include "src/tint/switch.h"
-#include "src/tint/type/abstract_float.h"
-#include "src/tint/type/abstract_int.h"
-#include "src/tint/type/abstract_numeric.h"
-#include "src/tint/type/atomic.h"
-#include "src/tint/type/depth_multisampled_texture.h"
-#include "src/tint/type/depth_texture.h"
-#include "src/tint/type/external_texture.h"
-#include "src/tint/type/multisampled_texture.h"
-#include "src/tint/type/sampled_texture.h"
-#include "src/tint/type/storage_texture.h"
-#include "src/tint/type/texture_dimension.h"
-#include "src/tint/utils/hash.h"
-#include "src/tint/utils/hashmap.h"
-#include "src/tint/utils/math.h"
-#include "src/tint/utils/scoped_assignment.h"
-#include "src/tint/utils/string_stream.h"
+#include "src/tint/lang/core/type/abstract_float.h"
+#include "src/tint/lang/core/type/abstract_int.h"
+#include "src/tint/lang/core/type/abstract_numeric.h"
+#include "src/tint/lang/core/type/atomic.h"
+#include "src/tint/lang/core/type/builtin_structs.h"
+#include "src/tint/lang/core/type/depth_multisampled_texture.h"
+#include "src/tint/lang/core/type/depth_texture.h"
+#include "src/tint/lang/core/type/external_texture.h"
+#include "src/tint/lang/core/type/multisampled_texture.h"
+#include "src/tint/lang/core/type/sampled_texture.h"
+#include "src/tint/lang/core/type/storage_texture.h"
+#include "src/tint/lang/core/type/texture_dimension.h"
+#include "src/tint/lang/wgsl/ast/binary_expression.h"
+#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/sem/evaluation_stage.h"
+#include "src/tint/lang/wgsl/sem/pipeline_stage_set.h"
+#include "src/tint/lang/wgsl/sem/value_constructor.h"
+#include "src/tint/lang/wgsl/sem/value_conversion.h"
+#include "src/tint/utils/containers/hashmap.h"
+#include "src/tint/utils/macros/scoped_assignment.h"
+#include "src/tint/utils/math/hash.h"
+#include "src/tint/utils/math/math.h"
+#include "src/tint/utils/rtti/switch.h"
+#include "src/tint/utils/text/string_stream.h"
 
 namespace tint::resolver {
 namespace {
@@ -821,25 +821,26 @@ bool match_atomic_compare_exchange_result(MatchState&, const type::Type* ty, con
 }
 
 const type::Struct* build_modf_result(MatchState& state, const type::Type* el) {
-    return CreateModfResult(state.builder.Types(), state.builder.Symbols(), el);
+    return type::CreateModfResult(state.builder.Types(), state.builder.Symbols(), el);
 }
 
 const type::Struct* build_modf_result_vec(MatchState& state, Number& n, const type::Type* el) {
     auto* vec = state.builder.create<type::Vector>(el, n.Value());
-    return CreateModfResult(state.builder.Types(), state.builder.Symbols(), vec);
+    return type::CreateModfResult(state.builder.Types(), state.builder.Symbols(), vec);
 }
 
 const type::Struct* build_frexp_result(MatchState& state, const type::Type* el) {
-    return CreateFrexpResult(state.builder.Types(), state.builder.Symbols(), el);
+    return type::CreateFrexpResult(state.builder.Types(), state.builder.Symbols(), el);
 }
 
 const type::Struct* build_frexp_result_vec(MatchState& state, Number& n, const type::Type* el) {
     auto* vec = state.builder.create<type::Vector>(el, n.Value());
-    return CreateFrexpResult(state.builder.Types(), state.builder.Symbols(), vec);
+    return type::CreateFrexpResult(state.builder.Types(), state.builder.Symbols(), vec);
 }
 
 const type::Struct* build_atomic_compare_exchange_result(MatchState& state, const type::Type* ty) {
-    return CreateAtomicCompareExchangeResult(state.builder.Types(), state.builder.Symbols(), ty);
+    return type::CreateAtomicCompareExchangeResult(state.builder.Types(), state.builder.Symbols(),
+                                                   ty);
 }
 
 /// ParameterInfo describes a parameter

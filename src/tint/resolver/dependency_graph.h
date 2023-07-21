@@ -18,16 +18,16 @@
 #include <string>
 #include <vector>
 
-#include "src/tint/ast/module.h"
-#include "src/tint/builtin/access.h"
-#include "src/tint/builtin/builtin.h"
-#include "src/tint/builtin/builtin_value.h"
-#include "src/tint/builtin/function.h"
-#include "src/tint/builtin/interpolation_sampling.h"
-#include "src/tint/builtin/interpolation_type.h"
-#include "src/tint/builtin/texel_format.h"
-#include "src/tint/diagnostic/diagnostic.h"
-#include "src/tint/utils/hashmap.h"
+#include "src/tint/lang/core/builtin/access.h"
+#include "src/tint/lang/core/builtin/builtin.h"
+#include "src/tint/lang/core/builtin/builtin_value.h"
+#include "src/tint/lang/core/builtin/function.h"
+#include "src/tint/lang/core/builtin/interpolation_sampling.h"
+#include "src/tint/lang/core/builtin/interpolation_type.h"
+#include "src/tint/lang/core/builtin/texel_format.h"
+#include "src/tint/lang/wgsl/ast/module.h"
+#include "src/tint/utils/containers/hashmap.h"
+#include "src/tint/utils/diagnostic/diagnostic.h"
 
 namespace tint::resolver {
 

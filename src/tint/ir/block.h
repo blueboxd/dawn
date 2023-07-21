@@ -19,7 +19,7 @@
 
 #include "src/tint/ir/instruction.h"
 #include "src/tint/ir/terminator.h"
-#include "src/tint/utils/vector.h"
+#include "src/tint/utils/containers/vector.h"
 
 // Forward declarations
 namespace tint::ir {

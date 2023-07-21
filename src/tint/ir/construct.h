@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_CONSTRUCT_H_
 
 #include "src/tint/ir/call.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -31,6 +31,9 @@ class Construct : public utils::Castable<Construct, Call> {
     /// @param args the constructor arguments
     explicit Construct(InstructionResult* result, utils::VectorRef<Value*> args = utils::Empty);
     ~Construct() override;
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "construct"; }
 };
 
 }  // namespace tint::ir

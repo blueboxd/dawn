@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <utility>
 
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::transform {
 

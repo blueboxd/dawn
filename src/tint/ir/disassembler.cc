@@ -15,19 +15,16 @@
 #include "src/tint/ir/disassembler.h"
 
 #include "src//tint/ir/unary.h"
-#include "src/tint/constant/composite.h"
-#include "src/tint/constant/scalar.h"
-#include "src/tint/constant/splat.h"
 #include "src/tint/ir/access.h"
 #include "src/tint/ir/binary.h"
 #include "src/tint/ir/bitcast.h"
 #include "src/tint/ir/block.h"
 #include "src/tint/ir/block_param.h"
 #include "src/tint/ir/break_if.h"
-#include "src/tint/ir/builtin_call.h"
 #include "src/tint/ir/construct.h"
 #include "src/tint/ir/continue.h"
 #include "src/tint/ir/convert.h"
+#include "src/tint/ir/core_builtin_call.h"
 #include "src/tint/ir/discard.h"
 #include "src/tint/ir/exit_if.h"
 #include "src/tint/ir/exit_loop.h"
@@ -50,11 +47,14 @@
 #include "src/tint/ir/unreachable.h"
 #include "src/tint/ir/user_call.h"
 #include "src/tint/ir/var.h"
-#include "src/tint/switch.h"
-#include "src/tint/type/struct.h"
-#include "src/tint/type/type.h"
-#include "src/tint/utils/scoped_assignment.h"
-#include "src/tint/utils/string.h"
+#include "src/tint/lang/core/constant/composite.h"
+#include "src/tint/lang/core/constant/scalar.h"
+#include "src/tint/lang/core/constant/splat.h"
+#include "src/tint/lang/core/type/struct.h"
+#include "src/tint/lang/core/type/type.h"
+#include "src/tint/utils/macros/scoped_assignment.h"
+#include "src/tint/utils/rtti/switch.h"
+#include "src/tint/utils/text/string.h"
 
 namespace tint::ir {
 namespace {
@@ -418,7 +418,7 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             EmitInstructionName("discard", d);
             EmitLine();
         },
-        [&](BuiltinCall* b) {
+        [&](CoreBuiltinCall* b) {
             EmitValueWithType(b);
             out_ << " = ";
             EmitInstructionName(builtin::str(b->Func()), b);
@@ -476,8 +476,6 @@ void Disassembler::EmitInstruction(Instruction* inst) {
         },
         [&](StoreVectorElement* s) {
             EmitInstructionName("store_vector_element", s);
-            out_ << " ";
-            EmitValue(s->To());
             out_ << " ";
             EmitOperandList(s);
             EmitLine();

@@ -15,9 +15,8 @@
 #ifndef SRC_TINT_IR_BUILTIN_CALL_H_
 #define SRC_TINT_IR_BUILTIN_CALL_H_
 
-#include "src/tint/builtin/function.h"
 #include "src/tint/ir/call.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -29,18 +28,9 @@ class BuiltinCall : public utils::Castable<BuiltinCall, Call> {
 
     /// Constructor
     /// @param result the result value
-    /// @param func the builtin function
     /// @param args the conversion arguments
-    BuiltinCall(InstructionResult* result,
-                builtin::Function func,
-                utils::VectorRef<Value*> args = utils::Empty);
+    explicit BuiltinCall(InstructionResult* result, utils::VectorRef<Value*> args = utils::Empty);
     ~BuiltinCall() override;
-
-    /// @returns the builtin function
-    builtin::Function Func() { return func_; }
-
-  private:
-    builtin::Function func_;
 };
 
 }  // namespace tint::ir

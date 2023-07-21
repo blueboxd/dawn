@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_EXIT_SWITCH_H_
 
 #include "src/tint/ir/exit.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
 namespace tint::ir {
@@ -43,6 +43,9 @@ class ExitSwitch : public utils::Castable<ExitSwitch, Exit> {
 
     /// @returns the switch being exited
     ir::Switch* Switch();
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "exit-switch"; }
 };
 
 }  // namespace tint::ir

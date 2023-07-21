@@ -17,8 +17,8 @@
 
 #include "src/tint/ir/instruction_result.h"
 #include "src/tint/ir/value.h"
-#include "src/tint/utils/castable.h"
-#include "src/tint/utils/enum_set.h"
+#include "src/tint/utils/containers/enum_set.h"
+#include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
 namespace tint::ir {
@@ -56,6 +56,9 @@ class Instruction : public utils::Castable<Instruction> {
     /// Removes the instruction from the block, and destroys all the result values.
     /// The result values must not be in use.
     virtual void Destroy();
+
+    /// @returns the friendly name for the instruction
+    virtual std::string_view FriendlyName() = 0;
 
     /// @returns true if the Instruction has not been destroyed with Destroy()
     bool Alive() const { return !flags_.Contains(Flag::kDead); }

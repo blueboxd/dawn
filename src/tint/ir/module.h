@@ -18,18 +18,18 @@
 #include <memory>
 #include <string>
 
-#include "src/tint/constant/manager.h"
 #include "src/tint/ir/block.h"
 #include "src/tint/ir/constant.h"
 #include "src/tint/ir/function.h"
 #include "src/tint/ir/instruction.h"
 #include "src/tint/ir/value.h"
+#include "src/tint/lang/core/constant/manager.h"
+#include "src/tint/lang/core/type/manager.h"
 #include "src/tint/program_id.h"
-#include "src/tint/symbol_table.h"
-#include "src/tint/type/manager.h"
-#include "src/tint/utils/block_allocator.h"
-#include "src/tint/utils/result.h"
-#include "src/tint/utils/vector.h"
+#include "src/tint/utils/containers/vector.h"
+#include "src/tint/utils/memory/block_allocator.h"
+#include "src/tint/utils/result/result.h"
+#include "src/tint/utils/text/symbol_table.h"
 
 namespace tint::ir {
 

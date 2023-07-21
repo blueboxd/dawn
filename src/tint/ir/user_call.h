@@ -17,7 +17,7 @@
 
 #include "src/tint/ir/call.h"
 #include "src/tint/ir/function.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -42,6 +42,9 @@ class UserCall : public utils::Castable<UserCall, Call> {
 
     /// @returns the called function name
     Function* Func() { return operands_[kFunctionOperandOffset]->As<ir::Function>(); }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "user-call"; }
 };
 
 }  // namespace tint::ir

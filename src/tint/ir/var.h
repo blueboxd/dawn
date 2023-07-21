@@ -15,13 +15,13 @@
 #ifndef SRC_TINT_IR_VAR_H_
 #define SRC_TINT_IR_VAR_H_
 
-#include "src/tint/builtin/access.h"
-#include "src/tint/builtin/address_space.h"
 #include "src/tint/ir/binding_point.h"
 #include "src/tint/ir/operand_instruction.h"
-#include "src/tint/type/pointer.h"
-#include "src/tint/utils/castable.h"
-#include "src/tint/utils/vector.h"
+#include "src/tint/lang/core/builtin/access.h"
+#include "src/tint/lang/core/builtin/address_space.h"
+#include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/utils/containers/vector.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -51,6 +51,9 @@ class Var : public utils::Castable<Var, OperandInstruction<1, 1>> {
 
     /// Destroys this instruction along with any assignment instructions, if the var is never read.
     void DestroyIfOnlyAssigned();
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "var"; }
 
   private:
     std::optional<struct BindingPoint> binding_point_;

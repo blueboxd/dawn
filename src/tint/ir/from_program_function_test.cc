@@ -13,10 +13,10 @@
 // limitations under the License.
 
 #include "gmock/gmock.h"
-#include "src/tint/ast/case_selector.h"
-#include "src/tint/ast/int_literal_expression.h"
-#include "src/tint/constant/scalar.h"
 #include "src/tint/ir/program_test_helper.h"
+#include "src/tint/lang/core/constant/scalar.h"
+#include "src/tint/lang/wgsl/ast/case_selector.h"
+#include "src/tint/lang/wgsl/ast/int_literal_expression.h"
 
 namespace tint::ir {
 namespace {
@@ -84,6 +84,29 @@ TEST_F(IR_FromProgramFunctionTest, EmitFunction_Return) {
     EXPECT_EQ(Disassemble(m.Get()), R"(%test = func():vec3<f32> -> %b1 {
   %b1 = block {
     ret vec3<f32>(0.0f)
+  }
+}
+)");
+}
+
+TEST_F(IR_FromProgramFunctionTest, EmitFunction_UnreachableEnd_ReturnValue) {
+    Func("test", utils::Empty, ty.f32(),
+         utils::Vector{If(true, Block(Return(0_f)), Else(Block(Return(1_f))))}, utils::Empty);
+
+    auto m = Build();
+    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+
+    EXPECT_EQ(Disassemble(m.Get()), R"(%test = func():f32 -> %b1 {
+  %b1 = block {
+    if true [t: %b2, f: %b3] {  # if_1
+      %b2 = block {  # true
+        ret 0.0f
+      }
+      %b3 = block {  # false
+        ret 1.0f
+      }
+    }
+    unreachable
   }
 }
 )");

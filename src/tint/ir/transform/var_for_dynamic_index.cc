@@ -18,11 +18,11 @@
 
 #include "src/tint/ir/builder.h"
 #include "src/tint/ir/module.h"
-#include "src/tint/type/array.h"
-#include "src/tint/type/matrix.h"
-#include "src/tint/type/pointer.h"
-#include "src/tint/type/vector.h"
-#include "src/tint/utils/hashmap.h"
+#include "src/tint/lang/core/type/array.h"
+#include "src/tint/lang/core/type/matrix.h"
+#include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/lang/core/type/vector.h"
+#include "src/tint/utils/containers/hashmap.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ir::transform::VarForDynamicIndex);
 

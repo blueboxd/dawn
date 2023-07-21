@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_UNARY_H_
 
 #include "src/tint/ir/operand_instruction.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -44,6 +44,9 @@ class Unary : public utils::Castable<Unary, OperandInstruction<1, 1>> {
 
     /// @returns the kind of unary instruction
     enum Kind Kind() { return kind_; }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "unary"; }
 
   private:
     enum Kind kind_;

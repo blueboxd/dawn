@@ -14,7 +14,7 @@
 
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
-#include "src/tint/utils/string_stream.h"
+#include "src/tint/utils/text/string_stream.h"
 
 #include "gmock/gmock.h"
 

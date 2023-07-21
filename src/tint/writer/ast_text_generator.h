@@ -20,8 +20,8 @@
 #include <utility>
 #include <vector>
 
-#include "src/tint/program_builder.h"
-#include "src/tint/writer/text_generator.h"
+#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/utils/text/text_generator.h"
 
 namespace tint::writer {
 

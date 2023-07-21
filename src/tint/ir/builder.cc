@@ -16,9 +16,9 @@
 
 #include <utility>
 
-#include "src/tint/constant/scalar.h"
-#include "src/tint/type/pointer.h"
-#include "src/tint/type/reference.h"
+#include "src/tint/lang/core/constant/scalar.h"
+#include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/lang/core/type/reference.h"
 
 namespace tint::ir {
 

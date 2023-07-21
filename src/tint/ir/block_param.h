@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_BLOCK_PARAM_H_
 
 #include "src/tint/ir/value.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 

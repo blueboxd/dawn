@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_ACCESS_H_
 
 #include "src/tint/ir/operand_instruction.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -39,8 +39,15 @@ class Access : public utils::Castable<Access, OperandInstruction<3, 1>> {
     /// @returns the object used for the access
     Value* Object() { return operands_[kObjectOperandOffset]; }
 
+    /// Adds the given index to the end of the access chain
+    /// @param idx the index to add
+    void AddIndex(Value* idx) { AddOperand(operands_.Length(), idx); }
+
     /// @returns the accessor indices
     utils::Slice<Value*> Indices() { return operands_.Slice().Offset(kIndicesOperandOffset); }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "access"; }
 };
 
 }  // namespace tint::ir

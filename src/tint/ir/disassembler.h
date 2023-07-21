@@ -25,9 +25,9 @@
 #include "src/tint/ir/module.h"
 #include "src/tint/ir/switch.h"
 #include "src/tint/ir/unary.h"
-#include "src/tint/utils/hashmap.h"
-#include "src/tint/utils/hashset.h"
-#include "src/tint/utils/string_stream.h"
+#include "src/tint/utils/containers/hashmap.h"
+#include "src/tint/utils/containers/hashset.h"
+#include "src/tint/utils/text/string_stream.h"
 
 // Forward declarations.
 namespace tint::type {

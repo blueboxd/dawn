@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_STORE_VECTOR_ELEMENT_H_
 
 #include "src/tint/ir/operand_instruction.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -47,6 +47,9 @@ class StoreVectorElement : public utils::Castable<StoreVectorElement, OperandIns
 
     /// @returns the new vector element value
     ir::Value* Value() { return operands_[kValueOperandOffset]; }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "store-vector-element"; }
 };
 
 }  // namespace tint::ir

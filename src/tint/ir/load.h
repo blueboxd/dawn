@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_LOAD_H_
 
 #include "src/tint/ir/operand_instruction.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -35,6 +35,9 @@ class Load : public utils::Castable<Load, OperandInstruction<1, 1>> {
 
     /// @returns the value being loaded from
     Value* From() { return operands_[kFromOperandOffset]; }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "load"; }
 };
 
 }  // namespace tint::ir

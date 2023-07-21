@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_NEXT_ITERATION_H_
 
 #include "src/tint/ir/terminator.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
 namespace tint::ir {
@@ -39,6 +39,9 @@ class NextIteration : public utils::Castable<NextIteration, Terminator> {
 
     /// @returns the loop being iterated
     ir::Loop* Loop() { return loop_; }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "next-iteration"; }
 
   private:
     ir::Loop* loop_ = nullptr;

@@ -15,9 +15,9 @@
 #ifndef SRC_TINT_IR_DISCARD_H_
 #define SRC_TINT_IR_DISCARD_H_
 
-#include "src/tint/debug.h"
 #include "src/tint/ir/call.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/debug/debug.h"
+#include "src/tint/utils/rtti/castable.h"
 
 namespace tint::ir {
 
@@ -27,6 +27,9 @@ class Discard : public utils::Castable<Discard, Call> {
     /// Constructor
     Discard();
     ~Discard() override;
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "discard"; }
 };
 
 }  // namespace tint::ir

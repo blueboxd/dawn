@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_RETURN_H_
 
 #include "src/tint/ir/terminator.h"
-#include "src/tint/utils/castable.h"
+#include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
 namespace tint::ir {
@@ -46,7 +46,7 @@ class Return : public utils::Castable<Return, Terminator> {
     ~Return() override;
 
     /// @returns the function being returned
-    Function* Func() { return operands_[kFunctionOperandOffset]->As<Function>(); }
+    Function* Func() { return tint::As<Function>(operands_[kFunctionOperandOffset]); }
 
     /// @returns the return value, or nullptr
     ir::Value* Value() const {
@@ -61,6 +61,9 @@ class Return : public utils::Castable<Return, Terminator> {
     utils::Slice<ir::Value* const> Args() override {
         return operands_.Slice().Offset(kArgOperandOffset);
     }
+
+    /// @returns the friendly name for the instruction
+    std::string_view FriendlyName() override { return "return"; }
 };
 
 }  // namespace tint::ir
