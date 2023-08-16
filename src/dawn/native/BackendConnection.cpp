@@ -28,9 +28,4 @@ InstanceBase* BackendConnection::GetInstance() const {
     return mInstance;
 }
 
-ResultOrError<std::vector<Ref<PhysicalDeviceBase>>> BackendConnection::DiscoverAdapters(
-    const AdapterDiscoveryOptionsBase* options) {
-    return DAWN_VALIDATION_ERROR("DiscoverAdapters not implemented for this backend.");
-}
-
 }  // namespace dawn::native

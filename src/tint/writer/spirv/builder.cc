@@ -1241,13 +1241,13 @@ uint32_t Builder::GenerateValueConstructorOrConversion(const sem::Call* call,
         return 0;
     }
 
-    bool can_cast_or_copy = result_type->is_scalar();
+    bool can_cast_or_copy = result_type->Is<type::Scalar>();
 
     if (auto* res_vec = result_type->As<type::Vector>()) {
-        if (res_vec->type()->is_scalar()) {
+        if (res_vec->type()->Is<type::Scalar>()) {
             auto* value_type = args[0]->Type()->UnwrapRef();
             if (auto* val_vec = value_type->As<type::Vector>()) {
-                if (val_vec->type()->is_scalar()) {
+                if (val_vec->type()->Is<type::Scalar>()) {
                     can_cast_or_copy = res_vec->Width() == val_vec->Width();
                 }
             }
@@ -1304,7 +1304,7 @@ uint32_t Builder::GenerateValueConstructorOrConversion(const sem::Call* call,
 
         // Both scalars, but not the same type so we need to generate a conversion
         // of the value.
-        if (value_type->is_scalar() && result_type->is_scalar()) {
+        if (value_type->Is<type::Scalar>() && result_type->Is<type::Scalar>()) {
             id = GenerateCastOrCopyOrPassthrough(result_type, args[0]->Declaration(), global_var);
             ops.push_back(Operand(id));
             continue;
@@ -1366,7 +1366,7 @@ uint32_t Builder::GenerateValueConstructorOrConversion(const sem::Call* call,
     // For a single-value vector initializer, splat the initializer value.
     auto* const init_result_type = call->Type()->UnwrapRef();
     if (args.Length() == 1 && init_result_type->is_scalar_vector() &&
-        args[0]->Type()->UnwrapRef()->is_scalar()) {
+        args[0]->Type()->UnwrapRef()->Is<type::Scalar>()) {
         size_t vec_size = init_result_type->As<type::Vector>()->Width();
         for (size_t i = 0; i < (vec_size - 1); ++i) {
             ops.push_back(ops[kOpsFirstValueIdx]);
@@ -1408,7 +1408,7 @@ uint32_t Builder::GenerateCastOrCopyOrPassthrough(const type::Type* to_type,
     }
 
     auto elem_type_of = [](const type::Type* t) -> const type::Type* {
-        if (t->is_scalar()) {
+        if (t->Is<type::Scalar>()) {
             return t;
         }
         if (auto* v = t->As<type::Vector>()) {
@@ -1464,7 +1464,7 @@ uint32_t Builder::GenerateCastOrCopyOrPassthrough(const type::Type* to_type,
                (from_type->is_unsigned_integer_vector() &&
                 to_type->is_integer_scalar_or_vector())) {
         op = spv::Op::OpBitcast;
-    } else if ((from_type->is_numeric_scalar() && to_type->Is<type::Bool>()) ||
+    } else if ((from_type->Is<type::NumericScalar>() && to_type->Is<type::Bool>()) ||
                (from_type->is_numeric_vector() && to_type->is_bool_vector())) {
         // Convert scalar (vector) to bool (vector)
 
@@ -1855,8 +1855,8 @@ uint32_t Builder::GenerateShortCircuitBinaryExpression(const ast::BinaryExpressi
 uint32_t Builder::GenerateSplat(uint32_t scalar_id, const type::Type* vec_type) {
     // Create a new vector to splat scalar into
     auto splat_vector = result_op();
-    auto* splat_vector_type = builder_.create<type::Pointer>(
-        vec_type, builtin::AddressSpace::kFunction, builtin::Access::kReadWrite);
+    auto* splat_vector_type = builder_.create<type::Pointer>(builtin::AddressSpace::kFunction,
+                                                             vec_type, builtin::Access::kReadWrite);
     push_function_var({Operand(GenerateTypeIfNeeded(splat_vector_type)), splat_vector,
                        U32Operand(ConvertAddressSpace(builtin::AddressSpace::kFunction)),
                        Operand(GenerateConstantNullIfNeeded(vec_type))});
@@ -1990,7 +1990,7 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
                                (lhs_type->is_float_vector() && rhs_type->is_float_scalar()));
 
     if (expr->IsArithmetic() && !is_float_scalar_vector_multiply) {
-        if (lhs_type->Is<type::Vector>() && rhs_type->is_numeric_scalar()) {
+        if (lhs_type->Is<type::Vector>() && rhs_type->Is<type::NumericScalar>()) {
             uint32_t splat_vector_id = GenerateSplat(rhs_id, lhs_type);
             if (splat_vector_id == 0) {
                 return 0;
@@ -1998,7 +1998,7 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
             rhs_id = splat_vector_id;
             rhs_type = lhs_type;
 
-        } else if (lhs_type->is_numeric_scalar() && rhs_type->Is<type::Vector>()) {
+        } else if (lhs_type->Is<type::NumericScalar>() && rhs_type->Is<type::Vector>()) {
             uint32_t splat_vector_id = GenerateSplat(lhs_id, rhs_type);
             if (splat_vector_id == 0) {
                 return 0;
@@ -2449,7 +2449,7 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::Builtin*
             // If the interpolant is scalar but the objects are vectors, we need to
             // splat the interpolant into a vector of the same size.
             auto* result_vector_type = builtin->ReturnType()->As<type::Vector>();
-            if (result_vector_type && builtin->Parameters()[2]->Type()->is_scalar()) {
+            if (result_vector_type && builtin->Parameters()[2]->Type()->Is<type::Scalar>()) {
                 f_id = GenerateSplat(f_id, builtin->Parameters()[0]->Type());
                 if (f_id == 0) {
                     return 0;
@@ -2482,7 +2482,7 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::Builtin*
             // splat the condition into a vector of the same size.
             // TODO(jrprice): If we're targeting SPIR-V 1.4, we don't need to do this.
             auto* result_vector_type = builtin->ReturnType()->As<type::Vector>();
-            if (result_vector_type && builtin->Parameters()[2]->Type()->is_scalar()) {
+            if (result_vector_type && builtin->Parameters()[2]->Type()->Is<type::Scalar>()) {
                 auto* bool_vec_ty = builder_.create<type::Vector>(builder_.create<type::Bool>(),
                                                                   result_vector_type->Width());
                 if (!GenerateTypeIfNeeded(bool_vec_ty)) {
@@ -3620,10 +3620,10 @@ uint32_t Builder::GenerateTypeIfNeeded(const type::Type* type) {
     // references are not legal in WGSL, so only considering the top-level type is
     // fine.
     if (auto* ptr = type->As<type::Pointer>()) {
-        type = builder_.create<type::Pointer>(ptr->StoreType(), ptr->AddressSpace(),
+        type = builder_.create<type::Pointer>(ptr->AddressSpace(), ptr->StoreType(),
                                               builtin::Access::kReadWrite);
     } else if (auto* ref = type->As<type::Reference>()) {
-        type = builder_.create<type::Pointer>(ref->StoreType(), ref->AddressSpace(),
+        type = builder_.create<type::Pointer>(ref->AddressSpace(), ref->StoreType(),
                                               builtin::Access::kReadWrite);
     }
 

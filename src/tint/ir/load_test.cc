@@ -12,47 +12,61 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gmock/gmock.h"
+#include "gtest/gtest-spi.h"
 #include "src/tint/ir/builder.h"
 #include "src/tint/ir/instruction.h"
-#include "src/tint/ir/test_helper.h"
+#include "src/tint/ir/ir_test_helper.h"
 
 namespace tint::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
-using IR_InstructionTest = TestHelper;
+using IR_LoadTest = IRTestHelper;
 
-TEST_F(IR_InstructionTest, CreateLoad) {
-    Module mod;
-    Builder b{mod};
-
-    auto* store_type = b.ir.types.Get<type::I32>();
-    auto* var = b.Declare(b.ir.types.Get<type::Pointer>(
-        store_type, builtin::AddressSpace::kFunction, builtin::Access::kReadWrite));
-    const auto* inst = b.Load(var);
+TEST_F(IR_LoadTest, Create) {
+    auto* store_type = ty.i32();
+    auto* var = b.Var(ty.ptr<function, i32>());
+    auto* inst = b.Load(var);
 
     ASSERT_TRUE(inst->Is<Load>());
-    ASSERT_EQ(inst->From(), var);
+    ASSERT_EQ(inst->From(), var->Result());
+    EXPECT_EQ(inst->Result()->Type(), store_type);
 
-    EXPECT_EQ(inst->Type(), store_type);
-
-    ASSERT_TRUE(inst->From()->Is<ir::Var>());
-    EXPECT_EQ(inst->From(), var);
+    auto* result = inst->From()->As<InstructionResult>();
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->Source()->Is<ir::Var>());
+    EXPECT_EQ(result->Source(), var);
 }
 
-TEST_F(IR_InstructionTest, Load_Usage) {
-    Module mod;
-    Builder b{mod};
-
-    auto* store_type = b.ir.types.Get<type::I32>();
-    auto* var = b.Declare(b.ir.types.Get<type::Pointer>(
-        store_type, builtin::AddressSpace::kFunction, builtin::Access::kReadWrite));
-    const auto* inst = b.Load(var);
+TEST_F(IR_LoadTest, Usage) {
+    auto* var = b.Var(ty.ptr<function, i32>());
+    auto* inst = b.Load(var);
 
     ASSERT_NE(inst->From(), nullptr);
-    ASSERT_EQ(inst->From()->Usage().Length(), 1u);
-    EXPECT_EQ(inst->From()->Usage()[0], inst);
+    EXPECT_THAT(inst->From()->Usages(), testing::UnorderedElementsAre(Usage{inst, 0u}));
+}
+
+TEST_F(IR_LoadTest, Results) {
+    auto* var = b.Var(ty.ptr<function, i32>());
+    auto* inst = b.Load(var);
+
+    EXPECT_TRUE(inst->HasResults());
+    EXPECT_FALSE(inst->HasMultiResults());
+    EXPECT_TRUE(inst->Result()->Is<InstructionResult>());
+    EXPECT_EQ(inst->Result()->Source(), inst);
+}
+
+TEST_F(IR_LoadTest, Fail_NonPtr_Builder) {
+    EXPECT_FATAL_FAILURE(
+        {
+            Module mod;
+            Builder b{mod};
+            b.Load(b.Constant(1_i));
+        },
+        "");
 }
 
 }  // namespace

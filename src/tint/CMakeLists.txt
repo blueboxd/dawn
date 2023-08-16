@@ -58,14 +58,14 @@ endfunction()
 add_library(tint_diagnostic_utils
   debug.cc
   debug.h
-  source.h
-  source.cc
   diagnostic/diagnostic.cc
   diagnostic/diagnostic.h
   diagnostic/formatter.cc
   diagnostic/formatter.h
   diagnostic/printer.cc
   diagnostic/printer.h
+  source.cc
+  source.h
   utils/debugger.cc
   utils/debugger.h
   utils/unicode.cc
@@ -232,11 +232,16 @@ list(APPEND TINT_LIB_SRCS
   ast/while_statement.h
   ast/workgroup_attribute.cc
   ast/workgroup_attribute.h
+  builtin/fluent_types.h
+  builtin/number.cc
+  builtin/number.h
   clone_context.cc
   clone_context.h
   constant/clone_context.h
   constant/composite.cc
   constant/composite.h
+  constant/manager.cc
+  constant/manager.h
   constant/scalar.cc
   constant/scalar.h
   constant/splat.cc
@@ -253,8 +258,6 @@ list(APPEND TINT_LIB_SRCS
   inspector/resource_binding.h
   inspector/scalar.cc
   inspector/scalar.h
-  number.cc
-  number.h
   program_builder.cc
   program_builder.h
   program_id.cc
@@ -489,6 +492,8 @@ list(APPEND TINT_LIB_SRCS
   type/multisampled_texture.h
   type/node.cc
   type/node.h
+  type/numeric_scalar.cc
+  type/numeric_scalar.h
   type/pointer.cc
   type/pointer.h
   type/reference.cc
@@ -499,6 +504,8 @@ list(APPEND TINT_LIB_SRCS
   type/sampler.h
   type/sampler_kind.cc
   type/sampler_kind.h
+  type/scalar.cc
+  type/scalar.h
   type/storage_texture.cc
   type/storage_texture.h
   type/struct.cc
@@ -523,6 +530,8 @@ list(APPEND TINT_LIB_SRCS
   utils/bump_allocator.h
   utils/castable.cc
   utils/castable.h
+  utils/cli.cc
+  utils/cli.h
   utils/compiler_macros.h
   utils/concat.h
   utils/crc32.h
@@ -534,6 +543,8 @@ list(APPEND TINT_LIB_SRCS
   utils/hashset.h
   utils/map.h
   utils/math.h
+  utils/parse_num.cc
+  utils/parse_num.h
   utils/predicates.h
   utils/scoped_assignment.h
   utils/slice.h
@@ -710,72 +721,106 @@ endif()
 
 if(${TINT_BUILD_IR})
   list(APPEND TINT_LIB_SRCS
+    ir/access.cc
+    ir/access.h
     ir/binary.cc
     ir/binary.h
+    ir/binding_point.h
     ir/bitcast.cc
     ir/bitcast.h
     ir/block.cc
     ir/block.h
     ir/block_param.cc
     ir/block_param.h
+    ir/branch.cc
+    ir/branch.h
+    ir/break_if.cc
+    ir/break_if.h
     ir/builder.cc
     ir/builder.h
-    ir/builtin.cc
-    ir/builtin.h
+    ir/builtin_call.cc
+    ir/builtin_call.h
     ir/call.cc
     ir/call.h
     ir/constant.cc
     ir/constant.h
     ir/construct.cc
     ir/construct.h
+    ir/continue.cc
+    ir/continue.h
+    ir/control_instruction.cc
+    ir/control_instruction.h
     ir/convert.cc
     ir/convert.h
-    ir/debug.cc
-    ir/debug.h
     ir/disassembler.cc
     ir/disassembler.h
     ir/discard.cc
     ir/discard.h
+    ir/exit_if.cc
+    ir/exit_if.h
+    ir/exit_loop.cc
+    ir/exit_loop.h
+    ir/exit_switch.cc
+    ir/exit_switch.h
+    ir/exit.cc
+    ir/exit.h
     ir/from_program.cc
     ir/from_program.h
-    ir/flow_node.cc
-    ir/flow_node.h
     ir/function.cc
     ir/function.h
     ir/function_param.cc
     ir/function_param.h
-    ir/function_terminator.cc
-    ir/function_terminator.h
     ir/if.cc
     ir/if.h
     ir/instruction.cc
     ir/instruction.h
+    ir/instruction_result.cc
+    ir/instruction_result.h
     ir/load.cc
     ir/load.h
+    ir/location.h
     ir/loop.cc
     ir/loop.h
     ir/module.cc
     ir/module.h
-    ir/root_terminator.cc
-    ir/root_terminator.h
+    ir/multi_in_block.cc
+    ir/multi_in_block.h
+    ir/next_iteration.cc
+    ir/next_iteration.h
+    ir/operand_instruction.cc
+    ir/operand_instruction.h
+    ir/return.cc
+    ir/return.h
     ir/store.cc
     ir/store.h
     ir/switch.cc
     ir/switch.h
+    ir/swizzle.cc
+    ir/swizzle.h
     ir/to_program.cc
     ir/to_program.h
     ir/unary.cc
     ir/unary.h
+    ir/unreachable.cc
+    ir/unreachable.h
     ir/user_call.cc
     ir/user_call.h
+    ir/validate.cc
+    ir/validate.h
     ir/value.cc
     ir/value.h
     ir/var.cc
     ir/var.h
     ir/transform/add_empty_entry_point.cc
     ir/transform/add_empty_entry_point.h
+    ir/transform/block_decorated_structs.cc
+    ir/transform/block_decorated_structs.h
+    ir/transform/merge_return.cc
+    ir/transform/merge_return.h
     ir/transform/transform.cc
     ir/transform/transform.h
+    ir/transform/var_for_dynamic_index.cc
+    ir/transform/var_for_dynamic_index.h
   )
 endif()
 
@@ -919,15 +964,17 @@ if(TINT_BUILD_TESTS)
     ast/variable_test.cc
     ast/while_statement_test.cc
     ast/workgroup_attribute_test.cc
+    builtin/number_test.cc
     clone_context_test.cc
     constant/composite_test.cc
+    constant/manager_test.cc
     constant/scalar_test.cc
     constant/splat_test.cc
+    constant/value_test.cc
     debug_test.cc
     diagnostic/diagnostic_test.cc
     diagnostic/formatter_test.cc
     diagnostic/printer_test.cc
-    number_test.cc
     program_builder_test.cc
     program_test.cc
     reflection_test.cc
@@ -1033,6 +1080,7 @@ if(TINT_BUILD_TESTS)
     utils/bitset_test.cc
     utils/block_allocator_test.cc
     utils/bump_allocator_test.cc
+    utils/cli_test.cc
     utils/castable_test.cc
     utils/crc32_test.cc
     utils/defer_test.cc
@@ -1242,10 +1290,15 @@ if(TINT_BUILD_TESTS)
 
     if(${TINT_BUILD_IR})
       list(APPEND TINT_TEST_SRCS
+        writer/spirv/ir/generator_impl_ir_access_test.cc
         writer/spirv/ir/generator_impl_ir_binary_test.cc
+        writer/spirv/ir/generator_impl_ir_builtin_test.cc
         writer/spirv/ir/generator_impl_ir_constant_test.cc
+        writer/spirv/ir/generator_impl_ir_construct_test.cc
         writer/spirv/ir/generator_impl_ir_function_test.cc
         writer/spirv/ir/generator_impl_ir_if_test.cc
+        writer/spirv/ir/generator_impl_ir_loop_test.cc
+        writer/spirv/ir/generator_impl_ir_switch_test.cc
         writer/spirv/ir/generator_impl_ir_test.cc
         writer/spirv/ir/generator_impl_ir_type_test.cc
         writer/spirv/ir/generator_impl_ir_var_test.cc
@@ -1460,24 +1513,58 @@ if(TINT_BUILD_TESTS)
 
   if (${TINT_BUILD_IR})
     list(APPEND TINT_TEST_SRCS
+      ir/access_test.cc
       ir/binary_test.cc
       ir/bitcast_test.cc
+      ir/block_param_test.cc
+      ir/block_test.cc
+      ir/break_if_test.cc
+      ir/builtin_call_test.cc
       ir/constant_test.cc
+      ir/construct_test.cc
+      ir/continue_test.cc
+      ir/convert_test.cc
       ir/discard_test.cc
+      ir/exit_if_test.cc
+      ir/exit_loop_test.cc
+      ir/exit_switch_test.cc
+      ir/from_program_accessor_test.cc
       ir/from_program_binary_test.cc
+      ir/from_program_builtin_test.cc
       ir/from_program_call_test.cc
+      ir/from_program_function_test.cc
       ir/from_program_literal_test.cc
       ir/from_program_materialize_test.cc
       ir/from_program_store_test.cc
       ir/from_program_test.cc
       ir/from_program_unary_test.cc
       ir/from_program_var_test.cc
+      ir/function_param_test.cc
+      ir/function_test.cc
+      ir/if_test.cc
+      ir/instruction_result_test.cc
+      ir/instruction_test.cc
+      ir/ir_test_helper.h
       ir/load_test.cc
+      ir/loop_test.cc
       ir/module_test.cc
+      ir/multi_in_block_test.cc
+      ir/next_iteration_test.cc
+      ir/operand_instruction_test.cc
+      ir/program_test_helper.h
+      ir/return_test.cc
       ir/store_test.cc
-      ir/test_helper.h
+      ir/switch_test.cc
+      ir/swizzle_test.cc
       ir/transform/add_empty_entry_point_test.cc
+      ir/transform/block_decorated_structs_test.cc
+      ir/transform/merge_return_test.cc
+      ir/transform/var_for_dynamic_index_test.cc
       ir/unary_test.cc
+      ir/user_call_test.cc
+      ir/validate_test.cc
+      ir/value_test.cc
+      ir/var_test.cc
     )
   endif()
 

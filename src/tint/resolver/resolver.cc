@@ -559,7 +559,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
         return nullptr;
     }
 
-    auto* var_ty = builder_->create<type::Reference>(storage_ty, address_space, access);
+    auto* var_ty = builder_->create<type::Reference>(address_space, storage_ty, access);
 
     if (!ApplyAddressSpaceUsageToType(address_space, var_ty,
                                       var->type ? var->type->source : var->source)) {
@@ -1869,7 +1869,7 @@ bool Resolver::MaybeMaterializeAndLoadArguments(utils::Vector<const sem::ValueEx
 }
 
 bool Resolver::ShouldMaterializeArgument(const type::Type* parameter_ty) const {
-    const auto* param_el_ty = type::Type::DeepestElementOf(parameter_ty);
+    const auto* param_el_ty = parameter_ty->DeepestElement();
     return param_el_ty && !param_el_ty->Is<type::AbstractNumeric>();
 }
 
@@ -1939,7 +1939,7 @@ sem::ValueExpression* Resolver::IndexAccessor(const ast::IndexAccessorExpression
 
     // If we're extracting from a reference, we return a reference.
     if (auto* ref = obj_raw_ty->As<type::Reference>()) {
-        ty = builder_->create<type::Reference>(ty, ref->AddressSpace(), ref->Access());
+        ty = builder_->create<type::Reference>(ref->AddressSpace(), ty, ref->Access());
     }
 
     const constant::Value* val = nullptr;
@@ -2583,7 +2583,7 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
             access = access_expr->Value();
         }
 
-        auto* out = b.create<type::Pointer>(store_ty, address_space, access);
+        auto* out = b.create<type::Pointer>(address_space, store_ty, access);
         if (!validator_.Pointer(tmpl_ident, out)) {
             return nullptr;
         }
@@ -3057,9 +3057,16 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
         return Switch(
             resolved_node,  //
             [&](sem::Variable* variable) -> sem::VariableUser* {
-                auto symbol = ident->symbol;
-                auto* user =
-                    builder_->create<sem::VariableUser>(expr, current_statement_, variable);
+                auto stage = variable->Stage();
+                const constant::Value* value = variable->ConstantValue();
+                if (skip_const_eval_.Contains(expr)) {
+                    // This expression is short-circuited by an ancestor expression.
+                    // Do not const-eval.
+                    stage = sem::EvaluationStage::kNotEvaluated;
+                    value = nullptr;
+                }
+                auto* user = builder_->create<sem::VariableUser>(expr, stage, current_statement_,
+                                                                 value, variable);
 
                 if (current_statement_) {
                     // If identifier is part of a loop continuing block, make sure it
@@ -3073,6 +3080,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
                         if (loop_block->FirstContinue()) {
                             // If our identifier is in loop_block->decls, make sure its index is
                             // less than first_continue
+                            auto symbol = ident->symbol;
                             if (auto decl = loop_block->Decls().Find(symbol)) {
                                 if (decl->order >= loop_block->NumDeclsAtFirstContinue()) {
                                     AddError("continue statement bypasses declaration of '" +
@@ -3118,7 +3126,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
                     // Note: The spec is currently vague around the rules here. See
                     // https://github.com/gpuweb/gpuweb/issues/3081. Remove this comment when
                     // resolved.
-                    std::string desc = "var '" + symbol.Name() + "' ";
+                    std::string desc = "var '" + ident->symbol.Name() + "' ";
                     AddError(desc + "cannot be referenced at module-scope", expr->source);
                     AddNote(desc + "declared here", variable->Declaration()->source);
                     return nullptr;
@@ -3267,7 +3275,7 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
 
             // If we're extracting from a reference, we return a reference.
             if (auto* ref = object_ty->As<type::Reference>()) {
-                ty = builder_->create<type::Reference>(ty, ref->AddressSpace(), ref->Access());
+                ty = builder_->create<type::Reference>(ref->AddressSpace(), ty, ref->Access());
             }
 
             auto val = const_eval_.MemberAccess(object, member);
@@ -3336,7 +3344,7 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
                 ty = vec->type();
                 // If we're extracting from a reference, we return a reference.
                 if (auto* ref = object_ty->As<type::Reference>()) {
-                    ty = builder_->create<type::Reference>(ty, ref->AddressSpace(), ref->Access());
+                    ty = builder_->create<type::Reference>(ref->AddressSpace(), ty, ref->Access());
                 }
             } else {
                 // The vector will have a number of components equal to the length of
@@ -3368,8 +3376,19 @@ sem::ValueExpression* Resolver::Binary(const ast::BinaryExpression* expr) {
     if (!lhs || !rhs) {
         return nullptr;
     }
-    auto* lhs_ty = lhs->Type()->UnwrapRef();
-    auto* rhs_ty = rhs->Type()->UnwrapRef();
+
+    // Load arguments if they are references
+    lhs = Load(lhs);
+    if (!lhs) {
+        return nullptr;
+    }
+    rhs = Load(rhs);
+    if (!rhs) {
+        return nullptr;
+    }
+
+    auto* lhs_ty = lhs->Type();
+    auto* rhs_ty = rhs->Type();
 
     auto stage = sem::EarliestStage(lhs->Stage(), rhs->Stage());
     auto op = intrinsic_table_->Lookup(expr->op, lhs_ty, rhs_ty, stage, expr->source, false);
@@ -3387,16 +3406,6 @@ sem::ValueExpression* Resolver::Binary(const ast::BinaryExpression* expr) {
         if (!rhs) {
             return nullptr;
         }
-    }
-
-    // Load arguments if they are references
-    lhs = Load(lhs);
-    if (!lhs) {
-        return nullptr;
-    }
-    rhs = Load(rhs);
-    if (!rhs) {
-        return nullptr;
     }
 
     const constant::Value* value = nullptr;
@@ -3471,7 +3480,7 @@ sem::ValueExpression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
                     return nullptr;
                 }
 
-                ty = builder_->create<type::Pointer>(ref->StoreType(), ref->AddressSpace(),
+                ty = builder_->create<type::Pointer>(ref->AddressSpace(), ref->StoreType(),
                                                      ref->Access());
 
                 root_ident = expr->RootIdentifier();
@@ -3483,7 +3492,7 @@ sem::ValueExpression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
 
         case ast::UnaryOp::kIndirection:
             if (auto* ptr = expr_ty->As<type::Pointer>()) {
-                ty = builder_->create<type::Reference>(ptr->StoreType(), ptr->AddressSpace(),
+                ty = builder_->create<type::Reference>(ptr->AddressSpace(), ptr->StoreType(),
                                                        ptr->Access());
                 root_ident = expr->RootIdentifier();
             } else {
@@ -3761,8 +3770,9 @@ bool Resolver::DiagnosticControl(const ast::DiagnosticControl& control) {
             } else {
                 utils::StringStream ss;
                 ss << "unrecognized diagnostic rule 'chromium." << name << "'\n";
-                utils::SuggestAlternatives(name, builtin::kChromiumDiagnosticRuleStrings, ss,
-                                           "chromium.");
+                utils::SuggestAlternativeOptions opts;
+                opts.prefix = "chromium.";
+                utils::SuggestAlternatives(name, builtin::kChromiumDiagnosticRuleStrings, ss, opts);
                 AddWarning(ss.str(), control.rule_name->source);
             }
         }

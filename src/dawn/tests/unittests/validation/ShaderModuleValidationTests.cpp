@@ -254,11 +254,10 @@ TEST_F(ShaderModuleValidationTest, GetCompilationMessages) {
     native::ShaderModuleBase* shaderModuleBase = native::FromAPI(shaderModule.Get());
     native::OwnedCompilationMessages* messages = shaderModuleBase->GetCompilationMessages();
     messages->ClearMessages();
-    messages->AddMessageForTesting("Info Message");
-    messages->AddMessageForTesting("Warning Message", wgpu::CompilationMessageType::Warning);
-    messages->AddMessageForTesting("Error Message", wgpu::CompilationMessageType::Error, 3, 4);
-    messages->AddMessageForTesting("Complete Message", wgpu::CompilationMessageType::Info, 3, 4, 5,
-                                   6);
+    messages->AddMessage("Info Message");
+    messages->AddMessage("Warning Message", wgpu::CompilationMessageType::Warning);
+    messages->AddMessage("Error Message", wgpu::CompilationMessageType::Error, 3, 4);
+    messages->AddMessage("Complete Message", wgpu::CompilationMessageType::Info, 3, 4, 5, 6);
 
     auto callback = [](WGPUCompilationInfoRequestStatus status, const WGPUCompilationInfo* info,
                        void* userdata) {
@@ -696,36 +695,33 @@ enable f16;
 @compute @workgroup_size(1) fn main() {})"));
 }
 
-// Test that passing a WGSL extension without setting the shader string should fail.
-TEST_F(ShaderModuleValidationTest, WgslNullptrShader) {
+// Test creating an error shader module with device.CreateErrorShaderModule()
+TEST_F(ShaderModuleValidationTest, CreateErrorShaderModule) {
     wgpu::ShaderModuleWGSLDescriptor wgslDesc = {};
     wgpu::ShaderModuleDescriptor descriptor = {};
     descriptor.nextInChain = &wgslDesc;
-    ASSERT_DEVICE_ERROR(device.CreateShaderModule(&descriptor));
-}
-
-// Tests that WGSL extension with deprecated source member still works but emits warning.
-TEST_F(ShaderModuleValidationTest, SourceToCodeMemberDeprecation) {
-    // This test works assuming ShaderModule is backed by a native::ShaderModuleBase, which
-    // is not the case on the wire.
-    DAWN_SKIP_TEST_IF(UsesWire());
-
-    wgpu::ShaderModuleWGSLDescriptor wgslDesc = {};
-    wgpu::ShaderModuleDescriptor descriptor = {};
-    descriptor.nextInChain = &wgslDesc;
-
-    wgpu::ShaderModule sourceShader;
-    wgslDesc.source = "@compute @workgroup_size(1) fn main() {}";
-    // Note that there are actually 2 warnings emitted because 1 is for the blueprint and one is for
-    // the actual shader.
-    EXPECT_DEPRECATION_WARNINGS(sourceShader = device.CreateShaderModule(&descriptor), 2);
-
-    wgslDesc.source = nullptr;
     wgslDesc.code = "@compute @workgroup_size(1) fn main() {}";
-    wgpu::ShaderModule codeShader = device.CreateShaderModule(&descriptor);
 
-    EXPECT_TRUE(native::ShaderModuleBase::EqualityFunc()(native::FromAPI(sourceShader.Get()),
-                                                         native::FromAPI(codeShader.Get())));
+    wgpu::ShaderModule errorShaderModule;
+    ASSERT_DEVICE_ERROR(errorShaderModule = device.CreateErrorShaderModule(
+                            &descriptor, "Shader compilation error"));
+
+    auto callback = [](WGPUCompilationInfoRequestStatus status, const WGPUCompilationInfo* info,
+                       void* userdata) {
+        ASSERT_EQ(WGPUCompilationInfoRequestStatus_Success, status);
+        ASSERT_NE(nullptr, info);
+        ASSERT_EQ(1u, info->messageCount);
+
+        const WGPUCompilationMessage* message = &info->messages[0];
+        ASSERT_STREQ("Shader compilation error", message->message);
+        ASSERT_EQ(WGPUCompilationMessageType_Error, message->type);
+        ASSERT_EQ(0u, message->lineNum);
+        ASSERT_EQ(0u, message->linePos);
+    };
+
+    errorShaderModule.GetCompilationInfo(callback, nullptr);
+
+    FlushWire();
 }
 
 }  // anonymous namespace

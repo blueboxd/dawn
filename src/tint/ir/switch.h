@@ -15,21 +15,41 @@
 #ifndef SRC_TINT_IR_SWITCH_H_
 #define SRC_TINT_IR_SWITCH_H_
 
-#include "src/tint/ir/block.h"
-#include "src/tint/ir/branch.h"
-#include "src/tint/ir/constant.h"
-#include "src/tint/ir/flow_node.h"
-#include "src/tint/ir/value.h"
+#include "src/tint/ir/control_instruction.h"
+
+// Forward declarations
+namespace tint::ir {
+class Constant;
+class MultiInBlock;
+}  // namespace tint::ir
 
 namespace tint::ir {
-
-/// Flow node representing a switch statement
-class Switch : public utils::Castable<Switch, FlowNode> {
+/// Switch instruction.
+///
+/// ```
+///                           in
+///                            ┃
+///     ╌╌╌╌╌╌╌╌┲━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━┱╌╌╌╌╌╌╌╌
+///             ▼              ▼              ▼
+///        ┌────────┐     ┌────────┐     ┌────────┐
+///        │ Case A │     │ Case B │     │ Case C │
+///        └────────┘     └────────┘     └────────┘
+///  ExitSwitch ┃   ExitSwitch ┃   ExitSwitch ┃
+///             ┃              ┃              ┃
+///     ╌╌╌╌╌╌╌╌┺━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━┹╌╌╌╌╌╌╌╌
+///                            ┃
+///                            ▼
+///                           out
+/// ```
+class Switch : public utils::Castable<Switch, ControlInstruction> {
   public:
+    /// The offset in Operands() for the condition
+    static constexpr size_t kConditionOperandOffset = 0;
+
     /// A case selector
     struct CaseSelector {
         /// @returns true if this is a default selector
-        bool IsDefault() const { return val == nullptr; }
+        bool IsDefault() { return val == nullptr; }
 
         /// The selector value, or nullptr if this is the default selector
         Constant* val = nullptr;
@@ -39,13 +59,11 @@ class Switch : public utils::Castable<Switch, FlowNode> {
     struct Case {
         /// The case selector for this node
         utils::Vector<CaseSelector, 4> selectors;
-        /// The start block for the case block.
-        Branch start = {};
+        /// The case block.
+        ir::Block* block = nullptr;
 
-        /// @returns the case start target
-        const Branch& Start() const { return start; }
-        /// @returns the case start target
-        Branch& Start() { return start; }
+        /// @returns the case block
+        ir::Block* Block() { return block; }
     };
 
     /// Constructor
@@ -53,23 +71,17 @@ class Switch : public utils::Castable<Switch, FlowNode> {
     explicit Switch(Value* cond);
     ~Switch() override;
 
-    /// @returns the switch merge branch
-    const Branch& Merge() const { return merge_; }
-    /// @returns the switch merge branch
-    Branch& Merge() { return merge_; }
+    /// @copydoc ControlInstruction::ForeachBlock
+    void ForeachBlock(const std::function<void(ir::Block*)>& cb) override;
 
-    /// @returns the switch cases
-    utils::VectorRef<Case> Cases() const { return cases_; }
     /// @returns the switch cases
     utils::Vector<Case, 4>& Cases() { return cases_; }
 
     /// @returns the condition
-    const Value* Condition() const { return condition_; }
+    Value* Condition() { return operands_[kConditionOperandOffset]; }
 
   private:
-    Branch merge_ = {};
     utils::Vector<Case, 4> cases_;
-    Value* condition_;
 };
 
 }  // namespace tint::ir

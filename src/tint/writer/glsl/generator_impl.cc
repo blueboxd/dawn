@@ -52,6 +52,7 @@
 #include "src/tint/ast/transform/unshadow.h"
 #include "src/tint/ast/transform/zero_init_workgroup_memory.h"
 #include "src/tint/ast/variable_decl_statement.h"
+#include "src/tint/constant/splat.h"
 #include "src/tint/constant/value.h"
 #include "src/tint/debug.h"
 #include "src/tint/sem/block_statement.h"
@@ -504,7 +505,7 @@ void GeneratorImpl::EmitFloatModulo(utils::StringStream& out, const ast::BinaryE
 }
 
 void GeneratorImpl::EmitBinary(utils::StringStream& out, const ast::BinaryExpression* expr) {
-    if (IsRelational(expr->op) && !TypeOf(expr->lhs)->UnwrapRef()->is_scalar()) {
+    if (IsRelational(expr->op) && !TypeOf(expr->lhs)->UnwrapRef()->Is<type::Scalar>()) {
         EmitVectorRelational(out, expr);
         return;
     }
@@ -718,7 +719,7 @@ void GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
         EmitExpression(out, expr->args[0]);
     } else if ((builtin->Type() == builtin::Function::kAny ||
                 builtin->Type() == builtin::Function::kAll) &&
-               TypeOf(expr->args[0])->UnwrapRef()->is_scalar()) {
+               TypeOf(expr->args[0])->UnwrapRef()->Is<type::Scalar>()) {
         // GLSL does not support any() or all() on scalar arguments. It's a no-op.
         EmitExpression(out, expr->args[0]);
     } else if (builtin->IsBarrier()) {
@@ -1081,7 +1082,7 @@ void GeneratorImpl::EmitFrexpCall(utils::StringStream& out,
 void GeneratorImpl::EmitDegreesCall(utils::StringStream& out,
                                     const ast::CallExpression* expr,
                                     const sem::Builtin* builtin) {
-    auto* return_elem_type = type::Type::DeepestElementOf(builtin->ReturnType());
+    auto* return_elem_type = builtin->ReturnType()->DeepestElement();
     const std::string suffix = Is<type::F16>(return_elem_type) ? "hf" : "f";
     CallBuiltinHelper(out, expr, builtin,
                       [&](TextBuffer* b, const std::vector<std::string>& params) {
@@ -1093,7 +1094,7 @@ void GeneratorImpl::EmitDegreesCall(utils::StringStream& out,
 void GeneratorImpl::EmitRadiansCall(utils::StringStream& out,
                                     const ast::CallExpression* expr,
                                     const sem::Builtin* builtin) {
-    auto* return_elem_type = type::Type::DeepestElementOf(builtin->ReturnType());
+    auto* return_elem_type = builtin->ReturnType()->DeepestElement();
     const std::string suffix = Is<type::F16>(return_elem_type) ? "hf" : "f";
     CallBuiltinHelper(out, expr, builtin,
                       [&](TextBuffer* b, const std::vector<std::string>& params) {
@@ -1180,8 +1181,7 @@ void GeneratorImpl::EmitTextureCall(utils::StringStream& out,
     auto* texture_type = TypeOf(texture)->UnwrapRef()->As<type::Texture>();
 
     auto emit_signed_int_type = [&](const type::Type* ty) {
-        uint32_t width = 0;
-        type::Type::ElementOf(ty, &width);
+        uint32_t width = ty->Elements().count;
         if (width > 1) {
             out << "ivec" << width;
         } else {
@@ -1190,8 +1190,7 @@ void GeneratorImpl::EmitTextureCall(utils::StringStream& out,
     };
 
     auto emit_unsigned_int_type = [&](const type::Type* ty) {
-        uint32_t width = 0;
-        type::Type::ElementOf(ty, &width);
+        uint32_t width = ty->Elements().count;
         if (width > 1) {
             out << "uvec" << width;
         } else {
@@ -2705,7 +2704,7 @@ void GeneratorImpl::EmitUnaryOp(utils::StringStream& out, const ast::UnaryOpExpr
             out << "~";
             break;
         case ast::UnaryOp::kNot:
-            if (TypeOf(expr)->UnwrapRef()->is_scalar()) {
+            if (TypeOf(expr)->UnwrapRef()->Is<type::Scalar>()) {
                 out << "!";
             } else {
                 out << "not";

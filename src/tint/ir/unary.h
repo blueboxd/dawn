@@ -15,14 +15,17 @@
 #ifndef SRC_TINT_IR_UNARY_H_
 #define SRC_TINT_IR_UNARY_H_
 
-#include "src/tint/ir/instruction.h"
+#include "src/tint/ir/operand_instruction.h"
 #include "src/tint/utils/castable.h"
 
 namespace tint::ir {
 
-/// An instruction in the IR.
-class Unary : public utils::Castable<Unary, Instruction> {
+/// A unary instruction in the IR.
+class Unary : public utils::Castable<Unary, OperandInstruction<1, 1>> {
   public:
+    /// The offset in Operands() for the value
+    static constexpr size_t kValueOperandOffset = 0;
+
     /// The kind of instruction.
     enum class Kind {
         kComplement,
@@ -30,25 +33,20 @@ class Unary : public utils::Castable<Unary, Instruction> {
     };
 
     /// Constructor
+    /// @param result the result value
     /// @param kind the kind of unary instruction
-    /// @param result_type the result type
     /// @param val the input value for the instruction
-    Unary(enum Kind kind, const type::Type* result_type, Value* val);
+    Unary(InstructionResult* result, enum Kind kind, Value* val);
     ~Unary() override;
 
-    /// @returns the type of the value
-    const type::Type* Type() const override { return result_type_; }
-
     /// @returns the value for the instruction
-    const Value* Val() const { return val_; }
+    Value* Val() { return operands_[kValueOperandOffset]; }
 
     /// @returns the kind of unary instruction
-    enum Kind Kind() const { return kind_; }
+    enum Kind Kind() { return kind_; }
 
   private:
     enum Kind kind_;
-    const type::Type* result_type_;
-    Value* val_;
 };
 
 }  // namespace tint::ir

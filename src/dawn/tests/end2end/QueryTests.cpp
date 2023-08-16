@@ -510,18 +510,22 @@ TEST_P(OcclusionQueryTests, ResolveToBufferWithOffset) {
 
     wgpu::QuerySet querySet = CreateOcclusionQuerySet(kQueryCount);
 
-    utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
-    renderPass.renderPassInfo.occlusionQuerySet = querySet;
+    // Fill the occlusion query with some data.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
 
-    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass.renderPassInfo);
-    pass.SetPipeline(pipeline);
-    pass.BeginOcclusionQuery(0);
-    pass.Draw(3);
-    pass.EndOcclusionQuery();
-    pass.End();
-    wgpu::CommandBuffer commands = encoder.Finish();
-    queue.Submit(1, &commands);
+        utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
+        renderPass.renderPassInfo.occlusionQuerySet = querySet;
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass.renderPassInfo);
+        pass.SetPipeline(pipeline);
+        pass.BeginOcclusionQuery(0);
+        pass.Draw(3);
+        pass.EndOcclusionQuery();
+        pass.End();
+
+        wgpu::CommandBuffer commands = encoder.Finish();
+        queue.Submit(1, &commands);
+    }
 
     constexpr uint64_t kBufferSize = kQueryCount * sizeof(uint64_t) + kMinDestinationOffset;
     constexpr uint64_t kCount = kQueryCount + kMinCount;
@@ -1201,6 +1205,9 @@ TEST_P(TimestampQueryInsidePassesTests, FromOnRenderPass) {
 
 // Test calling timestamp query from compute pass encoder
 TEST_P(TimestampQueryInsidePassesTests, FromComputePass) {
+    // TODO(crbug.com/dawn/1852): Flaky negative timestamps on Mac AMD.
+    DAWN_SUPPRESS_TEST_IF(IsMacOS() && IsMetal() && IsAMD());
+
     constexpr uint32_t kQueryCount = 2;
 
     // Write timestamp with different query indexes
@@ -1263,23 +1270,27 @@ TEST_P(TimestampQueryInsidePassesTests, FromComputePass) {
 }
 
 DAWN_INSTANTIATE_TEST(OcclusionQueryTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       MetalBackend({"metal_fill_empty_occlusion_queries_with_zero"}),
                       VulkanBackend());
 DAWN_INSTANTIATE_TEST(PipelineStatisticsQueryTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
 DAWN_INSTANTIATE_TEST(TimestampQueryTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
 DAWN_INSTANTIATE_TEST(TimestampQueryInsidePassesTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),

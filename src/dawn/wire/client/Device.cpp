@@ -61,16 +61,18 @@ Device::~Device() {
                           request->userdata);
     });
 
-    mCreatePipelineAsyncRequests.CloseAll([](CreatePipelineAsyncRequest* request) {
+    mCreatePipelineAsyncRequests.CloseAll([this](CreatePipelineAsyncRequest* request) {
         if (request->createComputePipelineAsyncCallback != nullptr) {
             request->createComputePipelineAsyncCallback(
-                WGPUCreatePipelineAsyncStatus_DeviceDestroyed, nullptr,
-                "Device destroyed before callback", request->userdata);
+                WGPUCreatePipelineAsyncStatus_Success,
+                ToAPI(GetClient()->Get<ComputePipeline>(request->pipelineObjectID)), "",
+                request->userdata);
         } else {
             ASSERT(request->createRenderPipelineAsyncCallback != nullptr);
             request->createRenderPipelineAsyncCallback(
-                WGPUCreatePipelineAsyncStatus_DeviceDestroyed, nullptr,
-                "Device destroyed before callback", request->userdata);
+                WGPUCreatePipelineAsyncStatus_Success,
+                ToAPI(GetClient()->Get<RenderPipeline>(request->pipelineObjectID)), "",
+                request->userdata);
         }
     });
 
@@ -211,6 +213,11 @@ WGPUBuffer Device::CreateErrorBuffer(const WGPUBufferDescriptor* descriptor) {
 
 WGPUQuerySet Device::CreateQuerySet(const WGPUQuerySetDescriptor* descriptor) {
     return QuerySet::Create(this, descriptor);
+}
+
+WGPUSwapChain Device::CreateSwapChain(WGPUSurface surface,
+                                      const WGPUSwapChainDescriptor* descriptor) {
+    return SwapChain::Create(this, surface, descriptor);
 }
 
 WGPUTexture Device::CreateTexture(const WGPUTextureDescriptor* descriptor) {

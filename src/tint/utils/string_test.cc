@@ -14,11 +14,20 @@
 
 #include "src/tint/utils/string.h"
 
-#include "gtest/gtest.h"
+#include "gmock/gmock.h"
 #include "src/tint/utils/string_stream.h"
+
+#include "src/tint/utils/transform.h"  // Used by ToStringList()
 
 namespace tint::utils {
 namespace {
+
+// Workaround for https://github.com/google/googletest/issues/3081
+// Remove when using C++20
+template <size_t N>
+utils::Vector<std::string, N> ToStringList(const utils::Vector<std::string_view, N>& views) {
+    return Transform(views, [](std::string_view view) { return std::string(view); });
+}
 
 TEST(StringTest, ReplaceAll) {
     EXPECT_EQ("xybbcc", ReplaceAll("aabbcc", "aa", "xy"));
@@ -34,6 +43,8 @@ TEST(StringTest, ReplaceAll) {
 }
 
 TEST(StringTest, ToString) {
+    EXPECT_EQ("true", ToString(true));
+    EXPECT_EQ("false", ToString(false));
     EXPECT_EQ("123", ToString(123));
     EXPECT_EQ("hello", ToString("hello"));
 }
@@ -81,6 +92,23 @@ Possible values: 'hello world', 'Hello World')");
         utils::StringStream ss;
         SuggestAlternatives("hello world", alternatives, ss);
         EXPECT_EQ(ss.str(), R"(Possible values: 'foobar', 'something else')");
+    }
+    {
+        const char* alternatives[] = {"hello world", "Hello World"};
+        utils::StringStream ss;
+        SuggestAlternativeOptions opts;
+        opts.prefix = "$";
+        SuggestAlternatives("hello wordl", alternatives, ss, opts);
+        EXPECT_EQ(ss.str(), R"(Did you mean '$hello world'?
+Possible values: '$hello world', '$Hello World')");
+    }
+    {
+        const char* alternatives[] = {"hello world", "Hello World"};
+        utils::StringStream ss;
+        SuggestAlternativeOptions opts;
+        opts.list_possible_values = false;
+        SuggestAlternatives("hello world", alternatives, ss, opts);
+        EXPECT_EQ(ss.str(), R"(Did you mean 'hello world'?)");
     }
 }
 
@@ -151,6 +179,27 @@ TEST(StringTest, TrimSpace) {
     EXPECT_EQ(TrimSpace(" \t hello world\v\f"), "hello world");
     EXPECT_EQ(TrimSpace("hello \t world"), "hello \t world");
     EXPECT_EQ(TrimSpace(""), "");
+}
+
+TEST(StringTest, Quote) {
+    EXPECT_EQ("'meow'", Quote("meow"));
+}
+
+TEST(StringTest, Split) {
+    EXPECT_THAT(ToStringList(Split("", ",")), testing::ElementsAre(""));
+    EXPECT_THAT(ToStringList(Split("cat", ",")), testing::ElementsAre("cat"));
+    EXPECT_THAT(ToStringList(Split("cat,", ",")), testing::ElementsAre("cat", ""));
+    EXPECT_THAT(ToStringList(Split(",cat", ",")), testing::ElementsAre("", "cat"));
+    EXPECT_THAT(ToStringList(Split("cat,dog,fish", ",")),
+                testing::ElementsAre("cat", "dog", "fish"));
+    EXPECT_THAT(ToStringList(Split("catdogfish", "dog")), testing::ElementsAre("cat", "fish"));
+}
+
+TEST(StringTest, Join) {
+    EXPECT_EQ(Join(utils::Vector<int, 1>{}, ","), "");
+    EXPECT_EQ(Join(utils::Vector{1, 2, 3}, ","), "1,2,3");
+    EXPECT_EQ(Join(utils::Vector{"cat"}, ","), "cat");
+    EXPECT_EQ(Join(utils::Vector{"cat", "dog"}, ","), "cat,dog");
 }
 
 }  // namespace

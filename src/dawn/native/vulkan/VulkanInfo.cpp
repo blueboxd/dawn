@@ -257,6 +257,10 @@ ResultOrError<VulkanDeviceInfo> GatherDeviceInfo(const PhysicalDevice& device) {
         }
 
         if (info.extensions[DeviceExt::ShaderIntegerDotProduct]) {
+            featuresChain.Add(
+                &info.shaderIntegerDotProductFeatures,
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES_KHR);
+
             propertiesChain.Add(
                 &info.shaderIntegerDotProductProperties,
                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES_KHR);
@@ -265,6 +269,22 @@ ResultOrError<VulkanDeviceInfo> GatherDeviceInfo(const PhysicalDevice& device) {
         if (info.extensions[DeviceExt::DepthClipEnable]) {
             featuresChain.Add(&info.depthClipEnableFeatures,
                               VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT);
+        }
+
+        if (info.extensions[DeviceExt::Maintenance4]) {
+            propertiesChain.Add(&info.propertiesMaintenance4,
+                                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_PROPERTIES);
+        }
+
+        if (info.extensions[DeviceExt::ZeroInitializeWorkgroupMemory]) {
+            featuresChain.Add(
+                &info.zeroInitializeWorkgroupMemoryFeatures,
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES);
+        }
+
+        if (info.extensions[DeviceExt::Robustness2]) {
+            featuresChain.Add(&info.robustness2Features,
+                              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT);
         }
 
         // Use vkGetPhysicalDevice{Features,Properties}2 if required to gather information about

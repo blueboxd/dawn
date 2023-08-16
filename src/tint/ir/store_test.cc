@@ -12,28 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gmock/gmock.h"
+#include "gtest/gtest-spi.h"
 #include "src/tint/ir/builder.h"
 #include "src/tint/ir/instruction.h"
-#include "src/tint/ir/test_helper.h"
+#include "src/tint/ir/ir_test_helper.h"
 
 namespace tint::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
-using IR_InstructionTest = TestHelper;
+using IR_StoreTest = IRTestHelper;
 
-TEST_F(IR_InstructionTest, CreateStore) {
-    Module mod;
-    Builder b{mod};
-
-    // TODO(dsinclair): This is wrong, but we don't have anything correct to store too at the
-    // moment.
-    auto* to = b.Discard();
-    const auto* inst = b.Store(to, b.Constant(4_i));
+TEST_F(IR_StoreTest, CreateStore) {
+    auto* to = b.Var(ty.ptr<private_, i32>());
+    auto* inst = b.Store(to, 4_i);
 
     ASSERT_TRUE(inst->Is<Store>());
-    ASSERT_EQ(inst->To(), to);
+    ASSERT_EQ(inst->To(), to->Result());
 
     ASSERT_TRUE(inst->From()->Is<Constant>());
     auto lhs = inst->From()->As<Constant>()->Value();
@@ -41,20 +39,23 @@ TEST_F(IR_InstructionTest, CreateStore) {
     EXPECT_EQ(4_i, lhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
 }
 
-TEST_F(IR_InstructionTest, Store_Usage) {
-    Module mod;
-    Builder b{mod};
-
-    auto* to = b.Discard();
-    const auto* inst = b.Store(to, b.Constant(4_i));
+TEST_F(IR_StoreTest, Usage) {
+    auto* to = b.Var(ty.ptr<private_, i32>());
+    auto* inst = b.Store(to, 4_i);
 
     ASSERT_NE(inst->To(), nullptr);
-    ASSERT_EQ(inst->To()->Usage().Length(), 1u);
-    EXPECT_EQ(inst->To()->Usage()[0], inst);
+    EXPECT_THAT(inst->To()->Usages(), testing::UnorderedElementsAre(Usage{inst, 0u}));
 
     ASSERT_NE(inst->From(), nullptr);
-    ASSERT_EQ(inst->From()->Usage().Length(), 1u);
-    EXPECT_EQ(inst->From()->Usage()[0], inst);
+    EXPECT_THAT(inst->From()->Usages(), testing::UnorderedElementsAre(Usage{inst, 1u}));
+}
+
+TEST_F(IR_StoreTest, Result) {
+    auto* to = b.Var(ty.ptr<private_, i32>());
+    auto* inst = b.Store(to, 4_i);
+
+    EXPECT_FALSE(inst->HasResults());
+    EXPECT_FALSE(inst->HasMultiResults());
 }
 
 }  // namespace

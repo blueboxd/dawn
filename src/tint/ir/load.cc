@@ -13,16 +13,20 @@
 // limitations under the License.
 
 #include "src/tint/ir/load.h"
+
 #include "src/tint/debug.h"
+#include "src/tint/type/pointer.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ir::Load);
 
 namespace tint::ir {
 
-Load::Load(const type::Type* type, Value* f) : Base(), result_type_(type), from_(f) {
-    TINT_ASSERT(IR, result_type_);
-    TINT_ASSERT(IR, from_);
-    from_->AddUsage(this);
+Load::Load(InstructionResult* result, Value* from) {
+    TINT_ASSERT(IR, from->Type()->Is<type::Pointer>());
+    TINT_ASSERT(IR, from && from->Type()->UnwrapPtr() == result->Type());
+
+    AddOperand(Load::kFromOperandOffset, from);
+    AddResult(result);
 }
 
 Load::~Load() = default;

@@ -12,21 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gtest/gtest-spi.h"
 #include "src/tint/ir/builder.h"
 #include "src/tint/ir/instruction.h"
-#include "src/tint/ir/test_helper.h"
+#include "src/tint/ir/ir_test_helper.h"
 
 namespace tint::ir {
 namespace {
 
-using IR_InstructionTest = TestHelper;
+using IR_DiscardTest = IRTestHelper;
 
-TEST_F(IR_InstructionTest, Discard) {
-    Module mod;
-    Builder b{mod};
-
-    const auto* inst = b.Discard();
+TEST_F(IR_DiscardTest, Discard) {
+    auto* inst = b.Discard();
     ASSERT_TRUE(inst->Is<ir::Discard>());
+}
+
+TEST_F(IR_DiscardTest, Result) {
+    auto* inst = b.Discard();
+
+    EXPECT_FALSE(inst->HasResults());
+    EXPECT_FALSE(inst->HasMultiResults());
 }
 
 }  // namespace

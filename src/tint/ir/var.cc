@@ -14,19 +14,37 @@
 
 #include "src/tint/ir/var.h"
 #include "src/tint/debug.h"
+#include "src/tint/ir/store.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ir::Var);
 
 namespace tint::ir {
 
-Var::Var(const type::Type* ty) : type_(ty) {}
+Var::Var(InstructionResult* result) {
+    if (result && result->Type()) {
+        TINT_ASSERT(IR, result->Type()->Is<type::Pointer>());
+    }
+
+    // Default to no initializer.
+    AddOperand(Var::kInitializerOperandOffset, nullptr);
+    AddResult(result);
+}
 
 Var::~Var() = default;
 
 void Var::SetInitializer(Value* initializer) {
-    initializer_ = initializer;
-    initializer_->AddUsage(this);
-    // TODO(dsinclair): Probably should do a RemoveUsage on an existing initializer if set
+    SetOperand(Var::kInitializerOperandOffset, initializer);
+}
+
+void Var::DestroyIfOnlyAssigned() {
+    auto* result = Result();
+    if (result->Usages().All([](const Usage& u) { return u.instruction->Is<ir::Store>(); })) {
+        while (!result->Usages().IsEmpty()) {
+            auto& usage = *result->Usages().begin();
+            usage.instruction->Destroy();
+        }
+        Destroy();
+    }
 }
 
 }  // namespace tint::ir

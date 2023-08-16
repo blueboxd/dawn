@@ -16,7 +16,7 @@
 #define SRC_TINT_IR_USER_CALL_H_
 
 #include "src/tint/ir/call.h"
-#include "src/tint/symbol.h"
+#include "src/tint/ir/function.h"
 #include "src/tint/utils/castable.h"
 
 namespace tint::ir {
@@ -24,18 +24,26 @@ namespace tint::ir {
 /// A user call instruction in the IR.
 class UserCall : public utils::Castable<UserCall, Call> {
   public:
+    /// The offset in Operands() for the function being called
+    static constexpr size_t kFunctionOperandOffset = 0;
+
+    /// The base offset in Operands() for the call arguments
+    static constexpr size_t kArgsOperandOffset = 1;
+
     /// Constructor
-    /// @param type the result type
-    /// @param name the function name
+    /// @param result the result value
+    /// @param func the function being called
     /// @param args the function arguments
-    UserCall(const type::Type* type, Symbol name, utils::VectorRef<Value*> args);
+    UserCall(InstructionResult* result, Function* func, utils::VectorRef<Value*> args);
     ~UserCall() override;
 
-    /// @returns the called function name
-    Symbol Name() const { return name_; }
+    /// @returns the call arguments
+    utils::Slice<Value* const> Args() override {
+        return operands_.Slice().Offset(kArgsOperandOffset);
+    }
 
-  private:
-    Symbol name_;
+    /// @returns the called function name
+    Function* Func() { return operands_[kFunctionOperandOffset]->As<ir::Function>(); }
 };
 
 }  // namespace tint::ir

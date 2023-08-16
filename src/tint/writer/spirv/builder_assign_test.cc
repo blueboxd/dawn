@@ -13,13 +13,15 @@
 // limitations under the License.
 
 #include "gmock/gmock.h"
+#include "gtest/gtest-spi.h"
 #include "src/tint/writer/spirv/spv_dump.h"
 #include "src/tint/writer/spirv/test_helper.h"
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::writer::spirv {
 namespace {
+
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 using BuilderTest = TestHelper;
 
@@ -52,29 +54,29 @@ TEST_F(BuilderTest, Assign_Var) {
 }
 
 TEST_F(BuilderTest, Assign_Var_OutsideFunction_IsError) {
-    auto* v = GlobalVar("var", ty.f32(), builtin::AddressSpace::kPrivate);
+    EXPECT_FATAL_FAILURE(
+        {
+            ProgramBuilder pb;
 
-    auto* assign = Assign("var", Expr(1_f));
+            auto* v = pb.GlobalVar("var", pb.ty.f32(), builtin::AddressSpace::kPrivate);
 
-    WrapInFunction(assign);
+            auto* assign = pb.Assign("var", pb.Expr(1_f));
 
-    spirv::Builder& b = Build();
+            pb.WrapInFunction(assign);
 
-    EXPECT_TRUE(b.GenerateGlobalVariable(v)) << b.Diagnostics();
-    ASSERT_FALSE(b.has_error()) << b.Diagnostics();
+            auto program = std::make_unique<Program>(std::move(pb));
+            auto b = std::make_unique<spirv::Builder>(program.get());
 
-    tint::SetInternalCompilerErrorReporter(nullptr);
-
-    EXPECT_FALSE(b.GenerateAssignStatement(assign)) << b.Diagnostics();
-    EXPECT_TRUE(b.has_error());
-    EXPECT_THAT(b.Diagnostics().str(),
-                ::testing::HasSubstr("trying to add SPIR-V instruction 62 outside a function"));
+            b->GenerateGlobalVariable(v);
+            b->GenerateAssignStatement(assign);
+        },
+        "trying to add SPIR-V instruction 62 outside a function");
 }
 
 TEST_F(BuilderTest, Assign_Var_ZeroInitializer) {
     auto* v = GlobalVar("var", ty.vec3<f32>(), builtin::AddressSpace::kPrivate);
 
-    auto* val = vec3<f32>();
+    auto* val = Call<vec3<f32>>();
     auto* assign = Assign("var", val);
 
     WrapInFunction(assign);
@@ -101,7 +103,7 @@ TEST_F(BuilderTest, Assign_Var_ZeroInitializer) {
 }
 
 TEST_F(BuilderTest, Assign_Var_Complex_InitializerNestedVector) {
-    auto* init = vec3<f32>(vec2<f32>(1_f, 2_f), 3_f);
+    auto* init = Call<vec3<f32>>(Call<vec2<f32>>(1_f, 2_f), 3_f);
 
     auto* v = GlobalVar("var", ty.vec3<f32>(), builtin::AddressSpace::kPrivate);
 
@@ -134,7 +136,7 @@ TEST_F(BuilderTest, Assign_Var_Complex_InitializerNestedVector) {
 }
 
 TEST_F(BuilderTest, Assign_Var_Complex_Initializer) {
-    auto* init = vec3<f32>(1_f, 2_f, 3_f);
+    auto* init = Call<vec3<f32>>(1_f, 2_f, 3_f);
 
     auto* v = GlobalVar("var", ty.vec3<f32>(), builtin::AddressSpace::kPrivate);
 
@@ -213,7 +215,7 @@ OpStore %9 %10
 TEST_F(BuilderTest, Assign_Vector) {
     auto* v = GlobalVar("var", ty.vec3<f32>(), builtin::AddressSpace::kPrivate);
 
-    auto* val = vec3<f32>(1_f, 1_f, 3_f);
+    auto* val = Call<vec3<f32>>(1_f, 1_f, 3_f);
     auto* assign = Assign("var", val);
 
     WrapInFunction(assign);

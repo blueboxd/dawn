@@ -49,6 +49,7 @@
 #include "src/tint/ast/transform/vectorize_scalar_matrix_initializers.h"
 #include "src/tint/ast/transform/zero_init_workgroup_memory.h"
 #include "src/tint/ast/variable_decl_statement.h"
+#include "src/tint/constant/splat.h"
 #include "src/tint/constant/value.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/function.h"
@@ -143,7 +144,7 @@ class ScopedBitCast {
 
         // If we need to promote from scalar to vector, bitcast the scalar to the
         // vector element type.
-        if (curr_type->is_scalar() && target_vec_type) {
+        if (curr_type->Is<type::Scalar>() && target_vec_type) {
             target_type = target_vec_type->type();
         }
 
@@ -740,7 +741,7 @@ bool GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
 
         case builtin::Function::kLength: {
             auto* sem = builder_.Sem().GetVal(expr->args[0]);
-            if (sem->Type()->UnwrapRef()->is_scalar()) {
+            if (sem->Type()->UnwrapRef()->Is<type::Scalar>()) {
                 // Emulate scalar overload using fabs(x).
                 name = "fabs";
             }
@@ -749,7 +750,7 @@ bool GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
 
         case builtin::Function::kDistance: {
             auto* sem = builder_.Sem().GetVal(expr->args[0]);
-            if (sem->Type()->UnwrapRef()->is_scalar()) {
+            if (sem->Type()->UnwrapRef()->Is<type::Scalar>()) {
                 // Emulate scalar overload using fabs(x - y);
                 out << "fabs";
                 ScopedParen sp(out);

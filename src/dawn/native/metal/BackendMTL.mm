@@ -171,29 +171,12 @@ MaybeError GetDevicePCIInfo(id<MTLDevice> device, PCIIDs* ids) {
 #error "Unsupported Apple platform."
 #endif
 
-// This method has seen hard-to-debug crashes. See crbug.com/dawn/1102.
-// For now, it is written defensively, with many potentially unnecessary guards until
-// we narrow down the cause of the problem.
-DAWN_NOINLINE bool IsGPUCounterSupported(id<MTLDevice> device,
-                                         MTLCommonCounterSet counterSetName,
-                                         std::vector<MTLCommonCounter> counterNames)
+bool IsGPUCounterSupported(id<MTLDevice> device,
+                           MTLCommonCounterSet counterSetName,
+                           std::vector<MTLCommonCounter> counterNames)
     API_AVAILABLE(macos(10.15), ios(14.0)) {
-    NSPRef<id<MTLCounterSet>> counterSet = nil;
-    if (![device respondsToSelector:@selector(counterSets)]) {
-        dawn::ErrorLog() << "MTLDevice does not respond to selector: counterSets.";
-        return false;
-    }
-    NSArray<id<MTLCounterSet>>* counterSets = device.counterSets;
-    if (counterSets == nil) {
-        // On some systems, [device counterSets] may be null and not an empty array.
-        return false;
-    }
-    // MTLDevice’s counterSets property declares which counter sets it supports. Check
-    // whether it's available on the device before requesting a counter set.
-    // Note: Don't do for..in loop to avoid potentially crashy interaction with
-    // NSFastEnumeration.
-    for (NSUInteger i = 0; i < counterSets.count; ++i) {
-        id<MTLCounterSet> set = [counterSets objectAtIndex:i];
+    id<MTLCounterSet> counterSet = nil;
+    for (id<MTLCounterSet> set in [device counterSets]) {
         if ([set.name caseInsensitiveCompare:counterSetName] == NSOrderedSame) {
             counterSet = set;
             break;
@@ -205,25 +188,13 @@ DAWN_NOINLINE bool IsGPUCounterSupported(id<MTLDevice> device,
         return false;
     }
 
-    if (![*counterSet respondsToSelector:@selector(counters)]) {
-        dawn::ErrorLog() << "MTLCounterSet does not respond to selector: counters.";
-        return false;
-    }
-    NSArray<id<MTLCounter>>* countersInSet = (*counterSet).counters;
-    if (countersInSet == nil) {
-        // On some systems, [MTLCounterSet counters] may be null and not an empty array.
-        return false;
-    }
-
+    NSArray<id<MTLCounter>>* countersInSet = [counterSet counters];
     // A GPU might support a counter set, but only support a subset of the counters in that
     // set, check if the counter set supports all specific counters we need. Return false
     // if there is a counter unsupported.
     for (MTLCommonCounter counterName : counterNames) {
         bool found = false;
-        // Note: Don't do for..in loop to avoid potentially crashy interaction with
-        // NSFastEnumeration.
-        for (NSUInteger i = 0; i < countersInSet.count; ++i) {
-            id<MTLCounter> counter = [countersInSet objectAtIndex:i];
+        for (id<MTLCounter> counter in countersInSet) {
             if ([counter.name caseInsensitiveCompare:counterName] == NSOrderedSame) {
                 found = true;
                 break;
@@ -255,12 +226,12 @@ DAWN_NOINLINE bool IsGPUCounterSupported(id<MTLDevice> device,
 
 class PhysicalDevice : public PhysicalDeviceBase {
   public:
-    PhysicalDevice(InstanceBase* instance, id<MTLDevice> device)
-        : PhysicalDeviceBase(instance, wgpu::BackendType::Metal), mDevice(device) {
+    PhysicalDevice(InstanceBase* instance, NSPRef<id<MTLDevice>> device)
+        : PhysicalDeviceBase(instance, wgpu::BackendType::Metal), mDevice(std::move(device)) {
         mName = std::string([[*mDevice name] UTF8String]);
 
         PCIIDs ids;
-        if (!instance->ConsumedError(GetDevicePCIInfo(device, &ids))) {
+        if (!instance->ConsumedError(GetDevicePCIInfo(*mDevice, &ids))) {
             mVendorId = ids.vendorId;
             mDeviceId = ids.deviceId;
         }
@@ -269,7 +240,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         mAdapterType = wgpu::AdapterType::IntegratedGPU;
         const char* systemName = "iOS ";
 #elif DAWN_PLATFORM_IS(MACOS)
-        if ([device isLowPower]) {
+        if ([*mDevice isLowPower]) {
             mAdapterType = wgpu::AdapterType::IntegratedGPU;
         } else {
             mAdapterType = wgpu::AdapterType::DiscreteGPU;
@@ -486,9 +457,11 @@ class PhysicalDevice : public PhysicalDeviceBase {
                 if (gpu_info::IsIntelGen11(vendorId, deviceId)) {
                     return true;
                 }
+#if DAWN_PLATFORM_IS(MACOS)
                 if (gpu_info::IsIntel(vendorId) && !IsMacOSVersionAtLeast(11)) {
                     return true;
                 }
+#endif
                 return false;
             };
             if (ShouldLeakCounterSets()) {
@@ -819,44 +792,46 @@ Backend::Backend(InstanceBase* instance) : BackendConnection(instance, wgpu::Bac
 
 Backend::~Backend() = default;
 
-std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverDefaultAdapters() {
-    AdapterDiscoveryOptions options;
-    auto result = DiscoverAdapters(&options);
-    if (result.IsError()) {
-        GetInstance()->ConsumedError(result.AcquireError());
+std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
+    const RequestAdapterOptions* options) {
+    if (options->forceFallbackAdapter) {
         return {};
     }
-    return result.AcquireSuccess();
+    if (!mPhysicalDevices.empty()) {
+        // Devices already discovered.
+        return std::vector<Ref<PhysicalDeviceBase>>{mPhysicalDevices};
+    }
+    @autoreleasepool {
+#if DAWN_PLATFORM_IS(MACOS)
+        if(@available(macOS 10.11,*)) {
+          for (id<MTLDevice> device in MTLCopyAllDevices()) {
+              Ref<PhysicalDevice> physicalDevice =
+                  AcquireRef(new PhysicalDevice(GetInstance(), AcquireNSPRef(device)));
+              if (!GetInstance()->ConsumedErrorAndWarnOnce(physicalDevice->Initialize())) {
+                  mPhysicalDevices.push_back(std::move(physicalDevice));
+              }
+          }
+        }
+#endif
+
+        // iOS only has a single device so MTLCopyAllDevices doesn't exist there.
+#if defined(DAWN_PLATFORM_IOS)
+        Ref<PhysicalDevice> physicalDevice = AcquireRef(
+            new PhysicalDevice(GetInstance(), AcquireNSPRef(MTLCreateSystemDefaultDevice())));
+        if (!GetInstance()->ConsumedErrorAndWarnOnce(physicalDevice->Initialize())) {
+            mPhysicalDevices.push_back(std::move(physicalDevice));
+        }
+#endif
+    }
+    return std::vector<Ref<PhysicalDeviceBase>>{mPhysicalDevices};
 }
 
-ResultOrError<std::vector<Ref<PhysicalDeviceBase>>> Backend::DiscoverAdapters(
-    const AdapterDiscoveryOptionsBase* optionsBase) {
-    ASSERT(optionsBase->backendType == WGPUBackendType_Metal);
+void Backend::ClearPhysicalDevices() {
+    mPhysicalDevices.clear();
+}
 
-    std::vector<Ref<PhysicalDeviceBase>> physicalDevices;
-#if DAWN_PLATFORM_IS(MACOS)
-    if(@available(macOS 10.11,*)) {
-      NSRef<NSArray<id<MTLDevice>>> devices = AcquireNSRef(MTLCopyAllDevices());
-
-      for (id<MTLDevice> device in devices.Get()) {
-          Ref<PhysicalDevice> physicalDevice = AcquireRef(new PhysicalDevice(GetInstance(), device));
-          if (!GetInstance()->ConsumedError(physicalDevice->Initialize())) {
-              physicalDevices.push_back(std::move(physicalDevice));
-          }
-      }
-    }
-#endif
-
-    // iOS only has a single device so MTLCopyAllDevices doesn't exist there.
-#if defined(DAWN_PLATFORM_IOS)
-    Ref<PhysicalDevice> physicalDevice =
-        AcquireRef(new PhysicalDevice(GetInstance(), MTLCreateSystemDefaultDevice()));
-    if (!GetInstance()->ConsumedError(physicalDevice->Initialize())) {
-        physicalDevices.push_back(std::move(physicalDevice));
-    }
-#endif
-
-    return physicalDevices;
+size_t Backend::GetPhysicalDeviceCountForTesting() const {
+    return mPhysicalDevices.size();
 }
 
 BackendConnection* Connect(InstanceBase* instance) {

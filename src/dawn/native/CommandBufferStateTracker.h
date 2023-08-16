@@ -40,6 +40,7 @@ class CommandBufferStateTracker {
     MaybeError ValidateCanDispatch();
     MaybeError ValidateCanDraw();
     MaybeError ValidateCanDrawIndexed();
+    MaybeError ValidateNoDifferentTextureViewsOnSameTexture();
     MaybeError ValidateBufferInRangeForVertexBuffer(uint32_t vertexCount, uint32_t firstVertex);
     MaybeError ValidateBufferInRangeForInstanceBuffer(uint32_t instanceCount,
                                                       uint32_t firstInstance);
@@ -48,6 +49,7 @@ class CommandBufferStateTracker {
     // State-modifying methods
     void SetComputePipeline(ComputePipelineBase* pipeline);
     void SetRenderPipeline(RenderPipelineBase* pipeline);
+    void UnsetBindGroup(BindGroupIndex index);
     void SetBindGroup(BindGroupIndex index,
                       BindGroupBase* bindgroup,
                       uint32_t dynamicOffsetCount,

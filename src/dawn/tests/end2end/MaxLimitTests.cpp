@@ -114,6 +114,10 @@ TEST_P(MaxLimitTests, MaxBufferBindingSize) {
     DAWN_SUPPRESS_TEST_IF(IsWindows() && IsVulkan() && IsNvidia());
     DAWN_SUPPRESS_TEST_IF(IsLinux() && IsVulkan() && IsNvidia());
 
+    // TODO(crbug.com/dawn/1705): Use a zero buffer to clear buffers. Otherwise, the test
+    // OOMs.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
+
     // TODO(dawn:1549) Fails on Qualcomm-based Android devices.
     DAWN_SUPPRESS_TEST_IF(IsAndroid() && IsQualcomm());
 
@@ -250,6 +254,9 @@ TEST_P(MaxLimitTests, MaxBufferBindingSize) {
 
 // Test using the maximum number of dynamic uniform and storage buffers
 TEST_P(MaxLimitTests, MaxDynamicBuffers) {
+    // TODO(https://anglebug.com/8177) Causes assertion failure in ANGLE.
+    DAWN_SUPPRESS_TEST_IF(IsANGLE() && IsWindows());
+
     wgpu::Limits limits = GetSupportedLimits().limits;
 
     std::vector<wgpu::BindGroupLayoutEntry> bglEntries;
@@ -705,6 +712,7 @@ TEST_P(MaxLimitTests, MaxBufferSizes) {
 }
 
 DAWN_INSTANTIATE_TEST(MaxLimitTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),

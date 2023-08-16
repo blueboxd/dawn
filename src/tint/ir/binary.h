@@ -15,14 +15,20 @@
 #ifndef SRC_TINT_IR_BINARY_H_
 #define SRC_TINT_IR_BINARY_H_
 
-#include "src/tint/ir/instruction.h"
+#include "src/tint/ir/operand_instruction.h"
 #include "src/tint/utils/castable.h"
 
 namespace tint::ir {
 
-/// An instruction in the IR.
-class Binary : public utils::Castable<Binary, Instruction> {
+/// A binary instruction in the IR.
+class Binary : public utils::Castable<Binary, OperandInstruction<2, 1>> {
   public:
+    /// The offset in Operands() for the LHS
+    static constexpr size_t kLhsOperandOffset = 0;
+
+    /// The offset in Operands() for the RHS
+    static constexpr size_t kRhsOperandOffset = 1;
+
     /// The kind of instruction.
     enum class Kind {
         kAdd,
@@ -47,30 +53,24 @@ class Binary : public utils::Castable<Binary, Instruction> {
     };
 
     /// Constructor
+    /// @param result the result value
     /// @param kind the kind of binary instruction
-    /// @param type the result type
     /// @param lhs the lhs of the instruction
     /// @param rhs the rhs of the instruction
-    Binary(enum Kind kind, const type::Type* type, Value* lhs, Value* rhs);
+    Binary(InstructionResult* result, enum Kind kind, Value* lhs, Value* rhs);
     ~Binary() override;
 
     /// @returns the kind of the binary instruction
-    enum Kind Kind() const { return kind_; }
-
-    /// @returns the type of the value
-    const type::Type* Type() const override { return result_type_; }
+    enum Kind Kind() { return kind_; }
 
     /// @returns the left-hand-side value for the instruction
-    const Value* LHS() const { return lhs_; }
+    Value* LHS() { return operands_[kLhsOperandOffset]; }
 
     /// @returns the right-hand-side value for the instruction
-    const Value* RHS() const { return rhs_; }
+    Value* RHS() { return operands_[kRhsOperandOffset]; }
 
   private:
     enum Kind kind_;
-    const type::Type* result_type_;
-    Value* lhs_;
-    Value* rhs_;
 };
 
 }  // namespace tint::ir

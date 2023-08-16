@@ -319,7 +319,7 @@ class TextureViewSamplingTest : public DawnTest {
                             uint32_t textureViewLayerCount,
                             bool isCubeMapArray) {
         // TODO(crbug.com/dawn/1300): OpenGLES does not support cube map arrays.
-        DAWN_TEST_UNSUPPORTED_IF(isCubeMapArray && IsOpenGLES());
+        DAWN_TEST_UNSUPPORTED_IF(isCubeMapArray && IsCompatibilityMode());
 
         constexpr uint32_t kMipLevels = 1u;
         InitTexture(textureArrayLayers, kMipLevels);
@@ -441,9 +441,6 @@ TEST_P(TextureViewSamplingTest, Texture2DArrayViewOnOneLevelOf2DArrayTexture) {
 TEST_P(TextureViewSamplingTest, SRGBReinterpretation) {
     // TODO(crbug.com/dawn/1360): OpenGLES doesn't support view format reinterpretation.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
-
-    // TODO(dawn:1810): D3D11 doesn't support view format reinterpretation.
-    DAWN_SUPPRESS_TEST_IF(IsD3D11());
 
     wgpu::TextureViewDescriptor viewDesc = {};
     viewDesc.format = wgpu::TextureFormat::RGBA8UnormSrgb;
@@ -776,9 +773,6 @@ TEST_P(TextureViewRenderingTest, SRGBReinterpretationRenderAttachment) {
     // TODO(crbug.com/dawn/1360): OpenGLES doesn't support view format reinterpretation.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
 
-    // TODO(dawn:1810): D3D11 doesn't support view format reinterpretation.
-    DAWN_SUPPRESS_TEST_IF(IsD3D11());
-
     // Test will render into an SRGB view
     wgpu::TextureViewDescriptor viewDesc = {};
     viewDesc.format = wgpu::TextureFormat::RGBA8UnormSrgb;
@@ -884,9 +878,6 @@ TEST_P(TextureViewRenderingTest, SRGBReinterpretationRenderAttachment) {
 TEST_P(TextureViewRenderingTest, SRGBReinterpretionResolveAttachment) {
     // TODO(crbug.com/dawn/1360): OpenGLES doesn't support view format reinterpretation.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
-
-    // TODO(dawn:1810): D3D11 doesn't support view format reinterpretation.
-    DAWN_SUPPRESS_TEST_IF(IsD3D11());
 
     // Test will resolve into an SRGB view
     wgpu::TextureViewDescriptor viewDesc = {};

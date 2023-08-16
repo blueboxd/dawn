@@ -28,7 +28,7 @@
 #include "dawn/native/BlitBufferToDepthStencil.h"
 #include "dawn/native/BlobCache.h"
 #include "dawn/native/Buffer.h"
-#include "dawn/native/ChainUtils_autogen.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/CommandBuffer.h"
 #include "dawn/native/CommandEncoder.h"
 #include "dawn/native/CompilationMessages.h"
@@ -646,7 +646,6 @@ void DeviceBase::APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata) 
         static wgpu::ErrorCallback defaultCallback = [](WGPUErrorType, char const*, void*) {};
         callback = defaultCallback;
     }
-    // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
     if (IsLost()) {
         mCallbackTaskManager->AddCallbackTask(
             std::bind(callback, WGPUErrorType_DeviceLost, "GPU device disconnected", userdata));
@@ -796,7 +795,8 @@ ResultOrError<const Format*> DeviceBase::GetInternalFormat(wgpu::TextureFormat f
     DAWN_INVALID_IF(index >= mFormatTable.size(), "Unknown texture format %s.", format);
 
     const Format* internalFormat = &mFormatTable[index];
-    DAWN_INVALID_IF(!internalFormat->isSupported, "Unsupported texture format %s.", format);
+    DAWN_INVALID_IF(!internalFormat->IsSupported(), "Unsupported texture format %s, reason: %s.",
+                    format, internalFormat->unsupportedReason);
 
     return internalFormat;
 }
@@ -804,13 +804,13 @@ ResultOrError<const Format*> DeviceBase::GetInternalFormat(wgpu::TextureFormat f
 const Format& DeviceBase::GetValidInternalFormat(wgpu::TextureFormat format) const {
     FormatIndex index = ComputeFormatIndex(format);
     ASSERT(index < mFormatTable.size());
-    ASSERT(mFormatTable[index].isSupported);
+    ASSERT(mFormatTable[index].IsSupported());
     return mFormatTable[index];
 }
 
 const Format& DeviceBase::GetValidInternalFormat(FormatIndex index) const {
     ASSERT(index < mFormatTable.size());
-    ASSERT(mFormatTable[index].isSupported);
+    ASSERT(mFormatTable[index].IsSupported());
     return mFormatTable[index];
 }
 
@@ -1145,20 +1145,29 @@ void DeviceBase::APICreateComputePipelineAsync(const ComputePipelineDescriptor* 
     TRACE_EVENT1(GetPlatform(), General, "DeviceBase::APICreateComputePipelineAsync", "label",
                  utils::GetLabelForTrace(descriptor->label));
 
-    MaybeError maybeResult = CreateComputePipelineAsync(descriptor, callback, userdata);
+    auto resultOrError = CreateUninitializedComputePipeline(descriptor);
+    // Enqueue the callback directly when an error has been found in the front-end
+    // validation.
+    if (resultOrError.IsError()) {
+        AddComputePipelineAsyncCallbackTask(resultOrError.AcquireError(), callback, userdata);
+        return;
+    }
 
-    // Call the callback directly when a validation error has been found in the front-end
-    // validations. If there is no error, then CreateComputePipelineAsync will call the
-    // callback.
-    if (maybeResult.IsError()) {
-        std::unique_ptr<ErrorData> error = maybeResult.AcquireError();
-        WGPUCreatePipelineAsyncStatus status =
-            CreatePipelineAsyncStatusFromErrorType(error->GetType());
-        // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
+    Ref<ComputePipelineBase> uninitializedComputePipeline = resultOrError.AcquireSuccess();
+
+    // Call the callback directly when we can get a cached compute pipeline object.
+    Ref<ComputePipelineBase> cachedComputePipeline =
+        GetCachedComputePipeline(uninitializedComputePipeline.Get());
+    if (cachedComputePipeline.Get() != nullptr) {
         mCallbackTaskManager->AddCallbackTask(
-            [callback, status, message = error->GetMessage(), userdata] {
-                callback(status, nullptr, message.c_str(), userdata);
-            });
+            std::bind(callback, WGPUCreatePipelineAsyncStatus_Success,
+                      ToAPI(cachedComputePipeline.Detach()), "", userdata));
+    } else {
+        // Otherwise we will create the pipeline object in InitializeComputePipelineAsyncImpl(),
+        // where the pipeline object may be initialized asynchronously and the result will be
+        // saved to mCreatePipelineAsyncTracker.
+        InitializeComputePipelineAsyncImpl(std::move(uninitializedComputePipeline), callback,
+                                           userdata);
     }
 }
 PipelineLayoutBase* DeviceBase::APICreatePipelineLayout(
@@ -1191,23 +1200,34 @@ void DeviceBase::APICreateRenderPipelineAsync(const RenderPipelineDescriptor* de
                                               void* userdata) {
     TRACE_EVENT1(GetPlatform(), General, "DeviceBase::APICreateRenderPipelineAsync", "label",
                  utils::GetLabelForTrace(descriptor->label));
-    // TODO(dawn:563): Add validation error context.
-    MaybeError maybeResult = CreateRenderPipelineAsync(descriptor, callback, userdata);
 
-    // Call the callback directly when a validation error has been found in the front-end
-    // validations. If there is no error, then CreateRenderPipelineAsync will call the
-    // callback.
-    if (maybeResult.IsError()) {
-        std::unique_ptr<ErrorData> error = maybeResult.AcquireError();
-        WGPUCreatePipelineAsyncStatus status =
-            CreatePipelineAsyncStatusFromErrorType(error->GetType());
-        // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
+    auto resultOrError = CreateUninitializedRenderPipeline(descriptor);
+
+    // Enqueue the callback directly when an error has been found in the front-end
+    // validation.
+    if (resultOrError.IsError()) {
+        AddRenderPipelineAsyncCallbackTask(resultOrError.AcquireError(), callback, userdata);
+        return;
+    }
+
+    Ref<RenderPipelineBase> uninitializedRenderPipeline = resultOrError.AcquireSuccess();
+
+    // Call the callback directly when we can get a cached render pipeline object.
+    Ref<RenderPipelineBase> cachedRenderPipeline =
+        GetCachedRenderPipeline(uninitializedRenderPipeline.Get());
+    if (cachedRenderPipeline != nullptr) {
         mCallbackTaskManager->AddCallbackTask(
-            [callback, status, message = error->GetMessage(), userdata] {
-                callback(status, nullptr, message.c_str(), userdata);
-            });
+            std::bind(callback, WGPUCreatePipelineAsyncStatus_Success,
+                      ToAPI(cachedRenderPipeline.Detach()), "", userdata));
+    } else {
+        // Otherwise we will create the pipeline object in InitializeRenderPipelineAsyncImpl(),
+        // where the pipeline object may be initialized asynchronously and the result will be
+        // saved to mCreatePipelineAsyncTracker.
+        InitializeRenderPipelineAsyncImpl(std::move(uninitializedRenderPipeline), callback,
+                                          userdata);
     }
 }
+
 RenderBundleEncoder* DeviceBase::APICreateRenderBundleEncoder(
     const RenderBundleEncoderDescriptor* descriptor) {
     Ref<RenderBundleEncoder> result;
@@ -1248,12 +1268,27 @@ ShaderModuleBase* DeviceBase::APICreateShaderModule(const ShaderModuleDescriptor
 
     return result.Detach();
 }
+ShaderModuleBase* DeviceBase::APICreateErrorShaderModule(const ShaderModuleDescriptor* descriptor,
+                                                         const char* errorMessage) {
+    Ref<ShaderModuleBase> result =
+        ShaderModuleBase::MakeError(this, descriptor ? descriptor->label : nullptr);
+    std::unique_ptr<OwnedCompilationMessages> compilationMessages(
+        std::make_unique<OwnedCompilationMessages>());
+    compilationMessages->AddMessage(errorMessage, wgpu::CompilationMessageType::Error);
+    result->InjectCompilationMessages(std::move(compilationMessages));
+
+    std::unique_ptr<ErrorData> errorData =
+        DAWN_VALIDATION_ERROR("Error in calling %s.CreateShaderModule(%s).", this, descriptor);
+    ConsumeError(std::move(errorData));
+
+    return result.Detach();
+}
 SwapChainBase* DeviceBase::APICreateSwapChain(Surface* surface,
                                               const SwapChainDescriptor* descriptor) {
     Ref<SwapChainBase> result;
     if (ConsumedError(CreateSwapChain(surface, descriptor), &result,
                       "calling %s.CreateSwapChain(%s).", this, descriptor)) {
-        return SwapChainBase::MakeError(this);
+        return SwapChainBase::MakeError(this, descriptor);
     }
     return result.Detach();
 }
@@ -1417,7 +1452,7 @@ void DeviceBase::SetWGSLExtensionAllowList() {
     if (mEnabledFeatures.IsEnabled(Feature::ShaderF16)) {
         mWGSLExtensionAllowList.insert("f16");
     }
-    if (AllowUnsafeAPIs()) {
+    if (IsToggleEnabled(Toggle::AllowUnsafeAPIs)) {
         mWGSLExtensionAllowList.insert("chromium_disable_uniformity_analysis");
     }
 }
@@ -1434,9 +1469,8 @@ bool DeviceBase::IsRobustnessEnabled() const {
     return !IsToggleEnabled(Toggle::DisableRobustness);
 }
 
-bool DeviceBase::AllowUnsafeAPIs() const {
-    // TODO(dawn:1685) Currently allows if either toggle are set accordingly.
-    return IsToggleEnabled(Toggle::AllowUnsafeAPIs) || !IsToggleEnabled(Toggle::DisallowUnsafeAPIs);
+bool DeviceBase::IsCompatibilityMode() const {
+    return mAdapter != nullptr && mAdapter->GetFeatureLevel() == FeatureLevel::Compatibility;
 }
 
 size_t DeviceBase::GetLazyClearCountForTesting() {
@@ -1560,20 +1594,9 @@ ResultOrError<Ref<BufferBase>> DeviceBase::CreateBuffer(const BufferDescriptor* 
 
 ResultOrError<Ref<ComputePipelineBase>> DeviceBase::CreateComputePipeline(
     const ComputePipelineDescriptor* descriptor) {
-    DAWN_TRY(ValidateIsAlive());
-    if (IsValidationEnabled()) {
-        DAWN_TRY(ValidateComputePipelineDescriptor(this, descriptor));
-    }
+    Ref<ComputePipelineBase> uninitializedComputePipeline;
+    DAWN_TRY_ASSIGN(uninitializedComputePipeline, CreateUninitializedComputePipeline(descriptor));
 
-    // Ref will keep the pipeline layout alive until the end of the function where
-    // the pipeline will take another reference.
-    Ref<PipelineLayoutBase> layoutRef;
-    ComputePipelineDescriptor appliedDescriptor;
-    DAWN_TRY_ASSIGN(layoutRef, ValidateLayoutAndGetComputePipelineDescriptorWithDefaults(
-                                   this, *descriptor, &appliedDescriptor));
-
-    Ref<ComputePipelineBase> uninitializedComputePipeline =
-        CreateUninitializedComputePipelineImpl(&appliedDescriptor);
     Ref<ComputePipelineBase> cachedComputePipeline =
         GetCachedComputePipeline(uninitializedComputePipeline.Get());
     if (cachedComputePipeline.Get() != nullptr) {
@@ -1603,9 +1626,8 @@ Ref<PipelineCacheBase> DeviceBase::GetOrCreatePipelineCacheImpl(const CacheKey& 
     UNREACHABLE();
 }
 
-MaybeError DeviceBase::CreateComputePipelineAsync(const ComputePipelineDescriptor* descriptor,
-                                                  WGPUCreateComputePipelineAsyncCallback callback,
-                                                  void* userdata) {
+ResultOrError<Ref<ComputePipelineBase>> DeviceBase::CreateUninitializedComputePipeline(
+    const ComputePipelineDescriptor* descriptor) {
     DAWN_TRY(ValidateIsAlive());
     if (IsValidationEnabled()) {
         DAWN_TRY(ValidateComputePipelineDescriptor(this, descriptor));
@@ -1616,45 +1638,19 @@ MaybeError DeviceBase::CreateComputePipelineAsync(const ComputePipelineDescripto
     DAWN_TRY_ASSIGN(layoutRef, ValidateLayoutAndGetComputePipelineDescriptorWithDefaults(
                                    this, *descriptor, &appliedDescriptor));
 
-    Ref<ComputePipelineBase> uninitializedComputePipeline =
-        CreateUninitializedComputePipelineImpl(&appliedDescriptor);
-
-    // Call the callback directly when we can get a cached compute pipeline object.
-    Ref<ComputePipelineBase> cachedComputePipeline =
-        GetCachedComputePipeline(uninitializedComputePipeline.Get());
-    if (cachedComputePipeline.Get() != nullptr) {
-        // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
-        mCallbackTaskManager->AddCallbackTask(
-            std::bind(callback, WGPUCreatePipelineAsyncStatus_Success,
-                      ToAPI(cachedComputePipeline.Detach()), "", userdata));
-    } else {
-        // Otherwise we will create the pipeline object in InitializeComputePipelineAsyncImpl(),
-        // where the pipeline object may be initialized asynchronously and the result will be
-        // saved to mCreatePipelineAsyncTracker.
-        InitializeComputePipelineAsyncImpl(std::move(uninitializedComputePipeline), callback,
-                                           userdata);
-    }
-
-    return {};
+    return CreateUninitializedComputePipelineImpl(&appliedDescriptor);
 }
 
 // This function is overwritten with the async version on the backends that supports
-//  initializing compute pipelines asynchronously.
+// initializing compute pipelines asynchronously.
 void DeviceBase::InitializeComputePipelineAsyncImpl(Ref<ComputePipelineBase> computePipeline,
                                                     WGPUCreateComputePipelineAsyncCallback callback,
                                                     void* userdata) {
     MaybeError maybeError = computePipeline->Initialize();
     if (maybeError.IsError()) {
-        std::unique_ptr<ErrorData> error = maybeError.AcquireError();
-        WGPUCreatePipelineAsyncStatus status =
-            CreatePipelineAsyncStatusFromErrorType(error->GetType());
-        mCallbackTaskManager->AddCallbackTask(
-            std::make_unique<CreateComputePipelineAsyncCallbackTask>(status, error->GetMessage(),
-                                                                     callback, userdata));
+        AddComputePipelineAsyncCallbackTask(maybeError.AcquireError(), callback, userdata);
     } else {
-        mCallbackTaskManager->AddCallbackTask(
-            std::make_unique<CreateComputePipelineAsyncCallbackTask>(
-                AddOrGetCachedComputePipeline(std::move(computePipeline)), callback, userdata));
+        AddComputePipelineAsyncCallbackTask(std::move(computePipeline), callback, userdata);
     }
 }
 
@@ -1665,16 +1661,9 @@ void DeviceBase::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> rende
                                                    void* userdata) {
     MaybeError maybeError = renderPipeline->Initialize();
     if (maybeError.IsError()) {
-        std::unique_ptr<ErrorData> error = maybeError.AcquireError();
-        WGPUCreatePipelineAsyncStatus status =
-            CreatePipelineAsyncStatusFromErrorType(error->GetType());
-        mCallbackTaskManager->AddCallbackTask(
-            std::make_unique<CreateRenderPipelineAsyncCallbackTask>(status, error->GetMessage(),
-                                                                    callback, userdata));
+        AddRenderPipelineAsyncCallbackTask(maybeError.AcquireError(), callback, userdata);
     } else {
-        mCallbackTaskManager->AddCallbackTask(
-            std::make_unique<CreateRenderPipelineAsyncCallbackTask>(
-                AddOrGetCachedRenderPipeline(std::move(renderPipeline)), callback, userdata));
+        AddRenderPipelineAsyncCallbackTask(std::move(renderPipeline), callback, userdata);
     }
 }
 
@@ -1718,20 +1707,8 @@ ResultOrError<Ref<RenderBundleEncoder>> DeviceBase::CreateRenderBundleEncoder(
 
 ResultOrError<Ref<RenderPipelineBase>> DeviceBase::CreateRenderPipeline(
     const RenderPipelineDescriptor* descriptor) {
-    DAWN_TRY(ValidateIsAlive());
-    if (IsValidationEnabled()) {
-        DAWN_TRY(ValidateRenderPipelineDescriptor(this, descriptor));
-    }
-
-    // Ref will keep the pipeline layout alive until the end of the function where
-    // the pipeline will take another reference.
-    Ref<PipelineLayoutBase> layoutRef;
-    RenderPipelineDescriptor appliedDescriptor;
-    DAWN_TRY_ASSIGN(layoutRef, ValidateLayoutAndGetRenderPipelineDescriptorWithDefaults(
-                                   this, *descriptor, &appliedDescriptor));
-
-    Ref<RenderPipelineBase> uninitializedRenderPipeline =
-        CreateUninitializedRenderPipelineImpl(&appliedDescriptor);
+    Ref<RenderPipelineBase> uninitializedRenderPipeline;
+    DAWN_TRY_ASSIGN(uninitializedRenderPipeline, CreateUninitializedRenderPipeline(descriptor));
 
     Ref<RenderPipelineBase> cachedRenderPipeline =
         GetCachedRenderPipeline(uninitializedRenderPipeline.Get());
@@ -1743,9 +1720,8 @@ ResultOrError<Ref<RenderPipelineBase>> DeviceBase::CreateRenderPipeline(
     return AddOrGetCachedRenderPipeline(std::move(uninitializedRenderPipeline));
 }
 
-MaybeError DeviceBase::CreateRenderPipelineAsync(const RenderPipelineDescriptor* descriptor,
-                                                 WGPUCreateRenderPipelineAsyncCallback callback,
-                                                 void* userdata) {
+ResultOrError<Ref<RenderPipelineBase>> DeviceBase::CreateUninitializedRenderPipeline(
+    const RenderPipelineDescriptor* descriptor) {
     DAWN_TRY(ValidateIsAlive());
     if (IsValidationEnabled()) {
         DAWN_TRY(ValidateRenderPipelineDescriptor(this, descriptor));
@@ -1758,26 +1734,7 @@ MaybeError DeviceBase::CreateRenderPipelineAsync(const RenderPipelineDescriptor*
     DAWN_TRY_ASSIGN(layoutRef, ValidateLayoutAndGetRenderPipelineDescriptorWithDefaults(
                                    this, *descriptor, &appliedDescriptor));
 
-    Ref<RenderPipelineBase> uninitializedRenderPipeline =
-        CreateUninitializedRenderPipelineImpl(&appliedDescriptor);
-
-    // Call the callback directly when we can get a cached render pipeline object.
-    Ref<RenderPipelineBase> cachedRenderPipeline =
-        GetCachedRenderPipeline(uninitializedRenderPipeline.Get());
-    if (cachedRenderPipeline != nullptr) {
-        // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
-        mCallbackTaskManager->AddCallbackTask(
-            std::bind(callback, WGPUCreatePipelineAsyncStatus_Success,
-                      ToAPI(cachedRenderPipeline.Detach()), "", userdata));
-    } else {
-        // Otherwise we will create the pipeline object in InitializeRenderPipelineAsyncImpl(),
-        // where the pipeline object may be initialized asynchronously and the result will be
-        // saved to mCreatePipelineAsyncTracker.
-        InitializeRenderPipelineAsyncImpl(std::move(uninitializedRenderPipeline), callback,
-                                          userdata);
-    }
-
-    return {};
+    return CreateUninitializedRenderPipelineImpl(&appliedDescriptor);
 }
 
 ResultOrError<Ref<SamplerBase>> DeviceBase::CreateSampler(const SamplerDescriptor* descriptor) {
@@ -1927,68 +1884,74 @@ dawn::platform::WorkerTaskPool* DeviceBase::GetWorkerTaskPool() const {
 }
 
 void DeviceBase::AddComputePipelineAsyncCallbackTask(
-    Ref<ComputePipelineBase> pipeline,
+    ResultOrError<Ref<ComputePipelineBase>> result,
     WGPUCreateComputePipelineAsyncCallback callback,
     void* userdata) {
-    // CreateComputePipelineAsyncWaitableCallbackTask is declared as an internal class as it
-    // needs to call the private member function DeviceBase::AddOrGetCachedComputePipeline().
-    struct CreateComputePipelineAsyncWaitableCallbackTask final
-        : CreateComputePipelineAsyncCallbackTask {
-        using CreateComputePipelineAsyncCallbackTask::CreateComputePipelineAsyncCallbackTask;
-        void FinishImpl() final {
+    if (result.IsError()) {
+        std::unique_ptr<ErrorData> error = result.AcquireError();
+        WGPUCreatePipelineAsyncStatus status =
+            CreatePipelineAsyncStatusFromErrorType(error->GetType());
+        mCallbackTaskManager->AddCallbackTask(
+            [callback, message = error->GetFormattedMessage(), status, userdata]() {
+                callback(status, nullptr, message.c_str(), userdata);
+            });
+    } else {
+        mCallbackTaskManager->AddCallbackTask([callback, pipeline = result.AcquireSuccess(),
+                                               userdata]() mutable {
             // TODO(dawn:529): call AddOrGetCachedComputePipeline() asynchronously in
             // CreateComputePipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
             // thread-safe.
-            ASSERT(mPipeline != nullptr);
+            ASSERT(pipeline != nullptr);
             {
-                // This is called inside a callback, and no lock will be held by default so we have
-                // to lock now to protect the cache.
-                // Note: we don't lock inside AddOrGetCachedComputePipeline() to avoid deadlock
-                // because many places calling that method might already have the lock held. For
-                // example, APICreateComputePipeline()
-                auto deviceLock(mPipeline->GetDevice()->GetScopedLock());
-                mPipeline = mPipeline->GetDevice()->AddOrGetCachedComputePipeline(mPipeline);
+                // This is called inside a callback, and no lock will be held by default so we
+                // have to lock now to protect the cache. Note: we don't lock inside
+                // AddOrGetCachedComputePipeline() to avoid deadlock because many places calling
+                // that method might already have the lock held. For example,
+                // APICreateComputePipeline()
+                auto deviceLock(pipeline->GetDevice()->GetScopedLock());
+                if (pipeline->GetDevice()->GetState() == State::Alive) {
+                    pipeline =
+                        pipeline->GetDevice()->AddOrGetCachedComputePipeline(std::move(pipeline));
+                }
             }
-
-            CreateComputePipelineAsyncCallbackTask::FinishImpl();
-        }
-    };
-
-    mCallbackTaskManager->AddCallbackTask(
-        std::make_unique<CreateComputePipelineAsyncWaitableCallbackTask>(std::move(pipeline),
-                                                                         callback, userdata));
+            callback(WGPUCreatePipelineAsyncStatus_Success, ToAPI(pipeline.Detach()), "", userdata);
+        });
+    }
 }
 
-void DeviceBase::AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipeline,
+void DeviceBase::AddRenderPipelineAsyncCallbackTask(ResultOrError<Ref<RenderPipelineBase>> result,
                                                     WGPUCreateRenderPipelineAsyncCallback callback,
                                                     void* userdata) {
-    // CreateRenderPipelineAsyncWaitableCallbackTask is declared as an internal class as it
-    // needs to call the private member function DeviceBase::AddOrGetCachedRenderPipeline().
-    struct CreateRenderPipelineAsyncWaitableCallbackTask final
-        : CreateRenderPipelineAsyncCallbackTask {
-        using CreateRenderPipelineAsyncCallbackTask::CreateRenderPipelineAsyncCallbackTask;
-
-        void FinishImpl() final {
+    if (result.IsError()) {
+        std::unique_ptr<ErrorData> error = result.AcquireError();
+        WGPUCreatePipelineAsyncStatus status =
+            CreatePipelineAsyncStatusFromErrorType(error->GetType());
+        mCallbackTaskManager->AddCallbackTask(
+            [callback, message = error->GetFormattedMessage(), status, userdata]() {
+                callback(status, nullptr, message.c_str(), userdata);
+            });
+    } else {
+        mCallbackTaskManager->AddCallbackTask([callback, pipeline = result.AcquireSuccess(),
+                                               userdata]() mutable {
             // TODO(dawn:529): call AddOrGetCachedRenderPipeline() asynchronously in
             // CreateRenderPipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
             // thread-safe.
-            if (mPipeline.Get() != nullptr) {
+            ASSERT(pipeline != nullptr);
+            {
                 // This is called inside a callback, and no lock will be held by default so we have
                 // to lock now to protect the cache.
                 // Note: we don't lock inside AddOrGetCachedRenderPipeline() to avoid deadlock
                 // because many places calling that method might already have the lock held. For
                 // example, APICreateRenderPipeline()
-                auto deviceLock(mPipeline->GetDevice()->GetScopedLock());
-                mPipeline = mPipeline->GetDevice()->AddOrGetCachedRenderPipeline(mPipeline);
+                auto deviceLock(pipeline->GetDevice()->GetScopedLock());
+                if (pipeline->GetDevice()->GetState() == State::Alive) {
+                    pipeline =
+                        pipeline->GetDevice()->AddOrGetCachedRenderPipeline(std::move(pipeline));
+                }
             }
-
-            CreateRenderPipelineAsyncCallbackTask::FinishImpl();
-        }
-    };
-
-    mCallbackTaskManager->AddCallbackTask(
-        std::make_unique<CreateRenderPipelineAsyncWaitableCallbackTask>(std::move(pipeline),
-                                                                        callback, userdata));
+            callback(WGPUCreatePipelineAsyncStatus_Success, ToAPI(pipeline.Detach()), "", userdata);
+        });
+    }
 }
 
 PipelineCompatibilityToken DeviceBase::GetNextPipelineCompatibilityToken() {

@@ -12,50 +12,64 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/ir/test_helper.h"
-
 #include "gmock/gmock.h"
 #include "src/tint/ast/case_selector.h"
 #include "src/tint/ast/int_literal_expression.h"
 #include "src/tint/constant/scalar.h"
+#include "src/tint/ir/program_test_helper.h"
 
 namespace tint::ir {
 namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_BuilderImplTest = TestHelper;
+using IR_FromProgramVarTest = ProgramTestHelper;
 
-TEST_F(IR_BuilderImplTest, Emit_GlobalVar_NoInit) {
+TEST_F(IR_FromProgramVarTest, Emit_GlobalVar_NoInit) {
     GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate);
 
     auto m = Build();
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
-    EXPECT_EQ(Disassemble(m.Get()), R"(%fn1 = block {
+    EXPECT_EQ(Disassemble(m.Get()), R"(# Root block
+%b1 = block {
   %a:ptr<private, u32, read_write> = var
 }
-
 
 )");
 }
 
-TEST_F(IR_BuilderImplTest, Emit_GlobalVar_Init) {
+TEST_F(IR_FromProgramVarTest, Emit_GlobalVar_Init) {
     auto* expr = Expr(2_u);
     GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate, expr);
 
     auto m = Build();
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
-    EXPECT_EQ(Disassemble(m.Get()), R"(%fn1 = block {
+    EXPECT_EQ(Disassemble(m.Get()), R"(# Root block
+%b1 = block {
   %a:ptr<private, u32, read_write> = var, 2u
 }
-
 
 )");
 }
 
-TEST_F(IR_BuilderImplTest, Emit_Var_NoInit) {
+TEST_F(IR_FromProgramVarTest, Emit_GlobalVar_GroupBinding) {
+    GlobalVar("a", ty.u32(), builtin::AddressSpace::kStorage,
+              utils::Vector{Group(2_u), Binding(3_u)});
+
+    auto m = Build();
+    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+
+    EXPECT_EQ(Disassemble(m.Get()), R"(# Root block
+%b1 = block {
+  %a:ptr<storage, u32, read> = var @binding_point(2, 3)
+}
+
+)");
+}
+
+TEST_F(IR_FromProgramVarTest, Emit_Var_NoInit) {
     auto* a = Var("a", ty.u32(), builtin::AddressSpace::kFunction);
     WrapInFunction(a);
 
@@ -63,16 +77,16 @@ TEST_F(IR_BuilderImplTest, Emit_Var_NoInit) {
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
     EXPECT_EQ(Disassemble(m.Get()),
-              R"(%fn1 = func test_function():void [@compute @workgroup_size(1, 1, 1)] {
-  %fn2 = block {
+              R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
+  %b1 = block {
     %a:ptr<function, u32, read_write> = var
-  } -> %func_end # return
-} %func_end
-
+    ret
+  }
+}
 )");
 }
 
-TEST_F(IR_BuilderImplTest, Emit_Var_Init) {
+TEST_F(IR_FromProgramVarTest, Emit_Var_Init_Constant) {
     auto* expr = Expr(2_u);
     auto* a = Var("a", ty.u32(), builtin::AddressSpace::kFunction, expr);
     WrapInFunction(a);
@@ -81,13 +95,35 @@ TEST_F(IR_BuilderImplTest, Emit_Var_Init) {
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
     EXPECT_EQ(Disassemble(m.Get()),
-              R"(%fn1 = func test_function():void [@compute @workgroup_size(1, 1, 1)] {
-  %fn2 = block {
+              R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
+  %b1 = block {
     %a:ptr<function, u32, read_write> = var, 2u
-  } -> %func_end # return
-} %func_end
-
+    ret
+  }
+}
 )");
 }
+
+TEST_F(IR_FromProgramVarTest, Emit_Var_Init_NonConstant) {
+    auto* a = Var("a", ty.u32(), builtin::AddressSpace::kFunction);
+    auto* b = Var("b", ty.u32(), builtin::AddressSpace::kFunction, Add("a", 2_u));
+    WrapInFunction(a, b);
+
+    auto m = Build();
+    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+
+    EXPECT_EQ(Disassemble(m.Get()),
+              R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
+  %b1 = block {
+    %a:ptr<function, u32, read_write> = var
+    %3:u32 = load %a
+    %4:u32 = add %3, 2u
+    %b:ptr<function, u32, read_write> = var, %4
+    ret
+  }
+}
+)");
+}
+
 }  // namespace
 }  // namespace tint::ir

@@ -15,29 +15,26 @@
 #ifndef SRC_TINT_IR_LOAD_H_
 #define SRC_TINT_IR_LOAD_H_
 
-#include "src/tint/ir/instruction.h"
+#include "src/tint/ir/operand_instruction.h"
 #include "src/tint/utils/castable.h"
 
 namespace tint::ir {
 
 /// A load instruction in the IR.
-class Load : public utils::Castable<Load, Instruction> {
+class Load : public utils::Castable<Load, OperandInstruction<1, 1>> {
   public:
-    /// Constructor
-    /// @param type the result type
+    /// The offset in Operands() for the from value
+    static constexpr size_t kFromOperandOffset = 0;
+
+    /// Constructor (infers type)
+    /// @param result the result value
     /// @param from the value being loaded from
-    Load(const type::Type* type, Value* from);
+    Load(InstructionResult* result, Value* from);
+
     ~Load() override;
 
-    /// @returns the type of the value
-    const type::Type* Type() const override { return result_type_; }
-
-    /// @returns the avlue being loaded from
-    Value* From() const { return from_; }
-
-  private:
-    const type::Type* result_type_;
-    Value* from_;
+    /// @returns the value being loaded from
+    Value* From() { return operands_[kFromOperandOffset]; }
 };
 
 }  // namespace tint::ir

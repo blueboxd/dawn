@@ -15,48 +15,58 @@
 #ifndef SRC_TINT_IR_IF_H_
 #define SRC_TINT_IR_IF_H_
 
-#include "src/tint/ir/branch.h"
-#include "src/tint/ir/flow_node.h"
-#include "src/tint/ir/value.h"
+#include "src/tint/ir/control_instruction.h"
 
 // Forward declarations
 namespace tint::ir {
-class Block;
+class MultiInBlock;
 }  // namespace tint::ir
 
 namespace tint::ir {
 
-/// A flow node representing an if statement.
-class If : public utils::Castable<If, FlowNode> {
+/// If instruction.
+///
+/// ```
+///                   in
+///                    ┃
+///         ┏━━━━━━━━━━┻━━━━━━━━━━┓
+///         ▼                     ▼
+///    ┌────────────┐      ┌────────────┐
+///    │  True      │      │  False     │
+///    | (optional) |      | (optional) |
+///    └────────────┘      └────────────┘
+///  ExitIf ┃                     ┃ ExitIf
+///         ┗━━━━━━━━━━┳━━━━━━━━━━┛
+///                    ▼
+///                   out
+/// ```
+class If : public utils::Castable<If, ControlInstruction> {
   public:
+    /// The index of the condition operand
+    static constexpr size_t kConditionOperandOffset = 0;
+
     /// Constructor
     /// @param cond the if condition
-    explicit If(Value* cond);
+    /// @param t the true block
+    /// @param f the false block
+    If(Value* cond, ir::Block* t, ir::Block* f);
     ~If() override;
 
+    /// @copydoc ControlInstruction::ForeachBlock
+    void ForeachBlock(const std::function<void(ir::Block*)>& cb) override;
+
     /// @returns the if condition
-    const Value* Condition() const { return condition_; }
+    Value* Condition() { return operands_[kConditionOperandOffset]; }
 
     /// @returns the true branch block
-    const Branch& True() const { return true_; }
-    /// @returns the true branch block
-    Branch& True() { return true_; }
+    ir::Block* True() { return true_; }
 
     /// @returns the false branch block
-    const Branch& False() const { return false_; }
-    /// @returns the false branch block
-    Branch& False() { return false_; }
-
-    /// @returns the merge branch block
-    const Branch& Merge() const { return merge_; }
-    /// @returns the merge branch block
-    Branch& Merge() { return merge_; }
+    ir::Block* False() { return false_; }
 
   private:
-    Branch true_ = {};
-    Branch false_ = {};
-    Branch merge_ = {};
-    Value* condition_;
+    ir::Block* true_ = nullptr;
+    ir::Block* false_ = nullptr;
 };
 
 }  // namespace tint::ir

@@ -89,7 +89,7 @@
             { "name": "instance id", "type": "ObjectId", "id_type": "instance" },
             { "name": "request serial", "type": "uint64_t" },
             { "name": "adapter object handle", "type": "ObjectHandle", "handle_type": "adapter"},
-            { "name": "options", "type": "request adapter options", "annotation": "const*" }
+            { "name": "options", "type": "request adapter options", "annotation": "const*", "optional": true }
         ],
         "adapter request device": [
             { "name": "adapter id", "type": "ObjectId", "id_type": "adapter" },
@@ -224,12 +224,14 @@
             "BufferUnmap",
             "DeviceCreateErrorBuffer",
             "DeviceCreateQuerySet",
+            "DeviceCreateSwapChain",
             "DeviceCreateTexture",
             "DeviceCreateErrorTexture",
             "DeviceGetAdapter",
             "DeviceGetQueue",
             "DeviceGetSupportedSurfaceUsage",
-            "DeviceInjectError"
+            "DeviceInjectError",
+            "SwapChainGetCurrentTexture"
         ],
         "client_special_objects": [
             "Adapter",
@@ -239,6 +241,7 @@
             "QuerySet",
             "Queue",
             "ShaderModule",
+            "SwapChain",
             "Texture"
         ],
         "server_custom_pre_handler_commands": [

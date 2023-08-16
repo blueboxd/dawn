@@ -24,22 +24,14 @@ namespace tint::ir {
 /// A value conversion instruction in the IR.
 class Convert : public utils::Castable<Convert, Call> {
   public:
+    /// The offset in Operands() for the value
+    static constexpr size_t kValueOperandOffset = 0;
+
     /// Constructor
-    /// @param result_type the result type
-    /// @param from_type the type being converted from
-    /// @param args the conversion arguments
-    Convert(const type::Type* result_type,
-            const type::Type* from_type,
-            utils::VectorRef<Value*> args);
+    /// @param result the result value
+    /// @param value the value to convert
+    Convert(InstructionResult* result, Value* value);
     ~Convert() override;
-
-    /// @returns the from type
-    const type::Type* FromType() const { return from_type_; }
-    /// @returns the to type
-    const type::Type* ToType() const { return Type(); }
-
-  private:
-    const type::Type* from_type_ = nullptr;
 };
 
 }  // namespace tint::ir

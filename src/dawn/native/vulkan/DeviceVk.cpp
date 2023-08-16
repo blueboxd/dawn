@@ -18,7 +18,7 @@
 #include "dawn/common/NonCopyable.h"
 #include "dawn/common/Platform.h"
 #include "dawn/native/BackendConnection.h"
-#include "dawn/native/ChainUtils_autogen.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/Instance.h"
@@ -445,31 +445,23 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
         // Always request all the features from VK_EXT_subgroup_size_control when available.
         usedKnobs.subgroupSizeControlFeatures = mDeviceInfo.subgroupSizeControlFeatures;
         featuresChain.Add(&usedKnobs.subgroupSizeControlFeatures);
-
-        mComputeSubgroupSize = FindComputeSubgroupSize();
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::ZeroInitializeWorkgroupMemory)) {
         ASSERT(usedKnobs.HasExt(DeviceExt::ZeroInitializeWorkgroupMemory));
 
-        usedKnobs.zeroInitializeWorkgroupMemoryFeatures.sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES_KHR;
-
         // Always allow initializing workgroup memory with OpConstantNull when available.
         // Note that the driver still won't initialize workgroup memory unless the workgroup
         // variable is explicitly initialized with OpConstantNull.
-        usedKnobs.zeroInitializeWorkgroupMemoryFeatures.shaderZeroInitializeWorkgroupMemory =
-            VK_TRUE;
+        usedKnobs.zeroInitializeWorkgroupMemoryFeatures =
+            mDeviceInfo.zeroInitializeWorkgroupMemoryFeatures;
         featuresChain.Add(&usedKnobs.zeroInitializeWorkgroupMemoryFeatures);
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::ShaderIntegerDotProduct)) {
         ASSERT(usedKnobs.HasExt(DeviceExt::ShaderIntegerDotProduct));
 
-        usedKnobs.shaderIntegerDotProductFeatures.sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES;
-
-        usedKnobs.shaderIntegerDotProductFeatures.shaderIntegerDotProduct = VK_TRUE;
+        usedKnobs.shaderIntegerDotProductFeatures = mDeviceInfo.shaderIntegerDotProductFeatures;
         featuresChain.Add(&usedKnobs.shaderIntegerDotProductFeatures);
     }
 
@@ -526,6 +518,16 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR);
         featuresChain.Add(&usedKnobs._16BitStorageFeatures,
                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES);
+    }
+
+    if (mDeviceInfo.HasExt(DeviceExt::Robustness2)) {
+        ASSERT(usedKnobs.HasExt(DeviceExt::Robustness2));
+
+        usedKnobs.robustness2Features = mDeviceInfo.robustness2Features;
+        // TODO(tint:1890): investigate how we can safely disable buffer access in Tint when
+        // robustBufferAccess2 == TRUE
+        usedKnobs.robustness2Features.robustBufferAccess2 = VK_FALSE;
+        featuresChain.Add(&usedKnobs.robustness2Features);
     }
 
     // Find a universal queue family
@@ -587,32 +589,6 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
                             "vkCreateDevice"));
 
     return usedKnobs;
-}
-
-uint32_t Device::FindComputeSubgroupSize() const {
-    if (!mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) {
-        return 0;
-    }
-
-    const VkPhysicalDeviceSubgroupSizeControlPropertiesEXT& ext =
-        mDeviceInfo.subgroupSizeControlProperties;
-
-    if (ext.minSubgroupSize == ext.maxSubgroupSize) {
-        return 0;
-    }
-
-    // At the moment, only Intel devices support varying subgroup sizes and 16, which is the
-    // next value after the minimum of 8, is the sweet spot according to [1]. Hence the
-    // following heuristics, which may need to be adjusted in the future for other
-    // architectures, or if a specific API is added to let client code select the size..
-    //
-    // [1] https://bugs.freedesktop.org/show_bug.cgi?id=108875
-    uint32_t subgroupSize = ext.minSubgroupSize * 2;
-    if (subgroupSize <= ext.maxSubgroupSize) {
-        return subgroupSize;
-    } else {
-        return ext.minSubgroupSize;
-    }
 }
 
 void Device::GatherQueueFromDevice() {
@@ -910,12 +886,20 @@ TextureBase* Device::CreateTextureWrappingVulkanImage(
     if (ConsumedError(ValidateIsAlive())) {
         return nullptr;
     }
-    if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor))) {
+    if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor,
+                                                AllowMultiPlanarTextureFormat::Yes))) {
         return nullptr;
     }
     if (ConsumedError(ValidateVulkanImageCanBeWrapped(this, textureDescriptor),
                       "validating that a Vulkan image can be wrapped with %s.",
                       textureDescriptor)) {
+        return nullptr;
+    }
+    if (GetValidInternalFormat(textureDescriptor->format).IsMultiPlanar() &&
+        !descriptor->isInitialized) {
+        bool consumed = ConsumedError(DAWN_VALIDATION_ERROR(
+            "External textures with multiplanar formats must be initialized."));
+        DAWN_UNUSED(consumed);
         return nullptr;
     }
 
@@ -952,7 +936,7 @@ TextureBase* Device::CreateTextureWrappingVulkanImage(
 }
 
 uint32_t Device::GetComputeSubgroupSize() const {
-    return mComputeSubgroupSize;
+    return ToBackend(GetPhysicalDevice())->GetDefaultComputeSubgroupSize();
 }
 
 void Device::OnDebugMessage(std::string message) {

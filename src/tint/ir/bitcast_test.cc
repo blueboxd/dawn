@@ -12,27 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gmock/gmock.h"
+#include "gtest/gtest-spi.h"
 #include "src/tint/ir/builder.h"
 #include "src/tint/ir/constant.h"
 #include "src/tint/ir/instruction.h"
-#include "src/tint/ir/test_helper.h"
+#include "src/tint/ir/ir_test_helper.h"
 
 namespace tint::ir {
 namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_InstructionTest = TestHelper;
+using IR_BitcastTest = IRTestHelper;
 
-TEST_F(IR_InstructionTest, Bitcast) {
-    Module mod;
-    Builder b{mod};
-    const auto* inst = b.Bitcast(b.ir.types.Get<type::I32>(), b.Constant(4_i));
+TEST_F(IR_BitcastTest, Bitcast) {
+    auto* inst = b.Bitcast(mod.Types().i32(), 4_i);
 
     ASSERT_TRUE(inst->Is<ir::Bitcast>());
-    ASSERT_NE(inst->Type(), nullptr);
+    ASSERT_NE(inst->Result()->Type(), nullptr);
 
-    const auto args = inst->Args();
+    auto args = inst->Args();
     ASSERT_EQ(args.Length(), 1u);
     ASSERT_TRUE(args[0]->Is<Constant>());
     auto val = args[0]->As<Constant>()->Value();
@@ -40,16 +40,32 @@ TEST_F(IR_InstructionTest, Bitcast) {
     EXPECT_EQ(4_i, val->As<constant::Scalar<i32>>()->ValueAs<i32>());
 }
 
-TEST_F(IR_InstructionTest, Bitcast_Usage) {
-    Module mod;
-    Builder b{mod};
-    const auto* inst = b.Bitcast(b.ir.types.Get<type::I32>(), b.Constant(4_i));
+TEST_F(IR_BitcastTest, Result) {
+    auto* a = b.Bitcast(mod.Types().i32(), 4_i);
 
-    const auto args = inst->Args();
+    EXPECT_TRUE(a->HasResults());
+    EXPECT_FALSE(a->HasMultiResults());
+    EXPECT_TRUE(a->Result()->Is<InstructionResult>());
+    EXPECT_EQ(a, a->Result()->Source());
+}
+
+TEST_F(IR_BitcastTest, Bitcast_Usage) {
+    auto* inst = b.Bitcast(mod.Types().i32(), 4_i);
+
+    auto args = inst->Args();
     ASSERT_EQ(args.Length(), 1u);
     ASSERT_NE(args[0], nullptr);
-    ASSERT_EQ(args[0]->Usage().Length(), 1u);
-    EXPECT_EQ(args[0]->Usage()[0], inst);
+    EXPECT_THAT(args[0]->Usages(), testing::UnorderedElementsAre(Usage{inst, 0u}));
+}
+
+TEST_F(IR_BitcastTest, Fail_NullType) {
+    EXPECT_FATAL_FAILURE(
+        {
+            Module mod;
+            Builder b{mod};
+            b.Bitcast(nullptr, 1_i);
+        },
+        "");
 }
 
 }  // namespace

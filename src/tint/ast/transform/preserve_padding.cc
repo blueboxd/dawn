@@ -26,9 +26,10 @@
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::PreservePadding);
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::ast::transform {
+
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 PreservePadding::PreservePadding() = default;
 
@@ -122,8 +123,7 @@ struct PreservePadding::State {
                 auto helper_name = b.Symbols().New("assign_and_preserve_padding");
                 utils::Vector<const Parameter*, 2> params = {
                     b.Param(kDestParamName,
-                            b.ty.pointer(CreateASTTypeFor(ctx, ty), builtin::AddressSpace::kStorage,
-                                         builtin::Access::kReadWrite)),
+                            b.ty.ptr<storage, read_write>(CreateASTTypeFor(ctx, ty))),
                     b.Param(kValueParamName, CreateASTTypeFor(ctx, ty)),
                 };
                 b.Func(helper_name, params, b.ty.void_(), body());

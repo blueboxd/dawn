@@ -30,6 +30,7 @@ class Platform;
 namespace wgpu {
 struct AdapterProperties;
 struct DeviceDescriptor;
+struct RequestAdapterOptions;
 }  // namespace wgpu
 
 namespace dawn::native {
@@ -107,6 +108,11 @@ class DAWN_NATIVE_EXPORT Adapter {
     void RequestDevice(const WGPUDeviceDescriptor* descriptor,
                        WGPURequestDeviceCallback callback,
                        void* userdata);
+    void RequestDevice(std::nullptr_t descriptor,
+                       WGPURequestDeviceCallback callback,
+                       void* userdata) {
+        RequestDevice(static_cast<const wgpu::DeviceDescriptor*>(descriptor), callback, userdata);
+    }
 
     // Returns the underlying WGPUAdapter object.
     WGPUAdapter Get() const;
@@ -118,14 +124,18 @@ class DAWN_NATIVE_EXPORT Adapter {
     AdapterBase* mImpl = nullptr;
 };
 
-// Base class for options passed to Instance::DiscoverAdapters.
-struct DAWN_NATIVE_EXPORT AdapterDiscoveryOptionsBase {
+// Base class for options passed to Instance::DiscoverPhysicalDevices.
+struct DAWN_NATIVE_EXPORT PhysicalDeviceDiscoveryOptionsBase {
   public:
     const WGPUBackendType backendType;
 
   protected:
-    explicit AdapterDiscoveryOptionsBase(WGPUBackendType type);
+    explicit PhysicalDeviceDiscoveryOptionsBase(WGPUBackendType type);
 };
+
+// Deprecated, use PhysicalDeviceDiscoveryOptionsBase instead.
+// TODO(dawn:1774): Remove this.
+using AdapterDiscoveryOptionsBase = PhysicalDeviceDiscoveryOptionsBase;
 
 enum BackendValidationLevel { Full, Partial, Disabled };
 
@@ -156,15 +166,27 @@ class DAWN_NATIVE_EXPORT Instance {
     Instance(const Instance& other) = delete;
     Instance& operator=(const Instance& other) = delete;
 
-    // Gather all adapters in the system that can be accessed with no special options. These
-    // adapters will later be returned by GetAdapters.
-    void DiscoverDefaultAdapters();
+    // Gather all physical devices in the system that can be accessed with no special options.
+    void DiscoverDefaultPhysicalDevices();
 
-    // Adds adapters that can be discovered with the options provided (like a getProcAddress).
-    // The backend is chosen based on the type of the options used. Returns true on success.
+    // Adds physical devices that can be discovered with the options provided (like a
+    // getProcAddress). The backend is chosen based on the type of the options used. Returns true on
+    // success.
+    bool DiscoverPhysicalDevices(const PhysicalDeviceDiscoveryOptionsBase* options);
+
+    // Deprecated, use DiscoverDefaultPhysicalDevices and DiscoverPhysicalDevices instead.
+    // TODO(Dawn:1774): Remove these.
+    void DiscoverDefaultAdapters();
     bool DiscoverAdapters(const AdapterDiscoveryOptionsBase* options);
 
-    // Returns all the adapters that the instance knows about.
+    // Discovers and returns a vector of adapters.
+    // All systems adapters that can be found are returned if no options are passed.
+    // Otherwise, returns adapters based on the `options`.
+    std::vector<Adapter> EnumerateAdapters(const WGPURequestAdapterOptions* options) const;
+    std::vector<Adapter> EnumerateAdapters(
+        const wgpu::RequestAdapterOptions* options = nullptr) const;
+
+    // Deprecated. Call EnumerateAdapters instead.
     std::vector<Adapter> GetAdapters() const;
 
     const ToggleInfo* GetToggleInfo(const char* toggleName);
@@ -201,8 +223,8 @@ DAWN_NATIVE_EXPORT size_t GetLazyClearCountForTesting(WGPUDevice device);
 // Backdoor to get the number of deprecation warnings for testing
 DAWN_NATIVE_EXPORT size_t GetDeprecationWarningCountForTesting(WGPUDevice device);
 
-// Backdoor to get the number of adapters an instance knows about for testing
-DAWN_NATIVE_EXPORT size_t GetAdapterCountForTesting(WGPUInstance instance);
+// Backdoor to get the number of physical devices an instance knows about for testing
+DAWN_NATIVE_EXPORT size_t GetPhysicalDeviceCountForTesting(WGPUInstance instance);
 
 //  Query if texture has been initialized
 DAWN_NATIVE_EXPORT bool IsTextureSubresourceInitialized(

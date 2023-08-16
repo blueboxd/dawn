@@ -54,6 +54,7 @@ struct VulkanDeviceKnobs {
     VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeaturesKHR zeroInitializeWorkgroupMemoryFeatures;
     VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR shaderIntegerDotProductFeatures;
     VkPhysicalDeviceDepthClipEnableFeaturesEXT depthClipEnableFeatures;
+    VkPhysicalDeviceRobustness2FeaturesEXT robustness2Features;
 
     bool HasExt(DeviceExt ext) const;
     DeviceExtSet extensions;
@@ -65,6 +66,7 @@ struct VulkanDeviceInfo : VulkanDeviceKnobs {
     VkPhysicalDeviceDriverProperties driverProperties;
     VkPhysicalDeviceSubgroupSizeControlPropertiesEXT subgroupSizeControlProperties;
     VkPhysicalDeviceShaderIntegerDotProductPropertiesKHR shaderIntegerDotProductProperties;
+    VkPhysicalDeviceMaintenance4Properties propertiesMaintenance4;
 
     std::vector<VkQueueFamilyProperties> queueFamilies;
 

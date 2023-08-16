@@ -18,8 +18,49 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::FunctionParam);
 
 namespace tint::ir {
 
-FunctionParam::FunctionParam(const type::Type* ty) : type_(ty) {}
+FunctionParam::FunctionParam(const type::Type* ty) : type_(ty) {
+    TINT_ASSERT(IR, ty != nullptr);
+}
 
 FunctionParam::~FunctionParam() = default;
+
+utils::StringStream& operator<<(utils::StringStream& out, enum FunctionParam::Builtin value) {
+    switch (value) {
+        case FunctionParam::Builtin::kVertexIndex:
+            out << "vertex_index";
+            break;
+        case FunctionParam::Builtin::kInstanceIndex:
+            out << "instance_index";
+            break;
+        case FunctionParam::Builtin::kPosition:
+            out << "position";
+            break;
+        case FunctionParam::Builtin::kFrontFacing:
+            out << "front_facing";
+            break;
+        case FunctionParam::Builtin::kLocalInvocationId:
+            out << "local_invocation_id";
+            break;
+        case FunctionParam::Builtin::kLocalInvocationIndex:
+            out << "local_invocation_index";
+            break;
+        case FunctionParam::Builtin::kGlobalInvocationId:
+            out << "global_invocation_id";
+            break;
+        case FunctionParam::Builtin::kWorkgroupId:
+            out << "workgroup_id";
+            break;
+        case FunctionParam::Builtin::kNumWorkgroups:
+            out << "num_workgroups";
+            break;
+        case FunctionParam::Builtin::kSampleIndex:
+            out << "sample_index";
+            break;
+        case FunctionParam::Builtin::kSampleMask:
+            out << "sample_mask";
+            break;
+    }
+    return out;
+}
 
 }  // namespace tint::ir

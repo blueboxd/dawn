@@ -36,6 +36,7 @@
 #include "dawn/native/d3d11/PhysicalDeviceD3D11.h"
 #include "dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "dawn/native/d3d11/PlatformFunctionsD3D11.h"
+#include "dawn/native/d3d11/QuerySetD3D11.h"
 #include "dawn/native/d3d11/QueueD3D11.h"
 #include "dawn/native/d3d11/RenderPipelineD3D11.h"
 #include "dawn/native/d3d11/SamplerD3D11.h"
@@ -121,7 +122,7 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     // Create the fence event.
     mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
-    DAWN_TRY(PreparePendingCommandContext());
+    DAWN_TRY(mPendingCommands.Intialize(this));
 
     SetLabelImpl();
 
@@ -147,13 +148,6 @@ CommandRecordingContext* Device::GetPendingCommandContext(Device::SubmitMode sub
         mPendingCommands.SetNeedsSubmit();
     }
     return &mPendingCommands;
-}
-
-MaybeError Device::PreparePendingCommandContext() {
-    if (!mPendingCommands.IsOpen()) {
-        DAWN_TRY(mPendingCommands.Open(this));
-    }
-    return {};
 }
 
 MaybeError Device::TickImpl() {
@@ -260,7 +254,7 @@ ResultOrError<Ref<PipelineLayoutBase>> Device::CreatePipelineLayoutImpl(
 }
 
 ResultOrError<Ref<QuerySetBase>> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
-    return DAWN_UNIMPLEMENTED_ERROR("CreateQuerySetImpl");
+    return QuerySet::Create(this, descriptor);
 }
 
 Ref<RenderPipelineBase> Device::CreateUninitializedRenderPipelineImpl(
@@ -425,7 +419,8 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
         "D3D11 OpenSharedResource1"));
 
     const TextureDescriptor* textureDescriptor = FromAPI(descriptor->cTextureDescriptor);
-    DAWN_TRY(ValidateTextureDescriptor(this, textureDescriptor));
+    DAWN_TRY(
+        ValidateTextureDescriptor(this, textureDescriptor, AllowMultiPlanarTextureFormat::Yes));
 
     DAWN_TRY_CONTEXT(d3d::ValidateTextureDescriptorCanBeWrapped(textureDescriptor),
                      "validating that a D3D11 external image can be wrapped with %s",

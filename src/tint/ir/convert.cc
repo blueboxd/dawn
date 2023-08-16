@@ -13,16 +13,19 @@
 // limitations under the License.
 
 #include "src/tint/ir/convert.h"
+
+#include <utility>
+
 #include "src/tint/debug.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ir::Convert);
 
 namespace tint::ir {
 
-Convert::Convert(const type::Type* to_type,
-                 const type::Type* from_type,
-                 utils::VectorRef<Value*> arguments)
-    : Base(to_type, arguments), from_type_(from_type) {}
+Convert::Convert(InstructionResult* result, Value* value) {
+    AddOperand(Convert::kValueOperandOffset, value);
+    AddResult(result);
+}
 
 Convert::~Convert() = default;
 

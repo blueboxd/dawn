@@ -20,7 +20,8 @@
 #include "dawn/common/Assert.h"
 #include "dawn/common/Constants.h"
 #include "dawn/common/Math.h"
-#include "dawn/native/ChainUtils_autogen.h"
+#include "dawn/native/Adapter.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/ObjectType_autogen.h"
@@ -178,7 +179,8 @@ MaybeError ValidateSampleCount(const TextureDescriptor* descriptor,
     return {};
 }
 
-MaybeError ValidateTextureViewDimensionCompatibility(const TextureBase* texture,
+MaybeError ValidateTextureViewDimensionCompatibility(const DeviceBase* device,
+                                                     const TextureBase* texture,
                                                      const TextureViewDescriptor* descriptor) {
     DAWN_INVALID_IF(!IsArrayLayerValidForTextureViewDimension(descriptor->dimension,
                                                               descriptor->arrayLayerCount),
@@ -207,8 +209,11 @@ MaybeError ValidateTextureViewDimensionCompatibility(const TextureBase* texture,
                 "(%u) and height (%u) are not equal.",
                 descriptor->dimension, texture, texture->GetSize().width,
                 texture->GetSize().height);
+            DAWN_INVALID_IF(descriptor->dimension == wgpu::TextureViewDimension::CubeArray &&
+                                device->IsCompatibilityMode(),
+                            "A %s texture view for %s is not supported in compatibility mode",
+                            descriptor->dimension, texture);
             break;
-
         case wgpu::TextureViewDimension::e1D:
         case wgpu::TextureViewDimension::e2D:
         case wgpu::TextureViewDimension::e2DArray:
@@ -347,7 +352,8 @@ MaybeError ValidateTextureUsage(const DeviceBase* device,
 }  // anonymous namespace
 
 MaybeError ValidateTextureDescriptor(const DeviceBase* device,
-                                     const TextureDescriptor* descriptor) {
+                                     const TextureDescriptor* descriptor,
+                                     AllowMultiPlanarTextureFormat allowMultiPlanar) {
     DAWN_TRY(ValidateSingleSType(descriptor->nextInChain,
                                  wgpu::SType::DawnTextureInternalUsageDescriptor));
 
@@ -360,6 +366,16 @@ MaybeError ValidateTextureDescriptor(const DeviceBase* device,
 
     const Format* format;
     DAWN_TRY_ASSIGN(format, device->GetInternalFormat(descriptor->format));
+
+    switch (allowMultiPlanar) {
+        case AllowMultiPlanarTextureFormat::Yes:
+            break;
+        case AllowMultiPlanarTextureFormat::No:
+            DAWN_INVALID_IF(format->IsMultiPlanar(),
+                            "Creation of multiplanar texture format %s is not allowed.",
+                            descriptor->format);
+            break;
+    }
 
     for (uint32_t i = 0; i < descriptor->viewFormatCount; ++i) {
         DAWN_TRY_CONTEXT(
@@ -436,7 +452,7 @@ MaybeError ValidateTextureViewDescriptor(const DeviceBase* device,
         descriptor->baseMipLevel, descriptor->mipLevelCount, texture->GetNumMipLevels());
 
     DAWN_TRY(ValidateCanViewTextureAs(device, texture, *viewFormat, descriptor->aspect));
-    DAWN_TRY(ValidateTextureViewDimensionCompatibility(texture, descriptor));
+    DAWN_TRY(ValidateTextureViewDimensionCompatibility(device, texture, descriptor));
 
     return {};
 }
@@ -595,6 +611,12 @@ TextureBase::TextureBase(DeviceBase* device,
     if (mFormat.HasDepth() &&
         (device->IsToggleEnabled(Toggle::UseBlitForDepth16UnormTextureToBufferCopy) ||
          device->IsToggleEnabled(Toggle::UseBlitForDepth32FloatTextureToBufferCopy))) {
+        if (mInternalUsage & wgpu::TextureUsage::CopySrc) {
+            AddInternalUsage(wgpu::TextureUsage::TextureBinding);
+        }
+    }
+    if (mFormat.HasStencil() &&
+        device->IsToggleEnabled(Toggle::UseBlitForStencilTextureToBufferCopy)) {
         if (mInternalUsage & wgpu::TextureUsage::CopySrc) {
             AddInternalUsage(wgpu::TextureUsage::TextureBinding);
         }

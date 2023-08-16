@@ -35,11 +35,11 @@
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::CalculateArrayLength);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::CalculateArrayLength::BufferSizeIntrinsic);
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::ast::transform {
-
 namespace {
+
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 bool ShouldRun(const Program* program) {
     for (auto* fn : program->AST().Functions()) {
@@ -107,18 +107,17 @@ Transform::ApplyResult CalculateArrayLength::Apply(const Program* src,
             auto name = b.Sym();
             auto type = CreateASTTypeFor(ctx, buffer_type);
             auto* disable_validation = b.Disable(DisabledValidation::kFunctionParameter);
-            b.Func(
-                name,
-                utils::Vector{
-                    b.Param("buffer",
-                            b.ty.pointer(type, buffer_type->AddressSpace(), buffer_type->Access()),
-                            utils::Vector{disable_validation}),
-                    b.Param("result", b.ty.pointer(b.ty.u32(), builtin::AddressSpace::kFunction)),
-                },
-                b.ty.void_(), nullptr,
-                utils::Vector{
-                    b.ASTNodes().Create<BufferSizeIntrinsic>(b.ID(), b.AllocateNodeID()),
-                });
+            b.Func(name,
+                   utils::Vector{
+                       b.Param("buffer",
+                               b.ty.ptr(buffer_type->AddressSpace(), type, buffer_type->Access()),
+                               utils::Vector{disable_validation}),
+                       b.Param("result", b.ty.ptr<function, u32>()),
+                   },
+                   b.ty.void_(), nullptr,
+                   utils::Vector{
+                       b.ASTNodes().Create<BufferSizeIntrinsic>(b.ID(), b.AllocateNodeID()),
+                   });
 
             return name;
         });

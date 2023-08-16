@@ -56,7 +56,6 @@ enum class Toggle {
     UseDXC,
     DisableRobustness,
     MetalEnableVertexPulling,
-    DisallowUnsafeAPIs,
     AllowUnsafeAPIs,
     FlushBeforeClientWaitSync,
     UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
@@ -95,9 +94,12 @@ enum class Toggle {
     UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
     UseBlitForDepth16UnormTextureToBufferCopy,
     UseBlitForDepth32FloatTextureToBufferCopy,
+    UseBlitForStencilTextureToBufferCopy,
     D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha,
     D3D12PolyfillReflectVec2F32,
     VulkanClearGen12TextureWithCCSAmbiguateOnCreation,
+    D3D12UseRootSignatureVersion1_1,
+    VulkanUseImageRobustAccess2,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

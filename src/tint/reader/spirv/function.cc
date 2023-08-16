@@ -2512,7 +2512,7 @@ bool FunctionEmitter::EmitFunctionVariables() {
                                          Attributes{});
         auto* var_decl_stmt = create<ast::VariableDeclStatement>(Source{}, var);
         AddStatement(var_decl_stmt);
-        auto* var_type = ty_.Reference(var_store_type, builtin::AddressSpace::kUndefined);
+        auto* var_type = ty_.Reference(builtin::AddressSpace::kUndefined, var_store_type);
         identifier_types_.emplace(inst.result_id(), var_type);
     }
     return success();
@@ -2844,7 +2844,7 @@ bool FunctionEmitter::EmitIfStart(const BlockInfo& block_info) {
     const std::string guard_name = block_info.flow_guard_name;
     if (!guard_name.empty()) {
         // Declare the guard variable just before the "if", initialized to true.
-        auto* guard_var = builder_.Var(guard_name, builder_.ty.bool_(), MakeTrue(Source{}));
+        auto* guard_var = builder_.Var(guard_name, MakeTrue(Source{}));
         auto* guard_decl = create<ast::VariableDeclStatement>(Source{}, guard_var);
         AddStatement(guard_decl);
     }
@@ -3358,7 +3358,7 @@ bool FunctionEmitter::EmitStatementsInBasicBlock(const BlockInfo& block_info,
             Source{},
             parser_impl_.MakeVar(id, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
                                  store_type, nullptr, Attributes{})));
-        auto* type = ty_.Reference(store_type, builtin::AddressSpace::kUndefined);
+        auto* type = ty_.Reference(builtin::AddressSpace::kUndefined, store_type);
         identifier_types_.emplace(id, type);
     }
 
@@ -3448,7 +3448,7 @@ bool FunctionEmitter::EmitConstDefinition(const spvtools::opt::Instruction& inst
 
     expr = AddressOfIfNeeded(expr, &inst);
     expr.type = RemapPointerProperties(expr.type, inst.result_id());
-    auto* let = parser_impl_.MakeLet(inst.result_id(), expr.type, expr.expr);
+    auto* let = parser_impl_.MakeLet(inst.result_id(), expr.expr);
     if (!let) {
         return false;
     }
@@ -3895,14 +3895,31 @@ TypedExpression FunctionEmitter::MaybeEmitCombinatorialValue(
 
     if (op == spv::Op::OpCompositeConstruct) {
         ExpressionList operands;
+        bool all_same = true;
+        uint32_t first_id = 0u;
         for (uint32_t iarg = 0; iarg < inst.NumInOperands(); ++iarg) {
             auto operand = MakeOperand(inst, iarg);
             if (!operand) {
                 return {};
             }
             operands.Push(operand.expr);
+
+            // Check if this argument is different from the others.
+            auto arg_id = inst.GetSingleWordInOperand(iarg);
+            if (first_id != 0u) {
+                if (arg_id != first_id) {
+                    all_same = false;
+                }
+            } else {
+                first_id = arg_id;
+            }
         }
-        return {ast_type, builder_.Call(ast_type->Build(builder_), std::move(operands))};
+        if (all_same && ast_type->Is<Vector>()) {
+            // We're constructing a vector and all the operands were the same, so use a splat.
+            return {ast_type, builder_.Call(ast_type->Build(builder_), operands[0])};
+        } else {
+            return {ast_type, builder_.Call(ast_type->Build(builder_), std::move(operands))};
+        }
     }
 
     if (op == spv::Op::OpCompositeExtract) {
@@ -4693,40 +4710,68 @@ TypedExpression FunctionEmitter::MakeVectorShuffle(const spvtools::opt::Instruct
     const auto vec0_len = type_mgr_->GetType(vec0.type_id())->AsVector()->element_count();
     const auto vec1_len = type_mgr_->GetType(vec1.type_id())->AsVector()->element_count();
 
-    // Idiomatic vector accessors.
+    // Helper to get the name for the component index `i`.
+    auto component_name = [](uint32_t i) {
+        constexpr const char* names[] = {"x", "y", "z", "w"};
+        TINT_ASSERT(Reader, i < 4);
+        return names[i];
+    };
 
-    // Generate an ast::TypeInitializer expression.
+    // Build a swizzle for each consecutive set of indices that fall within the same vector.
     // Assume the literal indices are valid, and there is a valid number of them.
     auto source = GetSourceForInst(inst);
     const Vector* result_type = As<Vector>(parser_impl_.ConvertType(inst.type_id()));
+    uint32_t last_vec_id = 0u;
+    std::string swizzle;
     ExpressionList values;
     for (uint32_t i = 2; i < inst.NumInOperands(); ++i) {
-        const auto index = inst.GetSingleWordInOperand(i);
+        // Select the source vector and determine the index within it.
+        uint32_t vec_id = 0u;
+        uint32_t index = inst.GetSingleWordInOperand(i);
         if (index < vec0_len) {
-            auto expr = MakeExpression(vec0_id);
-            if (!expr) {
-                return {};
-            }
-            values.Push(create<ast::MemberAccessorExpression>(source, expr.expr, Swizzle(index)));
+            vec_id = vec0_id;
         } else if (index < vec0_len + vec1_len) {
-            const auto sub_index = index - vec0_len;
-            TINT_ASSERT(Reader, sub_index < kMaxVectorLen);
-            auto expr = MakeExpression(vec1_id);
-            if (!expr) {
-                return {};
-            }
-            values.Push(
-                create<ast::MemberAccessorExpression>(source, expr.expr, Swizzle(sub_index)));
+            vec_id = vec1_id;
+            index -= vec0_len;
+            TINT_ASSERT(Reader, index < kMaxVectorLen);
         } else if (index == 0xFFFFFFFF) {
-            // By rule, this maps to OpUndef.  Instead, make it zero.
-            values.Push(parser_impl_.MakeNullValue(result_type->type));
+            // By rule, this maps to OpUndef. Instead, take the first component of the first vector.
+            vec_id = vec0_id;
+            index = 0u;
         } else {
             Fail() << "invalid vectorshuffle ID %" << inst.result_id()
                    << ": index too large: " << index;
             return {};
         }
+
+        if (vec_id != last_vec_id && !swizzle.empty()) {
+            // The source vector has changed, so emit the swizzle so far.
+            auto expr = MakeExpression(last_vec_id);
+            if (!expr) {
+                return {};
+            }
+            values.Push(builder_.MemberAccessor(source, expr.expr, builder_.Ident(swizzle)));
+            swizzle.clear();
+        }
+        swizzle += component_name(index);
+        last_vec_id = vec_id;
     }
-    return {result_type, builder_.Call(source, result_type->Build(builder_), std::move(values))};
+
+    // Emit the final swizzle.
+    auto expr = MakeExpression(last_vec_id);
+    if (!expr) {
+        return {};
+    }
+    values.Push(builder_.MemberAccessor(source, expr.expr, builder_.Ident(swizzle)));
+
+    if (values.Length() == 1) {
+        // There's only one swizzle, so just return it.
+        return {result_type, values[0]};
+    } else {
+        // There's multiple swizzles, so generate a type constructor expression to combine them.
+        return {result_type,
+                builder_.Call(source, result_type->Build(builder_), std::move(values))};
+    }
 }
 
 bool FunctionEmitter::RegisterSpecialBuiltInVariables() {
@@ -4892,11 +4937,11 @@ DefInfo::Pointer FunctionEmitter::GetPointerInfo(uint32_t id) {
 const Type* FunctionEmitter::RemapPointerProperties(const Type* type, uint32_t result_id) {
     if (auto* ast_ptr_type = As<Pointer>(type)) {
         const auto pi = GetPointerInfo(result_id);
-        return ty_.Pointer(ast_ptr_type->type, pi.address_space, pi.access);
+        return ty_.Pointer(pi.address_space, ast_ptr_type->type, pi.access);
     }
     if (auto* ast_ptr_type = As<Reference>(type)) {
         const auto pi = GetPointerInfo(result_id);
-        return ty_.Reference(ast_ptr_type->type, pi.address_space, pi.access);
+        return ty_.Reference(pi.address_space, ast_ptr_type->type, pi.access);
     }
     return type;
 }
@@ -6212,7 +6257,7 @@ bool FunctionEmitter::MakeVectorInsertDynamic(const spvtools::opt::Instruction& 
     //   variable with the %src_vector contents, then write the component,
     //   and then make a let-declaration that reads the value out:
     //
-    //    var temp : type = src_vector;
+    //    var temp = src_vector;
     //    temp[index] = component;
     //    let result : type = temp;
     //
@@ -6238,8 +6283,7 @@ bool FunctionEmitter::MakeVectorInsertDynamic(const spvtools::opt::Instruction& 
         // API in parser_impl_.
         var_name = namer_.MakeDerivedName(original_value_name);
 
-        auto* temp_var = builder_.Var(var_name, type->Build(builder_),
-                                      builtin::AddressSpace::kUndefined, src_vector.expr);
+        auto* temp_var = builder_.Var(var_name, builtin::AddressSpace::kUndefined, src_vector.expr);
 
         AddStatement(builder_.Decl({}, temp_var));
     }
@@ -6278,7 +6322,7 @@ bool FunctionEmitter::MakeCompositeInsert(const spvtools::opt::Instruction& inst
     //   variable with the %composite contents, then write the component,
     //   and then make a let-declaration that reads the value out:
     //
-    //    var temp : type = composite;
+    //    var temp = composite;
     //    temp[index].x = object;
     //    let result : type = temp;
     //
@@ -6308,8 +6352,8 @@ bool FunctionEmitter::MakeCompositeInsert(const spvtools::opt::Instruction& inst
         // It doesn't correspond to a SPIR-V ID, so we don't use the ordinary
         // API in parser_impl_.
         var_name = namer_.MakeDerivedName(original_value_name);
-        auto* temp_var = builder_.Var(var_name, type->Build(builder_),
-                                      builtin::AddressSpace::kUndefined, src_composite.expr);
+        auto* temp_var =
+            builder_.Var(var_name, builtin::AddressSpace::kUndefined, src_composite.expr);
         AddStatement(builder_.Decl({}, temp_var));
     }
 
@@ -6339,7 +6383,7 @@ TypedExpression FunctionEmitter::AddressOf(TypedExpression expr) {
         return {};
     }
     return {
-        ty_.Pointer(ref->type, ref->address_space),
+        ty_.Pointer(ref->address_space, ref->type),
         create<ast::UnaryOpExpression>(Source{}, ast::UnaryOp::kAddressOf, expr.expr),
     };
 }

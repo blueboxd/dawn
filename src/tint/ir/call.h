@@ -15,33 +15,22 @@
 #ifndef SRC_TINT_IR_CALL_H_
 #define SRC_TINT_IR_CALL_H_
 
-#include "src/tint/ir/instruction.h"
+#include "src/tint/ir/operand_instruction.h"
 #include "src/tint/utils/castable.h"
 
 namespace tint::ir {
 
 /// A Call instruction in the IR.
-class Call : public utils::Castable<Call, Instruction> {
+class Call : public utils::Castable<Call, OperandInstruction<4, 1>> {
   public:
     ~Call() override;
 
-    /// @returns the type of the value
-    const type::Type* Type() const override { return result_type_; }
-
     /// @returns the call arguments
-    utils::VectorRef<Value*> Args() const { return args_; }
+    virtual utils::Slice<Value* const> Args() { return operands_.Slice(); }
 
   protected:
     /// Constructor
-    Call() = delete;
-    /// Constructor
-    /// @param result_type the result type
-    /// @param args the constructor arguments
-    Call(const type::Type* result_type, utils::VectorRef<Value*> args);
-
-  private:
-    const type::Type* result_type_;
-    utils::Vector<Value*, 1> args_;
+    Call();
 };
 
 }  // namespace tint::ir

@@ -12,21 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/ir/test_helper.h"
-
 #include "gmock/gmock.h"
 #include "src/tint/ast/case_selector.h"
 #include "src/tint/ast/int_literal_expression.h"
 #include "src/tint/constant/scalar.h"
+#include "src/tint/ir/program_test_helper.h"
 
 namespace tint::ir {
 namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-using IR_BuilderImplTest = TestHelper;
+using IR_FromProgramStoreTest = ProgramTestHelper;
 
-TEST_F(IR_BuilderImplTest, EmitStatement_Assign) {
+TEST_F(IR_FromProgramStoreTest, EmitStatement_Assign) {
     GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Assign("a", 4_u);
@@ -35,17 +34,17 @@ TEST_F(IR_BuilderImplTest, EmitStatement_Assign) {
     auto m = Build();
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
-    EXPECT_EQ(Disassemble(m.Get()), R"(%fn1 = block {
+    EXPECT_EQ(Disassemble(m.Get()), R"(# Root block
+%b1 = block {
   %a:ptr<private, u32, read_write> = var
 }
 
-
-%fn2 = func test_function():void [@compute @workgroup_size(1, 1, 1)] {
-  %fn3 = block {
+%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
+  %b2 = block {
     store %a, 4u
-  } -> %func_end # return
-} %func_end
-
+    ret
+  }
+}
 )");
 }
 

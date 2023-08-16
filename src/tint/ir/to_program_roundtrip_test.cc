@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "src/tint/ir/from_program.h"
-#include "src/tint/ir/test_helper.h"
+#include "src/tint/ir/program_test_helper.h"
 #include "src/tint/ir/to_program.h"
 #include "src/tint/reader/wgsl/parser.h"
 #include "src/tint/utils/string.h"
@@ -28,7 +28,7 @@ namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
 
-class IRToProgramRoundtripTest : public TestHelper {
+class IRToProgramRoundtripTest : public ProgramTestHelper {
   public:
     void Test(std::string_view input_wgsl, std::string_view expected_wgsl) {
         auto input = utils::TrimSpace(input_wgsl);
@@ -42,9 +42,11 @@ class IRToProgramRoundtripTest : public TestHelper {
         auto output_program = ToProgram(ir_module.Get());
         if (!output_program.IsValid()) {
             tint::ir::Disassembler d{ir_module.Get()};
-            FAIL() << output_program.Diagnostics().str() << std::endl
-                   << "IR:" << std::endl
-                   << d.Disassemble();
+            FAIL() << output_program.Diagnostics().str() << std::endl  //
+                   << "IR:" << std::endl                               //
+                   << d.Disassemble() << std::endl                     //
+                   << "AST:" << std::endl                              //
+                   << Program::printer(&output_program) << std::endl;
         }
 
         ASSERT_TRUE(output_program.IsValid()) << output_program.Diagnostics().str();
@@ -90,6 +92,215 @@ TEST_F(IRToProgramRoundtripTest, SingleFunction_Return_i32) {
     Test(R"(
 fn f() -> i32 {
   return 42i;
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, SingleFunction_Parameters) {
+    Test(R"(
+fn f(i : i32, u : u32) -> i32 {
+  return i;
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Unary ops
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramRoundtripTest, UnaryOp_Negate) {
+    Test(R"(
+fn f(i : i32) -> i32 {
+  return -(i);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, UnaryOp_Complement) {
+    Test(R"(
+fn f(i : u32) -> u32 {
+  return ~(i);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, UnaryOp_Not) {
+    Test(R"(
+fn f(b : bool) -> bool {
+  return !(b);
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Binary ops
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramRoundtripTest, BinaryOp_Add) {
+    Test(R"(
+fn f(a : i32, b : i32) -> i32 {
+  return (a + b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_Subtract) {
+    Test(R"(
+fn f(a : i32, b : i32) -> i32 {
+  return (a - b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_Multiply) {
+    Test(R"(
+fn f(a : i32, b : i32) -> i32 {
+  return (a * b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_Divide) {
+    Test(R"(
+fn f(a : i32, b : i32) -> i32 {
+  return (a / b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_Modulo) {
+    Test(R"(
+fn f(a : i32, b : i32) -> i32 {
+  return (a % b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_And) {
+    Test(R"(
+fn f(a : i32, b : i32) -> i32 {
+  return (a & b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_Or) {
+    Test(R"(
+fn f(a : i32, b : i32) -> i32 {
+  return (a | b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_Xor) {
+    Test(R"(
+fn f(a : i32, b : i32) -> i32 {
+  return (a ^ b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_Equal) {
+    Test(R"(
+fn f(a : i32, b : i32) -> bool {
+  return (a == b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_NotEqual) {
+    Test(R"(
+fn f(a : i32, b : i32) -> bool {
+  return (a != b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_LessThan) {
+    Test(R"(
+fn f(a : i32, b : i32) -> bool {
+  return (a < b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_GreaterThan) {
+    Test(R"(
+fn f(a : i32, b : i32) -> bool {
+  return (a > b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_LessThanEqual) {
+    Test(R"(
+fn f(a : i32, b : i32) -> bool {
+  return (a <= b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_GreaterThanEqual) {
+    Test(R"(
+fn f(a : i32, b : i32) -> bool {
+  return (a >= b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_ShiftLeft) {
+    Test(R"(
+fn f(a : i32, b : u32) -> i32 {
+  return (a << b);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BinaryOp_ShiftRight) {
+    Test(R"(
+fn f(a : i32, b : u32) -> i32 {
+  return (a >> b);
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Short-circuiting binary ops
+////////////////////////////////////////////////////////////////////////////////
+
+// TODO(crbug.com/tint/1902): Pattern detect this
+TEST_F(IRToProgramRoundtripTest, DISABLED_BinaryOp_LogicalAnd) {
+    Test(R"(
+fn f(a : bool, b : bool) -> bool {
+  return (a && b);
+}
+)");
+}
+
+// TODO(crbug.com/tint/1902): Pattern detect this
+TEST_F(IRToProgramRoundtripTest, DISABLED_BinaryOp_LogicalOr) {
+    Test(R"(
+fn f(a : bool, b : bool) -> bool {
+  return (a && b);
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// let
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramRoundtripTest, LetUsedOnce) {
+    Test(R"(
+fn f(i : u32) -> u32 {
+  let v = ~(i);
+  return v;
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, LetUsedTwice) {
+    Test(R"(
+fn f(i : i32) -> i32 {
+  let v = (i * 2i);
+  return (v + v);
 }
 )");
 }
@@ -229,10 +440,9 @@ fn c() {
 
 fn f() {
   var cond_a : bool = true;
-  var cond_b : bool = true;
   if (cond_a) {
     a();
-  } else if (cond_b) {
+  } else if (false) {
     b();
   }
   c();

@@ -238,10 +238,10 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
 
   private:
     void ApplyBindGroup(const OpenGLFunctions& gl,
-                        BindGroupIndex index,
+                        BindGroupIndex groupIndex,
                         BindGroupBase* group,
                         const ityp::vector<BindingIndex, uint64_t>& dynamicOffsets) {
-        const auto& indices = ToBackend(mPipelineLayout)->GetBindingIndexInfo()[index];
+        const auto& indices = ToBackend(mPipelineLayout)->GetBindingIndexInfo()[groupIndex];
 
         for (BindingIndex bindingIndex{0}; bindingIndex < group->GetLayout()->GetBindingCount();
              ++bindingIndex) {
@@ -540,8 +540,6 @@ MaybeError CommandBuffer::Execute() {
                 DAWN_INVALID_IF(
                     dst.aspect == Aspect::Stencil,
                     "Copies to stencil textures are unsupported on the OpenGL backend.");
-
-                ASSERT(dst.aspect == Aspect::Color);
 
                 buffer->EnsureDataInitialized();
                 SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copy->copySize);

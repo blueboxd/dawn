@@ -135,11 +135,10 @@ ResultOrError<ComPtr<ID3DBlob>> CompileShaderFXC(const d3d::D3DBytecodeCompilati
     return std::move(compiledShader);
 }
 
-ResultOrError<std::string> TranslateToHLSL(
-    d3d::HlslCompilationRequest r,
-    CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*> tracePlatform,
-    std::string* remappedEntryPointName,
-    bool* usesVertexOrInstanceIndex) {
+MaybeError TranslateToHLSL(d3d::HlslCompilationRequest r,
+                           CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*> tracePlatform,
+                           std::string* remappedEntryPointName,
+                           CompiledShader* compiledShader) {
     std::ostringstream errorStream;
     errorStream << "Tint HLSL failure:" << std::endl;
 
@@ -202,9 +201,12 @@ ResultOrError<std::string> TranslateToHLSL(
                                transformedProgram, remappedEntryPointName->data(), r.limits));
     }
 
+    bool usesVertexIndex = false;
+    bool usesInstanceIndex = false;
     if (r.stage == SingleShaderStage::Vertex) {
         if (auto* data = transformOutputs.Get<tint::ast::transform::FirstIndexOffset::Data>()) {
-            *usesVertexOrInstanceIndex = data->has_vertex_or_instance_index;
+            usesVertexIndex = data->has_vertex_index;
+            usesInstanceIndex = data->has_instance_index;
         } else {
             return DAWN_VALIDATION_ERROR("Transform output missing first index offset data.");
         }
@@ -237,14 +239,20 @@ ResultOrError<std::string> TranslateToHLSL(
 
     options.polyfill_reflect_vec2_f32 = r.polyfillReflectVec2F32;
 
+    options.binding_points_ignored_in_robustness_transform =
+        std::move(r.bindingPointsIgnoredInRobustnessTransform);
+
     TRACE_EVENT0(tracePlatform.UnsafeGetValue(), General, "tint::writer::hlsl::Generate");
     auto result = tint::writer::hlsl::Generate(&transformedProgram, options);
     DAWN_INVALID_IF(!result.success, "An error occured while generating HLSL: %s", result.error);
 
-    return std::move(result.hlsl);
+    compiledShader->usesVertexIndex = usesVertexIndex;
+    compiledShader->usesInstanceIndex = usesInstanceIndex;
+    compiledShader->hlslSource = std::move(result.hlsl);
+    return {};
 }
 
-std::string CompileFlagsToStringFXC(uint32_t compileFlags) {
+std::string CompileFlagsToString(uint32_t compileFlags) {
     struct Flag {
         uint32_t value;
         const char* name;
@@ -310,11 +318,11 @@ std::string CompileFlagsToStringFXC(uint32_t compileFlags) {
 
 ResultOrError<CompiledShader> CompileShader(d3d::D3DCompilationRequest r) {
     CompiledShader compiledShader;
+    bool shouldDumpShader = r.hlsl.dumpShaders;
     // Compile the source shader to HLSL.
     std::string remappedEntryPoint;
-    DAWN_TRY_ASSIGN(compiledShader.hlslSource,
-                    TranslateToHLSL(std::move(r.hlsl), r.tracePlatform, &remappedEntryPoint,
-                                    &compiledShader.usesVertexOrInstanceIndex));
+    DAWN_TRY(
+        TranslateToHLSL(std::move(r.hlsl), r.tracePlatform, &remappedEntryPoint, &compiledShader));
 
     switch (r.bytecode.compiler) {
         case d3d::Compiler::DXC: {
@@ -337,7 +345,7 @@ ResultOrError<CompiledShader> CompileShader(d3d::D3DCompilationRequest r) {
 
     // If dumpShaders is false, we don't need the HLSL for logging. Clear the contents so it
     // isn't stored into the cache.
-    if (!r.hlsl.dumpShaders) {
+    if (!shouldDumpShader) {
         compiledShader.hlslSource = "";
     }
     return compiledShader;
@@ -357,6 +365,8 @@ void DumpCompiledShader(Device* device,
     const Blob& shaderBlob = compiledShader.shaderBlob;
     if (!shaderBlob.Empty()) {
         if (device->IsToggleEnabled(Toggle::UseDXC)) {
+            dumpedMsg << "/* DXC compile flags */ " << std::endl
+                      << CompileFlagsToString(compileFlags) << std::endl;
             dumpedMsg << "/* Dumped disassembled DXIL */" << std::endl;
             ComPtr<IDxcBlobEncoding> dxcBlob;
             ComPtr<IDxcBlobEncoding> disassembly;
@@ -371,7 +381,7 @@ void DumpCompiledShader(Device* device,
             }
         } else {
             dumpedMsg << "/* FXC compile flags */ " << std::endl
-                      << CompileFlagsToStringFXC(compileFlags) << std::endl;
+                      << CompileFlagsToString(compileFlags) << std::endl;
             dumpedMsg << "/* Dumped disassembled DXBC */" << std::endl;
             ComPtr<ID3DBlob> disassembly;
             UINT flags =

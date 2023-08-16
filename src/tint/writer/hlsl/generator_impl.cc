@@ -51,6 +51,7 @@
 #include "src/tint/ast/transform/vectorize_scalar_matrix_initializers.h"
 #include "src/tint/ast/transform/zero_init_workgroup_memory.h"
 #include "src/tint/ast/variable_decl_statement.h"
+#include "src/tint/constant/splat.h"
 #include "src/tint/constant/value.h"
 #include "src/tint/debug.h"
 #include "src/tint/sem/block_statement.h"
@@ -191,6 +192,12 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         // Robustness must come after PromoteSideEffectsToDecl
         // Robustness must come before BuiltinPolyfill and CanonicalizeEntryPointIO
         manager.Add<ast::transform::Robustness>();
+
+        ast::transform::Robustness::Config config = {};
+        config.bindings_ignored = std::unordered_set<sem::BindingPoint>(
+            options.binding_points_ignored_in_robustness_transform.cbegin(),
+            options.binding_points_ignored_in_robustness_transform.cend());
+        data.Add<ast::transform::Robustness::Config>(config);
     }
 
     // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
@@ -1100,7 +1107,7 @@ bool GeneratorImpl::EmitValueConstructor(utils::StringStream& out,
     // vector dimension using .x
     const bool is_single_value_vector_init = type->is_scalar_vector() &&
                                              call->Arguments().Length() == 1 &&
-                                             ctor->Parameters()[0]->Type()->is_scalar();
+                                             ctor->Parameters()[0]->Type()->Is<type::Scalar>();
 
     if (brackets) {
         out << "{";
@@ -1731,6 +1738,10 @@ bool GeneratorImpl::EmitStorageAtomicIntrinsic(
             return true;
         }
         case Op::kAtomicCompareExchangeWeak: {
+            if (!EmitStructType(&helpers_, result_ty->As<type::Struct>())) {
+                return false;
+            }
+
             auto* const value_ty = sem_func->Parameters()[1]->Type()->UnwrapRef();
             // NOTE: We don't need to emit the return type struct here as DecomposeMemoryAccess
             // already added it to the AST, and it should have already been emitted by now.
@@ -2042,7 +2053,7 @@ bool GeneratorImpl::EmitFrexpCall(utils::StringStream& out,
             }
 
             std::string member_type;
-            if (Is<type::F16>(type::Type::DeepestElementOf(ty))) {
+            if (Is<type::F16>(ty->DeepestElement())) {
                 member_type = width.empty() ? "float16_t" : ("vector<float16_t, " + width + ">");
             } else {
                 member_type = "float" + width;

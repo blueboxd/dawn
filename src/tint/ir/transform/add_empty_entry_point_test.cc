@@ -25,11 +25,11 @@ using IR_AddEmptyEntryPointTest = TransformTest;
 
 TEST_F(IR_AddEmptyEntryPointTest, EmptyModule) {
     auto* expect = R"(
-%fn1 = func unused_entry_point():void [@compute @workgroup_size(1, 1, 1)] {
-  %fn2 = block {
-  } -> %func_end # return
-} %func_end
-
+%unused_entry_point = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
+  %b1 = block {
+    ret
+  }
+}
 )";
 
     Run<AddEmptyEntryPoint>();
@@ -38,17 +38,16 @@ TEST_F(IR_AddEmptyEntryPointTest, EmptyModule) {
 }
 
 TEST_F(IR_AddEmptyEntryPointTest, ExistingEntryPoint) {
-    auto* ep = b.CreateFunction(mod.symbols.New("main"), mod.types.Get<type::Void>(),
-                                Function::PipelineStage::kFragment);
-    ep->StartTarget()->BranchTo(ep->EndTarget());
+    auto* ep = b.Function("main", mod.Types().void_(), Function::PipelineStage::kFragment);
+    ep->StartTarget()->Append(b.Return(ep));
     mod.functions.Push(ep);
 
     auto* expect = R"(
-%fn1 = func main():void [@fragment] {
-  %fn2 = block {
-  } -> %func_end # return
-} %func_end
-
+%main = @fragment func():void -> %b1 {
+  %b1 = block {
+    ret
+  }
+}
 )";
 
     Run<AddEmptyEntryPoint>();
