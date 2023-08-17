@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/sem/test_helper.h"
+#include "src/tint/lang/wgsl/sem/helper_test.h"
 
 #include "src/tint/lang/wgsl/sem/module.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::sem {
 namespace {
@@ -27,7 +27,7 @@ class DiagnosticSeverityTest : public TestHelper {
     /// using an attribute. Test that we correctly track the severity of the filter for the
     /// functions and the statements with them.
     /// @param global_severity the global severity of the "chromium.unreachable_code" filter
-    void Run(builtin::DiagnosticSeverity global_severity) {
+    void Run(core::DiagnosticSeverity global_severity) {
         // @diagnostic(off, chromium.unreachable_code)
         // fn foo() {
         //   @diagnostic(info, chromium.unreachable_code) {
@@ -74,24 +74,24 @@ class DiagnosticSeverityTest : public TestHelper {
         // fn bar() {
         //   return;
         // }
-        auto rule = builtin::ChromiumDiagnosticRule::kUnreachableCode;
-        auto func_severity = builtin::DiagnosticSeverity::kOff;
-        auto block_severity = builtin::DiagnosticSeverity::kInfo;
-        auto if_severity = builtin::DiagnosticSeverity::kError;
-        auto if_body_severity = builtin::DiagnosticSeverity::kWarning;
-        auto else_body_severity = builtin::DiagnosticSeverity::kInfo;
-        auto switch_severity = builtin::DiagnosticSeverity::kError;
-        auto switch_body_severity = builtin::DiagnosticSeverity::kOff;
-        auto case_severity = builtin::DiagnosticSeverity::kWarning;
-        auto for_severity = builtin::DiagnosticSeverity::kError;
-        auto for_body_severity = builtin::DiagnosticSeverity::kWarning;
-        auto loop_severity = builtin::DiagnosticSeverity::kWarning;
-        auto loop_body_severity = builtin::DiagnosticSeverity::kOff;
-        auto continuing_severity = builtin::DiagnosticSeverity::kInfo;
-        auto while_severity = builtin::DiagnosticSeverity::kError;
-        auto while_body_severity = builtin::DiagnosticSeverity::kWarning;
+        auto rule = core::ChromiumDiagnosticRule::kUnreachableCode;
+        auto func_severity = core::DiagnosticSeverity::kOff;
+        auto block_severity = core::DiagnosticSeverity::kInfo;
+        auto if_severity = core::DiagnosticSeverity::kError;
+        auto if_body_severity = core::DiagnosticSeverity::kWarning;
+        auto else_body_severity = core::DiagnosticSeverity::kInfo;
+        auto switch_severity = core::DiagnosticSeverity::kError;
+        auto switch_body_severity = core::DiagnosticSeverity::kOff;
+        auto case_severity = core::DiagnosticSeverity::kWarning;
+        auto for_severity = core::DiagnosticSeverity::kError;
+        auto for_body_severity = core::DiagnosticSeverity::kWarning;
+        auto loop_severity = core::DiagnosticSeverity::kWarning;
+        auto loop_body_severity = core::DiagnosticSeverity::kOff;
+        auto continuing_severity = core::DiagnosticSeverity::kInfo;
+        auto while_severity = core::DiagnosticSeverity::kError;
+        auto while_body_severity = core::DiagnosticSeverity::kWarning;
         auto attr = [&](auto severity) {
-            return utils::Vector{DiagnosticAttribute(severity, "chromium", "unreachable_code")};
+            return tint::Vector{DiagnosticAttribute(severity, "chromium", "unreachable_code")};
         };
 
         auto* return_foo_if = Return();
@@ -104,30 +104,30 @@ class DiagnosticSeverityTest : public TestHelper {
         auto* return_foo_loop = Return();
         auto* return_foo_while = Return();
         auto* breakif_foo_continuing = BreakIf(Expr(true));
-        auto* else_stmt = Block(utils::Vector{return_foo_else}, attr(else_body_severity));
+        auto* else_stmt = Block(tint::Vector{return_foo_else}, attr(else_body_severity));
         auto* elseif = If(Expr(false), Block(return_foo_elseif), Else(else_stmt));
-        auto* if_foo = If(Expr(true), Block(utils::Vector{return_foo_if}, attr(if_body_severity)),
+        auto* if_foo = If(Expr(true), Block(tint::Vector{return_foo_if}, attr(if_body_severity)),
                           Else(elseif), attr(if_severity));
         auto* case_stmt =
-            Case(CaseSelector(0_a), Block(utils::Vector{return_foo_case}, attr(case_severity)));
+            Case(CaseSelector(0_a), Block(tint::Vector{return_foo_case}, attr(case_severity)));
         auto* default_stmt = DefaultCase(Block(return_foo_default));
-        auto* swtch = Switch(42_a, utils::Vector{case_stmt, default_stmt}, attr(switch_severity),
+        auto* swtch = Switch(42_a, tint::Vector{case_stmt, default_stmt}, attr(switch_severity),
                              attr(switch_body_severity));
         auto* fl =
             For(Decl(Var("i", ty.i32())), false, Increment("i"),
-                Block(utils::Vector{return_foo_for}, attr(for_body_severity)), attr(for_severity));
-        auto* l = Loop(Block(utils::Vector{return_foo_loop}, attr(loop_body_severity)),
-                       Block(utils::Vector{breakif_foo_continuing}, attr(continuing_severity)),
+                Block(tint::Vector{return_foo_for}, attr(for_body_severity)), attr(for_severity));
+        auto* l = Loop(Block(tint::Vector{return_foo_loop}, attr(loop_body_severity)),
+                       Block(tint::Vector{breakif_foo_continuing}, attr(continuing_severity)),
                        attr(loop_severity));
-        auto* wl = While(false, Block(utils::Vector{return_foo_while}, attr(while_body_severity)),
+        auto* wl = While(false, Block(tint::Vector{return_foo_while}, attr(while_body_severity)),
                          attr(while_severity));
         auto* block_1 =
-            Block(utils::Vector{if_foo, return_foo_block, swtch, fl, l, wl}, attr(block_severity));
+            Block(tint::Vector{if_foo, return_foo_block, swtch, fl, l, wl}, attr(block_severity));
         auto* func_attr = DiagnosticAttribute(func_severity, "chromium", "unreachable_code");
-        auto* foo = Func("foo", {}, ty.void_(), utils::Vector{block_1}, utils::Vector{func_attr});
+        auto* foo = Func("foo", {}, ty.void_(), tint::Vector{block_1}, tint::Vector{func_attr});
 
         auto* return_bar = Return();
-        auto* bar = Func("bar", {}, ty.void_(), utils::Vector{return_bar});
+        auto* bar = Func("bar", {}, ty.void_(), tint::Vector{return_bar});
 
         auto p = Build();
         EXPECT_TRUE(p.IsValid()) << p.Diagnostics().str();
@@ -173,12 +173,12 @@ class DiagnosticSeverityTest : public TestHelper {
 };
 
 TEST_F(DiagnosticSeverityTest, WithDirective) {
-    DiagnosticDirective(builtin::DiagnosticSeverity::kError, "chromium", "unreachable_code");
-    Run(builtin::DiagnosticSeverity::kError);
+    DiagnosticDirective(core::DiagnosticSeverity::kError, "chromium", "unreachable_code");
+    Run(core::DiagnosticSeverity::kError);
 }
 
 TEST_F(DiagnosticSeverityTest, WithoutDirective) {
-    Run(builtin::DiagnosticSeverity::kWarning);
+    Run(core::DiagnosticSeverity::kWarning);
 }
 
 }  // namespace

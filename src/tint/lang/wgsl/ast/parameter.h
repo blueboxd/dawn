@@ -31,7 +31,7 @@ namespace tint::ast {
 /// ```
 ///
 /// @see https://www.w3.org/TR/WGSL/#creation-time-consts
-class Parameter final : public utils::Castable<Parameter, Variable> {
+class Parameter final : public Castable<Parameter, Variable> {
   public:
     /// Create a 'parameter' creation-time value variable.
     /// @param pid the identifier of the program that owns this node
@@ -40,12 +40,12 @@ class Parameter final : public utils::Castable<Parameter, Variable> {
     /// @param name the variable name
     /// @param type the declared variable type
     /// @param attributes the variable attributes
-    Parameter(ProgramID pid,
+    Parameter(GenerationID pid,
               NodeID nid,
               const Source& source,
               const Identifier* name,
               Type type,
-              utils::VectorRef<const Attribute*> attributes);
+              VectorRef<const Attribute*> attributes);
 
     /// Destructor
     ~Parameter() override;
@@ -57,7 +57,7 @@ class Parameter final : public utils::Castable<Parameter, Variable> {
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const Parameter* Clone(CloneContext* ctx) const override;
+    const Parameter* Clone(CloneContext& ctx) const override;
 };
 
 }  // namespace tint::ast

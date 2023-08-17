@@ -41,6 +41,9 @@ enum class Feature {
     RG11B10UfloatRenderable,
     BGRA8UnormStorage,
     Float32Filterable,
+    ChromiumExperimentalSubgroups,
+    ChromiumExperimentalSubgroupUniformControlFlow,
+    ChromiumExperimentalReadWriteStorageTexture,
 
     // Dawn-specific
     DawnInternalUsages,
@@ -50,6 +53,27 @@ enum class Feature {
     SurfaceCapabilities,
     TransientAttachments,
     MSAARenderToSingleSampled,
+    DualSourceBlending,
+    D3D11MultithreadProtected,
+    ANGLETextureSharing,
+    PixelLocalStorageCoherent,
+    PixelLocalStorageNonCoherent,
+
+    SharedTextureMemoryVkDedicatedAllocation,
+    SharedTextureMemoryAHardwareBuffer,
+    SharedTextureMemoryDmaBuf,
+    SharedTextureMemoryOpaqueFD,
+    SharedTextureMemoryZirconHandle,
+    SharedTextureMemoryDXGISharedHandle,
+    SharedTextureMemoryD3D11Texture2D,
+    SharedTextureMemoryIOSurface,
+    SharedTextureMemoryEGLImage,
+
+    SharedFenceVkSemaphoreOpaqueFD,
+    SharedFenceVkSemaphoreSyncFD,
+    SharedFenceVkSemaphoreZirconHandle,
+    SharedFenceDXGISharedHandle,
+    SharedFenceMTLSharedEvent,
 
     EnumCount,
     InvalidEnum = EnumCount,

@@ -25,10 +25,10 @@
 #undef Bool
 #endif
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// A boolean type
-class Bool final : public utils::Castable<Bool, Scalar> {
+class Bool final : public Castable<Bool, Scalar> {
   public:
     /// Constructor
     Bool();
@@ -55,6 +55,6 @@ class Bool final : public utils::Castable<Bool, Scalar> {
     Bool* Clone(CloneContext& ctx) const override;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_BOOL_H_

@@ -17,9 +17,11 @@
 #include <utility>
 
 #include "src/tint/lang/core/type/struct.h"
-#include "src/tint/lang/wgsl/ast/transform/utils/hoist_to_decl_before.h"
+#include "src/tint/lang/wgsl/ast/transform/hoist_to_decl_before.h"
 #include "src/tint/lang/wgsl/ast/traverse_expressions.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/call.h"
 #include "src/tint/lang/wgsl/sem/statement.h"
 #include "src/tint/lang/wgsl/sem/value_constructor.h"
@@ -37,12 +39,12 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
                                                        const DataMap&,
                                                        DataMap&) const {
     ProgramBuilder b;
-    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
 
     // Returns true if the expression should be hoisted to a new let statement before the
     // expression's statement.
     auto should_hoist = [&](const sem::ValueExpression* expr) {
-        if (!expr->Type()->IsAnyOf<type::Array, type::Struct>()) {
+        if (!expr->Type()->IsAnyOf<core::type::Array, core::type::Struct>()) {
             // We only care about array and struct initializers
             return false;
         }
@@ -51,7 +53,7 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
         {
             // Follow const-chains
             auto* root_expr = expr;
-            if (expr->Stage() == sem::EvaluationStage::kConstant) {
+            if (expr->Stage() == core::EvaluationStage::kConstant) {
                 if (expr->Type()->HoldsAbstract()) {
                     // Do not hoist expressions that are not materialized, as doing so would cause
                     // premature materialization.
@@ -82,9 +84,9 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
     };
 
     // A list of expressions that should be hoisted.
-    utils::Vector<const sem::ValueExpression*, 32> to_hoist;
+    tint::Vector<const sem::ValueExpression*, 32> to_hoist;
     // A set of expressions that are constant, which _may_ need to be hoisted.
-    utils::Hashset<const Expression*, 32> const_chains;
+    Hashset<const Expression*, 32> const_chains;
 
     // Walk the AST nodes. This order guarantees that leaf-expressions are visited first.
     for (auto* node : src->ASTNodes().Objects()) {
@@ -97,19 +99,19 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
                 continue;
             }
 
-            if (sem->Stage() == sem::EvaluationStage::kConstant) {
+            if (sem->Stage() == core::EvaluationStage::kConstant) {
                 // Expression is constant. We only need to hoist expressions if they're the
                 // outermost constant expression in a chain. Remove the immediate child nodes of the
                 // expression from const_chains, and add this expression to the const_chains. As we
                 // visit leaf-expressions first, this means the content of const_chains only
                 // contains the outer-most constant expressions.
                 auto* expr = sem->Declaration();
-                bool ok = TraverseExpressions(expr, b.Diagnostics(), [&](const Expression* child) {
+                bool ok = TraverseExpressions(expr, [&](const Expression* child) {
                     const_chains.Remove(child);
                     return child == expr ? TraverseAction::Descend : TraverseAction::Skip;
                 });
                 if (!ok) {
-                    return Program(std::move(b));
+                    return resolver::Resolve(b);
                 }
                 const_chains.Add(expr);
             } else if (should_hoist(sem)) {
@@ -143,12 +145,12 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
     for (auto* expr : to_hoist) {
         if (!hoist_to_decl_before.Add(expr, expr->Declaration(),
                                       HoistToDeclBefore::VariableKind::kLet)) {
-            return Program(std::move(b));
+            return resolver::Resolve(b);
         }
     }
 
     ctx.Clone();
-    return Program(std::move(b));
+    return resolver::Resolve(b);
 }
 
 }  // namespace tint::ast::transform

@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION((!is_linux) && (!is_mac) && (!is_win))
+
 #include "src/tint/utils/command/command.h"
 
-namespace tint::utils {
+namespace tint {
 
 Command::Command(const std::string&) {}
 
@@ -32,4 +34,4 @@ Command::Output Command::Exec(std::initializer_list<std::string>) const {
     return out;
 }
 
-}  // namespace tint::utils
+}  // namespace tint

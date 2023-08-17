@@ -14,18 +14,16 @@
 
 #include "src/tint/lang/core/type/sampler_kind.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
-utils::StringStream& operator<<(utils::StringStream& out, SamplerKind kind) {
+std::string_view ToString(SamplerKind kind) {
     switch (kind) {
         case SamplerKind::kSampler:
-            out << "sampler";
-            break;
+            return "sampler";
         case SamplerKind::kComparisonSampler:
-            out << "comparison_sampler";
-            break;
+            return "comparison_sampler";
     }
-    return out;
+    return "<unknown>";
 }
 
-}  // namespace tint::type
+}  // namespace tint::core::type

@@ -17,6 +17,11 @@
 #include <memory>
 #include <utility>
 
+#include "src/tint/lang/wgsl/ast/transform/manager.h"
+#include "src/tint/lang/wgsl/ast/transform/substitute_override.h"
+#include "src/tint/lang/wgsl/inspector/inspector.h"
+#include "src/tint/lang/wgsl/program/program.h"
+
 namespace tint::fuzzers {
 
 Program ApplySubstituteOverrides(Program&& program) {
@@ -35,13 +40,13 @@ Program ApplySubstituteOverrides(Program&& program) {
         return std::move(program);
     }
 
-    transform::DataMap override_data;
+    ast::transform::DataMap override_data;
     override_data.Add<ast::transform::SubstituteOverride::Config>(cfg);
 
-    transform::Manager mgr;
+    ast::transform::Manager mgr;
     mgr.append(std::make_unique<ast::transform::SubstituteOverride>());
 
-    transform::DataMap outputs;
+    ast::transform::DataMap outputs;
     return mgr.Run(&program, override_data, outputs);
 }
 

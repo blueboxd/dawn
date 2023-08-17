@@ -23,14 +23,14 @@
 namespace tint::ast {
 
 /// A binding attribute
-class BindingAttribute final : public utils::Castable<BindingAttribute, Attribute> {
+class BindingAttribute final : public Castable<BindingAttribute, Attribute> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     /// @param expr the binding expression
-    BindingAttribute(ProgramID pid, NodeID nid, const Source& src, const Expression* expr);
+    BindingAttribute(GenerationID pid, NodeID nid, const Source& src, const Expression* expr);
     ~BindingAttribute() override;
 
     /// @returns the WGSL name for the attribute
@@ -40,7 +40,7 @@ class BindingAttribute final : public utils::Castable<BindingAttribute, Attribut
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const BindingAttribute* Clone(CloneContext* ctx) const override;
+    const BindingAttribute* Clone(CloneContext& ctx) const override;
 
     /// the binding expression
     const Expression* const expr;

@@ -15,9 +15,9 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
 #include "src/tint/lang/wgsl/ast/binary_expression.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::ast {
 namespace {
@@ -26,7 +26,7 @@ using ForLoopStatementTest = TestHelper;
 
 TEST_F(ForLoopStatementTest, Creation) {
     auto* init = Decl(Var("i", ty.u32()));
-    auto* cond = create<BinaryExpression>(BinaryOp::kLessThan, Expr("i"), Expr(5_u));
+    auto* cond = create<BinaryExpression>(core::BinaryOp::kLessThan, Expr("i"), Expr(5_u));
     auto* cont = Assign("i", Add("i", 1_u));
     auto* body = Block(Return());
     auto* l = For(init, cond, cont, body);
@@ -52,10 +52,10 @@ TEST_F(ForLoopStatementTest, Creation_Null_InitCondCont) {
 }
 
 TEST_F(ForLoopStatementTest, Creation_WithAttributes) {
-    auto* attr1 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "foo");
-    auto* attr2 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "bar");
+    auto* attr1 = DiagnosticAttribute(core::DiagnosticSeverity::kOff, "foo");
+    auto* attr2 = DiagnosticAttribute(core::DiagnosticSeverity::kOff, "bar");
     auto* body = Block(Return());
-    auto* l = For(nullptr, nullptr, nullptr, body, utils::Vector{attr1, attr2});
+    auto* l = For(nullptr, nullptr, nullptr, body, tint::Vector{attr1, attr2});
 
     EXPECT_THAT(l->attributes, testing::ElementsAre(attr1, attr2));
 }
@@ -69,7 +69,7 @@ TEST_F(ForLoopStatementTest, Assert_Null_Body) {
         "internal compiler error");
 }
 
-TEST_F(ForLoopStatementTest, Assert_DifferentProgramID_Initializer) {
+TEST_F(ForLoopStatementTest, Assert_DifferentGenerationID_Initializer) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;
@@ -79,7 +79,7 @@ TEST_F(ForLoopStatementTest, Assert_DifferentProgramID_Initializer) {
         "internal compiler error");
 }
 
-TEST_F(ForLoopStatementTest, Assert_DifferentProgramID_Condition) {
+TEST_F(ForLoopStatementTest, Assert_DifferentGenerationID_Condition) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;
@@ -89,7 +89,7 @@ TEST_F(ForLoopStatementTest, Assert_DifferentProgramID_Condition) {
         "internal compiler error");
 }
 
-TEST_F(ForLoopStatementTest, Assert_DifferentProgramID_Continuing) {
+TEST_F(ForLoopStatementTest, Assert_DifferentGenerationID_Continuing) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;
@@ -99,7 +99,7 @@ TEST_F(ForLoopStatementTest, Assert_DifferentProgramID_Continuing) {
         "internal compiler error");
 }
 
-TEST_F(ForLoopStatementTest, Assert_DifferentProgramID_Body) {
+TEST_F(ForLoopStatementTest, Assert_DifferentGenerationID_Body) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;

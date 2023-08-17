@@ -27,7 +27,7 @@ class Expression;
 namespace tint::ast {
 
 /// An interpolate attribute
-class InterpolateAttribute final : public utils::Castable<InterpolateAttribute, Attribute> {
+class InterpolateAttribute final : public Castable<InterpolateAttribute, Attribute> {
   public:
     /// Create an interpolate attribute.
     /// @param pid the identifier of the program that owns this node
@@ -35,7 +35,7 @@ class InterpolateAttribute final : public utils::Castable<InterpolateAttribute, 
     /// @param src the source of this node
     /// @param type the interpolation type
     /// @param sampling the interpolation sampling
-    InterpolateAttribute(ProgramID pid,
+    InterpolateAttribute(GenerationID pid,
                          NodeID nid,
                          const Source& src,
                          const Expression* type,
@@ -49,7 +49,7 @@ class InterpolateAttribute final : public utils::Castable<InterpolateAttribute, 
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const InterpolateAttribute* Clone(CloneContext* ctx) const override;
+    const InterpolateAttribute* Clone(CloneContext& ctx) const override;
 
     /// The interpolation type
     const Expression* const type;

@@ -14,33 +14,26 @@
 
 #include "src/tint/lang/core/type/texture_dimension.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
-utils::StringStream& operator<<(utils::StringStream& out, type::TextureDimension dim) {
+std::string_view ToString(core::type::TextureDimension dim) {
     switch (dim) {
-        case type::TextureDimension::kNone:
-            out << "None";
-            break;
-        case type::TextureDimension::k1d:
-            out << "1d";
-            break;
-        case type::TextureDimension::k2d:
-            out << "2d";
-            break;
-        case type::TextureDimension::k2dArray:
-            out << "2d_array";
-            break;
-        case type::TextureDimension::k3d:
-            out << "3d";
-            break;
-        case type::TextureDimension::kCube:
-            out << "cube";
-            break;
-        case type::TextureDimension::kCubeArray:
-            out << "cube_array";
-            break;
+        case core::type::TextureDimension::kNone:
+            return "None";
+        case core::type::TextureDimension::k1d:
+            return "1d";
+        case core::type::TextureDimension::k2d:
+            return "2d";
+        case core::type::TextureDimension::k2dArray:
+            return "2d_array";
+        case core::type::TextureDimension::k3d:
+            return "3d";
+        case core::type::TextureDimension::kCube:
+            return "cube";
+        case core::type::TextureDimension::kCubeArray:
+            return "cube_array";
     }
-    return out;
+    return "<unknown>";
 }
 
-}  // namespace tint::type
+}  // namespace tint::core::type

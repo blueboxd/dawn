@@ -14,13 +14,14 @@
 
 #include "src/tint/lang/wgsl/ast/invariant_attribute.h"
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::InvariantAttribute);
 
 namespace tint::ast {
 
-InvariantAttribute::InvariantAttribute(ProgramID pid, NodeID nid, const Source& src)
+InvariantAttribute::InvariantAttribute(GenerationID pid, NodeID nid, const Source& src)
     : Base(pid, nid, src) {}
 
 InvariantAttribute::~InvariantAttribute() = default;
@@ -29,10 +30,10 @@ std::string InvariantAttribute::Name() const {
     return "invariant";
 }
 
-const InvariantAttribute* InvariantAttribute::Clone(CloneContext* ctx) const {
+const InvariantAttribute* InvariantAttribute::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    return ctx->dst->create<InvariantAttribute>(src);
+    auto src = ctx.Clone(source);
+    return ctx.dst->create<InvariantAttribute>(src);
 }
 
 }  // namespace tint::ast

@@ -14,21 +14,22 @@
 
 #include "src/tint/lang/wgsl/ast/discard_statement.h"
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::DiscardStatement);
 
 namespace tint::ast {
 
-DiscardStatement::DiscardStatement(ProgramID pid, NodeID nid, const Source& src)
+DiscardStatement::DiscardStatement(GenerationID pid, NodeID nid, const Source& src)
     : Base(pid, nid, src) {}
 
 DiscardStatement::~DiscardStatement() = default;
 
-const DiscardStatement* DiscardStatement::Clone(CloneContext* ctx) const {
+const DiscardStatement* DiscardStatement::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    return ctx->dst->create<DiscardStatement>(src);
+    auto src = ctx.Clone(source);
+    return ctx.dst->create<DiscardStatement>(src);
 }
 
 }  // namespace tint::ast

@@ -16,18 +16,19 @@
 
 #include <string>
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::BuiltinAttribute);
 
 namespace tint::ast {
 
-BuiltinAttribute::BuiltinAttribute(ProgramID pid,
+BuiltinAttribute::BuiltinAttribute(GenerationID pid,
                                    NodeID nid,
                                    const Source& src,
                                    const Expression* b)
     : Base(pid, nid, src), builtin(b) {
-    TINT_ASSERT_PROGRAM_IDS_EQUAL(AST, b, program_id);
+    TINT_ASSERT_GENERATION_IDS_EQUAL(b, generation_id);
 }
 
 BuiltinAttribute::~BuiltinAttribute() = default;
@@ -36,11 +37,11 @@ std::string BuiltinAttribute::Name() const {
     return "builtin";
 }
 
-const BuiltinAttribute* BuiltinAttribute::Clone(CloneContext* ctx) const {
+const BuiltinAttribute* BuiltinAttribute::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    auto b = ctx->Clone(builtin);
-    return ctx->dst->create<BuiltinAttribute>(src, b);
+    auto src = ctx.Clone(source);
+    auto b = ctx.Clone(builtin);
+    return ctx.dst->create<BuiltinAttribute>(src, b);
 }
 
 }  // namespace tint::ast

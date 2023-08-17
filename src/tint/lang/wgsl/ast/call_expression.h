@@ -16,6 +16,7 @@
 #define SRC_TINT_LANG_WGSL_AST_CALL_EXPRESSION_H_
 
 #include "src/tint/lang/wgsl/ast/expression.h"
+#include "src/tint/utils/containers/vector.h"
 
 // Forward declarations
 namespace tint::ast {
@@ -29,7 +30,7 @@ namespace tint::ast {
 /// * sem::Builtin
 /// * sem::ValueConstructor
 /// * sem::ValueConversion
-class CallExpression final : public utils::Castable<CallExpression, Expression> {
+class CallExpression final : public Castable<CallExpression, Expression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -37,11 +38,11 @@ class CallExpression final : public utils::Castable<CallExpression, Expression> 
     /// @param source the call expression source
     /// @param target the target of the call
     /// @param args the arguments
-    CallExpression(ProgramID pid,
+    CallExpression(GenerationID pid,
                    NodeID nid,
                    const Source& source,
                    const IdentifierExpression* target,
-                   utils::VectorRef<const Expression*> args);
+                   VectorRef<const Expression*> args);
 
     /// Destructor
     ~CallExpression() override;
@@ -50,13 +51,13 @@ class CallExpression final : public utils::Castable<CallExpression, Expression> 
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const CallExpression* Clone(CloneContext* ctx) const override;
+    const CallExpression* Clone(CloneContext& ctx) const override;
 
     /// The target function or type
     const IdentifierExpression* target;
 
     /// The arguments
-    const utils::Vector<const Expression*, 8> args;
+    const tint::Vector<const Expression*, 8> args;
 };
 
 }  // namespace tint::ast

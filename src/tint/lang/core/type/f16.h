@@ -19,10 +19,10 @@
 
 #include "src/tint/lang/core/type/numeric_scalar.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// A float 16 type
-class F16 final : public utils::Castable<F16, NumericScalar> {
+class F16 final : public Castable<F16, NumericScalar> {
   public:
     /// Constructor
     F16();
@@ -45,6 +45,6 @@ class F16 final : public utils::Castable<F16, NumericScalar> {
     F16* Clone(CloneContext& ctx) const override;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_F16_H_

@@ -16,14 +16,14 @@
 
 #include "src/tint/lang/core/type/manager.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
-#include "src/tint/utils/debug/debug.h"
 #include "src/tint/utils/diagnostic/diagnostic.h"
+#include "src/tint/utils/ice/ice.h"
 #include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/text/string_stream.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::type::DepthMultisampledTexture);
+TINT_INSTANTIATE_TYPEINFO(tint::core::type::DepthMultisampledTexture);
 
-namespace tint::type {
+namespace tint::core::type {
 namespace {
 
 bool IsValidDepthDimension(TextureDimension dim) {
@@ -33,8 +33,8 @@ bool IsValidDepthDimension(TextureDimension dim) {
 }  // namespace
 
 DepthMultisampledTexture::DepthMultisampledTexture(TextureDimension dim)
-    : Base(utils::Hash(utils::TypeInfo::Of<DepthMultisampledTexture>().full_hashcode, dim), dim) {
-    TINT_ASSERT(Type, IsValidDepthDimension(dim));
+    : Base(Hash(TypeInfo::Of<DepthMultisampledTexture>().full_hashcode, dim), dim) {
+    TINT_ASSERT(IsValidDepthDimension(dim));
 }
 
 DepthMultisampledTexture::~DepthMultisampledTexture() = default;
@@ -47,7 +47,7 @@ bool DepthMultisampledTexture::Equals(const UniqueNode& other) const {
 }
 
 std::string DepthMultisampledTexture::FriendlyName() const {
-    utils::StringStream out;
+    StringStream out;
     out << "texture_depth_multisampled_" << dim();
     return out.str();
 }
@@ -56,4 +56,4 @@ DepthMultisampledTexture* DepthMultisampledTexture::Clone(CloneContext& ctx) con
     return ctx.dst.mgr->Get<DepthMultisampledTexture>(dim());
 }
 
-}  // namespace tint::type
+}  // namespace tint::core::type

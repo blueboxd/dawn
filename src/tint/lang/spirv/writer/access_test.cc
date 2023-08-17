@@ -12,19 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/test_helper.h"
+// GEN_BUILD:CONDITION(tint_build_ir)
 
-namespace tint::writer::spirv {
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
+
+namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(SpirvWriterTest, Access_Array_Value_ConstantIndex) {
     auto* arr_val = b.FunctionParam("arr", ty.array(ty.i32(), 4));
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({arr_val});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Access(ty.i32(), arr_val, 1_u);
         b.Return(func);
         mod.SetName(result, "result");
@@ -36,7 +38,7 @@ TEST_F(SpirvWriterTest, Access_Array_Value_ConstantIndex) {
 
 TEST_F(SpirvWriterTest, Access_Array_Pointer_ConstantIndex) {
     auto* func = b.Function("foo", ty.void_());
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* arr_var = b.Var("arr", ty.ptr<function, array<i32, 4>>());
         auto* result = b.Access(ty.ptr<function, i32>(), arr_var, 1_u);
         b.Return(func);
@@ -51,7 +53,7 @@ TEST_F(SpirvWriterTest, Access_Array_Pointer_DynamicIndex) {
     auto* idx = b.FunctionParam("idx", ty.i32());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({idx});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* arr_var = b.Var("arr", ty.ptr<function, array<i32, 4>>());
         auto* result = b.Access(ty.ptr<function, i32>(), arr_var, idx);
         b.Return(func);
@@ -66,7 +68,7 @@ TEST_F(SpirvWriterTest, Access_Matrix_Value_ConstantIndex) {
     auto* mat_val = b.FunctionParam("mat", ty.mat2x2(ty.f32()));
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({mat_val});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result_vector = b.Access(ty.vec2(ty.f32()), mat_val, 1_u);
         auto* result_scalar = b.Access(ty.f32(), mat_val, 1_u, 0_u);
         b.Return(func);
@@ -81,7 +83,7 @@ TEST_F(SpirvWriterTest, Access_Matrix_Value_ConstantIndex) {
 
 TEST_F(SpirvWriterTest, Access_Matrix_Pointer_ConstantIndex) {
     auto* func = b.Function("foo", ty.void_());
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* mat_var = b.Var("mat", ty.ptr<function, mat2x2<f32>>());
         auto* result_vector = b.Access(ty.ptr<function, vec2<f32>>(), mat_var, 1_u);
         auto* result_scalar = b.LoadVectorElement(result_vector, 0_u);
@@ -100,7 +102,7 @@ TEST_F(SpirvWriterTest, Access_Matrix_Pointer_DynamicIndex) {
     auto* idx = b.FunctionParam("idx", ty.i32());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({idx});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* mat_var = b.Var("mat", ty.ptr<function, mat2x2<f32>>());
         auto* result_vector = b.Access(ty.ptr<function, vec2<f32>>(), mat_var, idx);
         auto* result_scalar = b.LoadVectorElement(result_vector, idx);
@@ -119,7 +121,7 @@ TEST_F(SpirvWriterTest, Access_Vector_Value_ConstantIndex) {
     auto* vec_val = b.FunctionParam("vec", ty.vec4(ty.i32()));
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({vec_val});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Access(ty.i32(), vec_val, 1_u);
         b.Return(func);
         mod.SetName(result, "result");
@@ -134,7 +136,7 @@ TEST_F(SpirvWriterTest, Access_Vector_Value_DynamicIndex) {
     auto* idx = b.FunctionParam("idx", ty.i32());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({vec_val, idx});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Access(ty.i32(), vec_val, idx);
         b.Return(func);
         mod.SetName(result, "result");
@@ -149,7 +151,7 @@ TEST_F(SpirvWriterTest, Access_NestedVector_Value_DynamicIndex) {
     auto* idx = b.FunctionParam("idx", ty.i32());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({val, idx});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Access(ty.i32(), val, 1_u, 2_u, idx);
         b.Return(func);
         mod.SetName(result, "result");
@@ -169,7 +171,7 @@ TEST_F(SpirvWriterTest, Access_Struct_Value_ConstantIndex) {
     auto* str_val = b.FunctionParam("str", str);
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({str_val});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result_a = b.Access(ty.f32(), str_val, 0_u);
         auto* result_b = b.Access(ty.i32(), str_val, 1_u, 2_u);
         b.Return(func);
@@ -189,7 +191,7 @@ TEST_F(SpirvWriterTest, Access_Struct_Pointer_ConstantIndex) {
                                                    {mod.symbols.Register("b"), ty.vec4<i32>()},
                                                });
     auto* func = b.Function("foo", ty.void_());
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* str_var = b.Var("str", ty.ptr(function, str, read_write));
         auto* result_a = b.Access(ty.ptr<function, f32>(), str_var, 0_u);
         auto* result_b = b.Access(ty.ptr<function, vec4<i32>>(), str_var, 1_u);
@@ -205,7 +207,7 @@ TEST_F(SpirvWriterTest, Access_Struct_Pointer_ConstantIndex) {
 
 TEST_F(SpirvWriterTest, LoadVectorElement_ConstantIndex) {
     auto* func = b.Function("foo", ty.void_());
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* vec_var = b.Var("vec", ty.ptr<function, vec4<i32>>());
         auto* result = b.LoadVectorElement(vec_var, 1_u);
         b.Return(func);
@@ -221,7 +223,7 @@ TEST_F(SpirvWriterTest, LoadVectorElement_DynamicIndex) {
     auto* idx = b.FunctionParam("idx", ty.i32());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({idx});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* vec_var = b.Var("vec", ty.ptr<function, vec4<i32>>());
         auto* result = b.LoadVectorElement(vec_var, idx);
         b.Return(func);
@@ -235,7 +237,7 @@ TEST_F(SpirvWriterTest, LoadVectorElement_DynamicIndex) {
 
 TEST_F(SpirvWriterTest, StoreVectorElement_ConstantIndex) {
     auto* func = b.Function("foo", ty.void_());
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* vec_var = b.Var("vec", ty.ptr<function, vec4<i32>>());
         b.StoreVectorElement(vec_var, 1_u, b.Constant(42_i));
         b.Return(func);
@@ -250,7 +252,7 @@ TEST_F(SpirvWriterTest, StoreVectorElement_DynamicIndex) {
     auto* idx = b.FunctionParam("idx", ty.i32());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({idx});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* vec_var = b.Var("vec", ty.ptr<function, vec4<i32>>());
         b.StoreVectorElement(vec_var, idx, b.Constant(42_i));
         b.Return(func);
@@ -262,4 +264,4 @@ TEST_F(SpirvWriterTest, StoreVectorElement_DynamicIndex) {
 }
 
 }  // namespace
-}  // namespace tint::writer::spirv
+}  // namespace tint::spirv::writer

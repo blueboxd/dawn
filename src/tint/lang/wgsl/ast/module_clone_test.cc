@@ -15,8 +15,8 @@
 #include <unordered_set>
 
 #include "gtest/gtest.h"
-#include "src/tint/lang/wgsl/ast_writer/generator.h"
-#include "src/tint/lang/wgsl/reader/parser.h"
+#include "src/tint/lang/wgsl/reader/reader.h"
+#include "src/tint/lang/wgsl/writer/writer.h"
 
 namespace tint::ast {
 namespace {
@@ -122,14 +122,14 @@ const declaration_order_check_4 : i32 = 1;
 )");
 
     // Parse the wgsl, create the src program
-    auto src = reader::wgsl::Parse(&file);
+    auto src = wgsl::reader::Parse(&file);
 
-    ASSERT_TRUE(src.IsValid()) << diag::Formatter().format(src.Diagnostics());
+    ASSERT_TRUE(src.IsValid()) << src.Diagnostics().str();
 
     // Clone the src program to dst
     Program dst(src.Clone());
 
-    ASSERT_TRUE(dst.IsValid()) << diag::Formatter().format(dst.Diagnostics());
+    ASSERT_TRUE(dst.IsValid()) << dst.Diagnostics().str();
 
     // Expect the printed strings to match
     EXPECT_EQ(Program::printer(&src), Program::printer(&dst));
@@ -139,7 +139,7 @@ const declaration_order_check_4 : i32 = 1;
     for (auto* src_node : src.ASTNodes().Objects()) {
         src_nodes.emplace(src_node);
     }
-    std::unordered_set<const type::Type*> src_types;
+    std::unordered_set<const core::type::Type*> src_types;
     for (auto* src_type : src.Types()) {
         src_types.emplace(src_type);
     }
@@ -153,12 +153,12 @@ const declaration_order_check_4 : i32 = 1;
     // Regenerate the wgsl for the src program. We use this instead of the
     // original source so that reformatting doesn't impact the final wgsl
     // comparison.
-    writer::wgsl::Options options;
+    wgsl::writer::Options options;
     std::string src_wgsl;
     {
-        auto result = writer::wgsl::Generate(&src, options);
-        ASSERT_TRUE(result.success) << result.error;
-        src_wgsl = result.wgsl;
+        auto result = wgsl::writer::Generate(&src, options);
+        ASSERT_TRUE(result) << result.Failure();
+        src_wgsl = result->wgsl;
 
         // Move the src program to a temporary that'll be dropped, so that the src
         // program is released before we attempt to print the dst program. This
@@ -169,9 +169,9 @@ const declaration_order_check_4 : i32 = 1;
     }
 
     // Print the dst module, check it matches the original source
-    auto result = writer::wgsl::Generate(&dst, options);
-    ASSERT_TRUE(result.success);
-    auto dst_wgsl = result.wgsl;
+    auto result = wgsl::writer::Generate(&dst, options);
+    ASSERT_TRUE(result);
+    auto dst_wgsl = result->wgsl;
     ASSERT_EQ(src_wgsl, dst_wgsl);
 }
 

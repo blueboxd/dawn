@@ -18,15 +18,15 @@
 #include "src/tint/lang/wgsl/sem/expression.h"
 
 // Forward declarations
-namespace tint::type {
+namespace tint::core::type {
 class Type;
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 namespace tint::sem {
 
 /// Base class for BuiltinEnumExpression.
 /// Useful for Is() queries.
-class BuiltinEnumExpressionBase : public utils::Castable<BuiltinEnumExpressionBase, Expression> {
+class BuiltinEnumExpressionBase : public Castable<BuiltinEnumExpressionBase, Expression> {
   public:
     /// Constructor
     /// @param declaration the AST node
@@ -41,7 +41,7 @@ class BuiltinEnumExpressionBase : public utils::Castable<BuiltinEnumExpressionBa
 /// builtin enumerator value.
 template <typename ENUM>
 class BuiltinEnumExpression
-    : public utils::Castable<BuiltinEnumExpression<ENUM>, BuiltinEnumExpressionBase> {
+    : public Castable<BuiltinEnumExpression<ENUM>, BuiltinEnumExpressionBase> {
   public:
     /// Constructor
     /// @param declaration the AST node

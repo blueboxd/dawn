@@ -23,14 +23,14 @@
 namespace tint::ast {
 
 /// A workgroup attribute
-class StageAttribute final : public utils::Castable<StageAttribute, Attribute> {
+class StageAttribute final : public Castable<StageAttribute, Attribute> {
   public:
     /// constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param stage the pipeline stage
     /// @param source the source of this attribute
-    StageAttribute(ProgramID pid, NodeID nid, const Source& source, PipelineStage stage);
+    StageAttribute(GenerationID pid, NodeID nid, const Source& source, PipelineStage stage);
     ~StageAttribute() override;
 
     /// @returns the WGSL name for the attribute
@@ -40,7 +40,7 @@ class StageAttribute final : public utils::Castable<StageAttribute, Attribute> {
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const StageAttribute* Clone(CloneContext* ctx) const override;
+    const StageAttribute* Clone(CloneContext& ctx) const override;
 
     /// The pipeline stage
     const PipelineStage stage;

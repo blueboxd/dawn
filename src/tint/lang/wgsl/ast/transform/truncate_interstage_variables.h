@@ -17,8 +17,8 @@
 
 #include <bitset>
 
+#include "src/tint/api/common/binding_point.h"
 #include "src/tint/lang/wgsl/ast/transform/transform.h"
-#include "src/tint/lang/wgsl/sem/binding_point.h"
 
 namespace tint::ast::transform {
 
@@ -88,11 +88,10 @@ namespace tint::ast::transform {
 ///  }
 /// ```
 ///
-class TruncateInterstageVariables final
-    : public utils::Castable<TruncateInterstageVariables, Transform> {
+class TruncateInterstageVariables final : public Castable<TruncateInterstageVariables, Transform> {
   public:
     /// Configuration options for the transform
-    struct Config final : public utils::Castable<Config, Data> {
+    struct Config final : public Castable<Config, Data> {
         /// Constructor
         Config();
 

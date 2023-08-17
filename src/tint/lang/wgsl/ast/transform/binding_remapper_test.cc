@@ -16,7 +16,7 @@
 
 #include <utility>
 
-#include "src/tint/lang/wgsl/ast/transform/test_helper.h"
+#include "src/tint/lang/wgsl/ast/transform/helper_test.h"
 
 namespace tint::ast::transform {
 namespace {
@@ -26,7 +26,7 @@ using BindingRemapperTest = TransformTest;
 TEST_F(BindingRemapperTest, ShouldRunEmptyRemappings) {
     auto* src = R"()";
 
-    Transform::DataMap data;
+    DataMap data;
     data.Add<BindingRemapper::Remappings>(BindingRemapper::BindingPoints{},
                                           BindingRemapper::AccessControls{});
 
@@ -36,7 +36,7 @@ TEST_F(BindingRemapperTest, ShouldRunEmptyRemappings) {
 TEST_F(BindingRemapperTest, ShouldRunBindingPointRemappings) {
     auto* src = R"()";
 
-    Transform::DataMap data;
+    DataMap data;
     data.Add<BindingRemapper::Remappings>(
         BindingRemapper::BindingPoints{
             {{2, 1}, {1, 2}},
@@ -49,10 +49,10 @@ TEST_F(BindingRemapperTest, ShouldRunBindingPointRemappings) {
 TEST_F(BindingRemapperTest, ShouldRunAccessControlRemappings) {
     auto* src = R"()";
 
-    Transform::DataMap data;
+    DataMap data;
     data.Add<BindingRemapper::Remappings>(BindingRemapper::BindingPoints{},
                                           BindingRemapper::AccessControls{
-                                              {{2, 1}, builtin::Access::kWrite},
+                                              {{2, 1}, core::Access::kWrite},
                                           });
 
     EXPECT_TRUE(ShouldRun<BindingRemapper>(src, data));
@@ -75,7 +75,7 @@ fn f() {
 
     auto* expect = src;
 
-    Transform::DataMap data;
+    DataMap data;
     data.Add<BindingRemapper::Remappings>(BindingRemapper::BindingPoints{},
                                           BindingRemapper::AccessControls{});
     auto got = Run<BindingRemapper>(src, data);
@@ -112,7 +112,7 @@ fn f() {
 }
 )";
 
-    Transform::DataMap data;
+    DataMap data;
     data.Add<BindingRemapper::Remappings>(
         BindingRemapper::BindingPoints{
             {{2, 1}, {1, 2}},  // Remap
@@ -158,13 +158,13 @@ fn f() {
 }
 )";
 
-    Transform::DataMap data;
+    DataMap data;
     data.Add<BindingRemapper::Remappings>(
         BindingRemapper::BindingPoints{},
         BindingRemapper::AccessControls{
-            {{2, 1}, builtin::Access::kReadWrite},  // Modify access control
+            {{2, 1}, core::Access::kReadWrite},  // Modify access control
             // Keep @group(3) @binding(2) as is
-            {{4, 3}, builtin::Access::kRead},  // Add access control
+            {{4, 3}, core::Access::kRead},  // Add access control
         });
     auto got = Run<BindingRemapper>(src, data);
 
@@ -200,15 +200,15 @@ fn f() {
 }
 )";
 
-    Transform::DataMap data;
+    DataMap data;
     data.Add<BindingRemapper::Remappings>(
         BindingRemapper::BindingPoints{
             {{2, 1}, {4, 5}},
             {{3, 2}, {6, 7}},
         },
         BindingRemapper::AccessControls{
-            {{2, 1}, builtin::Access::kReadWrite},
-            {{3, 2}, builtin::Access::kReadWrite},
+            {{2, 1}, core::Access::kReadWrite},
+            {{3, 2}, core::Access::kReadWrite},
         });
     auto got = Run<BindingRemapper>(src, data);
 
@@ -254,7 +254,7 @@ fn f() {
 }
 )";
 
-    Transform::DataMap data;
+    DataMap data;
     data.Add<BindingRemapper::Remappings>(
         BindingRemapper::BindingPoints{
             {{2, 1}, {1, 1}},
@@ -316,7 +316,7 @@ fn f2() {
 }
 )";
 
-    Transform::DataMap data;
+    DataMap data;
     data.Add<BindingRemapper::Remappings>(
         BindingRemapper::BindingPoints{
             {{2, 1}, {1, 1}},

@@ -23,9 +23,9 @@
 #include <utility>
 #include <vector>
 
-#include "tint/override_id.h"
+#include "src/tint/api/common/override_id.h"
 
-#include "src/tint/lang/core/builtin/builtin_value.h"
+#include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/wgsl/inspector/entry_point.h"
 #include "src/tint/lang/wgsl/inspector/resource_binding.h"
 #include "src/tint/lang/wgsl/inspector/scalar.h"
@@ -108,8 +108,7 @@ class Inspector {
 
     /// @param entry_point name of the entry point to get information about.
     /// @returns vector of all of the bindings for write-only storage textures.
-    std::vector<ResourceBinding> GetWriteOnlyStorageTextureResourceBindings(
-        const std::string& entry_point);
+    std::vector<ResourceBinding> GetStorageTextureResourceBindings(const std::string& entry_point);
 
     /// @param entry_point name of the entry point to get information about.
     /// @returns vector of all of the bindings for depth textures.
@@ -127,7 +126,7 @@ class Inspector {
     /// @param entry_point name of the entry point to get information about.
     /// @returns vector of all of the sampler/texture sampling pairs that are used
     /// by that entry point.
-    utils::VectorRef<SamplerTexturePair> GetSamplerTextureUses(const std::string& entry_point);
+    VectorRef<SamplerTexturePair> GetSamplerTextureUses(const std::string& entry_point);
 
     /// @param entry_point name of the entry point to get information about.
     /// @param placeholder the sampler binding point to use for texture-only
@@ -135,7 +134,7 @@ class Inspector {
     /// @returns vector of all of the sampler/texture sampling pairs that are used
     /// by that entry point.
     std::vector<SamplerTexturePair> GetSamplerTextureUses(const std::string& entry_point,
-                                                          const sem::BindingPoint& placeholder);
+                                                          const BindingPoint& placeholder);
 
     /// @param entry_point name of the entry point to get information about.
     /// @returns the total size in bytes of all Workgroup storage-class storage
@@ -157,7 +156,7 @@ class Inspector {
   private:
     const Program* program_;
     diag::List diagnostics_;
-    std::unique_ptr<std::unordered_map<std::string, utils::UniqueVector<SamplerTexturePair, 4>>>
+    std::unique_ptr<std::unordered_map<std::string, UniqueVector<SamplerTexturePair, 4>>>
         sampler_targets_;
 
     /// @param name name of the entry point to find
@@ -174,17 +173,17 @@ class Inspector {
     /// @param location the location value if provided
     /// @param variables the list to add the variables to
     void AddEntryPointInOutVariables(std::string name,
-                                     const type::Type* type,
-                                     utils::VectorRef<const ast::Attribute*> attributes,
+                                     const core::type::Type* type,
+                                     VectorRef<const ast::Attribute*> attributes,
                                      std::optional<uint32_t> location,
                                      std::vector<StageVariable>& variables) const;
 
     /// Recursively determine if the type contains builtin.
     /// If `type` is a struct, recurse into members to check for the attribute.
     /// Otherwise, check `attributes` for the attribute.
-    bool ContainsBuiltin(builtin::BuiltinValue builtin,
-                         const type::Type* type,
-                         utils::VectorRef<const ast::Attribute*> attributes) const;
+    bool ContainsBuiltin(core::BuiltinValue builtin,
+                         const core::type::Type* type,
+                         VectorRef<const ast::Attribute*> attributes) const;
 
     /// Gathers all the texture resource bindings of the given type for the given
     /// entry point.
@@ -195,7 +194,7 @@ class Inspector {
     /// @returns vector of all of the bindings for depth textures.
     std::vector<ResourceBinding> GetTextureResourceBindings(
         const std::string& entry_point,
-        const tint::utils::TypeInfo* texture_type,
+        const tint::TypeInfo* texture_type,
         ResourceBinding::ResourceType resource_type);
 
     /// @param entry_point name of the entry point to get information about.
@@ -226,8 +225,8 @@ class Inspector {
     /// @param attributes attributes associated with the parameter or structure member
     /// @returns the interpolation type and sampling modes for the value
     std::tuple<InterpolationType, InterpolationSampling> CalculateInterpolationData(
-        const type::Type* type,
-        utils::VectorRef<const ast::Attribute*> attributes) const;
+        const core::type::Type* type,
+        VectorRef<const ast::Attribute*> attributes) const;
 
     /// For a N-uple of expressions, resolve to the appropriate global resources
     /// and call 'cb'.

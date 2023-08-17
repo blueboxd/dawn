@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/test_helper.h"
+// GEN_BUILD:CONDITION(tint_build_ir)
 
-namespace tint::writer::spirv {
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
+
+namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(SpirvWriterTest, Discard) {
     auto* buffer = b.Var("buffer", ty.ptr<storage, i32>());
@@ -26,14 +28,14 @@ TEST_F(SpirvWriterTest, Discard) {
     b.RootBlock()->Append(buffer);
 
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
-    front_facing->SetBuiltin(ir::FunctionParam::Builtin::kFrontFacing);
-    auto* ep = b.Function("ep", ty.f32(), ir::Function::PipelineStage::kFragment);
+    front_facing->SetBuiltin(core::ir::FunctionParam::Builtin::kFrontFacing);
+    auto* ep = b.Function("ep", ty.f32(), core::ir::Function::PipelineStage::kFragment);
     ep->SetParams({front_facing});
     ep->SetReturnLocation(0_u, {});
 
-    b.With(ep->Block(), [&] {
+    b.Append(ep->Block(), [&] {
         auto* ifelse = b.If(front_facing);
-        b.With(ifelse->True(), [&] {  //
+        b.Append(ifelse->True(), [&] {  //
             b.Discard();
             b.ExitIf(ifelse);
         });
@@ -61,15 +63,16 @@ TEST_F(SpirvWriterTest, Discard) {
                OpBranch %28
          %28 = OpLabel
          %31 = OpLoad %bool %continue_execution
-               OpSelectionMerge %32 None
-               OpBranchConditional %31 %33 %32
-         %33 = OpLabel
+         %32 = OpLogicalEqual %bool %31 %false
+               OpSelectionMerge %33 None
+               OpBranchConditional %32 %34 %33
+         %34 = OpLabel
                OpKill
-         %32 = OpLabel
+         %33 = OpLabel
                OpReturnValue %float_0_5
                OpFunctionEnd
 )");
 }
 
 }  // namespace
-}  // namespace tint::writer::spirv
+}  // namespace tint::spirv::writer

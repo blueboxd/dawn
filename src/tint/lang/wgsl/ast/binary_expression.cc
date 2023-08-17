@@ -14,34 +14,34 @@
 
 #include "src/tint/lang/wgsl/ast/binary_expression.h"
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::BinaryExpression);
 
 namespace tint::ast {
 
-BinaryExpression::BinaryExpression(ProgramID pid,
+BinaryExpression::BinaryExpression(GenerationID pid,
                                    NodeID nid,
                                    const Source& src,
-                                   BinaryOp o,
+                                   core::BinaryOp o,
                                    const Expression* l,
                                    const Expression* r)
     : Base(pid, nid, src), op(o), lhs(l), rhs(r) {
-    TINT_ASSERT(AST, lhs);
-    TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, lhs, program_id);
-    TINT_ASSERT(AST, rhs);
-    TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, rhs, program_id);
-    TINT_ASSERT(AST, op != BinaryOp::kNone);
+    TINT_ASSERT(lhs);
+    TINT_ASSERT_GENERATION_IDS_EQUAL_IF_VALID(lhs, generation_id);
+    TINT_ASSERT(rhs);
+    TINT_ASSERT_GENERATION_IDS_EQUAL_IF_VALID(rhs, generation_id);
 }
 
 BinaryExpression::~BinaryExpression() = default;
 
-const BinaryExpression* BinaryExpression::Clone(CloneContext* ctx) const {
+const BinaryExpression* BinaryExpression::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    auto* l = ctx->Clone(lhs);
-    auto* r = ctx->Clone(rhs);
-    return ctx->dst->create<BinaryExpression>(src, op, l, r);
+    auto src = ctx.Clone(source);
+    auto* l = ctx.Clone(lhs);
+    auto* r = ctx.Clone(rhs);
+    return ctx.dst->create<BinaryExpression>(src, op, l, r);
 }
 
 }  // namespace tint::ast

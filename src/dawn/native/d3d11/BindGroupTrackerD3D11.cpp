@@ -351,7 +351,13 @@ MaybeError BindGroupTracker::ApplyBindGroup(BindGroupIndex index) {
             case BindingInfoType::Texture: {
                 TextureView* view = ToBackend(group->GetBindingAsTextureView(bindingIndex));
                 ComPtr<ID3D11ShaderResourceView> srv;
-                DAWN_TRY_ASSIGN(srv, view->CreateD3D11ShaderResourceView());
+                // For sampling from stencil, we have to use an internal mirror 'R8Uint' texture.
+                if (view->GetAspects() == Aspect::Stencil) {
+                    DAWN_TRY_ASSIGN(
+                        srv, ToBackend(view->GetTexture())->GetStencilSRV(mCommandContext, view));
+                } else {
+                    DAWN_TRY_ASSIGN(srv, view->CreateD3D11ShaderResourceView());
+                }
                 if (bindingVisibility & wgpu::ShaderStage::Vertex) {
                     deviceContext1->VSSetShaderResources(bindingSlot, 1, srv.GetAddressOf());
                 }
@@ -386,7 +392,8 @@ MaybeError BindGroupTracker::ApplyBindGroup(BindGroupIndex index) {
 
 void BindGroupTracker::UnApplyBindGroup(BindGroupIndex index) {
     ID3D11DeviceContext1* deviceContext1 = mCommandContext->GetD3D11DeviceContext1();
-    BindGroupLayoutBase* groupLayout = mLastAppliedPipelineLayout->GetBindGroupLayout(index);
+    BindGroupLayoutInternalBase* groupLayout =
+        mLastAppliedPipelineLayout->GetBindGroupLayout(index);
     const auto& indices = ToBackend(mLastAppliedPipelineLayout)->GetBindingIndexInfo()[index];
 
     for (BindingIndex bindingIndex{0}; bindingIndex < groupLayout->GetBindingCount();

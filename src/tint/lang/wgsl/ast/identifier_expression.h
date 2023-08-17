@@ -25,14 +25,14 @@ class Identifier;
 namespace tint::ast {
 
 /// An identifier expression
-class IdentifierExpression final : public utils::Castable<IdentifierExpression, Expression> {
+class IdentifierExpression final : public Castable<IdentifierExpression, Expression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     /// @param identifier the identifier
-    IdentifierExpression(ProgramID pid,
+    IdentifierExpression(GenerationID pid,
                          NodeID nid,
                          const Source& src,
                          const Identifier* identifier);
@@ -44,7 +44,7 @@ class IdentifierExpression final : public utils::Castable<IdentifierExpression, 
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const IdentifierExpression* Clone(CloneContext* ctx) const override;
+    const IdentifierExpression* Clone(CloneContext& ctx) const override;
 
     /// The identifier for the expression
     Identifier const* const identifier;

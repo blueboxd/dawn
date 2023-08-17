@@ -17,11 +17,13 @@
 #include <algorithm>
 #include <utility>
 
-#include "src/tint/lang/core/builtin/builtin_value.h"
+#include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
 #include "src/tint/lang/wgsl/ast/bitcast_expression.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/variable.h"
 #include "src/tint/utils/containers/map.h"
 #include "src/tint/utils/macros/compiler.h"
@@ -34,8 +36,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::VertexPulling::Config);
 
 namespace tint::ast::transform {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace {
 
@@ -62,7 +64,7 @@ enum class VertexDataType {
 /// @param out the stream to write to
 /// @param format the VertexFormat to write
 /// @returns out so calls can be chained
-utils::StringStream& operator<<(utils::StringStream& out, VertexFormat format) {
+StringStream& operator<<(StringStream& out, VertexFormat format) {
     switch (format) {
         case VertexFormat::kUint8x2:
             return out << "uint8x2";
@@ -155,22 +157,22 @@ bool IsTypeCompatible(AttributeWGSLType wgslType, VertexFormatType vertexFormatT
     }
 }
 
-AttributeWGSLType WGSLTypeOf(const type::Type* ty) {
+AttributeWGSLType WGSLTypeOf(const core::type::Type* ty) {
     return Switch(
         ty,
-        [](const type::I32*) -> AttributeWGSLType {
+        [](const core::type::I32*) -> AttributeWGSLType {
             return {BaseWGSLType::kI32, 1};
         },
-        [](const type::U32*) -> AttributeWGSLType {
+        [](const core::type::U32*) -> AttributeWGSLType {
             return {BaseWGSLType::kU32, 1};
         },
-        [](const type::F32*) -> AttributeWGSLType {
+        [](const core::type::F32*) -> AttributeWGSLType {
             return {BaseWGSLType::kF32, 1};
         },
-        [](const type::F16*) -> AttributeWGSLType {
+        [](const core::type::F16*) -> AttributeWGSLType {
             return {BaseWGSLType::kF16, 1};
         },
-        [](const type::Vector* vec) -> AttributeWGSLType {
+        [](const core::type::Vector* vec) -> AttributeWGSLType {
             return {WGSLTypeOf(vec->type()).base_type, vec->Width()};
         },
         [](Default) -> AttributeWGSLType {
@@ -246,7 +248,7 @@ struct VertexPulling::State {
                     b.Diagnostics().add_error(
                         diag::System::Transform,
                         "VertexPulling found more than one vertex entry point");
-                    return Program(std::move(b));
+                    return resolver::Resolve(b);
                 }
                 func = fn;
             }
@@ -254,14 +256,14 @@ struct VertexPulling::State {
         if (func == nullptr) {
             b.Diagnostics().add_error(diag::System::Transform,
                                       "Vertex stage entry point not found");
-            return Program(std::move(b));
+            return resolver::Resolve(b);
         }
 
         AddVertexStorageBuffers();
         Process(func);
 
         ctx.Clone();
-        return Program(std::move(b));
+        return resolver::Resolve(b);
     }
 
   private:
@@ -278,7 +280,7 @@ struct VertexPulling::State {
         /// A builder that builds the expression that resolves to the (transformed) input location
         std::function<const Expression*()> expr;
         /// The store type of the location variable
-        const type::Type* type;
+        const core::type::Type* type;
     };
 
     /// The source program
@@ -288,19 +290,19 @@ struct VertexPulling::State {
     /// The target program builder
     ProgramBuilder b;
     /// The clone context
-    CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
     std::unordered_map<uint32_t, LocationInfo> location_info;
     std::function<const Expression*()> vertex_index_expr = nullptr;
     std::function<const Expression*()> instance_index_expr = nullptr;
     Symbol pulling_position_name;
     Symbol struct_buffer_name;
     std::unordered_map<uint32_t, Symbol> vertex_buffer_names;
-    utils::Vector<const Parameter*, 8> new_function_parameters;
+    tint::Vector<const Parameter*, 8> new_function_parameters;
 
     /// Generate the vertex buffer binding name
     /// @param index index to append to buffer name
     Symbol GetVertexBufferName(uint32_t index) {
-        return utils::GetOrCreate(vertex_buffer_names, index, [&] {
+        return tint::GetOrCreate(vertex_buffer_names, index, [&] {
             static const char kVertexBufferNamePrefix[] = "tint_pulling_vertex_buffer_";
             return b.Symbols().New(kVertexBufferNamePrefix + std::to_string(index));
         });
@@ -320,14 +322,13 @@ struct VertexPulling::State {
         // Creating the struct type
         static const char kStructName[] = "TintVertexData";
         auto* struct_type = b.Structure(b.Symbols().New(kStructName),
-                                        utils::Vector{
+                                        tint::Vector{
                                             b.Member(GetStructBufferName(), b.ty.array<u32>()),
                                         });
         for (uint32_t i = 0; i < cfg.vertex_state.size(); ++i) {
             // The decorated variable with struct type
-            b.GlobalVar(GetVertexBufferName(i), b.ty.Of(struct_type),
-                        builtin::AddressSpace::kStorage, builtin::Access::kRead, b.Binding(AInt(i)),
-                        b.Group(AInt(cfg.pulling_group)));
+            b.GlobalVar(GetVertexBufferName(i), b.ty.Of(struct_type), core::AddressSpace::kStorage,
+                        core::Access::kRead, b.Binding(AInt(i)), b.Group(AInt(cfg.pulling_group)));
         }
     }
 
@@ -336,7 +337,7 @@ struct VertexPulling::State {
         // Assign by looking at the vertex descriptor to find attributes with
         // matching location.
 
-        utils::Vector<const Statement*, 8> stmts;
+        tint::Vector<const Statement*, 8> stmts;
 
         for (uint32_t buffer_idx = 0; buffer_idx < cfg.vertex_state.size(); ++buffer_idx) {
             const VertexBufferLayoutDescriptor& buffer_layout = cfg.vertex_state[buffer_idx];
@@ -382,7 +383,7 @@ struct VertexPulling::State {
 
                 // Base types must match between the vertex stream and the WGSL variable
                 if (!IsTypeCompatible(var_dt, fmt_dt)) {
-                    utils::StringStream err;
+                    StringStream err;
                     err << "VertexAttributeDescriptor for location "
                         << std::to_string(attribute_desc.shader_location) << " has format "
                         << attribute_desc.format << " but shader expects "
@@ -426,7 +427,7 @@ struct VertexPulling::State {
                             value = b.MemberAccessor(fetch, "xyz");
                             break;
                         default:
-                            TINT_UNREACHABLE(Transform, b.Diagnostics()) << var_dt.width;
+                            TINT_UNREACHABLE() << var_dt.width;
                             return nullptr;
                     }
                 } else if (var_dt.width > fmt_dt.width) {
@@ -434,7 +435,7 @@ struct VertexPulling::State {
 
                     // The components of result vector variable, initialized with type-converted
                     // loaded data vector.
-                    utils::Vector<const Expression*, 8> values{fetch};
+                    tint::Vector<const Expression*, 8> values{fetch};
 
                     // Add padding elements. The result must be of vector types of signed/unsigned
                     // integer or float, so use the abstract integer or abstract float value to do
@@ -668,7 +669,7 @@ struct VertexPulling::State {
                                          b.Call("unpack2x16float", load_next_u32()));
         }
 
-        TINT_UNREACHABLE(Transform, b.Diagnostics()) << "format " << static_cast<int>(format);
+        TINT_UNREACHABLE() << "format " << static_cast<int>(format);
         return nullptr;
     }
 
@@ -721,8 +722,7 @@ struct VertexPulling::State {
             default:
                 break;
         }
-        TINT_UNREACHABLE(Transform, b.Diagnostics())
-            << "invalid format for LoadPrimitive" << static_cast<int>(format);
+        TINT_UNREACHABLE() << "invalid format for LoadPrimitive" << static_cast<int>(format);
         return nullptr;
     }
 
@@ -742,7 +742,7 @@ struct VertexPulling::State {
                               Type base_type,
                               VertexFormat base_format,
                               uint32_t count) {
-        utils::Vector<const Expression*, 8> expr_list;
+        tint::Vector<const Expression*, 8> expr_list;
         for (uint32_t i = 0; i < count; ++i) {
             // Offset read position by element_stride for each component
             uint32_t primitive_offset = offset + element_stride * i;
@@ -772,23 +772,23 @@ struct VertexPulling::State {
             info.type = sem->Type();
 
             if (TINT_UNLIKELY(!sem->Location().has_value())) {
-                TINT_ICE(Transform, b.Diagnostics()) << "Location missing value";
+                TINT_ICE() << "Location missing value";
                 return;
             }
             location_info[sem->Location().value()] = info;
         } else {
             auto* builtin_attr = GetAttribute<BuiltinAttribute>(param->attributes);
             if (TINT_UNLIKELY(!builtin_attr)) {
-                TINT_ICE(Transform, b.Diagnostics()) << "Invalid entry point parameter";
+                TINT_ICE() << "Invalid entry point parameter";
                 return;
             }
             auto builtin = src->Sem().Get(builtin_attr)->Value();
             // Check for existing vertex_index and instance_index builtins.
-            if (builtin == builtin::BuiltinValue::kVertexIndex) {
+            if (builtin == core::BuiltinValue::kVertexIndex) {
                 vertex_index_expr = [this, param] {
                     return b.Expr(ctx.Clone(param->name->symbol));
                 };
-            } else if (builtin == builtin::BuiltinValue::kInstanceIndex) {
+            } else if (builtin == core::BuiltinValue::kInstanceIndex) {
                 instance_index_expr = [this, param] {
                     return b.Expr(ctx.Clone(param->name->symbol));
                 };
@@ -812,7 +812,7 @@ struct VertexPulling::State {
 
         // Process the struct members.
         bool has_locations = false;
-        utils::Vector<const StructMember*, 8> members_to_clone;
+        tint::Vector<const StructMember*, 8> members_to_clone;
         for (auto* member : struct_ty->members) {
             auto member_sym = ctx.Clone(member->name->symbol);
             std::function<const Expression*()> member_expr = [this, param_sym, member_sym] {
@@ -827,20 +827,20 @@ struct VertexPulling::State {
                 auto* sem = src->Sem().Get(member);
                 info.type = sem->Type();
 
-                TINT_ASSERT(Transform, sem->Attributes().location.has_value());
+                TINT_ASSERT(sem->Attributes().location.has_value());
                 location_info[sem->Attributes().location.value()] = info;
                 has_locations = true;
             } else {
                 auto* builtin_attr = GetAttribute<BuiltinAttribute>(member->attributes);
                 if (TINT_UNLIKELY(!builtin_attr)) {
-                    TINT_ICE(Transform, b.Diagnostics()) << "Invalid entry point parameter";
+                    TINT_ICE() << "Invalid entry point parameter";
                     return;
                 }
                 auto builtin = src->Sem().Get(builtin_attr)->Value();
                 // Check for existing vertex_index and instance_index builtins.
-                if (builtin == builtin::BuiltinValue::kVertexIndex) {
+                if (builtin == core::BuiltinValue::kVertexIndex) {
                     vertex_index_expr = member_expr;
-                } else if (builtin == builtin::BuiltinValue::kInstanceIndex) {
+                } else if (builtin == core::BuiltinValue::kInstanceIndex) {
                     instance_index_expr = member_expr;
                 }
                 members_to_clone.Push(member);
@@ -859,7 +859,7 @@ struct VertexPulling::State {
 
         if (!members_to_clone.IsEmpty()) {
             // Create a new struct without the location attributes.
-            utils::Vector<const StructMember*, 8> new_members;
+            tint::Vector<const StructMember*, 8> new_members;
             for (auto* member : members_to_clone) {
                 auto member_name = ctx.Clone(member->name);
                 auto member_type = ctx.Clone(member->type);
@@ -906,7 +906,7 @@ struct VertexPulling::State {
                     auto name = b.Symbols().New("tint_pulling_vertex_index");
                     new_function_parameters.Push(
                         b.Param(name, b.ty.u32(),
-                                utils::Vector{b.Builtin(builtin::BuiltinValue::kVertexIndex)}));
+                                tint::Vector{b.Builtin(core::BuiltinValue::kVertexIndex)}));
                     vertex_index_expr = [this, name] { return b.Expr(name); };
                     break;
                 }
@@ -918,7 +918,7 @@ struct VertexPulling::State {
                     auto name = b.Symbols().New("tint_pulling_instance_index");
                     new_function_parameters.Push(
                         b.Param(name, b.ty.u32(),
-                                utils::Vector{b.Builtin(builtin::BuiltinValue::kInstanceIndex)}));
+                                tint::Vector{b.Builtin(core::BuiltinValue::kInstanceIndex)}));
                     instance_index_expr = [this, name] { return b.Expr(name); };
                     break;
                 }

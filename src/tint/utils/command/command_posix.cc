@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(is_linux || is_mac)
+
 #include "src/tint/utils/command/command.h"
 
 #include <sys/poll.h>
@@ -21,7 +23,7 @@
 #include <sstream>
 #include <vector>
 
-namespace tint::utils {
+namespace tint {
 
 namespace {
 
@@ -261,4 +263,4 @@ Command::Output Command::Exec(std::initializer_list<std::string> arguments) cons
     }
 }
 
-}  // namespace tint::utils
+}  // namespace tint

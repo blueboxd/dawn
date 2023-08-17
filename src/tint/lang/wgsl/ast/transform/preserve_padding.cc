@@ -18,7 +18,9 @@
 #include <utility>
 
 #include "src/tint/lang/core/type/reference.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/struct.h"
 #include "src/tint/utils/containers/map.h"
 #include "src/tint/utils/containers/vector.h"
@@ -28,8 +30,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::PreservePadding);
 
 namespace tint::ast::transform {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 PreservePadding::PreservePadding() = default;
 
@@ -55,8 +57,8 @@ struct PreservePadding::State {
                         // Ignore phony assignment.
                         return;
                     }
-                    if (ty->As<type::Reference>()->AddressSpace() !=
-                        builtin::AddressSpace::kStorage) {
+                    if (ty->As<core::type::Reference>()->AddressSpace() !=
+                        core::AddressSpace::kStorage) {
                         // We only care about assignments that write to variables in the storage
                         // address space, as nothing else is host-visible.
                         return;
@@ -69,7 +71,7 @@ struct PreservePadding::State {
                 [&](const Enable* enable) {
                     // Check if the full pointer parameters extension is already enabled.
                     if (enable->HasExtension(
-                            builtin::Extension::kChromiumExperimentalFullPtrParameters)) {
+                            core::Extension::kChromiumExperimentalFullPtrParameters)) {
                         ext_enabled = true;
                     }
                 });
@@ -88,7 +90,7 @@ struct PreservePadding::State {
         });
 
         ctx.Clone();
-        return Program(std::move(b));
+        return resolver::Resolve(b);
     }
 
     /// Create a statement that will perform the assignment `lhs = rhs`, creating and using helper
@@ -97,7 +99,7 @@ struct PreservePadding::State {
     /// @param lhs the lhs expression (in the destination program)
     /// @param rhs the rhs expression (in the destination program)
     /// @returns the statement that performs the assignment
-    const Statement* MakeAssignment(const type::Type* ty,
+    const Statement* MakeAssignment(const core::type::Type* ty,
                                     const Expression* lhs,
                                     const Expression* rhs) {
         if (!HasPadding(ty)) {
@@ -121,7 +123,7 @@ struct PreservePadding::State {
             EnableExtension();
             auto helper = helpers.GetOrCreate(ty, [&] {
                 auto helper_name = b.Symbols().New("assign_and_preserve_padding");
-                utils::Vector<const Parameter*, 2> params = {
+                tint::Vector<const Parameter*, 2> params = {
                     b.Param(kDestParamName,
                             b.ty.ptr<storage, read_write>(CreateASTTypeFor(ctx, ty))),
                     b.Param(kValueParamName, CreateASTTypeFor(ctx, ty)),
@@ -134,10 +136,10 @@ struct PreservePadding::State {
 
         return Switch(
             ty,  //
-            [&](const type::Array* arr) {
+            [&](const core::type::Array* arr) {
                 // Call a helper function that uses a loop to assigns each element separately.
                 return call_helper([&] {
-                    utils::Vector<const Statement*, 8> body;
+                    tint::Vector<const Statement*, 8> body;
                     auto* idx = b.Var("i", b.Expr(0_u));
                     body.Push(
                         b.For(b.Decl(idx), b.LessThan(idx, u32(arr->ConstantCount().value())),
@@ -148,10 +150,10 @@ struct PreservePadding::State {
                     return body;
                 });
             },
-            [&](const type::Matrix* mat) {
+            [&](const core::type::Matrix* mat) {
                 // Call a helper function that assigns each column separately.
                 return call_helper([&] {
-                    utils::Vector<const Statement*, 4> body;
+                    tint::Vector<const Statement*, 4> body;
                     for (uint32_t i = 0; i < mat->columns(); i++) {
                         body.Push(MakeAssignment(mat->ColumnType(),
                                                  b.IndexAccessor(b.Deref(kDestParamName), u32(i)),
@@ -160,10 +162,10 @@ struct PreservePadding::State {
                     return body;
                 });
             },
-            [&](const type::Struct* str) {
+            [&](const core::type::Struct* str) {
                 // Call a helper function that assigns each member separately.
                 return call_helper([&] {
-                    utils::Vector<const Statement*, 8> body;
+                    tint::Vector<const Statement*, 8> body;
                     for (auto member : str->Members()) {
                         auto name = member->Name().Name();
                         body.Push(MakeAssignment(member->Type(),
@@ -174,7 +176,7 @@ struct PreservePadding::State {
                 });
             },
             [&](Default) {
-                TINT_ICE(Transform, b.Diagnostics()) << "unhandled type with padding";
+                TINT_ICE() << "unhandled type with padding";
                 return nullptr;
             });
     }
@@ -182,24 +184,24 @@ struct PreservePadding::State {
     /// Checks if a type contains padding bytes.
     /// @param ty the type to check
     /// @returns true if `ty` (or any of its contained types) have padding bytes
-    bool HasPadding(const type::Type* ty) {
+    bool HasPadding(const core::type::Type* ty) {
         return Switch(
             ty,  //
-            [&](const type::Array* arr) {
+            [&](const core::type::Array* arr) {
                 auto* elem_ty = arr->ElemType();
                 if (elem_ty->Size() % elem_ty->Align() > 0) {
                     return true;
                 }
                 return HasPadding(elem_ty);
             },
-            [&](const type::Matrix* mat) {
+            [&](const core::type::Matrix* mat) {
                 auto* col_ty = mat->ColumnType();
                 if (mat->ColumnStride() > col_ty->Size()) {
                     return true;
                 }
                 return HasPadding(col_ty);
             },
-            [&](const type::Struct* str) {
+            [&](const core::type::Struct* str) {
                 uint32_t current_offset = 0;
                 for (auto* member : str->Members()) {
                     if (member->Offset() > current_offset) {
@@ -218,7 +220,7 @@ struct PreservePadding::State {
     /// Enable the full pointer parameters extension, if we have not already done so.
     void EnableExtension() {
         if (!ext_enabled) {
-            b.Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
+            b.Enable(core::Extension::kChromiumExperimentalFullPtrParameters);
             ext_enabled = true;
         }
     }
@@ -227,7 +229,7 @@ struct PreservePadding::State {
     /// The program builder
     ProgramBuilder b;
     /// The clone context
-    CloneContext ctx;
+    program::CloneContext ctx;
     /// Alias to the semantic info in ctx.src
     const sem::Info& sem = ctx.src->Sem();
     /// Alias to the symbols in ctx.src
@@ -235,7 +237,7 @@ struct PreservePadding::State {
     /// Flag to track whether we have already enabled the full pointer parameters extension.
     bool ext_enabled = false;
     /// Map of semantic types to their assignment helper functions.
-    utils::Hashmap<const type::Type*, Symbol, 8> helpers;
+    Hashmap<const core::type::Type*, Symbol, 8> helpers;
 };
 
 Transform::ApplyResult PreservePadding::Apply(const Program* program,

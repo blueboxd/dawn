@@ -14,17 +14,18 @@
 
 #include <string>
 
-#include "src/tint/clone_context.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 #include "src/tint/lang/wgsl/ast/transform/transform.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 
 #include "gtest/gtest.h"
 
 namespace tint::ast::transform {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 // Inherit from Transform so we have access to protected methods
 struct CreateASTTypeForTest : public testing::Test, public Transform {
@@ -32,11 +33,11 @@ struct CreateASTTypeForTest : public testing::Test, public Transform {
         return SkipTransform;
     }
 
-    Type create(std::function<type::Type*(ProgramBuilder&)> create_sem_type) {
+    Type create(std::function<core::type::Type*(ProgramBuilder&)> create_sem_type) {
         ProgramBuilder sem_type_builder;
         auto* sem_type = create_sem_type(sem_type_builder);
-        Program program(std::move(sem_type_builder));
-        CloneContext ctx(&ast_type_builder, &program, false);
+        Program program = resolver::Resolve(sem_type_builder);
+        program::CloneContext ctx(&ast_type_builder, &program, false);
         return CreateASTTypeFor(ctx, sem_type);
     }
 
@@ -46,33 +47,35 @@ struct CreateASTTypeForTest : public testing::Test, public Transform {
 TEST_F(CreateASTTypeForTest, Basic) {
     auto check = [&](Type ty, const char* expect) { CheckIdentifier(ty->identifier, expect); };
 
-    check(create([](ProgramBuilder& b) { return b.create<type::I32>(); }), "i32");
-    check(create([](ProgramBuilder& b) { return b.create<type::U32>(); }), "u32");
-    check(create([](ProgramBuilder& b) { return b.create<type::F32>(); }), "f32");
-    check(create([](ProgramBuilder& b) { return b.create<type::Bool>(); }), "bool");
-    EXPECT_EQ(create([](ProgramBuilder& b) { return b.create<type::Void>(); }), nullptr);
+    check(create([](ProgramBuilder& b) { return b.create<core::type::I32>(); }), "i32");
+    check(create([](ProgramBuilder& b) { return b.create<core::type::U32>(); }), "u32");
+    check(create([](ProgramBuilder& b) { return b.create<core::type::F32>(); }), "f32");
+    check(create([](ProgramBuilder& b) { return b.create<core::type::Bool>(); }), "bool");
+    EXPECT_EQ(create([](ProgramBuilder& b) { return b.create<core::type::Void>(); }), nullptr);
 }
 
 TEST_F(CreateASTTypeForTest, Matrix) {
     auto mat = create([](ProgramBuilder& b) {
-        auto* column_type = b.create<type::Vector>(b.create<type::F32>(), 2u);
-        return b.create<type::Matrix>(column_type, 3u);
+        auto* column_type = b.create<core::type::Vector>(b.create<core::type::F32>(), 2u);
+        return b.create<core::type::Matrix>(column_type, 3u);
     });
 
     CheckIdentifier(mat, Template("mat3x2", "f32"));
 }
 
 TEST_F(CreateASTTypeForTest, Vector) {
-    auto vec =
-        create([](ProgramBuilder& b) { return b.create<type::Vector>(b.create<type::F32>(), 2u); });
+    auto vec = create([](ProgramBuilder& b) {
+        return b.create<core::type::Vector>(b.create<core::type::F32>(), 2u);
+    });
 
     CheckIdentifier(vec, Template("vec2", "f32"));
 }
 
 TEST_F(CreateASTTypeForTest, ArrayImplicitStride) {
     auto arr = create([](ProgramBuilder& b) {
-        return b.create<type::Array>(b.create<type::F32>(), b.create<type::ConstantArrayCount>(2u),
-                                     4u, 4u, 32u, 32u);
+        return b.create<core::type::Array>(b.create<core::type::F32>(),
+                                           b.create<core::type::ConstantArrayCount>(2u), 4u, 4u,
+                                           32u, 32u);
     });
 
     CheckIdentifier(arr, Template("array", "f32", 2_u));
@@ -83,8 +86,9 @@ TEST_F(CreateASTTypeForTest, ArrayImplicitStride) {
 
 TEST_F(CreateASTTypeForTest, ArrayNonImplicitStride) {
     auto arr = create([](ProgramBuilder& b) {
-        return b.create<type::Array>(b.create<type::F32>(), b.create<type::ConstantArrayCount>(2u),
-                                     4u, 4u, 64u, 32u);
+        return b.create<core::type::Array>(b.create<core::type::F32>(),
+                                           b.create<core::type::ConstantArrayCount>(2u), 4u, 4u,
+                                           64u, 32u);
     });
     CheckIdentifier(arr, Template("array", "f32", 2_u));
     auto* tmpl_attr = arr->identifier->As<TemplatedIdentifier>();
@@ -106,11 +110,11 @@ TEST_F(CreateASTTypeForTest, AliasedArrayWithComplexOverrideLength) {
     b.Override("O", b.Expr(123_a));
     auto* alias = b.Alias("A", b.ty.array(b.ty.i32(), arr_len));
 
-    Program program(std::move(b));
+    Program program(resolver::Resolve(b));
 
     auto* arr_ty = program.Sem().Get(alias);
 
-    CloneContext ctx(&ast_type_builder, &program, false);
+    program::CloneContext ctx(&ast_type_builder, &program, false);
     auto ast_ty = CreateASTTypeFor(ctx, arr_ty);
     CheckIdentifier(ast_ty, "A");
 }
@@ -118,7 +122,7 @@ TEST_F(CreateASTTypeForTest, AliasedArrayWithComplexOverrideLength) {
 TEST_F(CreateASTTypeForTest, Struct) {
     auto str = create([](ProgramBuilder& b) {
         auto* decl = b.Structure("S", {});
-        return b.create<sem::Struct>(decl, decl->name->symbol, utils::Empty, 4u /* align */,
+        return b.create<sem::Struct>(decl, decl->name->symbol, tint::Empty, 4u /* align */,
                                      4u /* size */, 4u /* size_no_padding */);
     });
 
@@ -127,8 +131,8 @@ TEST_F(CreateASTTypeForTest, Struct) {
 
 TEST_F(CreateASTTypeForTest, PrivatePointer) {
     auto ptr = create([](ProgramBuilder& b) {
-        return b.create<type::Pointer>(builtin::AddressSpace::kPrivate, b.create<type::I32>(),
-                                       builtin::Access::kReadWrite);
+        return b.create<core::type::Pointer>(core::AddressSpace::kPrivate,
+                                             b.create<core::type::I32>(), core::Access::kReadWrite);
     });
 
     CheckIdentifier(ptr, Template("ptr", "private", "i32"));
@@ -136,8 +140,8 @@ TEST_F(CreateASTTypeForTest, PrivatePointer) {
 
 TEST_F(CreateASTTypeForTest, StorageReadWritePointer) {
     auto ptr = create([](ProgramBuilder& b) {
-        return b.create<type::Pointer>(builtin::AddressSpace::kStorage, b.create<type::I32>(),
-                                       builtin::Access::kReadWrite);
+        return b.create<core::type::Pointer>(core::AddressSpace::kStorage,
+                                             b.create<core::type::I32>(), core::Access::kReadWrite);
     });
 
     CheckIdentifier(ptr, Template("ptr", "storage", "i32", "read_write"));

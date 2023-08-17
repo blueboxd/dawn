@@ -19,11 +19,11 @@
 
 #include "src/tint/lang/core/type/abstract_numeric.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// An abstract-float type.
 /// @see https://www.w3.org/TR/WGSL/#abstractFloat
-class AbstractFloat final : public utils::Castable<AbstractFloat, AbstractNumeric> {
+class AbstractFloat final : public Castable<AbstractFloat, AbstractNumeric> {
   public:
     /// Constructor
     AbstractFloat();
@@ -39,6 +39,6 @@ class AbstractFloat final : public utils::Castable<AbstractFloat, AbstractNumeri
     AbstractFloat* Clone(CloneContext& ctx) const override;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_ABSTRACT_FLOAT_H_

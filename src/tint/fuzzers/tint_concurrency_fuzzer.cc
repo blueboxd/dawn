@@ -20,21 +20,20 @@
 #include <thread>
 
 #include "src/tint/fuzzers/apply_substitute_overrides.h"
-#include "src/tint/lang/glsl/ast_writer/generator.h"
-#include "src/tint/lang/hlsl/ast_writer/generator.h"
-#include "src/tint/lang/msl/ast_writer/generator.h"
-#include "src/tint/lang/spirv/ast_writer/generator.h"
-#include "src/tint/lang/wgsl/ast_writer/generator.h"
+#include "src/tint/lang/glsl/writer/writer.h"
+#include "src/tint/lang/hlsl/writer/writer.h"
+#include "src/tint/lang/msl/writer/writer.h"
+#include "src/tint/lang/spirv/writer/writer.h"
 #include "src/tint/lang/wgsl/helpers/flatten_bindings.h"
 #include "src/tint/lang/wgsl/inspector/inspector.h"
-#include "src/tint/lang/wgsl/reader/parser.h"
+#include "src/tint/lang/wgsl/reader/reader.h"
+#include "src/tint/lang/wgsl/writer/writer.h"
 #include "src/tint/utils/math/hash.h"
 
 static constexpr size_t kNumThreads = 8;
 
-[[noreturn]] void TintInternalCompilerErrorReporter(const tint::diag::List& diagnostics) {
-    auto printer = tint::diag::Printer::create(stderr, true);
-    tint::diag::Formatter{}.format(diagnostics, printer.get());
+[[noreturn]] void TintInternalCompilerErrorReporter(const tint::InternalCompilerError& err) {
+    std::cerr << err.Error() << std::endl;
     __builtin_trap();
 }
 
@@ -43,7 +42,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
     std::string str(reinterpret_cast<const char*>(data), size);
     auto file = std::make_unique<tint::Source::File>("test.wgsl", str);
-    auto program = tint::reader::wgsl::Parse(file.get());
+    auto program = tint::wgsl::reader::Parse(file.get());
     if (!program.IsValid()) {
         return 0;
     }
@@ -82,28 +81,28 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
             switch (static_cast<Writer>(thread_idx % static_cast<size_t>(Writer::kCount))) {
 #if TINT_BUILD_WGSL_WRITER
                 case Writer::kWGSL: {
-                    tint::writer::wgsl::Generate(&program, {});
+                    (void)tint::wgsl::writer::Generate(&program, {});
                     break;
                 }
 #endif  // TINT_BUILD_WGSL_WRITER
 
 #if TINT_BUILD_SPV_WRITER
                 case Writer::kSPIRV: {
-                    tint::writer::spirv::Generate(&program, {});
+                    (void)tint::spirv::writer::Generate(&program, {});
                     break;
                 }
 #endif  // TINT_BUILD_SPV_WRITER
 
 #if TINT_BUILD_HLSL_WRITER
                 case Writer::kHLSL: {
-                    tint::writer::hlsl::Generate(&program, {});
+                    (void)tint::hlsl::writer::Generate(&program, {});
                     break;
                 }
 #endif  // TINT_BUILD_HLSL_WRITER
 
 #if TINT_BUILD_GLSL_WRITER
                 case Writer::kGLSL: {
-                    tint::writer::glsl::Generate(&program, {}, entry_point);
+                    (void)tint::glsl::writer::Generate(&program, {}, entry_point);
                     break;
                 }
 #endif  // TINT_BUILD_GLSL_WRITER
@@ -112,7 +111,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
                 case Writer::kMSL: {
                     // Remap resource numbers to a flat namespace.
                     if (auto flattened = tint::writer::FlattenBindings(&program)) {
-                        tint::writer::msl::Generate(&flattened.value(), {});
+                        (void)tint::msl::writer::Generate(&flattened.value(), {});
                     }
                     break;
                 }

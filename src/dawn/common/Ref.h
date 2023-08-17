@@ -16,7 +16,6 @@
 #define SRC_DAWN_COMMON_REF_H_
 
 #include <mutex>
-#include <type_traits>
 
 #include "dawn/common/RefBase.h"
 #include "dawn/common/RefCounted.h"
@@ -40,16 +39,27 @@ struct RefCountedTraits {
 }  // namespace detail
 
 template <typename T>
+struct UnwrapRef {
+    using type = T;
+};
+template <typename T>
+struct UnwrapRef<Ref<T>> {
+    using type = T;
+};
+
+template <typename T>
+struct IsRef {
+    static constexpr bool value = false;
+};
+template <typename T>
+struct IsRef<Ref<T>> {
+    static constexpr bool value = true;
+};
+
+template <typename T>
 class Ref : public RefBase<T*, detail::RefCountedTraits<T>> {
   public:
     using RefBase<T*, detail::RefCountedTraits<T>>::RefBase;
-
-    template <
-        typename U = T,
-        typename = typename std::enable_if<std::is_base_of_v<detail::WeakRefSupportBase, U>>::type>
-    WeakRef<T> GetWeakRef() {
-        return WeakRef<T>(this->Get());
-    }
 };
 
 }  // namespace dawn

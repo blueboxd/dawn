@@ -20,22 +20,25 @@
 #include <vector>
 
 #include "src/tint/lang/wgsl/ast/disable_validation_attribute.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/call.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/module.h"
 #include "src/tint/lang/wgsl/sem/statement.h"
+#include "src/tint/lang/wgsl/sem/struct.h"
 #include "src/tint/lang/wgsl/sem/variable.h"
 #include "src/tint/utils/text/string.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::ModuleScopeVarToEntryPointParam);
 
-using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::core::fluent_types;  // NOLINT
 
 namespace tint::ast::transform {
 namespace {
 
-using StructMemberList = utils::Vector<const StructMember*, 8>;
+using StructMemberList = tint::Vector<const StructMember*, 8>;
 
 // The name of the struct member for arrays that are wrapped in structures.
 const char* kWrappedArrayMemberName = "arr";
@@ -50,13 +53,13 @@ bool ShouldRun(const Program* program) {
 }
 
 // Returns `true` if `type` is or contains a matrix type.
-bool ContainsMatrix(const type::Type* type) {
+bool ContainsMatrix(const core::type::Type* type) {
     type = type->UnwrapRef();
-    if (type->Is<type::Matrix>()) {
+    if (type->Is<core::type::Matrix>()) {
         return true;
-    } else if (auto* ary = type->As<type::Array>()) {
+    } else if (auto* ary = type->As<core::type::Array>()) {
         return ContainsMatrix(ary->ElemType());
-    } else if (auto* str = type->As<type::Struct>()) {
+    } else if (auto* str = type->As<core::type::Struct>()) {
         for (auto* member : str->Members()) {
             if (ContainsMatrix(member->Type())) {
                 return true;
@@ -70,17 +73,17 @@ bool ContainsMatrix(const type::Type* type) {
 /// PIMPL state for the transform
 struct ModuleScopeVarToEntryPointParam::State {
     /// The clone context.
-    CloneContext& ctx;
+    program::CloneContext& ctx;
 
     /// Constructor
     /// @param context the clone context
-    explicit State(CloneContext& context) : ctx(context) {}
+    explicit State(program::CloneContext& context) : ctx(context) {}
 
     /// Clone any struct types that are contained in `ty` (including `ty` itself),
     /// and add it to the global declarations now, so that they precede new global
     /// declarations that need to reference them.
     /// @param ty the type to clone
-    void CloneStructTypes(const type::Type* ty) {
+    void CloneStructTypes(const core::type::Type* ty) {
         if (auto* str = ty->As<sem::Struct>()) {
             if (!cloned_structs_.emplace(str).second) {
                 // The struct has already been cloned.
@@ -97,7 +100,7 @@ struct ModuleScopeVarToEntryPointParam::State {
             auto* ast_str = str->Declaration();
             ctx.dst->AST().AddTypeDecl(ctx.Clone(ast_str));
             ctx.Remove(ctx.src->AST().GlobalDeclarations(), ast_str);
-        } else if (auto* arr = ty->As<type::Array>()) {
+        } else if (auto* arr = ty->As<core::type::Array>()) {
             CloneStructTypes(arr->ElemType());
         }
     }
@@ -124,9 +127,9 @@ struct ModuleScopeVarToEntryPointParam::State {
         // Helper to create an AST node for the store type of the variable.
         auto store_type = [&] { return CreateASTTypeFor(ctx, ty); };
 
-        builtin::AddressSpace sc = var->AddressSpace();
+        core::AddressSpace sc = var->AddressSpace();
         switch (sc) {
-            case builtin::AddressSpace::kHandle: {
+            case core::AddressSpace::kHandle: {
                 // For a texture or sampler variable, redeclare it as an entry point parameter.
                 // Disable entry point parameter validation.
                 auto* disable_validation =
@@ -138,8 +141,8 @@ struct ModuleScopeVarToEntryPointParam::State {
 
                 break;
             }
-            case builtin::AddressSpace::kStorage:
-            case builtin::AddressSpace::kUniform: {
+            case core::AddressSpace::kStorage:
+            case core::AddressSpace::kUniform: {
                 // Variables into the Storage and Uniform address spaces are redeclared as entry
                 // point parameters with a pointer type.
                 auto attributes = ctx.Clone(var->Declaration()->attributes);
@@ -147,21 +150,21 @@ struct ModuleScopeVarToEntryPointParam::State {
                 attributes.Push(ctx.dst->Disable(DisabledValidation::kIgnoreAddressSpace));
 
                 auto param_type = store_type();
-                if (auto* arr = ty->As<type::Array>();
-                    arr && arr->Count()->Is<type::RuntimeArrayCount>()) {
+                if (auto* arr = ty->As<core::type::Array>();
+                    arr && arr->Count()->Is<core::type::RuntimeArrayCount>()) {
                     // Wrap runtime-sized arrays in structures, so that we can declare pointers to
                     // them. Ideally we'd just emit the array itself as a pointer, but this is not
                     // representable in Tint's AST.
                     CloneStructTypes(ty);
                     auto* wrapper = ctx.dst->Structure(
-                        ctx.dst->Sym(), utils::Vector{
+                        ctx.dst->Sym(), tint::Vector{
                                             ctx.dst->Member(kWrappedArrayMemberName, param_type),
                                         });
                     param_type = ctx.dst->ty.Of(wrapper);
                     is_wrapped = true;
                 }
 
-                param_type = sc == builtin::AddressSpace::kStorage
+                param_type = sc == core::AddressSpace::kStorage
                                  ? ctx.dst->ty.ptr(sc, param_type, var->Access())
                                  : ctx.dst->ty.ptr(sc, param_type);
                 auto* param = ctx.dst->Param(new_var_symbol, param_type, attributes);
@@ -170,7 +173,7 @@ struct ModuleScopeVarToEntryPointParam::State {
 
                 break;
             }
-            case builtin::AddressSpace::kWorkgroup: {
+            case core::AddressSpace::kWorkgroup: {
                 if (ContainsMatrix(var->Type())) {
                     // Due to a bug in the MSL compiler, we use a threadgroup memory argument for
                     // any workgroup allocation that contains a matrix. See crbug.com/tint/938.
@@ -193,20 +196,19 @@ struct ModuleScopeVarToEntryPointParam::State {
                         ctx.dst->Disable(DisabledValidation::kIgnoreAddressSpace);
                     auto* initializer = ctx.Clone(var->Declaration()->initializer);
                     auto* local_var = ctx.dst->Var(new_var_symbol, store_type(), sc, initializer,
-                                                   utils::Vector{disable_validation});
+                                                   tint::Vector{disable_validation});
                     ctx.InsertFront(func->body->statements, ctx.dst->Decl(local_var));
                 }
                 break;
             }
-            case builtin::AddressSpace::kPushConstant: {
+            case core::AddressSpace::kPushConstant: {
                 ctx.dst->Diagnostics().add_error(
                     diag::System::Transform,
-                    "unhandled module-scope address space (" + utils::ToString(sc) + ")");
+                    "unhandled module-scope address space (" + tint::ToString(sc) + ")");
                 break;
             }
             default: {
-                TINT_ICE(Transform, ctx.dst->Diagnostics())
-                    << "unhandled module-scope address space (" << sc << ")";
+                TINT_ICE() << "unhandled module-scope address space (" << sc << ")";
                 break;
             }
         }
@@ -226,30 +228,29 @@ struct ModuleScopeVarToEntryPointParam::State {
         auto param_type = CreateASTTypeFor(ctx, ty);
         auto sc = var->AddressSpace();
         switch (sc) {
-            case builtin::AddressSpace::kPrivate:
+            case core::AddressSpace::kPrivate:
                 // Private variables are passed all together in a struct.
                 return;
-            case builtin::AddressSpace::kStorage:
-            case builtin::AddressSpace::kUniform:
-            case builtin::AddressSpace::kHandle:
-            case builtin::AddressSpace::kWorkgroup:
+            case core::AddressSpace::kStorage:
+            case core::AddressSpace::kUniform:
+            case core::AddressSpace::kHandle:
+            case core::AddressSpace::kWorkgroup:
                 break;
-            case builtin::AddressSpace::kPushConstant: {
+            case core::AddressSpace::kPushConstant: {
                 ctx.dst->Diagnostics().add_error(
                     diag::System::Transform,
-                    "unhandled module-scope address space (" + utils::ToString(sc) + ")");
+                    "unhandled module-scope address space (" + tint::ToString(sc) + ")");
                 break;
             }
             default: {
-                TINT_ICE(Transform, ctx.dst->Diagnostics())
-                    << "unhandled module-scope address space (" << sc << ")";
+                TINT_ICE() << "unhandled module-scope address space (" << sc << ")";
             }
         }
 
         // Use a pointer for non-handle types.
-        utils::Vector<const Attribute*, 2> attributes;
+        tint::Vector<const Attribute*, 2> attributes;
         if (!ty->is_handle()) {
-            param_type = sc == builtin::AddressSpace::kStorage
+            param_type = sc == core::AddressSpace::kStorage
                              ? ctx.dst->ty.ptr(sc, param_type, var->Access())
                              : ctx.dst->ty.ptr(sc, param_type);
             is_pointer = true;
@@ -301,21 +302,21 @@ struct ModuleScopeVarToEntryPointParam::State {
     /// Process the module.
     void Process() {
         // Predetermine the list of function calls that need to be replaced.
-        using CallList = utils::Vector<const CallExpression*, 8>;
+        using CallList = tint::Vector<const CallExpression*, 8>;
         std::unordered_map<const Function*, CallList> calls_to_replace;
 
-        utils::Vector<const Function*, 8> functions_to_process;
+        tint::Vector<const Function*, 8> functions_to_process;
 
         // Collect private variables into a single structure.
         StructMemberList private_struct_members;
-        utils::Vector<std::function<const AssignmentStatement*()>, 4> private_initializers;
+        tint::Vector<std::function<const AssignmentStatement*()>, 4> private_initializers;
         std::unordered_set<const Function*> uses_privates;
 
         // Build a list of functions that transitively reference any module-scope variables.
         for (auto* decl : ctx.src->Sem().Module()->DependencyOrderedDeclarations()) {
             if (auto* var = decl->As<Var>()) {
                 auto* sem_var = ctx.src->Sem().Get(var);
-                if (sem_var->AddressSpace() == builtin::AddressSpace::kPrivate) {
+                if (sem_var->AddressSpace() == core::AddressSpace::kPrivate) {
                     // Create a member in the private variable struct.
                     auto* ty = sem_var->Type()->UnwrapRef();
                     auto name = ctx.Clone(var->name->symbol);
@@ -343,8 +344,8 @@ struct ModuleScopeVarToEntryPointParam::State {
 
             bool needs_processing = false;
             for (auto* var : func_sem->TransitivelyReferencedGlobals()) {
-                if (var->AddressSpace() != builtin::AddressSpace::kUndefined) {
-                    if (var->AddressSpace() == builtin::AddressSpace::kPrivate) {
+                if (var->AddressSpace() != core::AddressSpace::kUndefined) {
+                    if (var->AddressSpace() == core::AddressSpace::kPrivate) {
                         uses_privates.insert(func_ast);
                     }
                     needs_processing = true;
@@ -366,7 +367,7 @@ struct ModuleScopeVarToEntryPointParam::State {
             ctx.dst->Structure(PrivateStructName(), std::move(private_struct_members));
             // Passing a pointer to a private variable will now involve passing a pointer to the
             // member of a structure, so enable the extension that allows this.
-            ctx.dst->Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
+            ctx.dst->Enable(core::Extension::kChromiumExperimentalFullPtrParameters);
         }
 
         // Build a list of `&ident` expressions. We'll use this later to avoid generating
@@ -376,7 +377,7 @@ struct ModuleScopeVarToEntryPointParam::State {
         // do this on the fly instead.
         for (auto* node : ctx.src->ASTNodes().Objects()) {
             auto* address_of = node->As<UnaryOpExpression>();
-            if (!address_of || address_of->op != UnaryOp::kAddressOf) {
+            if (!address_of || address_of->op != core::UnaryOp::kAddressOf) {
                 continue;
             }
             if (auto* ident = address_of->expr->As<IdentifierExpression>()) {
@@ -415,8 +416,8 @@ struct ModuleScopeVarToEntryPointParam::State {
                     // Create a local declaration for the private variable struct.
                     auto* var =
                         ctx.dst->Var(PrivateStructVariableName(), ctx.dst->ty(PrivateStructName()),
-                                     builtin::AddressSpace::kPrivate,
-                                     utils::Vector{
+                                     core::AddressSpace::kPrivate,
+                                     tint::Vector{
                                          ctx.dst->Disable(DisabledValidation::kIgnoreAddressSpace),
                                      });
                     ctx.InsertFront(func_ast->body->statements, ctx.dst->Decl(var));
@@ -435,10 +436,10 @@ struct ModuleScopeVarToEntryPointParam::State {
 
             // Process and redeclare all variables referenced by the function.
             for (auto* var : func_sem->TransitivelyReferencedGlobals()) {
-                if (var->AddressSpace() == builtin::AddressSpace::kUndefined) {
+                if (var->AddressSpace() == core::AddressSpace::kUndefined) {
                     continue;
                 }
-                if (var->AddressSpace() == builtin::AddressSpace::kPrivate) {
+                if (var->AddressSpace() == core::AddressSpace::kPrivate) {
                     // Private variable are collected into a single struct that is passed by
                     // pointer (handled above), so we just need to replace the uses here.
                     ReplaceUsesInFunction(func_ast, var, PrivateStructVariableName(),
@@ -463,7 +464,7 @@ struct ModuleScopeVarToEntryPointParam::State {
                                                 is_wrapped);
                 } else {
                     ProcessVariableInUserFunction(func_ast, var, new_var_symbol, is_pointer);
-                    if (var->AddressSpace() == builtin::AddressSpace::kWorkgroup) {
+                    if (var->AddressSpace() == core::AddressSpace::kWorkgroup) {
                         needs_pointer_aliasing = true;
                     }
                 }
@@ -491,7 +492,7 @@ struct ModuleScopeVarToEntryPointParam::State {
                 auto param_type = ctx.dst->ty.ptr(workgroup, ctx.dst->ty.Of(str));
                 auto* param =
                     ctx.dst->Param(workgroup_param(), param_type,
-                                   utils::Vector{
+                                   tint::Vector{
                                        ctx.dst->Disable(DisabledValidation::kEntryPointParameter),
                                        ctx.dst->Disable(DisabledValidation::kIgnoreAddressSpace),
                                    });
@@ -516,7 +517,7 @@ struct ModuleScopeVarToEntryPointParam::State {
                 // For entry points, pass non-handle types as pointers.
                 for (auto* target_var : target_sem->TransitivelyReferencedGlobals()) {
                     auto sc = target_var->AddressSpace();
-                    if (sc == builtin::AddressSpace::kUndefined) {
+                    if (sc == core::AddressSpace::kUndefined) {
                         continue;
                     }
 
@@ -547,7 +548,7 @@ struct ModuleScopeVarToEntryPointParam::State {
         // Now remove all module-scope variables with these address spaces.
         for (auto* var_ast : ctx.src->AST().GlobalVariables()) {
             auto* var_sem = ctx.src->Sem().Get(var_ast);
-            if (var_sem->AddressSpace() != builtin::AddressSpace::kUndefined) {
+            if (var_sem->AddressSpace() != core::AddressSpace::kUndefined) {
                 ctx.Remove(ctx.src->AST().GlobalDeclarations(), var_ast);
             }
         }
@@ -595,12 +596,12 @@ Transform::ApplyResult ModuleScopeVarToEntryPointParam::Apply(const Program* src
     }
 
     ProgramBuilder b;
-    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
     State state{ctx};
     state.Process();
 
     ctx.Clone();
-    return Program(std::move(b));
+    return resolver::Resolve(b);
 }
 
 }  // namespace tint::ast::transform

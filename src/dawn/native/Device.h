@@ -27,6 +27,7 @@
 #include "dawn/native/Commands.h"
 #include "dawn/native/ComputePipeline.h"
 #include "dawn/native/Error.h"
+#include "dawn/native/ExecutionQueue.h"
 #include "dawn/native/Features.h"
 #include "dawn/native/Format.h"
 #include "dawn/native/Forward.h"
@@ -53,6 +54,7 @@ class BlobCache;
 class CallbackTaskManager;
 class DynamicUploader;
 class ErrorScopeStack;
+class SharedTextureMemory;
 class OwnedCompilationMessages;
 struct CallbackTask;
 struct InternalPipelineStore;
@@ -60,7 +62,7 @@ struct ShaderModuleParseResult;
 
 using WGSLExtensionSet = std::unordered_set<std::string>;
 
-class DeviceBase : public RefCountedWithExternalCount {
+class DeviceBase : public RefCountedWithExternalCount, public ExecutionQueueBase {
   public:
     DeviceBase(AdapterBase* adapter,
                const DeviceDescriptor* descriptor,
@@ -174,10 +176,6 @@ class DeviceBase : public RefCountedWithExternalCount {
         CommandEncoder* encoder,
         const CommandBufferDescriptor* descriptor) = 0;
 
-    ExecutionSerial GetCompletedCommandSerial() const;
-    ExecutionSerial GetLastSubmittedCommandSerial() const;
-    ExecutionSerial GetPendingCommandSerial() const;
-
     // Many Dawn objects are completely immutable once created which means that if two
     // creations are given the same arguments, they can return the same object. Reusing
     // objects will help make comparisons between objects by a single pointer comparison.
@@ -195,12 +193,9 @@ class DeviceBase : public RefCountedWithExternalCount {
     ResultOrError<Ref<BindGroupLayoutBase>> GetOrCreateBindGroupLayout(
         const BindGroupLayoutDescriptor* descriptor,
         PipelineCompatibilityToken pipelineCompatibilityToken = PipelineCompatibilityToken(0));
-    void UncacheBindGroupLayout(BindGroupLayoutBase* obj);
 
     BindGroupLayoutBase* GetEmptyBindGroupLayout();
     PipelineLayoutBase* GetEmptyPipelineLayout();
-
-    void UncacheComputePipeline(ComputePipelineBase* obj);
 
     ResultOrError<Ref<TextureViewBase>> CreateImplicitMSAARenderTextureViewFor(
         const TextureBase* singleSampledTexture,
@@ -210,25 +205,19 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     ResultOrError<Ref<PipelineLayoutBase>> GetOrCreatePipelineLayout(
         const PipelineLayoutDescriptor* descriptor);
-    void UncachePipelineLayout(PipelineLayoutBase* obj);
-
-    void UncacheRenderPipeline(RenderPipelineBase* obj);
 
     ResultOrError<Ref<SamplerBase>> GetOrCreateSampler(const SamplerDescriptor* descriptor);
-    void UncacheSampler(SamplerBase* obj);
 
     ResultOrError<Ref<ShaderModuleBase>> GetOrCreateShaderModule(
         const ShaderModuleDescriptor* descriptor,
         ShaderModuleParseResult* parseResult,
         OwnedCompilationMessages* compilationMessages);
-    void UncacheShaderModule(ShaderModuleBase* obj);
 
     Ref<AttachmentState> GetOrCreateAttachmentState(AttachmentState* blueprint);
     Ref<AttachmentState> GetOrCreateAttachmentState(
         const RenderBundleEncoderDescriptor* descriptor);
     Ref<AttachmentState> GetOrCreateAttachmentState(const RenderPipelineDescriptor* descriptor);
     Ref<AttachmentState> GetOrCreateAttachmentState(const RenderPassDescriptor* descriptor);
-    void UncacheAttachmentState(AttachmentState* obj);
 
     Ref<PipelineCacheBase> GetOrCreatePipelineCache(const CacheKey& key);
 
@@ -285,6 +274,9 @@ class DeviceBase : public RefCountedWithExternalCount {
         const RenderBundleEncoderDescriptor* descriptor);
     RenderPipelineBase* APICreateRenderPipeline(const RenderPipelineDescriptor* descriptor);
     ExternalTextureBase* APICreateExternalTexture(const ExternalTextureDescriptor* descriptor);
+    SharedTextureMemoryBase* APIImportSharedTextureMemory(
+        const SharedTextureMemoryDescriptor* descriptor);
+    SharedFenceBase* APIImportSharedFence(const SharedFenceDescriptor* descriptor);
     SamplerBase* APICreateSampler(const SamplerDescriptor* descriptor);
     ShaderModuleBase* APICreateShaderModule(const ShaderModuleDescriptor* descriptor);
     ShaderModuleBase* APICreateErrorShaderModule(const ShaderModuleDescriptor* descriptor,
@@ -378,9 +370,6 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     friend class IgnoreLazyClearCountScope;
 
-    // Check for passed fences and set the new completed serial
-    MaybeError CheckPassedSerials();
-
     MaybeError Tick();
 
     // TODO(crbug.com/dawn/839): Organize the below backend-specific parameters into the struct
@@ -440,20 +429,6 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     virtual void AppendDebugLayerMessages(ErrorData* error) {}
 
-    void AssumeCommandsCompleteForTesting();
-
-    // Whether the device is having scheduled commands to be submitted or executed.
-    // There are "Scheduled" "Pending" and "Executing" commands. Frontend knows "Executing" commands
-    // and backend knows "Pending" commands. "Scheduled" commands are either "Pending" or
-    // "Executing".
-    bool HasScheduledCommands() const;
-    // The serial by which time all currently submitted or pending operations will be completed.
-    ExecutionSerial GetScheduledWorkDoneSerial() const;
-
-    // For the commands being internally recorded in backend, that were not urgent to submit, this
-    // method makes them to be submitted as soon as possbile in next ticks.
-    virtual void ForceEventualFlushOfCommands() = 0;
-
     // It is guaranteed that the wrapped mutex will outlive the Device (if the Device is deleted
     // before the AutoLockAndHoldRef).
     [[nodiscard]] Mutex::AutoLockAndHoldRef GetScopedLockSafeForDelete();
@@ -482,17 +457,13 @@ class DeviceBase : public RefCountedWithExternalCount {
     void DestroyObjects();
     void Destroy();
 
-    // Incrememt mLastSubmittedSerial when we submit the next serial
-    void IncrementLastSubmittedCommandSerial();
-
   private:
     void WillDropLastExternalRef() override;
 
     virtual ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) = 0;
-    virtual ResultOrError<Ref<BindGroupLayoutBase>> CreateBindGroupLayoutImpl(
-        const BindGroupLayoutDescriptor* descriptor,
-        PipelineCompatibilityToken pipelineCompatibilityToken) = 0;
+    virtual ResultOrError<Ref<BindGroupLayoutInternalBase>> CreateBindGroupLayoutImpl(
+        const BindGroupLayoutDescriptor* descriptor) = 0;
     virtual ResultOrError<Ref<BufferBase>> CreateBufferImpl(const BufferDescriptor* descriptor) = 0;
     virtual ResultOrError<Ref<ExternalTextureBase>> CreateExternalTextureImpl(
         const ExternalTextureDescriptor* descriptor);
@@ -520,6 +491,10 @@ class DeviceBase : public RefCountedWithExternalCount {
         const ComputePipelineDescriptor* descriptor) = 0;
     virtual Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) = 0;
+    virtual ResultOrError<Ref<SharedTextureMemoryBase>> ImportSharedTextureMemoryImpl(
+        const SharedTextureMemoryDescriptor* descriptor);
+    virtual ResultOrError<Ref<SharedFenceBase>> ImportSharedFenceImpl(
+        const SharedFenceDescriptor* descriptor);
     virtual void SetLabelImpl();
 
     virtual ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsageImpl(
@@ -553,35 +528,12 @@ class DeviceBase : public RefCountedWithExternalCount {
     void ConsumeError(std::unique_ptr<ErrorData> error,
                       InternalErrorType additionalAllowedErrors = InternalErrorType::None);
 
-    // Each backend should implement to check their passed fences if there are any and return a
-    // completed serial. Return 0 should indicate no fences to check.
-    virtual ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() = 0;
-    // During shut down of device, some operations might have been started since the last submit
-    // and waiting on a serial that doesn't have a corresponding fence enqueued. Fake serials to
-    // make all commands look completed.
-    void AssumeCommandsComplete();
     bool HasPendingTasks();
     bool IsDeviceIdle();
-
-    // mCompletedSerial tracks the last completed command serial that the fence has returned.
-    // mLastSubmittedSerial tracks the last submitted command serial.
-    // During device removal, the serials could be artificially incremented
-    // to make it appear as if commands have been compeleted.
-    ExecutionSerial mCompletedSerial = ExecutionSerial(0);
-    ExecutionSerial mLastSubmittedSerial = ExecutionSerial(0);
 
     // DestroyImpl is used to clean up and release resources used by device, does not wait for
     // GPU or check errors.
     virtual void DestroyImpl() = 0;
-
-    // WaitForIdleForDestruction waits for GPU to finish, checks errors and gets ready for
-    // destruction. This is only used when properly destructing the device. For a real
-    // device loss, this function doesn't need to be called since the driver already closed all
-    // resources.
-    virtual MaybeError WaitForIdleForDestruction() = 0;
-
-    // Indicates whether the backend has pending commands to be submitted as soon as possible.
-    virtual bool HasPendingCommands() const = 0;
 
     virtual MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
                                                    uint64_t sourceOffset,

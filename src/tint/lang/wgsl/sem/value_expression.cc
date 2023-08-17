@@ -25,10 +25,10 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::ValueExpression);
 namespace tint::sem {
 
 ValueExpression::ValueExpression(const ast::Expression* declaration,
-                                 const type::Type* type,
-                                 EvaluationStage stage,
+                                 const core::type::Type* type,
+                                 core::EvaluationStage stage,
                                  const Statement* statement,
-                                 const constant::Value* constant,
+                                 const core::constant::Value* constant,
                                  bool has_side_effects,
                                  const Variable* root_ident /* = nullptr */)
     : Base(declaration, statement),
@@ -37,10 +37,10 @@ ValueExpression::ValueExpression(const ast::Expression* declaration,
       stage_(stage),
       constant_(std::move(constant)),
       has_side_effects_(has_side_effects) {
-    TINT_ASSERT(Semantic, type_);
-    TINT_ASSERT(Semantic, (constant != nullptr) == (stage == EvaluationStage::kConstant));
+    TINT_ASSERT(type_);
+    TINT_ASSERT((constant != nullptr) == (stage == core::EvaluationStage::kConstant));
     if (constant != nullptr) {
-        TINT_ASSERT(Semantic, type_ == constant->Type());
+        TINT_ASSERT(type_ == constant->Type());
     }
 }
 

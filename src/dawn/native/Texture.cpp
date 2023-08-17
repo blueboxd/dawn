@@ -22,6 +22,7 @@
 #include "dawn/common/Math.h"
 #include "dawn/native/Adapter.h"
 #include "dawn/native/ChainUtils.h"
+#include "dawn/native/CommandValidation.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/ObjectType_autogen.h"
@@ -339,6 +340,13 @@ MaybeError ValidateTextureUsage(const DeviceBase* device,
                         usage, kTransientAttachment, kAllowedTransientUsage);
     }
 
+    if (usage & wgpu::TextureUsage::StorageAttachment) {
+        DAWN_TRY_CONTEXT(ValidateHasPLSFeature(device), "validating usage of %s",
+                         wgpu::TextureUsage::StorageAttachment);
+
+        // TODO(dawn:1704): Validate the constraints on the dimension, format, etc.
+    }
+
     // Only allows simple readonly texture usages.
     constexpr wgpu::TextureUsage kValidMultiPlanarUsages =
         wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc;
@@ -593,9 +601,9 @@ bool IsValidSampleCount(uint32_t sampleCount) {
 
 // TextureBase
 
-TextureBase::TextureBase(DeviceBase* device,
-                         const TextureDescriptor* descriptor,
-                         TextureState state)
+TextureBase::TextureState::TextureState() : hasAccess(true), destroyed(false) {}
+
+TextureBase::TextureBase(DeviceBase* device, const TextureDescriptor* descriptor)
     : ApiObjectBase(device, descriptor->label),
       mDimension(descriptor->dimension),
       mFormat(device->GetValidInternalFormat(descriptor->format)),
@@ -604,7 +612,6 @@ TextureBase::TextureBase(DeviceBase* device,
       mSampleCount(descriptor->sampleCount),
       mUsage(descriptor->usage),
       mInternalUsage(mUsage),
-      mState(state),
       mFormatEnumForReflection(descriptor->format) {
     uint32_t subresourceCount = mMipLevelCount * GetArrayLayers() * GetAspectCount(mFormat.aspects);
     mIsSubresourceContentInitializedAtIndex = std::vector<bool>(subresourceCount, false);
@@ -665,7 +672,7 @@ TextureBase::TextureBase(DeviceBase* device,
       mFormatEnumForReflection(descriptor->format) {}
 
 void TextureBase::DestroyImpl() {
-    mState = TextureState::Destroyed;
+    mState.destroyed = true;
 
     // Destroy all of the views associated with the texture as well.
     mTextureViews.Destroy();
@@ -746,9 +753,14 @@ void TextureBase::AddInternalUsage(wgpu::TextureUsage usage) {
     mInternalUsage |= usage;
 }
 
-TextureBase::TextureState TextureBase::GetTextureState() const {
+bool TextureBase::IsDestroyed() const {
     ASSERT(!IsError());
-    return mState;
+    return mState.destroyed;
+}
+
+void TextureBase::SetHasAccess(bool hasAccess) {
+    ASSERT(!IsError());
+    mState.hasAccess = hasAccess;
 }
 
 uint32_t TextureBase::GetSubresourceIndex(uint32_t mipLevel,
@@ -794,8 +806,8 @@ void TextureBase::SetIsSubresourceContentInitialized(bool isInitialized,
 
 MaybeError TextureBase::ValidateCanUseInSubmitNow() const {
     ASSERT(!IsError());
-    DAWN_INVALID_IF(mState == TextureState::Destroyed, "Destroyed texture %s used in a submit.",
-                    this);
+    DAWN_INVALID_IF(mState.destroyed, "Destroyed texture %s used in a submit.", this);
+
     return {};
 }
 
@@ -814,6 +826,7 @@ bool TextureBase::CoverFullSubresource(uint32_t mipLevel, const Extent3D& size) 
         case wgpu::TextureDimension::e3D:
             return size == levelSize;
     }
+    DAWN_UNREACHABLE();
 }
 
 Extent3D TextureBase::GetMipLevelSingleSubresourceVirtualSize(uint32_t level) const {

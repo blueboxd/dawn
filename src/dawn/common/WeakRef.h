@@ -23,6 +23,23 @@
 namespace dawn {
 
 template <typename T>
+class WeakRef;
+
+template <
+    typename T,
+    typename = typename std::enable_if<std::is_base_of_v<detail::WeakRefSupportBase, T>>::type>
+WeakRef<T> GetWeakRef(T* obj) {
+    return WeakRef<T>(obj);
+}
+
+template <
+    typename T,
+    typename = typename std::enable_if<std::is_base_of_v<detail::WeakRefSupportBase, T>>::type>
+WeakRef<T> GetWeakRef(const Ref<T>& obj) {
+    return GetWeakRef(obj.Get());
+}
+
+template <typename T>
 class WeakRef {
   public:
     WeakRef() {}
@@ -49,14 +66,31 @@ class WeakRef {
         return *this;
     }
 
+    // Constructor from explicit WeakRefSupport<T>* is allowed.
+    // NOLINTNEXTLINE(runtime/explicit)
+    WeakRef(WeakRefSupport<T>* support) : mData(support->mData) {}
+
     // Promotes a WeakRef to a Ref. Access to the raw pointer is not allowed because a raw pointer
     // could become invalid after being retrieved.
-    Ref<T> Promote() {
+    Ref<T> Promote() const {
         if (mData != nullptr) {
             return AcquireRef(static_cast<T*>(mData->TryGetRef().Detach()));
         }
         return nullptr;
     }
+
+    // Returns the raw pointer to the RefCountedT if it has not been invalidated. Note that this
+    // function is not thread-safe since the returned pointer can become invalid after being
+    // retrieved.
+    T* UnsafeGet() const {
+        if (mData != nullptr) {
+            return static_cast<T*>(mData->UnsafeGet());
+        }
+        return nullptr;
+    }
+
+    friend WeakRef GetWeakRef<>(T* obj);
+    friend WeakRef GetWeakRef<>(const Ref<T>& obj);
 
   private:
     // Friend is needed so that we can access the data ref in conversions.

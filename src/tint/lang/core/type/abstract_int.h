@@ -19,11 +19,11 @@
 
 #include "src/tint/lang/core/type/abstract_numeric.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// An abstract-int type.
 /// @see https://www.w3.org/TR/WGSL/#abstractint
-class AbstractInt final : public utils::Castable<AbstractInt, AbstractNumeric> {
+class AbstractInt final : public Castable<AbstractInt, AbstractNumeric> {
   public:
     /// Constructor
     AbstractInt();
@@ -39,6 +39,6 @@ class AbstractInt final : public utils::Castable<AbstractInt, AbstractNumeric> {
     AbstractInt* Clone(CloneContext& ctx) const override;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_ABSTRACT_INT_H_

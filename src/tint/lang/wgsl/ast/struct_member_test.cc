@@ -13,16 +13,16 @@
 // limitations under the License.
 
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using StructMemberTest = TestHelper;
 
 TEST_F(StructMemberTest, Creation) {
-    auto* st = Member("a", ty.i32(), utils::Vector{MemberSize(4_a)});
+    auto* st = Member("a", ty.i32(), tint::Vector{MemberSize(4_a)});
     CheckIdentifier(st->name, "a");
     CheckIdentifier(st->type, "i32");
     EXPECT_EQ(st->attributes.Length(), 1u);
@@ -67,27 +67,27 @@ TEST_F(StructMemberTest, Assert_Null_Attribute) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b;
-            b.Member("a", b.ty.i32(), utils::Vector{b.MemberSize(4_a), nullptr});
+            b.Member("a", b.ty.i32(), tint::Vector{b.MemberSize(4_a), nullptr});
         },
         "internal compiler error");
 }
 
-TEST_F(StructMemberTest, Assert_DifferentProgramID_Symbol) {
+TEST_F(StructMemberTest, Assert_DifferentGenerationID_Symbol) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;
             ProgramBuilder b2;
-            b1.Member(b2.Sym("a"), b1.ty.i32(), utils::Vector{b1.MemberSize(4_a)});
+            b1.Member(b2.Sym("a"), b1.ty.i32(), tint::Vector{b1.MemberSize(4_a)});
         },
         "internal compiler error");
 }
 
-TEST_F(StructMemberTest, Assert_DifferentProgramID_Attribute) {
+TEST_F(StructMemberTest, Assert_DifferentGenerationID_Attribute) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;
             ProgramBuilder b2;
-            b1.Member("a", b1.ty.i32(), utils::Vector{b2.MemberSize(4_a)});
+            b1.Member("a", b1.ty.i32(), tint::Vector{b2.MemberSize(4_a)});
         },
         "internal compiler error");
 }

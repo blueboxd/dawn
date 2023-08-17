@@ -258,6 +258,7 @@ enum ExternalImageType {
     DXGISharedHandle,
     D3D11Texture,
     EGLImage,
+    GLTexture,
     AHardwareBuffer,
     Last = AHardwareBuffer,
 };
@@ -294,9 +295,6 @@ DAWN_NATIVE_EXPORT const char* GetObjectLabelForTesting(void* objectHandle);
 
 DAWN_NATIVE_EXPORT uint64_t GetAllocatedSizeForTesting(WGPUBuffer buffer);
 
-DAWN_NATIVE_EXPORT bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayout a,
-                                                               WGPUBindGroupLayout b);
-
 }  // namespace dawn::native
 
 // Alias the DawnInstanceDescriptor up to wgpu.
@@ -304,8 +302,5 @@ DAWN_NATIVE_EXPORT bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayo
 namespace wgpu {
 using dawn::native::DawnInstanceDescriptor;
 }  // namespace wgpu
-
-// TODO(dawn:824): Remove once the deprecation period is passed.
-namespace dawn_native = dawn::native;
 
 #endif  // INCLUDE_DAWN_NATIVE_DAWNNATIVE_H_

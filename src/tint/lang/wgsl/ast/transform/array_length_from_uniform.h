@@ -18,13 +18,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "src/tint/api/common/binding_point.h"
 #include "src/tint/lang/wgsl/ast/transform/transform.h"
-#include "src/tint/lang/wgsl/sem/binding_point.h"
-
-// Forward declarations
-namespace tint {
-class CloneContext;
-}  // namespace tint
 
 namespace tint::ast::transform {
 
@@ -52,7 +47,7 @@ namespace tint::ast::transform {
 ///
 /// @note Depends on the following transforms to have been run first:
 /// * SimplifyPointers
-class ArrayLengthFromUniform final : public utils::Castable<ArrayLengthFromUniform, Transform> {
+class ArrayLengthFromUniform final : public Castable<ArrayLengthFromUniform, Transform> {
   public:
     /// Constructor
     ArrayLengthFromUniform();
@@ -60,10 +55,10 @@ class ArrayLengthFromUniform final : public utils::Castable<ArrayLengthFromUnifo
     ~ArrayLengthFromUniform() override;
 
     /// Configuration options for the ArrayLengthFromUniform transform.
-    struct Config final : public utils::Castable<Config, Data> {
+    struct Config final : public Castable<Config, Data> {
         /// Constructor
         /// @param ubo_bp the binding point to use for the generated uniform buffer.
-        explicit Config(sem::BindingPoint ubo_bp);
+        explicit Config(BindingPoint ubo_bp);
 
         /// Copy constructor
         Config(const Config&);
@@ -76,16 +71,16 @@ class ArrayLengthFromUniform final : public utils::Castable<ArrayLengthFromUnifo
         ~Config() override;
 
         /// The binding point to use for the generated uniform buffer.
-        sem::BindingPoint ubo_binding;
+        BindingPoint ubo_binding;
 
         /// The mapping from binding point to the index for the buffer size lookup.
-        std::unordered_map<sem::BindingPoint, uint32_t> bindpoint_to_size_index;
+        std::unordered_map<BindingPoint, uint32_t> bindpoint_to_size_index;
     };
 
     /// Information produced about what the transform did.
     /// If there were no calls to the arrayLength() builtin, then no Result will
     /// be emitted.
-    struct Result final : public utils::Castable<Result, Data> {
+    struct Result final : public Castable<Result, Data> {
         /// Constructor
         /// @param used_size_indices Indices into the UBO that are statically used.
         explicit Result(std::unordered_set<uint32_t> used_size_indices);

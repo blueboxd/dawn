@@ -24,7 +24,7 @@ namespace tint::sem {
 
 /// AccessorExpression is the base class for all semantic information for an ast::AccessorExpression
 /// node.
-class AccessorExpression : public utils::Castable<AccessorExpression, ValueExpression> {
+class AccessorExpression : public Castable<AccessorExpression, ValueExpression> {
   public:
     /// Destructor
     ~AccessorExpression() override;
@@ -48,11 +48,11 @@ class AccessorExpression : public utils::Castable<AccessorExpression, ValueExpre
     /// @param has_side_effects whether this expression may have side effects
     /// @param root_ident the (optional) root identifier for this expression
     AccessorExpression(const ast::AccessorExpression* declaration,
-                       const type::Type* type,
-                       EvaluationStage stage,
+                       const core::type::Type* type,
+                       core::EvaluationStage stage,
                        const ValueExpression* object,
                        const Statement* statement,
-                       const constant::Value* constant,
+                       const core::constant::Value* constant,
                        bool has_side_effects,
                        const Variable* root_ident = nullptr);
 

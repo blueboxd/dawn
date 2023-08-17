@@ -21,7 +21,7 @@
 namespace tint::ast {
 
 /// A switch statement
-class SwitchStatement final : public utils::Castable<SwitchStatement, Statement> {
+class SwitchStatement final : public Castable<SwitchStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -31,13 +31,13 @@ class SwitchStatement final : public utils::Castable<SwitchStatement, Statement>
     /// @param body the switch body
     /// @param stmt_attributes the switch statement attributes
     /// @param body_attributes the switch body attributes
-    SwitchStatement(ProgramID pid,
+    SwitchStatement(GenerationID pid,
                     NodeID nid,
                     const Source& src,
                     const Expression* condition,
-                    utils::VectorRef<const CaseStatement*> body,
-                    utils::VectorRef<const Attribute*> stmt_attributes,
-                    utils::VectorRef<const Attribute*> body_attributes);
+                    VectorRef<const CaseStatement*> body,
+                    VectorRef<const Attribute*> stmt_attributes,
+                    VectorRef<const Attribute*> body_attributes);
 
     /// Destructor
     ~SwitchStatement() override;
@@ -46,20 +46,20 @@ class SwitchStatement final : public utils::Castable<SwitchStatement, Statement>
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const SwitchStatement* Clone(CloneContext* ctx) const override;
+    const SwitchStatement* Clone(CloneContext& ctx) const override;
 
     /// The switch condition or nullptr if none set
     const Expression* const condition;
 
     /// The Switch body
-    const utils::Vector<const CaseStatement*, 4> body;
+    const tint::Vector<const CaseStatement*, 4> body;
     SwitchStatement(const SwitchStatement&) = delete;
 
     /// The attribute list for the statement
-    const utils::Vector<const Attribute*, 1> attributes;
+    const tint::Vector<const Attribute*, 1> attributes;
 
     /// The attribute list for the body
-    const utils::Vector<const Attribute*, 1> body_attributes;
+    const tint::Vector<const Attribute*, 1> body_attributes;
 };
 
 }  // namespace tint::ast

@@ -14,19 +14,20 @@
 
 #include "src/tint/lang/wgsl/ast/builtin_texture_helper_test.h"
 
-#include "src/tint/lang/core/builtin/texel_format.h"
+#include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
+#include "src/tint/lang/wgsl/program/program_builder.h"
 
 namespace tint::ast::test {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
-utils::StringStream& operator<<(utils::StringStream& out, const TextureKind& kind) {
+StringStream& operator<<(StringStream& out, const TextureKind& kind) {
     switch (kind) {
         case TextureKind::kRegular:
             out << "regular";
@@ -47,7 +48,7 @@ utils::StringStream& operator<<(utils::StringStream& out, const TextureKind& kin
     return out;
 }
 
-utils::StringStream& operator<<(utils::StringStream& out, const TextureDataType& ty) {
+StringStream& operator<<(StringStream& out, const TextureDataType& ty) {
     switch (ty) {
         case TextureDataType::kF32:
             out << "f32";
@@ -67,8 +68,8 @@ utils::StringStream& operator<<(utils::StringStream& out, const TextureDataType&
 TextureOverloadCase::TextureOverloadCase(ValidTextureOverload o,
                                          const char* desc,
                                          TextureKind tk,
-                                         type::SamplerKind sk,
-                                         type::TextureDimension dims,
+                                         core::type::SamplerKind sk,
+                                         core::type::TextureDimension dims,
                                          TextureDataType datatype,
                                          const char* f,
                                          std::function<Args(ProgramBuilder*)> a,
@@ -85,7 +86,7 @@ TextureOverloadCase::TextureOverloadCase(ValidTextureOverload o,
 TextureOverloadCase::TextureOverloadCase(ValidTextureOverload o,
                                          const char* desc,
                                          TextureKind tk,
-                                         type::TextureDimension dims,
+                                         core::type::TextureDimension dims,
                                          TextureDataType datatype,
                                          const char* f,
                                          std::function<Args(ProgramBuilder*)> a,
@@ -100,9 +101,9 @@ TextureOverloadCase::TextureOverloadCase(ValidTextureOverload o,
       returns_value(ret_val) {}
 TextureOverloadCase::TextureOverloadCase(ValidTextureOverload o,
                                          const char* d,
-                                         tint::builtin::Access acc,
-                                         tint::builtin::TexelFormat fmt,
-                                         type::TextureDimension dims,
+                                         tint::core::Access acc,
+                                         tint::core::TexelFormat fmt,
+                                         core::type::TextureDimension dims,
                                          TextureDataType datatype,
                                          const char* f,
                                          std::function<Args(ProgramBuilder*)> a,
@@ -121,7 +122,7 @@ TextureOverloadCase::TextureOverloadCase(const TextureOverloadCase&) = default;
 TextureOverloadCase::~TextureOverloadCase() = default;
 
 std::ostream& operator<<(std::ostream& out, const TextureOverloadCase& data) {
-    utils::StringStream str;
+    StringStream str;
     str << "TextureOverloadCase " << static_cast<int>(data.overload) << "\n";
     str << data.description << "\n";
     str << "texture_kind:      " << data.texture_kind << "\n";
@@ -151,12 +152,12 @@ Type TextureOverloadCase::BuildResultVectorComponentType(ProgramBuilder* b) cons
             return b->ty.i32();
     }
 
-    TINT_UNREACHABLE(AST, b->Diagnostics());
+    TINT_UNREACHABLE();
     return {};
 }
 
 const Variable* TextureOverloadCase::BuildTextureVariable(ProgramBuilder* b) const {
-    utils::Vector attrs{
+    tint::Vector attrs{
         b->Group(0_u),
         b->Binding(0_a),
     };
@@ -185,12 +186,12 @@ const Variable* TextureOverloadCase::BuildTextureVariable(ProgramBuilder* b) con
         }
     }
 
-    TINT_UNREACHABLE(AST, b->Diagnostics());
+    TINT_UNREACHABLE();
     return nullptr;
 }
 
 const Variable* TextureOverloadCase::BuildSamplerVariable(ProgramBuilder* b) const {
-    utils::Vector attrs = {b->Group(0_a), b->Binding(1_a)};
+    tint::Vector attrs = {b->Group(0_a), b->Binding(1_a)};
     return b->GlobalVar(kSamplerName, b->ty.sampler(sampler_kind), attrs);
 }
 
@@ -200,8 +201,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensions1d,
             "textureDimensions(t : texture_1d<f32>) -> u32",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k1d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k1d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -211,8 +212,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensions2d,
             "textureDimensions(t : texture_2d<f32>) -> vec2<u32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -223,8 +224,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureDimensions(t     : texture_2d<f32>,\n"
             "                  level : i32) -> vec2<u32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName, 1_i); },
@@ -234,8 +235,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensions2dArray,
             "textureDimensions(t : texture_2d_array<f32>) -> vec2<u32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -246,8 +247,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureDimensions(t     : texture_2d_array<f32>,\n"
             "                  level : i32) -> vec2<u32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName, 1_i); },
@@ -257,8 +258,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensions3d,
             "textureDimensions(t : texture_3d<f32>) -> vec3<u32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -269,8 +270,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureDimensions(t     : texture_3d<f32>,\n"
             "                  level : i32) -> vec3<u32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName, 1_i); },
@@ -280,8 +281,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensionsCube,
             "textureDimensions(t : texture_cube<f32>) -> vec2<u32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -292,8 +293,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureDimensions(t     : texture_cube<f32>,\n"
             "                  level : i32) -> vec2<u32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName, 1_i); },
@@ -303,8 +304,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensionsCubeArray,
             "textureDimensions(t : texture_cube_array<f32>) -> vec2<u32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -315,8 +316,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureDimensions(t     : texture_cube_array<f32>,\n"
             "                  level : i32) -> vec2<u32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName, 1_i); },
@@ -326,8 +327,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensionsMultisampled2d,
             "textureDimensions(t : texture_multisampled_2d<f32>)-> vec2<u32>",
             TextureKind::kMultisampled,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -337,8 +338,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensionsDepth2d,
             "textureDimensions(t : texture_depth_2d) -> vec2<u32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -349,8 +350,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureDimensions(t     : texture_depth_2d,\n"
             "                  level : i32) -> vec2<u32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName, 1_i); },
@@ -360,8 +361,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensionsDepth2dArray,
             "textureDimensions(t : texture_depth_2d_array) -> vec2<u32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -372,8 +373,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureDimensions(t     : texture_depth_2d_array,\n"
             "                  level : i32) -> vec2<u32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName, 1_i); },
@@ -383,8 +384,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensionsDepthCube,
             "textureDimensions(t : texture_depth_cube) -> vec2<u32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -395,8 +396,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureDimensions(t     : texture_depth_cube,\n"
             "                  level : i32) -> vec2<u32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName, 1_i); },
@@ -406,8 +407,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensionsDepthCubeArray,
             "textureDimensions(t : texture_depth_cube_array) -> vec2<u32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -418,8 +419,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureDimensions(t     : texture_depth_cube_array,\n"
             "                  level : i32) -> vec2<u32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName, 1_i); },
@@ -429,8 +430,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kDimensionsDepthMultisampled2d,
             "textureDimensions(t : texture_depth_multisampled_2d) -> vec2<u32>",
             TextureKind::kDepthMultisampled,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -439,9 +440,9 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
         {
             ValidTextureOverload::kDimensionsStorageWO1d,
             "textureDimensions(t : texture_storage_1d<rgba32float>) -> u32",
-            tint::builtin::Access::kWrite,
-            tint::builtin::TexelFormat::kRgba32Float,
-            type::TextureDimension::k1d,
+            tint::core::Access::kWrite,
+            tint::core::TexelFormat::kRgba32Float,
+            core::type::TextureDimension::k1d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -450,9 +451,9 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
         {
             ValidTextureOverload::kDimensionsStorageWO2d,
             "textureDimensions(t : texture_storage_2d<rgba32float>) -> vec2<u32>",
-            tint::builtin::Access::kWrite,
-            tint::builtin::TexelFormat::kRgba32Float,
-            type::TextureDimension::k2d,
+            tint::core::Access::kWrite,
+            tint::core::TexelFormat::kRgba32Float,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -461,9 +462,9 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
         {
             ValidTextureOverload::kDimensionsStorageWO2dArray,
             "textureDimensions(t : texture_storage_2d_array<rgba32float>) -> vec2<u32>",
-            tint::builtin::Access::kWrite,
-            tint::builtin::TexelFormat::kRgba32Float,
-            type::TextureDimension::k2dArray,
+            tint::core::Access::kWrite,
+            tint::core::TexelFormat::kRgba32Float,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -472,9 +473,9 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
         {
             ValidTextureOverload::kDimensionsStorageWO3d,
             "textureDimensions(t : texture_storage_3d<rgba32float>) -> vec3<u32>",
-            tint::builtin::Access::kWrite,
-            tint::builtin::TexelFormat::kRgba32Float,
-            type::TextureDimension::k3d,
+            tint::core::Access::kWrite,
+            tint::core::TexelFormat::kRgba32Float,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureDimensions",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -488,8 +489,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              s         : sampler,\n"
             "              coords    : vec2<f32>) -> vec4<T>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -508,8 +509,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords    : vec2<f32>,\n"
             "              offset    : vec2<i32>) -> vec4<T>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -529,8 +530,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords      : vec2<f32>,\n"
             "              array_index : i32) -> vec4<T>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -551,8 +552,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              array_index : u32,\n"
             "              offset      : vec2<i32>) -> vec4<T>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -572,8 +573,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              s         : sampler,\n"
             "              coords    : vec3<f32>) -> vec4<T>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -592,8 +593,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords      : vec3<f32>,\n"
             "              array_index : u32) -> vec4<T>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -611,8 +612,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              s      : sampler,\n"
             "              coords : vec2<f32>) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -629,8 +630,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords : vec2<f32>,\n"
             "              offset : vec2<i32>) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -648,8 +649,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords      : vec2<f32>,\n"
             "              array_index : u32) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -668,8 +669,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              array_index : i32,\n"
             "              offset      : vec2<i32>) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -687,8 +688,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              s      : sampler,\n"
             "              coords : vec3<f32>) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -705,8 +706,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords      : vec3<f32>,\n"
             "              array_index : u32) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureGather",
             [](ProgramBuilder* b) {
@@ -724,8 +725,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     coords    : vec2<f32>,\n"
             "                     depth_ref : f32) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureGatherCompare",
             [](ProgramBuilder* b) {
@@ -744,8 +745,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     depth_ref : f32,\n"
             "                     offset    : vec2<i32>) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureGatherCompare",
             [](ProgramBuilder* b) {
@@ -765,8 +766,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     array_index : i32,\n"
             "                     depth_ref   : f32) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureGatherCompare",
             [](ProgramBuilder* b) {
@@ -787,8 +788,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     depth_ref   : f32,\n"
             "                     offset      : vec2<i32>) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureGatherCompare",
             [](ProgramBuilder* b) {
@@ -808,8 +809,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     coords    : vec3<f32>,\n"
             "                     depth_ref : f32) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureGatherCompare",
             [](ProgramBuilder* b) {
@@ -828,8 +829,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     array_index : u32,\n"
             "                     depth_ref   : f32) -> vec4<f32>",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureGatherCompare",
             [](ProgramBuilder* b) {
@@ -845,8 +846,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLayers2dArray,
             "textureNumLayers(t : texture_2d_array<f32>) -> u32",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureNumLayers",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -856,8 +857,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLayersCubeArray,
             "textureNumLayers(t : texture_cube_array<f32>) -> u32",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureNumLayers",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -867,8 +868,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLayersDepth2dArray,
             "textureNumLayers(t : texture_depth_2d_array) -> u32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureNumLayers",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -878,8 +879,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLayersDepthCubeArray,
             "textureNumLayers(t : texture_depth_cube_array) -> u32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureNumLayers",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -888,9 +889,9 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
         {
             ValidTextureOverload::kNumLayersStorageWO2dArray,
             "textureNumLayers(t : texture_storage_2d_array<rgba32float>) -> u32",
-            tint::builtin::Access::kWrite,
-            tint::builtin::TexelFormat::kRgba32Float,
-            type::TextureDimension::k2dArray,
+            tint::core::Access::kWrite,
+            tint::core::TexelFormat::kRgba32Float,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureNumLayers",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -900,8 +901,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLevels2d,
             "textureNumLevels(t : texture_2d<f32>) -> u32",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureNumLevels",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -911,8 +912,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLevels2dArray,
             "textureNumLevels(t : texture_2d_array<f32>) -> u32",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureNumLevels",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -922,8 +923,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLevels3d,
             "textureNumLevels(t : texture_3d<f32>) -> u32",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureNumLevels",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -933,8 +934,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLevelsCube,
             "textureNumLevels(t : texture_cube<f32>) -> u32",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureNumLevels",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -944,8 +945,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLevelsCubeArray,
             "textureNumLevels(t : texture_cube_array<f32>) -> u32",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureNumLevels",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -955,8 +956,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLevelsDepth2d,
             "textureNumLevels(t : texture_depth_2d) -> u32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureNumLevels",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -966,8 +967,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLevelsDepth2dArray,
             "textureNumLevels(t : texture_depth_2d_array) -> u32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureNumLevels",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -977,8 +978,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLevelsDepthCube,
             "textureNumLevels(t : texture_depth_cube) -> u32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureNumLevels",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -988,8 +989,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumLevelsDepthCubeArray,
             "textureNumLevels(t : texture_depth_cube_array) -> u32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureNumLevels",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -999,8 +1000,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumSamplesMultisampled2d,
             "textureNumSamples(t : texture_multisampled_2d<f32>) -> u32",
             TextureKind::kMultisampled,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureNumSamples",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -1010,8 +1011,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             ValidTextureOverload::kNumSamplesDepthMultisampled2d,
             "textureNumSamples(t : texture_depth_multisampled_2d<f32>) -> u32",
             TextureKind::kMultisampled,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureNumSamples",
             [](ProgramBuilder* b) { return b->ExprList(kTextureName); },
@@ -1023,8 +1024,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              s      : sampler,\n"
             "              coords : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k1d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k1d,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1040,8 +1041,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              s      : sampler,\n"
             "              coords : vec2<f32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1058,8 +1059,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords : vec2<f32>\n"
             "              offset : vec2<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1077,8 +1078,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords      : vec2<f32>,\n"
             "              array_index : i32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1097,8 +1098,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              array_index : u32\n"
             "              offset      : vec2<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1116,8 +1117,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              s      : sampler,\n"
             "              coords : vec3<f32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1134,8 +1135,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords : vec3<f32>\n"
             "              offset : vec3<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1152,8 +1153,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              s      : sampler,\n"
             "              coords : vec3<f32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1170,8 +1171,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords      : vec3<f32>,\n"
             "              array_index : i32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1188,8 +1189,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              s      : sampler,\n"
             "              coords : vec2<f32>) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1206,8 +1207,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords : vec2<f32>\n"
             "              offset : vec2<i32>) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1225,8 +1226,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords      : vec2<f32>,\n"
             "              array_index : i32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1245,8 +1246,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              array_index : i32\n"
             "              offset      : vec2<i32>) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1264,8 +1265,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              s      : sampler,\n"
             "              coords : vec3<f32>) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1282,8 +1283,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "              coords      : vec3<f32>,\n"
             "              array_index : u32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureSample",
             [](ProgramBuilder* b) {
@@ -1301,8 +1302,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  coords : vec2<f32>,\n"
             "                  bias   : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleBias",
             [](ProgramBuilder* b) {
@@ -1321,8 +1322,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  bias   : f32,\n"
             "                  offset : vec2<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleBias",
             [](ProgramBuilder* b) {
@@ -1342,8 +1343,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  array_index : u32,\n"
             "                  bias        : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleBias",
             [](ProgramBuilder* b) {
@@ -1364,8 +1365,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  bias        : f32,\n"
             "                  offset      : vec2<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleBias",
             [](ProgramBuilder* b) {
@@ -1385,8 +1386,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  coords : vec3<f32>,\n"
             "                  bias   : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureSampleBias",
             [](ProgramBuilder* b) {
@@ -1405,8 +1406,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  bias   : f32,\n"
             "                  offset : vec3<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureSampleBias",
             [](ProgramBuilder* b) {
@@ -1425,8 +1426,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  coords : vec3<f32>,\n"
             "                  bias   : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureSampleBias",
             [](ProgramBuilder* b) {
@@ -1445,8 +1446,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  array_index : i32,\n"
             "                  bias        : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureSampleBias",
             [](ProgramBuilder* b) {
@@ -1465,8 +1466,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   coords : vec2<f32>,\n"
             "                   level  : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1485,8 +1486,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   level  : f32,\n"
             "                   offset : vec2<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1506,8 +1507,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   array_index : i32,\n"
             "                   level       : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1528,8 +1529,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   level       : f32,\n"
             "                   offset      : vec2<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1549,8 +1550,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   coords : vec3<f32>,\n"
             "                   level  : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1569,8 +1570,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   level  : f32,\n"
             "                   offset : vec3<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1589,8 +1590,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   coords : vec3<f32>,\n"
             "                   level  : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1609,8 +1610,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   array_index : i32,\n"
             "                   level       : f32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1629,8 +1630,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   coords : vec2<f32>,\n"
             "                   level  : u32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1649,8 +1650,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   level  : i32,\n"
             "                   offset : vec2<i32>) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1670,8 +1671,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   array_index : u32,\n"
             "                   level       : u32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1692,8 +1693,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   level       : u32,\n"
             "                   offset      : vec2<i32>) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1713,8 +1714,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   coords : vec3<f32>,\n"
             "                   level  : i32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1733,8 +1734,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                   array_index : i32,\n"
             "                   level       : i32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureSampleLevel",
             [](ProgramBuilder* b) {
@@ -1754,8 +1755,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  ddx    : vec2<f32>,\n"
             "                  ddy    : vec2<f32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleGrad",
             [](ProgramBuilder* b) {
@@ -1776,8 +1777,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  ddy    : vec2<f32>,\n"
             "                  offset : vec2<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleGrad",
             [](ProgramBuilder* b) {
@@ -1799,8 +1800,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  ddx         : vec2<f32>,\n"
             "                  ddy         : vec2<f32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleGrad",
             [](ProgramBuilder* b) {
@@ -1823,8 +1824,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  ddy         : vec2<f32>,\n"
             "                  offset      : vec2<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleGrad",
             [](ProgramBuilder* b) {
@@ -1846,8 +1847,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  ddx    : vec3<f32>,\n"
             "                  ddy    : vec3<f32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureSampleGrad",
             [](ProgramBuilder* b) {
@@ -1868,8 +1869,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  ddy    : vec3<f32>,\n"
             "                  offset : vec3<i32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::k3d,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureSampleGrad",
             [](ProgramBuilder* b) {
@@ -1890,8 +1891,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  ddx    : vec3<f32>,\n"
             "                  ddy    : vec3<f32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureSampleGrad",
             [](ProgramBuilder* b) {
@@ -1912,8 +1913,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                  ddx         : vec3<f32>,\n"
             "                  ddy         : vec3<f32>) -> vec4<f32>",
             TextureKind::kRegular,
-            type::SamplerKind::kSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureSampleGrad",
             [](ProgramBuilder* b) {
@@ -1933,8 +1934,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     coords    : vec2<f32>,\n"
             "                     depth_ref : f32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleCompare",
             [](ProgramBuilder* b) {
@@ -1953,8 +1954,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     depth_ref : f32,\n"
             "                     offset    : vec2<i32>) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleCompare",
             [](ProgramBuilder* b) {
@@ -1974,8 +1975,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     array_index : i32,\n"
             "                     depth_ref   : f32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleCompare",
             [](ProgramBuilder* b) {
@@ -1996,8 +1997,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     depth_ref   : f32,\n"
             "                     offset      : vec2<i32>) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleCompare",
             [](ProgramBuilder* b) {
@@ -2017,8 +2018,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     coords    : vec3<f32>,\n"
             "                     depth_ref : f32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureSampleCompare",
             [](ProgramBuilder* b) {
@@ -2037,8 +2038,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                     array_index : i32,\n"
             "                     depth_ref   : f32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureSampleCompare",
             [](ProgramBuilder* b) {
@@ -2057,8 +2058,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                          coords    : vec2<f32>,\n"
             "                          depth_ref : f32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleCompareLevel",
             [](ProgramBuilder* b) {
@@ -2077,8 +2078,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                          depth_ref : f32,\n"
             "                          offset    : vec2<i32>) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2d,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureSampleCompareLevel",
             [](ProgramBuilder* b) {
@@ -2098,8 +2099,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                          array_index : i32,\n"
             "                          depth_ref   : f32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleCompareLevel",
             [](ProgramBuilder* b) {
@@ -2120,8 +2121,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                          depth_ref   : f32,\n"
             "                          offset      : vec2<i32>) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::k2dArray,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureSampleCompareLevel",
             [](ProgramBuilder* b) {
@@ -2141,8 +2142,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                          coords      : vec3<f32>,\n"
             "                          depth_ref   : f32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::kCube,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::kCube,
             TextureDataType::kF32,
             "textureSampleCompareLevel",
             [](ProgramBuilder* b) {
@@ -2161,8 +2162,8 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "                          array_index : i32,\n"
             "                          depth_ref   : f32) -> f32",
             TextureKind::kDepth,
-            type::SamplerKind::kComparisonSampler,
-            type::TextureDimension::kCubeArray,
+            core::type::SamplerKind::kComparisonSampler,
+            core::type::TextureDimension::kCubeArray,
             TextureDataType::kF32,
             "textureSampleCompareLevel",
             [](ProgramBuilder* b) {
@@ -2180,7 +2181,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords : u32,\n"
             "            level  : u32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::TextureDimension::k1d,
+            core::type::TextureDimension::k1d,
             TextureDataType::kF32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2196,7 +2197,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords : i32,\n"
             "            level  : i32) -> vec4<u32>",
             TextureKind::kRegular,
-            type::TextureDimension::k1d,
+            core::type::TextureDimension::k1d,
             TextureDataType::kU32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2212,7 +2213,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords : i32,\n"
             "            level  : i32) -> vec4<i32>",
             TextureKind::kRegular,
-            type::TextureDimension::k1d,
+            core::type::TextureDimension::k1d,
             TextureDataType::kI32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2228,7 +2229,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords : vec2<u32>,\n"
             "            level  : u32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::TextureDimension::k2d,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2244,7 +2245,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords : vec2<i32>,\n"
             "            level  : i32) -> vec4<u32>",
             TextureKind::kRegular,
-            type::TextureDimension::k2d,
+            core::type::TextureDimension::k2d,
             TextureDataType::kU32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2260,7 +2261,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords : vec2<u32>,\n"
             "            level  : u32) -> vec4<i32>",
             TextureKind::kRegular,
-            type::TextureDimension::k2d,
+            core::type::TextureDimension::k2d,
             TextureDataType::kI32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2277,7 +2278,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            array_index : i32,\n"
             "            level       : i32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::TextureDimension::k2dArray,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2295,7 +2296,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            array_index : i32,\n"
             "            level       : i32) -> vec4<u32>",
             TextureKind::kRegular,
-            type::TextureDimension::k2dArray,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kU32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2313,7 +2314,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            array_index : u32,\n"
             "            level       : u32) -> vec4<i32>",
             TextureKind::kRegular,
-            type::TextureDimension::k2dArray,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kI32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2330,7 +2331,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords : vec3<i32>,\n"
             "            level  : i32) -> vec4<f32>",
             TextureKind::kRegular,
-            type::TextureDimension::k3d,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2346,7 +2347,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords : vec3<i32>,\n"
             "            level  : i32) -> vec4<u32>",
             TextureKind::kRegular,
-            type::TextureDimension::k3d,
+            core::type::TextureDimension::k3d,
             TextureDataType::kU32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2362,7 +2363,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords : vec3<u32>,\n"
             "            level  : u32) -> vec4<i32>",
             TextureKind::kRegular,
-            type::TextureDimension::k3d,
+            core::type::TextureDimension::k3d,
             TextureDataType::kI32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2378,7 +2379,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords       : vec2<i32>,\n"
             "            sample_index : i32) -> vec4<f32>",
             TextureKind::kMultisampled,
-            type::TextureDimension::k2d,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2394,7 +2395,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords       : vec2<i32>,\n"
             "            sample_index : i32) -> vec4<u32>",
             TextureKind::kMultisampled,
-            type::TextureDimension::k2d,
+            core::type::TextureDimension::k2d,
             TextureDataType::kU32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2410,7 +2411,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords       : vec2<u32>,\n"
             "            sample_index : u32) -> vec4<i32>",
             TextureKind::kMultisampled,
-            type::TextureDimension::k2d,
+            core::type::TextureDimension::k2d,
             TextureDataType::kI32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2426,7 +2427,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords : vec2<i32>,\n"
             "            level  : i32) -> f32",
             TextureKind::kDepth,
-            type::TextureDimension::k2d,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2443,7 +2444,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            array_index : u32,\n"
             "            level       : u32) -> f32",
             TextureKind::kDepth,
-            type::TextureDimension::k2dArray,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2460,7 +2461,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "            coords       : vec2<u32>,\n"
             "            sample_index : u32) -> f32",
             TextureKind::kDepthMultisampled,
-            type::TextureDimension::k2d,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureLoad",
             [](ProgramBuilder* b) {
@@ -2475,9 +2476,9 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureStore(t      : texture_storage_1d<rgba32float>,\n"
             "             coords : i32,\n"
             "             value  : vec4<T>)",
-            tint::builtin::Access::kWrite,
-            tint::builtin::TexelFormat::kRgba32Float,
-            type::TextureDimension::k1d,
+            tint::core::Access::kWrite,
+            tint::core::TexelFormat::kRgba32Float,
+            core::type::TextureDimension::k1d,
             TextureDataType::kF32,
             "textureStore",
             [](ProgramBuilder* b) {
@@ -2492,9 +2493,9 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureStore(t      : texture_storage_2d<rgba32float>,\n"
             "             coords : vec2<i32>,\n"
             "             value  : vec4<T>)",
-            tint::builtin::Access::kWrite,
-            tint::builtin::TexelFormat::kRgba32Float,
-            type::TextureDimension::k2d,
+            tint::core::Access::kWrite,
+            tint::core::TexelFormat::kRgba32Float,
+            core::type::TextureDimension::k2d,
             TextureDataType::kF32,
             "textureStore",
             [](ProgramBuilder* b) {
@@ -2510,9 +2511,9 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "             coords      : vec2<u32>,\n"
             "             array_index : u32,\n"
             "             value       : vec4<T>)",
-            tint::builtin::Access::kWrite,
-            tint::builtin::TexelFormat::kRgba32Float,
-            type::TextureDimension::k2dArray,
+            tint::core::Access::kWrite,
+            tint::core::TexelFormat::kRgba32Float,
+            core::type::TextureDimension::k2dArray,
             TextureDataType::kF32,
             "textureStore",
             [](ProgramBuilder* b) {
@@ -2528,9 +2529,9 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
             "textureStore(t      : texture_storage_3d<rgba32float>,\n"
             "             coords : vec3<u32>,\n"
             "             value  : vec4<T>)",
-            tint::builtin::Access::kWrite,
-            tint::builtin::TexelFormat::kRgba32Float,
-            type::TextureDimension::k3d,
+            tint::core::Access::kWrite,
+            tint::core::TexelFormat::kRgba32Float,
+            core::type::TextureDimension::k3d,
             TextureDataType::kF32,
             "textureStore",
             [](ProgramBuilder* b) {

@@ -17,18 +17,30 @@
 
 #include <string>
 
-#include "src/tint/clone_context.h"
 #include "src/tint/lang/wgsl/ast/node_id.h"
+#include "src/tint/utils/diagnostic/source.h"
+#include "src/tint/utils/id/generation_id.h"
+#include "src/tint/utils/rtti/castable.h"
+
+// Forward declarations
+namespace tint::ast {
+class CloneContext;
+}
 
 namespace tint::ast {
 
 /// AST base class node
-class Node : public utils::Castable<Node, Cloneable> {
+class Node : public Castable<Node> {
   public:
     ~Node() override;
 
+    /// Performs a deep clone of this object using the CloneContext `ctx`.
+    /// @param ctx the clone context
+    /// @return the newly cloned object
+    virtual const Node* Clone(CloneContext& ctx) const = 0;
+
     /// The identifier of the program that owns this node
-    const ProgramID program_id;
+    const GenerationID generation_id;
 
     /// The node identifier, unique for the program.
     const NodeID node_id;
@@ -41,7 +53,7 @@ class Node : public utils::Castable<Node, Cloneable> {
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the input source for the node
-    Node(ProgramID pid, NodeID nid, const Source& src);
+    Node(GenerationID pid, NodeID nid, const Source& src);
 
   private:
     Node(const Node&) = delete;
@@ -53,9 +65,9 @@ class Node : public utils::Castable<Node, Cloneable> {
 namespace tint {
 
 /// @param node a pointer to an AST node
-/// @returns the ProgramID of the given AST node.
-inline ProgramID ProgramIDOf(const ast::Node* node) {
-    return node ? node->program_id : ProgramID();
+/// @returns the GenerationID of the given AST node.
+inline GenerationID GenerationIDOf(const ast::Node* node) {
+    return node ? node->generation_id : GenerationID();
 }
 
 }  // namespace tint

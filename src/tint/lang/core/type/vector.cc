@@ -15,18 +15,18 @@
 #include "src/tint/lang/core/type/vector.h"
 
 #include "src/tint/lang/core/type/manager.h"
-#include "src/tint/utils/debug/debug.h"
 #include "src/tint/utils/diagnostic/diagnostic.h"
+#include "src/tint/utils/ice/ice.h"
 #include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/text/string_stream.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::type::Vector);
+TINT_INSTANTIATE_TYPEINFO(tint::core::type::Vector);
 
-namespace tint::type {
+namespace tint::core::type {
 
 Vector::Vector(Type const* subtype, uint32_t width, bool packed /* = false */)
-    : Base(utils::Hash(utils::TypeInfo::Of<Vector>().full_hashcode, width, subtype, packed),
-           type::Flags{
+    : Base(Hash(tint::TypeInfo::Of<Vector>().full_hashcode, width, subtype, packed),
+           core::type::Flags{
                Flag::kConstructable,
                Flag::kCreationFixedFootprint,
                Flag::kFixedFootprint,
@@ -34,8 +34,8 @@ Vector::Vector(Type const* subtype, uint32_t width, bool packed /* = false */)
       subtype_(subtype),
       width_(width),
       packed_(packed) {
-    TINT_ASSERT(Type, width_ > 1);
-    TINT_ASSERT(Type, width_ < 5);
+    TINT_ASSERT(width_ > 1);
+    TINT_ASSERT(width_ < 5);
 }
 
 Vector::~Vector() = default;
@@ -48,7 +48,7 @@ bool Vector::Equals(const UniqueNode& other) const {
 }
 
 std::string Vector::FriendlyName() const {
-    utils::StringStream out;
+    StringStream out;
     if (packed_) {
         out << "__packed_";
     }
@@ -86,4 +86,4 @@ const Type* Vector::Element(uint32_t index) const {
     return index < width_ ? subtype_ : nullptr;
 }
 
-}  // namespace tint::type
+}  // namespace tint::core::type

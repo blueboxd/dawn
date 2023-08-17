@@ -44,6 +44,8 @@ target_sources(dawn_native PRIVATE
     "BindGroup.h"
     "BindGroupLayout.cpp"
     "BindGroupLayout.h"
+    "BindGroupLayoutInternal.cpp"
+    "BindGroupLayoutInternal.h"
     "BindGroupTracker.h"
     "BindingInfo.cpp"
     "BindingInfo.h"
@@ -117,6 +119,8 @@ target_sources(dawn_native PRIVATE
     "Features.h"
     "ExternalTexture.cpp"
     "ExternalTexture.h"
+    "ExecutionQueue.cpp"
+    "ExecutionQueue.h"
     "IndirectDrawMetadata.cpp"
     "IndirectDrawMetadata.h"
     "IndirectDrawValidationEncoder.cpp"
@@ -184,6 +188,10 @@ target_sources(dawn_native PRIVATE
     "Serializable.h"
     "ShaderModule.cpp"
     "ShaderModule.h"
+    "SharedFence.cpp"
+    "SharedFence.h"
+    "SharedTextureMemory.cpp"
+    "SharedTextureMemory.h"
     "StreamImplTint.cpp"
     "Subresource.cpp"
     "Subresource.h"
@@ -231,12 +239,10 @@ target_link_libraries(dawn_native
 target_include_directories(dawn_native PRIVATE ${DAWN_ABSEIL_DIR})
 
 if (DAWN_USE_X11)
-    find_package(X11 REQUIRED)
-    target_link_libraries(dawn_native PRIVATE ${X11_LIBRARIES})
     target_include_directories(dawn_native PRIVATE ${X11_INCLUDE_DIR})
     target_sources(dawn_native PRIVATE
-        "XlibXcbFunctions.cpp"
-        "XlibXcbFunctions.h"
+        "X11Functions.cpp"
+        "X11Functions.h"
     )
 endif()
 

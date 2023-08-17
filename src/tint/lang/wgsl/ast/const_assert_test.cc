@@ -15,7 +15,10 @@
 #include "src/tint/lang/wgsl/ast/const_assert.h"
 
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/core/fluent_types.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
+
+using namespace tint::core::fluent_types;  // NOLINT
 
 namespace tint::ast {
 namespace {
@@ -52,7 +55,7 @@ TEST_F(ConstAssertTest, Assert_Null_Condition) {
         "internal compiler error");
 }
 
-TEST_F(ConstAssertTest, Assert_DifferentProgramID_Condition) {
+TEST_F(ConstAssertTest, Assert_DifferentGenerationID_Condition) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;

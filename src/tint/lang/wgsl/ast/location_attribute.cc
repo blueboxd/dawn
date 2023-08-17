@@ -16,13 +16,14 @@
 
 #include <string>
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::LocationAttribute);
 
 namespace tint::ast {
 
-LocationAttribute::LocationAttribute(ProgramID pid,
+LocationAttribute::LocationAttribute(GenerationID pid,
                                      NodeID nid,
                                      const Source& src,
                                      const Expression* exp)
@@ -34,11 +35,11 @@ std::string LocationAttribute::Name() const {
     return "location";
 }
 
-const LocationAttribute* LocationAttribute::Clone(CloneContext* ctx) const {
+const LocationAttribute* LocationAttribute::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    auto expr_ = ctx->Clone(expr);
-    return ctx->dst->create<LocationAttribute>(src, expr_);
+    auto src = ctx.Clone(source);
+    auto expr_ = ctx.Clone(expr);
+    return ctx.dst->create<LocationAttribute>(src, expr_);
 }
 
 }  // namespace tint::ast

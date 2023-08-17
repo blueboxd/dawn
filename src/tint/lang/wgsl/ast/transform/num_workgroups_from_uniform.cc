@@ -19,11 +19,16 @@
 #include <unordered_set>
 #include <utility>
 
-#include "src/tint/lang/core/builtin/builtin_value.h"
+#include "src/tint/lang/core/builtin_value.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/wgsl/ast/transform/canonicalize_entry_point_io.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/utils/math/hash.h"
+
+using namespace tint::core::fluent_types;  // NOLINT
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::NumWorkgroupsFromUniform);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::NumWorkgroupsFromUniform::Config);
@@ -34,7 +39,7 @@ namespace {
 bool ShouldRun(const Program* program) {
     for (auto* node : program->ASTNodes().Objects()) {
         if (auto* attr = node->As<BuiltinAttribute>()) {
-            if (program->Sem().Get(attr)->Value() == builtin::BuiltinValue::kNumWorkgroups) {
+            if (program->Sem().Get(attr)->Value() == core::BuiltinValue::kNumWorkgroups) {
                 return true;
             }
         }
@@ -54,7 +59,7 @@ struct Accessor {
     }
     /// Hash function
     struct Hasher {
-        size_t operator()(const Accessor& a) const { return utils::Hash(a.param, a.member); }
+        size_t operator()(const Accessor& a) const { return Hash(a.param, a.member); }
     };
 };
 
@@ -67,13 +72,13 @@ Transform::ApplyResult NumWorkgroupsFromUniform::Apply(const Program* src,
                                                        const DataMap& inputs,
                                                        DataMap&) const {
     ProgramBuilder b;
-    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
 
     auto* cfg = inputs.Get<Config>();
     if (cfg == nullptr) {
         b.Diagnostics().add_error(diag::System::Transform,
                                   "missing transform data for " + std::string(TypeInfo().name));
-        return Program(std::move(b));
+        return resolver::Resolve(b);
     }
 
     if (!ShouldRun(src)) {
@@ -99,7 +104,7 @@ Transform::ApplyResult NumWorkgroupsFromUniform::Apply(const Program* src,
             }
 
             for (auto* member : str->Members()) {
-                if (member->Attributes().builtin != builtin::BuiltinValue::kNumWorkgroups) {
+                if (member->Attributes().builtin != core::BuiltinValue::kNumWorkgroups) {
                     continue;
                 }
 
@@ -130,7 +135,7 @@ Transform::ApplyResult NumWorkgroupsFromUniform::Apply(const Program* src,
     auto get_ubo = [&] {
         if (!num_workgroups_ubo) {
             auto* num_workgroups_struct =
-                b.Structure(b.Sym(), utils::Vector{
+                b.Structure(b.Sym(), tint::Vector{
                                          b.Member(kNumWorkgroupsMemberName, b.ty.vec3(b.ty.u32())),
                                      });
 
@@ -156,9 +161,9 @@ Transform::ApplyResult NumWorkgroupsFromUniform::Apply(const Program* src,
                 binding = 0;
             }
 
-            num_workgroups_ubo = b.GlobalVar(b.Sym(), b.ty.Of(num_workgroups_struct),
-                                             builtin::AddressSpace::kUniform, b.Group(AInt(group)),
-                                             b.Binding(AInt(binding)));
+            num_workgroups_ubo =
+                b.GlobalVar(b.Sym(), b.ty.Of(num_workgroups_struct), core::AddressSpace::kUniform,
+                            b.Group(AInt(group)), b.Binding(AInt(binding)));
         }
         return num_workgroups_ubo;
     };
@@ -182,10 +187,10 @@ Transform::ApplyResult NumWorkgroupsFromUniform::Apply(const Program* src,
     }
 
     ctx.Clone();
-    return Program(std::move(b));
+    return resolver::Resolve(b);
 }
 
-NumWorkgroupsFromUniform::Config::Config(std::optional<sem::BindingPoint> ubo_bp)
+NumWorkgroupsFromUniform::Config::Config(std::optional<BindingPoint> ubo_bp)
     : ubo_binding(ubo_bp) {}
 NumWorkgroupsFromUniform::Config::Config(const Config&) = default;
 NumWorkgroupsFromUniform::Config::~Config() = default;

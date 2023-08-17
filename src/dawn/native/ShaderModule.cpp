@@ -20,7 +20,7 @@
 #include "absl/strings/str_format.h"
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Constants.h"
-#include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/BindGroupLayoutInternal.h"
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/CompilationMessages.h"
 #include "dawn/native/Device.h"
@@ -301,7 +301,7 @@ EntryPointMetadata::Override::Type FromTintOverrideType(tint::inspector::Overrid
 ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
                                        OwnedCompilationMessages* outMessages) {
 #if TINT_BUILD_WGSL_READER
-    tint::Program program = tint::reader::wgsl::Parse(file);
+    tint::Program program = tint::wgsl::reader::Parse(file);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
     }
@@ -319,11 +319,11 @@ ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
 ResultOrError<tint::Program> ParseSPIRV(const std::vector<uint32_t>& spirv,
                                         OwnedCompilationMessages* outMessages,
                                         const DawnShaderModuleSPIRVOptionsDescriptor* optionsDesc) {
-    tint::reader::spirv::Options options;
+    tint::spirv::reader::Options options;
     if (optionsDesc) {
         options.allow_non_uniform_derivatives = optionsDesc->allowNonUniformDerivatives;
     }
-    tint::Program program = tint::reader::spirv::Parse(spirv, options);
+    tint::Program program = tint::spirv::reader::Read(spirv, options);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
     }
@@ -337,7 +337,7 @@ ResultOrError<tint::Program> ParseSPIRV(const std::vector<uint32_t>& spirv,
 #endif  // TINT_BUILD_SPV_READER
 
 std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingGroupInfoMap& shaderBindings,
-                                                 const BindGroupLayoutBase* layout) {
+                                                 const BindGroupLayoutInternalBase* layout) {
     std::vector<uint64_t> requiredBufferSizes(layout->GetUnverifiedBufferCount());
     uint32_t packedIdx = 0;
 
@@ -365,11 +365,11 @@ std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingGroupInfoMap& shad
 }
 
 MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* device,
-                                                          const BindGroupLayoutBase* layout,
+                                                          const BindGroupLayoutInternalBase* layout,
                                                           SingleShaderStage entryPointStage,
                                                           BindingNumber bindingNumber,
                                                           const ShaderBindingInfo& shaderInfo) {
-    const BindGroupLayoutBase::BindingMap& layoutBindings = layout->GetBindingMap();
+    const BindGroupLayoutInternalBase::BindingMap& layoutBindings = layout->GetBindingMap();
 
     // An external texture binding found in the shader will later be expanded into multiple
     // bindings at compile time. This expansion will have already happened in the bgl - so
@@ -381,7 +381,7 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
         // key in the ExternalTextureBindingExpansions map.
         ExternalTextureBindingExpansionMap expansions =
             layout->GetExternalTextureBindingExpansionMap();
-        std::map<BindingNumber, dawn_native::ExternalTextureBindingExpansion>::iterator it =
+        std::map<BindingNumber, dawn::native::ExternalTextureBindingExpansion>::iterator it =
             expansions.find(bindingNumber);
         // TODO(dawn:563): Provide info about the binding types.
         DAWN_INVALID_IF(it == expansions.end(),
@@ -507,7 +507,7 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
 MaybeError ValidateCompatibilityWithBindGroupLayout(DeviceBase* device,
                                                     BindGroupIndex group,
                                                     const EntryPointMetadata& entryPoint,
-                                                    const BindGroupLayoutBase* layout) {
+                                                    const BindGroupLayoutInternalBase* layout) {
     // Iterate over all bindings used by this group in the shader, and find the
     // corresponding binding in the BindGroupLayout, if it exists.
     for (const auto& [bindingId, bindingInfo] : entryPoint.bindings[group]) {
@@ -958,11 +958,11 @@ MaybeError ValidateAndParseShaderModule(DeviceBase* device,
         tint::Program program;
         DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages, spirvOptions));
 
-        tint::writer::wgsl::Options options;
-        auto result = tint::writer::wgsl::Generate(&program, options);
-        DAWN_INVALID_IF(!result.success, "Tint WGSL failure: Generator: %s", result.error);
+        tint::wgsl::writer::Options options;
+        auto result = tint::wgsl::writer::Generate(&program, options);
+        DAWN_INVALID_IF(!result, "Tint WGSL failure: Generator: %s", result.Failure());
 
-        newWgslCode = std::move(result.wgsl);
+        newWgslCode = std::move(result->wgsl);
         newWgslDesc.code = newWgslCode.c_str();
 
         spirvDesc = nullptr;
@@ -1015,12 +1015,12 @@ RequiredBufferSizes ComputeRequiredBufferSizesForLayout(const EntryPointMetadata
     return bufferSizes;
 }
 
-ResultOrError<tint::Program> RunTransforms(tint::transform::Manager* transformManager,
+ResultOrError<tint::Program> RunTransforms(tint::ast::transform::Manager* transformManager,
                                            const tint::Program* program,
-                                           const tint::transform::DataMap& inputs,
-                                           tint::transform::DataMap* outputs,
+                                           const tint::ast::transform::DataMap& inputs,
+                                           tint::ast::transform::DataMap* outputs,
                                            OwnedCompilationMessages* outMessages) {
-    tint::transform::DataMap transform_outputs;
+    tint::ast::transform::DataMap transform_outputs;
     tint::Program result = transformManager->Run(program, inputs, transform_outputs);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(result.Diagnostics()));
@@ -1051,13 +1051,15 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
 
     // Validate that filtering samplers are not used with unfilterable textures.
     for (const auto& pair : entryPoint.samplerTexturePairs) {
-        const BindGroupLayoutBase* samplerBGL = layout->GetBindGroupLayout(pair.sampler.group);
+        const BindGroupLayoutInternalBase* samplerBGL =
+            layout->GetBindGroupLayout(pair.sampler.group);
         const BindingInfo& samplerInfo =
             samplerBGL->GetBindingInfo(samplerBGL->GetBindingIndex(pair.sampler.binding));
         if (samplerInfo.sampler.type != wgpu::SamplerBindingType::Filtering) {
             continue;
         }
-        const BindGroupLayoutBase* textureBGL = layout->GetBindGroupLayout(pair.texture.group);
+        const BindGroupLayoutInternalBase* textureBGL =
+            layout->GetBindGroupLayout(pair.texture.group);
         const BindingInfo& textureInfo =
             textureBGL->GetBindingInfo(textureBGL->GetBindingIndex(pair.texture.binding));
 
@@ -1124,10 +1126,7 @@ ShaderModuleBase::ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag,
 ShaderModuleBase::~ShaderModuleBase() = default;
 
 void ShaderModuleBase::DestroyImpl() {
-    if (IsCachedReference()) {
-        // Do not uncache the actual cached object if we are a blueprint.
-        GetDevice()->UncacheShaderModule(this);
-    }
+    Uncache();
 }
 
 // static

@@ -12,19 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/test_helper.h"
+// GEN_BUILD:CONDITION(tint_build_ir)
 
-namespace tint::writer::spirv {
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
+
+namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(SpirvWriterTest, Swizzle_TwoElements) {
     auto* vec = b.FunctionParam("vec", ty.vec4<i32>());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({vec});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Swizzle(ty.vec2<i32>(), vec, {3_u, 2_u});
         b.Return(func);
         mod.SetName(result, "result");
@@ -38,7 +40,7 @@ TEST_F(SpirvWriterTest, Swizzle_ThreeElements) {
     auto* vec = b.FunctionParam("vec", ty.vec4<i32>());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({vec});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Swizzle(ty.vec3<i32>(), vec, {3_u, 2_u, 1_u});
         b.Return(func);
         mod.SetName(result, "result");
@@ -52,7 +54,7 @@ TEST_F(SpirvWriterTest, Swizzle_FourElements) {
     auto* vec = b.FunctionParam("vec", ty.vec4<i32>());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({vec});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Swizzle(ty.vec4<i32>(), vec, {3_u, 2_u, 1_u, 0u});
         b.Return(func);
         mod.SetName(result, "result");
@@ -66,7 +68,7 @@ TEST_F(SpirvWriterTest, Swizzle_RepeatedElements) {
     auto* vec = b.FunctionParam("vec", ty.vec2<i32>());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({vec});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Swizzle(ty.vec4<i32>(), vec, {1_u, 3_u, 1_u, 3_u});
         b.Return(func);
         mod.SetName(result, "result");
@@ -77,4 +79,4 @@ TEST_F(SpirvWriterTest, Swizzle_RepeatedElements) {
 }
 
 }  // namespace
-}  // namespace tint::writer::spirv
+}  // namespace tint::spirv::writer

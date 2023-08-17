@@ -18,8 +18,8 @@
 #include <string>
 #include <vector>
 
-#include "src/tint/lang/core/builtin/extension.h"
-#include "src/tint/lang/core/builtin/function.h"
+#include "src/tint/lang/core/extension.h"
+#include "src/tint/lang/core/function.h"
 #include "src/tint/lang/wgsl/sem/call_target.h"
 #include "src/tint/lang/wgsl/sem/pipeline_stage_set.h"
 #include "src/tint/utils/math/hash.h"
@@ -27,7 +27,7 @@
 namespace tint::sem {
 
 /// Builtin holds the semantic information for a builtin function.
-class Builtin final : public utils::Castable<Builtin, CallTarget> {
+class Builtin final : public Castable<Builtin, CallTarget> {
   public:
     /// Constructor
     /// @param type the builtin type
@@ -37,10 +37,10 @@ class Builtin final : public utils::Castable<Builtin, CallTarget> {
     /// @param supported_stages the pipeline stages that this builtin can be used in
     /// @param is_deprecated true if the particular overload is considered deprecated
     /// @param must_use true if the builtin was annotated with `@must_use`
-    Builtin(builtin::Function type,
-            const type::Type* return_type,
-            utils::VectorRef<Parameter*> parameters,
-            EvaluationStage eval_stage,
+    Builtin(core::Function type,
+            const core::type::Type* return_type,
+            VectorRef<Parameter*> parameters,
+            core::EvaluationStage eval_stage,
             PipelineStageSet supported_stages,
             bool is_deprecated,
             bool must_use);
@@ -49,7 +49,7 @@ class Builtin final : public utils::Castable<Builtin, CallTarget> {
     ~Builtin() override;
 
     /// @return the type of the builtin
-    builtin::Function Type() const { return type_; }
+    core::Function Type() const { return type_; }
 
     /// @return the pipeline stages that this builtin can be used in
     PipelineStageSet SupportedStages() const { return supported_stages_; }
@@ -92,16 +92,20 @@ class Builtin final : public utils::Castable<Builtin, CallTarget> {
     /// chromium_experimental_DP4a)
     bool IsDP4a() const;
 
+    /// @returns true if builtin is a subgroup builtin (defined in the extension
+    /// chromium_experimental_subgroups)
+    bool IsSubgroup() const;
+
     /// @returns true if intrinsic may have side-effects (i.e. writes to at least
     /// one of its inputs)
     bool HasSideEffects() const;
 
     /// @returns the required extension of this builtin function. Returns
-    /// builtin::Extension::kNone if no extension is required.
-    builtin::Extension RequiredExtension() const;
+    /// core::Extension::kNone if no extension is required.
+    core::Extension RequiredExtension() const;
 
   private:
-    const builtin::Function type_;
+    const core::Function type_;
     const PipelineStageSet supported_stages_;
     const bool is_deprecated_;
 };
@@ -123,8 +127,8 @@ class hash<tint::sem::Builtin> {
     /// @param i the Builtin to create a hash for
     /// @return the hash value
     inline std::size_t operator()(const tint::sem::Builtin& i) const {
-        return tint::utils::Hash(i.Type(), i.SupportedStages(), i.ReturnType(), i.Parameters(),
-                                 i.IsDeprecated());
+        return Hash(i.Type(), i.SupportedStages(), i.ReturnType(), i.Parameters(),
+                    i.IsDeprecated());
     }
 };
 

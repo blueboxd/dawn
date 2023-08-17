@@ -20,9 +20,9 @@
 #include "src/tint/lang/wgsl/sem/builtin_enum_expression.h"
 
 // Forward declarations
-namespace tint::utils {
+namespace tint {
 class CastableBase;
-}  // namespace tint::utils
+}  // namespace tint
 namespace tint::ast {
 class AccessorExpression;
 class BinaryExpression;
@@ -46,8 +46,8 @@ class Variable;
 class WhileStatement;
 class UnaryOpExpression;
 }  // namespace tint::ast
-namespace tint::builtin {
-enum class BuiltinValue;
+namespace tint::core {
+enum class BuiltinValue : uint8_t;
 }
 namespace tint::sem {
 class Expression;
@@ -64,10 +64,10 @@ class ValueExpression;
 class Variable;
 class WhileStatement;
 }  // namespace tint::sem
-namespace tint::type {
+namespace tint::core::type {
 class Array;
 class Type;
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 namespace tint::sem {
 
@@ -77,8 +77,8 @@ namespace tint::sem {
 /// rules will be used to infer the return type based on the argument type.
 struct TypeMappings {
     //! @cond Doxygen_Suppress
-    BuiltinEnumExpression<builtin::BuiltinValue>* operator()(ast::BuiltinAttribute*);
-    utils::CastableBase* operator()(ast::Node*);
+    BuiltinEnumExpression<core::BuiltinValue>* operator()(ast::BuiltinAttribute*);
+    CastableBase* operator()(ast::Node*);
     Expression* operator()(ast::Expression*);
     ForLoopStatement* operator()(ast::ForLoopStatement*);
     Function* operator()(ast::Function*);
@@ -88,7 +88,7 @@ struct TypeMappings {
     Struct* operator()(ast::Struct*);
     StructMember* operator()(ast::StructMember*);
     SwitchStatement* operator()(ast::SwitchStatement*);
-    type::Type* operator()(ast::TypeDecl*);
+    core::type::Type* operator()(ast::TypeDecl*);
     ValueExpression* operator()(ast::AccessorExpression*);
     ValueExpression* operator()(ast::BinaryExpression*);
     ValueExpression* operator()(ast::BitcastExpression*);

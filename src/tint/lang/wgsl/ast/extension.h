@@ -15,7 +15,7 @@
 #ifndef SRC_TINT_LANG_WGSL_AST_EXTENSION_H_
 #define SRC_TINT_LANG_WGSL_AST_EXTENSION_H_
 
-#include "src/tint/lang/core/builtin/extension.h"
+#include "src/tint/lang/core/extension.h"
 #include "src/tint/lang/wgsl/ast/node.h"
 
 namespace tint::ast {
@@ -24,14 +24,14 @@ namespace tint::ast {
 /// ```
 ///   enable f16;
 /// ```
-class Extension final : public utils::Castable<Extension, Node> {
+class Extension final : public Castable<Extension, Node> {
   public:
     /// Create a extension
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     /// @param ext the extension
-    Extension(ProgramID pid, NodeID nid, const Source& src, builtin::Extension ext);
+    Extension(GenerationID pid, NodeID nid, const Source& src, core::Extension ext);
 
     /// Destructor
     ~Extension() override;
@@ -40,10 +40,10 @@ class Extension final : public utils::Castable<Extension, Node> {
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const Extension* Clone(CloneContext* ctx) const override;
+    const Extension* Clone(CloneContext& ctx) const override;
 
     /// The extension name
-    const builtin::Extension name;
+    const core::Extension name;
 };
 
 }  // namespace tint::ast

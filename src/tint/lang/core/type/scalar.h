@@ -17,11 +17,11 @@
 
 #include "src/tint/lang/core/type/type.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// Base class for all scalar types
 /// @see https://www.w3.org/TR/WGSL/#scalar-types
-class Scalar : public utils::Castable<Scalar, Type> {
+class Scalar : public Castable<Scalar, Type> {
   public:
     /// Destructor
     ~Scalar() override;
@@ -34,9 +34,9 @@ class Scalar : public utils::Castable<Scalar, Type> {
     /// Constructor
     /// @param hash the immutable hash for the node
     /// @param flags the flags of this type
-    Scalar(size_t hash, type::Flags flags);
+    Scalar(size_t hash, core::type::Flags flags);
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_SCALAR_H_

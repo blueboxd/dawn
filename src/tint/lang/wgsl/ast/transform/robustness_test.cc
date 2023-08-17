@@ -14,7 +14,7 @@
 
 #include "src/tint/lang/wgsl/ast/transform/robustness.h"
 
-#include "src/tint/lang/wgsl/ast/transform/test_helper.h"
+#include "src/tint/lang/wgsl/ast/transform/helper_test.h"
 
 namespace tint::ast::transform {
 
@@ -32,8 +32,7 @@ static std::ostream& operator<<(std::ostream& out, Robustness::Action action) {
 
 namespace {
 
-Transform::DataMap Config(Robustness::Action action,
-                          bool disable_runtime_sized_array_index_clamping = false) {
+DataMap Config(Robustness::Action action, bool disable_runtime_sized_array_index_clamping = false) {
     Robustness::Config cfg;
     cfg.value_action = action;
     cfg.texture_action = action;
@@ -44,7 +43,7 @@ Transform::DataMap Config(Robustness::Action action,
     cfg.uniform_action = action;
     cfg.workgroup_action = action;
     cfg.disable_runtime_sized_array_index_clamping = disable_runtime_sized_array_index_clamping;
-    Transform::DataMap data;
+    DataMap data;
     data.Add<Robustness::Config>(cfg);
     return data;
 }

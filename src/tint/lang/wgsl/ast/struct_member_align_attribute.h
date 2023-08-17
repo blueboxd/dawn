@@ -24,15 +24,14 @@
 namespace tint::ast {
 
 /// A struct member align attribute
-class StructMemberAlignAttribute final
-    : public utils::Castable<StructMemberAlignAttribute, Attribute> {
+class StructMemberAlignAttribute final : public Castable<StructMemberAlignAttribute, Attribute> {
   public:
     /// constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     /// @param align the align expression
-    StructMemberAlignAttribute(ProgramID pid,
+    StructMemberAlignAttribute(GenerationID pid,
                                NodeID nid,
                                const Source& src,
                                const Expression* align);
@@ -45,7 +44,7 @@ class StructMemberAlignAttribute final
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const StructMemberAlignAttribute* Clone(CloneContext* ctx) const override;
+    const StructMemberAlignAttribute* Clone(CloneContext& ctx) const override;
 
     /// The align expression
     const Expression* const expr;

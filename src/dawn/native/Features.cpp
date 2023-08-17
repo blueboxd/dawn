@@ -87,6 +87,24 @@ static constexpr FeatureEnumAndInfoList kFeatureNameAndInfoList = {{
       "Allows textures with formats \"r32float\" \"rg32float\" and \"rgba32float\" to be filtered.",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=1664",
       FeatureInfo::FeatureState::Experimental}},
+    {Feature::ChromiumExperimentalSubgroups,
+     {"chromium-experimental-subgroups",
+      "Experimental, allows using subgroup and supports the \"enable "
+      "chromium_experimental_subgroups\" directive "
+      "in WGSL. Only used to investigate the semantic of subgroups and should not be relied upon.",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=464",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::ChromiumExperimentalSubgroupUniformControlFlow,
+     {"chromium-experimental-subgroup-uniform-control-flow",
+      "Experimental, supports VK_KHR_shader_subgroup_uniform_control_flow on Vulkan devices. Only "
+      "used to investigate the semantic of subgroups and should not be relied upon.",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=464",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::ChromiumExperimentalReadWriteStorageTexture,
+     {"chromium-experimental-read-write-storage-texture",
+      "Experimental, supports ReadOnly and ReadWrite as storage texture access mode.",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1972",
+      FeatureInfo::FeatureState::Experimental}},
     {Feature::DawnInternalUsages,
      {"dawn-internal-usages",
       "Add internal usages to resources to affect how the texture is allocated, but not "
@@ -121,14 +139,122 @@ static constexpr FeatureEnumAndInfoList kFeatureNameAndInfoList = {{
      {"msaa-render-to-single-sampled",
       "Support multisampled rendering on single-sampled attachments efficiently.",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=1710", FeatureInfo::FeatureState::Stable}},
+    {Feature::DualSourceBlending,
+     {"dual-source-blending",
+      "Support dual source blending. Enables Src1, OneMinusSrc1, Src1Alpha, and OneMinusSrc1Alpha "
+      "blend factors along with @index WGSL output attribute.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "dual_source_blending.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::D3D11MultithreadProtected,
+     {"d3d11-multithread-protected",
+      "Enable ID3D11Multithread protection for interop with external users of the D3D11 device.",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1927", FeatureInfo::FeatureState::Stable}},
+    {Feature::ANGLETextureSharing,
+     {"angle-texture-sharing",
+      "Enable ANGLE texture sharing to allow the OpenGL ES backend to share textures by external "
+      "OpenGL texture ID.",
+      "https://chromium.googlesource.com/angle/angle/+/refs/heads/main/extensions/"
+      "EGL_ANGLE_display_texture_share_group.txt",
+      FeatureInfo::FeatureState::Stable}},
+    {Feature::PixelLocalStorageCoherent,
+     {"pixel-local-storage-coherent",
+      "Supports passing information between invocation in a render pass that cover the same pixel."
+      "This helps more efficiently implement algorithms that would otherwise require ping-ponging"
+      "between render targets. The coherent version of this extension means that no barrier calls"
+      "are needed to prevent data races between fragment shaders on the same pixel.",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1704",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::PixelLocalStorageNonCoherent,
+     {"pixel-local-storage-non-coherent",
+      "Supports passing information between invocation in a render pass that cover the same pixel."
+      "This helps more efficiently implement algorithms that would otherwise require ping-ponging"
+      "between render targets. The non-coherent version of this extension means that barrier calls"
+      "are needed to prevent data races between fragment shaders on the same pixels (note that "
+      "overlapping fragments from the same draw cannot be made data race free).",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1704",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedTextureMemoryVkDedicatedAllocation,
+     {"shared-texture-memory-vk-dedicated-allocation",
+      "Support specifying whether a Vulkan allocation for shared texture memory is a dedicated "
+      "memory allocation.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "shared_texture_memory.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedTextureMemoryAHardwareBuffer,
+     {"shared-texture-memory-a-hardware-buffer",
+      "Support importing AHardwareBuffer as shared texture memory.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "shared_texture_memory.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedTextureMemoryDmaBuf,
+     {"shared-texture-memory-dma-buf", "Support importing DmaBuf as shared texture memory.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "shared_texture_memory.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedTextureMemoryOpaqueFD,
+     {"shared-texture-memory-opaque-fd", "Support importing OpaqueFD as shared texture memory.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "shared_texture_memory.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedTextureMemoryZirconHandle,
+     {"shared-texture-memory-zircon-handle",
+      "Support importing ZirconHandle as shared texture memory.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "shared_texture_memory.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedTextureMemoryDXGISharedHandle,
+     {"shared-texture-memory-dxgi-handle",
+      "Support importing DXGISharedHandle as shared texture memory.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "shared_texture_memory.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedTextureMemoryD3D11Texture2D,
+     {"shared-texture-memory-d3d11-texture-2d",
+      "Support importing D3D11Texture2D as shared texture memory.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "shared_texture_memory.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedTextureMemoryIOSurface,
+     {"shared-texture-memory-io-surface", "Support importing IOSurface as shared texture memory.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "shared_texture_memory.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedTextureMemoryEGLImage,
+     {"shared-texture-memory-egl-image", "Support importing EGLImage as shared texture memory.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "shared_texture_memory.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedFenceVkSemaphoreOpaqueFD,
+     {"shared-fence-vk-semaphore-opaque-fd",
+      "Support for importing and exporting VkSemaphoreOpaqueFD used for GPU synchronization.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_fence.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedFenceVkSemaphoreSyncFD,
+     {"shared-fence-vk-semaphore-sync-fd",
+      "Support for importing and exporting VkSemaphoreSyncFD used for GPU synchronization.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_fence.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedFenceVkSemaphoreZirconHandle,
+     {"shared-fence-vk-semaphore-zircon-handle",
+      "Support for importing and exporting VkSemaphoreZirconHandle used for GPU synchronization.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_fence.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedFenceDXGISharedHandle,
+     {"shared-fence-vk-semaphore-dxgi-fence-handle",
+      "Support for importing and exporting DXGISharedHandle used for GPU synchronization.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_fence.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedFenceMTLSharedEvent,
+     {"shared-fence-vk-semaphore-mtl-shared-event",
+      "Support for importing and exporting MTLSharedEvent used for GPU synchronization.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_fence.md",
+      FeatureInfo::FeatureState::Experimental}},
 }};
 
 Feature FromAPIFeature(wgpu::FeatureName feature) {
     switch (feature) {
         case wgpu::FeatureName::Undefined:
-            return Feature::InvalidEnum;
-        case wgpu::FeatureName::DawnShaderFloat16:
-            // Deprecated.
             return Feature::InvalidEnum;
 
         case wgpu::FeatureName::TimestampQuery:
@@ -173,6 +299,50 @@ Feature FromAPIFeature(wgpu::FeatureName feature) {
             return Feature::Float32Filterable;
         case wgpu::FeatureName::MSAARenderToSingleSampled:
             return Feature::MSAARenderToSingleSampled;
+        case wgpu::FeatureName::DualSourceBlending:
+            return Feature::DualSourceBlending;
+        case wgpu::FeatureName::D3D11MultithreadProtected:
+            return Feature::D3D11MultithreadProtected;
+        case wgpu::FeatureName::ANGLETextureSharing:
+            return Feature::ANGLETextureSharing;
+        case wgpu::FeatureName::PixelLocalStorageCoherent:
+            return Feature::PixelLocalStorageCoherent;
+        case wgpu::FeatureName::PixelLocalStorageNonCoherent:
+            return Feature::PixelLocalStorageNonCoherent;
+        case wgpu::FeatureName::SharedTextureMemoryVkDedicatedAllocation:
+            return Feature::SharedTextureMemoryVkDedicatedAllocation;
+        case wgpu::FeatureName::SharedTextureMemoryAHardwareBuffer:
+            return Feature::SharedTextureMemoryAHardwareBuffer;
+        case wgpu::FeatureName::SharedTextureMemoryDmaBuf:
+            return Feature::SharedTextureMemoryDmaBuf;
+        case wgpu::FeatureName::SharedTextureMemoryOpaqueFD:
+            return Feature::SharedTextureMemoryOpaqueFD;
+        case wgpu::FeatureName::SharedTextureMemoryZirconHandle:
+            return Feature::SharedTextureMemoryZirconHandle;
+        case wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle:
+            return Feature::SharedTextureMemoryDXGISharedHandle;
+        case wgpu::FeatureName::SharedTextureMemoryD3D11Texture2D:
+            return Feature::SharedTextureMemoryD3D11Texture2D;
+        case wgpu::FeatureName::SharedTextureMemoryIOSurface:
+            return Feature::SharedTextureMemoryIOSurface;
+        case wgpu::FeatureName::SharedTextureMemoryEGLImage:
+            return Feature::SharedTextureMemoryEGLImage;
+        case wgpu::FeatureName::SharedFenceVkSemaphoreOpaqueFD:
+            return Feature::SharedFenceVkSemaphoreOpaqueFD;
+        case wgpu::FeatureName::SharedFenceVkSemaphoreSyncFD:
+            return Feature::SharedFenceVkSemaphoreSyncFD;
+        case wgpu::FeatureName::SharedFenceVkSemaphoreZirconHandle:
+            return Feature::SharedFenceVkSemaphoreZirconHandle;
+        case wgpu::FeatureName::SharedFenceDXGISharedHandle:
+            return Feature::SharedFenceDXGISharedHandle;
+        case wgpu::FeatureName::SharedFenceMTLSharedEvent:
+            return Feature::SharedFenceMTLSharedEvent;
+        case wgpu::FeatureName::ChromiumExperimentalSubgroups:
+            return Feature::ChromiumExperimentalSubgroups;
+        case wgpu::FeatureName::ChromiumExperimentalSubgroupUniformControlFlow:
+            return Feature::ChromiumExperimentalSubgroupUniformControlFlow;
+        case wgpu::FeatureName::ChromiumExperimentalReadWriteStorageTexture:
+            return Feature::ChromiumExperimentalReadWriteStorageTexture;
     }
     return Feature::InvalidEnum;
 }
@@ -221,7 +391,50 @@ wgpu::FeatureName ToAPIFeature(Feature feature) {
             return wgpu::FeatureName::Float32Filterable;
         case Feature::MSAARenderToSingleSampled:
             return wgpu::FeatureName::MSAARenderToSingleSampled;
-
+        case Feature::DualSourceBlending:
+            return wgpu::FeatureName::DualSourceBlending;
+        case Feature::D3D11MultithreadProtected:
+            return wgpu::FeatureName::D3D11MultithreadProtected;
+        case Feature::ANGLETextureSharing:
+            return wgpu::FeatureName::ANGLETextureSharing;
+        case Feature::PixelLocalStorageCoherent:
+            return wgpu::FeatureName::PixelLocalStorageCoherent;
+        case Feature::PixelLocalStorageNonCoherent:
+            return wgpu::FeatureName::PixelLocalStorageNonCoherent;
+        case Feature::SharedTextureMemoryVkDedicatedAllocation:
+            return wgpu::FeatureName::SharedTextureMemoryVkDedicatedAllocation;
+        case Feature::SharedTextureMemoryAHardwareBuffer:
+            return wgpu::FeatureName::SharedTextureMemoryAHardwareBuffer;
+        case Feature::SharedTextureMemoryDmaBuf:
+            return wgpu::FeatureName::SharedTextureMemoryDmaBuf;
+        case Feature::SharedTextureMemoryOpaqueFD:
+            return wgpu::FeatureName::SharedTextureMemoryOpaqueFD;
+        case Feature::SharedTextureMemoryZirconHandle:
+            return wgpu::FeatureName::SharedTextureMemoryZirconHandle;
+        case Feature::SharedTextureMemoryDXGISharedHandle:
+            return wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle;
+        case Feature::SharedTextureMemoryD3D11Texture2D:
+            return wgpu::FeatureName::SharedTextureMemoryD3D11Texture2D;
+        case Feature::SharedTextureMemoryIOSurface:
+            return wgpu::FeatureName::SharedTextureMemoryIOSurface;
+        case Feature::SharedTextureMemoryEGLImage:
+            return wgpu::FeatureName::SharedTextureMemoryEGLImage;
+        case Feature::SharedFenceVkSemaphoreOpaqueFD:
+            return wgpu::FeatureName::SharedFenceVkSemaphoreOpaqueFD;
+        case Feature::SharedFenceVkSemaphoreSyncFD:
+            return wgpu::FeatureName::SharedFenceVkSemaphoreSyncFD;
+        case Feature::SharedFenceVkSemaphoreZirconHandle:
+            return wgpu::FeatureName::SharedFenceVkSemaphoreZirconHandle;
+        case Feature::SharedFenceDXGISharedHandle:
+            return wgpu::FeatureName::SharedFenceDXGISharedHandle;
+        case Feature::SharedFenceMTLSharedEvent:
+            return wgpu::FeatureName::SharedFenceMTLSharedEvent;
+        case Feature::ChromiumExperimentalSubgroups:
+            return wgpu::FeatureName::ChromiumExperimentalSubgroups;
+        case Feature::ChromiumExperimentalSubgroupUniformControlFlow:
+            return wgpu::FeatureName::ChromiumExperimentalSubgroupUniformControlFlow;
+        case Feature::ChromiumExperimentalReadWriteStorageTexture:
+            return wgpu::FeatureName::ChromiumExperimentalReadWriteStorageTexture;
         case Feature::EnumCount:
             break;
     }

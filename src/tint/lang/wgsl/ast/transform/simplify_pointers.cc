@@ -20,7 +20,9 @@
 #include <vector>
 
 #include "src/tint/lang/wgsl/ast/transform/unshadow.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/block_statement.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/statement.h"
@@ -53,7 +55,7 @@ struct SimplifyPointers::State {
     /// The target program builder
     ProgramBuilder b;
     /// The clone context
-    CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
 
     /// Constructor
     /// @param program the source program
@@ -100,11 +102,11 @@ struct SimplifyPointers::State {
         while (true) {
             if (auto* unary = op.expr->As<UnaryOpExpression>()) {
                 switch (unary->op) {
-                    case UnaryOp::kIndirection:
+                    case core::UnaryOp::kIndirection:
                         op.indirections++;
                         op.expr = unary->expr;
                         continue;
-                    case UnaryOp::kAddressOf:
+                    case core::UnaryOp::kAddressOf:
                         op.indirections--;
                         op.expr = unary->expr;
                         continue;
@@ -116,7 +118,7 @@ struct SimplifyPointers::State {
                 auto* var = user->Variable();
                 if (var->Is<sem::LocalVariable>() &&  //
                     var->Declaration()->Is<Let>() &&  //
-                    var->Type()->Is<type::Pointer>()) {
+                    var->Type()->Is<core::type::Pointer>()) {
                     op.expr = var->Declaration()->initializer;
                     continue;
                 }
@@ -129,11 +131,11 @@ struct SimplifyPointers::State {
     /// @returns the new program or SkipTransform if the transform is not required
     ApplyResult Run() {
         // A map of saved expressions to their saved variable name
-        utils::Hashmap<const Expression*, Symbol, 8> saved_vars;
+        Hashmap<const Expression*, Symbol, 8> saved_vars;
 
         bool needs_transform = false;
         for (auto* ty : ctx.src->Types()) {
-            if (ty->Is<type::Pointer>()) {
+            if (ty->Is<core::type::Pointer>()) {
                 // Program contains pointers which need removing.
                 needs_transform = true;
                 break;
@@ -152,7 +154,7 @@ struct SimplifyPointers::State {
                     }
 
                     auto* var = ctx.src->Sem().Get(let->variable);
-                    if (!var->Type()->Is<type::Pointer>()) {
+                    if (!var->Type()->Is<core::type::Pointer>()) {
                         return;  // Not a pointer type. Ignore.
                     }
 
@@ -160,7 +162,7 @@ struct SimplifyPointers::State {
 
                     // Scan the initializer expression for array index expressions that need
                     // to be hoist to temporary "saved" variables.
-                    utils::Vector<const VariableDeclStatement*, 8> saved;
+                    tint::Vector<const VariableDeclStatement*, 8> saved;
                     CollectSavedArrayIndices(
                         var->Declaration()->initializer, [&](const Expression* idx_expr) {
                             // We have a sub-expression that needs to be saved.
@@ -206,7 +208,7 @@ struct SimplifyPointers::State {
                     RemoveStatement(ctx, let);
                 },
                 [&](const UnaryOpExpression* op) {
-                    if (op->op == UnaryOp::kAddressOf) {
+                    if (op->op == core::UnaryOp::kAddressOf) {
                         // Transform can be skipped if no address-of operator is used, as there
                         // will be no pointers that can be inlined.
                         needs_transform = true;
@@ -249,7 +251,7 @@ struct SimplifyPointers::State {
         });
 
         ctx.Clone();
-        return Program(std::move(b));
+        return resolver::Resolve(b);
     }
 };
 

@@ -305,6 +305,7 @@ dawn_test("dawn_unittests") {
     "unittests/LimitsTests.cpp",
     "unittests/LinkedListTests.cpp",
     "unittests/MathTests.cpp",
+    "unittests/MutexProtectedTests.cpp",
     "unittests/MutexTests.cpp",
     "unittests/NumericTests.cpp",
     "unittests/ObjectBaseTests.cpp",
@@ -357,8 +358,10 @@ dawn_test("dawn_unittests") {
     "unittests/validation/LabelTests.cpp",
     "unittests/validation/MinimumBufferSizeValidationTests.cpp",
     "unittests/validation/MultipleDeviceTests.cpp",
+    "unittests/validation/ObjectCachingTests.cpp",
     "unittests/validation/OverridableConstantsValidationTests.cpp",
     "unittests/validation/PipelineAndPassCompatibilityTests.cpp",
+    "unittests/validation/PixelLocalStorageTests.cpp",
     "unittests/validation/QueryValidationTests.cpp",
     "unittests/validation/QueueOnSubmittedWorkDoneValidationTests.cpp",
     "unittests/validation/QueueSubmitValidationTests.cpp",
@@ -531,6 +534,7 @@ source_set("end2end_tests_sources") {
     "end2end/DrawIndexedTests.cpp",
     "end2end/DrawIndirectTests.cpp",
     "end2end/DrawTests.cpp",
+    "end2end/DualSourceBlendTests.cpp",
     "end2end/DynamicBufferOffsetTests.cpp",
     "end2end/EntryPointTests.cpp",
     "end2end/ExperimentalDP4aTests.cpp",
@@ -547,7 +551,6 @@ source_set("end2end_tests_sources") {
     "end2end/MultithreadTests.cpp",
     "end2end/NonzeroBufferCreationTests.cpp",
     "end2end/NonzeroTextureCreationTests.cpp",
-    "end2end/ObjectCachingTests.cpp",
     "end2end/OpArrayLengthTests.cpp",
     "end2end/PhysicalDeviceDiscoveryTests.cpp",
     "end2end/PipelineCachingTests.cpp",
@@ -701,20 +704,15 @@ source_set("white_box_tests_sources") {
     ]
 
     # If a "build with ARC" config is present, remove it.
-    # TODO(https://crbug.com/1280317): Remove the "enable_arc2" variant
-    # when ARC migration in the Chromium repo is complete.
     if (filter_include(configs, [ "//build/config/compiler:enable_arc" ]) !=
         []) {
       configs -= [ "//build/config/compiler:enable_arc" ]
-    }
-    if (filter_include(configs, [ "//build/config/compiler:enable_arc2" ]) !=
-        []) {
-      configs -= [ "//build/config/compiler:enable_arc2" ]
     }
   }
 
   if (dawn_enable_opengles) {
     sources += [ "white_box/EGLImageWrappingTests.cpp" ]
+    sources += [ "white_box/GLTextureWrappingTests.cpp" ]
     include_dirs = [ "//third_party/khronos" ]
   }
 

@@ -22,13 +22,13 @@
 namespace tint::ast {
 
 /// The invariant attribute
-class InvariantAttribute final : public utils::Castable<InvariantAttribute, Attribute> {
+class InvariantAttribute final : public Castable<InvariantAttribute, Attribute> {
   public:
     /// constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
-    InvariantAttribute(ProgramID pid, NodeID nid, const Source& src);
+    InvariantAttribute(GenerationID pid, NodeID nid, const Source& src);
     ~InvariantAttribute() override;
 
     /// @returns the WGSL name for the attribute
@@ -38,7 +38,7 @@ class InvariantAttribute final : public utils::Castable<InvariantAttribute, Attr
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const InvariantAttribute* Clone(CloneContext* ctx) const override;
+    const InvariantAttribute* Clone(CloneContext& ctx) const override;
 };
 
 }  // namespace tint::ast

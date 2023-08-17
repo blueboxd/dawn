@@ -12,1659 +12,563 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+################################################################################
+# Target flags
+################################################################################
+if(NOT TINT_BUILD_AS_OTHER_OS)
+  if(UNIX)
+    set(IS_LINUX TRUE)
+    set(IS_LINUX TRUE)
+  elseif(APPLE)
+    set(IS_MAC TRUE)
+    set(IS_MAC TRUE)
+  elseif(WIN32)
+    set(IS_WIN TRUE)
+    set(IS_WIN TRUE)
+  endif()
+endif()
+
+################################################################################
+# Helper functions
+################################################################################
+function(tint_core_compile_options TARGET)
+  target_include_directories(${TARGET} PUBLIC "${TINT_ROOT_SOURCE_DIR}")
+  target_include_directories(${TARGET} PUBLIC "${TINT_ROOT_SOURCE_DIR}/include")
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SPV_READER=$<BOOL:${TINT_BUILD_SPV_READER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_WGSL_READER=$<BOOL:${TINT_BUILD_WGSL_READER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_GLSL_WRITER=$<BOOL:${TINT_BUILD_GLSL_WRITER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_HLSL_WRITER=$<BOOL:${TINT_BUILD_HLSL_WRITER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_MSL_WRITER=$<BOOL:${TINT_BUILD_MSL_WRITER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SPV_WRITER=$<BOOL:${TINT_BUILD_SPV_WRITER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_WGSL_WRITER=$<BOOL:${TINT_BUILD_WGSL_WRITER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SYNTAX_TREE_WRITER=$<BOOL:${TINT_BUILD_SYNTAX_TREE_WRITER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_IR=$<BOOL:${TINT_BUILD_IR}>)
+
+  common_compile_options(${TARGET})
+endfunction()
+
+function(tint_default_compile_options TARGET)
+  tint_core_compile_options(${TARGET})
+
+  set_target_properties(${TARGET} PROPERTIES LINKER_LANGUAGE CXX)
+
+  set(COMMON_GNU_OPTIONS
+    -Wall
+    -Werror
+    -Wextra
+    -Wno-documentation-unknown-command
+    -Wno-padded
+    -Wno-switch-enum
+    -Wno-unknown-pragmas
+  )
+
+  set(COMMON_CLANG_OPTIONS
+    -Wno-c++98-compat
+    -Wno-c++98-compat-pedantic
+    -Wno-format-pedantic
+    -Wno-poison-system-directories
+    -Wno-return-std-move-in-c++11
+    -Wno-unknown-warning-option
+    -Wno-undefined-var-template
+    -Wno-unsafe-buffer-usage
+    -Wno-used-but-marked-unused
+    -Weverything
+  )
+
+  if(APPLE)
+    # Silence 'has no symbols' warnings for header-only libraries.
+    target_link_options(${TARGET} PRIVATE "-no_warning_for_no_symbols")
+  endif()
+
+  if(COMPILER_IS_LIKE_GNU)
+    target_compile_options(${TARGET} PRIVATE
+      -pedantic-errors
+      ${COMMON_GNU_OPTIONS}
+    )
+
+    if(COMPILER_IS_CLANG)
+      target_compile_options(${TARGET} PRIVATE
+        ${COMMON_CLANG_OPTIONS}
+      )
+    endif()
+  endif(COMPILER_IS_LIKE_GNU)
+
+  if(MSVC)
+    # Specify /EHs for exception handling.
+    target_compile_options(${TARGET} PRIVATE
+      /bigobj
+      /EHsc
+      /W4
+      /WX
+      /wd4068 # unknown pragma
+      /wd4127 # conditional expression is constant
+      /wd4244 # 'conversion' conversion from 'type1' to 'type2', possible loss of data
+      /wd4267 # 'var' : conversion from 'size_t' to 'type', possible loss of data
+      /wd4324 # 'struct_name' : structure was padded due to __declspec(align())
+      /wd4459 # declaration of 'identifier' hides global declaration
+      /wd4458 # declaration of 'identifier' hides class member
+      /wd4514 # 'function' : unreferenced inline function has been removed
+      /wd4571 # catch(...) semantics changed since Visual C++ 7.1; structured exceptions (SEH) are no longer caught
+      /wd4625 # 'derived class' : copy constructor was implicitly defined as deleted because a base class copy constructor is inaccessible or deleted
+      /wd4626 # 'derived class' : assignment operator was implicitly defined as deleted because a base class assignment operator is inaccessible or deleted
+      /wd4710 # 'function' : function not inlined
+      /wd4774 # 'function' : format string 'string' requires an argument of type 'type', but variadic argument number has type 'type'
+      /wd4820 # 'bytes' bytes padding added after construct 'member_name'
+      /wd5026 # 'type': move constructor was implicitly defined as deleted
+      /wd5027 # 'type': move assignment operator was implicitly defined as deleted
+    )
+
+    # When building with clang-cl on Windows, try to match our clang build
+    # options as much as possible.
+    if(COMPILER_IS_CLANG_CL)
+      target_compile_options(${TARGET} PRIVATE
+        ${COMMON_GNU_OPTIONS}
+        ${COMMON_CLANG_OPTIONS}
+
+        # Disable warnings that are usually disabled in downstream deps for
+        # gcc/clang, but aren't for clang-cl.
+        -Wno-global-constructors
+        -Wno-zero-as-null-pointer-constant
+        -Wno-shorten-64-to-32
+        -Wno-shadow-field-in-constructor
+        -Wno-reserved-id-macro
+        -Wno-language-extension-token
+      )
+    endif()
+  endif()
+
+  if(TINT_RANDOMIZE_HASHES)
+    if(NOT DEFINED TINT_HASH_SEED)
+      string(RANDOM LENGTH 16 ALPHABET "0123456789abcdef" seed)
+      set(TINT_HASH_SEED "0x${seed}" CACHE STRING "Tint hash seed value")
+      message("Using TINT_HASH_SEED: ${TINT_HASH_SEED}")
+    endif()
+
+    target_compile_definitions(${TARGET} PUBLIC "-DTINT_HASH_SEED=${TINT_HASH_SEED}")
+  endif()
+endfunction()
+
+function(tint_spvheaders_compile_options TARGET)
+  target_link_libraries(${TARGET} PRIVATE SPIRV-Headers)
+  target_include_directories(${TARGET} PRIVATE "${TINT_SPIRV_HEADERS_DIR}/include")
+endfunction()
+
 function(tint_spvtools_compile_options TARGET)
-  # We'll use the optimizer for its nice SPIR-V in-memory representation
-  target_link_libraries(${TARGET} SPIRV-Tools-opt SPIRV-Tools)
-
-  # We'll be cheating: using internal interfaces to the SPIRV-Tools
-  # optimizer.
-  target_include_directories(${TARGET} PRIVATE
-    ${spirv-tools_SOURCE_DIR}
-    ${spirv-tools_BINARY_DIR}
-  )
+  target_link_libraries(${TARGET} PRIVATE SPIRV-Tools)
+  target_include_directories(${TARGET} PRIVATE "${TINT_SPIRV_TOOLS_DIR}/include")
 endfunction()
 
-set(TINT_LIB_SRCS)
-set(TINT_BENCHMARK_SRCS)
-set(TINT_TEST_SRCS)
+function(tint_test_compile_options TARGET)
+  tint_default_compile_options(${TARGET})
+  set_target_properties(${TARGET} PROPERTIES FOLDER "Tests")
+  target_include_directories(${TARGET} PRIVATE ${gmock_SOURCE_DIR}/include)
+  target_link_libraries(${TARGET} PRIVATE gmock)
 
-# Add a generated file set into the build.
-#
-# Params:
-#  TARGET - the target name to add (without extension)
-#  BENCH  - set if the target has a benchmark file
-#  TEST   - set if the target has a test file
-#
-function(tint_generated TARGET)
-  cmake_parse_arguments(PARSE_ARGV 0 TINT_GEN "BENCH;TEST" "" "")
-
-   list(APPEND TINT_LIB_SRCS
-      ${TARGET}.cc
-      ${TARGET}.h
+  if(NOT MSVC)
+    target_compile_options(${TARGET} PRIVATE
+      -Wno-global-constructors
+      -Wno-weak-vtables
     )
-    set(TINT_LIB_SRCS ${TINT_LIB_SRCS} PARENT_SCOPE)
-
-    if(${TINT_GEN_BENCH})
-        list(APPEND TINT_BENCHMARK_SRCS ${TARGET}_bench.cc)
-        set(TINT_BENCHMARK_SRCS ${TINT_BENCHMARK_SRCS} PARENT_SCOPE)
-    endif()
-    if(${TINT_GEN_TEST})
-        list(APPEND TINT_TEST_SRCS ${TARGET}_test.cc)
-        set(TINT_TEST_SRCS ${TINT_TEST_SRCS} PARENT_SCOPE)
-    endif()
+  endif()
 endfunction()
 
-## Tint diagnostic utilities. Used by libtint and tint_utils_io.
-add_library(tint_diagnostic_utils
-  utils/debug/debug.cc
-  utils/debug/debug.h
-  utils/diagnostic/diagnostic.cc
-  utils/diagnostic/diagnostic.h
-  utils/diagnostic/formatter.cc
-  utils/diagnostic/formatter.h
-  utils/diagnostic/printer.cc
-  utils/diagnostic/printer.h
-  utils/diagnostic/source.cc
-  utils/diagnostic/source.h
-  utils/debug/debugger.cc
-  utils/debug/debugger.h
-  utils/text/unicode.cc
-  utils/text/unicode.h
-)
-tint_default_compile_options(tint_diagnostic_utils)
+function(tint_bench_compile_options TARGET)
+  tint_core_compile_options(${TARGET})
+  set_target_properties(${TARGET} PROPERTIES FOLDER "Benchmarks")
+  target_link_libraries(${TARGET} PRIVATE benchmark::benchmark)
+endfunction()
 
-if (TINT_ENABLE_BREAK_IN_DEBUGGER)
+function(tint_test_cmd_compile_options TARGET)
+  tint_test_compile_options(${TARGET})
+
+  if(MSVC)
+    # TODO(crbug.com/tint/1749): MSVC debug builds can suffer from stack
+    # overflows when resolving deeply nested expression chains or statements.
+    # Production builds neither use MSVC nor debug, so just bump the stack size
+    # for this build combination.
+    if(IS_DEBUG_BUILD)
+      target_link_options(${TARGET} PRIVATE "/STACK:4194304") # 4MB, default is 1MB
+    endif()
+  endif()
+
+  target_link_libraries(${TARGET} PRIVATE gmock)
+endfunction()
+
+function(tint_bench_cmd_compile_options TARGET)
+  tint_bench_compile_options(${TARGET})
+  target_link_libraries(${TARGET} PRIVATE benchmark::benchmark)
+endfunction()
+
+function(tint_fuzzer_compile_options TARGET)
+  tint_default_compile_options(${TARGET})
+  target_link_libraries(${TARGET} PRIVATE "tint_api${TINT_FUZZ_SUFFIX}")
+
+  if(NOT "${TINT_LIB_FUZZING_ENGINE_LINK_OPTIONS}" STREQUAL "")
+    # This is set when the fuzzers are being built by OSS${TINT_FUZZ_SUFFIX}. In this case the
+    # variable provides the necessary linker flags, and OSS${TINT_FUZZ_SUFFIX} will take care
+    # of passing suitable compiler flags.
+    target_link_options(${TARGET} PUBLIC ${TINT_LIB_FUZZING_ENGINE_LINK_OPTIONS})
+  else()
+    # When the fuzzers are being built outside of OSS${TINT_FUZZ_SUFFIX}, specific libFuzzer
+    # arguments to enable fuzzing are used.
+    target_link_options(${TARGET} PUBLIC -fsanitize=fuzzer -fsanitize-coverage=trace-cmp)
+  endif()
+endfunction()
+
+if(TINT_ENABLE_BREAK_IN_DEBUGGER)
   set_source_files_properties(utils/debug/debugger.cc
-    PROPERTIES COMPILE_DEFINITIONS "TINT_ENABLE_BREAK_IN_DEBUGGER=1" )
+    PROPERTIES COMPILE_DEFINITIONS "TINT_ENABLE_BREAK_IN_DEBUGGER=1")
 endif()
 
-list(APPEND TINT_LIB_SRCS
-  ../../include/tint/tint.h
-  clone_context.cc
-  clone_context.h
-  lang/core/builtin/fluent_types.h
-  lang/core/builtin/number.cc
-  lang/core/builtin/number.h
-  lang/core/constant/clone_context.h
-  lang/core/constant/composite.cc
-  lang/core/constant/composite.h
-  lang/core/constant/manager.cc
-  lang/core/constant/manager.h
-  lang/core/constant/node.cc
-  lang/core/constant/node.h
-  lang/core/constant/scalar.cc
-  lang/core/constant/scalar.h
-  lang/core/constant/splat.cc
-  lang/core/constant/splat.h
-  lang/core/constant/value.cc
-  lang/core/constant/value.h
-  lang/core/type/abstract_float.cc
-  lang/core/type/abstract_float.h
-  lang/core/type/abstract_int.cc
-  lang/core/type/abstract_int.h
-  lang/core/type/abstract_numeric.cc
-  lang/core/type/abstract_numeric.h
-  lang/core/type/array.cc
-  lang/core/type/array.h
-  lang/core/type/array_count.cc
-  lang/core/type/array_count.h
-  lang/core/type/atomic.cc
-  lang/core/type/atomic.h
-  lang/core/type/bool.cc
-  lang/core/type/bool.h
-  lang/core/type/builtin_structs.cc
-  lang/core/type/builtin_structs.h
-  lang/core/type/clone_context.h
-  lang/core/type/depth_multisampled_texture.cc
-  lang/core/type/depth_multisampled_texture.h
-  lang/core/type/depth_texture.cc
-  lang/core/type/depth_texture.h
-  lang/core/type/external_texture.cc
-  lang/core/type/external_texture.h
-  lang/core/type/f16.cc
-  lang/core/type/f16.h
-  lang/core/type/f32.cc
-  lang/core/type/f32.h
-  lang/core/type/i32.cc
-  lang/core/type/i32.h
-  lang/core/type/manager.cc
-  lang/core/type/manager.h
-  lang/core/type/matrix.cc
-  lang/core/type/matrix.h
-  lang/core/type/multisampled_texture.cc
-  lang/core/type/multisampled_texture.h
-  lang/core/type/node.cc
-  lang/core/type/node.h
-  lang/core/type/numeric_scalar.cc
-  lang/core/type/numeric_scalar.h
-  lang/core/type/pointer.cc
-  lang/core/type/pointer.h
-  lang/core/type/reference.cc
-  lang/core/type/reference.h
-  lang/core/type/sampled_texture.cc
-  lang/core/type/sampled_texture.h
-  lang/core/type/sampler.cc
-  lang/core/type/sampler.h
-  lang/core/type/sampler_kind.cc
-  lang/core/type/sampler_kind.h
-  lang/core/type/scalar.cc
-  lang/core/type/scalar.h
-  lang/core/type/storage_texture.cc
-  lang/core/type/storage_texture.h
-  lang/core/type/struct.cc
-  lang/core/type/struct.h
-  lang/core/type/texture.cc
-  lang/core/type/texture.h
-  lang/core/type/texture_dimension.cc
-  lang/core/type/texture_dimension.h
-  lang/core/type/type.cc
-  lang/core/type/type.h
-  lang/core/type/u32.cc
-  lang/core/type/u32.h
-  lang/core/type/unique_node.cc
-  lang/core/type/unique_node.h
-  lang/core/type/vector.cc
-  lang/core/type/vector.h
-  lang/core/type/void.cc
-  lang/core/type/void.h
-  lang/wgsl/ast/accessor_expression.cc
-  lang/wgsl/ast/accessor_expression.h
-  lang/wgsl/ast/alias.cc
-  lang/wgsl/ast/alias.h
-  lang/wgsl/ast/assignment_statement.cc
-  lang/wgsl/ast/assignment_statement.h
-  lang/wgsl/ast/attribute.cc
-  lang/wgsl/ast/attribute.h
-  lang/wgsl/ast/binary_expression.cc
-  lang/wgsl/ast/binary_expression.h
-  lang/wgsl/ast/binding_attribute.cc
-  lang/wgsl/ast/binding_attribute.h
-  lang/wgsl/ast/bitcast_expression.cc
-  lang/wgsl/ast/bitcast_expression.h
-  lang/wgsl/ast/block_statement.cc
-  lang/wgsl/ast/block_statement.h
-  lang/wgsl/ast/bool_literal_expression.cc
-  lang/wgsl/ast/bool_literal_expression.h
-  lang/wgsl/ast/break_if_statement.cc
-  lang/wgsl/ast/break_if_statement.h
-  lang/wgsl/ast/break_statement.cc
-  lang/wgsl/ast/break_statement.h
-  lang/wgsl/ast/builtin_attribute.cc
-  lang/wgsl/ast/builtin_attribute.h
-  lang/wgsl/ast/call_expression.cc
-  lang/wgsl/ast/call_expression.h
-  lang/wgsl/ast/call_statement.cc
-  lang/wgsl/ast/call_statement.h
-  lang/wgsl/ast/case_selector.cc
-  lang/wgsl/ast/case_selector.h
-  lang/wgsl/ast/case_statement.cc
-  lang/wgsl/ast/case_statement.h
-  lang/wgsl/ast/compound_assignment_statement.cc
-  lang/wgsl/ast/compound_assignment_statement.h
-  lang/wgsl/ast/const.cc
-  lang/wgsl/ast/const.h
-  lang/wgsl/ast/const_assert.cc
-  lang/wgsl/ast/const_assert.h
-  lang/wgsl/ast/continue_statement.cc
-  lang/wgsl/ast/continue_statement.h
-  lang/wgsl/ast/diagnostic_attribute.cc
-  lang/wgsl/ast/diagnostic_attribute.h
-  lang/wgsl/ast/diagnostic_control.cc
-  lang/wgsl/ast/diagnostic_control.h
-  lang/wgsl/ast/diagnostic_directive.cc
-  lang/wgsl/ast/diagnostic_directive.h
-  lang/wgsl/ast/diagnostic_rule_name.cc
-  lang/wgsl/ast/diagnostic_rule_name.h
-  lang/wgsl/ast/disable_validation_attribute.cc
-  lang/wgsl/ast/disable_validation_attribute.h
-  lang/wgsl/ast/discard_statement.cc
-  lang/wgsl/ast/discard_statement.h
-  lang/wgsl/ast/enable.cc
-  lang/wgsl/ast/enable.h
-  lang/wgsl/ast/expression.cc
-  lang/wgsl/ast/expression.h
-  lang/wgsl/ast/extension.cc
-  lang/wgsl/ast/extension.h
-  lang/wgsl/ast/float_literal_expression.cc
-  lang/wgsl/ast/float_literal_expression.h
-  lang/wgsl/ast/for_loop_statement.cc
-  lang/wgsl/ast/for_loop_statement.h
-  lang/wgsl/ast/function.cc
-  lang/wgsl/ast/function.h
-  lang/wgsl/ast/group_attribute.cc
-  lang/wgsl/ast/group_attribute.h
-  lang/wgsl/ast/id_attribute.cc
-  lang/wgsl/ast/id_attribute.h
-  lang/wgsl/ast/identifier.cc
-  lang/wgsl/ast/identifier.h
-  lang/wgsl/ast/identifier_expression.cc
-  lang/wgsl/ast/identifier_expression.h
-  lang/wgsl/ast/if_statement.cc
-  lang/wgsl/ast/if_statement.h
-  lang/wgsl/ast/increment_decrement_statement.cc
-  lang/wgsl/ast/increment_decrement_statement.h
-  lang/wgsl/ast/index_accessor_expression.cc
-  lang/wgsl/ast/index_accessor_expression.h
-  lang/wgsl/ast/index_attribute.cc
-  lang/wgsl/ast/index_attribute.h
-  lang/wgsl/ast/int_literal_expression.cc
-  lang/wgsl/ast/int_literal_expression.h
-  lang/wgsl/ast/internal_attribute.cc
-  lang/wgsl/ast/internal_attribute.h
-  lang/wgsl/ast/interpolate_attribute.cc
-  lang/wgsl/ast/interpolate_attribute.h
-  lang/wgsl/ast/invariant_attribute.cc
-  lang/wgsl/ast/invariant_attribute.h
-  lang/wgsl/ast/let.cc
-  lang/wgsl/ast/let.h
-  lang/wgsl/ast/literal_expression.cc
-  lang/wgsl/ast/literal_expression.h
-  lang/wgsl/ast/location_attribute.cc
-  lang/wgsl/ast/location_attribute.h
-  lang/wgsl/ast/loop_statement.cc
-  lang/wgsl/ast/loop_statement.h
-  lang/wgsl/ast/member_accessor_expression.cc
-  lang/wgsl/ast/member_accessor_expression.h
-  lang/wgsl/ast/module.cc
-  lang/wgsl/ast/module.h
-  lang/wgsl/ast/must_use_attribute.cc
-  lang/wgsl/ast/must_use_attribute.h
-  lang/wgsl/ast/node.cc
-  lang/wgsl/ast/node.h
-  lang/wgsl/ast/node_id.h
-  lang/wgsl/ast/override.cc
-  lang/wgsl/ast/override.h
-  lang/wgsl/ast/parameter.cc
-  lang/wgsl/ast/parameter.h
-  lang/wgsl/ast/phony_expression.cc
-  lang/wgsl/ast/phony_expression.h
-  lang/wgsl/ast/pipeline_stage.cc
-  lang/wgsl/ast/pipeline_stage.h
-  lang/wgsl/ast/return_statement.cc
-  lang/wgsl/ast/return_statement.h
-  lang/wgsl/ast/stage_attribute.cc
-  lang/wgsl/ast/stage_attribute.h
-  lang/wgsl/ast/statement.cc
-  lang/wgsl/ast/statement.h
-  lang/wgsl/ast/stride_attribute.cc
-  lang/wgsl/ast/stride_attribute.h
-  lang/wgsl/ast/struct.cc
-  lang/wgsl/ast/struct.h
-  lang/wgsl/ast/struct_member.cc
-  lang/wgsl/ast/struct_member.h
-  lang/wgsl/ast/struct_member_align_attribute.cc
-  lang/wgsl/ast/struct_member_align_attribute.h
-  lang/wgsl/ast/struct_member_offset_attribute.cc
-  lang/wgsl/ast/struct_member_offset_attribute.h
-  lang/wgsl/ast/struct_member_size_attribute.cc
-  lang/wgsl/ast/struct_member_size_attribute.h
-  lang/wgsl/ast/switch_statement.cc
-  lang/wgsl/ast/switch_statement.h
-  lang/wgsl/ast/templated_identifier.cc
-  lang/wgsl/ast/templated_identifier.h
-  lang/wgsl/ast/transform/add_block_attribute.cc
-  lang/wgsl/ast/transform/add_block_attribute.h
-  lang/wgsl/ast/transform/add_empty_entry_point.cc
-  lang/wgsl/ast/transform/add_empty_entry_point.h
-  lang/wgsl/ast/transform/array_length_from_uniform.cc
-  lang/wgsl/ast/transform/array_length_from_uniform.h
-  lang/wgsl/ast/transform/binding_remapper.cc
-  lang/wgsl/ast/transform/binding_remapper.h
-  lang/wgsl/ast/transform/builtin_polyfill.cc
-  lang/wgsl/ast/transform/builtin_polyfill.h
-  lang/wgsl/ast/transform/calculate_array_length.cc
-  lang/wgsl/ast/transform/calculate_array_length.h
-  lang/wgsl/ast/transform/canonicalize_entry_point_io.cc
-  lang/wgsl/ast/transform/canonicalize_entry_point_io.h
-  lang/wgsl/ast/transform/clamp_frag_depth.cc
-  lang/wgsl/ast/transform/clamp_frag_depth.h
-  lang/wgsl/ast/transform/combine_samplers.cc
-  lang/wgsl/ast/transform/combine_samplers.h
-  lang/wgsl/ast/transform/decompose_memory_access.cc
-  lang/wgsl/ast/transform/decompose_memory_access.h
-  lang/wgsl/ast/transform/decompose_strided_array.cc
-  lang/wgsl/ast/transform/decompose_strided_array.h
-  lang/wgsl/ast/transform/decompose_strided_matrix.cc
-  lang/wgsl/ast/transform/decompose_strided_matrix.h
-  lang/wgsl/ast/transform/demote_to_helper.cc
-  lang/wgsl/ast/transform/demote_to_helper.h
-  lang/wgsl/ast/transform/direct_variable_access.cc
-  lang/wgsl/ast/transform/direct_variable_access.h
-  lang/wgsl/ast/transform/disable_uniformity_analysis.cc
-  lang/wgsl/ast/transform/disable_uniformity_analysis.h
-  lang/wgsl/ast/transform/expand_compound_assignment.cc
-  lang/wgsl/ast/transform/expand_compound_assignment.h
-  lang/wgsl/ast/transform/first_index_offset.cc
-  lang/wgsl/ast/transform/first_index_offset.h
-  lang/wgsl/ast/transform/fold_trivial_lets.cc
-  lang/wgsl/ast/transform/fold_trivial_lets.h
-  lang/wgsl/ast/transform/for_loop_to_loop.cc
-  lang/wgsl/ast/transform/for_loop_to_loop.h
-  lang/wgsl/ast/transform/localize_struct_array_assignment.cc
-  lang/wgsl/ast/transform/localize_struct_array_assignment.h
-  lang/wgsl/ast/transform/merge_return.cc
-  lang/wgsl/ast/transform/merge_return.h
-  lang/wgsl/ast/transform/module_scope_var_to_entry_point_param.cc
-  lang/wgsl/ast/transform/module_scope_var_to_entry_point_param.h
-  lang/wgsl/ast/transform/multiplanar_external_texture.cc
-  lang/wgsl/ast/transform/multiplanar_external_texture.h
-  lang/wgsl/ast/transform/num_workgroups_from_uniform.cc
-  lang/wgsl/ast/transform/num_workgroups_from_uniform.h
-  lang/wgsl/ast/transform/packed_vec3.cc
-  lang/wgsl/ast/transform/packed_vec3.h
-  lang/wgsl/ast/transform/pad_structs.cc
-  lang/wgsl/ast/transform/pad_structs.h
-  lang/wgsl/ast/transform/preserve_padding.cc
-  lang/wgsl/ast/transform/preserve_padding.h
-  lang/wgsl/ast/transform/promote_initializers_to_let.cc
-  lang/wgsl/ast/transform/promote_initializers_to_let.h
-  lang/wgsl/ast/transform/promote_side_effects_to_decl.cc
-  lang/wgsl/ast/transform/promote_side_effects_to_decl.h
-  lang/wgsl/ast/transform/remove_continue_in_switch.cc
-  lang/wgsl/ast/transform/remove_continue_in_switch.h
-  lang/wgsl/ast/transform/remove_phonies.cc
-  lang/wgsl/ast/transform/remove_phonies.h
-  lang/wgsl/ast/transform/remove_unreachable_statements.cc
-  lang/wgsl/ast/transform/remove_unreachable_statements.h
-  lang/wgsl/ast/transform/renamer.cc
-  lang/wgsl/ast/transform/renamer.h
-  lang/wgsl/ast/transform/robustness.cc
-  lang/wgsl/ast/transform/robustness.h
-  lang/wgsl/ast/transform/simplify_pointers.cc
-  lang/wgsl/ast/transform/simplify_pointers.h
-  lang/wgsl/ast/transform/single_entry_point.cc
-  lang/wgsl/ast/transform/single_entry_point.h
-  lang/wgsl/ast/transform/spirv_atomic.cc
-  lang/wgsl/ast/transform/spirv_atomic.h
-  lang/wgsl/ast/transform/std140.cc
-  lang/wgsl/ast/transform/std140.h
-  lang/wgsl/ast/transform/substitute_override.cc
-  lang/wgsl/ast/transform/substitute_override.h
-  lang/wgsl/ast/transform/texture_1d_to_2d.cc
-  lang/wgsl/ast/transform/texture_1d_to_2d.h
-  lang/wgsl/ast/transform/transform.cc
-  lang/wgsl/ast/transform/transform.h
-  lang/wgsl/ast/transform/truncate_interstage_variables.cc
-  lang/wgsl/ast/transform/truncate_interstage_variables.h
-  lang/wgsl/ast/transform/unshadow.cc
-  lang/wgsl/ast/transform/unshadow.h
-  lang/wgsl/ast/transform/utils/get_insertion_point.cc
-  lang/wgsl/ast/transform/utils/get_insertion_point.h
-  lang/wgsl/ast/transform/utils/hoist_to_decl_before.cc
-  lang/wgsl/ast/transform/utils/hoist_to_decl_before.h
-  lang/wgsl/ast/transform/var_for_dynamic_index.cc
-  lang/wgsl/ast/transform/var_for_dynamic_index.h
-  lang/wgsl/ast/transform/vectorize_matrix_conversions.cc
-  lang/wgsl/ast/transform/vectorize_matrix_conversions.h
-  lang/wgsl/ast/transform/vectorize_scalar_matrix_initializers.cc
-  lang/wgsl/ast/transform/vectorize_scalar_matrix_initializers.h
-  lang/wgsl/ast/transform/vertex_pulling.cc
-  lang/wgsl/ast/transform/vertex_pulling.h
-  lang/wgsl/ast/transform/while_to_loop.cc
-  lang/wgsl/ast/transform/while_to_loop.h
-  lang/wgsl/ast/transform/zero_init_workgroup_memory.cc
-  lang/wgsl/ast/transform/zero_init_workgroup_memory.h
-  lang/wgsl/ast/traverse_expressions.h
-  lang/wgsl/ast/type.cc
-  lang/wgsl/ast/type.h
-  lang/wgsl/ast/type_decl.cc
-  lang/wgsl/ast/type_decl.h
-  lang/wgsl/ast/unary_op.cc
-  lang/wgsl/ast/unary_op.h
-  lang/wgsl/ast/unary_op_expression.cc
-  lang/wgsl/ast/unary_op_expression.h
-  lang/wgsl/ast/var.cc
-  lang/wgsl/ast/var.h
-  lang/wgsl/ast/variable.cc
-  lang/wgsl/ast/variable.h
-  lang/wgsl/ast/variable_decl_statement.cc
-  lang/wgsl/ast/variable_decl_statement.h
-  lang/wgsl/ast/while_statement.cc
-  lang/wgsl/ast/while_statement.h
-  lang/wgsl/ast/workgroup_attribute.cc
-  lang/wgsl/ast/workgroup_attribute.h
-  lang/wgsl/helpers/append_vector.cc
-  lang/wgsl/helpers/append_vector.h
-  lang/wgsl/helpers/check_supported_extensions.cc
-  lang/wgsl/helpers/check_supported_extensions.h
-  lang/wgsl/helpers/flatten_bindings.cc
-  lang/wgsl/helpers/flatten_bindings.h
-  lang/wgsl/inspector/entry_point.cc
-  lang/wgsl/inspector/entry_point.h
-  lang/wgsl/inspector/inspector.cc
-  lang/wgsl/inspector/inspector.h
-  lang/wgsl/inspector/resource_binding.cc
-  lang/wgsl/inspector/resource_binding.h
-  lang/wgsl/inspector/scalar.cc
-  lang/wgsl/inspector/scalar.h
-  lang/wgsl/program/program.cc
-  lang/wgsl/program/program.h
-  lang/wgsl/program/program_builder.cc
-  lang/wgsl/program/program_builder.h
-  lang/wgsl/sem/accessor_expression.cc
-  lang/wgsl/sem/accessor_expression.h
-  lang/wgsl/sem/array_count.cc
-  lang/wgsl/sem/array_count.h
-  lang/wgsl/sem/behavior.cc
-  lang/wgsl/sem/behavior.h
-  lang/wgsl/sem/binding_point.h
-  lang/wgsl/sem/block_statement.cc
-  lang/wgsl/sem/block_statement.h
-  lang/wgsl/sem/break_if_statement.cc
-  lang/wgsl/sem/break_if_statement.h
-  lang/wgsl/sem/builtin.cc
-  lang/wgsl/sem/builtin.h
-  lang/wgsl/sem/builtin_enum_expression.cc
-  lang/wgsl/sem/builtin_enum_expression.h
-  lang/wgsl/sem/call.cc
-  lang/wgsl/sem/call.h
-  lang/wgsl/sem/call_target.cc
-  lang/wgsl/sem/call_target.h
-  lang/wgsl/sem/evaluation_stage.h
-  lang/wgsl/sem/expression.cc
-  lang/wgsl/sem/expression.h
-  lang/wgsl/sem/external_texture.h
-  lang/wgsl/sem/for_loop_statement.cc
-  lang/wgsl/sem/for_loop_statement.h
-  lang/wgsl/sem/function.cc
-  lang/wgsl/sem/function_expression.cc
-  lang/wgsl/sem/function_expression.h
-  lang/wgsl/sem/if_statement.cc
-  lang/wgsl/sem/if_statement.h
-  lang/wgsl/sem/index_accessor_expression.cc
-  lang/wgsl/sem/index_accessor_expression.h
-  lang/wgsl/sem/info.cc
-  lang/wgsl/sem/info.h
-  lang/wgsl/sem/load.cc
-  lang/wgsl/sem/load.h
-  lang/wgsl/sem/loop_statement.cc
-  lang/wgsl/sem/loop_statement.h
-  lang/wgsl/sem/materialize.cc
-  lang/wgsl/sem/materialize.h
-  lang/wgsl/sem/member_accessor_expression.cc
-  lang/wgsl/sem/module.cc
-  lang/wgsl/sem/module.h
-  lang/wgsl/sem/node.cc
-  lang/wgsl/sem/node.h
-  lang/wgsl/sem/pipeline_stage_set.h
-  lang/wgsl/sem/sampler_texture_pair.h
-  lang/wgsl/sem/statement.cc
-  lang/wgsl/sem/struct.cc
-  lang/wgsl/sem/struct.h
-  lang/wgsl/sem/switch_statement.cc
-  lang/wgsl/sem/switch_statement.h
-  lang/wgsl/sem/type_expression.cc
-  lang/wgsl/sem/type_expression.h
-  lang/wgsl/sem/type_mappings.h
-  lang/wgsl/sem/value_constructor.cc
-  lang/wgsl/sem/value_constructor.h
-  lang/wgsl/sem/value_conversion.cc
-  lang/wgsl/sem/value_conversion.h
-  lang/wgsl/sem/value_expression.cc
-  lang/wgsl/sem/value_expression.h
-  lang/wgsl/sem/variable.cc
-  lang/wgsl/sem/while_statement.cc
-  lang/wgsl/sem/while_statement.h
-  program_id.cc
-  program_id.h
-  reader/reader.cc
-  reader/reader.h
-  resolver/const_eval.cc
-  resolver/const_eval.h
-  resolver/dependency_graph.cc
-  resolver/dependency_graph.h
-  resolver/intrinsic_table.cc
-  resolver/intrinsic_table.h
-  resolver/intrinsic_table.inl
-  resolver/resolver.cc
-  resolver/resolver.h
-  resolver/sem_helper.cc
-  resolver/sem_helper.h
-  resolver/uniformity.cc
-  resolver/uniformity.h
-  resolver/validator.cc
-  resolver/validator.h
-  tint.cc
-  transform/manager.cc
-  transform/manager.h
-  transform/transform.cc
-  transform/transform.h
-  utils/cli/cli.cc
-  utils/cli/cli.h
-  utils/containers/bitset.h
-  utils/containers/enum_set.h
-  utils/containers/hashmap.h
-  utils/containers/hashmap_base.h
-  utils/containers/hashset.h
-  utils/containers/map.h
-  utils/containers/predicates.h
-  utils/containers/scope_stack.h
-  utils/containers/slice.h
-  utils/containers/unique_allocator.h
-  utils/containers/unique_vector.h
-  utils/containers/vector.h
-  utils/macros/compiler.h
-  utils/macros/concat.h
-  utils/macros/foreach.h
-  utils/macros/scoped_assignment.h
-  utils/math/crc32.h
-  utils/math/hash.h
-  utils/math/math.h
-  utils/memory/bitcast.h
-  utils/memory/block_allocator.h
-  utils/memory/bump_allocator.h
-  utils/reflection/reflection.h
-  utils/rtti/castable.cc
-  utils/rtti/castable.h
-  utils/rtti/switch.h
-  utils/text/float_to_string.cc
-  utils/text/float_to_string.h
-  utils/text/parse_num.cc
-  utils/text/parse_num.h
-  utils/text/string.cc
-  utils/text/string.h
-  utils/text/string_stream.cc
-  utils/text/string_stream.h
-  utils/text/symbol.cc
-  utils/text/symbol.h
-  utils/text/symbol_table.cc
-  utils/text/symbol_table.h
-  utils/text/text_generator.cc
-  utils/text/text_generator.h
-  utils/traits/traits.h
-  writer/array_length_from_uniform_options.cc
-  writer/array_length_from_uniform_options.h
-  writer/ast_text_generator.cc
-  writer/ast_text_generator.h
-  writer/binding_point.h
-  writer/binding_remapper_options.cc
-  writer/binding_remapper_options.h
-  writer/external_texture_options.cc
-  writer/external_texture_options.h
-  writer/ir_text_generator.cc
-  writer/ir_text_generator.h
-  writer/text.cc
-  writer/text.h
-  writer/writer.cc
-  writer/writer.h
-)
-
-tint_generated(lang/core/builtin/access BENCH TEST)
-tint_generated(lang/core/builtin/address_space BENCH TEST)
-tint_generated(lang/core/builtin/attribute BENCH TEST)
-tint_generated(lang/core/builtin/builtin BENCH TEST)
-tint_generated(lang/core/builtin/builtin_value BENCH TEST)
-tint_generated(lang/core/builtin/diagnostic_rule BENCH TEST)
-tint_generated(lang/core/builtin/diagnostic_severity BENCH TEST)
-tint_generated(lang/core/builtin/extension BENCH TEST)
-tint_generated(lang/core/builtin/function)
-tint_generated(lang/core/builtin/interpolation_sampling BENCH TEST)
-tint_generated(lang/core/builtin/interpolation_type BENCH TEST)
-tint_generated(lang/core/builtin/texel_format BENCH TEST)
-
-tint_generated(resolver/ctor_conv_intrinsic)
-tint_generated(lang/wgsl/sem/parameter_usage)
-
-if(UNIX)
-  list(APPEND TINT_LIB_SRCS utils/diagnostic/printer_posix.cc)
-elseif(WIN32)
-  list(APPEND TINT_LIB_SRCS utils/diagnostic/printer_windows.cc)
-else()
-  list(APPEND TINT_LIB_SRCS utils/diagnostic/printer_other.cc)
+################################################################################
+# Fuzzers
+################################################################################
+if(TINT_BUILD_FUZZERS)
+  add_subdirectory(fuzzers)
+  set(TINT_FUZZ_SUFFIX "_fuzz")
 endif()
 
-if(${TINT_BUILD_SPV_READER})
-  list(APPEND TINT_LIB_SRCS
-    lang/spirv/reader/attributes.h
-    lang/spirv/reader/construct.h
-    lang/spirv/reader/construct.cc
-    lang/spirv/reader/entry_point_info.h
-    lang/spirv/reader/entry_point_info.cc
-    lang/spirv/reader/enum_converter.h
-    lang/spirv/reader/enum_converter.cc
-    lang/spirv/reader/fail_stream.h
-    lang/spirv/reader/function.cc
-    lang/spirv/reader/function.h
-    lang/spirv/reader/namer.cc
-    lang/spirv/reader/namer.h
-    lang/spirv/reader/parser_type.cc
-    lang/spirv/reader/parser_type.h
-    lang/spirv/reader/parser.cc
-    lang/spirv/reader/parser.h
-    lang/spirv/reader/parser_impl.cc
-    lang/spirv/reader/parser_impl.h
-    lang/spirv/reader/usage.cc
-    lang/spirv/reader/usage.h
-  )
-endif()
+################################################################################
+# Functions used by BUILD.cmake files
+# The CMake build handles the target kinds in different ways:
+# 'cmd'       - Translates to a CMake executable target.
+# 'lib'       - Translates to CMake static library.
+#               If TINT_BUILD_FUZZERS is enabled, then a second static library with
+#               the ${TINT_FUZZ_SUFFIX} suffix is also created. This is done because
+#               the fuzzer build requires compilation with the '-fsanitize=fuzzer'
+#               flag, which results in a separate set of compilation units.
+# 'test'      - Translates to a CMake object library, configured for compiling and
+#               linking against google-test.
+# 'bench'     - Translates to a CMake object library, configured for compiling and
+#               linking against google-benchmark.
+# 'test_cmd'  - Translates to a CMake executable target linked against google-test.
+# 'bench_cmd' - Translates to a CMake executable target linked against google-benchmark.
+# See also: docs/tint/gen.md
+################################################################################
 
-if(${TINT_BUILD_WGSL_READER})
-  list(APPEND TINT_LIB_SRCS
-    lang/wgsl/reader/classify_template_args.cc
-    lang/wgsl/reader/classify_template_args.h
-    lang/wgsl/reader/lexer.cc
-    lang/wgsl/reader/lexer.h
-    lang/wgsl/reader/parser.cc
-    lang/wgsl/reader/parser.h
-    lang/wgsl/reader/parser_impl.cc
-    lang/wgsl/reader/parser_impl.h
-    lang/wgsl/reader/parser_impl_detail.h
-    lang/wgsl/reader/token.cc
-    lang/wgsl/reader/token.h
-  )
-endif()
+# A special name given to targets and target kinds that are not to be built due
+# to the active CMake flags.
+set(TINT_TARGET_DISABLED "<DISABLED>")
 
-if(${TINT_BUILD_SPV_WRITER})
-  list(APPEND TINT_LIB_SRCS
-    lang/spirv/ast_writer/binary_writer.cc
-    lang/spirv/ast_writer/binary_writer.h
-    lang/spirv/ast_writer/builder.cc
-    lang/spirv/ast_writer/builder.h
-    lang/spirv/ast_writer/function.cc
-    lang/spirv/ast_writer/function.h
-    lang/spirv/ast_writer/generator.cc
-    lang/spirv/ast_writer/generator.h
-    lang/spirv/ast_writer/generator_impl.cc
-    lang/spirv/ast_writer/generator_impl.h
-    lang/spirv/ast_writer/instruction.cc
-    lang/spirv/ast_writer/instruction.h
-    lang/spirv/ast_writer/module.cc
-    lang/spirv/ast_writer/module.h
-    lang/spirv/ast_writer/operand.cc
-    lang/spirv/ast_writer/operand.h
-    lang/spirv/ast_writer/scalar_constant.h
-  )
-
-  if(${TINT_BUILD_IR})
-    list(APPEND TINT_LIB_SRCS
-      ir/transform/builtin_polyfill_spirv.cc
-      ir/transform/builtin_polyfill_spirv.h
-      ir/transform/expand_implicit_splats.cc
-      ir/transform/expand_implicit_splats.h
-      ir/transform/handle_matrix_arithmetic.cc
-      ir/transform/handle_matrix_arithmetic.h
-      ir/transform/merge_return.cc
-      ir/transform/merge_return.h
-      ir/transform/shader_io_spirv.cc
-      ir/transform/shader_io_spirv.h
-      ir/transform/var_for_dynamic_index.cc
-      ir/transform/var_for_dynamic_index.h
-      lang/spirv/writer/writer.cc
-      lang/spirv/writer/writer.h
-    )
+# tint_translate_target(TARGET_OUT KIND_OUT GN_TARGET_IN)
+#
+# Translates a GN-style target to a CMake target name, and target kind.
+# The GN-style target is of the form `<path>` for a 'lib' target or
+# `<path>:<kind>` for any other target kind.
+#
+# Parameters:
+#   TARGET_OUT   - The name of the variable receieving the CMake target name
+#   KIND_OUT     - The name of the variable receieving the target kind
+#   GN_TARGET_IN - The GN-style target name
+function(tint_translate_target TARGET_OUT KIND_OUT GN_TARGET_IN)
+  string(REGEX MATCH "^([^:]+):(.+)$" MATCH ${GN_TARGET_IN})
+  if(MATCH)
+    # Explicit target kind
+    set(TARGET ${CMAKE_MATCH_1})
+    set(KIND ${CMAKE_MATCH_2})
+  else()
+    # Implicit 'lib'
+    set(TARGET ${GN_TARGET_IN})
+    set(KIND "lib")
   endif()
-endif()
 
-if(${TINT_BUILD_WGSL_WRITER})
-  list(APPEND TINT_LIB_SRCS
-    lang/wgsl/ast_writer/generator.cc
-    lang/wgsl/ast_writer/generator.h
-    lang/wgsl/ast_writer/generator_impl.cc
-    lang/wgsl/ast_writer/generator_impl.h
-  )
-endif()
+  # Replace path slashes with underscores.
+  string(REPLACE "/" "_" TARGET "${TARGET}")
 
-if(${TINT_BUILD_MSL_WRITER})
-  list(APPEND TINT_LIB_SRCS
-    lang/msl/ast_writer/generator.cc
-    lang/msl/ast_writer/generator.h
-    lang/msl/ast_writer/generator_impl.cc
-    lang/msl/ast_writer/generator_impl.h
-    lang/msl/ast_writer/generator_support.cc
-    lang/msl/ast_writer/generator_support.h
-  )
+  # Add 'tint_' prefix
+  set(TARGET "tint_${TARGET}")
 
-  if(${TINT_BUILD_IR})
-    list(APPEND TINT_LIB_SRCS
-      lang/msl/writer/generator_impl_ir.cc
-      lang/msl/writer/generator_impl_ir.h
-    )
+  # Disable targets that aren't enabled with build flags and add test / bench
+  # target name suffixes
+  if(${KIND} STREQUAL cmd)
+    if(TINT_BUILD_CMD_TOOLS)
+      set(TARGET "${TARGET}_cmd")
+    else()
+      set(TARGET TINT_TARGET_DISABLED)
+      set(KIND   TINT_TARGET_DISABLED)
+    endif()
+  elseif(${KIND} STREQUAL test_cmd)
+    if(TINT_BUILD_TESTS)
+      set(TARGET "${TARGET}_test_cmd")
+    else()
+      set(TARGET TINT_TARGET_DISABLED)
+      set(KIND   TINT_TARGET_DISABLED)
+    endif()
+  elseif(${KIND} STREQUAL bench_cmd)
+    if(TINT_BUILD_BENCHMARKS)
+      set(TARGET "${TARGET}_bench_cmd")
+    else()
+      set(TARGET TINT_TARGET_DISABLED)
+      set(KIND   TINT_TARGET_DISABLED)
+    endif()
+  elseif(${KIND} STREQUAL test)
+    if(TINT_BUILD_TESTS)
+      set(TARGET "${TARGET}_test")
+    else()
+      set(TARGET TINT_TARGET_DISABLED)
+      set(KIND   TINT_TARGET_DISABLED)
+    endif()
+  elseif(${KIND} STREQUAL bench)
+    if(TINT_BUILD_BENCHMARKS)
+      set(TARGET "${TARGET}_bench")
+    else()
+      set(TARGET TINT_TARGET_DISABLED)
+      set(KIND   TINT_TARGET_DISABLED)
+    endif()
+  elseif(${KIND} STREQUAL lib)
+  else()
+    message(FATAL_ERROR "unhandled target kind ${KIND}")
   endif()
-endif()
 
-if(${TINT_BUILD_GLSL_WRITER})
-  list(APPEND TINT_LIB_SRCS
-    lang/glsl/ast_writer/generator.cc
-    lang/glsl/ast_writer/generator.h
-    lang/glsl/ast_writer/generator_impl.cc
-    lang/glsl/ast_writer/generator_impl.h
-    lang/glsl/ast_writer/version.h
-  )
-endif()
+  # Output values
+  set(${TARGET_OUT} ${TARGET} PARENT_SCOPE)
+  set(${KIND_OUT}   ${KIND}   PARENT_SCOPE)
+endfunction()
 
-if(${TINT_BUILD_HLSL_WRITER})
-  list(APPEND TINT_LIB_SRCS
-    lang/hlsl/ast_writer/generator.cc
-    lang/hlsl/ast_writer/generator.h
-    lang/hlsl/ast_writer/generator_impl.cc
-    lang/hlsl/ast_writer/generator_impl.h
-  )
-endif()
+# tint_add_target(GN_TARGET [SOURCES...])
+#
+# Registers the target with the given GN-style target name, with the provided
+# sources. Additional sources can be appended with subsequent calls to
+# tint_target_add_sources()
+#
+# Parameters:
+#   GN_TARGET - The GN-style target name
+#   SOURCES   - a list of source files, relative to this directory
+function(tint_add_target GN_TARGET)
+  set(SOURCES ${ARGN})
 
-if(${TINT_BUILD_SYNTAX_TREE_WRITER})
-    list(APPEND TINT_LIB_SRCS
-      lang/wgsl/syntax_tree_writer/generator.cc
-      lang/wgsl/syntax_tree_writer/generator.h
-      lang/wgsl/syntax_tree_writer/generator_impl.cc
-      lang/wgsl/syntax_tree_writer/generator_impl.h
-    )
-endif()
+  # Split the GN-style target name into the CMake target name and target kind
+  tint_translate_target(TARGET KIND ${GN_TARGET})
 
-if(${TINT_BUILD_IR})
-  list(APPEND TINT_LIB_SRCS
-    ir/access.cc
-    ir/access.h
-    ir/binary.cc
-    ir/binary.h
-    ir/binding_point.h
-    ir/bitcast.cc
-    ir/bitcast.h
-    ir/block.cc
-    ir/block.h
-    ir/block_param.cc
-    ir/block_param.h
-    ir/break_if.cc
-    ir/break_if.h
-    ir/builder.cc
-    ir/builder.h
-    ir/builtin_call.cc
-    ir/builtin_call.h
-    ir/call.cc
-    ir/call.h
-    ir/constant.cc
-    ir/constant.h
-    ir/construct.cc
-    ir/construct.h
-    ir/continue.cc
-    ir/continue.h
-    ir/control_instruction.cc
-    ir/control_instruction.h
-    ir/convert.cc
-    ir/convert.h
-    ir/core_builtin_call.cc
-    ir/core_builtin_call.h
-    ir/disassembler.cc
-    ir/disassembler.h
-    ir/discard.cc
-    ir/discard.h
-    ir/exit_if.cc
-    ir/exit_if.h
-    ir/exit_loop.cc
-    ir/exit_loop.h
-    ir/exit_switch.cc
-    ir/exit_switch.h
-    ir/exit.cc
-    ir/exit.h
-    ir/from_program.cc
-    ir/from_program.h
-    ir/function.cc
-    ir/function.h
-    ir/function_param.cc
-    ir/function_param.h
-    ir/if.cc
-    ir/if.h
-    ir/instruction.cc
-    ir/instruction.h
-    ir/instruction_result.cc
-    ir/instruction_result.h
-    ir/intrinsic_call.cc
-    ir/intrinsic_call.h
-    ir/let.cc
-    ir/let.h
-    ir/load.cc
-    ir/load.h
-    ir/load_vector_element.cc
-    ir/load_vector_element.h
-    ir/location.h
-    ir/loop.cc
-    ir/loop.h
-    ir/module.cc
-    ir/module.h
-    ir/multi_in_block.cc
-    ir/multi_in_block.h
-    ir/next_iteration.cc
-    ir/next_iteration.h
-    ir/operand_instruction.cc
-    ir/operand_instruction.h
-    ir/return.cc
-    ir/return.h
-    ir/store.cc
-    ir/store.h
-    ir/store_vector_element.cc
-    ir/store_vector_element.h
-    ir/switch.cc
-    ir/switch.h
-    ir/swizzle.cc
-    ir/swizzle.h
-    ir/terminate_invocation.cc
-    ir/terminate_invocation.h
-    ir/terminator.cc
-    ir/terminator.h
-    ir/to_program.cc
-    ir/to_program.h
-    ir/unary.cc
-    ir/unary.h
-    ir/unreachable.cc
-    ir/unreachable.h
-    ir/user_call.cc
-    ir/user_call.h
-    ir/validator.cc
-    ir/validator.h
-    ir/value.cc
-    ir/value.h
-    ir/var.cc
-    ir/var.h
-    ir/transform/add_empty_entry_point.cc
-    ir/transform/add_empty_entry_point.h
-    ir/transform/block_decorated_structs.cc
-    ir/transform/block_decorated_structs.h
-    ir/transform/demote_to_helper.cc
-    ir/transform/demote_to_helper.h
-    ir/transform/shader_io.cc
-    ir/transform/shader_io.h
-    ir/transform/transform.cc
-    ir/transform/transform.h
-  )
-endif()
+  if(${KIND} STREQUAL ${TINT_TARGET_DISABLED})
+    return() # Target is disabled via build flags
+  elseif(${KIND} STREQUAL lib)
+    add_library(${TARGET} STATIC EXCLUDE_FROM_ALL)
+    tint_default_compile_options(${TARGET})
 
-if(MSVC)
-  list(APPEND TINT_LIB_SRCS
-    tint.natvis
-  )
-endif()
+    if(TINT_BUILD_FUZZERS)
+      # Create a second library target for use of the fuzzers, with the
+      # ${TINT_FUZZ_SUFFIX} suffix
+      set(FUZZ_TARGET "${TARGET}${TINT_FUZZ_SUFFIX}")
+      add_library(${FUZZ_TARGET} STATIC EXCLUDE_FROM_ALL)
+      target_sources(${FUZZ_TARGET} PRIVATE ${SOURCES})
+      tint_default_compile_options(${FUZZ_TARGET})
+    endif()
+  elseif(${KIND} STREQUAL cmd)
+    add_executable(${TARGET})
+    tint_default_compile_options(${TARGET})
+  elseif(${KIND} STREQUAL test_cmd)
+    add_executable(${TARGET})
+    tint_test_cmd_compile_options(${TARGET})
+  elseif(${KIND} STREQUAL bench_cmd)
+    add_executable(${TARGET})
+    tint_bench_cmd_compile_options(${TARGET})
+  elseif(${KIND} STREQUAL test)
+    add_library(${TARGET} OBJECT EXCLUDE_FROM_ALL)
+    tint_test_compile_options(${TARGET})
+  elseif(${KIND} STREQUAL bench)
+    add_library(${TARGET} OBJECT EXCLUDE_FROM_ALL)
+    tint_bench_compile_options(${TARGET})
+  else()
+    message(FATAL_ERROR "unhandled target kind ${KIND}")
+  endif()
 
-## Tint IO utilities. Used by tint_val.
-add_library(tint_utils_io
-  utils/command/command_${TINT_OS_CC_SUFFIX}.cc
-  utils/command/command.h
-  utils/file/tmpfile_${TINT_OS_CC_SUFFIX}.cc
-  utils/file/tmpfile.h
-)
-tint_default_compile_options(tint_utils_io)
-target_link_libraries(tint_utils_io tint_diagnostic_utils)
+  # Add the sources to the target
+  target_sources(${TARGET} PRIVATE ${SOURCES})
+endfunction()
 
-## Tint validation utilities. Used by tests and the tint executable.
-add_library(tint_val
-  lang/hlsl/validate/hlsl.cc
-  lang/hlsl/validate/val.h
-  lang/msl/validate/msl.cc
-  lang/msl/validate/val.h
-)
+# tint_target_add_sources(GN_TARGET [SOURCES...])
+#
+# Adds source files to the target with the given GN-style target name.
+#
+# Parameters:
+#   GN_TARGET - The GN-style target name
+#   SOURCES   - a list of source files, relative to this directory
+function(tint_target_add_sources GN_TARGET)
+  set(SOURCES ${ARGN})
+
+  # Split the GN-style target name into the CMake target name and target kind
+  tint_translate_target(TARGET KIND ${GN_TARGET})
+
+  if(${KIND} STREQUAL ${TINT_TARGET_DISABLED})
+    return() # Target is disabled via build flags
+  endif()
+
+  target_sources(${TARGET} PRIVATE ${SOURCES})
+
+  # If there's a corresponding fuzz target for this target, also append the files to that target
+  set(FUZZ_TARGET "${TARGET}${TINT_FUZZ_SUFFIX}")
+  if(TARGET "${FUZZ_TARGET}")
+    target_sources("${FUZZ_TARGET}" PRIVATE ${SOURCES})
+  endif()
+endfunction()
+
+# tint_target_add_dependencies(GN_TARGET DEPENDENCIES...)
+#
+# Adds dependencies to the target with the given GN-style target name.
+#
+# Parameters:
+#   GN_TARGET    - The GN-style target name
+#   DEPENDENCIES - a list of GN-style target names
+function(tint_target_add_dependencies GN_TARGET)
+  set(DEPENDENCIES ${ARGN})
+
+  # Split the GN-style target name into the CMake target name and target kind
+  tint_translate_target(TARGET KIND ${GN_TARGET})
+
+  if(${KIND} STREQUAL ${TINT_TARGET_DISABLED})
+    return() # Target is disabled via build flags
+  endif()
+
+  # Translate list of GN-style target names to CMake target names
+  set(DEPENDENCY_TARGETS "")
+  foreach(DEPENDENCY ${DEPENDENCIES})
+    tint_translate_target(DEP_TARGET DEP_KIND ${DEPENDENCY})
+    list(APPEND DEPENDENCY_TARGETS ${DEP_TARGET})
+  endforeach()
+
+  # Register the dependencies
+  target_link_libraries(${TARGET} PRIVATE ${DEPENDENCY_TARGETS})
+
+  # If there's a corresponding fuzz target for this target, add the corresponding fuzz dependencies
+  # to the fuzz target.
+  set(FUZZ_TARGET "${TARGET}${TINT_FUZZ_SUFFIX}")
+  if(TARGET "${FUZZ_TARGET}")
+    set(FUZZ_DEPENDENCY_TARGETS "")
+
+    foreach(TARGET ${DEPENDENCY_TARGETS})
+      list(APPEND FUZZ_DEPENDENCY_TARGETS "${TARGET}${TINT_FUZZ_SUFFIX}")
+    endforeach()
+
+    target_link_libraries("${FUZZ_TARGET}" PRIVATE ${FUZZ_DEPENDENCY_TARGETS})
+  endif()
+endfunction()
+
+# tint_target_add_external_dependencies(GN_TARGET DEPENDENCIES...)
+#
+# Adds external dependencies to the target with the given GN-style target name.
+#
+# Parameters:
+#   GN_TARGET    - The GN-style target name
+#   DEPENDENCIES - a list of external target names
+#
+# See tools/src/cmd/gen/build/externals.json for the list of external dependencies.
+function(tint_target_add_external_dependencies GN_TARGET)
+  set(DEPENDENCIES ${ARGN})
+
+  # Split the GN-style target name into the CMake target name and target kind
+  tint_translate_target(UNSUFFIXED_TARGET KIND ${GN_TARGET})
+
+  if(${KIND} STREQUAL ${TINT_TARGET_DISABLED})
+    return() # Target is disabled via build flags
+  endif()
+
+  # Build a list of targets that we're going to operate on
+  set(TARGETS ${UNSUFFIXED_TARGET})
+  if(TARGET "${UNSUFFIXED_TARGET}${TINT_FUZZ_SUFFIX}")
+    list(APPEND TARGETS "${UNSUFFIXED_TARGET}${TINT_FUZZ_SUFFIX}")
+  endif()
+
+  foreach(TARGET ${TARGETS})
+    foreach(DEPENDENCY ${DEPENDENCIES})
+      # Each external dependency requires special handling...
+      if(${DEPENDENCY} STREQUAL "abseil")
+        target_link_libraries(${TARGET} PRIVATE
+          absl_strings
+        )
+      elseif(${DEPENDENCY} STREQUAL "spirv-headers")
+        tint_spvheaders_compile_options(${TARGET})
+      elseif(${DEPENDENCY} STREQUAL "spirv-tools")
+        tint_spvtools_compile_options(${TARGET})
+      elseif(${DEPENDENCY} STREQUAL "spirv-opt-internal")
+        target_link_libraries(${TARGET} PRIVATE
+          SPIRV-Tools-opt
+        )
+        target_include_directories(${TARGET} PRIVATE
+          "${TINT_SPIRV_TOOLS_DIR}"
+          "${TINT_SPIRV_TOOLS_DIR}/include"
+          "${TINT_SPIRV_TOOLS_DIR}/source"
+          "${spirv-tools_BINARY_DIR}"
+        )
+      elseif(${DEPENDENCY} STREQUAL "glslang")
+        target_link_libraries(${TARGET} PRIVATE glslang)
+        if(NOT MSVC)
+          target_compile_options(${TARGET} PRIVATE
+            -Wno-reserved-id-macro
+            -Wno-shadow-field-in-constructor
+            -Wno-shadow
+            -Wno-weak-vtables
+          )
+        endif()
+      elseif(${DEPENDENCY} STREQUAL "glslang-res-limits")
+        target_link_libraries(${TARGET} PRIVATE
+          glslang-default-resource-limits
+        )
+      else()
+        message(FATAL_ERROR "unhandled external dependency ${DEPENDENCY}")
+      endif()
+    endforeach()
+  endforeach()
+endfunction()
+
+# tint_target_set_output_name(GN_TARGET OUTPUT_NAME)
+#
+# Overrides the output name for the given target
+#
+# Parameters:
+#   GN_TARGET   - The GN-style target name
+#   OUTPUT_NAME - the new name for the target output
+function(tint_target_set_output_name GN_TARGET OUTPUT_NAME)
+  # Split the GN-style target name into the CMake target name and target kind
+  tint_translate_target(TARGET KIND ${GN_TARGET})
+
+  if(${KIND} STREQUAL ${TINT_TARGET_DISABLED})
+    return() # Target is disabled via build flags
+  endif()
+
+  set_target_properties(${TARGET} PROPERTIES OUTPUT_NAME ${OUTPUT_NAME})
+
+  # Create an alias target with the name OUTPUT_NAME to TARGET
+  if(${KIND} STREQUAL lib)
+    add_library(${OUTPUT_NAME} ALIAS ${TARGET})
+  elseif(${KIND} STREQUAL test)
+    add_library(${OUTPUT_NAME} ALIAS ${TARGET})
+  elseif(${KIND} STREQUAL cmd)
+    add_executable(${OUTPUT_NAME} ALIAS ${TARGET})
+  elseif(${KIND} STREQUAL test_cmd)
+    add_executable(${OUTPUT_NAME} ALIAS ${TARGET})
+  elseif(${KIND} STREQUAL bench_cmd)
+    add_executable(${OUTPUT_NAME} ALIAS ${TARGET})
+  else()
+    message(FATAL_ERROR "unhandled target kind ${KIND}")
+  endif()
+endfunction()
+
+################################################################################
+# Include the generated build files
+################################################################################
+include("BUILD.cmake")
 
 # If we're building on mac / ios and we have CoreGraphics, then we can use the
 # metal API to validate our shaders. This is roughly 4x faster than invoking
 # the metal shader compiler executable.
-if(APPLE)
+if(APPLE AND TINT_BUILD_MSL_WRITER)
   find_library(LIB_CORE_GRAPHICS CoreGraphics)
+
   if(LIB_CORE_GRAPHICS)
-    target_sources(tint_val PRIVATE "lang/msl/validate/msl_metal.mm")
-    target_compile_definitions(tint_val PUBLIC "-DTINT_ENABLE_MSL_VALIDATION_USING_METAL_API=1")
-    target_compile_options(tint_val PRIVATE "-fmodules" "-fcxx-modules")
-    target_link_options(tint_val PUBLIC "-framework" "CoreGraphics")
+    target_sources("tint_lang_msl_validate" PRIVATE "lang/msl/validate/msl_metal.mm")
+    target_compile_definitions("tint_lang_msl_validate" PUBLIC "-DTINT_ENABLE_MSL_VALIDATION_USING_METAL_API=1")
+    target_compile_options("tint_lang_msl_validate" PRIVATE "-fmodules" "-fcxx-modules")
+    target_link_options("tint_lang_msl_validate" PUBLIC "-framework" "CoreGraphics")
   endif()
 endif()
-
-tint_default_compile_options(tint_val)
-target_link_libraries(tint_val tint_utils_io)
-
-## Tint library
-add_library(libtint ${TINT_LIB_SRCS})
-tint_default_compile_options(libtint)
-target_link_libraries(libtint tint_diagnostic_utils absl_strings)
-set_target_properties(libtint PROPERTIES OUTPUT_NAME "tint")
-
-if (${TINT_BUILD_FUZZERS})
-  # Tint library with fuzzer instrumentation
-  add_library(libtint-fuzz ${TINT_LIB_SRCS})
-  tint_default_compile_options(libtint-fuzz)
-  target_link_libraries(libtint-fuzz tint_diagnostic_utils absl_strings)
-  if (${COMPILER_IS_LIKE_GNU})
-    target_compile_options(libtint-fuzz PRIVATE -fvisibility=hidden)
-  endif()
-
-  if (NOT ${TINT_LIB_FUZZING_ENGINE_LINK_OPTIONS} STREQUAL "")
-    # This is set when the fuzzers are being built by OSS-Fuzz. In this case the
-    # variable provides the necessary linker flags, and OSS-Fuzz will take care
-    # of passing suitable compiler flags.
-    target_link_options(libtint-fuzz PUBLIC ${TINT_LIB_FUZZING_ENGINE_LINK_OPTIONS})
-  else()
-    # When the fuzzers are being built outside of OSS-Fuzz, specific libFuzzer
-    # arguments to enable fuzzing are used.
-    target_compile_options(libtint-fuzz PUBLIC -fsanitize=fuzzer -fsanitize-coverage=trace-cmp)
-    target_link_options(libtint-fuzz PUBLIC -fsanitize=fuzzer -fsanitize-coverage=trace-cmp)
-  endif()
-endif()
-
-if(${TINT_BUILD_SPV_READER} OR ${TINT_BUILD_SPV_WRITER})
-  tint_spvtools_compile_options(libtint)
-  if (${TINT_BUILD_FUZZERS})
-    tint_spvtools_compile_options(libtint-fuzz)
-  endif()
-endif()
-
 
 ################################################################################
-# Tests
+# Additional fuzzer tests
 ################################################################################
 if(TINT_BUILD_TESTS)
-  list(APPEND TINT_TEST_SRCS
-    clone_context_test.cc
-    lang/core/builtin/number_test.cc
-    lang/core/constant/composite_test.cc
-    lang/core/constant/manager_test.cc
-    lang/core/constant/scalar_test.cc
-    lang/core/constant/splat_test.cc
-    lang/core/constant/value_test.cc
-    lang/core/type/array_test.cc
-    lang/core/type/atomic_test.cc
-    lang/core/type/bool_test.cc
-    lang/core/type/builtin_structs_test.cc
-    lang/core/type/depth_multisampled_texture_test.cc
-    lang/core/type/depth_texture_test.cc
-    lang/core/type/external_texture_test.cc
-    lang/core/type/f16_test.cc
-    lang/core/type/f32_test.cc
-    lang/core/type/i32_test.cc
-    lang/core/type/manager_test.cc
-    lang/core/type/matrix_test.cc
-    lang/core/type/multisampled_texture_test.cc
-    lang/core/type/pointer_test.cc
-    lang/core/type/reference_test.cc
-    lang/core/type/sampled_texture_test.cc
-    lang/core/type/sampler_test.cc
-    lang/core/type/storage_texture_test.cc
-    lang/core/type/struct_test.cc
-    lang/core/type/texture_test.cc
-    lang/core/type/type_test.cc
-    lang/core/type/u32_test.cc
-    lang/core/type/vector_test.cc
-    lang/wgsl/ast/alias_test.cc
-    lang/wgsl/ast/assignment_statement_test.cc
-    lang/wgsl/ast/binary_expression_test.cc
-    lang/wgsl/ast/binding_attribute_test.cc
-    lang/wgsl/ast/bitcast_expression_test.cc
-    lang/wgsl/ast/block_statement_test.cc
-    lang/wgsl/ast/bool_literal_expression_test.cc
-    lang/wgsl/ast/break_if_statement_test.cc
-    lang/wgsl/ast/break_statement_test.cc
-    lang/wgsl/ast/builtin_attribute_test.cc
-    lang/wgsl/ast/builtin_texture_helper_test.cc
-    lang/wgsl/ast/builtin_texture_helper_test.h
-    lang/wgsl/ast/call_expression_test.cc
-    lang/wgsl/ast/call_statement_test.cc
-    lang/wgsl/ast/case_selector_test.cc
-    lang/wgsl/ast/case_statement_test.cc
-    lang/wgsl/ast/compound_assignment_statement_test.cc
-    lang/wgsl/ast/const_assert_test.cc
-    lang/wgsl/ast/continue_statement_test.cc
-    lang/wgsl/ast/diagnostic_attribute_test.cc
-    lang/wgsl/ast/diagnostic_control_test.cc
-    lang/wgsl/ast/diagnostic_directive_test.cc
-    lang/wgsl/ast/diagnostic_rule_name_test.cc
-    lang/wgsl/ast/discard_statement_test.cc
-    lang/wgsl/ast/enable_test.cc
-    lang/wgsl/ast/float_literal_expression_test.cc
-    lang/wgsl/ast/for_loop_statement_test.cc
-    lang/wgsl/ast/function_test.cc
-    lang/wgsl/ast/group_attribute_test.cc
-    lang/wgsl/ast/id_attribute_test.cc
-    lang/wgsl/ast/identifier_expression_test.cc
-    lang/wgsl/ast/identifier_test.cc
-    lang/wgsl/ast/if_statement_test.cc
-    lang/wgsl/ast/increment_decrement_statement_test.cc
-    lang/wgsl/ast/index_accessor_expression_test.cc
-    lang/wgsl/ast/index_attribute_test.cc
-    lang/wgsl/ast/int_literal_expression_test.cc
-    lang/wgsl/ast/interpolate_attribute_test.cc
-    lang/wgsl/ast/location_attribute_test.cc
-    lang/wgsl/ast/loop_statement_test.cc
-    lang/wgsl/ast/member_accessor_expression_test.cc
-    lang/wgsl/ast/module_test.cc
-    lang/wgsl/ast/phony_expression_test.cc
-    lang/wgsl/ast/return_statement_test.cc
-    lang/wgsl/ast/stage_attribute_test.cc
-    lang/wgsl/ast/stride_attribute_test.cc
-    lang/wgsl/ast/struct_member_align_attribute_test.cc
-    lang/wgsl/ast/struct_member_offset_attribute_test.cc
-    lang/wgsl/ast/struct_member_size_attribute_test.cc
-    lang/wgsl/ast/struct_member_test.cc
-    lang/wgsl/ast/struct_test.cc
-    lang/wgsl/ast/switch_statement_test.cc
-    lang/wgsl/ast/templated_identifier_test.cc
-    lang/wgsl/ast/test_helper.h
-    lang/wgsl/ast/test_helper_test.cc
-    lang/wgsl/ast/transform/transform_test.cc
-    lang/wgsl/ast/traverse_expressions_test.cc
-    lang/wgsl/ast/unary_op_expression_test.cc
-    lang/wgsl/ast/variable_decl_statement_test.cc
-    lang/wgsl/ast/variable_test.cc
-    lang/wgsl/ast/while_statement_test.cc
-    lang/wgsl/ast/workgroup_attribute_test.cc
-    lang/wgsl/helpers/append_vector_test.cc
-    lang/wgsl/helpers/check_supported_extensions_test.cc
-    lang/wgsl/helpers/flatten_bindings_test.cc
-    lang/wgsl/program/program_builder_test.cc
-    lang/wgsl/program/program_test.cc
-    lang/wgsl/sem/builtin_test.cc
-    lang/wgsl/sem/diagnostic_severity_test.cc
-    lang/wgsl/sem/struct_test.cc
-    lang/wgsl/sem/value_expression_test.cc
-    resolver/address_space_layout_validation_test.cc
-    resolver/address_space_validation_test.cc
-    resolver/alias_analysis_test.cc
-    resolver/array_accessor_test.cc
-    resolver/assignment_validation_test.cc
-    resolver/atomics_test.cc
-    resolver/atomics_validation_test.cc
-    resolver/attribute_validation_test.cc
-    resolver/bitcast_validation_test.cc
-    resolver/builtin_enum_test.cc
-    resolver/builtin_structs_test.cc
-    resolver/builtin_test.cc
-    resolver/builtin_validation_test.cc
-    resolver/builtins_validation_test.cc
-    resolver/call_test.cc
-    resolver/call_validation_test.cc
-    resolver/compound_assignment_validation_test.cc
-    resolver/compound_statement_test.cc
-    resolver/const_assert_test.cc
-    resolver/const_eval_binary_op_test.cc
-    resolver/const_eval_bitcast_test.cc
-    resolver/const_eval_builtin_test.cc
-    resolver/const_eval_construction_test.cc
-    resolver/const_eval_conversion_test.cc
-    resolver/const_eval_indexing_test.cc
-    resolver/const_eval_member_access_test.cc
-    resolver/const_eval_runtime_semantics_test.cc
-    resolver/const_eval_test.h
-    resolver/const_eval_unary_op_test.cc
-    resolver/control_block_validation_test.cc
-    resolver/dependency_graph_test.cc
-    resolver/diagnostic_control_test.cc
-    resolver/dual_source_blending_extension_test.cc
-    resolver/entry_point_validation_test.cc
-    resolver/evaluation_stage_test.cc
-    resolver/expression_kind_test.cc
-    resolver/f16_extension_test.cc
-    resolver/function_validation_test.cc
-    resolver/host_shareable_validation_test.cc
-    resolver/increment_decrement_validation_test.cc
-    resolver/inferred_type_test.cc
-    resolver/intrinsic_table_test.cc
-    resolver/is_host_shareable_test.cc
-    resolver/is_storeable_test.cc
-    resolver/load_test.cc
-    resolver/materialize_test.cc
-    resolver/override_test.cc
-    resolver/ptr_ref_test.cc
-    resolver/ptr_ref_validation_test.cc
-    resolver/resolver_behavior_test.cc
-    resolver/resolver_test.cc
-    resolver/resolver_test_helper.cc
-    resolver/resolver_test_helper.h
-    resolver/root_identifier_test.cc
-    resolver/side_effects_test.cc
-    resolver/struct_address_space_use_test.cc
-    resolver/struct_layout_test.cc
-    resolver/struct_pipeline_stage_use_test.cc
-    resolver/type_validation_test.cc
-    resolver/unresolved_identifier_test.cc
-    resolver/validation_test.cc
-    resolver/validator_is_storeable_test.cc
-    resolver/value_constructor_validation_test.cc
-    resolver/variable_test.cc
-    resolver/variable_validation_test.cc
-    test_main.cc
-    transform/manager_test.cc
-    utils/cli/cli_test.cc
-    utils/command/command_test.cc
-    utils/containers/bitset_test.cc
-    utils/containers/enum_set_test.cc
-    utils/containers/hashmap_test.cc
-    utils/containers/hashset_test.cc
-    utils/containers/map_test.cc
-    utils/containers/predicates_test.cc
-    utils/containers/reverse_test.cc
-    utils/containers/scope_stack_test.cc
-    utils/containers/slice_test.cc
-    utils/containers/transform_test.cc
-    utils/containers/unique_allocator_test.cc
-    utils/containers/unique_vector_test.cc
-    utils/containers/vector_test.cc
-    utils/debug/debug_test.cc
-    utils/diagnostic/diagnostic_test.cc
-    utils/diagnostic/formatter_test.cc
-    utils/diagnostic/printer_test.cc
-    utils/diagnostic/source_test.cc
-    utils/file/tmpfile_test.cc
-    utils/macros/defer_test.cc
-    utils/macros/scoped_assignment_test.cc
-    utils/math/crc32_test.cc
-    utils/math/hash_test.cc
-    utils/math/math_test.cc
-    utils/memory/bitcast_test.cc
-    utils/memory/block_allocator_test.cc
-    utils/memory/bump_allocator_test.cc
-    utils/reflection/reflection_test.cc
-    utils/result/result_test.cc
-    utils/rtti/castable_test.cc
-    utils/rtti/switch_test.cc
-    utils/text/float_to_string_test.cc
-    utils/text/string_stream_test.cc
-    utils/text/string_test.cc
-    utils/text/symbol_table_test.cc
-    utils/text/symbol_test.cc
-    utils/text/unicode_test.cc
-    utils/traits/traits_test.cc
-    writer/ast_text_generator_test.cc
-  )
-
-  # Noet, the source files are included here otherwise the cmd sources would not be included in the
-  # test binary.
-  list(APPEND TINT_TEST_SRCS
-    cmd/generate_external_texture_bindings.cc
-    cmd/generate_external_texture_bindings.h
-    cmd/generate_external_texture_bindings_test.cc
-  )
-
-  # Uniformity analysis tests depend on WGSL reader
-  if(${TINT_BUILD_WGSL_READER})
-    list(APPEND TINT_TEST_SRCS
-      resolver/uniformity_test.cc
-    )
-  endif()
-
-  # Inspector tests depend on WGSL reader
-  if(${TINT_BUILD_WGSL_READER})
-    list(APPEND TINT_TEST_SRCS
-      lang/wgsl/inspector/inspector_test.cc
-      lang/wgsl/inspector/test_inspector_builder.cc
-      lang/wgsl/inspector/test_inspector_builder.h
-      lang/wgsl/inspector/test_inspector_runner.cc
-      lang/wgsl/inspector/test_inspector_runner.h
-    )
-  endif()
-
-  if(${TINT_BUILD_SPV_READER} AND ${TINT_BUILD_WGSL_WRITER})
-    list(APPEND TINT_TEST_SRCS
-      lang/spirv/reader/enum_converter_test.cc
-      lang/spirv/reader/fail_stream_test.cc
-      lang/spirv/reader/function_arithmetic_test.cc
-      lang/spirv/reader/function_bit_test.cc
-      lang/spirv/reader/function_cfg_test.cc
-      lang/spirv/reader/function_call_test.cc
-      lang/spirv/reader/function_composite_test.cc
-      lang/spirv/reader/function_conversion_test.cc
-      lang/spirv/reader/function_decl_test.cc
-      lang/spirv/reader/function_glsl_std_450_test.cc
-      lang/spirv/reader/function_logical_test.cc
-      lang/spirv/reader/function_memory_test.cc
-      lang/spirv/reader/function_misc_test.cc
-      lang/spirv/reader/function_var_test.cc
-      lang/spirv/reader/namer_test.cc
-      lang/spirv/reader/parser_impl_barrier_test.cc
-      lang/spirv/reader/parser_impl_constant_test.cc
-      lang/spirv/reader/parser_impl_convert_member_decoration_test.cc
-      lang/spirv/reader/parser_impl_convert_type_test.cc
-      lang/spirv/reader/parser_impl_function_decl_test.cc
-      lang/spirv/reader/parser_impl_get_decorations_test.cc
-      lang/spirv/reader/parser_impl_handle_test.cc
-      lang/spirv/reader/parser_impl_import_test.cc
-      lang/spirv/reader/parser_impl_module_var_test.cc
-      lang/spirv/reader/parser_impl_named_types_test.cc
-      lang/spirv/reader/parser_impl_test_helper.cc
-      lang/spirv/reader/parser_impl_test_helper.h
-      lang/spirv/reader/parser_impl_test.cc
-      lang/spirv/reader/parser_impl_user_name_test.cc
-      lang/spirv/reader/parser_type_test.cc
-      lang/spirv/reader/parser_test.cc
-      lang/spirv/reader/spirv_tools_helpers_test.cc
-      lang/spirv/reader/spirv_tools_helpers_test.h
-      lang/spirv/reader/usage_test.cc
-    )
-  endif()
-
-  if(${TINT_BUILD_WGSL_READER})
-    list(APPEND TINT_TEST_SRCS
-      lang/wgsl/reader/classify_template_args_test.cc
-      lang/wgsl/reader/lexer_test.cc
-      lang/wgsl/reader/parser_test.cc
-      lang/wgsl/reader/parser_impl_additive_expression_test.cc
-      lang/wgsl/reader/parser_impl_argument_expression_list_test.cc
-      lang/wgsl/reader/parser_impl_assignment_stmt_test.cc
-      lang/wgsl/reader/parser_impl_bitwise_expression_test.cc
-      lang/wgsl/reader/parser_impl_break_stmt_test.cc
-      lang/wgsl/reader/parser_impl_bug_cases_test.cc
-      lang/wgsl/reader/parser_impl_call_stmt_test.cc
-      lang/wgsl/reader/parser_impl_compound_stmt_test.cc
-      lang/wgsl/reader/parser_impl_const_literal_test.cc
-      lang/wgsl/reader/parser_impl_continue_stmt_test.cc
-      lang/wgsl/reader/parser_impl_continuing_stmt_test.cc
-      lang/wgsl/reader/parser_impl_core_lhs_expression_test.cc
-      lang/wgsl/reader/parser_impl_diagnostic_attribute_test.cc
-      lang/wgsl/reader/parser_impl_diagnostic_control_test.cc
-      lang/wgsl/reader/parser_impl_diagnostic_directive_test.cc
-      lang/wgsl/reader/parser_impl_enable_directive_test.cc
-      lang/wgsl/reader/parser_impl_error_msg_test.cc
-      lang/wgsl/reader/parser_impl_error_resync_test.cc
-      lang/wgsl/reader/parser_impl_expression_test.cc
-      lang/wgsl/reader/parser_impl_for_stmt_test.cc
-      lang/wgsl/reader/parser_impl_function_decl_test.cc
-      lang/wgsl/reader/parser_impl_function_attribute_list_test.cc
-      lang/wgsl/reader/parser_impl_function_attribute_test.cc
-      lang/wgsl/reader/parser_impl_function_header_test.cc
-      lang/wgsl/reader/parser_impl_global_constant_decl_test.cc
-      lang/wgsl/reader/parser_impl_global_decl_test.cc
-      lang/wgsl/reader/parser_impl_global_variable_decl_test.cc
-      lang/wgsl/reader/parser_impl_if_stmt_test.cc
-      lang/wgsl/reader/parser_impl_increment_decrement_stmt_test.cc
-      lang/wgsl/reader/parser_impl_lhs_expression_test.cc
-      lang/wgsl/reader/parser_impl_loop_stmt_test.cc
-      lang/wgsl/reader/parser_impl_math_expression_test.cc
-      lang/wgsl/reader/parser_impl_multiplicative_expression_test.cc
-      lang/wgsl/reader/parser_impl_param_list_test.cc
-      lang/wgsl/reader/parser_impl_paren_expression_test.cc
-      lang/wgsl/reader/parser_impl_primary_expression_test.cc
-      lang/wgsl/reader/parser_impl_relational_expression_test.cc
-      lang/wgsl/reader/parser_impl_reserved_keyword_test.cc
-      lang/wgsl/reader/parser_impl_require_directive_test.cc
-      lang/wgsl/reader/parser_impl_shift_expression_test.cc
-      lang/wgsl/reader/parser_impl_singular_expression_test.cc
-      lang/wgsl/reader/parser_impl_statement_test.cc
-      lang/wgsl/reader/parser_impl_statements_test.cc
-      lang/wgsl/reader/parser_impl_struct_body_decl_test.cc
-      lang/wgsl/reader/parser_impl_struct_decl_test.cc
-      lang/wgsl/reader/parser_impl_struct_attribute_decl_test.cc
-      lang/wgsl/reader/parser_impl_struct_member_attribute_decl_test.cc
-      lang/wgsl/reader/parser_impl_struct_member_attribute_test.cc
-      lang/wgsl/reader/parser_impl_struct_member_test.cc
-      lang/wgsl/reader/parser_impl_switch_body_test.cc
-      lang/wgsl/reader/parser_impl_switch_stmt_test.cc
-      lang/wgsl/reader/parser_impl_test.cc
-      lang/wgsl/reader/parser_impl_test_helper.cc
-      lang/wgsl/reader/parser_impl_test_helper.h
-      lang/wgsl/reader/parser_impl_type_alias_test.cc
-      lang/wgsl/reader/parser_impl_type_decl_test.cc
-      lang/wgsl/reader/parser_impl_unary_expression_test.cc
-      lang/wgsl/reader/parser_impl_variable_decl_test.cc
-      lang/wgsl/reader/parser_impl_variable_attribute_list_test.cc
-      lang/wgsl/reader/parser_impl_variable_attribute_test.cc
-      lang/wgsl/reader/parser_impl_variable_ident_decl_test.cc
-      lang/wgsl/reader/parser_impl_variable_stmt_test.cc
-      lang/wgsl/reader/parser_impl_variable_qualifier_test.cc
-      lang/wgsl/reader/parser_impl_while_stmt_test.cc
-      lang/wgsl/reader/token_test.cc
-    )
-  endif()
-
-  if(${TINT_BUILD_SPV_WRITER})
-    list(APPEND TINT_TEST_SRCS
-      lang/spirv/ast_writer/binary_writer_test.cc
-      lang/spirv/ast_writer/builder_accessor_expression_test.cc
-      lang/spirv/ast_writer/builder_assign_test.cc
-      lang/spirv/ast_writer/builder_binary_expression_test.cc
-      lang/spirv/ast_writer/builder_bitcast_expression_test.cc
-      lang/spirv/ast_writer/builder_block_test.cc
-      lang/spirv/ast_writer/builder_builtin_test.cc
-      lang/spirv/ast_writer/builder_builtin_texture_test.cc
-      lang/spirv/ast_writer/builder_call_test.cc
-      lang/spirv/ast_writer/builder_const_assert_test.cc
-      lang/spirv/ast_writer/builder_constructor_expression_test.cc
-      lang/spirv/ast_writer/builder_discard_test.cc
-      lang/spirv/ast_writer/builder_entry_point_test.cc
-      lang/spirv/ast_writer/builder_format_conversion_test.cc
-      lang/spirv/ast_writer/builder_function_attribute_test.cc
-      lang/spirv/ast_writer/builder_function_test.cc
-      lang/spirv/ast_writer/builder_function_variable_test.cc
-      lang/spirv/ast_writer/builder_global_variable_test.cc
-      lang/spirv/ast_writer/builder_ident_expression_test.cc
-      lang/spirv/ast_writer/builder_if_test.cc
-      lang/spirv/ast_writer/builder_literal_test.cc
-      lang/spirv/ast_writer/builder_loop_test.cc
-      lang/spirv/ast_writer/builder_return_test.cc
-      lang/spirv/ast_writer/builder_switch_test.cc
-      lang/spirv/ast_writer/builder_test.cc
-      lang/spirv/ast_writer/builder_type_test.cc
-      lang/spirv/ast_writer/builder_unary_op_expression_test.cc
-      lang/spirv/ast_writer/instruction_test.cc
-      lang/spirv/ast_writer/module_test.cc
-      lang/spirv/ast_writer/operand_test.cc
-      lang/spirv/ast_writer/scalar_constant_test.cc
-      lang/spirv/ast_writer/spv_dump.cc
-      lang/spirv/ast_writer/spv_dump.h
-      lang/spirv/ast_writer/test_helper.h
-    )
-
-    if(${TINT_BUILD_IR})
-      list(APPEND TINT_TEST_SRCS
-        ir/transform/builtin_polyfill_spirv_test.cc
-        ir/transform/handle_matrix_arithmetic_test.cc
-        ir/transform/expand_implicit_splats_test.cc
-        ir/transform/merge_return_test.cc
-        ir/transform/shader_io_spirv_test.cc
-        ir/transform/var_for_dynamic_index_test.cc
-        lang/spirv/writer/access_test.cc
-        lang/spirv/writer/atomic_builtin_test.cc
-        lang/spirv/writer/binary_test.cc
-        lang/spirv/writer/bitcast_test.cc
-        lang/spirv/writer/builtin_test.cc
-        lang/spirv/writer/constant_test.cc
-        lang/spirv/writer/construct_test.cc
-        lang/spirv/writer/convert_test.cc
-        lang/spirv/writer/discard_test.cc
-        lang/spirv/writer/function_test.cc
-        lang/spirv/writer/if_test.cc
-        lang/spirv/writer/let_test.cc
-        lang/spirv/writer/loop_test.cc
-        lang/spirv/writer/switch_test.cc
-        lang/spirv/writer/swizzle_test.cc
-        lang/spirv/writer/test_helper.h
-        lang/spirv/writer/texture_builtin_test.cc
-        lang/spirv/writer/type_test.cc
-        lang/spirv/writer/unary_test.cc
-        lang/spirv/writer/var_test.cc
-        lang/spirv/writer/writer_test.cc
-      )
-    endif()
-  endif()
-
-  if(${TINT_BUILD_WGSL_WRITER})
-    list(APPEND TINT_TEST_SRCS
-      lang/wgsl/ast_writer/generator_impl_test.cc
-      lang/wgsl/ast_writer/generator_impl_alias_type_test.cc
-      lang/wgsl/ast_writer/generator_impl_array_accessor_test.cc
-      lang/wgsl/ast_writer/generator_impl_assign_test.cc
-      lang/wgsl/ast_writer/generator_impl_binary_test.cc
-      lang/wgsl/ast_writer/generator_impl_bitcast_test.cc
-      lang/wgsl/ast_writer/generator_impl_block_test.cc
-      lang/wgsl/ast_writer/generator_impl_break_test.cc
-      lang/wgsl/ast_writer/generator_impl_call_test.cc
-      lang/wgsl/ast_writer/generator_impl_case_test.cc
-      lang/wgsl/ast_writer/generator_impl_cast_test.cc
-      lang/wgsl/ast_writer/generator_impl_const_assert_test.cc
-      lang/wgsl/ast_writer/generator_impl_constructor_test.cc
-      lang/wgsl/ast_writer/generator_impl_continue_test.cc
-      lang/wgsl/ast_writer/generator_impl_diagnostic_test.cc
-      lang/wgsl/ast_writer/generator_impl_discard_test.cc
-      lang/wgsl/ast_writer/generator_impl_enable_test.cc
-      lang/wgsl/ast_writer/generator_impl_function_test.cc
-      lang/wgsl/ast_writer/generator_impl_global_decl_test.cc
-      lang/wgsl/ast_writer/generator_impl_identifier_test.cc
-      lang/wgsl/ast_writer/generator_impl_if_test.cc
-      lang/wgsl/ast_writer/generator_impl_loop_test.cc
-      lang/wgsl/ast_writer/generator_impl_literal_test.cc
-      lang/wgsl/ast_writer/generator_impl_member_accessor_test.cc
-      lang/wgsl/ast_writer/generator_impl_return_test.cc
-      lang/wgsl/ast_writer/generator_impl_switch_test.cc
-      lang/wgsl/ast_writer/generator_impl_type_test.cc
-      lang/wgsl/ast_writer/generator_impl_unary_op_test.cc
-      lang/wgsl/ast_writer/generator_impl_variable_decl_statement_test.cc
-      lang/wgsl/ast_writer/generator_impl_variable_test.cc
-      lang/wgsl/ast_writer/test_helper.h
-    )
-  endif()
-
-  if(${TINT_BUILD_WGSL_READER} AND ${TINT_BUILD_WGSL_WRITER})
-    list(APPEND TINT_TEST_SRCS
-      lang/wgsl/ast/module_clone_test.cc
-      lang/wgsl/ast/transform/add_empty_entry_point_test.cc
-      lang/wgsl/ast/transform/add_block_attribute_test.cc
-      lang/wgsl/ast/transform/array_length_from_uniform_test.cc
-      lang/wgsl/ast/transform/binding_remapper_test.cc
-      lang/wgsl/ast/transform/builtin_polyfill_test.cc
-      lang/wgsl/ast/transform/calculate_array_length_test.cc
-      lang/wgsl/ast/transform/clamp_frag_depth_test.cc
-      lang/wgsl/ast/transform/canonicalize_entry_point_io_test.cc
-      lang/wgsl/ast/transform/combine_samplers_test.cc
-      lang/wgsl/ast/transform/decompose_memory_access_test.cc
-      lang/wgsl/ast/transform/decompose_strided_array_test.cc
-      lang/wgsl/ast/transform/decompose_strided_matrix_test.cc
-      lang/wgsl/ast/transform/demote_to_helper_test.cc
-      lang/wgsl/ast/transform/direct_variable_access_test.cc
-      lang/wgsl/ast/transform/disable_uniformity_analysis_test.cc
-      lang/wgsl/ast/transform/expand_compound_assignment_test.cc
-      lang/wgsl/ast/transform/first_index_offset_test.cc
-      lang/wgsl/ast/transform/fold_trivial_lets_test.cc
-      lang/wgsl/ast/transform/for_loop_to_loop_test.cc
-      lang/wgsl/ast/transform/expand_compound_assignment_test.cc
-      lang/wgsl/ast/transform/localize_struct_array_assignment_test.cc
-      lang/wgsl/ast/transform/merge_return_test.cc
-      lang/wgsl/ast/transform/module_scope_var_to_entry_point_param_test.cc
-      lang/wgsl/ast/transform/multiplanar_external_texture_test.cc
-      lang/wgsl/ast/transform/num_workgroups_from_uniform_test.cc
-      lang/wgsl/ast/transform/packed_vec3_test.cc
-      lang/wgsl/ast/transform/pad_structs_test.cc
-      lang/wgsl/ast/transform/preserve_padding_test.cc
-      lang/wgsl/ast/transform/promote_initializers_to_let_test.cc
-      lang/wgsl/ast/transform/promote_side_effects_to_decl_test.cc
-      lang/wgsl/ast/transform/remove_continue_in_switch_test.cc
-      lang/wgsl/ast/transform/remove_phonies_test.cc
-      lang/wgsl/ast/transform/remove_unreachable_statements_test.cc
-      lang/wgsl/ast/transform/renamer_test.cc
-      lang/wgsl/ast/transform/robustness_test.cc
-      lang/wgsl/ast/transform/simplify_pointers_test.cc
-      lang/wgsl/ast/transform/single_entry_point_test.cc
-      lang/wgsl/ast/transform/spirv_atomic_test.cc
-      lang/wgsl/ast/transform/std140_exhaustive_test.cc
-      lang/wgsl/ast/transform/std140_f16_test.cc
-      lang/wgsl/ast/transform/std140_f32_test.cc
-      lang/wgsl/ast/transform/std140_test.cc
-      lang/wgsl/ast/transform/substitute_override_test.cc
-      lang/wgsl/ast/transform/test_helper.h
-      lang/wgsl/ast/transform/texture_1d_to_2d_test.cc
-      lang/wgsl/ast/transform/truncate_interstage_variables_test.cc
-      lang/wgsl/ast/transform/unshadow_test.cc
-      lang/wgsl/ast/transform/var_for_dynamic_index_test.cc
-      lang/wgsl/ast/transform/vectorize_matrix_conversions_test.cc
-      lang/wgsl/ast/transform/vectorize_scalar_matrix_initializers_test.cc
-      lang/wgsl/ast/transform/vertex_pulling_test.cc
-      lang/wgsl/ast/transform/while_to_loop_test.cc
-      lang/wgsl/ast/transform/zero_init_workgroup_memory_test.cc
-      lang/wgsl/ast/transform/utils/get_insertion_point_test.cc
-      lang/wgsl/ast/transform/utils/hoist_to_decl_before_test.cc
-    )
-  endif()
-
-  if(${TINT_BUILD_MSL_WRITER})
-    list(APPEND TINT_TEST_SRCS
-      lang/msl/ast_writer/generator_impl_array_accessor_test.cc
-      lang/msl/ast_writer/generator_impl_assign_test.cc
-      lang/msl/ast_writer/generator_impl_binary_test.cc
-      lang/msl/ast_writer/generator_impl_bitcast_test.cc
-      lang/msl/ast_writer/generator_impl_block_test.cc
-      lang/msl/ast_writer/generator_impl_break_test.cc
-      lang/msl/ast_writer/generator_impl_builtin_test.cc
-      lang/msl/ast_writer/generator_impl_builtin_texture_test.cc
-      lang/msl/ast_writer/generator_impl_call_test.cc
-      lang/msl/ast_writer/generator_impl_case_test.cc
-      lang/msl/ast_writer/generator_impl_cast_test.cc
-      lang/msl/ast_writer/generator_impl_const_assert_test.cc
-      lang/msl/ast_writer/generator_impl_constructor_test.cc
-      lang/msl/ast_writer/generator_impl_continue_test.cc
-      lang/msl/ast_writer/generator_impl_discard_test.cc
-      lang/msl/ast_writer/generator_impl_function_test.cc
-      lang/msl/ast_writer/generator_impl_identifier_test.cc
-      lang/msl/ast_writer/generator_impl_if_test.cc
-      lang/msl/ast_writer/generator_impl_import_test.cc
-      lang/msl/ast_writer/generator_impl_loop_test.cc
-      lang/msl/ast_writer/generator_impl_member_accessor_test.cc
-      lang/msl/ast_writer/generator_impl_module_constant_test.cc
-      lang/msl/ast_writer/generator_impl_return_test.cc
-      lang/msl/ast_writer/generator_impl_sanitizer_test.cc
-      lang/msl/ast_writer/generator_impl_switch_test.cc
-      lang/msl/ast_writer/generator_impl_test.cc
-      lang/msl/ast_writer/generator_impl_type_test.cc
-      lang/msl/ast_writer/generator_impl_unary_op_test.cc
-      lang/msl/ast_writer/generator_impl_variable_decl_statement_test.cc
-      lang/msl/ast_writer/generator_support_test.cc
-      lang/msl/ast_writer/test_helper.h
-    )
-
-    if(${TINT_BUILD_IR})
-      list(APPEND TINT_TEST_SRCS
-        lang/msl/writer/generator_impl_ir_constant_test.cc
-        lang/msl/writer/generator_impl_ir_function_test.cc
-        lang/msl/writer/generator_impl_ir_type_test.cc
-        lang/msl/writer/test_helper_ir.h
-      )
-    endif()
-  endif()
-
-  if (${TINT_BUILD_GLSL_WRITER})
-    list(APPEND TINT_TEST_SRCS
-      lang/glsl/ast_writer/generator_impl_array_accessor_test.cc
-      lang/glsl/ast_writer/generator_impl_assign_test.cc
-      lang/glsl/ast_writer/generator_impl_binary_test.cc
-      lang/glsl/ast_writer/generator_impl_bitcast_test.cc
-      lang/glsl/ast_writer/generator_impl_block_test.cc
-      lang/glsl/ast_writer/generator_impl_break_test.cc
-      lang/glsl/ast_writer/generator_impl_builtin_test.cc
-      lang/glsl/ast_writer/generator_impl_builtin_texture_test.cc
-      lang/glsl/ast_writer/generator_impl_call_test.cc
-      lang/glsl/ast_writer/generator_impl_case_test.cc
-      lang/glsl/ast_writer/generator_impl_cast_test.cc
-      lang/glsl/ast_writer/generator_impl_constructor_test.cc
-      lang/glsl/ast_writer/generator_impl_continue_test.cc
-      lang/glsl/ast_writer/generator_impl_discard_test.cc
-      lang/glsl/ast_writer/generator_impl_function_test.cc
-      lang/glsl/ast_writer/generator_impl_identifier_test.cc
-      lang/glsl/ast_writer/generator_impl_if_test.cc
-      lang/glsl/ast_writer/generator_impl_import_test.cc
-      lang/glsl/ast_writer/generator_impl_loop_test.cc
-      lang/glsl/ast_writer/generator_impl_member_accessor_test.cc
-      lang/glsl/ast_writer/generator_impl_module_constant_test.cc
-      lang/glsl/ast_writer/generator_impl_return_test.cc
-      lang/glsl/ast_writer/generator_impl_sanitizer_test.cc
-      lang/glsl/ast_writer/generator_impl_storage_buffer_test.cc
-      lang/glsl/ast_writer/generator_impl_switch_test.cc
-      lang/glsl/ast_writer/generator_impl_test.cc
-      lang/glsl/ast_writer/generator_impl_type_test.cc
-      lang/glsl/ast_writer/generator_impl_unary_op_test.cc
-      lang/glsl/ast_writer/generator_impl_uniform_buffer_test.cc
-      lang/glsl/ast_writer/generator_impl_variable_decl_statement_test.cc
-      lang/glsl/ast_writer/generator_impl_workgroup_var_test.cc
-      lang/glsl/ast_writer/test_helper.h
-    )
-  endif()
-
-  if (${TINT_BUILD_HLSL_WRITER})
-    list(APPEND TINT_TEST_SRCS
-      lang/hlsl/ast_writer/generator_impl_array_accessor_test.cc
-      lang/hlsl/ast_writer/generator_impl_assign_test.cc
-      lang/hlsl/ast_writer/generator_impl_binary_test.cc
-      lang/hlsl/ast_writer/generator_impl_bitcast_test.cc
-      lang/hlsl/ast_writer/generator_impl_block_test.cc
-      lang/hlsl/ast_writer/generator_impl_break_test.cc
-      lang/hlsl/ast_writer/generator_impl_builtin_test.cc
-      lang/hlsl/ast_writer/generator_impl_builtin_texture_test.cc
-      lang/hlsl/ast_writer/generator_impl_call_test.cc
-      lang/hlsl/ast_writer/generator_impl_case_test.cc
-      lang/hlsl/ast_writer/generator_impl_cast_test.cc
-      lang/hlsl/ast_writer/generator_impl_const_assert_test.cc
-      lang/hlsl/ast_writer/generator_impl_constructor_test.cc
-      lang/hlsl/ast_writer/generator_impl_continue_test.cc
-      lang/hlsl/ast_writer/generator_impl_discard_test.cc
-      lang/hlsl/ast_writer/generator_impl_function_test.cc
-      lang/hlsl/ast_writer/generator_impl_identifier_test.cc
-      lang/hlsl/ast_writer/generator_impl_if_test.cc
-      lang/hlsl/ast_writer/generator_impl_import_test.cc
-      lang/hlsl/ast_writer/generator_impl_loop_test.cc
-      lang/hlsl/ast_writer/generator_impl_member_accessor_test.cc
-      lang/hlsl/ast_writer/generator_impl_module_constant_test.cc
-      lang/hlsl/ast_writer/generator_impl_return_test.cc
-      lang/hlsl/ast_writer/generator_impl_sanitizer_test.cc
-      lang/hlsl/ast_writer/generator_impl_switch_test.cc
-      lang/hlsl/ast_writer/generator_impl_test.cc
-      lang/hlsl/ast_writer/generator_impl_type_test.cc
-      lang/hlsl/ast_writer/generator_impl_unary_op_test.cc
-      lang/hlsl/ast_writer/generator_impl_variable_decl_statement_test.cc
-      lang/hlsl/ast_writer/generator_impl_workgroup_var_test.cc
-      lang/hlsl/ast_writer/test_helper.h
-    )
-  endif()
-
-  if (${TINT_BUILD_IR})
-    list(APPEND TINT_TEST_SRCS
-      ir/access_test.cc
-      ir/binary_test.cc
-      ir/bitcast_test.cc
-      ir/block_param_test.cc
-      ir/block_test.cc
-      ir/break_if_test.cc
-      ir/constant_test.cc
-      ir/construct_test.cc
-      ir/continue_test.cc
-      ir/convert_test.cc
-      ir/core_builtin_call_test.cc
-      ir/discard_test.cc
-      ir/exit_if_test.cc
-      ir/exit_loop_test.cc
-      ir/exit_switch_test.cc
-      ir/from_program_accessor_test.cc
-      ir/from_program_binary_test.cc
-      ir/from_program_builtin_test.cc
-      ir/from_program_call_test.cc
-      ir/from_program_function_test.cc
-      ir/from_program_let_test.cc
-      ir/from_program_literal_test.cc
-      ir/from_program_materialize_test.cc
-      ir/from_program_store_test.cc
-      ir/from_program_test.cc
-      ir/from_program_unary_test.cc
-      ir/from_program_var_test.cc
-      ir/function_param_test.cc
-      ir/function_test.cc
-      ir/if_test.cc
-      ir/instruction_result_test.cc
-      ir/instruction_test.cc
-      ir/intrinsic_call_test.cc
-      ir/ir_test_helper.h
-      ir/let_test.cc
-      ir/load_test.cc
-      ir/load_vector_element_test.cc
-      ir/loop_test.cc
-      ir/module_test.cc
-      ir/multi_in_block_test.cc
-      ir/next_iteration_test.cc
-      ir/operand_instruction_test.cc
-      ir/program_test_helper.h
-      ir/return_test.cc
-      ir/store_test.cc
-      ir/store_vector_element_test.cc
-      ir/switch_test.cc
-      ir/swizzle_test.cc
-      ir/transform/add_empty_entry_point_test.cc
-      ir/transform/block_decorated_structs_test.cc
-      ir/transform/demote_to_helper_test.cc
-      ir/unary_test.cc
-      ir/user_call_test.cc
-      ir/validator_test.cc
-      ir/value_test.cc
-      ir/var_test.cc
-    )
-  endif()
-
-  if (${TINT_BUILD_IR} AND ${TINT_BUILD_WGSL_READER} AND ${TINT_BUILD_WGSL_WRITER})
-    list(APPEND TINT_TEST_SRCS
-      ir/to_program_roundtrip_test.cc
-    )
-  endif()
-
-  if (${TINT_BUILD_IR} AND ${TINT_BUILD_WGSL_READER})
-    list(APPEND TINT_TEST_SRCS
-      ir/from_program_shadowing_test.cc
-    )
-  endif()
-
-  if (${TINT_BUILD_IR} AND ${TINT_BUILD_WGSL_WRITER})
-    list(APPEND TINT_TEST_SRCS
-      ir/to_program_inlining_test.cc
-      ir/to_program_test.cc
-    )
-  endif()
-
-  if (${TINT_BUILD_FUZZERS})
-    list(APPEND TINT_TEST_SRCS
+  if(${TINT_BUILD_FUZZERS})
+    target_sources(tint_cmd_test_test_cmd PRIVATE
       fuzzers/mersenne_twister_engine.cc
       fuzzers/mersenne_twister_engine.h
       fuzzers/random_generator.cc
@@ -1675,112 +579,60 @@ if(TINT_BUILD_TESTS)
     )
   endif()
 
-  add_executable(tint_unittests ${TINT_TEST_SRCS})
-  set_target_properties(${target} PROPERTIES FOLDER "Tests")
-
-  if(MSVC)
-    # TODO(crbug.com/tint/1749): MSVC debug builds can suffer from stack
-    # overflows when resolving deeply nested expression chains or statements.
-    # Production builds neither use MSVC nor debug, so just bump the stack size
-    # for this build combination.
-    if (IS_DEBUG_BUILD)
-      target_link_options(tint_unittests PRIVATE "/STACK:4194304") # 4MB, default is 1MB
-    endif()
-  else()
-    target_compile_options(tint_unittests PRIVATE
-      -Wno-global-constructors
-      -Wno-weak-vtables
-    )
-  endif()
-
-  ## Test executable
-  target_include_directories(
-      tint_unittests PRIVATE ${gmock_SOURCE_DIR}/include)
-  target_link_libraries(tint_unittests libtint gmock tint_utils_io)
-  tint_default_compile_options(tint_unittests)
-
-  if(${TINT_BUILD_SPV_READER} OR ${TINT_BUILD_SPV_WRITER})
-    tint_spvtools_compile_options(tint_unittests)
-  endif()
-
-  add_test(NAME tint_unittests COMMAND tint_unittests)
+  add_test(NAME tint_unittests COMMAND tint_cmd_test_test_cmd)
 endif(TINT_BUILD_TESTS)
 
 ################################################################################
 # Benchmarks
 ################################################################################
-if(TINT_BUILD_BENCHMARKS)
-  if(NOT TINT_BUILD_WGSL_READER)
-    message(FATAL_ERROR "TINT_BUILD_BENCHMARKS requires TINT_BUILD_WGSL_READER")
-  endif()
+if(TINT_BUILD_BENCHMARKS AND TINT_EXTERNAL_BENCHMARK_CORPUS_DIR)
+  # Glob all the files at TINT_EXTERNAL_BENCHMARK_CORPUS_DIR, and create a header
+  # that lists these with the macros:
+  # TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS()
+  # TINT_BENCHMARK_EXTERNAL_SPV_PROGRAMS()
+  set(TINT_BENCHMARK_GEN_DIR "${DAWN_BUILD_GEN_DIR}/src/tint/benchmark/")
+  set(TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER "${TINT_BENCHMARK_GEN_DIR}/external_wgsl_programs.h")
+  message("Globbing ${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}...")
 
-  list(APPEND TINT_BENCHMARK_SRCS
-    "utils/rtti/switch_bench.cc"
-    "bench/benchmark.cc"
-    "lang/wgsl/reader/parser_bench.cc"
+  file(GLOB_RECURSE
+    TINT_EXTERNAL_WGSL_BENCHMARK_FILES
+    RELATIVE "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}"
+    "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/**.wgsl"
   )
+  list(TRANSFORM TINT_EXTERNAL_WGSL_BENCHMARK_FILES REPLACE
+    "(.+)"
+    "    BENCHMARK_CAPTURE\(FUNC, \"\\1\", \"${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/\\1\")"
+  )
+  list(JOIN TINT_EXTERNAL_WGSL_BENCHMARK_FILES "; \\\n" TINT_EXTERNAL_WGSL_BENCHMARK_FILES)
 
-  if (${TINT_BUILD_GLSL_WRITER})
-    list(APPEND TINT_BENCHMARK_SRCS lang/glsl/ast_writer/generator_bench.cc)
-  endif()
-  if (${TINT_BUILD_HLSL_WRITER})
-    list(APPEND TINT_BENCHMARK_SRCS lang/hlsl/ast_writer/generator_bench.cc)
-  endif()
-  if (${TINT_BUILD_MSL_WRITER})
-    list(APPEND TINT_BENCHMARK_SRCS lang/msl/ast_writer/generator_bench.cc)
-  endif()
-  if (${TINT_BUILD_SPV_WRITER})
-    list(APPEND TINT_BENCHMARK_SRCS lang/spirv/ast_writer/generator_bench.cc)
-  endif()
-  if (${TINT_BUILD_WGSL_WRITER})
-    list(APPEND TINT_BENCHMARK_SRCS lang/wgsl/ast_writer/generator_bench.cc)
-  endif()
+  file(GLOB_RECURSE
+    TINT_EXTERNAL_SPV_BENCHMARK_FILES
+    RELATIVE "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}"
+    "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/**.spv")
 
-  add_executable(tint-benchmark ${TINT_BENCHMARK_SRCS})
-  set_target_properties(${target} PROPERTIES FOLDER "Benchmarks")
+  list(TRANSFORM TINT_EXTERNAL_SPV_BENCHMARK_FILES REPLACE
+    "(.+)"
+    "    BENCHMARK_CAPTURE\(FUNC, \"\\1\", \"${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/\\1\")"
+  )
+  list(JOIN TINT_EXTERNAL_SPV_BENCHMARK_FILES "; \\\n" TINT_EXTERNAL_SPV_BENCHMARK_FILES)
 
-  tint_core_compile_options(tint-benchmark)
-
-  target_link_libraries(tint-benchmark PRIVATE benchmark::benchmark libtint)
-
-  if (TINT_EXTERNAL_BENCHMARK_CORPUS_DIR)
-    # Glob all the files at TINT_EXTERNAL_BENCHMARK_CORPUS_DIR, and create a header
-    # that lists these with the macros:
-    # TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS()
-    # TINT_BENCHMARK_EXTERNAL_SPV_PROGRAMS()
-    set(TINT_BENCHMARK_GEN_DIR "${DAWN_BUILD_GEN_DIR}/src/tint/benchmark/")
-    set(TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER "${TINT_BENCHMARK_GEN_DIR}/external_wgsl_programs.h")
-    message("Globbing ${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}...")
-
-    file(GLOB_RECURSE
-      TINT_EXTERNAL_WGSL_BENCHMARK_FILES
-      RELATIVE "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}"
-      "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/**.wgsl")
-    list(TRANSFORM TINT_EXTERNAL_WGSL_BENCHMARK_FILES REPLACE
-      "(.+)"
-      "    BENCHMARK_CAPTURE\(FUNC, \"\\1\", \"${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/\\1\")")
-    list(JOIN TINT_EXTERNAL_WGSL_BENCHMARK_FILES "; \\\n" TINT_EXTERNAL_WGSL_BENCHMARK_FILES)
-
-    file(GLOB_RECURSE
-      TINT_EXTERNAL_SPV_BENCHMARK_FILES
-      RELATIVE "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}"
-      "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/**.spv")
-
-      list(TRANSFORM TINT_EXTERNAL_SPV_BENCHMARK_FILES REPLACE
-      "(.+)"
-      "    BENCHMARK_CAPTURE\(FUNC, \"\\1\", \"${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/\\1\")")
-    list(JOIN TINT_EXTERNAL_SPV_BENCHMARK_FILES "; \\\n" TINT_EXTERNAL_SPV_BENCHMARK_FILES)
-
-    file(CONFIGURE
-      OUTPUT "${TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER}"
-      CONTENT "
+  file(CONFIGURE
+    OUTPUT "${TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER}"
+    CONTENT "
 #define TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS(FUNC) \\
 ${TINT_EXTERNAL_WGSL_BENCHMARK_FILES};
 
 #define TINT_BENCHMARK_EXTERNAL_SPV_PROGRAMS(FUNC) \\
-${TINT_EXTERNAL_SPV_BENCHMARK_FILES};")
-    # Define TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER to the generated header path
-    target_compile_definitions(tint-benchmark PRIVATE
-      "TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER=\"${TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER}\"")
-  endif()
-endif(TINT_BUILD_BENCHMARKS)
+${TINT_EXTERNAL_SPV_BENCHMARK_FILES};"
+  )
+
+  # Define TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER to the generated header path
+  target_compile_definitions(tint_cmd_bench_bench_cmd PRIVATE
+    "TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER=\"${TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER}\""
+  )
+endif(TINT_BUILD_BENCHMARKS AND TINT_EXTERNAL_BENCHMARK_CORPUS_DIR)
+
+################################################################################
+# Target aliases
+################################################################################
+add_library(libtint ALIAS tint_api)

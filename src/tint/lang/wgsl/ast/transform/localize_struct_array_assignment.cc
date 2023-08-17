@@ -21,7 +21,9 @@
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
 #include "src/tint/lang/wgsl/ast/transform/simplify_pointers.h"
 #include "src/tint/lang/wgsl/ast/traverse_expressions.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/member_accessor_expression.h"
 #include "src/tint/lang/wgsl/sem/statement.h"
 #include "src/tint/lang/wgsl/sem/value_expression.h"
@@ -43,8 +45,8 @@ struct LocalizeStructArrayAssignment::State {
     ApplyResult Run() {
         struct Shared {
             bool process_nested_nodes = false;
-            utils::Vector<const Statement*, 4> insert_before_stmts;
-            utils::Vector<const Statement*, 4> insert_after_stmts;
+            tint::Vector<const Statement*, 4> insert_before_stmts;
+            tint::Vector<const Statement*, 4> insert_after_stmts;
         } s;
 
         bool made_changes = false;
@@ -60,9 +62,9 @@ struct LocalizeStructArrayAssignment::State {
                     continue;
                 }
                 auto og = GetOriginatingTypeAndAddressSpace(assign_stmt);
-                if (!(og.first->Is<type::Struct>() &&
-                      (og.second == builtin::AddressSpace::kFunction ||
-                       og.second == builtin::AddressSpace::kPrivate))) {
+                if (!(og.first->Is<core::type::Struct>() &&
+                      (og.second == core::AddressSpace::kFunction ||
+                       og.second == core::AddressSpace::kPrivate))) {
                     continue;
                 }
 
@@ -135,7 +137,7 @@ struct LocalizeStructArrayAssignment::State {
             // e.g. *(tint_symbol) = tint_symbol_1;
             auto* assign_rhs_to_temp = b.Assign(b.Deref(mem_access_ptr), tmp_var);
             {
-                utils::Vector<const Statement*, 8> stmts{assign_rhs_to_temp};
+                tint::Vector<const Statement*, 8> stmts{assign_rhs_to_temp};
                 for (auto* stmt : s.insert_after_stmts) {
                     stmts.Push(stmt);
                 }
@@ -146,7 +148,7 @@ struct LocalizeStructArrayAssignment::State {
         });
 
         ctx.Clone();
-        return Program(std::move(b));
+        return resolver::Resolve(b);
     }
 
   private:
@@ -155,20 +157,20 @@ struct LocalizeStructArrayAssignment::State {
     /// The target program builder
     ProgramBuilder b;
     /// The clone context
-    CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
 
     /// Returns true if `expr` contains an index accessor expression to a
     /// structure member of array type.
     bool ContainsStructArrayIndex(const Expression* expr) {
         bool result = false;
-        TraverseExpressions(expr, b.Diagnostics(), [&](const IndexAccessorExpression* ia) {
+        TraverseExpressions(expr, [&](const IndexAccessorExpression* ia) {
             // Indexing using a runtime value?
             auto* idx_sem = src->Sem().GetVal(ia->index);
             if (!idx_sem->ConstantValue()) {
                 // Indexing a member access expr?
                 if (auto* ma = ia->object->As<MemberAccessorExpression>()) {
                     // That accesses an array?
-                    if (src->TypeOf(ma)->UnwrapRef()->Is<type::Array>()) {
+                    if (src->TypeOf(ma)->UnwrapRef()->Is<core::type::Array>()) {
                         result = true;
                         return TraverseAction::Stop;
                     }
@@ -183,29 +185,27 @@ struct LocalizeStructArrayAssignment::State {
     // Returns the type and address space of the originating variable of the lhs
     // of the assignment statement.
     // See https://www.w3.org/TR/WGSL/#originating-variable-section
-    std::pair<const type::Type*, builtin::AddressSpace> GetOriginatingTypeAndAddressSpace(
+    std::pair<const core::type::Type*, core::AddressSpace> GetOriginatingTypeAndAddressSpace(
         const AssignmentStatement* assign_stmt) {
         auto* root_ident = src->Sem().GetVal(assign_stmt->lhs)->RootIdentifier();
         if (TINT_UNLIKELY(!root_ident)) {
-            TINT_ICE(Transform, b.Diagnostics())
-                << "Unable to determine originating variable for lhs of assignment "
-                   "statement";
+            TINT_ICE() << "Unable to determine originating variable for lhs of assignment "
+                          "statement";
             return {};
         }
 
         return Switch(
             root_ident->Type(),  //
-            [&](const type::Reference* ref) {
+            [&](const core::type::Reference* ref) {
                 return std::make_pair(ref->StoreType(), ref->AddressSpace());
             },
-            [&](const type::Pointer* ptr) {
+            [&](const core::type::Pointer* ptr) {
                 return std::make_pair(ptr->StoreType(), ptr->AddressSpace());
             },
             [&](Default) {
-                TINT_ICE(Transform, b.Diagnostics())
-                    << "Expecting to find variable of type pointer or reference on lhs "
-                       "of assignment statement";
-                return std::pair<const type::Type*, builtin::AddressSpace>{};
+                TINT_ICE() << "Expecting to find variable of type pointer or reference on lhs "
+                              "of assignment statement";
+                return std::pair<const core::type::Type*, core::AddressSpace>{};
             });
     }
 };

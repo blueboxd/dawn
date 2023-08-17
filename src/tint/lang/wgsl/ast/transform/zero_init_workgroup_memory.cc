@@ -20,14 +20,19 @@
 #include <utility>
 #include <vector>
 
-#include "src/tint/lang/core/builtin/builtin_value.h"
+#include "src/tint/lang/core/builtin_value.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/wgsl/ast/workgroup_attribute.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/variable.h"
 #include "src/tint/utils/containers/map.h"
 #include "src/tint/utils/containers/unique_vector.h"
+
+using namespace tint::core::fluent_types;  // NOLINT
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::ZeroInitWorkgroupMemory);
 
@@ -38,7 +43,7 @@ bool ShouldRun(const Program* program) {
     for (auto* global : program->AST().GlobalVariables()) {
         if (auto* var = global->As<Var>()) {
             auto* v = program->Sem().Get(var);
-            if (v->AddressSpace() == builtin::AddressSpace::kWorkgroup) {
+            if (v->AddressSpace() == core::AddressSpace::kWorkgroup) {
                 return true;
             }
         }
@@ -48,15 +53,15 @@ bool ShouldRun(const Program* program) {
 
 }  // namespace
 
-using StatementList = utils::Vector<const Statement*, 8>;
+using StatementList = tint::Vector<const Statement*, 8>;
 
 /// PIMPL state for the transform
 struct ZeroInitWorkgroupMemory::State {
     /// The clone context
-    CloneContext& ctx;
+    program::CloneContext& ctx;
 
     /// An alias to *ctx.dst
-    ProgramBuilder& b = *ctx.dst;
+    ast::Builder& b = *ctx.dst;
 
     /// The constant size of the workgroup. If 0, then #workgroup_size_expr should
     /// be used instead.
@@ -84,14 +89,12 @@ struct ZeroInitWorkgroupMemory::State {
         struct Hasher {
             /// @param i the ArrayIndex to calculate a hash for
             /// @returns the hash value for the ArrayIndex `i`
-            size_t operator()(const ArrayIndex& i) const {
-                return utils::Hash(i.modulo, i.division);
-            }
+            size_t operator()(const ArrayIndex& i) const { return Hash(i.modulo, i.division); }
         };
     };
 
     /// A list of unique ArrayIndex
-    using ArrayIndices = utils::UniqueVector<ArrayIndex, 4, ArrayIndex::Hasher>;
+    using ArrayIndices = UniqueVector<ArrayIndex, 4, ArrayIndex::Hasher>;
 
     /// Expression holds information about an expression that is being built for a
     /// statement will zero workgroup values.
@@ -126,8 +129,8 @@ struct ZeroInitWorkgroupMemory::State {
     std::unordered_map<ArrayIndex, Symbol, ArrayIndex::Hasher> array_index_names;
 
     /// Constructor
-    /// @param c the CloneContext used for the transform
-    explicit State(CloneContext& c) : ctx(c) {}
+    /// @param c the program::CloneContext used for the transform
+    explicit State(program::CloneContext& c) : ctx(c) {}
 
     /// Run inserts the workgroup memory zero-initialization logic at the top of
     /// the given function
@@ -141,7 +144,7 @@ struct ZeroInitWorkgroupMemory::State {
         // workgroup storage variables used by `fn`. This will populate #statements.
         auto* func = sem.Get(fn);
         for (auto* var : func->TransitivelyReferencedGlobals()) {
-            if (var->AddressSpace() == builtin::AddressSpace::kWorkgroup) {
+            if (var->AddressSpace() == core::AddressSpace::kWorkgroup) {
                 auto get_expr = [&](uint32_t num_values) {
                     auto var_name = ctx.Clone(var->Declaration()->name->symbol);
                     return Expression{b.Expr(var_name), num_values, ArrayIndices{}};
@@ -162,16 +165,15 @@ struct ZeroInitWorkgroupMemory::State {
         for (auto* param : fn->params) {
             if (auto* builtin_attr = GetAttribute<BuiltinAttribute>(param->attributes)) {
                 auto builtin = sem.Get(builtin_attr)->Value();
-                if (builtin == builtin::BuiltinValue::kLocalInvocationIndex) {
+                if (builtin == core::BuiltinValue::kLocalInvocationIndex) {
                     local_index = [=] { return b.Expr(ctx.Clone(param->name->symbol)); };
                     break;
                 }
             }
 
-            if (auto* str = sem.Get(param)->Type()->As<type::Struct>()) {
+            if (auto* str = sem.Get(param)->Type()->As<core::type::Struct>()) {
                 for (auto* member : str->Members()) {
-                    if (member->Attributes().builtin ==
-                        builtin::BuiltinValue::kLocalInvocationIndex) {
+                    if (member->Attributes().builtin == core::BuiltinValue::kLocalInvocationIndex) {
                         local_index = [=] {
                             auto* param_expr = b.Expr(ctx.Clone(param->name->symbol));
                             auto member_name = ctx.Clone(member->Name());
@@ -185,8 +187,8 @@ struct ZeroInitWorkgroupMemory::State {
         if (!local_index) {
             // No existing local index parameter. Append one to the entry point.
             auto param_name = b.Symbols().New("local_invocation_index");
-            auto* local_invocation_index = b.Builtin(builtin::BuiltinValue::kLocalInvocationIndex);
-            auto* param = b.Param(param_name, b.ty.u32(), utils::Vector{local_invocation_index});
+            auto* local_invocation_index = b.Builtin(core::BuiltinValue::kLocalInvocationIndex);
+            auto* param = b.Param(param_name, b.ty.u32(), tint::Vector{local_invocation_index});
             ctx.InsertBack(fn->params, param);
             local_index = [=] { return b.Expr(param->name->symbol); };
         }
@@ -231,7 +233,7 @@ struct ZeroInitWorkgroupMemory::State {
                 //  }
                 auto idx = b.Symbols().New("idx");
                 auto* init = b.Decl(b.Var(idx, b.ty.u32(), local_index()));
-                auto* cond = b.create<BinaryExpression>(BinaryOp::kLessThan, b.Expr(idx),
+                auto* cond = b.create<BinaryExpression>(core::BinaryOp::kLessThan, b.Expr(idx),
                                                         b.Expr(u32(num_iterations)));
                 auto* cont = b.Assign(
                     idx, b.Add(idx, workgroup_size_const ? b.Expr(u32(workgroup_size_const))
@@ -251,7 +253,7 @@ struct ZeroInitWorkgroupMemory::State {
                 //  if (local_index < num_iterations) {
                 //    ...
                 //  }
-                auto* cond = b.create<BinaryExpression>(BinaryOp::kLessThan, local_index(),
+                auto* cond = b.create<BinaryExpression>(core::BinaryOp::kLessThan, local_index(),
                                                         b.Expr(u32(num_iterations)));
                 auto block = DeclareArrayIndices(num_iterations, array_indices,
                                                  [&] { return b.Expr(local_index()); });
@@ -290,7 +292,7 @@ struct ZeroInitWorkgroupMemory::State {
     /// @param ty the expression type
     /// @param get_expr a function that builds the AST nodes for the expression.
     /// @returns true on success, false on failure
-    [[nodiscard]] bool BuildZeroingStatements(const type::Type* ty,
+    [[nodiscard]] bool BuildZeroingStatements(const core::type::Type* ty,
                                               const BuildZeroingExpr& get_expr) {
         if (CanTriviallyZero(ty)) {
             auto var = get_expr(1u);
@@ -303,7 +305,7 @@ struct ZeroInitWorkgroupMemory::State {
             return true;
         }
 
-        if (auto* atomic = ty->As<type::Atomic>()) {
+        if (auto* atomic = ty->As<core::type::Atomic>()) {
             auto* zero_init = b.Call(CreateASTTypeFor(ctx, atomic->Type()));
             auto expr = get_expr(1u);
             if (!expr) {
@@ -315,7 +317,7 @@ struct ZeroInitWorkgroupMemory::State {
             return true;
         }
 
-        if (auto* str = ty->As<type::Struct>()) {
+        if (auto* str = ty->As<core::type::Struct>()) {
             for (auto* member : str->Members()) {
                 auto name = ctx.Clone(member->Name());
                 auto get_member = [&](uint32_t num_values) {
@@ -333,7 +335,7 @@ struct ZeroInitWorkgroupMemory::State {
             return true;
         }
 
-        if (auto* arr = ty->As<type::Array>()) {
+        if (auto* arr = ty->As<core::type::Array>()) {
             auto get_el = [&](uint32_t num_values) {
                 // num_values is the number of values to zero for the element type.
                 // The number of iterations required to zero the array and its elements is:
@@ -343,7 +345,7 @@ struct ZeroInitWorkgroupMemory::State {
                 auto count = arr->ConstantCount();
                 if (!count) {
                     ctx.dst->Diagnostics().add_error(diag::System::Transform,
-                                                     type::Array::kErrExpectedConstantCount);
+                                                     core::type::Array::kErrExpectedConstantCount);
                     return Expression{};  // error
                 }
                 auto modulo = num_values * count.value();
@@ -354,15 +356,14 @@ struct ZeroInitWorkgroupMemory::State {
                 }
                 auto array_indices = a.array_indices;
                 array_indices.Add(ArrayIndex{modulo, division});
-                auto index = utils::GetOrCreate(array_index_names, ArrayIndex{modulo, division},
-                                                [&] { return b.Symbols().New("i"); });
+                auto index = tint::GetOrCreate(array_index_names, ArrayIndex{modulo, division},
+                                               [&] { return b.Symbols().New("i"); });
                 return Expression{b.IndexAccessor(a.expr, index), a.num_iterations, array_indices};
             };
             return BuildZeroingStatements(arr->ElemType(), get_el);
         }
 
-        TINT_UNREACHABLE(Transform, b.Diagnostics())
-            << "could not zero workgroup type: " << ty->FriendlyName();
+        TINT_UNREACHABLE() << "could not zero workgroup type: " << ty->FriendlyName();
         return false;
     }
 
@@ -382,7 +383,7 @@ struct ZeroInitWorkgroupMemory::State {
         for (auto index : array_indices) {
             auto name = array_index_names.at(index);
             auto* mod = (num_iterations > index.modulo)
-                            ? b.create<BinaryExpression>(BinaryOp::kModulo, iteration(),
+                            ? b.create<BinaryExpression>(core::BinaryOp::kModulo, iteration(),
                                                          b.Expr(u32(index.modulo)))
                             : iteration();
             auto* div = (index.division != 1u) ? b.Div(mod, u32(index.division)) : mod;
@@ -411,7 +412,7 @@ struct ZeroInitWorkgroupMemory::State {
             // Constant value could not be found. Build expression instead.
             workgroup_size_expr = [this, expr, size = workgroup_size_expr] {
                 auto* e = ctx.Clone(expr);
-                if (ctx.src->TypeOf(expr)->UnwrapRef()->Is<type::I32>()) {
+                if (ctx.src->TypeOf(expr)->UnwrapRef()->Is<core::type::I32>()) {
                     e = b.Call<u32>(e);
                 }
                 return size ? b.Mul(size(), e) : e;
@@ -437,18 +438,18 @@ struct ZeroInitWorkgroupMemory::State {
     /// then the type needs to be initialized by decomposing the initialization into multiple
     /// sub-initializations.
     /// @param ty the type to inspect
-    bool CanTriviallyZero(const type::Type* ty) {
-        if (ty->Is<type::Atomic>()) {
+    bool CanTriviallyZero(const core::type::Type* ty) {
+        if (ty->Is<core::type::Atomic>()) {
             return false;
         }
-        if (auto* str = ty->As<type::Struct>()) {
+        if (auto* str = ty->As<core::type::Struct>()) {
             for (auto* member : str->Members()) {
                 if (!CanTriviallyZero(member->Type())) {
                     return false;
                 }
             }
         }
-        if (ty->Is<type::Array>()) {
+        if (ty->Is<core::type::Array>()) {
             return false;
         }
         // True for all other storable types
@@ -468,7 +469,7 @@ Transform::ApplyResult ZeroInitWorkgroupMemory::Apply(const Program* src,
     }
 
     ProgramBuilder b;
-    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
 
     for (auto* fn : src->AST().Functions()) {
         if (fn->PipelineStage() == PipelineStage::kCompute) {
@@ -477,7 +478,7 @@ Transform::ApplyResult ZeroInitWorkgroupMemory::Apply(const Program* src,
     }
 
     ctx.Clone();
-    return Program(std::move(b));
+    return resolver::Resolve(b);
 }
 
 }  // namespace tint::ast::transform

@@ -20,13 +20,13 @@
 namespace tint::ast {
 
 /// An break statement
-class BreakStatement final : public utils::Castable<BreakStatement, Statement> {
+class BreakStatement final : public Castable<BreakStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
-    BreakStatement(ProgramID pid, NodeID nid, const Source& src);
+    BreakStatement(GenerationID pid, NodeID nid, const Source& src);
 
     /// Destructor
     ~BreakStatement() override;
@@ -35,7 +35,7 @@ class BreakStatement final : public utils::Castable<BreakStatement, Statement> {
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const BreakStatement* Clone(CloneContext* ctx) const override;
+    const BreakStatement* Clone(CloneContext& ctx) const override;
 };
 
 }  // namespace tint::ast

@@ -30,7 +30,7 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::Function);
 namespace tint::sem {
 
 Function::Function(const ast::Function* declaration)
-    : Base(EvaluationStage::kRuntime,
+    : Base(core::EvaluationStage::kRuntime,
            ast::HasAttribute<ast::MustUseAttribute>(declaration->attributes)),
       declaration_(declaration),
       workgroup_size_{1, 1, 1} {}
@@ -56,7 +56,7 @@ Function::VariableBindings Function::TransitivelyReferencedUniformVariables() co
     VariableBindings ret;
 
     for (auto* global : TransitivelyReferencedGlobals()) {
-        if (global->AddressSpace() != builtin::AddressSpace::kUniform) {
+        if (global->AddressSpace() != core::AddressSpace::kUniform) {
             continue;
         }
 
@@ -71,7 +71,7 @@ Function::VariableBindings Function::TransitivelyReferencedStorageBufferVariable
     VariableBindings ret;
 
     for (auto* global : TransitivelyReferencedGlobals()) {
-        if (global->AddressSpace() != builtin::AddressSpace::kStorage) {
+        if (global->AddressSpace() != core::AddressSpace::kStorage) {
             continue;
         }
 
@@ -98,11 +98,11 @@ Function::TransitivelyReferencedBuiltinVariables() const {
 }
 
 Function::VariableBindings Function::TransitivelyReferencedSamplerVariables() const {
-    return TransitivelyReferencedSamplerVariablesImpl(type::SamplerKind::kSampler);
+    return TransitivelyReferencedSamplerVariablesImpl(core::type::SamplerKind::kSampler);
 }
 
 Function::VariableBindings Function::TransitivelyReferencedComparisonSamplerVariables() const {
-    return TransitivelyReferencedSamplerVariablesImpl(type::SamplerKind::kComparisonSampler);
+    return TransitivelyReferencedSamplerVariablesImpl(core::type::SamplerKind::kComparisonSampler);
 }
 
 Function::VariableBindings Function::TransitivelyReferencedSampledTextureVariables() const {
@@ -114,7 +114,7 @@ Function::VariableBindings Function::TransitivelyReferencedMultisampledTextureVa
 }
 
 Function::VariableBindings Function::TransitivelyReferencedVariablesOfType(
-    const tint::utils::TypeInfo* type) const {
+    const tint::TypeInfo* type) const {
     VariableBindings ret;
     for (auto* global : TransitivelyReferencedGlobals()) {
         auto* unwrapped_type = global->Type()->UnwrapRef();
@@ -137,12 +137,12 @@ bool Function::HasAncestorEntryPoint(Symbol symbol) const {
 }
 
 Function::VariableBindings Function::TransitivelyReferencedSamplerVariablesImpl(
-    type::SamplerKind kind) const {
+    core::type::SamplerKind kind) const {
     VariableBindings ret;
 
     for (auto* global : TransitivelyReferencedGlobals()) {
         auto* unwrapped_type = global->Type()->UnwrapRef();
-        auto* sampler = unwrapped_type->As<type::Sampler>();
+        auto* sampler = unwrapped_type->As<core::type::Sampler>();
         if (sampler == nullptr || sampler->kind() != kind) {
             continue;
         }
@@ -160,13 +160,13 @@ Function::VariableBindings Function::TransitivelyReferencedSampledTextureVariabl
 
     for (auto* global : TransitivelyReferencedGlobals()) {
         auto* unwrapped_type = global->Type()->UnwrapRef();
-        auto* texture = unwrapped_type->As<type::Texture>();
+        auto* texture = unwrapped_type->As<core::type::Texture>();
         if (texture == nullptr) {
             continue;
         }
 
-        auto is_multisampled = texture->Is<type::MultisampledTexture>();
-        auto is_sampled = texture->Is<type::SampledTexture>();
+        auto is_multisampled = texture->Is<core::type::MultisampledTexture>();
+        auto is_sampled = texture->Is<core::type::SampledTexture>();
 
         if ((multisampled && !is_multisampled) || (!multisampled && !is_sampled)) {
             continue;

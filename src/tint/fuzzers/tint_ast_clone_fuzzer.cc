@@ -16,8 +16,8 @@
 #include <string>
 #include <unordered_set>
 
-#include "src/tint/lang/wgsl/ast_writer/generator.h"
-#include "src/tint/lang/wgsl/reader/parser_impl.h"
+#include "src/tint/lang/wgsl/reader/parser/parser.h"
+#include "src/tint/lang/wgsl/writer/writer.h"
 
 #define ASSERT_EQ(A, B)                                        \
     do {                                                       \
@@ -40,9 +40,8 @@
         }                                                                                       \
     } while (false)
 
-[[noreturn]] void TintInternalCompilerErrorReporter(const tint::diag::List& diagnostics) {
-    auto printer = tint::diag::Printer::create(stderr, true);
-    tint::diag::Formatter{}.format(diagnostics, printer.get());
+[[noreturn]] void TintInternalCompilerErrorReporter(const tint::InternalCompilerError& err) {
+    std::cerr << err.Error() << std::endl;
     __builtin_trap();
 }
 
@@ -54,7 +53,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     tint::Source::File file("test.wgsl", str);
 
     // Parse the wgsl, create the src program
-    tint::reader::wgsl::ParserImpl parser(&file);
+    tint::wgsl::reader::Parser parser(&file);
     parser.set_max_errors(1);
     if (!parser.Parse()) {
         return 0;
@@ -75,7 +74,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     for (auto* src_node : src.ASTNodes().Objects()) {
         src_nodes.emplace(src_node);
     }
-    std::unordered_set<const tint::type::Type*> src_types;
+    std::unordered_set<const tint::core::type::Type*> src_types;
     for (auto* src_type : src.Types()) {
         src_types.emplace(src_type);
     }
@@ -90,11 +89,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     // original source so that reformatting doesn't impact the final wgsl
     // comparison.
     std::string src_wgsl;
-    tint::writer::wgsl::Options wgsl_options;
+    tint::wgsl::writer::Options wgsl_options;
     {
-        auto result = tint::writer::wgsl::Generate(&src, wgsl_options);
-        ASSERT_TRUE(result.success);
-        src_wgsl = result.wgsl;
+        auto result = tint::wgsl::writer::Generate(&src, wgsl_options);
+        ASSERT_TRUE(result == true);
+        src_wgsl = result->wgsl;
 
         // Move the src program to a temporary that'll be dropped, so that the src
         // program is released before we attempt to print the dst program. This
@@ -105,9 +104,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     }
 
     // Print the dst program, check it matches the original source
-    auto result = tint::writer::wgsl::Generate(&dst, wgsl_options);
-    ASSERT_TRUE(result.success);
-    auto dst_wgsl = result.wgsl;
+    auto result = tint::wgsl::writer::Generate(&dst, wgsl_options);
+    ASSERT_TRUE(result == true);
+    auto dst_wgsl = result->wgsl;
     ASSERT_EQ(src_wgsl, dst_wgsl);
 
     return 0;

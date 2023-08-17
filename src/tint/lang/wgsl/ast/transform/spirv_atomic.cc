@@ -20,8 +20,11 @@
 #include <utility>
 #include <vector>
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/reference.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/block_statement.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/index_accessor_expression.h"
@@ -31,12 +34,13 @@
 #include "src/tint/utils/containers/unique_vector.h"
 #include "src/tint/utils/rtti/switch.h"
 
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::SpirvAtomic);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::SpirvAtomic::Stub);
 
 namespace tint::ast::transform {
-
-using namespace tint::number_suffixes;  // NOLINT
 
 /// PIMPL state for the transform
 struct SpirvAtomic::State {
@@ -52,10 +56,10 @@ struct SpirvAtomic::State {
     /// The target program builder
     ProgramBuilder b;
     /// The clone context
-    CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
-    std::unordered_map<const type::Struct*, ForkedStruct> forked_structs;
+    program::CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
+    std::unordered_map<const core::type::Struct*, ForkedStruct> forked_structs;
     std::unordered_set<const sem::Variable*> atomic_variables;
-    utils::UniqueVector<const sem::ValueExpression*, 8> atomic_expressions;
+    UniqueVector<const sem::ValueExpression*, 8> atomic_expressions;
 
   public:
     /// Constructor
@@ -82,22 +86,22 @@ struct SpirvAtomic::State {
                     out_args[0] = b.AddressOf(out_args[0]);
 
                     // Replace all callsites of this stub to a call to the real builtin
-                    if (stub->builtin == builtin::Function::kAtomicCompareExchangeWeak) {
+                    if (stub->builtin == core::Function::kAtomicCompareExchangeWeak) {
                         // atomicCompareExchangeWeak returns a struct, so insert a call to it above
                         // the current statement, and replace the current call with the struct's
                         // `old_value` member.
                         auto* block = call->Stmt()->Block()->Declaration();
                         auto old_value = b.Symbols().New("old_value");
                         auto old_value_decl = b.Decl(b.Let(
-                            old_value, b.MemberAccessor(
-                                           b.Call(builtin::str(stub->builtin), std::move(out_args)),
-                                           "old_value")));
+                            old_value,
+                            b.MemberAccessor(b.Call(core::str(stub->builtin), std::move(out_args)),
+                                             "old_value")));
                         ctx.InsertBefore(block->statements, call->Stmt()->Declaration(),
                                          old_value_decl);
                         ctx.Replace(call->Declaration(), b.Expr(old_value));
                     } else {
                         ctx.Replace(call->Declaration(),
-                                    b.Call(builtin::str(stub->builtin), std::move(out_args)));
+                                    b.Call(core::str(stub->builtin), std::move(out_args)));
                     }
 
                     // Keep track of this expression. We'll need to modify the root identifier /
@@ -128,7 +132,7 @@ struct SpirvAtomic::State {
                     const auto& forked = it->second;
 
                     // Re-create the structure swapping in the atomic-flavoured members
-                    utils::Vector<const StructMember*, 8> members;
+                    tint::Vector<const StructMember*, 8> members;
                     members.Reserve(str->members.Length());
                     for (size_t i = 0; i < str->members.Length(); i++) {
                         auto* member = str->members[i];
@@ -151,11 +155,11 @@ struct SpirvAtomic::State {
         ReplaceLoadsAndStores();
 
         ctx.Clone();
-        return Program(std::move(b));
+        return resolver::Resolve(b);
     }
 
   private:
-    ForkedStruct& Fork(const type::Struct* str) {
+    ForkedStruct& Fork(const core::type::Struct* str) {
         auto& forked = forked_structs[str];
         if (!forked.name.IsValid()) {
             forked.name = b.Symbols().New(str->Name().Name() + "_atomic");
@@ -194,14 +198,14 @@ struct SpirvAtomic::State {
         }
     }
 
-    Type AtomicTypeFor(const type::Type* ty) {
+    Type AtomicTypeFor(const core::type::Type* ty) {
         return Switch(
             ty,  //
-            [&](const type::I32*) { return b.ty.atomic(CreateASTTypeFor(ctx, ty)); },
-            [&](const type::U32*) { return b.ty.atomic(CreateASTTypeFor(ctx, ty)); },
-            [&](const type::Struct* str) { return b.ty(Fork(str).name); },
-            [&](const type::Array* arr) {
-                if (arr->Count()->Is<type::RuntimeArrayCount>()) {
+            [&](const core::type::I32*) { return b.ty.atomic(CreateASTTypeFor(ctx, ty)); },
+            [&](const core::type::U32*) { return b.ty.atomic(CreateASTTypeFor(ctx, ty)); },
+            [&](const core::type::Struct* str) { return b.ty(Fork(str).name); },
+            [&](const core::type::Array* arr) {
+                if (arr->Count()->Is<core::type::RuntimeArrayCount>()) {
                     return b.ty.array(AtomicTypeFor(arr->ElemType()));
                 }
                 auto count = arr->ConstantCount();
@@ -214,13 +218,13 @@ struct SpirvAtomic::State {
                 }
                 return b.ty.array(AtomicTypeFor(arr->ElemType()), u32(count.value()));
             },
-            [&](const type::Pointer* ptr) {
+            [&](const core::type::Pointer* ptr) {
                 return b.ty.ptr(ptr->AddressSpace(), AtomicTypeFor(ptr->StoreType()),
                                 ptr->Access());
             },
-            [&](const type::Reference* ref) { return AtomicTypeFor(ref->StoreType()); },
+            [&](const core::type::Reference* ref) { return AtomicTypeFor(ref->StoreType()); },
             [&](Default) {
-                TINT_ICE(Transform, b.Diagnostics()) << "unhandled type: " << ty->FriendlyName();
+                TINT_ICE() << "unhandled type: " << ty->FriendlyName();
                 return Type{};
             });
     }
@@ -228,7 +232,7 @@ struct SpirvAtomic::State {
     void ReplaceLoadsAndStores() {
         // Returns true if 'e' is a reference to an atomic variable or struct member
         auto is_ref_to_atomic_var = [&](const sem::ValueExpression* e) {
-            if (tint::Is<type::Reference>(e->Type()) && e->RootIdentifier() &&
+            if (tint::Is<core::type::Reference>(e->Type()) && e->RootIdentifier() &&
                 (atomic_variables.count(e->RootIdentifier()) != 0)) {
                 // If it's a struct member, make sure it's one we marked as atomic
                 if (auto* ma = e->As<sem::StructMemberAccess>()) {
@@ -255,7 +259,7 @@ struct SpirvAtomic::State {
                             ctx.Replace(assign, [=] {
                                 auto* lhs = ctx.CloneWithoutTransform(assign->lhs);
                                 auto* rhs = ctx.CloneWithoutTransform(assign->rhs);
-                                auto* call = b.Call(builtin::str(builtin::Function::kAtomicStore),
+                                auto* call = b.Call(core::str(core::Function::kAtomicStore),
                                                     b.AddressOf(lhs), rhs);
                                 return b.CallStmt(call);
                             });
@@ -266,7 +270,7 @@ struct SpirvAtomic::State {
                         if (is_ref_to_atomic_var(sem_rhs->UnwrapLoad())) {
                             ctx.Replace(assign->rhs, [=] {
                                 auto* rhs = ctx.CloneWithoutTransform(assign->rhs);
-                                return b.Call(builtin::str(builtin::Function::kAtomicLoad),
+                                return b.Call(core::str(core::Function::kAtomicLoad),
                                               b.AddressOf(rhs));
                             });
                             return;
@@ -278,7 +282,7 @@ struct SpirvAtomic::State {
                             if (is_ref_to_atomic_var(sem_init->UnwrapLoad())) {
                                 ctx.Replace(var->initializer, [=] {
                                     auto* rhs = ctx.CloneWithoutTransform(var->initializer);
-                                    return b.Call(builtin::str(builtin::Function::kAtomicLoad),
+                                    return b.Call(core::str(core::Function::kAtomicLoad),
                                                   b.AddressOf(rhs));
                                 });
                                 return;
@@ -293,16 +297,16 @@ struct SpirvAtomic::State {
 SpirvAtomic::SpirvAtomic() = default;
 SpirvAtomic::~SpirvAtomic() = default;
 
-SpirvAtomic::Stub::Stub(ProgramID pid, NodeID nid, builtin::Function b)
-    : Base(pid, nid, utils::Empty), builtin(b) {}
+SpirvAtomic::Stub::Stub(GenerationID pid, NodeID nid, core::Function b)
+    : Base(pid, nid, tint::Empty), builtin(b) {}
 SpirvAtomic::Stub::~Stub() = default;
 std::string SpirvAtomic::Stub::InternalName() const {
-    return "@internal(spirv-atomic " + std::string(builtin::str(builtin)) + ")";
+    return "@internal(spirv-atomic " + std::string(core::str(builtin)) + ")";
 }
 
-const SpirvAtomic::Stub* SpirvAtomic::Stub::Clone(CloneContext* ctx) const {
-    return ctx->dst->ASTNodes().Create<SpirvAtomic::Stub>(ctx->dst->ID(),
-                                                          ctx->dst->AllocateNodeID(), builtin);
+const SpirvAtomic::Stub* SpirvAtomic::Stub::Clone(ast::CloneContext& ctx) const {
+    return ctx.dst->ASTNodes().Create<SpirvAtomic::Stub>(ctx.dst->ID(), ctx.dst->AllocateNodeID(),
+                                                         builtin);
 }
 
 Transform::ApplyResult SpirvAtomic::Apply(const Program* src, const DataMap&, DataMap&) const {

@@ -18,7 +18,7 @@
 #include <string>
 #include <utility>
 
-#include "src/tint/lang/core/builtin/builtin.h"
+#include "src/tint/lang/core/builtin.h"
 #include "src/tint/lang/core/type/abstract_float.h"
 #include "src/tint/lang/core/type/abstract_int.h"
 #include "src/tint/lang/core/type/bool.h"
@@ -29,40 +29,46 @@
 #include "src/tint/lang/core/type/u32.h"
 #include "src/tint/lang/core/type/vector.h"
 #include "src/tint/utils/rtti/switch.h"
+#include "src/tint/utils/symbol/symbol_table.h"
 #include "src/tint/utils/text/string.h"
-#include "src/tint/utils/text/symbol_table.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
+/// An array of `modf()` return type names for an argument of `vecN<f32>`.
 constexpr std::array kModfVecF32Names{
-    builtin::Builtin::kModfResultVec2F32,
-    builtin::Builtin::kModfResultVec3F32,
-    builtin::Builtin::kModfResultVec4F32,
+    core::Builtin::kModfResultVec2F32,  // return type of modf(vec2<f32>)
+    core::Builtin::kModfResultVec3F32,  // return type of modf(vec3<f32>)
+    core::Builtin::kModfResultVec4F32,  // return type of modf(vec4<f32>)
 };
+
+/// An array of `modf()` return type names for an argument of `vecN<f16>`.
 constexpr std::array kModfVecF16Names{
-    builtin::Builtin::kModfResultVec2F16,
-    builtin::Builtin::kModfResultVec3F16,
-    builtin::Builtin::kModfResultVec4F16,
+    core::Builtin::kModfResultVec2F16,  // return type of modf(vec2<f16>)
+    core::Builtin::kModfResultVec3F16,  // return type of modf(vec3<f16>)
+    core::Builtin::kModfResultVec4F16,  // return type of modf(vec4<f16>)
 };
+
+/// An array of `modf()` return type names for an argument of `vecN<abstract-float>`.
 constexpr std::array kModfVecAbstractNames{
-    builtin::Builtin::kModfResultVec2Abstract,
-    builtin::Builtin::kModfResultVec3Abstract,
-    builtin::Builtin::kModfResultVec4Abstract,
+    core::Builtin::kModfResultVec2Abstract,  // return type of modf(vec2<abstract-float>)
+    core::Builtin::kModfResultVec3Abstract,  // return type of modf(vec3<abstract-float>)
+    core::Builtin::kModfResultVec4Abstract,  // return type of modf(vec4<abstract-float>)
 };
+
 Struct* CreateModfResult(Manager& types, SymbolTable& symbols, const Type* ty) {
-    auto build = [&](builtin::Builtin name, const Type* t) {
-        return types.Struct(symbols.Register(utils::ToString(name)),
+    auto build = [&](core::Builtin name, const Type* t) {
+        return types.Struct(symbols.Register(tint::ToString(name)),
                             {{symbols.Register("fract"), t}, {symbols.Register("whole"), t}});
     };
     return Switch(
         ty,  //
-        [&](const F32*) { return build(builtin::Builtin::kModfResultF32, ty); },
-        [&](const F16*) { return build(builtin::Builtin::kModfResultF16, ty); },
+        [&](const F32*) { return build(core::Builtin::kModfResultF32, ty); },
+        [&](const F16*) { return build(core::Builtin::kModfResultF16, ty); },
         [&](const AbstractFloat*) {
-            auto* abstract = build(builtin::Builtin::kModfResultAbstract, ty);
-            abstract->SetConcreteTypes(utils::Vector{
-                build(builtin::Builtin::kModfResultF32, types.f32()),
-                build(builtin::Builtin::kModfResultF16, types.f16()),
+            auto* abstract = build(core::Builtin::kModfResultAbstract, ty);
+            abstract->SetConcreteTypes(tint::Vector{
+                build(core::Builtin::kModfResultF32, types.f32()),
+                build(core::Builtin::kModfResultF16, types.f16()),
             });
             return abstract;
         },
@@ -74,53 +80,59 @@ Struct* CreateModfResult(Manager& types, SymbolTable& symbols, const Type* ty) {
                 [&](const F16*) { return build(kModfVecF16Names[width - 2], vec); },
                 [&](const AbstractFloat*) {
                     auto* abstract = build(kModfVecAbstractNames[width - 2], vec);
-                    abstract->SetConcreteTypes(utils::Vector{
+                    abstract->SetConcreteTypes(tint::Vector{
                         build(kModfVecF32Names[width - 2], types.vec(types.f32(), width)),
                         build(kModfVecF16Names[width - 2], types.vec(types.f16(), width)),
                     });
                     return abstract;
                 },
                 [&](Default) {
-                    TINT_ASSERT(Builtin, false && "unhandled modf type");
+                    TINT_UNREACHABLE() << "unhandled modf type";
                     return nullptr;
                 });
         },
         [&](Default) {
-            TINT_ASSERT(Builtin, false && "unhandled modf type");
+            TINT_UNREACHABLE() << "unhandled modf type";
             return nullptr;
         });
 }
 
+/// An array of `frexp()` return type names for an argument of `vecN<f32>`.
 constexpr std::array kFrexpVecF32Names{
-    builtin::Builtin::kFrexpResultVec2F32,
-    builtin::Builtin::kFrexpResultVec3F32,
-    builtin::Builtin::kFrexpResultVec4F32,
+    core::Builtin::kFrexpResultVec2F32,  // return type of frexp(vec2<f32>)
+    core::Builtin::kFrexpResultVec3F32,  // return type of frexp(vec3<f32>)
+    core::Builtin::kFrexpResultVec4F32,  // return type of frexp(vec4<f32>)
 };
+
+/// An array of `frexp()` return type names for an argument of `vecN<f16>`.
 constexpr std::array kFrexpVecF16Names{
-    builtin::Builtin::kFrexpResultVec2F16,
-    builtin::Builtin::kFrexpResultVec3F16,
-    builtin::Builtin::kFrexpResultVec4F16,
+    core::Builtin::kFrexpResultVec2F16,  // return type of frexp(vec2<f16>)
+    core::Builtin::kFrexpResultVec3F16,  // return type of frexp(vec3<f16>)
+    core::Builtin::kFrexpResultVec4F16,  // return type of frexp(vec4<f16>)
 };
+
+/// An array of `frexp()` return type names for an argument of `vecN<abstract-float>`.
 constexpr std::array kFrexpVecAbstractNames{
-    builtin::Builtin::kFrexpResultVec2Abstract,
-    builtin::Builtin::kFrexpResultVec3Abstract,
-    builtin::Builtin::kFrexpResultVec4Abstract,
+    core::Builtin::kFrexpResultVec2Abstract,  // return type of frexp(vec2<abstract-float>)
+    core::Builtin::kFrexpResultVec3Abstract,  // return type of frexp(vec3<abstract-float>)
+    core::Builtin::kFrexpResultVec4Abstract,  // return type of frexp(vec4<abstract-float>)
 };
+
 Struct* CreateFrexpResult(Manager& types, SymbolTable& symbols, const Type* ty) {
-    auto build = [&](builtin::Builtin name, const Type* fract_ty, const Type* exp_ty) {
+    auto build = [&](core::Builtin name, const Type* fract_ty, const Type* exp_ty) {
         return types.Struct(
-            symbols.Register(utils::ToString(name)),
+            symbols.Register(tint::ToString(name)),
             {{symbols.Register("fract"), fract_ty}, {symbols.Register("exp"), exp_ty}});
     };
     return Switch(
         ty,  //
-        [&](const F32*) { return build(builtin::Builtin::kFrexpResultF32, ty, types.i32()); },
-        [&](const F16*) { return build(builtin::Builtin::kFrexpResultF16, ty, types.i32()); },
+        [&](const F32*) { return build(core::Builtin::kFrexpResultF32, ty, types.i32()); },
+        [&](const F16*) { return build(core::Builtin::kFrexpResultF16, ty, types.i32()); },
         [&](const AbstractFloat*) {
-            auto* abstract = build(builtin::Builtin::kFrexpResultAbstract, ty, types.AInt());
-            abstract->SetConcreteTypes(utils::Vector{
-                build(builtin::Builtin::kFrexpResultF32, types.f32(), types.i32()),
-                build(builtin::Builtin::kFrexpResultF16, types.f16(), types.i32()),
+            auto* abstract = build(core::Builtin::kFrexpResultAbstract, ty, types.AInt());
+            abstract->SetConcreteTypes(tint::Vector{
+                build(core::Builtin::kFrexpResultF32, types.f32(), types.i32()),
+                build(core::Builtin::kFrexpResultF16, types.f16(), types.i32()),
             });
             return abstract;
         },
@@ -140,26 +152,26 @@ Struct* CreateFrexpResult(Manager& types, SymbolTable& symbols, const Type* ty) 
                     auto* vec_i32 = types.vec(types.i32(), width);
                     auto* vec_ai = types.vec(types.AInt(), width);
                     auto* abstract = build(kFrexpVecAbstractNames[width - 2], ty, vec_ai);
-                    abstract->SetConcreteTypes(utils::Vector{
+                    abstract->SetConcreteTypes(tint::Vector{
                         build(kFrexpVecF32Names[width - 2], vec_f32, vec_i32),
                         build(kFrexpVecF16Names[width - 2], vec_f16, vec_i32),
                     });
                     return abstract;
                 },
                 [&](Default) {
-                    TINT_ASSERT(Builtin, false && "unhandled frexp type");
+                    TINT_UNREACHABLE() << "unhandled frexp type";
                     return nullptr;
                 });
         },
         [&](Default) {
-            TINT_ASSERT(Builtin, false && "unhandled frexp type");
+            TINT_UNREACHABLE() << "unhandled frexp type";
             return nullptr;
         });
 }
 
 Struct* CreateAtomicCompareExchangeResult(Manager& types, SymbolTable& symbols, const Type* ty) {
-    auto build = [&](builtin::Builtin name) {
-        return types.Struct(symbols.Register(utils::ToString(name)),
+    auto build = [&](core::Builtin name) {
+        return types.Struct(symbols.Register(tint::ToString(name)),
                             {
                                 {symbols.Register("old_value"), ty},
                                 {symbols.Register("exchanged"), types.bool_()},
@@ -167,12 +179,12 @@ Struct* CreateAtomicCompareExchangeResult(Manager& types, SymbolTable& symbols, 
     };
     return Switch(
         ty,  //
-        [&](const I32*) { return build(builtin::Builtin::kAtomicCompareExchangeResultI32); },
-        [&](const U32*) { return build(builtin::Builtin::kAtomicCompareExchangeResultU32); },
+        [&](const I32*) { return build(core::Builtin::kAtomicCompareExchangeResultI32); },
+        [&](const U32*) { return build(core::Builtin::kAtomicCompareExchangeResultU32); },
         [&](Default) {
-            TINT_ASSERT(Builtin, false && "unhandled atomic_compare_exchange type");
+            TINT_UNREACHABLE() << "unhandled atomic_compare_exchange type";
             return nullptr;
         });
 }
 
-}  // namespace tint::type
+}  // namespace tint::core::type

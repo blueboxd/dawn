@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/test_helper.h"
+// GEN_BUILD:CONDITION(tint_build_ir)
 
-namespace tint::writer::spirv {
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
+
+namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(SpirvWriterTest, Function_Empty) {
     auto* func = b.Function("foo", ty.void_());
-    b.With(func->Block(), [&] {  //
+    b.Append(func->Block(), [&] {  //
         b.Return(func);
     });
 
@@ -38,15 +40,15 @@ TEST_F(SpirvWriterTest, Function_Empty) {
 // Test that we do not emit the same function type more than once.
 TEST_F(SpirvWriterTest, Function_DeduplicateType) {
     auto* func_a = b.Function("func_a", ty.void_());
-    b.With(func_a->Block(), [&] {  //
+    b.Append(func_a->Block(), [&] {  //
         b.Return(func_a);
     });
     auto* func_b = b.Function("func_b", ty.void_());
-    b.With(func_b->Block(), [&] {  //
+    b.Append(func_b->Block(), [&] {  //
         b.Return(func_b);
     });
     auto* func_c = b.Function("func_c", ty.void_());
-    b.With(func_c->Block(), [&] {  //
+    b.Append(func_c->Block(), [&] {  //
         b.Return(func_c);
     });
 
@@ -78,8 +80,8 @@ TEST_F(SpirvWriterTest, Function_DeduplicateType) {
 
 TEST_F(SpirvWriterTest, Function_EntryPoint_Compute) {
     auto* func =
-        b.Function("main", ty.void_(), ir::Function::PipelineStage::kCompute, {{32, 4, 1}});
-    b.With(func->Block(), [&] {  //
+        b.Function("main", ty.void_(), core::ir::Function::PipelineStage::kCompute, {{32, 4, 1}});
+    b.Append(func->Block(), [&] {  //
         b.Return(func);
     });
 
@@ -104,8 +106,8 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Compute) {
 }
 
 TEST_F(SpirvWriterTest, Function_EntryPoint_Fragment) {
-    auto* func = b.Function("main", ty.void_(), ir::Function::PipelineStage::kFragment);
-    b.With(func->Block(), [&] {  //
+    auto* func = b.Function("main", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {  //
         b.Return(func);
     });
 
@@ -130,8 +132,8 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Fragment) {
 }
 
 TEST_F(SpirvWriterTest, Function_EntryPoint_Vertex) {
-    auto* func = b.Function("main", ty.void_(), ir::Function::PipelineStage::kVertex);
-    b.With(func->Block(), [&] {  //
+    auto* func = b.Function("main", ty.void_(), core::ir::Function::PipelineStage::kVertex);
+    b.Append(func->Block(), [&] {  //
         b.Return(func);
     });
 
@@ -155,18 +157,20 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Vertex) {
 }
 
 TEST_F(SpirvWriterTest, Function_EntryPoint_Multiple) {
-    auto* f1 = b.Function("main1", ty.void_(), ir::Function::PipelineStage::kCompute, {{32, 4, 1}});
-    b.With(f1->Block(), [&] {  //
+    auto* f1 =
+        b.Function("main1", ty.void_(), core::ir::Function::PipelineStage::kCompute, {{32, 4, 1}});
+    b.Append(f1->Block(), [&] {  //
         b.Return(f1);
     });
 
-    auto* f2 = b.Function("main2", ty.void_(), ir::Function::PipelineStage::kCompute, {{8, 2, 16}});
-    b.With(f2->Block(), [&] {  //
+    auto* f2 =
+        b.Function("main2", ty.void_(), core::ir::Function::PipelineStage::kCompute, {{8, 2, 16}});
+    b.Append(f2->Block(), [&] {  //
         b.Return(f2);
     });
 
-    auto* f3 = b.Function("main3", ty.void_(), ir::Function::PipelineStage::kFragment);
-    b.With(f3->Block(), [&] {  //
+    auto* f3 = b.Function("main3", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(f3->Block(), [&] {  //
         b.Return(f3);
     });
 
@@ -210,7 +214,7 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Multiple) {
 
 TEST_F(SpirvWriterTest, Function_ReturnValue) {
     auto* func = b.Function("foo", ty.i32());
-    b.With(func->Block(), [&] {  //
+    b.Append(func->Block(), [&] {  //
         b.Return(func, 42_i);
     });
 
@@ -236,7 +240,7 @@ TEST_F(SpirvWriterTest, Function_Parameters) {
     auto* func = b.Function("foo", i32);
     func->SetParams({x, y});
 
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Add(i32, x, y);
         b.Return(func, result);
     });
@@ -265,13 +269,13 @@ TEST_F(SpirvWriterTest, Function_Call) {
     auto* foo = b.Function("foo", i32);
     foo->SetParams({x, y});
 
-    b.With(foo->Block(), [&] {
+    b.Append(foo->Block(), [&] {
         auto* result = b.Add(i32, x, y);
         b.Return(foo, result);
     });
 
     auto* bar = b.Function("bar", ty.void_());
-    b.With(bar->Block(), [&] {
+    b.Append(bar->Block(), [&] {
         auto* result = b.Call(i32, foo, 2_i, 3_i);
         b.Return(bar);
         mod.SetName(result, "result");
@@ -283,12 +287,12 @@ TEST_F(SpirvWriterTest, Function_Call) {
 
 TEST_F(SpirvWriterTest, Function_Call_Void) {
     auto* foo = b.Function("foo", ty.void_());
-    b.With(foo->Block(), [&] {  //
+    b.Append(foo->Block(), [&] {  //
         b.Return(foo);
     });
 
     auto* bar = b.Function("bar", ty.void_());
-    b.With(bar->Block(), [&] {
+    b.Append(bar->Block(), [&] {
         auto* result = b.Call(ty.void_(), foo);
         b.Return(bar);
         mod.SetName(result, "result");
@@ -299,4 +303,4 @@ TEST_F(SpirvWriterTest, Function_Call_Void) {
 }
 
 }  // namespace
-}  // namespace tint::writer::spirv
+}  // namespace tint::spirv::writer

@@ -27,8 +27,8 @@ SwitchStatement::SwitchStatement(const ast::SwitchStatement* declaration,
                                  const CompoundStatement* parent,
                                  const sem::Function* function)
     : Base(declaration, parent, function) {
-    TINT_ASSERT(Semantic, parent);
-    TINT_ASSERT(Semantic, function);
+    TINT_ASSERT(parent);
+    TINT_ASSERT(function);
 }
 
 SwitchStatement::~SwitchStatement() = default;
@@ -41,8 +41,8 @@ CaseStatement::CaseStatement(const ast::CaseStatement* declaration,
                              const CompoundStatement* parent,
                              const sem::Function* function)
     : Base(declaration, parent, function) {
-    TINT_ASSERT(Semantic, parent);
-    TINT_ASSERT(Semantic, function);
+    TINT_ASSERT(parent);
+    TINT_ASSERT(function);
 }
 CaseStatement::~CaseStatement() = default;
 
@@ -50,7 +50,7 @@ const ast::CaseStatement* CaseStatement::Declaration() const {
     return static_cast<const ast::CaseStatement*>(Base::Declaration());
 }
 
-CaseSelector::CaseSelector(const ast::CaseSelector* decl, const constant::Value* val)
+CaseSelector::CaseSelector(const ast::CaseSelector* decl, const core::constant::Value* val)
     : Base(), decl_(decl), val_(val) {}
 
 CaseSelector::~CaseSelector() = default;

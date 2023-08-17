@@ -22,22 +22,21 @@
 namespace tint::ast {
 
 /// A boolean literal
-class BoolLiteralExpression final
-    : public utils::Castable<BoolLiteralExpression, LiteralExpression> {
+class BoolLiteralExpression final : public Castable<BoolLiteralExpression, LiteralExpression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     /// @param value the bool literals value
-    BoolLiteralExpression(ProgramID pid, NodeID nid, const Source& src, bool value);
+    BoolLiteralExpression(GenerationID pid, NodeID nid, const Source& src, bool value);
     ~BoolLiteralExpression() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const BoolLiteralExpression* Clone(CloneContext* ctx) const override;
+    const BoolLiteralExpression* Clone(CloneContext& ctx) const override;
 
     /// The boolean literal value
     const bool value;

@@ -28,7 +28,7 @@ class Identifier;
 namespace tint::ast {
 
 /// A struct member statement.
-class StructMember final : public utils::Castable<StructMember, Node> {
+class StructMember final : public Castable<StructMember, Node> {
   public:
     /// Create a new struct member statement
     /// @param pid the identifier of the program that owns this node
@@ -37,12 +37,12 @@ class StructMember final : public utils::Castable<StructMember, Node> {
     /// @param name The struct member name
     /// @param type The struct member type
     /// @param attributes The struct member attributes
-    StructMember(ProgramID pid,
+    StructMember(GenerationID pid,
                  NodeID nid,
                  const Source& src,
                  const Identifier* name,
                  Type type,
-                 utils::VectorRef<const Attribute*> attributes);
+                 VectorRef<const Attribute*> attributes);
 
     /// Destructor
     ~StructMember() override;
@@ -51,7 +51,7 @@ class StructMember final : public utils::Castable<StructMember, Node> {
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const StructMember* Clone(CloneContext* ctx) const override;
+    const StructMember* Clone(CloneContext& ctx) const override;
 
     /// The member name
     const Identifier* const name;
@@ -60,7 +60,7 @@ class StructMember final : public utils::Castable<StructMember, Node> {
     const Type type;
 
     /// The attributes
-    const utils::Vector<const Attribute*, 4> attributes;
+    const tint::Vector<const Attribute*, 4> attributes;
 };
 
 }  // namespace tint::ast

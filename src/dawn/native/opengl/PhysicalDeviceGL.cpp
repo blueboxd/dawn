@@ -57,15 +57,43 @@ uint32_t GetVendorIdFromVendors(const char* vendor) {
 // static
 ResultOrError<Ref<PhysicalDevice>> PhysicalDevice::Create(InstanceBase* instance,
                                                           wgpu::BackendType backendType,
-                                                          void* (*getProc)(const char*)) {
-    Ref<PhysicalDevice> physicalDevice = AcquireRef(new PhysicalDevice(instance, backendType));
+                                                          void* (*getProc)(const char*),
+                                                          EGLDisplay display) {
+    EGLFunctions egl;
+    egl.Init(getProc);
+
+    EGLenum api = backendType == wgpu::BackendType::OpenGLES ? EGL_OPENGL_ES_API : EGL_OPENGL_API;
+
+    if (display == EGL_NO_DISPLAY) {
+        display = egl.GetCurrentDisplay();
+    }
+
+    if (display == EGL_NO_DISPLAY) {
+        display = egl.GetDisplay(EGL_DEFAULT_DISPLAY);
+    }
+
+    std::unique_ptr<ContextEGL> context;
+    DAWN_TRY_ASSIGN(context, ContextEGL::Create(egl, api, display, false));
+
+    EGLContext prevDrawSurface = egl.GetCurrentSurface(EGL_DRAW);
+    EGLContext prevReadSurface = egl.GetCurrentSurface(EGL_READ);
+    EGLContext prevContext = egl.GetCurrentContext();
+
+    context->MakeCurrent();
+
+    Ref<PhysicalDevice> physicalDevice =
+        AcquireRef(new PhysicalDevice(instance, backendType, display));
     DAWN_TRY(physicalDevice->InitializeGLFunctions(getProc));
     DAWN_TRY(physicalDevice->Initialize());
+
+    egl.MakeCurrent(display, prevDrawSurface, prevReadSurface, prevContext);
     return physicalDevice;
 }
 
-PhysicalDevice::PhysicalDevice(InstanceBase* instance, wgpu::BackendType backendType)
-    : PhysicalDeviceBase(instance, backendType) {}
+PhysicalDevice::PhysicalDevice(InstanceBase* instance,
+                               wgpu::BackendType backendType,
+                               EGLDisplay display)
+    : PhysicalDeviceBase(instance, backendType), mDisplay(display) {}
 
 MaybeError PhysicalDevice::InitializeGLFunctions(void* (*getProc)(const char*)) {
     // Use getProc to populate the dispatch table
@@ -142,6 +170,9 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
             EnableFeature(dawn::native::Feature::TextureCompressionBC);
         }
     }
+    if (mName.find("ANGLE") != std::string::npos) {
+        EnableFeature(dawn::native::Feature::ANGLETextureSharing);
+    }
 
     // Non-zero baseInstance requires at least desktop OpenGL 4.2, and it is not supported in
     // OpenGL ES OpenGL:
@@ -155,6 +186,12 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     // ShaderF16
     if (mFunctions.IsGLExtensionSupported("GL_AMD_gpu_shader_half_float")) {
         EnableFeature(Feature::ShaderF16);
+    }
+
+    // DualSourceBlending
+    if (mFunctions.IsGLExtensionSupported("GL_EXT_blend_func_extended") ||
+        mFunctions.IsAtLeastGL(3, 3)) {
+        EnableFeature(Feature::DualSourceBlending);
     }
 }
 
@@ -312,7 +349,15 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* ada
     EGLenum api =
         GetBackendType() == wgpu::BackendType::OpenGL ? EGL_OPENGL_API : EGL_OPENGL_ES_API;
     std::unique_ptr<Device::Context> context;
-    DAWN_TRY_ASSIGN(context, ContextEGL::Create(mEGLFunctions, api));
+    bool useANGLETextureSharing = false;
+    for (size_t i = 0; i < descriptor->requiredFeatureCount; ++i) {
+        if (descriptor->requiredFeatures[i] == wgpu::FeatureName::ANGLETextureSharing) {
+            useANGLETextureSharing = true;
+        }
+    }
+
+    DAWN_TRY_ASSIGN(context,
+                    ContextEGL::Create(mEGLFunctions, api, mDisplay, useANGLETextureSharing));
     return Device::Create(adapter, descriptor, mFunctions, std::move(context), deviceToggles);
 }
 

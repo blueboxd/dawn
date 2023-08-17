@@ -17,14 +17,13 @@
 #include <unordered_set>
 
 #include "src/tint/fuzzers/apply_substitute_overrides.h"
-#include "src/tint/ir/from_program.h"
-#include "src/tint/ir/to_program.h"
-#include "src/tint/lang/wgsl/ast_writer/generator.h"
-#include "src/tint/lang/wgsl/reader/parser_impl.h"
+#include "src/tint/lang/wgsl/reader/parser/parser.h"
+#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
+#include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program.h"
+#include "src/tint/lang/wgsl/writer/writer.h"
 
-[[noreturn]] void TintInternalCompilerErrorReporter(const tint::diag::List& diagnostics) {
-    auto printer = tint::diag::Printer::create(stderr, true);
-    tint::diag::Formatter{}.format(diagnostics, printer.get());
+[[noreturn]] void TintInternalCompilerErrorReporter(const tint::InternalCompilerError& err) {
+    std::cerr << err.Error() << std::endl;
     __builtin_trap();
 }
 
@@ -36,7 +35,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     tint::Source::File file("test.wgsl", str);
 
     // Parse the wgsl, create the src program
-    tint::reader::wgsl::ParserImpl parser(&file);
+    tint::wgsl::reader::Parser parser(&file);
     parser.set_max_errors(1);
     if (!parser.Parse()) {
         return 0;
@@ -49,11 +48,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     auto is_unsupported = [](const tint::ast::Enable* enable) {
         for (auto ext : enable->extensions) {
             switch (ext->name) {
-                case tint::builtin::Extension::kChromiumExperimentalDp4A:
-                case tint::builtin::Extension::kChromiumExperimentalFullPtrParameters:
-                case tint::builtin::Extension::kChromiumExperimentalPushConstant:
-                case tint::builtin::Extension::kChromiumInternalDualSourceBlending:
-                case tint::builtin::Extension::kChromiumInternalRelaxedUniformLayout:
+                case tint::core::Extension::kChromiumExperimentalDp4A:
+                case tint::core::Extension::kChromiumExperimentalFullPtrParameters:
+                case tint::core::Extension::kChromiumExperimentalPushConstant:
+                case tint::core::Extension::kChromiumInternalDualSourceBlending:
+                case tint::core::Extension::kChromiumInternalRelaxedUniformLayout:
                     return true;
                 default:
                     break;
@@ -71,17 +70,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         return 0;
     }
 
-    auto ir = tint::ir::FromProgram(&src);
+    auto ir = tint::wgsl::reader::ProgramToIR(&src);
     if (!ir) {
         std::cerr << ir.Failure() << std::endl;
         __builtin_trap();
     }
 
-    auto dst = tint::ir::ToProgram(ir.Get());
+    auto dst = tint::wgsl::writer::IRToProgram(ir.Get());
     if (!dst.IsValid()) {
 #if TINT_BUILD_WGSL_WRITER
-        if (auto result = tint::writer::wgsl::Generate(&dst, {}); result.success) {
-            std::cerr << result.wgsl << std::endl << std::endl;
+        if (auto result = tint::wgsl::writer::Generate(&dst, {}); result) {
+            std::cerr << result->wgsl << std::endl << std::endl;
         }
 #endif
 

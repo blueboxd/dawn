@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION((!is_linux) && (!is_mac) && (!is_win))
+
 #include "src/tint/utils/file/tmpfile.h"
 
-namespace tint::utils {
+namespace tint {
 
 TmpFile::TmpFile(std::string) {}
 
@@ -24,4 +26,4 @@ bool TmpFile::Append(const void*, size_t) const {
     return false;
 }
 
-}  // namespace tint::utils
+}  // namespace tint

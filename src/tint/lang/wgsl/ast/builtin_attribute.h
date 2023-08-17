@@ -27,14 +27,14 @@ class Expression;
 namespace tint::ast {
 
 /// A builtin attribute
-class BuiltinAttribute final : public utils::Castable<BuiltinAttribute, Attribute> {
+class BuiltinAttribute final : public Castable<BuiltinAttribute, Attribute> {
   public:
     /// constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     /// @param builtin the builtin value
-    BuiltinAttribute(ProgramID pid, NodeID nid, const Source& src, const Expression* builtin);
+    BuiltinAttribute(GenerationID pid, NodeID nid, const Source& src, const Expression* builtin);
     ~BuiltinAttribute() override;
 
     /// @returns the WGSL name for the attribute
@@ -44,7 +44,7 @@ class BuiltinAttribute final : public utils::Castable<BuiltinAttribute, Attribut
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const BuiltinAttribute* Clone(CloneContext* ctx) const override;
+    const BuiltinAttribute* Clone(CloneContext& ctx) const override;
 
     /// The builtin value
     const Expression* const builtin;

@@ -16,14 +16,14 @@
 
 #include <string>
 
-#include "src/tint/clone_context.h"
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::StructMemberAlignAttribute);
 
 namespace tint::ast {
 
-StructMemberAlignAttribute::StructMemberAlignAttribute(ProgramID pid,
+StructMemberAlignAttribute::StructMemberAlignAttribute(GenerationID pid,
                                                        NodeID nid,
                                                        const Source& src,
                                                        const Expression* a)
@@ -35,11 +35,11 @@ std::string StructMemberAlignAttribute::Name() const {
     return "align";
 }
 
-const StructMemberAlignAttribute* StructMemberAlignAttribute::Clone(CloneContext* ctx) const {
+const StructMemberAlignAttribute* StructMemberAlignAttribute::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    auto* expr_ = ctx->Clone(expr);
-    return ctx->dst->create<StructMemberAlignAttribute>(src, expr_);
+    auto src = ctx.Clone(source);
+    auto* expr_ = ctx.Clone(expr);
+    return ctx.dst->create<StructMemberAlignAttribute>(src, expr_);
 }
 
 }  // namespace tint::ast

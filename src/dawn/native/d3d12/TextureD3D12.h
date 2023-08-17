@@ -90,15 +90,11 @@ class Texture final : public d3d::Texture {
     void TrackUsageAndTransitionNow(CommandRecordingContext* commandContext,
                                     D3D12_RESOURCE_STATES newState,
                                     const SubresourceRange& range);
-    void TrackAllUsageAndTransitionNow(CommandRecordingContext* commandContext,
-                                       wgpu::TextureUsage usage);
-    void TrackAllUsageAndTransitionNow(CommandRecordingContext* commandContext,
-                                       D3D12_RESOURCE_STATES newState);
 
   private:
     using Base = d3d::Texture;
 
-    Texture(Device* device, const TextureDescriptor* descriptor, TextureState state);
+    Texture(Device* device, const TextureDescriptor* descriptor);
     ~Texture() override;
 
     MaybeError InitializeAsInternalTexture();

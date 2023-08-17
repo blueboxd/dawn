@@ -249,6 +249,7 @@ class DawnTestBase {
     bool IsANGLESwiftShader() const;
     bool IsWARP() const;
 
+    bool IsIntelGen9() const;
     bool IsIntelGen12() const;
 
     bool IsWindows() const;
@@ -287,7 +288,7 @@ class DawnTestBase {
     struct PrintToStringParamName {
         explicit PrintToStringParamName(const char* test);
         std::string SanitizeParamName(std::string paramName,
-                                      const wgpu::AdapterProperties& properties,
+                                      const TestAdapterProperties& properties,
                                       size_t index) const;
 
         template <class ParamType>
@@ -581,7 +582,7 @@ class DawnTestBase {
 
     virtual wgpu::RequiredLimits GetRequiredLimits(const wgpu::SupportedLimits&);
 
-    const wgpu::AdapterProperties& GetAdapterProperties() const;
+    const TestAdapterProperties& GetAdapterProperties() const;
 
     wgpu::SupportedLimits GetAdapterLimits();
     wgpu::SupportedLimits GetSupportedLimits();

@@ -16,18 +16,18 @@
 
 #include "src/tint/lang/core/type/manager.h"
 #include "src/tint/lang/core/type/vector.h"
-#include "src/tint/utils/debug/debug.h"
 #include "src/tint/utils/diagnostic/diagnostic.h"
+#include "src/tint/utils/ice/ice.h"
 #include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/text/string_stream.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::type::Matrix);
+TINT_INSTANTIATE_TYPEINFO(tint::core::type::Matrix);
 
-namespace tint::type {
+namespace tint::core::type {
 
 Matrix::Matrix(const Vector* column_type, uint32_t columns)
-    : Base(utils::Hash(utils::TypeInfo::Of<Vector>().full_hashcode, columns, column_type),
-           type::Flags{
+    : Base(Hash(tint::TypeInfo::Of<Vector>().full_hashcode, columns, column_type),
+           core::type::Flags{
                Flag::kConstructable,
                Flag::kCreationFixedFootprint,
                Flag::kFixedFootprint,
@@ -36,10 +36,10 @@ Matrix::Matrix(const Vector* column_type, uint32_t columns)
       column_type_(column_type),
       rows_(column_type->Width()),
       columns_(columns) {
-    TINT_ASSERT(AST, rows_ > 1);
-    TINT_ASSERT(AST, rows_ < 5);
-    TINT_ASSERT(AST, columns_ > 1);
-    TINT_ASSERT(AST, columns_ < 5);
+    TINT_ASSERT(rows_ > 1);
+    TINT_ASSERT(rows_ < 5);
+    TINT_ASSERT(columns_ > 1);
+    TINT_ASSERT(columns_ < 5);
 }
 
 Matrix::~Matrix() = default;
@@ -52,7 +52,7 @@ bool Matrix::Equals(const UniqueNode& other) const {
 }
 
 std::string Matrix::FriendlyName() const {
-    utils::StringStream out;
+    StringStream out;
     out << "mat" << columns_ << "x" << rows_ << "<" << subtype_->FriendlyName() << ">";
     return out.str();
 }
@@ -83,4 +83,4 @@ Matrix* Matrix::Clone(CloneContext& ctx) const {
     return ctx.dst.mgr->Get<Matrix>(col_ty, columns_);
 }
 
-}  // namespace tint::type
+}  // namespace tint::core::type

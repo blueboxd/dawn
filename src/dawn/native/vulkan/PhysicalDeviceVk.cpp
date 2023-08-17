@@ -216,6 +216,10 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::IndirectFirstInstance);
     }
 
+    if (mDeviceInfo.features.dualSrcBlend == VK_TRUE) {
+        EnableFeature(Feature::DualSourceBlending);
+    }
+
     if (mDeviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
         mDeviceInfo.HasExt(DeviceExt::_16BitStorage) &&
         mDeviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
@@ -282,6 +286,28 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::TransientAttachments);
+
+    // Enable ChromiumExperimentalSubgroups feature if:
+    // 1. Vulkan API version is 1.1 or later, and
+    // 2. subgroupSupportedStages includes compute stage bit, and
+    // 3. subgroupSupportedOperations includes basic and ballot bits, and
+    // 4. VK_EXT_subgroup_size_control extension is valid, and both subgroupSizeControl
+    //    and computeFullSubgroups is TRUE in VkPhysicalDeviceSubgroupSizeControlFeaturesEXT.
+    if ((mDeviceInfo.properties.apiVersion >= VK_API_VERSION_1_1) &&
+        (mDeviceInfo.subgroupProperties.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT) &&
+        (mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) &&
+        (mDeviceInfo.subgroupSizeControlFeatures.subgroupSizeControl == VK_TRUE) &&
+        (mDeviceInfo.subgroupSizeControlFeatures.computeFullSubgroups == VK_TRUE)) {
+        EnableFeature(Feature::ChromiumExperimentalSubgroups);
+    }
+    // Enable ChromiumExperimentalSubgroupUniformControlFlow if
+    // VK_KHR_shader_subgroup_uniform_control_flow is supported.
+    if (mDeviceInfo.HasExt(DeviceExt::ShaderSubgroupUniformControlFlow) &&
+        (mDeviceInfo.shaderSubgroupUniformControlFlowFeatures.shaderSubgroupUniformControlFlow ==
+         VK_TRUE)) {
+        EnableFeature(Feature::ChromiumExperimentalSubgroupUniformControlFlow);
+    }
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -470,16 +496,24 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     deviceToggles->Default(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
 
     if (IsAndroidQualcomm()) {
-        // dawn:1564: Clearing a depth/stencil buffer in a render pass and then sampling it in a
-        // compute pass in the same command buffer causes a crash on Qualcomm GPUs. To work around
-        // that bug, split the command buffer any time we can detect that situation.
-        deviceToggles->Default(
-            Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass, true);
+        // dawn:1564, dawn:1897: Recording a compute pass after a render pass in the same command
+        // buffer frequently causes a crash on Qualcomm GPUs. To work around that bug, split the
+        // command buffer any time we are about to record a compute pass when a render pass has
+        // already been recorded.
+        deviceToggles->Default(Toggle::VulkanSplitCommandBufferOnComputePassAfterRenderPass, true);
 
         // dawn:1569: Qualcomm devices have a bug resolving into a non-zero level of an array
         // texture. Work around it by resolving into a single level texture and then copying into
         // the intended layer.
         deviceToggles->Default(Toggle::AlwaysResolveIntoZeroLevelAndLayer, true);
+    }
+
+    if (IsAndroidARM()) {
+        // dawn:1550: Resolving multiple color targets in a single pass fails on ARM GPUs. To
+        // work around the issue, passes that resolve to multiple color targets will instead be
+        // forced to store the multisampled targets and do the resolves as separate passes injected
+        // after the original one.
+        deviceToggles->Default(Toggle::ResolveMultipleAttachmentInSeparatePasses, true);
     }
 
     if (IsIntelMesa() && gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId())) {
@@ -592,6 +626,15 @@ MaybeError PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
 bool PhysicalDevice::IsAndroidQualcomm() const {
 #if DAWN_PLATFORM_IS(ANDROID)
     return gpu_info::IsQualcomm(GetVendorId());
+#else
+    return false;
+#endif
+}
+
+// Android devices with ARM GPUs have known issues. (dawn:1550)
+bool PhysicalDevice::IsAndroidARM() const {
+#if DAWN_PLATFORM_IS(ANDROID)
+    return gpu_info::IsARM(GetVendorId());
 #else
     return false;
 #endif

@@ -22,8 +22,7 @@
 namespace tint::ast {
 
 /// A compound assignment statement
-class CompoundAssignmentStatement final
-    : public utils::Castable<CompoundAssignmentStatement, Statement> {
+class CompoundAssignmentStatement final : public Castable<CompoundAssignmentStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -32,12 +31,12 @@ class CompoundAssignmentStatement final
     /// @param lhs the left side of the expression
     /// @param rhs the right side of the expression
     /// @param op the binary operator
-    CompoundAssignmentStatement(ProgramID pid,
+    CompoundAssignmentStatement(GenerationID pid,
                                 NodeID nid,
                                 const Source& source,
                                 const Expression* lhs,
                                 const Expression* rhs,
-                                BinaryOp op);
+                                core::BinaryOp op);
 
     /// Destructor
     ~CompoundAssignmentStatement() override;
@@ -46,7 +45,7 @@ class CompoundAssignmentStatement final
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const CompoundAssignmentStatement* Clone(CloneContext* ctx) const override;
+    const CompoundAssignmentStatement* Clone(CloneContext& ctx) const override;
 
     /// left side expression
     const Expression* const lhs;
@@ -55,7 +54,7 @@ class CompoundAssignmentStatement final
     const Expression* const rhs;
 
     /// the binary operator
-    const BinaryOp op;
+    const core::BinaryOp op;
 };
 
 }  // namespace tint::ast

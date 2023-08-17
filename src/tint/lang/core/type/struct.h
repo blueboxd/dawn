@@ -21,20 +21,20 @@
 #include <unordered_set>
 #include <utility>
 
-#include "src/tint/lang/core/builtin/address_space.h"
-#include "src/tint/lang/core/builtin/builtin_value.h"
-#include "src/tint/lang/core/builtin/interpolation.h"
+#include "src/tint/lang/core/address_space.h"
+#include "src/tint/lang/core/builtin_value.h"
+#include "src/tint/lang/core/interpolation.h"
 #include "src/tint/lang/core/type/node.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/utils/containers/vector.h"
-#include "src/tint/utils/text/symbol.h"
+#include "src/tint/utils/symbol/symbol.h"
 
 // Forward declarations
-namespace tint::type {
+namespace tint::core::type {
 class StructMember;
-}  // namespace tint::type
+}  // namespace tint::core::type
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// Metadata to capture how a structure is used in a shader module.
 enum class PipelineStageUsage {
@@ -46,16 +46,17 @@ enum class PipelineStageUsage {
     kComputeOutput,
 };
 
+/// StructFlag is an enumerator of struct flag bits, used by StructFlags.
 enum StructFlag {
     /// The structure is a block-decorated structure (for SPIR-V or GLSL).
     kBlock,
 };
 
-/// An alias to utils::EnumSet<StructFlag>
-using StructFlags = utils::EnumSet<StructFlag>;
+/// An alias to tint::EnumSet<StructFlag>
+using StructFlags = tint::EnumSet<StructFlag>;
 
 /// Struct holds the Type information for structures.
-class Struct : public utils::Castable<Struct, Type> {
+class Struct : public Castable<Struct, Type> {
   public:
     /// Constructor
     /// @param name the name of the structure
@@ -65,7 +66,7 @@ class Struct : public utils::Castable<Struct, Type> {
     /// @param size_no_padding size of the members without the end of structure
     /// alignment padding
     Struct(Symbol name,
-           utils::VectorRef<const StructMember*> members,
+           VectorRef<const StructMember*> members,
            uint32_t align,
            uint32_t size,
            uint32_t size_no_padding);
@@ -80,8 +81,12 @@ class Struct : public utils::Castable<Struct, Type> {
     /// @returns the name of the structure
     Symbol Name() const { return name_; }
 
+    /// Renames the structure
+    /// @param name the new name for the structure
+    void SetName(Symbol name) { name_ = name; }
+
     /// @returns the members of the structure
-    utils::VectorRef<const StructMember*> Members() const { return members_; }
+    VectorRef<const StructMember*> Members() const { return members_; }
 
     /// @param name the member name to look for
     /// @returns the member with the given name, or nullptr if it was not found.
@@ -104,7 +109,7 @@ class Struct : public utils::Castable<Struct, Type> {
     uint32_t SizeNoPadding() const { return size_no_padding_; }
 
     /// @returns the structure flags
-    type::StructFlags StructFlags() const { return struct_flags_; }
+    core::type::StructFlags StructFlags() const { return struct_flags_; }
 
     /// Set a structure flag.
     /// @param flag the flag to set
@@ -112,22 +117,22 @@ class Struct : public utils::Castable<Struct, Type> {
 
     /// Adds the AddressSpace usage to the structure.
     /// @param usage the storage usage
-    void AddUsage(builtin::AddressSpace usage) { address_space_usage_.emplace(usage); }
+    void AddUsage(core::AddressSpace usage) { address_space_usage_.emplace(usage); }
 
     /// @returns the set of address space uses of this structure
-    const std::unordered_set<builtin::AddressSpace>& AddressSpaceUsage() const {
+    const std::unordered_set<core::AddressSpace>& AddressSpaceUsage() const {
         return address_space_usage_;
     }
 
     /// @param usage the AddressSpace usage type to query
     /// @returns true iff this structure has been used as the given address space
-    bool UsedAs(builtin::AddressSpace usage) const { return address_space_usage_.count(usage) > 0; }
+    bool UsedAs(core::AddressSpace usage) const { return address_space_usage_.count(usage) > 0; }
 
     /// @returns true iff this structure has been used by address space that's
     /// host-shareable.
     bool IsHostShareable() const {
         for (auto sc : address_space_usage_) {
-            if (builtin::IsHostShareable(sc)) {
+            if (core::IsHostShareable(sc)) {
                 return true;
             }
         }
@@ -152,12 +157,12 @@ class Struct : public utils::Castable<Struct, Type> {
     std::string Layout() const;
 
     /// @param concrete the conversion-rank ordered concrete versions of this abstract structure.
-    void SetConcreteTypes(utils::VectorRef<const Struct*> concrete) { concrete_types_ = concrete; }
+    void SetConcreteTypes(VectorRef<const Struct*> concrete) { concrete_types_ = concrete; }
 
     /// @returns the conversion-rank ordered concrete versions of this abstract structure, or an
     /// empty vector if this structure is not abstract.
     /// @note only structures returned by builtins may be abstract (e.g. modf, frexp)
-    utils::VectorRef<const Struct*> ConcreteTypes() const { return concrete_types_; }
+    VectorRef<const Struct*> ConcreteTypes() const { return concrete_types_; }
 
     /// @copydoc Type::Elements
     TypeAndCount Elements(const Type* type_if_invalid = nullptr,
@@ -171,15 +176,15 @@ class Struct : public utils::Castable<Struct, Type> {
     Struct* Clone(CloneContext& ctx) const override;
 
   private:
-    const Symbol name_;
-    const utils::Vector<const StructMember*, 4> members_;
+    Symbol name_;
+    const tint::Vector<const StructMember*, 4> members_;
     const uint32_t align_;
     const uint32_t size_;
     const uint32_t size_no_padding_;
-    type::StructFlags struct_flags_;
-    std::unordered_set<builtin::AddressSpace> address_space_usage_;
+    core::type::StructFlags struct_flags_;
+    std::unordered_set<core::AddressSpace> address_space_usage_;
     std::unordered_set<PipelineStageUsage> pipeline_stage_uses_;
-    utils::Vector<const Struct*, 2> concrete_types_;
+    tint::Vector<const Struct*, 2> concrete_types_;
 };
 
 /// Attributes that can be applied to the StructMember
@@ -189,15 +194,15 @@ struct StructMemberAttributes {
     /// The value of a `@index` attribute
     std::optional<uint32_t> index;
     /// The value of a `@builtin` attribute
-    std::optional<builtin::BuiltinValue> builtin;
+    std::optional<core::BuiltinValue> builtin;
     /// The values of a `@interpolate` attribute
-    std::optional<builtin::Interpolation> interpolation;
+    std::optional<core::Interpolation> interpolation;
     /// True if the member was annotated with `@invariant`
     bool invariant = false;
 };
 
 /// StructMember holds the type information for structure members.
-class StructMember : public utils::Castable<StructMember, Node> {
+class StructMember : public Castable<StructMember, Node> {
   public:
     /// Constructor
     /// @param name the name of the structure member
@@ -208,7 +213,7 @@ class StructMember : public utils::Castable<StructMember, Node> {
     /// @param size the byte size of the member
     /// @param attributes the optional attributes
     StructMember(Symbol name,
-                 const type::Type* type,
+                 const core::type::Type* type,
                  uint32_t index,
                  uint32_t offset,
                  uint32_t align,
@@ -226,10 +231,10 @@ class StructMember : public utils::Castable<StructMember, Node> {
     void SetStruct(const Struct* s) { struct_ = s; }
 
     /// @returns the structure that owns this member
-    const type::Struct* Struct() const { return struct_; }
+    const core::type::Struct* Struct() const { return struct_; }
 
     /// @returns the type of the member
-    const type::Type* Type() const { return type_; }
+    const core::type::Type* Type() const { return type_; }
 
     /// @returns the member index
     uint32_t Index() const { return index_; }
@@ -256,8 +261,8 @@ class StructMember : public utils::Castable<StructMember, Node> {
 
   private:
     const Symbol name_;
-    const type::Struct* struct_;
-    const type::Type* type_;
+    const core::type::Struct* struct_;
+    const core::type::Type* type_;
     const uint32_t index_;
     const uint32_t offset_;
     const uint32_t align_;
@@ -265,6 +270,6 @@ class StructMember : public utils::Castable<StructMember, Node> {
     StructMemberAttributes attributes_;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_STRUCT_H_

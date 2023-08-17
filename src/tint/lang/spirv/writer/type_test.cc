@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_ir)
+
 #include "src/tint/lang/core/type/type.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/bool.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
@@ -24,9 +27,11 @@
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/u32.h"
 #include "src/tint/lang/core/type/void.h"
-#include "src/tint/lang/spirv/writer/test_helper.h"
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
 
-namespace tint::writer::spirv {
+using namespace tint::core::fluent_types;  // NOLINT
+
+namespace tint::spirv::writer {
 namespace {
 
 TEST_F(SpirvWriterTest, Type_Void) {
@@ -229,7 +234,7 @@ TEST_F(SpirvWriterTest, Type_Samplers_Dedup) {
     ASSERT_TRUE(Generate()) << Error() << output_;
 }
 
-using Dim = type::TextureDimension;
+using Dim = core::type::TextureDimension;
 struct TextureCase {
     std::string result;
     Dim dim;
@@ -239,7 +244,7 @@ struct TextureCase {
 using Type_SampledTexture = SpirvWriterTestWithParam<TextureCase>;
 TEST_P(Type_SampledTexture, Emit) {
     auto params = GetParam();
-    writer_.Type(ty.Get<type::SampledTexture>(params.dim, MakeScalarType(params.format)));
+    writer_.Type(ty.Get<core::type::SampledTexture>(params.dim, MakeScalarType(params.format)));
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST(params.result);
@@ -270,7 +275,8 @@ INSTANTIATE_TEST_SUITE_P(
 using Type_MultisampledTexture = SpirvWriterTestWithParam<TextureCase>;
 TEST_P(Type_MultisampledTexture, Emit) {
     auto params = GetParam();
-    writer_.Type(ty.Get<type::MultisampledTexture>(params.dim, MakeScalarType(params.format)));
+    writer_.Type(
+        ty.Get<core::type::MultisampledTexture>(params.dim, MakeScalarType(params.format)));
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST(params.result);
@@ -285,7 +291,7 @@ INSTANTIATE_TEST_SUITE_P(
 using Type_DepthTexture = SpirvWriterTestWithParam<TextureCase>;
 TEST_P(Type_DepthTexture, Emit) {
     auto params = GetParam();
-    writer_.Type(ty.Get<type::DepthTexture>(params.dim));
+    writer_.Type(ty.Get<core::type::DepthTexture>(params.dim));
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST(params.result);
@@ -299,8 +305,8 @@ INSTANTIATE_TEST_SUITE_P(
                     TextureCase{"%1 = OpTypeImage %float Cube 0 1 0 1 Unknown", Dim::kCubeArray}));
 
 TEST_F(SpirvWriterTest, Type_DepthTexture_DedupWithSampledTexture) {
-    writer_.Type(ty.Get<type::SampledTexture>(Dim::k2d, ty.f32()));
-    writer_.Type(ty.Get<type::DepthTexture>(Dim::k2d));
+    writer_.Type(ty.Get<core::type::SampledTexture>(Dim::k2d, ty.f32()));
+    writer_.Type(ty.Get<core::type::DepthTexture>(Dim::k2d));
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_EQ(DumpTypes(), R"(%2 = OpTypeFloat 32
@@ -311,15 +317,15 @@ TEST_F(SpirvWriterTest, Type_DepthTexture_DedupWithSampledTexture) {
 }
 
 TEST_F(SpirvWriterTest, Type_DepthMultiSampledTexture) {
-    writer_.Type(ty.Get<type::DepthMultisampledTexture>(Dim::k2d));
+    writer_.Type(ty.Get<core::type::DepthMultisampledTexture>(Dim::k2d));
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST("%1 = OpTypeImage %float 2D 0 0 1 1 Unknown");
 }
 
 TEST_F(SpirvWriterTest, Type_DepthMultisampledTexture_DedupWithMultisampledTexture) {
-    writer_.Type(ty.Get<type::MultisampledTexture>(Dim::k2d, ty.f32()));
-    writer_.Type(ty.Get<type::DepthMultisampledTexture>(Dim::k2d));
+    writer_.Type(ty.Get<core::type::MultisampledTexture>(Dim::k2d, ty.f32()));
+    writer_.Type(ty.Get<core::type::DepthMultisampledTexture>(Dim::k2d));
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_EQ(DumpTypes(), R"(%2 = OpTypeFloat 32
@@ -329,7 +335,7 @@ TEST_F(SpirvWriterTest, Type_DepthMultisampledTexture_DedupWithMultisampledTextu
 )");
 }
 
-using Format = builtin::TexelFormat;
+using Format = core::TexelFormat;
 struct StorageTextureCase {
     std::string result;
     Dim dim;
@@ -338,15 +344,15 @@ struct StorageTextureCase {
 using Type_StorageTexture = SpirvWriterTestWithParam<StorageTextureCase>;
 TEST_P(Type_StorageTexture, Emit) {
     auto params = GetParam();
-    writer_.Type(
-        ty.Get<type::StorageTexture>(params.dim, params.format, builtin::Access::kWrite,
-                                     type::StorageTexture::SubtypeFor(params.format, mod.Types())));
+    writer_.Type(ty.Get<core::type::StorageTexture>(
+        params.dim, params.format, core::Access::kWrite,
+        core::type::StorageTexture::SubtypeFor(params.format, mod.Types())));
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST(params.result);
-    if (params.format == builtin::TexelFormat::kRg32Uint ||
-        params.format == builtin::TexelFormat::kRg32Sint ||
-        params.format == builtin::TexelFormat::kRg32Float) {
+    if (params.format == core::TexelFormat::kRg32Uint ||
+        params.format == core::TexelFormat::kRg32Sint ||
+        params.format == core::TexelFormat::kRg32Float) {
         EXPECT_INST("OpCapability StorageImageExtendedFormats");
     }
 }
@@ -425,4 +431,4 @@ TEST_F(SpirvWriterTest, Type_Deduplicate) {
 }
 
 }  // namespace
-}  // namespace tint::writer::spirv
+}  // namespace tint::spirv::writer

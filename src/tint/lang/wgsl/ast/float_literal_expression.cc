@@ -16,13 +16,14 @@
 
 #include <limits>
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::FloatLiteralExpression);
 
 namespace tint::ast {
 
-FloatLiteralExpression::FloatLiteralExpression(ProgramID pid,
+FloatLiteralExpression::FloatLiteralExpression(GenerationID pid,
                                                NodeID nid,
                                                const Source& src,
                                                double val,
@@ -31,20 +32,20 @@ FloatLiteralExpression::FloatLiteralExpression(ProgramID pid,
 
 FloatLiteralExpression::~FloatLiteralExpression() = default;
 
-const FloatLiteralExpression* FloatLiteralExpression::Clone(CloneContext* ctx) const {
+const FloatLiteralExpression* FloatLiteralExpression::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    return ctx->dst->create<FloatLiteralExpression>(src, value, suffix);
+    auto src = ctx.Clone(source);
+    return ctx.dst->create<FloatLiteralExpression>(src, value, suffix);
 }
 
-utils::StringStream& operator<<(utils::StringStream& out, FloatLiteralExpression::Suffix suffix) {
+std::string_view ToString(FloatLiteralExpression::Suffix suffix) {
     switch (suffix) {
         default:
-            return out;
+            return "";
         case FloatLiteralExpression::Suffix::kF:
-            return out << "f";
+            return "f";
         case FloatLiteralExpression::Suffix::kH:
-            return out << "h";
+            return "h";
     }
 }
 

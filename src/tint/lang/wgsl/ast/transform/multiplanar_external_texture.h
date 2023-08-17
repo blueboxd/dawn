@@ -18,11 +18,11 @@
 #include <unordered_map>
 #include <utility>
 
-#include "src/tint/lang/core/builtin/function.h"
+#include "src/tint/api/common/binding_point.h"
+#include "src/tint/api/options/external_texture.h"
+#include "src/tint/lang/core/function.h"
 #include "src/tint/lang/wgsl/ast/struct_member.h"
 #include "src/tint/lang/wgsl/ast/transform/transform.h"
-#include "src/tint/lang/wgsl/sem/binding_point.h"
-#include "src/tint/lang/wgsl/sem/external_texture.h"
 
 namespace tint::ast::transform {
 
@@ -37,22 +37,21 @@ namespace tint::ast::transform {
 /// decoding, gamut conversion, and gamma encoding steps. Specifically
 // for BT.709 to SRGB conversion, it takes the fast path only doing the yuv->rgb
 // step and skipping all other steps.
-class MultiplanarExternalTexture final
-    : public utils::Castable<MultiplanarExternalTexture, Transform> {
+class MultiplanarExternalTexture final : public Castable<MultiplanarExternalTexture, Transform> {
   public:
     /// This struct identifies the binding groups and locations for new bindings to
     /// use when transforming a texture_external instance.
-    using BindingPoints = sem::external_texture::BindingPoints;
+    using BindingPoints = ExternalTextureOptions::BindingPoints;
 
     /// BindingsMap is a map where the key is the binding location of a
     /// texture_external and the value is a struct containing the desired
     /// locations for new bindings expanded from the texture_external instance.
-    using BindingsMap = sem::external_texture::BindingsMap;
+    using BindingsMap = ExternalTextureOptions::BindingsMap;
 
     /// NewBindingPoints is consumed by the MultiplanarExternalTexture transform.
     /// Data holds information about location of each texture_external binding and
     /// which binding slots it should expand into.
-    struct NewBindingPoints final : public utils::Castable<NewBindingPoints, Data> {
+    struct NewBindingPoints final : public Castable<NewBindingPoints, Data> {
         /// Constructor
         /// @param bm a map to the new binding slots to use.
         explicit NewBindingPoints(BindingsMap bm);

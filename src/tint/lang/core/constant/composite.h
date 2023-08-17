@@ -15,31 +15,31 @@
 #ifndef SRC_TINT_LANG_CORE_CONSTANT_COMPOSITE_H_
 #define SRC_TINT_LANG_CORE_CONSTANT_COMPOSITE_H_
 
-#include "src/tint/lang/core/builtin/number.h"
 #include "src/tint/lang/core/constant/value.h"
+#include "src/tint/lang/core/number.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/utils/containers/vector.h"
 #include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::constant {
+namespace tint::core::constant {
 
 /// Composite holds a number of mixed child values.
 /// Composite may be of a vector, matrix, array or structure type.
 /// If each element is the same type and value, then a Splat would be a more efficient constant
 /// implementation. Use CreateComposite() to create the appropriate type.
-class Composite : public utils::Castable<Composite, Value> {
+class Composite : public Castable<Composite, Value> {
   public:
     /// Constructor
     /// @param t the compsite type
     /// @param els the composite elements
     /// @param all_0 true if all elements are 0
     /// @param any_0 true if any element is 0
-    Composite(const type::Type* t, utils::VectorRef<const Value*> els, bool all_0, bool any_0);
+    Composite(const core::type::Type* t, VectorRef<const Value*> els, bool all_0, bool any_0);
     ~Composite() override;
 
     /// @copydoc Value::Type()
-    const type::Type* Type() const override { return type; }
+    const core::type::Type* Type() const override { return type; }
 
     /// @copydoc Value::Index()
     const Value* Index(size_t i) const override {
@@ -64,9 +64,9 @@ class Composite : public utils::Castable<Composite, Value> {
     const Composite* Clone(CloneContext& ctx) const override;
 
     /// The composite type
-    type::Type const* const type;
+    core::type::Type const* const type;
     /// The composite elements
-    const utils::Vector<const Value*, 4> elements;
+    const Vector<const Value*, 4> elements;
     /// True if all elements are zero
     const bool all_zero;
     /// True if any element is zero
@@ -80,14 +80,14 @@ class Composite : public utils::Castable<Composite, Value> {
 
   private:
     size_t CalcHash() {
-        auto h = utils::Hash(type, all_zero, any_zero);
+        auto h = tint::Hash(type, all_zero, any_zero);
         for (auto* el : elements) {
-            h = utils::HashCombine(h, el->Hash());
+            h = HashCombine(h, el->Hash());
         }
         return h;
     }
 };
 
-}  // namespace tint::constant
+}  // namespace tint::core::constant
 
 #endif  // SRC_TINT_LANG_CORE_CONSTANT_COMPOSITE_H_

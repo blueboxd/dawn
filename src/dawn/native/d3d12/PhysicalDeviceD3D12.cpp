@@ -125,6 +125,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::DepthClipControl);
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::Float32Filterable);
+    EnableFeature(Feature::DualSourceBlending);
 
     if (AreTimestampQueriesSupported()) {
         EnableFeature(Feature::TimestampQuery);
@@ -140,6 +141,11 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         if (mDeviceInfo.supportsShaderF16) {
             EnableFeature(Feature::ShaderF16);
         }
+    }
+
+    // ChromiumExperimentalSubgroups requires SM >= 6.0 and capabilities flags.
+    if (GetBackend()->IsDXCAvailable() && mDeviceInfo.supportsWaveOps) {
+        EnableFeature(Feature::ChromiumExperimentalSubgroups);
     }
 
     D3D12_FEATURE_DATA_FORMAT_SUPPORT bgra8unormFormatInfo = {};
@@ -497,9 +503,29 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // By default use the maximum shader-visible heap size allowed.
     deviceToggles->Default(Toggle::UseD3D12SmallShaderVisibleHeapForTesting, false);
 
-    // By default use D3D12 Root Signature Version 1.1 when possible
+    // By default use D3D12 Root Signature Version 1.1 when possible, otherwise we should never
+    // enable this toggle.
+    if (!GetDeviceInfo().supportsRootSignatureVersion1_1) {
+        deviceToggles->ForceSet(Toggle::D3D12UseRootSignatureVersion1_1, false);
+    }
     deviceToggles->Default(Toggle::D3D12UseRootSignatureVersion1_1,
                            GetDeviceInfo().supportsRootSignatureVersion1_1);
+
+    // By default create MSAA textures with 64KB (D3D12_SMALL_MSAA_RESOURCE_PLACEMENT_ALIGNMENT)
+    // alignment when possible, otherwise we should never enable this toggle.
+    if (!GetDeviceInfo().use64KBAlignedMSAATexture) {
+        deviceToggles->ForceSet(Toggle::D3D12Use64KBAlignedMSAATexture, false);
+    }
+    deviceToggles->Default(Toggle::D3D12Use64KBAlignedMSAATexture,
+                           GetDeviceInfo().use64KBAlignedMSAATexture);
+
+    // By default use D3D12_HEAP_FLAG_CREATE_NOT_ZEROED when possible, otherwise we should never
+    // enable this toggle.
+    if (!GetDeviceInfo().supportsHeapFlagCreateNotZeroed) {
+        deviceToggles->ForceSet(Toggle::D3D12CreateNotZeroedHeap, false);
+    }
+    deviceToggles->Default(Toggle::D3D12CreateNotZeroedHeap,
+                           GetDeviceInfo().supportsHeapFlagCreateNotZeroed);
 
     uint32_t deviceId = GetDeviceId();
     uint32_t vendorId = GetVendorId();

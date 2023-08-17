@@ -130,7 +130,7 @@ void ValidationTest::SetUp() {
     const char* allowUnsafeApisToggle = "allow_unsafe_apis";
     WGPUDawnTogglesDescriptor instanceToggles = {};
     instanceToggles.chain.sType = WGPUSType::WGPUSType_DawnTogglesDescriptor;
-    instanceToggles.enabledTogglesCount = 1;
+    instanceToggles.enabledToggleCount = 1;
     instanceToggles.enabledToggles = &allowUnsafeApisToggle;
 
     WGPUInstanceDescriptor instanceDesc = {};
@@ -148,13 +148,7 @@ void ValidationTest::SetUp() {
     options.backendType = wgpu::BackendType::Null;
     options.compatibilityMode = gCurrentTest->UseCompatibilityMode();
 
-    mInstance.RequestAdapter(
-        &options,
-        [](WGPURequestAdapterStatus, WGPUAdapter cAdapter, const char*, void* userdata) {
-            *static_cast<wgpu::Adapter*>(userdata) = wgpu::Adapter::Acquire(cAdapter);
-        },
-        &adapter);
-    FlushWire();
+    CreateTestAdapter(mInstance, options);
     ASSERT(adapter);
 
     wgpu::DeviceDescriptor deviceDescriptor = {};
@@ -176,7 +170,11 @@ ValidationTest::~ValidationTest() {
     mWireHelper.reset();
 
     // Check that all devices were destructed.
-    EXPECT_EQ(mDawnInstance->GetDeviceCountForTesting(), 0u);
+    // Note that if the test is skipped before SetUp is called, mDawnInstance will not get set and
+    // remain nullptr.
+    if (mDawnInstance) {
+        EXPECT_EQ(mDawnInstance->GetDeviceCountForTesting(), 0u);
+    }
 
     gCurrentTest = nullptr;
 }
@@ -281,6 +279,17 @@ dawn::native::Adapter& ValidationTest::GetBackendAdapter() {
     return mBackendAdapter;
 }
 
+void ValidationTest::CreateTestAdapter(wgpu::Instance instance,
+                                       wgpu::RequestAdapterOptions options) {
+    instance.RequestAdapter(
+        &options,
+        [](WGPURequestAdapterStatus, WGPUAdapter cAdapter, const char*, void* userdata) {
+            *static_cast<wgpu::Adapter*>(userdata) = wgpu::Adapter::Acquire(cAdapter);
+        },
+        &adapter);
+    FlushWire();
+}
+
 WGPUDevice ValidationTest::CreateTestDevice(dawn::native::Adapter dawnAdapter,
                                             wgpu::DeviceDescriptor deviceDescriptor) {
     std::vector<const char*> enabledToggles;
@@ -298,9 +307,9 @@ WGPUDevice ValidationTest::CreateTestDevice(dawn::native::Adapter dawnAdapter,
     deviceDescriptor.nextInChain = &deviceTogglesDesc;
 
     deviceTogglesDesc.enabledToggles = enabledToggles.data();
-    deviceTogglesDesc.enabledTogglesCount = enabledToggles.size();
+    deviceTogglesDesc.enabledToggleCount = enabledToggles.size();
     deviceTogglesDesc.disabledToggles = disabledToggles.data();
-    deviceTogglesDesc.disabledTogglesCount = disabledToggles.size();
+    deviceTogglesDesc.disabledToggleCount = disabledToggles.size();
 
     return dawnAdapter.CreateDevice(&deviceDescriptor);
 }

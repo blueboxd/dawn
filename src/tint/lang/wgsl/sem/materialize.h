@@ -25,7 +25,7 @@ namespace tint::sem {
 /// the same AST node as the inner semantic node.
 /// Abstract numerics types may only be used by compile-time expressions, so a Materialize semantic
 /// node must have a valid Constant value.
-class Materialize final : public utils::Castable<Materialize, ValueExpression> {
+class Materialize final : public Castable<Materialize, ValueExpression> {
   public:
     /// Constructor
     /// @param expr the inner expression, being materialized
@@ -34,8 +34,8 @@ class Materialize final : public utils::Castable<Materialize, ValueExpression> {
     /// @param constant the constant value of this expression or nullptr
     Materialize(const ValueExpression* expr,
                 const Statement* statement,
-                const type::Type* type,
-                const constant::Value* constant);
+                const core::type::Type* type,
+                const core::constant::Value* constant);
 
     /// Destructor
     ~Materialize() override;

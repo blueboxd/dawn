@@ -17,24 +17,25 @@
 #include <utility>
 
 #include "src/tint/utils/math/hash.h"
-#include "src/tint/utils/text/symbol_table.h"
+#include "src/tint/utils/symbol/symbol_table.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::sem::CallTarget);
 
 namespace tint::sem {
 
-CallTarget::CallTarget(EvaluationStage stage, bool must_use) : stage_(stage), must_use_(must_use) {}
+CallTarget::CallTarget(core::EvaluationStage stage, bool must_use)
+    : stage_(stage), must_use_(must_use) {}
 
-CallTarget::CallTarget(const type::Type* return_type,
-                       utils::VectorRef<Parameter*> parameters,
-                       EvaluationStage stage,
+CallTarget::CallTarget(const core::type::Type* return_type,
+                       VectorRef<Parameter*> parameters,
+                       core::EvaluationStage stage,
                        bool must_use)
     : stage_(stage), must_use_(must_use) {
     SetReturnType(return_type);
     for (auto* param : parameters) {
         AddParameter(param);
     }
-    TINT_ASSERT(Semantic, return_type);
+    TINT_ASSERT(return_type);
 }
 
 CallTarget::CallTarget(const CallTarget&) = default;
@@ -42,13 +43,13 @@ CallTarget::~CallTarget() = default;
 
 CallTargetSignature::CallTargetSignature() = default;
 
-CallTargetSignature::CallTargetSignature(const type::Type* ret_ty,
-                                         utils::VectorRef<const sem::Parameter*> params)
+CallTargetSignature::CallTargetSignature(const core::type::Type* ret_ty,
+                                         VectorRef<const sem::Parameter*> params)
     : return_type(ret_ty), parameters(std::move(params)) {}
 CallTargetSignature::CallTargetSignature(const CallTargetSignature&) = default;
 CallTargetSignature::~CallTargetSignature() = default;
 
-int CallTargetSignature::IndexOf(ParameterUsage usage) const {
+int CallTargetSignature::IndexOf(core::ParameterUsage usage) const {
     for (size_t i = 0; i < parameters.Length(); i++) {
         if (parameters[i]->Usage() == usage) {
             return static_cast<int>(i);
@@ -77,11 +78,11 @@ namespace std {
 
 std::size_t hash<tint::sem::CallTargetSignature>::operator()(
     const tint::sem::CallTargetSignature& sig) const {
-    size_t hash = tint::utils::Hash(sig.parameters.Length());
+    size_t hash = tint::Hash(sig.parameters.Length());
     for (auto* p : sig.parameters) {
-        hash = tint::utils::HashCombine(hash, p->Type(), p->Usage());
+        hash = HashCombine(hash, p->Type(), p->Usage());
     }
-    return tint::utils::Hash(hash, sig.return_type);
+    return Hash(hash, sig.return_type);
 }
 
 }  // namespace std

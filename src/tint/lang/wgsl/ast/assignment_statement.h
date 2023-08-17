@@ -21,7 +21,7 @@
 namespace tint::ast {
 
 /// An assignment statement
-class AssignmentStatement final : public utils::Castable<AssignmentStatement, Statement> {
+class AssignmentStatement final : public Castable<AssignmentStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -29,7 +29,7 @@ class AssignmentStatement final : public utils::Castable<AssignmentStatement, St
     /// @param source the assignment statement source
     /// @param lhs the left side of the expression
     /// @param rhs the right side of the expression
-    AssignmentStatement(ProgramID pid,
+    AssignmentStatement(GenerationID pid,
                         NodeID nid,
                         const Source& source,
                         const Expression* lhs,
@@ -42,7 +42,7 @@ class AssignmentStatement final : public utils::Castable<AssignmentStatement, St
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const AssignmentStatement* Clone(CloneContext* ctx) const override;
+    const AssignmentStatement* Clone(CloneContext& ctx) const override;
 
     /// left side expression
     const Expression* const lhs;

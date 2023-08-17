@@ -20,13 +20,13 @@
 namespace tint::ast {
 
 /// A discard statement
-class DiscardStatement final : public utils::Castable<DiscardStatement, Statement> {
+class DiscardStatement final : public Castable<DiscardStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
-    DiscardStatement(ProgramID pid, NodeID nid, const Source& src);
+    DiscardStatement(GenerationID pid, NodeID nid, const Source& src);
 
     /// Destructor
     ~DiscardStatement() override;
@@ -35,7 +35,7 @@ class DiscardStatement final : public utils::Castable<DiscardStatement, Statemen
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const DiscardStatement* Clone(CloneContext* ctx) const override;
+    const DiscardStatement* Clone(CloneContext& ctx) const override;
 };
 
 }  // namespace tint::ast

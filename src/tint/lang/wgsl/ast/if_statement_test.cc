@@ -17,7 +17,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
 #include "src/tint/lang/wgsl/ast/discard_statement.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
@@ -33,10 +33,10 @@ TEST_F(IfStatementTest, Creation) {
 }
 
 TEST_F(IfStatementTest, Creation_WithAttributes) {
-    auto* attr1 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "foo");
-    auto* attr2 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "bar");
+    auto* attr1 = DiagnosticAttribute(core::DiagnosticSeverity::kOff, "foo");
+    auto* attr2 = DiagnosticAttribute(core::DiagnosticSeverity::kOff, "bar");
     auto* cond = Expr("cond");
-    auto* stmt = If(cond, Block(), ElseStmt(), utils::Vector{attr1, attr2});
+    auto* stmt = If(cond, Block(), ElseStmt(), tint::Vector{attr1, attr2});
 
     EXPECT_THAT(stmt->attributes, testing::ElementsAre(attr1, attr2));
 }
@@ -73,7 +73,7 @@ TEST_F(IfStatementTest, Assert_InvalidElse) {
         "internal compiler error");
 }
 
-TEST_F(IfStatementTest, Assert_DifferentProgramID_Cond) {
+TEST_F(IfStatementTest, Assert_DifferentGenerationID_Cond) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;
@@ -83,7 +83,7 @@ TEST_F(IfStatementTest, Assert_DifferentProgramID_Cond) {
         "internal compiler error");
 }
 
-TEST_F(IfStatementTest, Assert_DifferentProgramID_Body) {
+TEST_F(IfStatementTest, Assert_DifferentGenerationID_Body) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;
@@ -93,7 +93,7 @@ TEST_F(IfStatementTest, Assert_DifferentProgramID_Body) {
         "internal compiler error");
 }
 
-TEST_F(IfStatementTest, Assert_DifferentProgramID_ElseStatement) {
+TEST_F(IfStatementTest, Assert_DifferentGenerationID_ElseStatement) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;

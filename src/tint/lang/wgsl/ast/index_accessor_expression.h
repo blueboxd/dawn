@@ -20,8 +20,7 @@
 namespace tint::ast {
 
 /// An index accessor expression
-class IndexAccessorExpression final
-    : public utils::Castable<IndexAccessorExpression, AccessorExpression> {
+class IndexAccessorExpression final : public Castable<IndexAccessorExpression, AccessorExpression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -29,7 +28,7 @@ class IndexAccessorExpression final
     /// @param source the index accessor source
     /// @param obj the object
     /// @param idx the index expression
-    IndexAccessorExpression(ProgramID pid,
+    IndexAccessorExpression(GenerationID pid,
                             NodeID nid,
                             const Source& source,
                             const Expression* obj,
@@ -42,7 +41,7 @@ class IndexAccessorExpression final
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const IndexAccessorExpression* Clone(CloneContext* ctx) const override;
+    const IndexAccessorExpression* Clone(CloneContext& ctx) const override;
 
     /// the index expression
     const Expression* const index;

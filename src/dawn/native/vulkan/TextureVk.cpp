@@ -582,6 +582,10 @@ VkImageLayout VulkanImageLayout(const Texture* texture, wgpu::TextureUsage usage
             UNREACHABLE();
             break;
 
+        case wgpu::TextureUsage::StorageAttachment:
+            // TODO(dawn:1704): Support PLS on Vulkan.
+            UNREACHABLE();
+
         case wgpu::TextureUsage::None:
             break;
     }
@@ -636,7 +640,7 @@ bool IsSampleCountSupported(const dawn::native::vulkan::Device* device,
 ResultOrError<Ref<Texture>> Texture::Create(Device* device,
                                             const TextureDescriptor* descriptor,
                                             VkImageUsageFlags extraUsages) {
-    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor, TextureState::OwnedInternal));
+    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     DAWN_TRY(texture->InitializeAsInternalTexture(extraUsages));
     return std::move(texture);
 }
@@ -647,8 +651,7 @@ ResultOrError<Texture*> Texture::CreateFromExternal(
     const ExternalImageDescriptorVk* descriptor,
     const TextureDescriptor* textureDescriptor,
     external_memory::Service* externalMemoryService) {
-    Ref<Texture> texture =
-        AcquireRef(new Texture(device, textureDescriptor, TextureState::OwnedInternal));
+    Ref<Texture> texture = AcquireRef(new Texture(device, textureDescriptor));
     DAWN_TRY(texture->InitializeFromExternal(descriptor, externalMemoryService));
     return texture.Detach();
 }
@@ -657,13 +660,13 @@ ResultOrError<Texture*> Texture::CreateFromExternal(
 Ref<Texture> Texture::CreateForSwapChain(Device* device,
                                          const TextureDescriptor* descriptor,
                                          VkImage nativeImage) {
-    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor, TextureState::OwnedExternal));
+    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     texture->InitializeForSwapChain(nativeImage);
     return texture;
 }
 
-Texture::Texture(Device* device, const TextureDescriptor* descriptor, TextureState state)
-    : TextureBase(device, descriptor, state),
+Texture::Texture(Device* device, const TextureDescriptor* descriptor)
+    : TextureBase(device, descriptor),
       mCombinedAspect(ComputeCombinedAspect(device, GetFormat())),
       // A usage of none will make sure the texture is transitioned before its first use as
       // required by the Vulkan spec.
@@ -733,6 +736,7 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
     DAWN_TRY(CheckVkSuccess(
         device->fn.CreateImage(device->GetVkDevice(), &createInfo, nullptr, &*mHandle),
         "CreateImage"));
+    mOwnsHandle = true;
 
     // Create the image memory and associate it with the container
     VkMemoryRequirements requirements;
@@ -844,6 +848,7 @@ MaybeError Texture::InitializeFromExternal(const ExternalImageDescriptorVk* desc
     }
 
     DAWN_TRY_ASSIGN(mHandle, externalMemoryService->CreateImage(descriptor, baseCreateInfo));
+    mOwnsHandle = true;
 
     SetLabelHelper("Dawn_ExternalTexture");
 
@@ -993,24 +998,23 @@ void Texture::SetLabelImpl() {
 }
 
 void Texture::DestroyImpl() {
-    if (GetTextureState() == TextureState::OwnedInternal) {
-        Device* device = ToBackend(GetDevice());
+    Device* device = ToBackend(GetDevice());
 
-        // For textures created from a VkImage, the allocation if kInvalid so the Device knows
-        // to skip the deallocation of the (absence of) VkDeviceMemory.
-        device->GetResourceMemoryAllocator()->Deallocate(&mMemoryAllocation);
-
-        if (mHandle != VK_NULL_HANDLE) {
-            device->GetFencedDeleter()->DeleteWhenUnused(mHandle);
-        }
-
-        if (mExternalAllocation != VK_NULL_HANDLE) {
-            device->GetFencedDeleter()->DeleteWhenUnused(mExternalAllocation);
-        }
-
-        mHandle = VK_NULL_HANDLE;
-        mExternalAllocation = VK_NULL_HANDLE;
+    if (mOwnsHandle) {
+        device->GetFencedDeleter()->DeleteWhenUnused(mHandle);
     }
+
+    // For textures created from a VkImage, the allocation is kInvalid so the Device knows
+    // to skip the deallocation of the (absence of) VkDeviceMemory.
+    device->GetResourceMemoryAllocator()->Deallocate(&mMemoryAllocation);
+
+    if (mExternalAllocation != VK_NULL_HANDLE) {
+        device->GetFencedDeleter()->DeleteWhenUnused(mExternalAllocation);
+    }
+
+    mHandle = VK_NULL_HANDLE;
+    mExternalAllocation = VK_NULL_HANDLE;
+
     // For Vulkan, we currently run the base destruction code after the internal changes because
     // of the dependency on the texture state which the base code overwrites too early.
     TextureBase::DestroyImpl();
@@ -1432,7 +1436,7 @@ MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {
     }
 
     // Texture could be destroyed by the time we make a view.
-    if (GetTexture()->GetTextureState() == Texture::TextureState::Destroyed) {
+    if (GetTexture()->IsDestroyed()) {
         return {};
     }
 

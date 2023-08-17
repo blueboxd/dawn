@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
@@ -48,7 +48,7 @@ TEST_F(IdentifierTest, Assert_InvalidSymbol) {
         "internal compiler error");
 }
 
-TEST_F(IdentifierTest, Assert_DifferentProgramID_Symbol) {
+TEST_F(IdentifierTest, Assert_DifferentGenerationID_Symbol) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;

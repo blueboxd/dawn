@@ -25,9 +25,9 @@ namespace dawn::native {
 AttachmentState::AttachmentState(DeviceBase* device,
                                  const RenderBundleEncoderDescriptor* descriptor)
     : ObjectBase(device), mSampleCount(descriptor->sampleCount) {
-    ASSERT(descriptor->colorFormatsCount <= kMaxColorAttachments);
+    ASSERT(descriptor->colorFormatCount <= kMaxColorAttachments);
     for (ColorAttachmentIndex i(uint8_t(0));
-         i < ColorAttachmentIndex(static_cast<uint8_t>(descriptor->colorFormatsCount)); ++i) {
+         i < ColorAttachmentIndex(static_cast<uint8_t>(descriptor->colorFormatCount)); ++i) {
         wgpu::TextureFormat format = descriptor->colorFormats[static_cast<uint8_t>(i)];
         if (format != wgpu::TextureFormat::Undefined) {
             mColorAttachmentsSet.set(i);
@@ -122,10 +122,9 @@ AttachmentState::AttachmentState(const AttachmentState& blueprint)
     SetContentHash(blueprint.GetContentHash());
 }
 
-AttachmentState::~AttachmentState() {
-    if (IsCachedReference()) {
-        GetDevice()->UncacheAttachmentState(this);
-    }
+void AttachmentState::DeleteThis() {
+    Uncache();
+    RefCounted::DeleteThis();
 }
 
 bool AttachmentState::EqualityFunc::operator()(const AttachmentState* a,

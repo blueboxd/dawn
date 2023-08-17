@@ -49,6 +49,10 @@ D3D12_DESCRIPTOR_RANGE_TYPE WGPUBindingInfoToDescriptorRangeType(const BindingIn
             switch (bindingInfo.storageTexture.access) {
                 case wgpu::StorageTextureAccess::WriteOnly:
                     return D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+
+                // TODO(dawn:1972): Implement ReadOnly and ReadWrite storage texture
+                case wgpu::StorageTextureAccess::ReadOnly:
+                case wgpu::StorageTextureAccess::ReadWrite:
                 case wgpu::StorageTextureAccess::Undefined:
                     UNREACHABLE();
             }
@@ -57,17 +61,13 @@ D3D12_DESCRIPTOR_RANGE_TYPE WGPUBindingInfoToDescriptorRangeType(const BindingIn
 }  // anonymous namespace
 
 // static
-Ref<BindGroupLayout> BindGroupLayout::Create(
-    Device* device,
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return AcquireRef(new BindGroupLayout(device, descriptor, pipelineCompatibilityToken));
+Ref<BindGroupLayout> BindGroupLayout::Create(Device* device,
+                                             const BindGroupLayoutDescriptor* descriptor) {
+    return AcquireRef(new BindGroupLayout(device, descriptor));
 }
 
-BindGroupLayout::BindGroupLayout(Device* device,
-                                 const BindGroupLayoutDescriptor* descriptor,
-                                 PipelineCompatibilityToken pipelineCompatibilityToken)
-    : BindGroupLayoutBase(device, descriptor, pipelineCompatibilityToken),
+BindGroupLayout::BindGroupLayout(Device* device, const BindGroupLayoutDescriptor* descriptor)
+    : BindGroupLayoutInternalBase(device, descriptor),
       mDescriptorHeapOffsets(GetBindingCount()),
       mShaderRegisters(GetBindingCount()),
       mCbvUavSrvDescriptorCount(0),
@@ -163,17 +163,22 @@ ResultOrError<Ref<BindGroup>> BindGroupLayout::AllocateBindGroup(
     uint32_t viewSizeIncrement = 0;
     CPUDescriptorHeapAllocation viewAllocation;
     if (GetCbvUavSrvDescriptorCount() > 0) {
-        DAWN_TRY_ASSIGN(viewAllocation, mViewAllocator->AllocateCPUDescriptors());
-        viewSizeIncrement = mViewAllocator->GetSizeIncrement();
+        ASSERT(mViewAllocator != nullptr);
+        DAWN_TRY((*mViewAllocator).Use([&](auto viewAllocator) -> MaybeError {
+            DAWN_TRY_ASSIGN(viewAllocation, viewAllocator->AllocateCPUDescriptors());
+            viewSizeIncrement = viewAllocator->GetSizeIncrement();
+            return {};
+        }));
     }
 
     Ref<BindGroup> bindGroup = AcquireRef<BindGroup>(
-        mBindGroupAllocator.Allocate(device, descriptor, viewSizeIncrement, viewAllocation));
+        mBindGroupAllocator->Allocate(device, descriptor, viewSizeIncrement, viewAllocation));
 
     if (GetSamplerDescriptorCount() > 0) {
+        ASSERT(mSamplerAllocator != nullptr);
         Ref<SamplerHeapCacheEntry> samplerHeapCacheEntry;
         DAWN_TRY_ASSIGN(samplerHeapCacheEntry, device->GetSamplerHeapCache()->GetOrCreate(
-                                                   bindGroup.Get(), mSamplerAllocator));
+                                                   bindGroup.Get(), *mSamplerAllocator));
         bindGroup->SetSamplerAllocationEntry(std::move(samplerHeapCacheEntry));
     }
 
@@ -183,10 +188,10 @@ ResultOrError<Ref<BindGroup>> BindGroupLayout::AllocateBindGroup(
 void BindGroupLayout::DeallocateBindGroup(BindGroup* bindGroup,
                                           CPUDescriptorHeapAllocation* viewAllocation) {
     if (viewAllocation->IsValid()) {
-        mViewAllocator->Deallocate(viewAllocation);
+        (*mViewAllocator)->Deallocate(viewAllocation);
     }
 
-    mBindGroupAllocator.Deallocate(bindGroup);
+    mBindGroupAllocator->Deallocate(bindGroup);
 }
 
 ityp::span<BindingIndex, const uint32_t> BindGroupLayout::GetDescriptorHeapOffsets() const {

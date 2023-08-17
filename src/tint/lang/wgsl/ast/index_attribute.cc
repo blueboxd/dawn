@@ -16,13 +16,17 @@
 
 #include <string>
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::IndexAttribute);
 
 namespace tint::ast {
 
-IndexAttribute::IndexAttribute(ProgramID pid, NodeID nid, const Source& src, const Expression* exp)
+IndexAttribute::IndexAttribute(GenerationID pid,
+                               NodeID nid,
+                               const Source& src,
+                               const Expression* exp)
     : Base(pid, nid, src), expr(exp) {}
 
 IndexAttribute::~IndexAttribute() = default;
@@ -31,11 +35,11 @@ std::string IndexAttribute::Name() const {
     return "index";
 }
 
-const IndexAttribute* IndexAttribute::Clone(CloneContext* ctx) const {
+const IndexAttribute* IndexAttribute::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    auto* expr_ = ctx->Clone(expr);
-    return ctx->dst->create<IndexAttribute>(src, expr_);
+    auto src = ctx.Clone(source);
+    auto* expr_ = ctx.Clone(expr);
+    return ctx.dst->create<IndexAttribute>(src, expr_);
 }
 
 }  // namespace tint::ast

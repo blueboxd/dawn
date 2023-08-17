@@ -22,13 +22,13 @@
 namespace tint::ast {
 
 /// The must_use attribute
-class MustUseAttribute final : public utils::Castable<MustUseAttribute, Attribute> {
+class MustUseAttribute final : public Castable<MustUseAttribute, Attribute> {
   public:
     /// constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
-    MustUseAttribute(ProgramID pid, NodeID nid, const Source& src);
+    MustUseAttribute(GenerationID pid, NodeID nid, const Source& src);
     ~MustUseAttribute() override;
 
     /// @returns the WGSL name for the attribute
@@ -38,7 +38,7 @@ class MustUseAttribute final : public utils::Castable<MustUseAttribute, Attribut
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const MustUseAttribute* Clone(CloneContext* ctx) const override;
+    const MustUseAttribute* Clone(CloneContext& ctx) const override;
 };
 
 }  // namespace tint::ast

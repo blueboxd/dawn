@@ -14,29 +14,30 @@
 
 #include "src/tint/lang/wgsl/ast/unary_op_expression.h"
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::UnaryOpExpression);
 
 namespace tint::ast {
 
-UnaryOpExpression::UnaryOpExpression(ProgramID pid,
+UnaryOpExpression::UnaryOpExpression(GenerationID pid,
                                      NodeID nid,
                                      const Source& src,
-                                     UnaryOp o,
+                                     core::UnaryOp o,
                                      const Expression* e)
     : Base(pid, nid, src), op(o), expr(e) {
-    TINT_ASSERT(AST, expr);
-    TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, expr, program_id);
+    TINT_ASSERT(expr);
+    TINT_ASSERT_GENERATION_IDS_EQUAL_IF_VALID(expr, generation_id);
 }
 
 UnaryOpExpression::~UnaryOpExpression() = default;
 
-const UnaryOpExpression* UnaryOpExpression::Clone(CloneContext* ctx) const {
+const UnaryOpExpression* UnaryOpExpression::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    auto* e = ctx->Clone(expr);
-    return ctx->dst->create<UnaryOpExpression>(src, op, e);
+    auto src = ctx.Clone(source);
+    auto* e = ctx.Clone(expr);
+    return ctx.dst->create<UnaryOpExpression>(src, op, e);
 }
 
 }  // namespace tint::ast

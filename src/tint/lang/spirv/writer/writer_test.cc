@@ -12,18 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/test_helper.h"
+// GEN_BUILD:CONDITION(tint_build_ir)
+
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 #include "gmock/gmock.h"
 
-namespace tint::writer::spirv {
+namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(SpirvWriterTest, ModuleHeader) {
-    ASSERT_TRUE(writer_.Generate()) << writer_.Diagnostics().str();
-    auto got = Disassemble(writer_.Result());
+    auto spirv = writer_.Generate();
+    ASSERT_TRUE(spirv) << spirv.Failure();
+    auto got = Disassemble(spirv.Get());
     EXPECT_THAT(got, testing::StartsWith(R"(OpCapability Shader
 OpMemoryModel Logical GLSL450
 )"));
@@ -31,19 +34,19 @@ OpMemoryModel Logical GLSL450
 
 TEST_F(SpirvWriterTest, Unreachable) {
     auto* func = b.Function("foo", ty.void_());
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* loop = b.Loop();
-        b.With(loop->Body(), [&] {
+        b.Append(loop->Body(), [&] {
             auto* ifelse = b.If(true);
-            b.With(ifelse->True(), [&] {  //
+            b.Append(ifelse->True(), [&] {  //
                 b.Continue(loop);
             });
-            b.With(ifelse->False(), [&] {  //
+            b.Append(ifelse->False(), [&] {  //
                 b.Continue(loop);
             });
             b.Unreachable();
 
-            b.With(loop->Continuing(), [&] {  //
+            b.Append(loop->Continuing(), [&] {  //
                 b.NextIteration(loop);
             });
         });
@@ -76,4 +79,4 @@ TEST_F(SpirvWriterTest, Unreachable) {
 }
 
 }  // namespace
-}  // namespace tint::writer::spirv
+}  // namespace tint::spirv::writer

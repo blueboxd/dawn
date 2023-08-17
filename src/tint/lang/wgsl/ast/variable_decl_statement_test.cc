@@ -15,7 +15,7 @@
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
@@ -54,7 +54,7 @@ TEST_F(VariableDeclStatementTest, Assert_Null_Variable) {
         "internal compiler error");
 }
 
-TEST_F(VariableDeclStatementTest, Assert_DifferentProgramID_Variable) {
+TEST_F(VariableDeclStatementTest, Assert_DifferentGenerationID_Variable) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;

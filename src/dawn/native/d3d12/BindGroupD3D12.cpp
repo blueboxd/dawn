@@ -30,7 +30,8 @@ namespace dawn::native::d3d12 {
 // static
 ResultOrError<Ref<BindGroup>> BindGroup::Create(Device* device,
                                                 const BindGroupDescriptor* descriptor) {
-    return ToBackend(descriptor->layout)->AllocateBindGroup(device, descriptor);
+    return ToBackend(descriptor->layout->GetInternalBindGroupLayout())
+        ->AllocateBindGroup(device, descriptor);
 }
 
 BindGroup::BindGroup(Device* device,
@@ -170,6 +171,9 @@ BindGroup::BindGroup(Device* device,
                         break;
                     }
 
+                    // TODO(dawn:1972): Implement ReadOnly and ReadWrite storage texture
+                    case wgpu::StorageTextureAccess::ReadOnly:
+                    case wgpu::StorageTextureAccess::ReadWrite:
                     case wgpu::StorageTextureAccess::Undefined:
                         UNREACHABLE();
                 }
@@ -211,7 +215,7 @@ void BindGroup::DestroyImpl() {
     ASSERT(!mCPUViewAllocation.IsValid());
 }
 
-bool BindGroup::PopulateViews(ShaderVisibleDescriptorAllocator* viewAllocator) {
+bool BindGroup::PopulateViews(MutexProtected<ShaderVisibleDescriptorAllocator>& viewAllocator) {
     const BindGroupLayout* bgl = ToBackend(GetLayout());
 
     const uint32_t descriptorCount = bgl->GetCbvUavSrvDescriptorCount();
@@ -248,8 +252,9 @@ D3D12_GPU_DESCRIPTOR_HANDLE BindGroup::GetBaseSamplerDescriptor() const {
     return mSamplerAllocationEntry->GetBaseDescriptor();
 }
 
-bool BindGroup::PopulateSamplers(Device* device,
-                                 ShaderVisibleDescriptorAllocator* samplerAllocator) {
+bool BindGroup::PopulateSamplers(
+    Device* device,
+    MutexProtected<ShaderVisibleDescriptorAllocator>& samplerAllocator) {
     if (mSamplerAllocationEntry == nullptr) {
         return true;
     }

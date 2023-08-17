@@ -21,15 +21,15 @@
 namespace tint::sem {
 
 /// ValueConstructor is the CallTarget for a value constructor.
-class ValueConstructor final : public utils::Castable<ValueConstructor, CallTarget> {
+class ValueConstructor final : public Castable<ValueConstructor, CallTarget> {
   public:
     /// Constructor
     /// @param type the type that's being constructed
     /// @param parameters the constructor parameters
     /// @param stage the earliest evaluation stage for the expression
-    ValueConstructor(const type::Type* type,
-                     utils::VectorRef<Parameter*> parameters,
-                     EvaluationStage stage);
+    ValueConstructor(const core::type::Type* type,
+                     VectorRef<Parameter*> parameters,
+                     core::EvaluationStage stage);
 
     /// Destructor
     ~ValueConstructor() override;

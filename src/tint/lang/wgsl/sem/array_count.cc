@@ -22,7 +22,7 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::UnnamedOverrideArrayCount);
 namespace tint::sem {
 
 NamedOverrideArrayCount::NamedOverrideArrayCount(const GlobalVariable* var)
-    : Base(static_cast<size_t>(utils::TypeInfo::Of<NamedOverrideArrayCount>().full_hashcode)),
+    : Base(static_cast<size_t>(tint::TypeInfo::Of<NamedOverrideArrayCount>().full_hashcode)),
       variable(var) {}
 NamedOverrideArrayCount::~NamedOverrideArrayCount() = default;
 
@@ -37,13 +37,13 @@ std::string NamedOverrideArrayCount::FriendlyName() const {
     return variable->Declaration()->name->symbol.Name();
 }
 
-type::ArrayCount* NamedOverrideArrayCount::Clone(type::CloneContext&) const {
-    TINT_ASSERT(Type, false && "Named override array count clone not available");
+core::type::ArrayCount* NamedOverrideArrayCount::Clone(core::type::CloneContext&) const {
+    TINT_UNREACHABLE() << "Named override array count clone not available";
     return nullptr;
 }
 
 UnnamedOverrideArrayCount::UnnamedOverrideArrayCount(const ValueExpression* e)
-    : Base(static_cast<size_t>(utils::TypeInfo::Of<UnnamedOverrideArrayCount>().full_hashcode)),
+    : Base(static_cast<size_t>(tint::TypeInfo::Of<UnnamedOverrideArrayCount>().full_hashcode)),
       expr(e) {}
 UnnamedOverrideArrayCount::~UnnamedOverrideArrayCount() = default;
 
@@ -58,8 +58,8 @@ std::string UnnamedOverrideArrayCount::FriendlyName() const {
     return "[unnamed override-expression]";
 }
 
-type::ArrayCount* UnnamedOverrideArrayCount::Clone(type::CloneContext&) const {
-    TINT_ASSERT(Type, false && "Unnamed override array count clone not available");
+core::type::ArrayCount* UnnamedOverrideArrayCount::Clone(core::type::CloneContext&) const {
+    TINT_UNREACHABLE() << "Unnamed override array count clone not available";
     return nullptr;
 }
 

@@ -14,23 +14,24 @@
 
 #include "src/tint/lang/wgsl/ast/extension.h"
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 //! @cond Doxygen_Suppress
-// Doxygen gets confused with tint::ast::Extension and tint::builtin::Extension
+// Doxygen gets confused with tint::ast::Extension and tint::core::Extension
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::Extension);
 
 namespace tint::ast {
 
-Extension::Extension(ProgramID pid, NodeID nid, const Source& src, builtin::Extension ext)
+Extension::Extension(GenerationID pid, NodeID nid, const Source& src, core::Extension ext)
     : Base(pid, nid, src), name(ext) {}
 
 Extension::~Extension() = default;
 
-const Extension* Extension::Clone(CloneContext* ctx) const {
-    auto src = ctx->Clone(source);
-    return ctx->dst->create<Extension>(src, name);
+const Extension* Extension::Clone(CloneContext& ctx) const {
+    auto src = ctx.Clone(source);
+    return ctx.dst->create<Extension>(src, name);
 }
 
 }  // namespace tint::ast

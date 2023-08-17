@@ -15,7 +15,7 @@
 #include "src/tint/lang/wgsl/ast/break_if_statement.h"
 
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
@@ -44,7 +44,7 @@ TEST_F(BreakIfStatementTest, Assert_Null_Condition) {
         "internal compiler error");
 }
 
-TEST_F(BreakIfStatementTest, Assert_DifferentProgramID_Cond) {
+TEST_F(BreakIfStatementTest, Assert_DifferentGenerationID_Cond) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;

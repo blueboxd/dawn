@@ -23,14 +23,14 @@
 namespace tint::ast {
 
 /// A diagnostic attribute
-class DiagnosticAttribute final : public utils::Castable<DiagnosticAttribute, Attribute> {
+class DiagnosticAttribute final : public Castable<DiagnosticAttribute, Attribute> {
   public:
     /// constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     /// @param dc the diagnostic control
-    DiagnosticAttribute(ProgramID pid, NodeID nid, const Source& src, DiagnosticControl&& dc);
+    DiagnosticAttribute(GenerationID pid, NodeID nid, const Source& src, DiagnosticControl&& dc);
     ~DiagnosticAttribute() override;
 
     /// @returns the WGSL name for the attribute
@@ -39,7 +39,7 @@ class DiagnosticAttribute final : public utils::Castable<DiagnosticAttribute, At
     /// Clones this node and all transitive child nodes using the `CloneContext` `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const DiagnosticAttribute* Clone(CloneContext* ctx) const override;
+    const DiagnosticAttribute* Clone(CloneContext& ctx) const override;
 
     /// The diagnostic control.
     const DiagnosticControl control;

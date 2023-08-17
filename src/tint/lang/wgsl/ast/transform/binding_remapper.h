@@ -17,28 +17,28 @@
 
 #include <unordered_map>
 
-#include "src/tint/lang/core/builtin/access.h"
+#include "src/tint/api/common/binding_point.h"
+#include "src/tint/lang/core/access.h"
 #include "src/tint/lang/wgsl/ast/transform/transform.h"
-#include "src/tint/lang/wgsl/sem/binding_point.h"
 
 namespace tint::ast::transform {
 
-/// BindingPoint is an alias to sem::BindingPoint
-using BindingPoint = sem::BindingPoint;
+/// BindingPoint is an alias to BindingPoint
+using BindingPoint = BindingPoint;
 
 /// BindingRemapper is a transform used to remap resource binding points and
 /// access controls.
-class BindingRemapper final : public utils::Castable<BindingRemapper, Transform> {
+class BindingRemapper final : public Castable<BindingRemapper, Transform> {
   public:
     /// BindingPoints is a map of old binding point to new binding point
     using BindingPoints = std::unordered_map<BindingPoint, BindingPoint>;
 
     /// AccessControls is a map of old binding point to new access control
-    using AccessControls = std::unordered_map<BindingPoint, builtin::Access>;
+    using AccessControls = std::unordered_map<BindingPoint, core::Access>;
 
     /// Remappings is consumed by the BindingRemapper transform.
     /// Data holds information about shader usage and constant buffer offsets.
-    struct Remappings final : public utils::Castable<Remappings, Data> {
+    struct Remappings final : public Castable<Remappings, Data> {
         /// Constructor
         /// @param bp a map of new binding points
         /// @param ac a map of new access controls

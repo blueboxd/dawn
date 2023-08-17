@@ -16,13 +16,14 @@
 
 #include <string>
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::WorkgroupAttribute);
 
 namespace tint::ast {
 
-WorkgroupAttribute::WorkgroupAttribute(ProgramID pid,
+WorkgroupAttribute::WorkgroupAttribute(GenerationID pid,
                                        NodeID nid,
                                        const Source& src,
                                        const Expression* x_,
@@ -36,13 +37,13 @@ std::string WorkgroupAttribute::Name() const {
     return "workgroup_size";
 }
 
-const WorkgroupAttribute* WorkgroupAttribute::Clone(CloneContext* ctx) const {
+const WorkgroupAttribute* WorkgroupAttribute::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    auto* x_ = ctx->Clone(x);
-    auto* y_ = ctx->Clone(y);
-    auto* z_ = ctx->Clone(z);
-    return ctx->dst->create<WorkgroupAttribute>(src, x_, y_, z_);
+    auto src = ctx.Clone(source);
+    auto* x_ = ctx.Clone(x);
+    auto* y_ = ctx.Clone(y);
+    auto* z_ = ctx.Clone(z);
+    return ctx.dst->create<WorkgroupAttribute>(src, x_, y_, z_);
 }
 
 }  // namespace tint::ast

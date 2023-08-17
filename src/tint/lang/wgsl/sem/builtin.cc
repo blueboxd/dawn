@@ -27,13 +27,13 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::Builtin);
 namespace tint::sem {
 
 const char* Builtin::str() const {
-    return builtin::str(type_);
+    return core::str(type_);
 }
 
-Builtin::Builtin(builtin::Function type,
-                 const type::Type* return_type,
-                 utils::VectorRef<Parameter*> parameters,
-                 EvaluationStage eval_stage,
+Builtin::Builtin(core::Function type,
+                 const core::type::Type* return_type,
+                 VectorRef<Parameter*> parameters,
+                 core::EvaluationStage eval_stage,
                  PipelineStageSet supported_stages,
                  bool is_deprecated,
                  bool must_use)
@@ -84,15 +84,25 @@ bool Builtin::IsDP4a() const {
     return IsDP4aBuiltin(type_);
 }
 
-bool Builtin::HasSideEffects() const {
-    return builtin::HasSideEffects(type_);
+bool Builtin::IsSubgroup() const {
+    return IsSubgroupBuiltin(type_);
 }
 
-builtin::Extension Builtin::RequiredExtension() const {
+bool Builtin::HasSideEffects() const {
+    return core::HasSideEffects(type_);
+}
+
+core::Extension Builtin::RequiredExtension() const {
     if (IsDP4a()) {
-        return builtin::Extension::kChromiumExperimentalDp4A;
+        return core::Extension::kChromiumExperimentalDp4A;
     }
-    return builtin::Extension::kUndefined;
+    if (IsSubgroup()) {
+        return core::Extension::kChromiumExperimentalSubgroups;
+    }
+    if (type_ == core::Function::kTextureBarrier) {
+        return core::Extension::kChromiumExperimentalReadWriteStorageTexture;
+    }
+    return core::Extension::kUndefined;
 }
 
 }  // namespace tint::sem

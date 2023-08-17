@@ -16,24 +16,23 @@
 
 #include "src/tint/lang/core/type/manager.h"
 #include "src/tint/lang/core/type/reference.h"
-#include "src/tint/utils/debug/debug.h"
 #include "src/tint/utils/diagnostic/diagnostic.h"
+#include "src/tint/utils/ice/ice.h"
 #include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/text/string_stream.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::type::Pointer);
+TINT_INSTANTIATE_TYPEINFO(tint::core::type::Pointer);
 
-namespace tint::type {
+namespace tint::core::type {
 
-Pointer::Pointer(builtin::AddressSpace address_space, const Type* subtype, builtin::Access access)
-    : Base(
-          utils::Hash(utils::TypeInfo::Of<Pointer>().full_hashcode, address_space, subtype, access),
-          type::Flags{}),
+Pointer::Pointer(core::AddressSpace address_space, const Type* subtype, core::Access access)
+    : Base(Hash(tint::TypeInfo::Of<Pointer>().full_hashcode, address_space, subtype, access),
+           core::type::Flags{}),
       subtype_(subtype),
       address_space_(address_space),
       access_(access) {
-    TINT_ASSERT(Type, !subtype->Is<Reference>());
-    TINT_ASSERT(Type, access != builtin::Access::kUndefined);
+    TINT_ASSERT(!subtype->Is<Reference>());
+    TINT_ASSERT(access != core::Access::kUndefined);
 }
 
 bool Pointer::Equals(const UniqueNode& other) const {
@@ -45,9 +44,9 @@ bool Pointer::Equals(const UniqueNode& other) const {
 }
 
 std::string Pointer::FriendlyName() const {
-    utils::StringStream out;
+    StringStream out;
     out << "ptr<";
-    if (address_space_ != builtin::AddressSpace::kUndefined) {
+    if (address_space_ != core::AddressSpace::kUndefined) {
         out << address_space_ << ", ";
     }
     out << subtype_->FriendlyName() << ", " << access_;
@@ -62,4 +61,4 @@ Pointer* Pointer::Clone(CloneContext& ctx) const {
     return ctx.dst.mgr->Get<Pointer>(address_space_, ty, access_);
 }
 
-}  // namespace tint::type
+}  // namespace tint::core::type

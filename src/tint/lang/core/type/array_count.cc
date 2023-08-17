@@ -16,17 +16,17 @@
 
 #include "src/tint/lang/core/type/manager.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::type::ArrayCount);
-TINT_INSTANTIATE_TYPEINFO(tint::type::ConstantArrayCount);
-TINT_INSTANTIATE_TYPEINFO(tint::type::RuntimeArrayCount);
+TINT_INSTANTIATE_TYPEINFO(tint::core::type::ArrayCount);
+TINT_INSTANTIATE_TYPEINFO(tint::core::type::ConstantArrayCount);
+TINT_INSTANTIATE_TYPEINFO(tint::core::type::RuntimeArrayCount);
 
-namespace tint::type {
+namespace tint::core::type {
 
 ArrayCount::ArrayCount(size_t hash) : Base(hash) {}
 ArrayCount::~ArrayCount() = default;
 
 ConstantArrayCount::ConstantArrayCount(uint32_t val)
-    : Base(static_cast<size_t>(utils::TypeInfo::Of<ConstantArrayCount>().full_hashcode)),
+    : Base(static_cast<size_t>(tint::TypeInfo::Of<ConstantArrayCount>().full_hashcode)),
       value(val) {}
 ConstantArrayCount::~ConstantArrayCount() = default;
 
@@ -46,7 +46,7 @@ ConstantArrayCount* ConstantArrayCount::Clone(CloneContext& ctx) const {
 }
 
 RuntimeArrayCount::RuntimeArrayCount()
-    : Base(static_cast<size_t>(utils::TypeInfo::Of<RuntimeArrayCount>().full_hashcode)) {}
+    : Base(static_cast<size_t>(tint::TypeInfo::Of<RuntimeArrayCount>().full_hashcode)) {}
 RuntimeArrayCount::~RuntimeArrayCount() = default;
 
 bool RuntimeArrayCount::Equals(const UniqueNode& other) const {
@@ -61,4 +61,4 @@ RuntimeArrayCount* RuntimeArrayCount::Clone(CloneContext& ctx) const {
     return ctx.dst.mgr->Get<RuntimeArrayCount>();
 }
 
-}  // namespace tint::type
+}  // namespace tint::core::type

@@ -20,10 +20,10 @@
 #include "src/tint/lang/core/type/texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// A multisampled depth texture type.
-class DepthMultisampledTexture final : public utils::Castable<DepthMultisampledTexture, Texture> {
+class DepthMultisampledTexture final : public Castable<DepthMultisampledTexture, Texture> {
   public:
     /// Constructor
     /// @param dim the dimensionality of the texture
@@ -45,6 +45,6 @@ class DepthMultisampledTexture final : public utils::Castable<DepthMultisampledT
     DepthMultisampledTexture* Clone(CloneContext& ctx) const override;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_DEPTH_MULTISAMPLED_TEXTURE_H_

@@ -19,13 +19,13 @@
 
 #include "src/tint/lang/core/type/node.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// UniqueNode is the base class for objects that are de-duplicated by the Manager.
 /// Deduplication is achieved by comparing a temporary object to the set of existing objects, using
 /// Hash() and Equals(). If an existing object is found, then the pointer to that object is
 /// returned, otherwise a new object is constructed, added to the Manager's set and returned.
-class UniqueNode : public utils::Castable<UniqueNode, Node> {
+class UniqueNode : public Castable<UniqueNode, Node> {
   public:
     /// Constructor
     /// @param hash the immutable hash for the node
@@ -42,25 +42,26 @@ class UniqueNode : public utils::Castable<UniqueNode, Node> {
     const size_t unique_hash;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 namespace std {
 
-/// std::hash specialization for tint::type::UniqueNode
+/// std::hash specialization for tint::core::type::UniqueNode
 template <>
-struct hash<tint::type::UniqueNode> {
+struct hash<tint::core::type::UniqueNode> {
     /// @param node the unique node to obtain a hash from
     /// @returns the hash of the node
-    size_t operator()(const tint::type::UniqueNode& node) const { return node.unique_hash; }
+    size_t operator()(const tint::core::type::UniqueNode& node) const { return node.unique_hash; }
 };
 
-/// std::equal_to specialization for tint::type::UniqueNode
+/// std::equal_to specialization for tint::core::type::UniqueNode
 template <>
-struct equal_to<tint::type::UniqueNode> {
+struct equal_to<tint::core::type::UniqueNode> {
     /// @param a the first unique node to compare
     /// @param b the second unique node to compare
     /// @returns true if the two nodes are equal
-    bool operator()(const tint::type::UniqueNode& a, const tint::type::UniqueNode& b) const {
+    bool operator()(const tint::core::type::UniqueNode& a,
+                    const tint::core::type::UniqueNode& b) const {
         return &a == &b || a.Equals(b);
     }
 };

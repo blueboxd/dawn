@@ -17,8 +17,8 @@
 
 #include <unordered_set>
 
+#include "src/tint/api/common/binding_point.h"
 #include "src/tint/lang/wgsl/ast/transform/transform.h"
-#include "src/tint/lang/wgsl/sem/binding_point.h"
 
 namespace tint::ast::transform {
 
@@ -32,7 +32,7 @@ namespace tint::ast::transform {
 ///       * BuiltinPolyfill as 'clamp' and binary operators may need to be polyfilled.
 ///       * CanonicalizeEntryPointIO as the transform does not support the 'in' and 'out' address
 ///         spaces.
-class Robustness final : public utils::Castable<Robustness, Transform> {
+class Robustness final : public Castable<Robustness, Transform> {
   public:
     /// Robustness action for out-of-bounds indexing.
     enum class Action {
@@ -48,7 +48,7 @@ class Robustness final : public utils::Castable<Robustness, Transform> {
     };
 
     /// Configuration options for the transform
-    struct Config final : public utils::Castable<Config, Data> {
+    struct Config final : public Castable<Config, Data> {
         /// Constructor
         Config();
 
@@ -82,7 +82,7 @@ class Robustness final : public utils::Castable<Robustness, Transform> {
         Action workgroup_action = Action::kDefault;
 
         /// Bindings that should always be applied Actions::kIgnore on
-        std::unordered_set<tint::sem::BindingPoint> bindings_ignored;
+        std::unordered_set<tint::BindingPoint> bindings_ignored;
 
         /// If we should disable index clamping on runtime-sized arrays in robustness transform
         bool disable_runtime_sized_array_index_clamping = false;

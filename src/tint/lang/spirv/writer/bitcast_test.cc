@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/test_helper.h"
+// GEN_BUILD:CONDITION(tint_build_ir)
 
-namespace tint::writer::spirv {
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
+
+namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 /// A parameterized test case.
 struct BitcastCase {
@@ -30,7 +32,7 @@ struct BitcastCase {
     std::string spirv_type_name;
 };
 std::string PrintCase(testing::TestParamInfo<BitcastCase> cc) {
-    utils::StringStream ss;
+    StringStream ss;
     ss << cc.param.in << "_to_" << cc.param.out;
     return ss.str();
 }
@@ -40,7 +42,7 @@ TEST_P(Bitcast, Scalar) {
     auto& params = GetParam();
     auto* func = b.Function("foo", MakeScalarType(params.out));
     func->SetParams({b.FunctionParam("arg", MakeScalarType(params.in))});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Bitcast(MakeScalarType(params.out), func->Params()[0]);
         b.Return(func, result);
         mod.SetName(result, "result");
@@ -57,7 +59,7 @@ TEST_P(Bitcast, Vector) {
     auto& params = GetParam();
     auto* func = b.Function("foo", MakeVectorType(params.out));
     func->SetParams({b.FunctionParam("arg", MakeVectorType(params.in))});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Bitcast(MakeVectorType(params.out), func->Params()[0]);
         b.Return(func, result);
         mod.SetName(result, "result");
@@ -95,7 +97,7 @@ INSTANTIATE_TEST_SUITE_P(SpirvWriterTest,
 TEST_F(SpirvWriterTest, Bitcast_u32_to_vec2h) {
     auto* func = b.Function("foo", ty.vec2<f16>());
     func->SetParams({b.FunctionParam("arg", ty.u32())});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Bitcast(ty.vec2<f16>(), func->Params()[0]);
         b.Return(func, result);
         mod.SetName(result, "result");
@@ -108,7 +110,7 @@ TEST_F(SpirvWriterTest, Bitcast_u32_to_vec2h) {
 TEST_F(SpirvWriterTest, Bitcast_vec2i_to_vec4h) {
     auto* func = b.Function("foo", ty.vec4<f16>());
     func->SetParams({b.FunctionParam("arg", ty.vec2<i32>())});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Bitcast(ty.vec4<f16>(), func->Params()[0]);
         b.Return(func, result);
         mod.SetName(result, "result");
@@ -121,7 +123,7 @@ TEST_F(SpirvWriterTest, Bitcast_vec2i_to_vec4h) {
 TEST_F(SpirvWriterTest, Bitcast_vec2h_to_u32) {
     auto* func = b.Function("foo", ty.u32());
     func->SetParams({b.FunctionParam("arg", ty.vec2<f16>())});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Bitcast(ty.u32(), func->Params()[0]);
         b.Return(func, result);
         mod.SetName(result, "result");
@@ -134,7 +136,7 @@ TEST_F(SpirvWriterTest, Bitcast_vec2h_to_u32) {
 TEST_F(SpirvWriterTest, Bitcast_vec4h_to_vec2i) {
     auto* func = b.Function("foo", ty.vec2<i32>());
     func->SetParams({b.FunctionParam("arg", ty.vec4<f16>())});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Bitcast(ty.vec2<i32>(), func->Params()[0]);
         b.Return(func, result);
         mod.SetName(result, "result");
@@ -145,4 +147,4 @@ TEST_F(SpirvWriterTest, Bitcast_vec4h_to_vec2i) {
 }
 
 }  // namespace
-}  // namespace tint::writer::spirv
+}  // namespace tint::spirv::writer

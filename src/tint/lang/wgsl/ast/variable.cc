@@ -21,19 +21,19 @@ TINT_INSTANTIATE_TYPEINFO(tint::ast::Variable);
 
 namespace tint::ast {
 
-Variable::Variable(ProgramID pid,
+Variable::Variable(GenerationID pid,
                    NodeID nid,
                    const Source& src,
                    const Identifier* n,
                    Type ty,
                    const Expression* init,
-                   utils::VectorRef<const Attribute*> attrs)
+                   VectorRef<const Attribute*> attrs)
     : Base(pid, nid, src), name(n), type(ty), initializer(init), attributes(std::move(attrs)) {
-    TINT_ASSERT(AST, name);
+    TINT_ASSERT(name);
     if (name) {
-        TINT_ASSERT(AST, !name->Is<TemplatedIdentifier>());
+        TINT_ASSERT(!name->Is<TemplatedIdentifier>());
     }
-    TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, initializer, program_id);
+    TINT_ASSERT_GENERATION_IDS_EQUAL_IF_VALID(initializer, generation_id);
 }
 
 Variable::~Variable() = default;

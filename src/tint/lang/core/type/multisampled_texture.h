@@ -20,10 +20,10 @@
 #include "src/tint/lang/core/type/texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// A multisampled texture type.
-class MultisampledTexture final : public utils::Castable<MultisampledTexture, Texture> {
+class MultisampledTexture final : public Castable<MultisampledTexture, Texture> {
   public:
     /// Constructor
     /// @param dim the dimensionality of the texture
@@ -52,6 +52,6 @@ class MultisampledTexture final : public utils::Castable<MultisampledTexture, Te
     const Type* const type_;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_MULTISAMPLED_TEXTURE_H_

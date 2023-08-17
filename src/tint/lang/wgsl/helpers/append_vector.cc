@@ -24,7 +24,7 @@
 #include "src/tint/utils/containers/transform.h"
 #include "src/tint/utils/rtti/switch.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::writer {
 namespace {
@@ -37,7 +37,7 @@ struct VectorConstructorInfo {
 VectorConstructorInfo AsVectorConstructor(const sem::ValueExpression* expr) {
     if (auto* call = expr->As<sem::Call>()) {
         if (auto* ctor = call->Target()->As<sem::ValueConstructor>()) {
-            if (ctor->ReturnType()->Is<type::Vector>()) {
+            if (ctor->ReturnType()->Is<core::type::Vector>()) {
                 return {call, ctor};
             }
         }
@@ -46,23 +46,22 @@ VectorConstructorInfo AsVectorConstructor(const sem::ValueExpression* expr) {
 }
 
 const sem::ValueExpression* Zero(ProgramBuilder& b,
-                                 const type::Type* ty,
+                                 const core::type::Type* ty,
                                  const sem::Statement* stmt) {
     const ast::Expression* expr = nullptr;
-    if (ty->Is<type::I32>()) {
+    if (ty->Is<core::type::I32>()) {
         expr = b.Expr(0_i);
-    } else if (ty->Is<type::U32>()) {
+    } else if (ty->Is<core::type::U32>()) {
         expr = b.Expr(0_u);
-    } else if (ty->Is<type::F32>()) {
+    } else if (ty->Is<core::type::F32>()) {
         expr = b.Expr(0_f);
-    } else if (ty->Is<type::Bool>()) {
+    } else if (ty->Is<core::type::Bool>()) {
         expr = b.Expr(false);
     } else {
-        TINT_UNREACHABLE(Writer, b.Diagnostics())
-            << "unsupported vector element type: " << ty->TypeInfo().name;
+        TINT_UNREACHABLE() << "unsupported vector element type: " << ty->TypeInfo().name;
         return nullptr;
     }
-    auto* sem = b.create<sem::ValueExpression>(expr, ty, sem::EvaluationStage::kRuntime, stmt,
+    auto* sem = b.create<sem::ValueExpression>(expr, ty, core::EvaluationStage::kRuntime, stmt,
                                                /* constant_value */ nullptr,
                                                /* has_side_effects */ false);
     b.Sem().Add(expr, sem);
@@ -75,11 +74,11 @@ const sem::Call* AppendVector(ProgramBuilder* b,
                               const ast::Expression* vector_ast,
                               const ast::Expression* scalar_ast) {
     uint32_t packed_size;
-    const type::Type* packed_el_sem_ty;
+    const core::type::Type* packed_el_sem_ty;
     auto* vector_sem = b->Sem().GetVal(vector_ast);
     auto* scalar_sem = b->Sem().GetVal(scalar_ast);
     auto* vector_ty = vector_sem->Type()->UnwrapRef();
-    if (auto* vec = vector_ty->As<type::Vector>()) {
+    if (auto* vec = vector_ty->As<core::type::Vector>()) {
         packed_size = vec->Width() + 1;
         packed_el_sem_ty = vec->type();
     } else {
@@ -89,20 +88,20 @@ const sem::Call* AppendVector(ProgramBuilder* b,
 
     auto packed_el_ast_ty = Switch(
         packed_el_sem_ty,  //
-        [&](const type::I32*) { return b->ty.i32(); },
-        [&](const type::U32*) { return b->ty.u32(); },
-        [&](const type::F32*) { return b->ty.f32(); },
-        [&](const type::Bool*) { return b->ty.bool_(); },
+        [&](const core::type::I32*) { return b->ty.i32(); },
+        [&](const core::type::U32*) { return b->ty.u32(); },
+        [&](const core::type::F32*) { return b->ty.f32(); },
+        [&](const core::type::Bool*) { return b->ty.bool_(); },
         [&](Default) {
-            TINT_UNREACHABLE(Writer, b->Diagnostics())
-                << "unsupported vector element type: " << packed_el_sem_ty->TypeInfo().name;
+            TINT_UNREACHABLE() << "unsupported vector element type: "
+                               << packed_el_sem_ty->TypeInfo().name;
             return ast::Type{};
         });
 
     auto* statement = vector_sem->Stmt();
 
     auto packed_ast_ty = b->ty.vec(packed_el_ast_ty, packed_size);
-    auto* packed_sem_ty = b->create<type::Vector>(packed_el_sem_ty, packed_size);
+    auto* packed_sem_ty = b->create<core::type::Vector>(packed_el_sem_ty, packed_size);
 
     // If the coordinates are already passed in a vector constructor, with only
     // scalar components supplied, extract the elements into the new vector
@@ -113,7 +112,7 @@ const sem::Call* AppendVector(ProgramBuilder* b,
     // to convert a vector of a different type, e.g. vec2<i32>(vec2<u32>()).
     // In that case, preserve the original argument, or you'll get a type error.
 
-    utils::Vector<const sem::ValueExpression*, 4> packed;
+    Vector<const sem::ValueExpression*, 4> packed;
     if (auto vc = AsVectorConstructor(vector_sem)) {
         const auto num_supplied = vc.call->Arguments().Length();
         if (num_supplied == 0) {
@@ -138,12 +137,11 @@ const sem::Call* AppendVector(ProgramBuilder* b,
         auto* scalar_cast_target = b->create<sem::ValueConversion>(
             packed_el_sem_ty,
             b->create<sem::Parameter>(nullptr, 0u, scalar_sem->Type()->UnwrapRef(),
-                                      builtin::AddressSpace::kUndefined,
-                                      builtin::Access::kUndefined),
-            sem::EvaluationStage::kRuntime);
+                                      core::AddressSpace::kUndefined, core::Access::kUndefined),
+            core::EvaluationStage::kRuntime);
         auto* scalar_cast_sem = b->create<sem::Call>(
-            scalar_cast_ast, scalar_cast_target, sem::EvaluationStage::kRuntime,
-            utils::Vector<const sem::ValueExpression*, 1>{scalar_sem}, statement,
+            scalar_cast_ast, scalar_cast_target, core::EvaluationStage::kRuntime,
+            Vector<const sem::ValueExpression*, 1>{scalar_sem}, statement,
             /* constant_value */ nullptr, /* has_side_effects */ false);
         b->Sem().Add(scalar_cast_ast, scalar_cast_sem);
         packed.Push(scalar_cast_sem);
@@ -152,19 +150,19 @@ const sem::Call* AppendVector(ProgramBuilder* b,
     }
 
     auto* ctor_ast =
-        b->Call(packed_ast_ty, utils::Transform(packed, [&](const sem::ValueExpression* expr) {
+        b->Call(packed_ast_ty, tint::Transform(packed, [&](const sem::ValueExpression* expr) {
                     return expr->Declaration();
                 }));
     auto* ctor_target = b->create<sem::ValueConstructor>(
         packed_sem_ty,
-        utils::Transform(packed,
-                         [&](const tint::sem::ValueExpression* arg, size_t i) {
-                             return b->create<sem::Parameter>(
-                                 nullptr, static_cast<uint32_t>(i), arg->Type()->UnwrapRef(),
-                                 builtin::AddressSpace::kUndefined, builtin::Access::kUndefined);
-                         }),
-        sem::EvaluationStage::kRuntime);
-    auto* ctor_sem = b->create<sem::Call>(ctor_ast, ctor_target, sem::EvaluationStage::kRuntime,
+        tint::Transform(packed,
+                        [&](const tint::sem::ValueExpression* arg, size_t i) {
+                            return b->create<sem::Parameter>(
+                                nullptr, static_cast<uint32_t>(i), arg->Type()->UnwrapRef(),
+                                core::AddressSpace::kUndefined, core::Access::kUndefined);
+                        }),
+        core::EvaluationStage::kRuntime);
+    auto* ctor_sem = b->create<sem::Call>(ctor_ast, ctor_target, core::EvaluationStage::kRuntime,
                                           std::move(packed), statement,
                                           /* constant_value */ nullptr,
                                           /* has_side_effects */ false);

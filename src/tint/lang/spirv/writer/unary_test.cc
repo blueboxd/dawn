@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/test_helper.h"
+// GEN_BUILD:CONDITION(tint_build_ir)
 
-#include "src/tint/ir/unary.h"
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+#include "src/tint/lang/core/ir/unary.h"
 
-namespace tint::writer::spirv {
+using namespace tint::core::number_suffixes;  // NOLINT
+
+namespace tint::spirv::writer {
 namespace {
 
 /// A parameterized test case.
@@ -26,7 +28,7 @@ struct UnaryTestCase {
     /// The element type to test.
     TestElementType type;
     /// The unary operation.
-    enum ir::Unary::Kind kind;
+    enum core::ir::Unary::Kind kind;
     /// The expected SPIR-V instruction.
     std::string spirv_inst;
     /// The expected SPIR-V result type name.
@@ -40,7 +42,7 @@ TEST_P(Arithmetic, Scalar) {
     auto* arg = b.FunctionParam("arg", MakeScalarType(params.type));
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({arg});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Unary(params.kind, MakeScalarType(params.type), arg);
         b.Return(func);
         mod.SetName(result, "result");
@@ -55,7 +57,7 @@ TEST_P(Arithmetic, Vector) {
     auto* arg = b.FunctionParam("arg", MakeVectorType(params.type));
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({arg});
-    b.With(func->Block(), [&] {
+    b.Append(func->Block(), [&] {
         auto* result = b.Unary(params.kind, MakeVectorType(params.type), arg);
         b.Return(func);
         mod.SetName(result, "result");
@@ -67,11 +69,11 @@ TEST_P(Arithmetic, Vector) {
 INSTANTIATE_TEST_SUITE_P(
     SpirvWriterTest_Unary,
     Arithmetic,
-    testing::Values(UnaryTestCase{kI32, ir::Unary::Kind::kComplement, "OpNot", "int"},
-                    UnaryTestCase{kU32, ir::Unary::Kind::kComplement, "OpNot", "uint"},
-                    UnaryTestCase{kI32, ir::Unary::Kind::kNegation, "OpSNegate", "int"},
-                    UnaryTestCase{kF32, ir::Unary::Kind::kNegation, "OpFNegate", "float"},
-                    UnaryTestCase{kF16, ir::Unary::Kind::kNegation, "OpFNegate", "half"}));
+    testing::Values(UnaryTestCase{kI32, core::ir::Unary::Kind::kComplement, "OpNot", "int"},
+                    UnaryTestCase{kU32, core::ir::Unary::Kind::kComplement, "OpNot", "uint"},
+                    UnaryTestCase{kI32, core::ir::Unary::Kind::kNegation, "OpSNegate", "int"},
+                    UnaryTestCase{kF32, core::ir::Unary::Kind::kNegation, "OpFNegate", "float"},
+                    UnaryTestCase{kF16, core::ir::Unary::Kind::kNegation, "OpFNegate", "half"}));
 
 }  // namespace
-}  // namespace tint::writer::spirv
+}  // namespace tint::spirv::writer

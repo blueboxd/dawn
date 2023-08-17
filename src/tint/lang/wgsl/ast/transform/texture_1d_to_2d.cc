@@ -17,7 +17,9 @@
 #include <utility>
 
 #include "src/tint/lang/core/type/texture_dimension.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/statement.h"
 #include "src/tint/lang/wgsl/sem/type_expression.h"
@@ -25,7 +27,7 @@
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::Texture1DTo2D);
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::ast::transform {
 
@@ -36,10 +38,10 @@ bool ShouldRun(const Program* program) {
         if (auto* sem_fn = program->Sem().Get(fn)) {
             for (auto* builtin : sem_fn->DirectlyCalledBuiltins()) {
                 const auto& signature = builtin->Signature();
-                auto texture = signature.Parameter(sem::ParameterUsage::kTexture);
+                auto texture = signature.Parameter(core::ParameterUsage::kTexture);
                 if (texture) {
-                    auto* tex = texture->Type()->As<type::Texture>();
-                    if (tex->dim() == type::TextureDimension::k1d) {
+                    auto* tex = texture->Type()->As<core::type::Texture>();
+                    if (tex->dim() == core::type::TextureDimension::k1d) {
                         return true;
                     }
                 }
@@ -49,11 +51,11 @@ bool ShouldRun(const Program* program) {
     for (auto* var : program->AST().GlobalVariables()) {
         if (Switch(
                 program->Sem().Get(var)->Type()->UnwrapRef(),
-                [&](const type::SampledTexture* tex) {
-                    return tex->dim() == type::TextureDimension::k1d;
+                [&](const core::type::SampledTexture* tex) {
+                    return tex->dim() == core::type::TextureDimension::k1d;
                 },
-                [&](const type::StorageTexture* storage_tex) {
-                    return storage_tex->dim() == type::TextureDimension::k1d;
+                [&](const core::type::StorageTexture* storage_tex) {
+                    return storage_tex->dim() == core::type::TextureDimension::k1d;
                 })) {
             return true;
         }
@@ -70,7 +72,7 @@ struct Texture1DTo2D::State {
     /// The target program builder
     ProgramBuilder b;
     /// The clone context
-    CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
 
     /// Constructor
     /// @param program the source program
@@ -96,18 +98,18 @@ struct Texture1DTo2D::State {
         ctx.ReplaceAll([&](const Variable* v) -> const Variable* {
             const Variable* r = Switch(
                 sem.Get(v)->Type()->UnwrapRef(),
-                [&](const type::SampledTexture* tex) -> const Variable* {
-                    if (tex->dim() == type::TextureDimension::k1d) {
-                        auto type = ctx.dst->ty.sampled_texture(type::TextureDimension::k2d,
+                [&](const core::type::SampledTexture* tex) -> const Variable* {
+                    if (tex->dim() == core::type::TextureDimension::k1d) {
+                        auto type = ctx.dst->ty.sampled_texture(core::type::TextureDimension::k2d,
                                                                 CreateASTTypeFor(ctx, tex->type()));
                         return create_var(v, type);
                     } else {
                         return nullptr;
                     }
                 },
-                [&](const type::StorageTexture* storage_tex) -> const Variable* {
-                    if (storage_tex->dim() == type::TextureDimension::k1d) {
-                        auto type = ctx.dst->ty.storage_texture(type::TextureDimension::k2d,
+                [&](const core::type::StorageTexture* storage_tex) -> const Variable* {
+                    if (storage_tex->dim() == core::type::TextureDimension::k1d) {
+                        auto type = ctx.dst->ty.storage_texture(core::type::TextureDimension::k2d,
                                                                 storage_tex->texel_format(),
                                                                 storage_tex->access());
                         return create_var(v, type);
@@ -129,16 +131,16 @@ struct Texture1DTo2D::State {
                 return nullptr;
             }
             const auto& signature = builtin->Signature();
-            auto* texture = signature.Parameter(sem::ParameterUsage::kTexture);
+            auto* texture = signature.Parameter(core::ParameterUsage::kTexture);
             if (!texture) {
                 return nullptr;
             }
-            auto* tex = texture->Type()->As<type::Texture>();
-            if (tex->dim() != type::TextureDimension::k1d) {
+            auto* tex = texture->Type()->As<core::type::Texture>();
+            if (tex->dim() != core::type::TextureDimension::k1d) {
                 return nullptr;
             }
 
-            if (builtin->Type() == builtin::Function::kTextureDimensions) {
+            if (builtin->Type() == core::Function::kTextureDimensions) {
                 // If this textureDimensions() call is in a CallStatement, we can leave it
                 // unmodified since the return value will be dropped on the floor anyway.
                 if (call->Stmt()->Declaration()->Is<CallStatement>()) {
@@ -148,12 +150,12 @@ struct Texture1DTo2D::State {
                 return ctx.dst->MemberAccessor(new_call, "x");
             }
 
-            auto coords_index = signature.IndexOf(sem::ParameterUsage::kCoords);
+            auto coords_index = signature.IndexOf(core::ParameterUsage::kCoords);
             if (coords_index == -1) {
                 return nullptr;
             }
 
-            utils::Vector<const Expression*, 8> args;
+            tint::Vector<const Expression*, 8> args;
             int index = 0;
             for (auto* arg : c->args) {
                 if (index == coords_index) {
@@ -177,7 +179,7 @@ struct Texture1DTo2D::State {
         });
 
         ctx.Clone();
-        return Program(std::move(b));
+        return resolver::Resolve(b);
     }
 };
 

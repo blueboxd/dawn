@@ -18,8 +18,10 @@
 
 #include "src/tint/lang/wgsl/ast/compound_assignment_statement.h"
 #include "src/tint/lang/wgsl/ast/increment_decrement_statement.h"
-#include "src/tint/lang/wgsl/ast/transform/utils/hoist_to_decl_before.h"
+#include "src/tint/lang/wgsl/ast/transform/hoist_to_decl_before.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/block_statement.h"
 #include "src/tint/lang/wgsl/sem/for_loop_statement.h"
 #include "src/tint/lang/wgsl/sem/statement.h"
@@ -27,7 +29,7 @@
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::ExpandCompoundAssignment);
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::ast::transform {
 
@@ -48,7 +50,8 @@ bool ShouldRun(const Program* program) {
 struct ExpandCompoundAssignment::State {
     /// Constructor
     /// @param context the clone context
-    explicit State(CloneContext& context) : ctx(context), b(*ctx.dst), hoist_to_decl_before(ctx) {}
+    explicit State(program::CloneContext& context)
+        : ctx(context), b(*ctx.dst), hoist_to_decl_before(ctx) {}
 
     /// Replace `stmt` with a regular assignment statement of the form:
     ///     lhs = lhs op rhs
@@ -58,7 +61,10 @@ struct ExpandCompoundAssignment::State {
     /// @param lhs the lhs expression from the source statement
     /// @param rhs the rhs expression in the destination module
     /// @param op the binary operator
-    void Expand(const Statement* stmt, const Expression* lhs, const Expression* rhs, BinaryOp op) {
+    void Expand(const Statement* stmt,
+                const Expression* lhs,
+                const Expression* rhs,
+                core::BinaryOp op) {
         // Helper function to create the new LHS expression. This will be called
         // twice when building the non-compound assignment statement, so must
         // not produce expressions that cause side effects.
@@ -84,7 +90,7 @@ struct ExpandCompoundAssignment::State {
         // Helper function that returns `true` if the type of `expr` is a vector.
         auto is_vec = [&](const Expression* expr) {
             if (auto* val_expr = ctx.src->Sem().GetVal(expr)) {
-                return val_expr->Type()->UnwrapRef()->Is<type::Vector>();
+                return val_expr->Type()->UnwrapRef()->Is<core::type::Vector>();
             }
             return false;
         };
@@ -147,10 +153,10 @@ struct ExpandCompoundAssignment::State {
 
   private:
     /// The clone context.
-    CloneContext& ctx;
+    program::CloneContext& ctx;
 
-    /// The program builder.
-    ProgramBuilder& b;
+    /// The AST builder.
+    ast::Builder& b;
 
     /// The HoistToDeclBefore helper instance.
     HoistToDeclBefore hoist_to_decl_before;
@@ -168,20 +174,20 @@ Transform::ApplyResult ExpandCompoundAssignment::Apply(const Program* src,
     }
 
     ProgramBuilder b;
-    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
     State state(ctx);
     for (auto* node : src->ASTNodes().Objects()) {
         if (auto* assign = node->As<CompoundAssignmentStatement>()) {
             state.Expand(assign, assign->lhs, ctx.Clone(assign->rhs), assign->op);
         } else if (auto* inc_dec = node->As<IncrementDecrementStatement>()) {
             // For increment/decrement statements, `i++` becomes `i = i + 1`.
-            auto op = inc_dec->increment ? BinaryOp::kAdd : BinaryOp::kSubtract;
+            auto op = inc_dec->increment ? core::BinaryOp::kAdd : core::BinaryOp::kSubtract;
             state.Expand(inc_dec, inc_dec->lhs, ctx.dst->Expr(1_a), op);
         }
     }
 
     ctx.Clone();
-    return Program(std::move(b));
+    return resolver::Resolve(b);
 }
 
 }  // namespace tint::ast::transform

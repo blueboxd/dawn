@@ -18,27 +18,24 @@
 
 #include "src/tint/lang/core/constant/manager.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::constant::Composite);
+TINT_INSTANTIATE_TYPEINFO(tint::core::constant::Composite);
 
-namespace tint::constant {
+namespace tint::core::constant {
 
-Composite::Composite(const type::Type* t,
-                     utils::VectorRef<const constant::Value*> els,
-                     bool all_0,
-                     bool any_0)
+Composite::Composite(const core::type::Type* t, VectorRef<const Value*> els, bool all_0, bool any_0)
     : type(t), elements(std::move(els)), all_zero(all_0), any_zero(any_0), hash(CalcHash()) {
-    TINT_ASSERT(Constant, !elements.IsEmpty());
+    TINT_ASSERT(!elements.IsEmpty());
 }
 
 Composite::~Composite() = default;
 
 const Composite* Composite::Clone(CloneContext& ctx) const {
     auto* ty = type->Clone(ctx.type_ctx);
-    utils::Vector<const constant::Value*, 4> els;
+    Vector<const Value*, 4> els;
     for (const auto* el : elements) {
         els.Push(el->Clone(ctx));
     }
     return ctx.dst.Get<Composite>(ty, std::move(els), all_zero, any_zero);
 }
 
-}  // namespace tint::constant
+}  // namespace tint::core::constant

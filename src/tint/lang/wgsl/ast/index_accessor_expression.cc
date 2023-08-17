@@ -14,30 +14,31 @@
 
 #include "src/tint/lang/wgsl/ast/index_accessor_expression.h"
 
-#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/ast/clone_context.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::IndexAccessorExpression);
 
 namespace tint::ast {
 
-IndexAccessorExpression::IndexAccessorExpression(ProgramID pid,
+IndexAccessorExpression::IndexAccessorExpression(GenerationID pid,
                                                  NodeID nid,
                                                  const Source& src,
                                                  const Expression* obj,
                                                  const Expression* idx)
     : Base(pid, nid, src, obj), index(idx) {
-    TINT_ASSERT(AST, idx);
-    TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, idx, program_id);
+    TINT_ASSERT(idx);
+    TINT_ASSERT_GENERATION_IDS_EQUAL_IF_VALID(idx, generation_id);
 }
 
 IndexAccessorExpression::~IndexAccessorExpression() = default;
 
-const IndexAccessorExpression* IndexAccessorExpression::Clone(CloneContext* ctx) const {
+const IndexAccessorExpression* IndexAccessorExpression::Clone(CloneContext& ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
-    auto src = ctx->Clone(source);
-    auto* obj = ctx->Clone(object);
-    auto* idx = ctx->Clone(index);
-    return ctx->dst->create<IndexAccessorExpression>(src, obj, idx);
+    auto src = ctx.Clone(source);
+    auto* obj = ctx.Clone(object);
+    auto* idx = ctx.Clone(index);
+    return ctx.dst->create<IndexAccessorExpression>(src, obj, idx);
 }
 
 }  // namespace tint::ast

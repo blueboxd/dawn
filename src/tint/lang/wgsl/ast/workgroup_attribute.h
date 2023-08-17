@@ -28,7 +28,7 @@ class Expression;
 namespace tint::ast {
 
 /// A workgroup attribute
-class WorkgroupAttribute final : public utils::Castable<WorkgroupAttribute, Attribute> {
+class WorkgroupAttribute final : public Castable<WorkgroupAttribute, Attribute> {
   public:
     /// constructor
     /// @param pid the identifier of the program that owns this node
@@ -37,7 +37,7 @@ class WorkgroupAttribute final : public utils::Castable<WorkgroupAttribute, Attr
     /// @param x the workgroup x dimension expression
     /// @param y the optional workgroup y dimension expression
     /// @param z the optional workgroup z dimension expression
-    WorkgroupAttribute(ProgramID pid,
+    WorkgroupAttribute(GenerationID pid,
                        NodeID nid,
                        const Source& src,
                        const Expression* x,
@@ -56,7 +56,7 @@ class WorkgroupAttribute final : public utils::Castable<WorkgroupAttribute, Attr
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const WorkgroupAttribute* Clone(CloneContext* ctx) const override;
+    const WorkgroupAttribute* Clone(CloneContext& ctx) const override;
 
     /// The workgroup x dimension.
     const Expression* const x;

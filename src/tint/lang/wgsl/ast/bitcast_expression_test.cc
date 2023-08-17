@@ -15,7 +15,7 @@
 #include "src/tint/lang/wgsl/ast/bitcast_expression.h"
 
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
@@ -63,7 +63,7 @@ TEST_F(BitcastExpressionTest, Assert_Null_Expr) {
         "internal compiler error");
 }
 
-TEST_F(BitcastExpressionTest, Assert_DifferentProgramID_Expr) {
+TEST_F(BitcastExpressionTest, Assert_DifferentGenerationID_Expr) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;

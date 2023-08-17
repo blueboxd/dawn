@@ -15,7 +15,7 @@
 #include "src/tint/lang/wgsl/ast/increment_decrement_statement.h"
 
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
@@ -53,7 +53,7 @@ TEST_F(IncrementDecrementStatementTest, Decrement) {
     EXPECT_FALSE(i->increment);
 }
 
-TEST_F(IncrementDecrementStatementTest, Assert_DifferentProgramID_Expr) {
+TEST_F(IncrementDecrementStatementTest, Assert_DifferentGenerationID_Expr) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;

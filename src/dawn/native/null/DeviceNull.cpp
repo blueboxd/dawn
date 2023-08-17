@@ -149,10 +149,9 @@ ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     const BindGroupDescriptor* descriptor) {
     return AcquireRef(new BindGroup(this, descriptor));
 }
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return AcquireRef(new BindGroupLayout(this, descriptor, pipelineCompatibilityToken));
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return AcquireRef(new BindGroupLayout(this, descriptor));
 }
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
     DAWN_TRY(IncrementMemoryUsage(descriptor->size));
@@ -196,7 +195,7 @@ ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
 ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
-    return AcquireRef(new Texture(this, descriptor, TextureBase::TextureState::OwnedInternal));
+    return AcquireRef(new Texture(this, descriptor));
 }
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     TextureBase* texture,
@@ -307,15 +306,13 @@ BindGroupDataHolder::~BindGroupDataHolder() {
 // BindGroup
 
 BindGroup::BindGroup(DeviceBase* device, const BindGroupDescriptor* descriptor)
-    : BindGroupDataHolder(descriptor->layout->GetBindingDataSize()),
+    : BindGroupDataHolder(descriptor->layout->GetInternalBindGroupLayout()->GetBindingDataSize()),
       BindGroupBase(device, descriptor, mBindingDataAllocation) {}
 
 // BindGroupLayout
 
-BindGroupLayout::BindGroupLayout(DeviceBase* device,
-                                 const BindGroupLayoutDescriptor* descriptor,
-                                 PipelineCompatibilityToken pipelineCompatibilityToken)
-    : BindGroupLayoutBase(device, descriptor, pipelineCompatibilityToken) {}
+BindGroupLayout::BindGroupLayout(DeviceBase* device, const BindGroupLayoutDescriptor* descriptor)
+    : BindGroupLayoutInternalBase(device, descriptor) {}
 
 // Buffer
 
@@ -402,8 +399,8 @@ MaybeError ComputePipeline::Initialize() {
 
     tint::Program transformedProgram;
     const tint::Program* program;
-    tint::transform::Manager transformManager;
-    tint::transform::DataMap transformInputs;
+    tint::ast::transform::Manager transformManager;
+    tint::ast::transform::DataMap transformInputs;
 
     if (!computeStage.metadata->overrides.empty()) {
         transformManager.Add<tint::ast::transform::SingleEntryPoint>();
@@ -472,8 +469,7 @@ MaybeError SwapChain::PresentImpl() {
 
 ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureImpl() {
     TextureDescriptor textureDesc = GetSwapChainBaseTextureDescriptor(this);
-    mTexture = AcquireRef(
-        new Texture(GetDevice(), &textureDesc, TextureBase::TextureState::OwnedInternal));
+    mTexture = AcquireRef(new Texture(GetDevice(), &textureDesc));
     return mTexture;
 }
 
@@ -509,7 +505,7 @@ bool Device::IsResolveTextureBlitWithDrawSupported() const {
 
 void Device::ForceEventualFlushOfCommands() {}
 
-Texture::Texture(DeviceBase* device, const TextureDescriptor* descriptor, TextureState state)
-    : TextureBase(device, descriptor, state) {}
+Texture::Texture(DeviceBase* device, const TextureDescriptor* descriptor)
+    : TextureBase(device, descriptor) {}
 
 }  // namespace dawn::native::null

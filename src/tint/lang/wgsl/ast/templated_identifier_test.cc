@@ -14,12 +14,12 @@
 
 #include "gtest/gtest-spi.h"
 
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using TemplatedIdentifierTest = TestHelper;
 
@@ -60,7 +60,7 @@ TEST_F(TemplatedIdentifierTest, Assert_InvalidSymbol) {
         "internal compiler error");
 }
 
-TEST_F(TemplatedIdentifierTest, Assert_DifferentProgramID_Symbol) {
+TEST_F(TemplatedIdentifierTest, Assert_DifferentGenerationID_Symbol) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;
@@ -70,7 +70,7 @@ TEST_F(TemplatedIdentifierTest, Assert_DifferentProgramID_Symbol) {
         "internal compiler error");
 }
 
-TEST_F(TemplatedIdentifierTest, Assert_DifferentProgramID_TemplateArg) {
+TEST_F(TemplatedIdentifierTest, Assert_DifferentGenerationID_TemplateArg) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b1;

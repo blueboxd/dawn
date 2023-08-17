@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(is_linux || is_mac)
+
 #include "src/tint/utils/file/tmpfile.h"
 
 #include <unistd.h>
 #include <limits>
 
-#include "src/tint/utils/debug/debug.h"
+#include "src/tint/utils/ice/ice.h"
 
-namespace tint::utils {
+namespace tint {
 
 namespace {
 
@@ -34,7 +36,7 @@ std::string TmpFilePath(std::string ext) {
     // (when the source value exceeds the representable range) is implementation
     // defined. While such a large file extension is unlikely in practice, we
     // enforce this here at runtime.
-    TINT_ASSERT(Utils, ext.length() <= static_cast<size_t>(std::numeric_limits<int>::max()));
+    TINT_ASSERT(ext.length() <= static_cast<size_t>(std::numeric_limits<int>::max()));
     std::string name = std::string(dir) + "/tint_XXXXXX" + ext;
     int file = mkstemps(&name[0], static_cast<int>(ext.length()));
     if (file != -1) {
@@ -63,4 +65,4 @@ bool TmpFile::Append(const void* data, size_t size) const {
     return false;
 }
 
-}  // namespace tint::utils
+}  // namespace tint

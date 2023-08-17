@@ -16,9 +16,9 @@
 
 #include <utility>
 
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/sem/type_expression.h"
 #include "src/tint/lang/wgsl/sem/value_expression.h"
-#include "src/tint/resolver/resolver.h"
 #include "src/tint/utils/rtti/switch.h"
 
 namespace tint {
@@ -52,14 +52,7 @@ Program::Program(Program&& program)
 Program::Program(ProgramBuilder&& builder) {
     id_ = builder.ID();
     highest_node_id_ = builder.LastAllocatedNodeID();
-
     is_valid_ = builder.IsValid();
-    if (builder.ResolveOnBuild() && builder.IsValid()) {
-        resolver::Resolver resolver(&builder);
-        if (!resolver.Resolve()) {
-            is_valid_ = false;
-        }
-    }
 
     // The above must be called *before* the calls to std::move() below
     constants_ = std::move(builder.constants);
@@ -106,7 +99,7 @@ Program Program::Clone() const {
 ProgramBuilder Program::CloneAsBuilder() const {
     AssertNotMoved();
     ProgramBuilder out;
-    CloneContext(&out, this).Clone();
+    program::CloneContext(&out, this).Clone();
     return out;
 }
 
@@ -115,24 +108,24 @@ bool Program::IsValid() const {
     return is_valid_;
 }
 
-const type::Type* Program::TypeOf(const ast::Expression* expr) const {
+const core::type::Type* Program::TypeOf(const ast::Expression* expr) const {
     return tint::Switch(
         Sem().Get(expr),  //
         [](const sem::ValueExpression* ty_expr) { return ty_expr->Type(); },
         [](const sem::TypeExpression* ty_expr) { return ty_expr->Type(); });
 }
 
-const type::Type* Program::TypeOf(const ast::Variable* var) const {
+const core::type::Type* Program::TypeOf(const ast::Variable* var) const {
     auto* sem = Sem().Get(var);
     return sem ? sem->Type() : nullptr;
 }
 
-const type::Type* Program::TypeOf(const ast::TypeDecl* type_decl) const {
+const core::type::Type* Program::TypeOf(const ast::TypeDecl* type_decl) const {
     return Sem().Get(type_decl);
 }
 
 void Program::AssertNotMoved() const {
-    TINT_ASSERT(Program, !moved_);
+    TINT_ASSERT(!moved_);
 }
 
 }  // namespace tint

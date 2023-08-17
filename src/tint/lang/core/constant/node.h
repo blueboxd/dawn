@@ -17,10 +17,10 @@
 
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::constant {
+namespace tint::core::constant {
 
 /// Node is the base class for all constant nodes
-class Node : public utils::Castable<Node> {
+class Node : public Castable<Node> {
   public:
     /// Constructor
     Node();
@@ -32,6 +32,6 @@ class Node : public utils::Castable<Node> {
     ~Node() override;
 };
 
-}  // namespace tint::constant
+}  // namespace tint::core::constant
 
 #endif  // SRC_TINT_LANG_CORE_CONSTANT_NODE_H_

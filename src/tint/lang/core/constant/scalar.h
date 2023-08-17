@@ -15,25 +15,25 @@
 #ifndef SRC_TINT_LANG_CORE_CONSTANT_SCALAR_H_
 #define SRC_TINT_LANG_CORE_CONSTANT_SCALAR_H_
 
-#include "src/tint/lang/core/builtin/number.h"
 #include "src/tint/lang/core/constant/manager.h"
 #include "src/tint/lang/core/constant/value.h"
+#include "src/tint/lang/core/number.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::constant {
+namespace tint::core::constant {
 
 /// ScalarBase is the base class of all Scalar<T> specializations.
 /// Used for querying whether a value is a scalar type.
-class ScalarBase : public utils::Castable<ScalarBase, Value> {
+class ScalarBase : public Castable<ScalarBase, Value> {
   public:
     ~ScalarBase() override;
 };
 
 /// Scalar holds a single scalar or abstract-numeric value.
 template <typename T>
-class Scalar : public utils::Castable<Scalar<T>, ScalarBase> {
+class Scalar : public Castable<Scalar<T>, ScalarBase> {
   public:
     static_assert(!std::is_same_v<UnwrapNumber<T>, T> || std::is_same_v<T, bool>,
                   "T must be a Number or bool");
@@ -41,15 +41,15 @@ class Scalar : public utils::Castable<Scalar<T>, ScalarBase> {
     /// Constructor
     /// @param t the scalar type
     /// @param v the scalar value
-    Scalar(const type::Type* t, T v) : type(t), value(v) {
+    Scalar(const core::type::Type* t, T v) : type(t), value(v) {
         if constexpr (IsFloatingPoint<T>) {
-            TINT_ASSERT(Constant, std::isfinite(v.value));
+            TINT_ASSERT(std::isfinite(v.value));
         }
     }
     ~Scalar() override = default;
 
     /// @copydoc Value::Type()
-    const type::Type* Type() const override { return type; }
+    const core::type::Type* Type() const override { return type; }
 
     /// @return nullptr, as Scalar does not hold any elements.
     const Value* Index(size_t) const override { return nullptr; }
@@ -58,13 +58,13 @@ class Scalar : public utils::Castable<Scalar<T>, ScalarBase> {
     size_t NumElements() const override { return 1; }
 
     /// @copydoc Value::AllZero()
-    bool AllZero() const override { return IsPositiveZero(); }
+    bool AllZero() const override { return IsZero(); }
 
     /// @copydoc Value::AnyZero()
-    bool AnyZero() const override { return IsPositiveZero(); }
+    bool AnyZero() const override { return IsZero(); }
 
     /// @copydoc Value::Hash()
-    size_t Hash() const override { return utils::Hash(type, ValueOf()); }
+    size_t Hash() const override { return tint::Hash(type, ValueOf()); }
 
     /// Clones the constant into the provided context
     /// @param ctx the clone context
@@ -84,14 +84,15 @@ class Scalar : public utils::Castable<Scalar<T>, ScalarBase> {
         }
     }
 
-    /// @returns true if `value` is a positive zero.
-    inline bool IsPositiveZero() const {
+    /// @returns true if `value` is zero.
+    /// For floating point -0.0 equals 0.0, according to IEEE 754.
+    inline bool IsZero() const {
         using N = UnwrapNumber<T>;
-        return Number<N>(value) == Number<N>(0);  // Considers sign bit
+        return Number<N>(value) == Number<N>(0);
     }
 
     /// The scalar type
-    type::Type const* const type;
+    core::type::Type const* const type;
     /// The scalar value
     const T value;
 
@@ -106,6 +107,6 @@ class Scalar : public utils::Castable<Scalar<T>, ScalarBase> {
     }
 };
 
-}  // namespace tint::constant
+}  // namespace tint::core::constant
 
 #endif  // SRC_TINT_LANG_CORE_CONSTANT_SCALAR_H_

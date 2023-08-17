@@ -27,7 +27,7 @@ MutationChangeUnaryOperator::MutationChangeUnaryOperator(
     : message_(std::move(message)) {}
 
 MutationChangeUnaryOperator::MutationChangeUnaryOperator(uint32_t unary_expr_id,
-                                                         ast::UnaryOp new_operator) {
+                                                         core::UnaryOp new_operator) {
     message_.set_unary_expr_id(unary_expr_id);
     message_.set_new_operator(static_cast<uint32_t>(new_operator));
 }
@@ -43,12 +43,12 @@ bool MutationChangeUnaryOperator::IsApplicable(const tint::Program& program,
         return false;
     }
 
-    auto new_unary_operator = static_cast<ast::UnaryOp>(message_.new_operator());
+    auto new_unary_operator = static_cast<core::UnaryOp>(message_.new_operator());
 
     // Get the type of the unary expression.
     const auto* type = program.Sem().Get(unary_expr_node)->Type();
     const auto* basic_type =
-        type->Is<type::Reference>() ? type->As<type::Reference>()->StoreType() : type;
+        type->Is<core::type::Reference>() ? type->As<core::type::Reference>()->StoreType() : type;
 
     // Only signed integer or vector of signed integer has more than 1
     // unary operators to change between.
@@ -65,20 +65,20 @@ bool MutationChangeUnaryOperator::IsApplicable(const tint::Program& program,
 }
 
 void MutationChangeUnaryOperator::Apply(const NodeIdMap& node_id_map,
-                                        tint::CloneContext* clone_context,
+                                        tint::program::CloneContext& clone_context,
                                         NodeIdMap* new_node_id_map) const {
     const auto* unary_expr_node =
         tint::As<ast::UnaryOpExpression>(node_id_map.GetNode(message_.unary_expr_id()));
 
     const ast::UnaryOpExpression* cloned_replacement;
-    switch (static_cast<ast::UnaryOp>(message_.new_operator())) {
-        case ast::UnaryOp::kComplement:
+    switch (static_cast<core::UnaryOp>(message_.new_operator())) {
+        case core::UnaryOp::kComplement:
             cloned_replacement =
-                clone_context->dst->Complement(clone_context->Clone(unary_expr_node->expr));
+                clone_context.dst->Complement(clone_context.Clone(unary_expr_node->expr));
             break;
-        case ast::UnaryOp::kNegation:
+        case core::UnaryOp::kNegation:
             cloned_replacement =
-                clone_context->dst->Negation(clone_context->Clone(unary_expr_node->expr));
+                clone_context.dst->Negation(clone_context.Clone(unary_expr_node->expr));
             break;
         default:
             cloned_replacement = nullptr;
@@ -86,7 +86,7 @@ void MutationChangeUnaryOperator::Apply(const NodeIdMap& node_id_map,
     }
     // Set things up so that the original unary expression will be replaced with
     // its clone, and update the id mapping.
-    clone_context->Replace(unary_expr_node, cloned_replacement);
+    clone_context.Replace(unary_expr_node, cloned_replacement);
     new_node_id_map->Add(cloned_replacement, message_.unary_expr_id());
 }
 
@@ -96,12 +96,12 @@ protobufs::Mutation MutationChangeUnaryOperator::ToMessage() const {
     return mutation;
 }
 
-ast::UnaryOp MutationChangeUnaryOperator::ToggleOperator(const ast::UnaryOp& original_op) {
-    if (original_op == ast::UnaryOp::kComplement) {
-        return ast::UnaryOp::kNegation;
+core::UnaryOp MutationChangeUnaryOperator::ToggleOperator(const core::UnaryOp& original_op) {
+    if (original_op == core::UnaryOp::kComplement) {
+        return core::UnaryOp::kNegation;
     }
-    assert(original_op == ast::UnaryOp::kNegation && "Unexpected operator.");
-    return ast::UnaryOp::kComplement;
+    assert(original_op == core::UnaryOp::kNegation && "Unexpected operator.");
+    return core::UnaryOp::kComplement;
 }
 
 }  // namespace tint::fuzzers::ast_fuzzer

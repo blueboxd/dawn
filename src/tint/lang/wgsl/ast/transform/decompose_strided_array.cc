@@ -18,8 +18,11 @@
 #include <utility>
 #include <vector>
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/wgsl/ast/transform/simplify_pointers.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/call.h"
 #include "src/tint/lang/wgsl/sem/member_accessor_expression.h"
 #include "src/tint/lang/wgsl/sem/type_expression.h"
@@ -28,12 +31,14 @@
 #include "src/tint/utils/containers/map.h"
 #include "src/tint/utils/math/hash.h"
 
+using namespace tint::core::fluent_types;  // NOLINT
+
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::DecomposeStridedArray);
 
 namespace tint::ast::transform {
 namespace {
 
-using DecomposedArrays = std::unordered_map<const type::Array*, Symbol>;
+using DecomposedArrays = std::unordered_map<const core::type::Array*, Symbol>;
 
 bool ShouldRun(const Program* program) {
     for (auto* node : program->ASTNodes().Objects()) {
@@ -60,14 +65,14 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
     }
 
     ProgramBuilder b;
-    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
     const auto& sem = src->Sem();
 
     static constexpr const char* kMemberName = "el";
 
     // Maps an array type in the source program to the name of the struct wrapper
     // type in the target program.
-    std::unordered_map<const type::Array*, Symbol> decomposed;
+    std::unordered_map<const core::type::Array*, Symbol> decomposed;
 
     // Find and replace all arrays with a @stride attribute with a array that has
     // the @stride removed. If the source array stride does not match the natural
@@ -83,19 +88,19 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
         if (!type_expr) {
             return nullptr;
         }
-        auto* arr = type_expr->Type()->As<type::Array>();
+        auto* arr = type_expr->Type()->As<core::type::Array>();
         if (!arr) {
             return nullptr;
         }
         if (!arr->IsStrideImplicit()) {
-            auto el_ty = utils::GetOrCreate(decomposed, arr, [&] {
+            auto el_ty = tint::GetOrCreate(decomposed, arr, [&] {
                 auto name = b.Symbols().New("strided_arr");
                 auto* member_ty = ctx.Clone(ident->arguments[0]->As<IdentifierExpression>());
                 auto* member = b.Member(kMemberName, Type{member_ty},
-                                        utils::Vector{
+                                        tint::Vector{
                                             b.MemberSize(AInt(arr->Stride())),
                                         });
-                b.Structure(name, utils::Vector{member});
+                b.Structure(name, tint::Vector{member});
                 return name;
             });
             if (ident->arguments.Length() > 1) {
@@ -124,7 +129,7 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
     // Example: `arr[i]` -> `arr[i].el`
     ctx.ReplaceAll([&](const IndexAccessorExpression* idx) -> const Expression* {
         if (auto* ty = src->TypeOf(idx->object)) {
-            if (auto* arr = ty->UnwrapRef()->As<type::Array>()) {
+            if (auto* arr = ty->UnwrapRef()->As<core::type::Array>()) {
                 if (!arr->IsStrideImplicit()) {
                     auto* expr = ctx.CloneWithoutTransform(idx);
                     return b.MemberAccessor(expr, kMemberName);
@@ -144,7 +149,7 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
         if (!expr->args.IsEmpty()) {
             if (auto* call = sem.Get(expr)->UnwrapMaterialize()->As<sem::Call>()) {
                 if (auto* ctor = call->Target()->As<sem::ValueConstructor>()) {
-                    if (auto* arr = ctor->ReturnType()->As<type::Array>()) {
+                    if (auto* arr = ctor->ReturnType()->As<core::type::Array>()) {
                         // Begin by cloning the array initializer type or name
                         // If this is an unaliased array, this may add a new entry to
                         // decomposed.
@@ -153,7 +158,7 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
 
                         auto* target = ctx.Clone(expr->target);
 
-                        utils::Vector<const Expression*, 8> args;
+                        tint::Vector<const Expression*, 8> args;
                         if (auto it = decomposed.find(arr); it != decomposed.end()) {
                             args.Reserve(expr->args.Length());
                             for (auto* arg : expr->args) {
@@ -172,7 +177,7 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
     });
 
     ctx.Clone();
-    return Program(std::move(b));
+    return resolver::Resolve(b);
 }
 
 }  // namespace tint::ast::transform

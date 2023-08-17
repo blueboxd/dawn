@@ -17,14 +17,9 @@
 
 #include <string>
 
-#include "src/tint/lang/core/builtin/function.h"
+#include "src/tint/lang/core/function.h"
 #include "src/tint/lang/wgsl/ast/internal_attribute.h"
 #include "src/tint/lang/wgsl/ast/transform/transform.h"
-
-// Forward declarations
-namespace tint {
-class CloneContext;
-}  // namespace tint
 
 namespace tint::ast::transform {
 
@@ -32,7 +27,7 @@ namespace tint::ast::transform {
 /// with calls to the WGSL atomic builtin. It also makes sure to replace variable declarations that
 /// are the target of the atomic operations with an atomic declaration of the same type. For
 /// structs, it creates a copy of the original struct with atomic members.
-class SpirvAtomic final : public utils::Castable<SpirvAtomic, Transform> {
+class SpirvAtomic final : public Castable<SpirvAtomic, Transform> {
   public:
     /// Constructor
     SpirvAtomic();
@@ -41,12 +36,12 @@ class SpirvAtomic final : public utils::Castable<SpirvAtomic, Transform> {
 
     /// Stub is an attribute applied to stub SPIR-V reader generated functions that need to be
     /// translated to an atomic builtin.
-    class Stub final : public utils::Castable<Stub, InternalAttribute> {
+    class Stub final : public Castable<Stub, InternalAttribute> {
       public:
         /// @param pid the identifier of the program that owns this node
         /// @param nid the unique node identifier
         /// @param builtin the atomic builtin this stub represents
-        Stub(ProgramID pid, NodeID nid, builtin::Function builtin);
+        Stub(GenerationID pid, NodeID nid, core::Function builtin);
         /// Destructor
         ~Stub() override;
 
@@ -54,13 +49,13 @@ class SpirvAtomic final : public utils::Castable<SpirvAtomic, Transform> {
         /// displayed as `@internal(<name>)`
         std::string InternalName() const override;
 
-        /// Performs a deep clone of this object using the CloneContext `ctx`.
+        /// Performs a deep clone of this object using the program::CloneContext `ctx`.
         /// @param ctx the clone context
         /// @return the newly cloned object
-        const Stub* Clone(CloneContext* ctx) const override;
+        const Stub* Clone(ast::CloneContext& ctx) const override;
 
         /// The type of the intrinsic
-        const builtin::Function builtin;
+        const core::Function builtin;
     };
 
     /// @copydoc Transform::Apply

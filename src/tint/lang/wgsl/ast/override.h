@@ -30,7 +30,7 @@ namespace tint::ast {
 ///   override scale : f32;            // No default - must be overridden.
 /// ```
 /// @see https://www.w3.org/TR/WGSL/#override-decls
-class Override final : public utils::Castable<Override, Variable> {
+class Override final : public Castable<Override, Variable> {
   public:
     /// Create an 'override' pipeline-overridable constant.
     /// @param pid the identifier of the program that owns this node
@@ -40,13 +40,13 @@ class Override final : public utils::Castable<Override, Variable> {
     /// @param type the declared variable type
     /// @param initializer the initializer expression
     /// @param attributes the variable attributes
-    Override(ProgramID pid,
+    Override(GenerationID pid,
              NodeID nid,
              const Source& source,
              const Identifier* name,
              Type type,
              const Expression* initializer,
-             utils::VectorRef<const Attribute*> attributes);
+             VectorRef<const Attribute*> attributes);
 
     /// Destructor
     ~Override() override;
@@ -58,7 +58,7 @@ class Override final : public utils::Castable<Override, Variable> {
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const Override* Clone(CloneContext* ctx) const override;
+    const Override* Clone(CloneContext& ctx) const override;
 };
 
 }  // namespace tint::ast

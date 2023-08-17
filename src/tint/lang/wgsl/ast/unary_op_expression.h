@@ -15,13 +15,13 @@
 #ifndef SRC_TINT_LANG_WGSL_AST_UNARY_OP_EXPRESSION_H_
 #define SRC_TINT_LANG_WGSL_AST_UNARY_OP_EXPRESSION_H_
 
+#include "src/tint/lang/core/unary_op.h"
 #include "src/tint/lang/wgsl/ast/expression.h"
-#include "src/tint/lang/wgsl/ast/unary_op.h"
 
 namespace tint::ast {
 
 /// A unary op expression
-class UnaryOpExpression final : public utils::Castable<UnaryOpExpression, Expression> {
+class UnaryOpExpression final : public Castable<UnaryOpExpression, Expression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -29,10 +29,10 @@ class UnaryOpExpression final : public utils::Castable<UnaryOpExpression, Expres
     /// @param source the unary op expression source
     /// @param op the op
     /// @param expr the expr
-    UnaryOpExpression(ProgramID pid,
+    UnaryOpExpression(GenerationID pid,
                       NodeID nid,
                       const Source& source,
-                      UnaryOp op,
+                      core::UnaryOp op,
                       const Expression* expr);
 
     /// Destructor
@@ -42,10 +42,10 @@ class UnaryOpExpression final : public utils::Castable<UnaryOpExpression, Expres
     /// `ctx`.
     /// @param ctx the clone context
     /// @return the newly cloned node
-    const UnaryOpExpression* Clone(CloneContext* ctx) const override;
+    const UnaryOpExpression* Clone(CloneContext& ctx) const override;
 
     /// The op
-    const UnaryOp op;
+    const core::UnaryOp op;
 
     /// The expression
     const Expression* const expr;

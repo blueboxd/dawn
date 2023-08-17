@@ -154,11 +154,13 @@ MaybeError Device::TickImpl() {
     // Perform cleanup operations to free unused objects
     [[maybe_unused]] ExecutionSerial completedSerial = GetCompletedCommandSerial();
 
+    // Check for debug layer messages before executing the command context in case we encounter an
+    // error during execution and early out as a result.
+    DAWN_TRY(CheckDebugLayerAndGenerateErrors());
     if (mPendingCommands.IsOpen() && mPendingCommands.NeedsSubmit()) {
         DAWN_TRY(ExecutePendingCommandContext());
         DAWN_TRY(NextSerial());
     }
-
     DAWN_TRY(CheckDebugLayerAndGenerateErrors());
 
     return {};
@@ -227,10 +229,9 @@ ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     return BindGroup::Create(this, descriptor);
 }
 
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return BindGroupLayout::Create(this, descriptor, pipelineCompatibilityToken);
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return BindGroupLayout::Create(this, descriptor);
 }
 
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
@@ -307,6 +308,9 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
                                                uint64_t size) {
+    // D3D11 requires that buffers are unmapped before being used in a copy.
+    DAWN_TRY(source->Unmap());
+
     CommandRecordingContext* commandContext = GetPendingCommandContext();
     return Buffer::Copy(commandContext, ToBackend(source), sourceOffset, size,
                         ToBackend(destination), destinationOffset);
@@ -471,6 +475,10 @@ bool Device::MayRequireDuplicationOfIndirectParameters() const {
 
 uint64_t Device::GetBufferCopyOffsetAlignmentForDepthStencil() const {
     return DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil();
+}
+
+bool Device::IsResolveTextureBlitWithDrawSupported() const {
+    return true;
 }
 
 Ref<TextureBase> Device::CreateD3DExternalTexture(const TextureDescriptor* descriptor,

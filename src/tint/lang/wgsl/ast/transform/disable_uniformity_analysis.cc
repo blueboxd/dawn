@@ -16,7 +16,9 @@
 
 #include <utility>
 
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/module.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::DisableUniformityAnalysis);
@@ -31,16 +33,16 @@ Transform::ApplyResult DisableUniformityAnalysis::Apply(const Program* src,
                                                         const DataMap&,
                                                         DataMap&) const {
     if (src->Sem().Module()->Extensions().Contains(
-            builtin::Extension::kChromiumDisableUniformityAnalysis)) {
+            core::Extension::kChromiumDisableUniformityAnalysis)) {
         return SkipTransform;
     }
 
     ProgramBuilder b;
-    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
-    b.Enable(builtin::Extension::kChromiumDisableUniformityAnalysis);
+    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    b.Enable(core::Extension::kChromiumDisableUniformityAnalysis);
 
     ctx.Clone();
-    return Program(std::move(b));
+    return resolver::Resolve(b);
 }
 
 }  // namespace tint::ast::transform

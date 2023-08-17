@@ -19,8 +19,10 @@
 #include <utility>
 
 #include "src/tint/lang/core/type/reference.h"
-#include "src/tint/lang/wgsl/ast/transform/utils/hoist_to_decl_before.h"
+#include "src/tint/lang/wgsl/ast/transform/hoist_to_decl_before.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/block_statement.h"
 #include "src/tint/lang/wgsl/sem/call.h"
 #include "src/tint/lang/wgsl/sem/function.h"
@@ -30,7 +32,7 @@
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::DemoteToHelper);
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::ast::transform {
 
@@ -78,11 +80,11 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
     }
 
     ProgramBuilder b;
-    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
 
     // Create a module-scope flag that indicates whether the current invocation has been discarded.
     auto flag = b.Symbols().New("tint_discarded");
-    b.GlobalVar(flag, builtin::AddressSpace::kPrivate, b.Expr(false));
+    b.GlobalVar(flag, core::AddressSpace::kPrivate, b.Expr(false));
 
     // Replace all discard statements with a statement that marks the invocation as discarded.
     ctx.ReplaceAll(
@@ -104,7 +106,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
     // Mask all writes to host-visible memory using the discarded flag.
     // We also insert a discard statement before all return statements in entry points for shaders
     // that discard.
-    std::unordered_map<const type::Type*, Symbol> atomic_cmpxchg_result_types;
+    std::unordered_map<const core::type::Type*, Symbol> atomic_cmpxchg_result_types;
     for (auto* node : src->ASTNodes().Objects()) {
         Switch(
             node,
@@ -123,18 +125,18 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                 }
 
                 // Skip writes to invocation-private address spaces.
-                auto* ref = sem.GetVal(assign->lhs)->Type()->As<type::Reference>();
+                auto* ref = sem.GetVal(assign->lhs)->Type()->As<core::type::Reference>();
                 switch (ref->AddressSpace()) {
-                    case builtin::AddressSpace::kStorage:
+                    case core::AddressSpace::kStorage:
                         // Need to mask these.
                         break;
-                    case builtin::AddressSpace::kFunction:
-                    case builtin::AddressSpace::kPrivate:
-                    case builtin::AddressSpace::kOut:
+                    case core::AddressSpace::kFunction:
+                    case core::AddressSpace::kPrivate:
+                    case core::AddressSpace::kOut:
                         // Skip these.
                         return;
                     default:
-                        TINT_UNREACHABLE(Transform, b.Diagnostics())
+                        TINT_UNREACHABLE()
                             << "write to unhandled address space: " << ref->AddressSpace();
                 }
 
@@ -152,13 +154,12 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                     return;
                 }
 
-                if (builtin->Type() == builtin::Function::kTextureStore) {
+                if (builtin->Type() == core::Function::kTextureStore) {
                     // A call to textureStore() will always be a statement.
                     // Wrap it inside a conditional block.
                     auto* masked_call = b.If(b.Not(flag), b.Block(ctx.Clone(stmt->Declaration())));
                     ctx.Replace(stmt->Declaration(), masked_call);
-                } else if (builtin->IsAtomic() &&
-                           builtin->Type() != builtin::Function::kAtomicLoad) {
+                } else if (builtin->IsAtomic() && builtin->Type() != core::Function::kAtomicLoad) {
                     // A call to an atomic builtin can be a statement or an expression.
                     if (auto* call_stmt = stmt->Declaration()->As<CallStatement>();
                         call_stmt && call_stmt->expr == call) {
@@ -179,20 +180,20 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                         auto result = b.Sym();
                         Type result_ty;
                         const Statement* masked_call = nullptr;
-                        if (builtin->Type() == builtin::Function::kAtomicCompareExchangeWeak) {
+                        if (builtin->Type() == core::Function::kAtomicCompareExchangeWeak) {
                             // Special case for atomicCompareExchangeWeak as we cannot name its
                             // result type. We have to declare an equivalent struct and copy the
                             // original member values over to it.
 
                             // Declare a struct to hold the result values.
-                            auto* result_struct = sem_call->Type()->As<type::Struct>();
+                            auto* result_struct = sem_call->Type()->As<core::type::Struct>();
                             auto* atomic_ty = result_struct->Members()[0]->Type();
-                            result_ty = b.ty(
-                                utils::GetOrCreate(atomic_cmpxchg_result_types, atomic_ty, [&] {
+                            result_ty =
+                                b.ty(tint::GetOrCreate(atomic_cmpxchg_result_types, atomic_ty, [&] {
                                     auto name = b.Sym();
                                     b.Structure(
                                         name,
-                                        utils::Vector{
+                                        tint::Vector{
                                             b.Member("old_value", CreateASTTypeFor(ctx, atomic_ty)),
                                             b.Member("exchanged", b.ty.bool_()),
                                         });
@@ -208,7 +209,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                             auto tmp_result = b.Sym();
                             masked_call =
                                 b.If(b.Not(flag),
-                                     b.Block(utils::Vector{
+                                     b.Block(tint::Vector{
                                          b.Decl(b.Let(tmp_result, ctx.CloneWithoutTransform(call))),
                                          b.Assign(b.MemberAccessor(result, "old_value"),
                                                   b.MemberAccessor(tmp_result, "old_value")),
@@ -242,7 +243,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
     }
 
     ctx.Clone();
-    return Program(std::move(b));
+    return resolver::Resolve(b);
 }
 
 }  // namespace tint::ast::transform

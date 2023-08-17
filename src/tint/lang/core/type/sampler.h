@@ -20,10 +20,10 @@
 #include "src/tint/lang/core/type/sampler_kind.h"
 #include "src/tint/lang/core/type/type.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// A sampler type.
-class Sampler final : public utils::Castable<Sampler, Type> {
+class Sampler final : public Castable<Sampler, Type> {
   public:
     /// Constructor
     /// @param kind the kind of sampler
@@ -54,6 +54,6 @@ class Sampler final : public utils::Castable<Sampler, Type> {
     SamplerKind const kind_;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_SAMPLER_H_

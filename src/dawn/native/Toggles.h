@@ -81,7 +81,7 @@ enum class Toggle {
     D3D12UseTempBufferInTextureToTextureCopyBetweenDifferentDimensions,
     ApplyClearBigIntegerColorValueWithDraw,
     MetalUseMockBlitEncoderForWriteTimestamp,
-    VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass,
+    VulkanSplitCommandBufferOnComputePassAfterRenderPass,
     DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment,
     MetalUseCombinedDepthStencilFormatForStencil8,
     MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats,
@@ -101,6 +101,9 @@ enum class Toggle {
     D3D12UseRootSignatureVersion1_1,
     VulkanUseImageRobustAccess2,
     VulkanUseBufferRobustAccess2,
+    D3D12Use64KBAlignedMSAATexture,
+    ResolveMultipleAttachmentInSeparatePasses,
+    D3D12CreateNotZeroedHeap,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
