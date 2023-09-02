@@ -53,13 +53,37 @@ The graph of target dependencies must be acyclic (DAG).
 Target dependencies are automatically inferred from `#include`s made by the source files.
 Additional target dependencies can be added with the use of a [`BUILD.cfg` file](#buildcfg-files).
 
+### External dependencies
+
+All external dependencies must be declared in [`src/tint/externals.json`](../../src/tint/externals.json).
+
+The syntax of this file is:
+
+```json
+{
+    "external-target-name": {
+        "IncludePatterns": [
+          /*
+            A list of #include path patterns that refer to this external target.
+            You may use the '*' wildcard for a single directory, or '**' as a multi-directory wildcard.
+          */
+          "myexternal/**.h",
+        ],
+        /* An optional build condition expression to wrap all uses of this external dependency */
+        "Condition": "expression",
+    },
+    /* Repeat the above for all external targets */
+}
+```
+
 ### `GEN_BUILD` directives
 
 Source and build files can be annotated with special directives in comments to control the build file generation.
 
 | Directive | Description |
 |-----------|-------------|
-| `GEN_BUILD:IGNORE` | Apply to the end of a `#include` in a source file to ignore this include for dependency analysis <br> Example: `#include "foo/bar.h"  // GEN_BUILD:IGNORE` |
+| `GEN_BUILD:IGNORE_FILE` | Add to a source file to have the file ignored by the generator <br> Example: `// GEN_BUILD:IGNORE_FILE` |
+| `GEN_BUILD:IGNORE_INCLUDE` | Apply to the end of a `#include` in a source file to ignore this include for dependency analysis <br> Example: `#include "foo/bar.h"  // GEN_BUILD:IGNORE_INCLUDE` |
 | `GEN_BUILD:CONDITION(`_cond_`)` | Applies the build condition for this source file. <br> Example: `// GEN_BUILD:CONDITION(is_linux)` |
 | `GEN_BUILD:DO_NOT_GENERATE` | Prevents the `BUILD.*` file from being generated. <br> Example: `# GEN_BUILD:DO_NOT_GENERATE` |
 
@@ -90,13 +114,20 @@ The syntax of `TargetConfig` is:
 {
   /* An override for the output file name for the target */
   "OutputName": "name",
-  "AdditionalDependencies": [
-    /*
-      A list of target patterns that should in added as dependencies to this target.
-      And use the '*' wildcard for a single directory, or '**' as a multi-directory
-      wildcard.
-    */
-  ],
+  "AdditionalDependencies": {
+    "Internal": [
+      /*
+        A list of target name patterns that should in added as dependencies to this target.
+        You may use the '*' wildcard for a single directory, or '**' as a multi-directory wildcard.
+      */
+    ],
+    "External": [
+      /*
+        A list of external targets that should in added as dependencies to this target.
+        Must match an external dependency declared in src/tint/externals.json
+      */
+    ]
+  },
 }
 ```
 

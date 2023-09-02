@@ -260,6 +260,23 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::BGRA8UnormStorage);
     }
 
+    bool norm16TextureFormatsSupported = true;
+    for (const auto& norm16Format :
+         {VK_FORMAT_R16_UNORM, VK_FORMAT_R16G16_UNORM, VK_FORMAT_R16G16B16A16_UNORM,
+          VK_FORMAT_R16_SNORM, VK_FORMAT_R16G16_SNORM, VK_FORMAT_R16G16B16A16_SNORM}) {
+        VkFormatProperties norm16Properties;
+        mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+            mVkPhysicalDevice, norm16Format, &norm16Properties);
+        norm16TextureFormatsSupported &= IsSubset(
+            static_cast<VkFormatFeatureFlags>(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                                              VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                                              VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT),
+            norm16Properties.optimalTilingFeatures);
+    }
+    if (norm16TextureFormatsSupported) {
+        EnableFeature(Feature::Norm16TextureFormats);
+    }
+
     // 32 bit float channel formats.
     VkFormatProperties r32Properties;
     VkFormatProperties rg32Properties;
@@ -278,11 +295,30 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::Float32Filterable);
     }
 
-#if DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
-    // TODO(chromium:1258986): Precisely enable the feature by querying the device's format
-    // features.
-    EnableFeature(Feature::MultiPlanarFormats);
-#endif  // DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
+    // Multiplanar formats.
+    constexpr VkFormat multiplanarFormats[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+    };
+
+    bool allMultiplanarFormatsSupported = true;
+    for (const auto multiplanarFormat : multiplanarFormats) {
+        VkFormatProperties multiplanarProps;
+        mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+            mVkPhysicalDevice, multiplanarFormat, &multiplanarProps);
+
+        if (!IsSubset(static_cast<VkFormatFeatureFlagBits>(
+                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+                          VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT),
+                      multiplanarProps.optimalTilingFeatures)) {
+            allMultiplanarFormatsSupported = false;
+        }
+    }
+
+    if (allMultiplanarFormatsSupported) {
+        EnableFeature(Feature::DawnMultiPlanarFormats);
+        EnableFeature(Feature::MultiPlanarFormatExtendedUsages);
+    }
 
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::TransientAttachments);

@@ -99,6 +99,12 @@ bool GPUAdapter::getIsFallbackAdapter(Napi::Env) {
     return adapterProperties.adapterType == WGPUAdapterType_CPU;
 }
 
+bool GPUAdapter::getIsCompatibilityMode(Napi::Env) {
+    WGPUAdapterProperties adapterProperties = {};
+    adapter_.GetProperties(&adapterProperties);
+    return adapterProperties.compatibilityMode;
+}
+
 interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevice(
     Napi::Env env,
     interop::GPUDeviceDescriptor descriptor) {
@@ -118,6 +124,10 @@ interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevi
         }
 
         requiredFeatures.emplace_back(feature);
+    }
+    if (!conv(desc.label, descriptor.label)) {
+        Napi::Error::New(env, "invalid value for label").ThrowAsJavaScriptException();
+        return promise;
     }
 
     wgpu::RequiredLimits limits;

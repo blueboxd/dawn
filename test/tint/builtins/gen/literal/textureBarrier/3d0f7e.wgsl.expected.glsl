@@ -1,15 +1,15 @@
-SKIP: FAILED
+#version 310 es
 
-
-enable chromium_experimental_read_write_storage_texture;
-
-fn textureBarrier_3d0f7e() {
-  textureBarrier();
+void textureBarrier_3d0f7e() {
+  { barrier(); memoryBarrierImage(); };
 }
 
-@compute @workgroup_size(1)
-fn compute_main() {
+void compute_main() {
   textureBarrier_3d0f7e();
 }
 
-Failed to generate: error: Unknown builtin method: textureBarrier
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  compute_main();
+  return;
+}

@@ -102,7 +102,7 @@ deps = {
   },
 
   'tools/clang': {
-    'url': '{chromium_git}/chromium/src/tools/clang@effd9257d456f2d42e9e22fa4f37a24d8cf0b5b5',
+    'url': '{chromium_git}/chromium/src/tools/clang@8f75392b4aa947fb55c7c206b36804229595e4da',
     'condition': 'dawn_standalone',
   },
   'tools/clang/dsymutil': {
@@ -154,17 +154,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@4fffc9938375f2b84632eb661fc175457fb2ee77',
+    'url': '{chromium_git}/angle/angle@4e1053b96602566b522268b0ca86f9c0fb1e0db7',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@97bdc453fbedee92ed0fc7687544098efc821622',
+    'url': '{swiftshader_git}/SwiftShader@32f9332d1d7aacbdba7c1aa5df894bb1890bb2cc',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@4d521ea13709202adeea20bd5f0f65c4cc5a0185',
+    'url': '{chromium_git}/vulkan-deps@5857bae969d54323f987b6d1ebb4a7e809381eef',
     'condition': 'dawn_standalone',
   },
 
@@ -174,22 +174,31 @@ deps = {
   },
 
   'third_party/abseil-cpp': {
-    'url': '{chromium_git}/chromium/src/third_party/abseil-cpp@bc3ab29356a081d0b5dd4ac55e30f4b45d8794cc',
+    'url': '{chromium_git}/chromium/src/third_party/abseil-cpp@4ef9b33175828ea46d091e7e5ec28259d39a8ba5',
     'condition': 'dawn_standalone',
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@15d086f6855c6921662587c6f11acb98f91b68c7',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@babb2378e6fe83848be8b579c581ab8af6a4c031',
   },
+
   'third_party/dxheaders': {
     # The non-Windows build of DXC depends on DirectX-Headers, and at a specific commit (not ToT)
     'url': '{chromium_git}/external/github.com/microsoft/DirectX-Headers@980971e835876dc0cde415e8f9bc646e64667bf7',
     'condition': 'host_os != "win"',
   },
 
+  'third_party/khronos/OpenGL-Registry': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/OpenGL-Registry@5bae8738b23d06968e7c3a41308568120943ae77',
+  },
+
+  'third_party/khronos/EGL-Registry': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/EGL-Registry@7dea2ed79187cd13f76183c4b9100159b9e3e071',
+  },
+
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@8596996e727e0086a27702f82897ea600b92e070',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@03819a515332bd0ac6daf11ab13839bdd75eae7f',
     'condition': 'build_with_chromium',
   },
 
@@ -248,7 +257,7 @@ deps = {
 
   # Misc dependencies inherited from Tint
   'third_party/protobuf': {
-    'url': '{chromium_git}/external/github.com/protocolbuffers/protobuf.git@fde7cf7358ec7cd69e8db9be4f1fa6a5c431386a',
+    'url': '{chromium_git}/external/github.com/protocolbuffers/protobuf.git@2b673bbb57e34fe1bd4570f726fc86b769a3a3d2',
     'condition': 'dawn_standalone',
   },
 }

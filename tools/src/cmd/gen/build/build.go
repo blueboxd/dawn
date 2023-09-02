@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"dawn.googlesource.com/dawn/tools/src/cmd/gen/common"
+	"dawn.googlesource.com/dawn/tools/src/cnf"
 	"dawn.googlesource.com/dawn/tools/src/container"
 	"dawn.googlesource.com/dawn/tools/src/fileutils"
 	"dawn.googlesource.com/dawn/tools/src/glob"
@@ -106,30 +107,53 @@ func (c Cmd) Run(ctx context.Context, cfg *common.Config) error {
 
 // loadExternals loads the 'externals.json' file in this directory.
 func loadExternals(p *Project) error {
-	content, err := os.ReadFile(path.Join(fileutils.ThisDir(), "externals.json"))
+	content, err := os.ReadFile(p.externalsJsonPath)
 	if err != nil {
 		return err
 	}
 
 	externals := container.NewMap[string, struct {
-		IncludePattern string `json:"include_pattern"`
-		Condition      string
+		IncludePatterns []string
+		Condition       string
 	}]()
 	if err := json.Unmarshal(jsonc.ToJSON(content), &externals); err != nil {
-		return fmt.Errorf("failed to parse 'externals.json': %w", err)
+		return fmt.Errorf("failed to parse '%v': %w", p.externalsJsonPath, err)
 	}
 
 	for _, name := range externals.Keys() {
 		external := externals[name]
-		match, err := match.New(external.IncludePattern)
-		if err != nil {
-			return fmt.Errorf("'externals.json' matcher error: %w", err)
+
+		includePatternMatch := func(s string) bool { return false }
+		if len(external.IncludePatterns) > 0 {
+			matchers := []match.Test{}
+			for _, pattern := range external.IncludePatterns {
+				matcher, err := match.New(pattern)
+				if err != nil {
+					return fmt.Errorf("%v: matcher error: %w", p.externalsJsonPath, err)
+				}
+				matchers = append(matchers, matcher)
+			}
+			includePatternMatch = func(s string) bool {
+				for _, matcher := range matchers {
+					if matcher(s) {
+						return true
+					}
+				}
+				return false
+			}
 		}
+
+		cond, err := cnf.Parse(external.Condition)
+		if err != nil {
+			return fmt.Errorf("%v: could not parse condition: %w",
+				p.externalsJsonPath, err)
+		}
+
 		name := ExternalDependencyName(name)
 		p.externals.Add(name, ExternalDependency{
 			Name:                name,
-			Condition:           external.Condition,
-			includePatternMatch: match,
+			Condition:           cond,
+			includePatternMatch: includePatternMatch,
 		})
 	}
 
@@ -145,7 +169,8 @@ func populateSourceFiles(p *Project) error {
 				"include": [
 					"*/**.cc",
 					"*/**.h",
-					"*/**.inl"
+					"*/**.inl",
+					"*/**.mm"
 				]
 			},
 			{
@@ -176,8 +201,9 @@ func populateSourceFiles(p *Project) error {
 func scanSourceFiles(p *Project) error {
 	// ParsedFile describes all the includes and conditions found in a source file
 	type ParsedFile struct {
-		conditions []string
-		includes   []Include
+		removeFromProject bool
+		conditions        []string
+		includes          []Include
 	}
 
 	// parseFile parses the source file at 'path' represented by 'file'
@@ -189,12 +215,18 @@ func scanSourceFiles(p *Project) error {
 		}
 		out := &ParsedFile{}
 		for i, line := range strings.Split(string(body), "\n") {
+			if match := reIgnoreFile.FindStringSubmatch(line); len(match) > 0 {
+				out.removeFromProject = true
+				continue
+			}
 			if match := reCondition.FindStringSubmatch(line); len(match) > 0 {
 				out.conditions = append(out.conditions, match[1])
 			}
 			if !reIgnoreInclude.MatchString(line) {
-				if match := reInclude.FindStringSubmatch(line); len(match) > 0 {
-					out.includes = append(out.includes, Include{match[1], i + 1})
+				for _, re := range []*regexp.Regexp{reInclude, reHashImport, reAtImport} {
+					if match := re.FindStringSubmatch(line); len(match) > 0 {
+						out.includes = append(out.includes, Include{match[1], i + 1})
+					}
 				}
 			}
 		}
@@ -215,13 +247,21 @@ func scanSourceFiles(p *Project) error {
 				// Retrieve the parsed file information
 				parsed := parsedFiles[file.Path()]
 
+				if parsed.removeFromProject {
+					file.RemoveFromProject()
+					continue
+				}
+
 				// Apply any conditions
 				for _, condition := range parsed.conditions {
-					if file.Condition == "" {
-						file.Condition = condition
-					} else {
-						file.Condition += " && " + condition
+					cond, err := cnf.Parse(condition)
+					if err != nil {
+						return fmt.Errorf("%v: could not parse condition: %w", file, err)
 					}
+					if file.Condition != nil {
+						cond = cnf.Optimize(cnf.And(file.Condition, cond))
+					}
+					file.Condition = cond
 				}
 
 				file.Includes = append(file.Includes, parsed.includes...)
@@ -250,7 +290,11 @@ func applyDirectoryConfigs(p *Project) error {
 
 		// Apply any directory-level condition
 		for _, target := range dir.Targets() {
-			target.Condition = cfg.Condition
+			cond, err := cnf.Parse(cfg.Condition)
+			if err != nil {
+				return fmt.Errorf("%v: could not parse condition: %w", path, err)
+			}
+			target.Condition = cond
 		}
 
 		// For each target config...
@@ -276,11 +320,11 @@ func applyDirectoryConfigs(p *Project) error {
 			// Apply any custom output name
 			target.OutputName = tc.cfg.OutputName
 
-			// Add any additional dependencies
-			for _, depPattern := range tc.cfg.AdditionalDependencies {
+			// Add any additional internal dependencies
+			for _, depPattern := range tc.cfg.AdditionalDependencies.Internal {
 				match, err := match.New(depPattern)
 				if err != nil {
-					return fmt.Errorf("%v: failed to parse %v.AdditionalDependencies '%v': %w", path, tc.kind, depPattern, err)
+					return fmt.Errorf("%v: invalid pattern for '%v'.AdditionalDependencies.Internal.'%v': %w", path, tc.kind, depPattern, err)
 				}
 				additionalDeps := []*Target{}
 				for _, target := range p.Targets.Keys() {
@@ -289,13 +333,22 @@ func applyDirectoryConfigs(p *Project) error {
 					}
 				}
 				if len(additionalDeps) == 0 {
-					return fmt.Errorf("%v: %v.AdditionalDependencies '%v' did not match any targets", path, tc.kind, depPattern)
+					return fmt.Errorf("%v: '%v'.AdditionalDependencies.Internal.'%v' did not match any targets", path, tc.kind, depPattern)
 				}
 				for _, dep := range additionalDeps {
 					if dep != target {
 						target.Dependencies.AddInternal(dep)
 					}
 				}
+			}
+			// Add any additional internal dependencies
+			for _, name := range tc.cfg.AdditionalDependencies.External {
+				dep, ok := p.externals[name]
+				if !ok {
+					return fmt.Errorf("%v: external dependency '%v'.AdditionalDependencies.External.'%v' not declared in '%v'",
+						path, tc.kind, name, p.externalsJsonPath)
+				}
+				target.Dependencies.AddExternal(dep)
 			}
 		}
 	}
@@ -515,13 +568,13 @@ func emitBuildFiles(p *Project) error {
 			}
 
 			if string(existing) != w.String() {
-				stale = append(stale, outputPath)
-			}
-
-			if !p.cfg.Flags.CheckStale {
-				if err := os.WriteFile(outputPath, w.Bytes(), 0666); err != nil {
-					return nil, err
+				if !p.cfg.Flags.CheckStale {
+					if err := os.WriteFile(outputPath, w.Bytes(), 0666); err != nil {
+						return nil, err
+					}
 				}
+
+				stale = append(stale, outputPath)
 			}
 
 		}
@@ -591,8 +644,11 @@ func emitDotFile(p *Project, kind TargetKind) error {
 
 var (
 	// Regular expressions used by this file
-	reInclude       = regexp.MustCompile(`\s*#\s*include\s*\"([^"]+)\"`)
-	reIgnoreInclude = regexp.MustCompile(`//\s*GEN_BUILD:IGNORE`)
+	reInclude       = regexp.MustCompile(`\s*#\s*include\s*(?:\"|<)([^(\"|>)]+)(?:\"|>)`)
+	reHashImport    = regexp.MustCompile(`\s*#\s*import\s*\<([\w\/\.]+)\>`)
+	reAtImport      = regexp.MustCompile(`\s*@\s*import\s*(\w+)\s*;`)
+	reIgnoreFile    = regexp.MustCompile(`//\s*GEN_BUILD:IGNORE_FILE`)
+	reIgnoreInclude = regexp.MustCompile(`//\s*GEN_BUILD:IGNORE_INCLUDE`)
 	reCondition     = regexp.MustCompile(`//\s*GEN_BUILD:CONDITION\((.*)\)\s*$`)
 	reDoNotGenerate = regexp.MustCompile(`#\s*GEN_BUILD:DO_NOT_GENERATE`)
 )

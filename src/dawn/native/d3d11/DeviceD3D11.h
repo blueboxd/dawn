@@ -60,7 +60,6 @@ class Device final : public d3d::Device {
         CommandEncoder* encoder,
         const CommandBufferDescriptor* descriptor) override;
     MaybeError TickImpl() override;
-    void ForceEventualFlushOfCommands() override;
     MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
                                            uint64_t sourceOffset,
                                            BufferBase* destination,
@@ -84,6 +83,12 @@ class Device final : public d3d::Device {
         const ExternalImageDescriptor* descriptor) override;
 
     uint32_t GetUAVSlotCount() const;
+
+    // TODO(dawn:1413) move these methods to the d3d11::Queue.
+    void ForceEventualFlushOfCommands();
+    bool HasPendingCommands() const;
+    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials();
+    MaybeError WaitForIdleForDestruction();
 
   private:
     using Base = d3d::Device;
@@ -121,12 +126,15 @@ class Device final : public d3d::Device {
     void InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPipeline,
                                            WGPUCreateRenderPipelineAsyncCallback callback,
                                            void* userdata) override;
+
+    ResultOrError<Ref<SharedTextureMemoryBase>> ImportSharedTextureMemoryImpl(
+        const SharedTextureMemoryDescriptor* descriptor) override;
+    ResultOrError<Ref<SharedFenceBase>> ImportSharedFenceImpl(
+        const SharedFenceDescriptor* descriptor) override;
+
     void DestroyImpl() override;
-    MaybeError WaitForIdleForDestruction() override;
-    bool HasPendingCommands() const override;
     MaybeError CheckDebugLayerAndGenerateErrors();
     void AppendDebugLayerMessages(ErrorData* error) override;
-    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
 
     ComPtr<ID3D11Fence> mFence;
     HANDLE mFenceEvent = nullptr;

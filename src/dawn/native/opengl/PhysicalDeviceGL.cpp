@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "dawn/common/GPUInfo.h"
@@ -50,6 +51,26 @@ uint32_t GetVendorIdFromVendors(const char* vendor) {
         }
     }
     return vendorId;
+}
+
+uint32_t GetDeviceIdFromRender(std::string_view render) {
+    uint32_t deviceId = 0;
+    size_t pos = render.find("(0x");
+    if (pos == std::string_view::npos) {
+        pos = render.find("(0X");
+    }
+    if (pos == std::string_view::npos) {
+        return deviceId;
+    }
+    render.remove_prefix(pos + 3);
+
+    // The first character after the prefix must be hexadecimal, otherwise an invalid argument
+    // exception is thrown.
+    if (!render.empty() && std::isxdigit(static_cast<unsigned char>(*render.data()))) {
+        deviceId = static_cast<uint32_t>(std::stoul(render.data(), nullptr, 16));
+    }
+
+    return deviceId;
 }
 
 }  // anonymous namespace
@@ -118,6 +139,10 @@ MaybeError PhysicalDevice::InitializeImpl() {
     // Workaroud to find vendor id from vendor name
     const char* vendor = reinterpret_cast<const char*>(mFunctions.GetString(GL_VENDOR));
     mVendorId = GetVendorIdFromVendors(vendor);
+    // Workaround to find device id from ANGLE render string
+    if (mName.find("ANGLE") == 0) {
+        mDeviceId = GetDeviceIdFromRender(mName);
+    }
 
     mDriverDescription = std::string("OpenGL version ") +
                          reinterpret_cast<const char*>(mFunctions.GetString(GL_VERSION));
@@ -192,6 +217,11 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     if (mFunctions.IsGLExtensionSupported("GL_EXT_blend_func_extended") ||
         mFunctions.IsAtLeastGL(3, 3)) {
         EnableFeature(Feature::DualSourceBlending);
+    }
+
+    // Norm16TextureFormats
+    if (mFunctions.IsGLExtensionSupported("GL_EXT_texture_norm16")) {
+        EnableFeature(Feature::Norm16TextureFormats);
     }
 }
 

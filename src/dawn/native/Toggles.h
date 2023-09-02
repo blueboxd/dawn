@@ -104,6 +104,7 @@ enum class Toggle {
     D3D12Use64KBAlignedMSAATexture,
     ResolveMultipleAttachmentInSeparatePasses,
     D3D12CreateNotZeroedHeap,
+    D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
@@ -189,6 +190,9 @@ class TogglesInfo {
   public:
     TogglesInfo();
     ~TogglesInfo();
+
+    // Retrieves all fo the ToggleInfo information
+    static std::vector<const ToggleInfo*> AllToggleInfos();
 
     // Used to query the details of a toggle. Return nullptr if toggleName is not a valid name
     // of a toggle supported in Dawn.

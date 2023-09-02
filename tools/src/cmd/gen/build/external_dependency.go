@@ -22,7 +22,7 @@ type ExternalDependency struct {
 	// See 'externals.json'
 	Name ExternalDependencyName
 	// The optional condition for using this dependency
-	Condition string
+	Condition Condition
 	// Include file pattern matcher
 	includePatternMatch match.Test
 }

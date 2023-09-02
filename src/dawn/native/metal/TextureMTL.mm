@@ -21,6 +21,9 @@
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/metal/BufferMTL.h"
 #include "dawn/native/metal/DeviceMTL.h"
+#include "dawn/native/metal/QueueMTL.h"
+#include "dawn/native/metal/SharedFenceMTL.h"
+#include "dawn/native/metal/SharedTextureMemoryMTL.h"
 #include "dawn/native/metal/UtilsMetal.h"
 
 #include <CoreVideo/CVPixelBuffer.h>
@@ -216,6 +219,8 @@ ResultOrError<wgpu::TextureFormat> GetFormatEquivalentToIOSurfaceFormat(uint32_t
             return wgpu::TextureFormat::R8Unorm;
         case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
             return wgpu::TextureFormat::R8BG8Biplanar420Unorm;
+        case kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange:
+            return wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm;
         default:
             return DAWN_VALIDATION_ERROR("Unsupported IOSurface format (%x).", format);
     }
@@ -252,6 +257,10 @@ MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat fo
         case wgpu::TextureFormat::R8Sint:
             return MTLPixelFormatR8Sint;
 
+        case wgpu::TextureFormat::R16Unorm:
+            return MTLPixelFormatR16Unorm;
+        case wgpu::TextureFormat::R16Snorm:
+            return MTLPixelFormatR16Snorm;
         case wgpu::TextureFormat::R16Uint:
             return MTLPixelFormatR16Uint;
         case wgpu::TextureFormat::R16Sint:
@@ -273,6 +282,10 @@ MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat fo
             return MTLPixelFormatR32Sint;
         case wgpu::TextureFormat::R32Float:
             return MTLPixelFormatR32Float;
+        case wgpu::TextureFormat::RG16Unorm:
+            return MTLPixelFormatRG16Unorm;
+        case wgpu::TextureFormat::RG16Snorm:
+            return MTLPixelFormatRG16Snorm;
         case wgpu::TextureFormat::RG16Uint:
             return MTLPixelFormatRG16Uint;
         case wgpu::TextureFormat::RG16Sint:
@@ -306,6 +319,10 @@ MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat fo
             return MTLPixelFormatRG32Sint;
         case wgpu::TextureFormat::RG32Float:
             return MTLPixelFormatRG32Float;
+        case wgpu::TextureFormat::RGBA16Unorm:
+            return MTLPixelFormatRGBA16Unorm;
+        case wgpu::TextureFormat::RGBA16Snorm:
+            return MTLPixelFormatRGBA16Snorm;
         case wgpu::TextureFormat::RGBA16Uint:
             return MTLPixelFormatRGBA16Uint;
         case wgpu::TextureFormat::RGBA16Sint:
@@ -615,6 +632,7 @@ MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat fo
             }
 
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
+        case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
         case wgpu::TextureFormat::Undefined:
             UNREACHABLE();
     }
@@ -741,6 +759,21 @@ ResultOrError<Ref<Texture>> Texture::CreateFromIOSurface(
 }
 
 // static
+ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
+    SharedTextureMemory* memory,
+    const TextureDescriptor* descriptor) {
+    ExternalImageDescriptorIOSurface ioSurfaceImageDesc;
+    ioSurfaceImageDesc.isInitialized = false;  // Initialized state is set on memory.BeginAccess.
+
+    Device* device = ToBackend(memory->GetDevice());
+    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
+    DAWN_TRY(texture->InitializeFromIOSurface(&ioSurfaceImageDesc, descriptor,
+                                              memory->GetIOSurface(), {}));
+    texture->mSharedTextureMemoryState = memory->GetState();
+    return texture;
+}
+
+// static
 Ref<Texture> Texture::CreateWrapping(Device* device,
                                      const TextureDescriptor* descriptor,
                                      NSPRef<id<MTLTexture>> wrapped) {
@@ -815,8 +848,15 @@ MaybeError Texture::InitializeFromIOSurface(const ExternalImageDescriptor* descr
 }
 
 void Texture::SynchronizeTextureBeforeUse(CommandRecordingContext* commandContext) {
-    if (@available(macOS 10.14, *)) {
-        if (!mWaitEvents.empty()) {
+    if (@available(macOS 10.14, iOS 12.0, *)) {
+        SharedTextureMemoryBase::PendingFenceList fences;
+        SharedTextureMemoryState* memoryState = GetSharedTextureMemoryState();
+        if (memoryState != nullptr) {
+            memoryState->AcquirePendingFences(&fences);
+            memoryState->SetLastUsageSerial(GetDevice()->GetPendingCommandSerial());
+        }
+
+        if (!mWaitEvents.empty() || !fences->empty()) {
             // There may be an open blit encoder from a copy command or writeBuffer.
             // Wait events are only allowed if there is no encoder open.
             commandContext->EndBlit();
@@ -828,12 +868,17 @@ void Texture::SynchronizeTextureBeforeUse(CommandRecordingContext* commandContex
             id<MTLSharedEvent> sharedEvent = static_cast<id<MTLSharedEvent>>(rawEvent);
             [commandBuffer encodeWaitForEvent:sharedEvent value:waitEvent.signaledValue];
         }
+
+        for (const auto& fence : fences) {
+            [commandBuffer encodeWaitForEvent:ToBackend(fence.object)->GetMTLSharedEvent()
+                                        value:fence.signaledValue];
+        }
     }
 }
 
 void Texture::IOSurfaceEndAccess(ExternalImageIOSurfaceEndAccessDescriptor* descriptor) {
     ASSERT(descriptor);
-    ToBackend(GetDevice())->ExportLastSignaledEvent(descriptor);
+    ToBackend(GetDevice()->GetQueue())->ExportLastSignaledEvent(descriptor);
     descriptor->isInitialized = IsSubresourceContentInitialized(GetAllSubresources());
     // Destroy the texture as it should not longer be used after EndAccess.
     Destroy();

@@ -17,12 +17,14 @@
 
 #include <vector>
 
+#include "dawn/common/WeakRef.h"
 #include "dawn/common/ityp_array.h"
 #include "dawn/common/ityp_bitset.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/Format.h"
 #include "dawn/native/Forward.h"
 #include "dawn/native/ObjectBase.h"
+#include "dawn/native/SharedTextureMemory.h"
 #include "dawn/native/Subresource.h"
 
 #include "dawn/native/dawn_platform.h"
@@ -37,7 +39,8 @@ enum class AllowMultiPlanarTextureFormat {
 MaybeError ValidateTextureDescriptor(
     const DeviceBase* device,
     const TextureDescriptor* descriptor,
-    AllowMultiPlanarTextureFormat allowMultiPlanar = AllowMultiPlanarTextureFormat::No);
+    AllowMultiPlanarTextureFormat allowMultiPlanar = AllowMultiPlanarTextureFormat::No,
+    std::optional<wgpu::TextureUsage> allowedSharedTextureMemoryUsage = std::nullopt);
 MaybeError ValidateTextureViewDescriptor(const DeviceBase* device,
                                          const TextureBase* texture,
                                          const TextureViewDescriptor* descriptor);
@@ -48,7 +51,8 @@ ResultOrError<TextureViewDescriptor> GetTextureViewDescriptorWithDefaults(
 bool IsValidSampleCount(uint32_t sampleCount);
 
 static constexpr wgpu::TextureUsage kReadOnlyTextureUsages =
-    wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::TextureBinding | kReadOnlyRenderAttachment;
+    wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::TextureBinding | kReadOnlyRenderAttachment |
+    kReadOnlyStorageTexture;
 
 // Valid texture usages for a resolve texture that are loaded from at the beginning of a render
 // pass.
@@ -115,6 +119,8 @@ class TextureBase : public ApiObjectBase {
 
     bool IsImplicitMSAARenderTextureViewSupported() const;
 
+    SharedTextureMemoryState* GetSharedTextureMemoryState() const;
+
     // Dawn API
     TextureViewBase* APICreateView(const TextureViewDescriptor* descriptor = nullptr);
     void APIDestroy();
@@ -133,6 +139,9 @@ class TextureBase : public ApiObjectBase {
 
     void DestroyImpl() override;
     void AddInternalUsage(wgpu::TextureUsage usage);
+
+    // The shared texture memory state the texture was created from. May be null.
+    Ref<SharedTextureMemoryState> mSharedTextureMemoryState;
 
   private:
     struct TextureState {

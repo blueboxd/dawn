@@ -514,7 +514,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         // Uses newTextureWithDescriptor::iosurface::plane which is available
         // on ios 11.0+ and macOS 11.0+
         if (@available(macOS 10.11, iOS 11.0, *)) {
-            EnableFeature(Feature::MultiPlanarFormats);
+            EnableFeature(Feature::DawnMultiPlanarFormats);
         }
 
         if (@available(macOS 11.0, iOS 10.0, *)) {
@@ -532,6 +532,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         EnableFeature(Feature::SurfaceCapabilities);
         EnableFeature(Feature::MSAARenderToSingleSampled);
         EnableFeature(Feature::DualSourceBlending);
+        EnableFeature(Feature::ChromiumExperimentalDp4a);
 
         // SIMD-scoped permute operations is supported by GPU family Metal3, Apple6, Apple7, Apple8,
         // and Mac2.
@@ -547,6 +548,13 @@ class PhysicalDevice : public PhysicalDeviceBase {
                 EnableFeature(Feature::ChromiumExperimentalSubgroups);
             }
         }
+
+        EnableFeature(Feature::SharedTextureMemoryIOSurface);
+        if (@available(macOS 10.14, iOS 12.0, *)) {
+            EnableFeature(Feature::SharedFenceMTLSharedEvent);
+        }
+
+        EnableFeature(Feature::Norm16TextureFormats);
     }
 
     void InitializeVendorArchitectureImpl() override {

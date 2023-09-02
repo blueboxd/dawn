@@ -462,23 +462,22 @@ const Value* ConvertInternal(const Value* root_value,
     return value_stack.Pop();
 }
 
-namespace detail {
-/// Implementation of TransformElements
+/// TransformElements constructs a new constant of type `composite_ty` by applying the
+/// transformation function `f` on each of the most deeply nested elements of 'cs'. Assumes that all
+/// input constants `cs` are of the same arity (all scalars or all vectors of the same size).
+/// If `f`'s last argument is a `size_t`, then the index of the most deeply nested element inside
+/// the most deeply nested aggregate type will be passed in.
 template <typename F, typename... CONSTANTS>
-Eval::Result TransformElements(Manager& mgr,
-                               const core::type::Type* composite_ty,
-                               F&& f,
-                               size_t index,
-                               CONSTANTS&&... cs) {
+tint::traits::EnableIf<tint::traits::IsType<size_t, tint::traits::LastParameterType<F>>,
+                       Eval::Result>
+TransformElements(Manager& mgr,
+                  const core::type::Type* composite_ty,
+                  const F& f,
+                  size_t index,
+                  CONSTANTS&&... cs) {
     auto [el_ty, n] = First(cs...)->Type()->Elements();
     if (!el_ty) {
-        constexpr bool kHasIndexParam =
-            tint::traits::IsType<size_t, tint::traits::LastParameterType<F>>;
-        if constexpr (kHasIndexParam) {
-            return f(cs..., index);
-        } else {
-            return f(cs...);
-        }
+        return f(cs..., index);
     }
 
     auto* composite_el_ty = composite_ty->Elements(composite_ty).type;
@@ -486,8 +485,7 @@ Eval::Result TransformElements(Manager& mgr,
     Vector<const Value*, 8> els;
     els.Reserve(n);
     for (uint32_t i = 0; i < n; i++) {
-        if (auto el = detail::TransformElements(mgr, composite_el_ty, std::forward<F>(f), index + i,
-                                                cs->Index(i)...)) {
+        if (auto el = TransformElements(mgr, composite_el_ty, f, index + i, cs->Index(i)...)) {
             els.Push(el.Get());
 
         } else {
@@ -496,31 +494,78 @@ Eval::Result TransformElements(Manager& mgr,
     }
     return mgr.Composite(composite_ty, std::move(els));
 }
-}  // namespace detail
 
-/// TransformElements constructs a new constant of type `composite_ty` by applying the
-/// transformation function `f` on each of the most deeply nested elements of 'cs'. Assumes that all
-/// input constants `cs` are of the same arity (all scalars or all vectors of the same size).
-/// If `f`'s last argument is a `size_t`, then the index of the most deeply nested element inside
-/// the most deeply nested aggregate type will be passed in.
-template <typename F, typename... CONSTANTS>
-Eval::Result TransformElements(Manager& mgr,
-                               const core::type::Type* composite_ty,
-                               F&& f,
-                               CONSTANTS&&... cs) {
-    return detail::TransformElements(mgr, composite_ty, f, 0, cs...);
+/// Signature of a unary transformation callback
+using UnaryTransform = std::function<Eval::Result(const Value*)>;
+
+/// TransformUnaryElements constructs a new constant of type `composite_ty` by applying the
+/// transformation function 'f' on each of the most deeply nested elements of `c0`.
+Eval::Result TransformUnaryElements(Manager& mgr,
+                                    const core::type::Type* composite_ty,
+                                    const UnaryTransform& f,
+                                    const Value* c0) {
+    auto [el_ty, n] = c0->Type()->Elements();
+    if (!el_ty) {
+        return f(c0);
+    }
+
+    auto* composite_el_ty = composite_ty->Elements(composite_ty).type;
+
+    Vector<const Value*, 8> els;
+    els.Reserve(n);
+    for (uint32_t i = 0; i < n; i++) {
+        if (auto el = TransformUnaryElements(mgr, composite_el_ty, f, c0->Index(i))) {
+            els.Push(el.Get());
+
+        } else {
+            return el.Failure();
+        }
+    }
+    return mgr.Composite(composite_ty, std::move(els));
 }
+
+/// Signature of a binary transformation callback.
+using BinaryTransform = std::function<Eval::Result(const Value*, const Value*)>;
 
 /// TransformBinaryElements constructs a new constant of type `composite_ty` by applying the
 /// transformation function 'f' on each of the most deeply nested elements of both `c0` and `c1`.
-/// Unlike TransformElements, this function handles the constants being of different arity, e.g.
-/// vector-scalar, scalar-vector.
-template <typename F>
 Eval::Result TransformBinaryElements(Manager& mgr,
                                      const core::type::Type* composite_ty,
-                                     F&& f,
+                                     const BinaryTransform& f,
                                      const Value* c0,
                                      const Value* c1) {
+    auto [el_ty, n] = c0->Type()->Elements();
+    if (!el_ty) {
+        return f(c0, c1);
+    }
+
+    TINT_ASSERT(n == c1->Type()->Elements().count);
+
+    auto* composite_el_ty = composite_ty->Elements(composite_ty).type;
+
+    Vector<const Value*, 8> els;
+    els.Reserve(n);
+    for (uint32_t i = 0; i < n; i++) {
+        if (auto el =
+                TransformBinaryElements(mgr, composite_el_ty, f, c0->Index(i), c1->Index(i))) {
+            els.Push(el.Get());
+
+        } else {
+            return el.Failure();
+        }
+    }
+    return mgr.Composite(composite_ty, std::move(els));
+}
+
+/// TransformBinaryDifferingArityElements constructs a new constant of type `composite_ty` by
+/// applying the transformation function 'f' on each of the most deeply nested elements of both `c0`
+/// and `c1`. Unlike TransformElements, this function handles the constants being of different
+/// arity, e.g. vector-scalar, scalar-vector.
+Eval::Result TransformBinaryDifferingArityElements(Manager& mgr,
+                                                   const core::type::Type* composite_ty,
+                                                   const BinaryTransform& f,
+                                                   const Value* c0,
+                                                   const Value* c1) {
     uint32_t n0 = c0->Type()->Elements(nullptr, 1).count;
     uint32_t n1 = c1->Type()->Elements(nullptr, 1).count;
     uint32_t max_n = std::max(n0, n1);
@@ -535,14 +580,44 @@ Eval::Result TransformBinaryElements(Manager& mgr,
     els.Reserve(max_n);
     for (uint32_t i = 0; i < max_n; i++) {
         auto nested_or_self = [&](auto* c, uint32_t num_elems) {
-            if (num_elems == 1) {
-                return c;
-            }
-            return c->Index(i);
+            return (num_elems == 1) ? c : c->Index(i);
         };
-        if (auto el = TransformBinaryElements(mgr, element_ty, std::forward<F>(f),
-                                              nested_or_self(c0, n0), nested_or_self(c1, n1))) {
+        if (auto el = TransformBinaryDifferingArityElements(
+                mgr, element_ty, f, nested_or_self(c0, n0), nested_or_self(c1, n1))) {
             els.Push(el.Get());
+        } else {
+            return el.Failure();
+        }
+    }
+    return mgr.Composite(composite_ty, std::move(els));
+}
+
+/// Signature of a ternary transformation callback
+using TernaryTransform = std::function<Eval::Result(const Value*, const Value*, const Value*)>;
+
+/// TransformTernaryElements constructs a new constant of type `composite_ty` by applying the
+/// transformation function 'f' on each of the most deeply nested elements of both `c0`, `c1`, and
+/// `c2`.
+Eval::Result TransformTernaryElements(Manager& mgr,
+                                      const core::type::Type* composite_ty,
+                                      const TernaryTransform& f,
+                                      const Value* c0,
+                                      const Value* c1,
+                                      const Value* c2) {
+    auto [el_ty, n] = c0->Type()->Elements();
+    if (!el_ty) {
+        return f(c0, c1, c2);
+    }
+
+    auto* composite_el_ty = composite_ty->Elements(composite_ty).type;
+
+    Vector<const Value*, 8> els;
+    els.Reserve(n);
+    for (uint32_t i = 0; i < n; i++) {
+        if (auto el = TransformTernaryElements(mgr, composite_el_ty, f, c0->Index(i), c1->Index(i),
+                                               c2->Index(i))) {
+            els.Push(el.Get());
+
         } else {
             return el.Failure();
         }
@@ -1204,7 +1279,7 @@ Eval::Result Eval::Mul(const Source& source,
     auto transform = [&](const Value* c0, const Value* c1) {
         return Dispatch_fia_fiu32_f16(MulFunc(source, c0->Type()), c0, c1);
     };
-    return TransformBinaryElements(mgr, ty, transform, v1, v2);
+    return TransformBinaryDifferingArityElements(mgr, ty, transform, v1, v2);
 }
 
 Eval::Result Eval::Sub(const Source& source,
@@ -1214,7 +1289,7 @@ Eval::Result Eval::Sub(const Source& source,
     auto transform = [&](const Value* c0, const Value* c1) {
         return Dispatch_fia_fiu32_f16(SubFunc(source, c0->Type()), c0, c1);
     };
-    return TransformBinaryElements(mgr, ty, transform, v1, v2);
+    return TransformBinaryDifferingArityElements(mgr, ty, transform, v1, v2);
 }
 
 auto Eval::Det2Func(const Source& source, const core::type::Type* elem_ty) {
@@ -1510,7 +1585,7 @@ Eval::Result Eval::Complement(const core::type::Type* ty,
         };
         return Dispatch_ia_iu32(create, c);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::UnaryMinus(const core::type::Type* ty,
@@ -1535,7 +1610,7 @@ Eval::Result Eval::UnaryMinus(const core::type::Type* ty,
         };
         return Dispatch_fia_fi32_f16(create, c);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::Not(const core::type::Type* ty,
@@ -1545,7 +1620,7 @@ Eval::Result Eval::Not(const core::type::Type* ty,
         auto create = [&](auto i) { return CreateScalar(source, c->Type(), decltype(i)(!i)); };
         return Dispatch_bool(create, c);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::Plus(const core::type::Type* ty,
@@ -1555,7 +1630,7 @@ Eval::Result Eval::Plus(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16(AddFunc(source, c0->Type()), c0, c1);
     };
 
-    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryDifferingArityElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::Minus(const core::type::Type* ty,
@@ -1742,7 +1817,7 @@ Eval::Result Eval::Divide(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16(DivFunc(source, c0->Type()), c0, c1);
     };
 
-    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryDifferingArityElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::Modulo(const core::type::Type* ty,
@@ -1752,7 +1827,7 @@ Eval::Result Eval::Modulo(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16(ModFunc(source, c0->Type()), c0, c1);
     };
 
-    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryDifferingArityElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::Equal(const core::type::Type* ty,
@@ -1765,7 +1840,7 @@ Eval::Result Eval::Equal(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::NotEqual(const core::type::Type* ty,
@@ -1778,7 +1853,7 @@ Eval::Result Eval::NotEqual(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::LessThan(const core::type::Type* ty,
@@ -1791,7 +1866,7 @@ Eval::Result Eval::LessThan(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::GreaterThan(const core::type::Type* ty,
@@ -1804,7 +1879,7 @@ Eval::Result Eval::GreaterThan(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::LessThanEqual(const core::type::Type* ty,
@@ -1817,7 +1892,7 @@ Eval::Result Eval::LessThanEqual(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::GreaterThanEqual(const core::type::Type* ty,
@@ -1830,7 +1905,7 @@ Eval::Result Eval::GreaterThanEqual(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::LogicalAnd(const core::type::Type* ty,
@@ -1868,7 +1943,7 @@ Eval::Result Eval::And(const core::type::Type* ty,
         return Dispatch_ia_iu32_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::Or(const core::type::Type* ty,
@@ -1888,7 +1963,7 @@ Eval::Result Eval::Or(const core::type::Type* ty,
         return Dispatch_ia_iu32_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::Xor(const core::type::Type* ty,
@@ -1901,7 +1976,7 @@ Eval::Result Eval::Xor(const core::type::Type* ty,
         return Dispatch_ia_iu32(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::ShiftLeft(const core::type::Type* ty,
@@ -1998,7 +2073,7 @@ Eval::Result Eval::ShiftLeft(const core::type::Type* ty,
         return Failure;
     }
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::ShiftRight(const core::type::Type* ty,
@@ -2065,7 +2140,7 @@ Eval::Result Eval::ShiftRight(const core::type::Type* ty,
         return Failure;
     }
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::abs(const core::type::Type* ty,
@@ -2090,7 +2165,7 @@ Eval::Result Eval::abs(const core::type::Type* ty,
         };
         return Dispatch_fia_fiu32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::acos(const core::type::Type* ty,
@@ -2112,7 +2187,7 @@ Eval::Result Eval::acos(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::acosh(const core::type::Type* ty,
@@ -2134,7 +2209,7 @@ Eval::Result Eval::acosh(const core::type::Type* ty,
         return Dispatch_fa_f32_f16(create, c0);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::all(const core::type::Type* ty,
@@ -2168,7 +2243,7 @@ Eval::Result Eval::asin(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::asinh(const core::type::Type* ty,
@@ -2181,7 +2256,7 @@ Eval::Result Eval::asinh(const core::type::Type* ty,
         return Dispatch_fa_f32_f16(create, c0);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::atan(const core::type::Type* ty,
@@ -2193,7 +2268,7 @@ Eval::Result Eval::atan(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::atanh(const core::type::Type* ty,
@@ -2216,7 +2291,7 @@ Eval::Result Eval::atanh(const core::type::Type* ty,
         return Dispatch_fa_f32_f16(create, c0);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::atan2(const core::type::Type* ty,
@@ -2228,7 +2303,7 @@ Eval::Result Eval::atan2(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::ceil(const core::type::Type* ty,
@@ -2240,7 +2315,7 @@ Eval::Result Eval::ceil(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::clamp(const core::type::Type* ty,
@@ -2249,7 +2324,7 @@ Eval::Result Eval::clamp(const core::type::Type* ty,
     auto transform = [&](const Value* c0, const Value* c1, const Value* c2) {
         return Dispatch_fia_fiu32_f16(ClampFunc(source, c0->Type()), c0, c1, c2);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1], args[2]);
+    return TransformTernaryElements(mgr, ty, transform, args[0], args[1], args[2]);
 }
 
 Eval::Result Eval::cos(const core::type::Type* ty,
@@ -2262,7 +2337,7 @@ Eval::Result Eval::cos(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::cosh(const core::type::Type* ty,
@@ -2275,7 +2350,7 @@ Eval::Result Eval::cosh(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::countLeadingZeros(const core::type::Type* ty,
@@ -2290,7 +2365,7 @@ Eval::Result Eval::countLeadingZeros(const core::type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::countOneBits(const core::type::Type* ty,
@@ -2314,7 +2389,7 @@ Eval::Result Eval::countOneBits(const core::type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::countTrailingZeros(const core::type::Type* ty,
@@ -2329,7 +2404,7 @@ Eval::Result Eval::countTrailingZeros(const core::type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::cross(const core::type::Type* ty,
@@ -2397,7 +2472,7 @@ Eval::Result Eval::degrees(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::determinant(const core::type::Type* ty,
@@ -2485,7 +2560,7 @@ Eval::Result Eval::exp(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::exp2(const core::type::Type* ty,
@@ -2507,7 +2582,7 @@ Eval::Result Eval::exp2(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::extractBits(const core::type::Type* ty,
@@ -2567,7 +2642,7 @@ Eval::Result Eval::extractBits(const core::type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::faceForward(const core::type::Type* ty,
@@ -2630,7 +2705,7 @@ Eval::Result Eval::firstLeadingBit(const core::type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::firstTrailingBit(const core::type::Type* ty,
@@ -2656,7 +2731,7 @@ Eval::Result Eval::firstTrailingBit(const core::type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::floor(const core::type::Type* ty,
@@ -2668,7 +2743,7 @@ Eval::Result Eval::floor(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::fma(const core::type::Type* ty,
@@ -2694,7 +2769,7 @@ Eval::Result Eval::fma(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c1, c2, c3);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1], args[2]);
+    return TransformTernaryElements(mgr, ty, transform, args[0], args[1], args[2]);
 }
 
 Eval::Result Eval::fract(const core::type::Type* ty,
@@ -2708,7 +2783,7 @@ Eval::Result Eval::fract(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::frexp(const core::type::Type* ty,
@@ -2834,7 +2909,7 @@ Eval::Result Eval::insertBits(const core::type::Type* ty,
         };
         return Dispatch_iu32(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::inverseSqrt(const core::type::Type* ty,
@@ -2872,7 +2947,7 @@ Eval::Result Eval::inverseSqrt(const core::type::Type* ty,
         return Dispatch_fa_f32_f16(create, c0);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::ldexp(const core::type::Type* ty,
@@ -2918,7 +2993,7 @@ Eval::Result Eval::ldexp(const core::type::Type* ty,
         return Dispatch_fa_f32_f16(create, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformElements(mgr, ty, transform, 0, args[0]);
 }
 
 Eval::Result Eval::length(const core::type::Type* ty,
@@ -2949,7 +3024,7 @@ Eval::Result Eval::log(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::log2(const core::type::Type* ty,
@@ -2970,7 +3045,7 @@ Eval::Result Eval::log2(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::max(const core::type::Type* ty,
@@ -2982,7 +3057,7 @@ Eval::Result Eval::max(const core::type::Type* ty,
         };
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::min(const core::type::Type* ty,
@@ -2994,7 +3069,7 @@ Eval::Result Eval::min(const core::type::Type* ty,
         };
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::mix(const core::type::Type* ty,
@@ -3033,7 +3108,7 @@ Eval::Result Eval::mix(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
-    auto r = TransformElements(mgr, ty, transform, args[0], args[1]);
+    auto r = TransformElements(mgr, ty, transform, 0, args[0], args[1]);
     if (!r) {
         AddNote("when calculating mix", source);
     }
@@ -3058,13 +3133,13 @@ Eval::Result Eval::modf(const core::type::Type* ty,
 
     Vector<const Value*, 2> fields;
 
-    if (auto fract = TransformElements(mgr, args[0]->Type(), transform_fract, args[0])) {
+    if (auto fract = TransformUnaryElements(mgr, args[0]->Type(), transform_fract, args[0])) {
         fields.Push(fract.Get());
     } else {
         return tint::Failure;
     }
 
-    if (auto whole = TransformElements(mgr, args[0]->Type(), transform_whole, args[0])) {
+    if (auto whole = TransformUnaryElements(mgr, args[0]->Type(), transform_whole, args[0])) {
         fields.Push(whole.Get());
     } else {
         return tint::Failure;
@@ -3216,7 +3291,7 @@ Eval::Result Eval::pow(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::radians(const core::type::Type* ty,
@@ -3242,7 +3317,7 @@ Eval::Result Eval::radians(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::reflect(const core::type::Type* ty,
@@ -3410,7 +3485,7 @@ Eval::Result Eval::reverseBits(const core::type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::round(const core::type::Type* ty,
@@ -3446,7 +3521,7 @@ Eval::Result Eval::round(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::saturate(const core::type::Type* ty,
@@ -3460,7 +3535,7 @@ Eval::Result Eval::saturate(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::select_bool(const core::type::Type* ty,
@@ -3474,7 +3549,7 @@ Eval::Result Eval::select_bool(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::select_boolvec(const core::type::Type* ty,
@@ -3489,7 +3564,7 @@ Eval::Result Eval::select_boolvec(const core::type::Type* ty,
         return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformElements(mgr, ty, transform, 0, args[0], args[1]);
 }
 
 Eval::Result Eval::sign(const core::type::Type* ty,
@@ -3511,7 +3586,7 @@ Eval::Result Eval::sign(const core::type::Type* ty,
         };
         return Dispatch_fia_fi32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::sin(const core::type::Type* ty,
@@ -3524,7 +3599,7 @@ Eval::Result Eval::sin(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::sinh(const core::type::Type* ty,
@@ -3537,7 +3612,7 @@ Eval::Result Eval::sinh(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::smoothstep(const core::type::Type* ty,
@@ -3587,7 +3662,7 @@ Eval::Result Eval::smoothstep(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0, c1, c2);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1], args[2]);
+    return TransformTernaryElements(mgr, ty, transform, args[0], args[1], args[2]);
 }
 
 Eval::Result Eval::step(const core::type::Type* ty,
@@ -3601,7 +3676,7 @@ Eval::Result Eval::step(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
 Eval::Result Eval::sqrt(const core::type::Type* ty,
@@ -3611,7 +3686,7 @@ Eval::Result Eval::sqrt(const core::type::Type* ty,
         return Dispatch_fa_f32_f16(SqrtFunc(source, c0->Type()), c0);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::tan(const core::type::Type* ty,
@@ -3624,7 +3699,7 @@ Eval::Result Eval::tan(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::tanh(const core::type::Type* ty,
@@ -3637,7 +3712,7 @@ Eval::Result Eval::tanh(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::transpose(const core::type::Type* ty,
@@ -3669,7 +3744,7 @@ Eval::Result Eval::trunc(const core::type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::unpack2x16float(const core::type::Type* ty,
@@ -3794,7 +3869,7 @@ Eval::Result Eval::quantizeToF16(const core::type::Type* ty,
         }
         return CreateScalar(source, c->Type(), conv.Get());
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
 Eval::Result Eval::Convert(const core::type::Type* target_ty,

@@ -70,7 +70,7 @@ VkAccessFlags VulkanAccessFlags(wgpu::TextureUsage usage, const Format& format) 
     if (usage & wgpu::TextureUsage::CopyDst) {
         flags |= VK_ACCESS_TRANSFER_WRITE_BIT;
     }
-    if (usage & wgpu::TextureUsage::TextureBinding) {
+    if (usage & (wgpu::TextureUsage::TextureBinding | kReadOnlyStorageTexture)) {
         flags |= VK_ACCESS_SHADER_READ_BIT;
     }
     if (usage & wgpu::TextureUsage::StorageBinding) {
@@ -121,7 +121,7 @@ VkPipelineStageFlags VulkanPipelineStage(wgpu::TextureUsage usage, const Format&
     if (usage & (wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst)) {
         flags |= VK_PIPELINE_STAGE_TRANSFER_BIT;
     }
-    if (usage & wgpu::TextureUsage::TextureBinding) {
+    if (usage & (wgpu::TextureUsage::TextureBinding | kReadOnlyStorageTexture)) {
         // TODO(crbug.com/dawn/851): Only transition to the usage we care about to avoid
         // introducing FS -> VS dependencies that would prevent parallelization on tiler
         // GPUs
@@ -254,6 +254,10 @@ VkFormat VulkanImageFormat(const Device* device, wgpu::TextureFormat format) {
         case wgpu::TextureFormat::R8Sint:
             return VK_FORMAT_R8_SINT;
 
+        case wgpu::TextureFormat::R16Unorm:
+            return VK_FORMAT_R16_UNORM;
+        case wgpu::TextureFormat::R16Snorm:
+            return VK_FORMAT_R16_SNORM;
         case wgpu::TextureFormat::R16Uint:
             return VK_FORMAT_R16_UINT;
         case wgpu::TextureFormat::R16Sint:
@@ -275,6 +279,10 @@ VkFormat VulkanImageFormat(const Device* device, wgpu::TextureFormat format) {
             return VK_FORMAT_R32_SINT;
         case wgpu::TextureFormat::R32Float:
             return VK_FORMAT_R32_SFLOAT;
+        case wgpu::TextureFormat::RG16Unorm:
+            return VK_FORMAT_R16G16_UNORM;
+        case wgpu::TextureFormat::RG16Snorm:
+            return VK_FORMAT_R16G16_SNORM;
         case wgpu::TextureFormat::RG16Uint:
             return VK_FORMAT_R16G16_UINT;
         case wgpu::TextureFormat::RG16Sint:
@@ -308,6 +316,10 @@ VkFormat VulkanImageFormat(const Device* device, wgpu::TextureFormat format) {
             return VK_FORMAT_R32G32_SINT;
         case wgpu::TextureFormat::RG32Float:
             return VK_FORMAT_R32G32_SFLOAT;
+        case wgpu::TextureFormat::RGBA16Unorm:
+            return VK_FORMAT_R16G16B16A16_UNORM;
+        case wgpu::TextureFormat::RGBA16Snorm:
+            return VK_FORMAT_R16G16B16A16_SNORM;
         case wgpu::TextureFormat::RGBA16Uint:
             return VK_FORMAT_R16G16B16A16_UINT;
         case wgpu::TextureFormat::RGBA16Sint:
@@ -458,6 +470,8 @@ VkFormat VulkanImageFormat(const Device* device, wgpu::TextureFormat format) {
 
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
             return VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+        case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
+            return VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16;
 
         case wgpu::TextureFormat::Undefined:
             break;
@@ -560,6 +574,7 @@ VkImageLayout VulkanImageLayout(const Texture* texture, wgpu::TextureUsage usage
             // and store operations on storage images can only be done on the images in
             // VK_IMAGE_LAYOUT_GENERAL layout.
         case wgpu::TextureUsage::StorageBinding:
+        case kReadOnlyStorageTexture:
             return VK_IMAGE_LAYOUT_GENERAL;
 
         case wgpu::TextureUsage::RenderAttachment:
@@ -696,7 +711,7 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
 
     VkImageFormatListCreateInfo imageFormatListInfo = {};
     std::vector<VkFormat> viewFormats;
-    bool requiresCreateMutableFormatBit = GetViewFormats().any();
+    bool requiresViewFormatsList = GetViewFormats().any();
     // As current SPIR-V SPEC doesn't support 'bgra8' as a valid image format, to support the
     // STORAGE usage of BGRA8Unorm we have to create an RGBA8Unorm image view on the BGRA8Unorm
     // storage texture and polyfill it as RGBA8Unorm in Tint. See http://crbug.com/dawn/1641 for
@@ -704,10 +719,19 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
     if (createInfo.format == VK_FORMAT_B8G8R8A8_UNORM &&
         createInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT) {
         viewFormats.push_back(VK_FORMAT_R8G8B8A8_UNORM);
-        requiresCreateMutableFormatBit = true;
+        requiresViewFormatsList = true;
     }
-    if (requiresCreateMutableFormatBit) {
+    if (GetFormat().IsMultiPlanar() || requiresViewFormatsList) {
+        // Multi-planar image needs to have VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT in order to be able
+        // to create per-plane view. See
+        // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkImageCreateFlagBits.html
+        //
+        // Note: we cannot include R8 & RG8 in the viewFormats list of
+        // G8_B8R8_2PLANE_420_UNORM. The Vulkan validation layer will disallow that.
         createInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+    }
+
+    if (requiresViewFormatsList) {
         if (device->GetDeviceInfo().HasExt(DeviceExt::ImageFormatList)) {
             createInfoChain.Add(&imageFormatListInfo,
                                 VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
@@ -1259,15 +1283,17 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
     imageRange.levelCount = 1;
     imageRange.layerCount = 1;
 
-    if (GetFormat().isCompressed) {
+    if (GetFormat().isCompressed || GetFormat().IsMultiPlanar()) {
         if (range.aspects == Aspect::None) {
             return {};
         }
         // need to clear the texture with a copy from buffer
-        ASSERT(range.aspects == Aspect::Color);
+        ASSERT(range.aspects == Aspect::Color || range.aspects == Aspect::Plane0 ||
+               range.aspects == Aspect::Plane1);
         const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(range.aspects).block;
 
         Extent3D largestMipSize = GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel);
+        largestMipSize = GetFormat().GetAspectSize(range.aspects, largestMipSize);
 
         uint32_t bytesPerRow = Align((largestMipSize.width / blockInfo.width) * blockInfo.byteSize,
                                      device->GetOptimalBytesPerRowAlignment());
@@ -1284,6 +1310,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
         for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
              ++level) {
             Extent3D copySize = GetMipLevelSingleSubresourcePhysicalSize(level);
+            copySize = GetFormat().GetAspectSize(range.aspects, copySize);
             imageRange.baseMipLevel = level;
             for (uint32_t layer = range.baseArrayLayer;
                  layer < range.baseArrayLayer + range.layerCount; ++layer) {

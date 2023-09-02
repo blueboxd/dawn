@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "dawn/common/GPUInfo.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/D3D11Backend.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/Instance.h"
@@ -41,6 +42,8 @@
 #include "dawn/native/d3d11/RenderPipelineD3D11.h"
 #include "dawn/native/d3d11/SamplerD3D11.h"
 #include "dawn/native/d3d11/ShaderModuleD3D11.h"
+#include "dawn/native/d3d11/SharedFenceD3D11.h"
+#include "dawn/native/d3d11/SharedTextureMemoryD3D11.h"
 #include "dawn/native/d3d11/SwapChainD3D11.h"
 #include "dawn/native/d3d11/TextureD3D11.h"
 #include "dawn/platform/DawnPlatform.h"
@@ -152,7 +155,7 @@ CommandRecordingContext* Device::GetPendingCommandContext(Device::SubmitMode sub
 
 MaybeError Device::TickImpl() {
     // Perform cleanup operations to free unused objects
-    [[maybe_unused]] ExecutionSerial completedSerial = GetCompletedCommandSerial();
+    [[maybe_unused]] ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
 
     // Check for debug layer messages before executing the command context in case we encounter an
     // error during execution and early out as a result.
@@ -167,7 +170,7 @@ MaybeError Device::TickImpl() {
 }
 
 MaybeError Device::NextSerial() {
-    IncrementLastSubmittedCommandSerial();
+    GetQueue()->IncrementLastSubmittedCommandSerial();
 
     TRACE_EVENT1(GetPlatform(), General, "D3D11Device::SignalFence", "serial",
                  uint64_t(GetLastSubmittedCommandSerial()));
@@ -182,12 +185,12 @@ MaybeError Device::NextSerial() {
 }
 
 MaybeError Device::WaitForSerial(ExecutionSerial serial) {
-    DAWN_TRY(CheckPassedSerials());
-    if (GetCompletedCommandSerial() < serial) {
+    DAWN_TRY(GetQueue()->CheckPassedSerials());
+    if (GetQueue()->GetCompletedCommandSerial() < serial) {
         DAWN_TRY(CheckHRESULT(mFence->SetEventOnCompletion(uint64_t(serial), mFenceEvent),
                               "D3D11 set event on completion"));
         WaitForSingleObject(mFenceEvent, INFINITE);
-        DAWN_TRY(CheckPassedSerials());
+        DAWN_TRY(GetQueue()->CheckPassedSerials());
     }
     return {};
 }
@@ -203,7 +206,7 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
         return DAWN_DEVICE_LOST_ERROR("Device lost");
     }
 
-    if (completedSerial <= GetCompletedCommandSerial()) {
+    if (completedSerial <= GetQueue()->GetCompletedCommandSerial()) {
         return ExecutionSerial(0);
     }
 
@@ -301,6 +304,59 @@ void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPip
                                                WGPUCreateRenderPipelineAsyncCallback callback,
                                                void* userdata) {
     RenderPipeline::InitializeAsync(std::move(renderPipeline), callback, userdata);
+}
+
+ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImpl(
+    const SharedTextureMemoryDescriptor* descriptor) {
+    UnpackedSharedTextureMemoryDescriptorChain unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+
+    wgpu::SType type;
+    DAWN_TRY_ASSIGN(
+        type, (ValidateBranches<BranchList<Branch<SharedTextureMemoryDXGISharedHandleDescriptor>,
+                                           Branch<SharedTextureMemoryD3D11Texture2DDescriptor>>>(
+                  unpacked)));
+
+    switch (type) {
+        case wgpu::SType::SharedTextureMemoryDXGISharedHandleDescriptor:
+            DAWN_INVALID_IF(!HasFeature(Feature::SharedTextureMemoryDXGISharedHandle),
+                            "%s is not enabled.",
+                            wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle);
+            return SharedTextureMemory::Create(
+                this, descriptor->label,
+                std::get<const SharedTextureMemoryDXGISharedHandleDescriptor*>(unpacked));
+        case wgpu::SType::SharedTextureMemoryD3D11Texture2DDescriptor:
+            DAWN_INVALID_IF(!HasFeature(Feature::SharedTextureMemoryD3D11Texture2D),
+                            "%s is not enabled.",
+                            wgpu::FeatureName::SharedTextureMemoryD3D11Texture2D);
+            return SharedTextureMemory::Create(
+                this, descriptor->label,
+                std::get<const SharedTextureMemoryD3D11Texture2DDescriptor*>(unpacked));
+        default:
+            UNREACHABLE();
+    }
+}
+
+ResultOrError<Ref<SharedFenceBase>> Device::ImportSharedFenceImpl(
+    const SharedFenceDescriptor* descriptor) {
+    UnpackedSharedFenceDescriptorChain unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+
+    wgpu::SType type;
+    DAWN_TRY_ASSIGN(
+        type,
+        (ValidateBranches<BranchList<Branch<SharedFenceDXGISharedHandleDescriptor>>>(unpacked)));
+
+    switch (type) {
+        case wgpu::SType::SharedFenceDXGISharedHandleDescriptor:
+            DAWN_INVALID_IF(!HasFeature(Feature::SharedFenceDXGISharedHandle), "%s is not enabled.",
+                            wgpu::FeatureName::SharedFenceDXGISharedHandle);
+            return SharedFence::Create(
+                this, descriptor->label,
+                std::get<const SharedFenceDXGISharedHandleDescriptor*>(unpacked));
+        default:
+            UNREACHABLE();
+    }
 }
 
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
@@ -460,7 +516,7 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
     // Shared handle is assumed to support resource sharing capability. The resource
     // shared capability tier must agree to share resources between D3D devices.
     const Format* format = GetInternalFormat(textureDescriptor->format).AcquireSuccess();
-    if (format->IsMultiPlanar()) {
+    if (format->IsMultiPlanar() && descriptor->GetType() == ExternalImageType::DXGISharedHandle) {
         DAWN_TRY(ValidateVideoTextureCanBeShared(
             this, d3d::DXGITextureFormat(textureDescriptor->format)));
     }

@@ -697,7 +697,7 @@ bool GenerateMsl(const tint::Program* program, const Options& options) {
 
     if (options.validate && options.skip_hash.count(hash) == 0) {
         tint::msl::validate::Result res;
-#ifdef TINT_ENABLE_MSL_VALIDATION_USING_METAL_API
+#ifdef __APPLE__
         res = tint::msl::validate::UsingMetalAPI(result->msl, msl_version);
 #else
 #ifdef _WIN32
@@ -713,7 +713,7 @@ bool GenerateMsl(const tint::Program* program, const Options& options) {
             res.output = "xcrun executable not found. Cannot validate.";
             res.failed = true;
         }
-#endif  // TINT_ENABLE_MSL_VALIDATION_USING_METAL_API
+#endif  // __APPLE__
         if (res.failed) {
             std::cerr << res.output << std::endl;
             return false;
@@ -883,6 +883,10 @@ bool GenerateGlsl(const tint::Program* program, const Options& options) {
         gen_options.disable_robustness = !options.enable_robustness;
         gen_options.external_texture_options.bindings_map =
             tint::cmd::GenerateExternalTextureBindings(prg);
+        tint::TextureBuiltinsFromUniformOptions textureBuiltinsFromUniform;
+        constexpr uint32_t kMaxBindGroups = 4u;
+        textureBuiltinsFromUniform.ubo_binding = {kMaxBindGroups, 0u};
+        gen_options.texture_builtins_from_uniform = std::move(textureBuiltinsFromUniform);
         auto result = tint::glsl::writer::Generate(prg, gen_options, entry_point_name);
         if (!result) {
             tint::cmd::PrintWGSL(std::cerr, *prg);

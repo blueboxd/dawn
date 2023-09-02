@@ -118,7 +118,7 @@ bool PhysicalDevice::AreTimestampQueriesSupported() const {
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::TextureCompressionBC);
-    EnableFeature(Feature::MultiPlanarFormats);
+    EnableFeature(Feature::DawnMultiPlanarFormats);
     EnableFeature(Feature::Depth32FloatStencil8);
     EnableFeature(Feature::IndirectFirstInstance);
     EnableFeature(Feature::RG11B10UfloatRenderable);
@@ -126,6 +126,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::Float32Filterable);
     EnableFeature(Feature::DualSourceBlending);
+    EnableFeature(Feature::Norm16TextureFormats);
 
     if (AreTimestampQueriesSupported()) {
         EnableFeature(Feature::TimestampQuery);
@@ -156,6 +157,9 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         (bgra8unormFormatInfo.Support1 & D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW)) {
         EnableFeature(Feature::BGRA8UnormStorage);
     }
+
+    EnableFeature(Feature::SharedTextureMemoryDXGISharedHandle);
+    EnableFeature(Feature::SharedFenceDXGISharedHandle);
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -627,6 +631,13 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
             deviceToggles->ForceSet(
                 Toggle::NoWorkaroundDstAlphaAsSrcBlendFactorForBothColorAndAlphaDoesNotWork, true);
         }
+    }
+
+    // Currently these workarounds are only needed on Intel Gen9 and Gen11 GPUs.
+    // See http://crbug.com/dawn/484 for more information.
+    if (gpu_info::IsIntelGen9(vendorId, deviceId) || gpu_info::IsIntelGen11(vendorId, deviceId)) {
+        deviceToggles->Default(Toggle::D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources,
+                               true);
     }
 
 #if D3D12_SDK_VERSION >= 602

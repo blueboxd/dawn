@@ -33,6 +33,8 @@
 #include "dawn/native/d3d12/Forward.h"
 #include "dawn/native/d3d12/HeapD3D12.h"
 #include "dawn/native/d3d12/ResourceAllocatorManagerD3D12.h"
+#include "dawn/native/d3d12/SharedFenceD3D12.h"
+#include "dawn/native/d3d12/SharedTextureMemoryD3D12.h"
 #include "dawn/native/d3d12/StagingDescriptorAllocatorD3D12.h"
 #include "dawn/native/d3d12/TextureCopySplitter.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
@@ -57,9 +59,8 @@ D3D12_RESOURCE_STATES D3D12TextureUsage(wgpu::TextureUsage usage, const Format& 
     if (usage & wgpu::TextureUsage::CopyDst) {
         resourceState |= D3D12_RESOURCE_STATE_COPY_DEST;
     }
-    if (usage & (wgpu::TextureUsage::TextureBinding)) {
-        resourceState |= (D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
-                          D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    if (usage & (wgpu::TextureUsage::TextureBinding | kReadOnlyStorageTexture)) {
+        resourceState |= D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE;
     }
     if (usage & wgpu::TextureUsage::StorageBinding) {
         resourceState |= D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -204,6 +205,17 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device,
     return std::move(dawnTexture);
 }
 
+// static
+ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
+    SharedTextureMemory* memory,
+    const TextureDescriptor* descriptor) {
+    Device* device = ToBackend(memory->GetDevice());
+    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
+    DAWN_TRY(texture->InitializeAsExternalTexture(memory->GetD3DResource(), {}, false));
+    texture->mSharedTextureMemoryState = memory->GetState();
+    return texture;
+}
+
 MaybeError Texture::InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
                                                 std::vector<Ref<d3d::Fence>> waitFences,
                                                 bool isSwapChainTexture) {
@@ -240,9 +252,16 @@ MaybeError Texture::InitializeAsInternalTexture() {
     resourceDescriptor.DepthOrArraySize = size.depthOrArrayLayers;
 
     Device* device = ToBackend(GetDevice());
+    // When the depth stencil texture is created on a not-zeroed heap, its first usage will also be
+    // copy destination when it is initialized with a non-zero value, which also triggered the issue
+    // about copying data into a placed depth stencil texture with a dirty memory, so in this
+    // situation the workaround should also be enabled.
     bool applyForceClearCopyableDepthStencilTextureOnCreationToggle =
         device->IsToggleEnabled(Toggle::D3D12ForceClearCopyableDepthStencilTextureOnCreation) &&
-        GetFormat().HasDepthOrStencil() && (GetInternalUsage() & wgpu::TextureUsage::CopyDst);
+        GetFormat().HasDepthOrStencil() &&
+        ((GetInternalUsage() & wgpu::TextureUsage::CopyDst) ||
+         (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting) &&
+          device->IsToggleEnabled(Toggle::D3D12CreateNotZeroedHeap)));
     if (applyForceClearCopyableDepthStencilTextureOnCreationToggle) {
         AddInternalUsage(wgpu::TextureUsage::RenderAttachment);
     }
@@ -283,18 +302,15 @@ MaybeError Texture::InitializeAsInternalTexture() {
 
     SetLabelImpl();
 
-    if (applyForceClearCopyableDepthStencilTextureOnCreationToggle) {
+    if (applyForceClearCopyableDepthStencilTextureOnCreationToggle ||
+        device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
         CommandRecordingContext* commandContext;
         DAWN_TRY_ASSIGN(commandContext, device->GetPendingCommandContext());
-        DAWN_TRY(ClearTexture(commandContext, GetAllSubresources(), TextureBase::ClearValue::Zero));
-    }
-
-    if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-        CommandRecordingContext* commandContext;
-        DAWN_TRY_ASSIGN(commandContext, device->GetPendingCommandContext());
-
-        DAWN_TRY(
-            ClearTexture(commandContext, GetAllSubresources(), TextureBase::ClearValue::NonZero));
+        ClearValue clearValue =
+            device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)
+                ? ClearValue::NonZero
+                : ClearValue::Zero;
+        DAWN_TRY(ClearTexture(commandContext, GetAllSubresources(), clearValue));
     }
 
     return {};
@@ -318,12 +334,7 @@ MaybeError Texture::InitializeAsSwapChainTexture(ComPtr<ID3D12Resource> d3d12Tex
 }
 
 Texture::Texture(Device* device, const TextureDescriptor* descriptor)
-    : Base(device, descriptor),
-      mSubresourceStateAndDecay(
-          GetFormat().aspects,
-          GetArrayLayers(),
-          GetNumMipLevels(),
-          {D3D12_RESOURCE_STATES::D3D12_RESOURCE_STATE_COMMON, kMaxExecutionSerial, false}) {}
+    : Base(device, descriptor), mSubresourceStateAndDecay(InitialSubresourceStateAndDecay()) {}
 
 Texture::~Texture() = default;
 
@@ -404,6 +415,21 @@ MaybeError Texture::SynchronizeImportedTextureBeforeUse() {
         device->ReferenceUntilUnused(static_cast<Fence*>(fence.Get())->GetD3D12Fence());
     }
     mWaitFences.clear();
+
+    SharedTextureMemoryBase::PendingFenceList fences;
+    SharedTextureMemoryState* memoryState = GetSharedTextureMemoryState();
+    if (memoryState != nullptr) {
+        memoryState->AcquirePendingFences(&fences);
+        memoryState->SetLastUsageSerial(GetDevice()->GetPendingCommandSerial());
+    }
+
+    for (const auto& fence : fences) {
+        DAWN_TRY(CheckHRESULT(device->GetCommandQueue()->Wait(
+                                  ToBackend(fence.object)->GetD3DFence(), fence.signaledValue),
+                              "D3D12 fence wait"));
+        // Keep D3D12 fence alive until commands complete.
+        device->ReferenceUntilUnused(ToBackend(fence.object)->GetD3DFence());
+    }
     return {};
 }
 
@@ -507,8 +533,7 @@ void Texture::TransitionSubresourceRange(std::vector<D3D12_RESOURCE_BARRIER>* ba
     // PIXEL_SHADER_RESOURCE, COPY_SRC, COPY_DEST.
     {
         const D3D12_RESOURCE_STATES kD3D12PromotableReadOnlyStates =
-            D3D12_RESOURCE_STATE_COPY_SOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
-            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            D3D12_RESOURCE_STATE_COPY_SOURCE | D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE;
 
         if (lastState == D3D12_RESOURCE_STATE_COMMON) {
             if (IsSubset(newState, kD3D12PromotableReadOnlyStates) ||
@@ -616,6 +641,17 @@ void Texture::TrackUsageAndGetResourceBarrierForPass(CommandRecordingContext* co
             D3D12_RESOURCE_STATES newState = D3D12TextureUsage(usage, GetFormat());
             TransitionSubresourceRange(barriers, mergeRange, state, newState, pendingCommandSerial);
         });
+}
+
+SubresourceStorage<Texture::StateAndDecay> Texture::InitialSubresourceStateAndDecay() const {
+    return {GetFormat().aspects,
+            GetArrayLayers(),
+            GetNumMipLevels(),
+            {D3D12_RESOURCE_STATES::D3D12_RESOURCE_STATE_COMMON, kMaxExecutionSerial, false}};
+}
+
+void Texture::ResetSubresourceStateAndDecayToCommon() {
+    mSubresourceStateAndDecay = InitialSubresourceStateAndDecay();
 }
 
 D3D12_RENDER_TARGET_VIEW_DESC Texture::GetRTVDescriptor(const Format& format,

@@ -110,7 +110,8 @@ endif()
 
 # GLFW is not supported in UWP
 set(DAWN_SUPPORTS_GLFW_FOR_WINDOWING OFF)
-if ((WIN32 AND NOT WINDOWS_STORE) OR UNIX AND NOT ANDROID)
+
+if ((WIN32 AND NOT WINDOWS_STORE) OR (UNIX AND NOT ANDROID))
     set(DAWN_SUPPORTS_GLFW_FOR_WINDOWING ON)
 endif()
 
@@ -180,7 +181,6 @@ option_if_not_defined(TINT_BUILD_REGEX_FUZZER "Build regex fuzzer" OFF)
 option_if_not_defined(TINT_BUILD_BENCHMARKS "Build Tint benchmarks" OFF)
 option_if_not_defined(TINT_BUILD_TESTS "Build tests" ON)
 option_if_not_defined(TINT_BUILD_AS_OTHER_OS "Override OS detection to force building of *_other.cc files" OFF)
-option_if_not_defined(TINT_BUILD_REMOTE_COMPILE "Build the remote-compile tool for validating shaders on a remote machine" OFF)
 
 set_if_not_defined(TINT_EXTERNAL_BENCHMARK_CORPUS_DIR "" "Directory that holds a corpus of external shaders to benchmark.")
 
@@ -323,7 +323,6 @@ message(STATUS "Tint build regex fuzzer: ${TINT_BUILD_REGEX_FUZZER}")
 message(STATUS "Tint build benchmarks: ${TINT_BUILD_BENCHMARKS}")
 message(STATUS "Tint build tests: ${TINT_BUILD_TESTS}")
 message(STATUS "Tint build checking [chromium-style]: ${TINT_CHECK_CHROMIUM_STYLE}")
-message(STATUS "Tint build remote-compile tool: ${TINT_BUILD_REMOTE_COMPILE}")
 message(STATUS "Tint external benchmark corpus dir: ${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}")
 
 
@@ -571,6 +570,3 @@ if (DAWN_EMIT_COVERAGE)
     VERBATIM)
 endif()
 
-if (TINT_BUILD_REMOTE_COMPILE)
-  add_subdirectory(tools/src/cmd/remote-compile)
-endif()

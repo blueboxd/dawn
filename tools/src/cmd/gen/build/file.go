@@ -31,7 +31,7 @@ type File struct {
 	// The name of the file
 	Name string
 	// An optional condition used to build this source file
-	Condition string
+	Condition Condition
 	// All the #include made by this file
 	Includes []Include
 	// All the transitive dependencies of this file
@@ -43,7 +43,14 @@ func (f *File) Path() string {
 	return path.Join(f.Directory.Path, f.Name)
 }
 
-// Path returns the absolute path of the file
+// AbsPath returns the absolute path of the file
 func (f *File) AbsPath() string {
 	return path.Join(f.Directory.AbsPath(), f.Name)
+}
+
+// RemoveFromProject removes the File from the project
+func (f *File) RemoveFromProject() {
+	path := f.Path()
+	f.Target.SourceFileSet.Remove(path)
+	f.Directory.Project.Files.Remove(path)
 }
