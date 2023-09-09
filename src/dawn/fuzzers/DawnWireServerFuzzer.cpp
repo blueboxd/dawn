@@ -62,16 +62,13 @@ int DawnWireServerFuzzer::Initialize(int* argc, char*** argv) {
     // for adapter discovery can be fuzzed.
     sInstance = std::make_unique<dawn::native::Instance>();
 
-    // TODO(crbug.com/1038952): Although we keep a static instance, when discovering default Vulkan
+    // TODO(crbug.com/1038952): Although we keep a static instance, when discovering Vulkan
     // adapters, if no adapter is found, the vulkan loader DLL will be loaded and then unloaded,
     // resulting in ASAN false positives. We work around this by explicitly loading the loader
     // without unloading it here.
 #if DAWN_PLATFORM_IS(WINDOWS) && defined(ADDRESS_SANITIZER)
     sVulkanLoader.Open(dawn::GetExecutableDirectory().value_or("") + "vulkan-1.dll");
 #endif
-
-    sInstance->DiscoverDefaultPhysicalDevices();
-
     return 0;
 }
 
@@ -125,7 +122,7 @@ int DawnWireServerFuzzer::Run(const uint8_t* data,
     serverDesc.procs = &procs;
     serverDesc.serializer = &devNull;
 
-    std::unique_ptr<dawn::wire::WireServer> wireServer(new dawn_wire::WireServer(serverDesc));
+    std::unique_ptr<dawn::wire::WireServer> wireServer(new dawn::wire::WireServer(serverDesc));
     wireServer->InjectInstance(sInstance->Get(), 1, 0);
     wireServer->HandleCommands(reinterpret_cast<const char*>(data), size);
 

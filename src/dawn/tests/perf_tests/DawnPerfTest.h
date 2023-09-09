@@ -16,7 +16,9 @@
 #define SRC_DAWN_TESTS_PERF_TESTS_DAWNPERFTEST_H_
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "dawn/tests/DawnTest.h"
 
@@ -90,6 +92,7 @@ class DawnPerfTestBase {
                      unsigned int value,
                      const std::string& units,
                      bool important) const;
+    void SetGPUTime(double GPUTime);
 
   private:
     void DoRunLoop(double maxRunTime);
@@ -110,6 +113,7 @@ class DawnPerfTestBase {
     unsigned int mNumStepsPerformed = 0;
     double mCpuTime;
     std::unique_ptr<utils::Timer> mTimer;
+    std::optional<double> mGPUTime;
 };
 
 template <typename Params = AdapterTestParam>
@@ -124,8 +128,84 @@ class DawnPerfTestWithParams : public DawnTestWithParams<Params>, public DawnPer
         wgpu::AdapterProperties properties;
         this->GetAdapter().GetProperties(&properties);
         DAWN_TEST_UNSUPPORTED_IF(properties.adapterType == wgpu::AdapterType::CPU);
+
+        if (mSupportsTimestampQuery) {
+            InitializeGPUTimer();
+        }
     }
     ~DawnPerfTestWithParams() override = default;
+
+    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
+        std::vector<wgpu::FeatureName> requiredFeatures = {wgpu::FeatureName::TimestampQuery};
+        mSupportsTimestampQuery = DawnTestWithParams<Params>::SupportsFeatures(requiredFeatures);
+        if (mSupportsTimestampQuery) {
+            return requiredFeatures;
+        }
+        return {};
+    }
+
+    bool SupportsTimestampQuery() const { return mSupportsTimestampQuery; }
+
+    void RecordBeginTimestamp(wgpu::CommandEncoder encoder) {
+        encoder.WriteTimestamp(mTimestampQuerySet, 0);
+    }
+
+    void RecordEndTimestampAndResolveQuerySet(wgpu::CommandEncoder encoder) {
+        encoder.WriteTimestamp(mTimestampQuerySet, 1);
+        encoder.ResolveQuerySet(mTimestampQuerySet, 0, kTimestampQueryCount, mResolveBuffer, 0);
+        encoder.CopyBufferToBuffer(mResolveBuffer, 0, mReadbackBuffer, 0,
+                                   sizeof(uint64_t) * kTimestampQueryCount);
+    }
+
+    void ComputeGPUElapsedTime() {
+        bool done = false;
+        mReadbackBuffer.MapAsync(
+            wgpu::MapMode::Read, 0, sizeof(uint64_t) * kTimestampQueryCount,
+            [](WGPUBufferMapAsyncStatus status, void* userdata) {
+                *static_cast<bool*>(userdata) = true;
+            },
+            &done);
+        while (!done) {
+            DawnTestWithParams<Params>::WaitABit();
+        }
+        const uint64_t* readbackValues =
+            static_cast<const uint64_t*>(mReadbackBuffer.GetConstMappedRange());
+        ASSERT_EQ(2u, kTimestampQueryCount);
+        double gpuTimeElapsed = (readbackValues[1] - readbackValues[0]) / 1e9;
+        SetGPUTime(gpuTimeElapsed);
+        mReadbackBuffer.Unmap();
+    }
+
+  private:
+    void InitializeGPUTimer() {
+        ASSERT(mSupportsTimestampQuery);
+
+        wgpu::Device device = this->device;
+
+        wgpu::QuerySetDescriptor querySetDescriptor;
+        querySetDescriptor.count = kTimestampQueryCount;
+        querySetDescriptor.type = wgpu::QueryType::Timestamp;
+        mTimestampQuerySet = device.CreateQuerySet(&querySetDescriptor);
+
+        wgpu::BufferDescriptor resolveBufferDescriptor;
+        resolveBufferDescriptor.size = kTimestampQueryCount * sizeof(uint64_t);
+        resolveBufferDescriptor.usage = wgpu::BufferUsage::QueryResolve |
+                                        wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
+        mResolveBuffer = device.CreateBuffer(&resolveBufferDescriptor);
+
+        wgpu::BufferDescriptor readbackBufferDescriptor;
+        readbackBufferDescriptor.size = kTimestampQueryCount * sizeof(uint64_t);
+        readbackBufferDescriptor.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+        mReadbackBuffer = device.CreateBuffer(&readbackBufferDescriptor);
+    }
+
+    static constexpr uint32_t kTimestampQueryCount = 2;
+
+    bool mSupportsTimestampQuery = false;
+
+    wgpu::QuerySet mTimestampQuerySet;
+    wgpu::Buffer mResolveBuffer;
+    wgpu::Buffer mReadbackBuffer;
 };
 
 using DawnPerfTest = DawnPerfTestWithParams<>;

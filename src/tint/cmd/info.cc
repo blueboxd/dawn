@@ -19,13 +19,12 @@
 #include "spirv-tools/libspirv.hpp"
 #endif  // TINT_BUILD_SPV_READER
 
-#include "src/tint/ast/module.h"
 #include "src/tint/cmd/helper.h"
-#include "src/tint/type/struct.h"
-#include "src/tint/utils/io/command.h"
-#include "src/tint/utils/string.h"
-#include "src/tint/utils/transform.h"
-#include "src/tint/val/val.h"
+#include "src/tint/lang/core/type/struct.h"
+#include "src/tint/lang/wgsl/ast/module.h"
+#include "src/tint/utils/command/command.h"
+#include "src/tint/utils/containers/transform.h"
+#include "src/tint/utils/text/string.h"
 #include "tint/tint.h"
 
 namespace {
@@ -34,7 +33,7 @@ struct Options {
     bool show_help = false;
 
 #if TINT_BUILD_SPV_READER
-    tint::reader::spirv::Options spirv_reader_options;
+    tint::spirv::reader::Options spirv_reader_options;
 #endif
 
     std::string input_filename;
@@ -328,9 +327,6 @@ int main(int argc, const char** argv) {
         std::cout << kUsage << std::endl;
         return 0;
     }
-
-    auto diag_printer = tint::diag::Printer::create(stderr, true);
-    tint::diag::Formatter diag_formatter;
 
     std::unique_ptr<tint::Program> program;
     std::unique_ptr<tint::Source::File> source_file;

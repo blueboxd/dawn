@@ -140,13 +140,20 @@ MaybeError ValidateTextureBinding(DeviceBase* device,
         case BindingInfoType::Texture: {
             SampleTypeBit supportedTypes =
                 texture->GetFormat().GetAspectInfo(aspect).supportedSampleTypes;
-            SampleTypeBit requiredType = SampleTypeToSampleTypeBit(bindingInfo.texture.sampleType);
-
             DAWN_TRY(ValidateCanUseAs(texture, wgpu::TextureUsage::TextureBinding, mode));
 
             DAWN_INVALID_IF(texture->IsMultisampledTexture() != bindingInfo.texture.multisampled,
                             "Sample count (%u) of %s doesn't match expectation (multisampled: %d).",
                             texture->GetSampleCount(), texture, bindingInfo.texture.multisampled);
+
+            SampleTypeBit requiredType;
+            if (bindingInfo.texture.sampleType == kInternalResolveAttachmentSampleType) {
+                // If the binding's sample type is kInternalResolveAttachmentSampleType,
+                // then the supported types must contain float.
+                requiredType = SampleTypeBit::UnfilterableFloat;
+            } else {
+                requiredType = SampleTypeToSampleTypeBit(bindingInfo.texture.sampleType);
+            }
 
             DAWN_INVALID_IF(
                 !(supportedTypes & requiredType),
@@ -279,7 +286,7 @@ MaybeError ValidateBindGroupDescriptor(DeviceBase* device,
         descriptor->entryCount, static_cast<uint32_t>(descriptor->layout->GetBindingCount()),
         descriptor->layout, descriptor->layout->EntriesToString());
 
-    const BindGroupLayoutBase::BindingMap& bindingMap = descriptor->layout->GetBindingMap();
+    const BindGroupLayoutInternalBase::BindingMap& bindingMap = descriptor->layout->GetBindingMap();
     ASSERT(bindingMap.size() <= kMaxBindingsPerPipelineLayout);
 
     ityp::bitset<BindingIndex, kMaxBindingsPerPipelineLayout> bindingsSet;
@@ -447,7 +454,7 @@ BindGroupBase::BindGroupBase(DeviceBase* device,
                 externalTextureBindingEntry->externalTexture->GetParamsBuffer();
             mBindingData.bufferData[paramsBindingIndex].offset = 0;
             mBindingData.bufferData[paramsBindingIndex].size =
-                sizeof(dawn_native::ExternalTextureParams);
+                sizeof(dawn::native::ExternalTextureParams);
 
             continue;
         }

@@ -15,6 +15,8 @@
 function(add_tint_fuzzer NAME)
   add_executable(${NAME}
     ${NAME}.cc
+    apply_substitute_overrides.cc
+    apply_substitute_overrides.h
     cli.cc
     cli.h
     data_builder.h
@@ -32,7 +34,7 @@ function(add_tint_fuzzer NAME)
     tint_common_fuzzer.h
     tint_reader_writer_fuzzer.h
     transform_builder.h
-    )
+  )
   target_link_libraries(${NAME} libtint-fuzz)
   tint_default_compile_options(${NAME})
   target_compile_options(${NAME} PRIVATE -Wno-missing-prototypes)
@@ -52,6 +54,10 @@ if (${TINT_BUILD_WGSL_READER} AND ${TINT_BUILD_SPV_WRITER})
   add_tint_fuzzer(tint_single_entry_point_fuzzer)
   add_tint_fuzzer(tint_vertex_pulling_fuzzer)
   add_tint_fuzzer(tint_wgsl_reader_spv_writer_fuzzer)
+endif()
+
+if (${TINT_BUILD_WGSL_READER} AND ${TINT_BUILD_IR})
+  add_tint_fuzzer(tint_ir_roundtrip_fuzzer)
 endif()
 
 if (${TINT_BUILD_WGSL_READER} AND ${TINT_BUILD_HLSL_WRITER})
@@ -100,6 +106,8 @@ if (${TINT_BUILD_WGSL_READER}
     AND ${TINT_BUILD_SPV_WRITER}
     AND ${TINT_BUILD_WGSL_WRITER})
   add_executable(tint_black_box_fuzz_target
+    apply_substitute_overrides.cc
+    apply_substitute_overrides.h
     mersenne_twister_engine.cc
     mersenne_twister_engine.h
     random_generator.cc
@@ -109,7 +117,7 @@ if (${TINT_BUILD_WGSL_READER}
     tint_black_box_fuzz_target.cc
     tint_common_fuzzer.cc
     tint_common_fuzzer.h
-    )
+  )
   target_link_libraries(tint_black_box_fuzz_target libtint)
   tint_default_compile_options(tint_black_box_fuzz_target)
 endif()

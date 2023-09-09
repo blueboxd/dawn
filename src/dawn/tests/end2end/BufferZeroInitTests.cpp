@@ -1368,7 +1368,7 @@ TEST_P(BufferZeroInitTest, ResolveQuerySet) {
     // destinationOffset > 0 and destinationOffset + 8 * queryCount <= kBufferSize
     {
         constexpr uint32_t kQueryCount = 1;
-        constexpr uint64_t kDestinationOffset = 256u;
+        constexpr uint64_t kDestinationOffset = kQueryResolveAlignment;
 
         wgpu::Buffer destination = CreateBuffer(kBufferSize + kDestinationOffset, kBufferUsage);
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
@@ -1383,6 +1383,8 @@ TEST_P(BufferZeroInitTest, ResolveQuerySet) {
 DAWN_INSTANTIATE_TEST(BufferZeroInitTest,
                       D3D11Backend({"nonzero_clear_resources_on_creation_for_testing"}),
                       D3D12Backend({"nonzero_clear_resources_on_creation_for_testing"}),
+                      D3D12Backend({"nonzero_clear_resources_on_creation_for_testing"},
+                                   {"d3d12_create_not_zeroed_heap"}),
                       MetalBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       OpenGLBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       OpenGLESBackend({"nonzero_clear_resources_on_creation_for_testing"}),

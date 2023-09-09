@@ -167,12 +167,12 @@ class MemoryDataBuilder {
         // bytes and avoid NaN or Inf.
         constexpr uint8_t dataMask = ~paddingMask;
         // Get a data byte
-        auto NextDataByte = [&]() {
+        auto NextDataByte = [&] {
             dataByte += 0x11u;
             return static_cast<uint8_t>((dataByte ^ dataXorKey) & dataMask);
         };
         // Get a padding byte
-        auto NextPaddingByte = [&]() {
+        auto NextPaddingByte = [&] {
             paddingByte += 0x13u;
             return static_cast<uint8_t>((paddingByte ^ paddingXorKey) | paddingMask);
         };
@@ -459,7 +459,7 @@ void RunComputeShaderWithBuffers(const wgpu::Device& device,
 
     wgpu::BindGroupDescriptor descriptor;
     descriptor.layout = pipeline.GetBindGroupLayout(0);
-    descriptor.entryCount = static_cast<uint32_t>(entries.size());
+    descriptor.entryCount = entries.size();
     descriptor.entries = entries.data();
 
     wgpu::BindGroup bindGroup = device.CreateBindGroup(&descriptor);

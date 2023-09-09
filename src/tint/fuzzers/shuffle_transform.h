@@ -15,7 +15,7 @@
 #ifndef SRC_TINT_FUZZERS_SHUFFLE_TRANSFORM_H_
 #define SRC_TINT_FUZZERS_SHUFFLE_TRANSFORM_H_
 
-#include "src/tint/ast/transform/transform.h"
+#include "src/tint/lang/wgsl/ast/transform/transform.h"
 
 namespace tint::fuzzers {
 
@@ -28,8 +28,8 @@ class ShuffleTransform : public ast::transform::Transform {
 
     /// @copydoc ast::transform::Transform::Apply
     ApplyResult Apply(const Program* program,
-                      const transform::DataMap& inputs,
-                      transform::DataMap& outputs) const override;
+                      const ast::transform::DataMap& inputs,
+                      ast::transform::DataMap& outputs) const override;
 
   private:
     size_t seed_;

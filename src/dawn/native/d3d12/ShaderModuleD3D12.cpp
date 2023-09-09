@@ -32,6 +32,7 @@
 #include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
 
 #include "tint/tint.h"
@@ -116,21 +117,22 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         }
     }
 
-    using tint::writer::BindingPoint;
+    using tint::BindingPoint;
 
-    tint::writer::BindingRemapperOptions bindingRemapper;
+    tint::BindingRemapperOptions bindingRemapper;
     // D3D12 registers like `t3` and `c3` have the same bindingOffset number in
     // the remapping but should not be considered a collision because they have
     // different types.
     bindingRemapper.allow_collisions = true;
 
-    tint::writer::ArrayLengthFromUniformOptions arrayLengthFromUniform;
+    tint::ArrayLengthFromUniformOptions arrayLengthFromUniform;
     arrayLengthFromUniform.ubo_binding = {layout->GetDynamicStorageBufferLengthsRegisterSpace(),
                                           layout->GetDynamicStorageBufferLengthsShaderRegister()};
 
     const BindingInfoArray& moduleBindingInfo = entryPoint.bindings;
     for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
-        const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
+        const BindGroupLayout* bgl =
+            ToBackend(layout->GetBindGroupLayout(group)->GetInternalBindGroupLayout());
         const auto& moduleGroupBindingInfo = moduleBindingInfo[group];
 
         // d3d12::BindGroupLayout packs the bindings per HLSL register-space. We modify
@@ -158,7 +160,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
                   bgl->GetBindingInfo(bindingIndex).buffer.type == kInternalStorageBufferBinding));
             if (forceStorageBufferAsUAV) {
                 bindingRemapper.access_controls.emplace(srcBindingPoint,
-                                                        tint::builtin::Access::kReadWrite);
+                                                        tint::core::Access::kReadWrite);
             }
 
             // On D3D12 backend all storage buffers without Dynamic Buffer Offset will always be
@@ -239,7 +241,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     CacheResult<d3d::CompiledShader> compiledShader;
     MaybeError compileError = [&]() -> MaybeError {
         DAWN_TRY_LOAD_OR_RUN(compiledShader, device, std::move(req), d3d::CompiledShader::FromBlob,
-                             d3d::CompileShader);
+                             d3d::CompileShader, "D3D12.CompileShader");
         return {};
     }();
 

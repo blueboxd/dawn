@@ -16,14 +16,14 @@
 
 #include "gtest/gtest.h"
 
-#include "src/tint/ast/call_statement.h"
 #include "src/tint/fuzzers/tint_ast_fuzzer/mutations/change_unary_operator.h"
 #include "src/tint/fuzzers/tint_ast_fuzzer/mutator.h"
 #include "src/tint/fuzzers/tint_ast_fuzzer/node_id_map.h"
 #include "src/tint/fuzzers/tint_ast_fuzzer/probability_context.h"
-#include "src/tint/program_builder.h"
-#include "src/tint/reader/wgsl/parser.h"
-#include "src/tint/writer/wgsl/generator.h"
+#include "src/tint/lang/wgsl/ast/call_statement.h"
+#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/reader/reader.h"
+#include "src/tint/lang/wgsl/writer/writer.h"
 
 namespace tint::fuzzers::ast_fuzzer {
 namespace {
@@ -43,7 +43,7 @@ TEST(ChangeUnaryOperatorTest, Operator_Not_Applicable) {
     }
   )";
     Source::File file("test.wgsl", content);
-    auto program = reader::wgsl::Parse(&file);
+    auto program = wgsl::reader::Parse(&file);
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
     NodeIdMap node_id_map(program);
@@ -81,49 +81,49 @@ TEST(ChangeUnaryOperatorTest, Operator_Not_Applicable) {
     // Only negation is allowed for float type. Cannot change
     // the operator of float types to any other.
     ASSERT_FALSE(MaybeApplyMutation(
-        program, MutationChangeUnaryOperator(neg_a_id, ast::UnaryOp::kComplement), node_id_map,
+        program, MutationChangeUnaryOperator(neg_a_id, core::UnaryOp::kComplement), node_id_map,
         &program, &node_id_map, nullptr));
     ASSERT_FALSE(MaybeApplyMutation(program,
-                                    MutationChangeUnaryOperator(neg_a_id, ast::UnaryOp::kNot),
+                                    MutationChangeUnaryOperator(neg_a_id, core::UnaryOp::kNot),
                                     node_id_map, &program, &node_id_map, nullptr));
     ASSERT_FALSE(MaybeApplyMutation(program,
-                                    MutationChangeUnaryOperator(neg_a_id, ast::UnaryOp::kNegation),
+                                    MutationChangeUnaryOperator(neg_a_id, core::UnaryOp::kNegation),
                                     node_id_map, &program, &node_id_map, nullptr));
 
     auto not_b_id = node_id_map.GetId(not_b_expr);
     // Only complement and negation is allowed for signed integer type.
     ASSERT_FALSE(MaybeApplyMutation(program,
-                                    MutationChangeUnaryOperator(not_b_id, ast::UnaryOp::kNot),
+                                    MutationChangeUnaryOperator(not_b_id, core::UnaryOp::kNot),
                                     node_id_map, &program, &node_id_map, nullptr));
     // Cannot change to the same unary operator.
     ASSERT_FALSE(MaybeApplyMutation(
-        program, MutationChangeUnaryOperator(not_b_id, ast::UnaryOp::kComplement), node_id_map,
+        program, MutationChangeUnaryOperator(not_b_id, core::UnaryOp::kComplement), node_id_map,
         &program, &node_id_map, nullptr));
 
     auto not_c_id = node_id_map.GetId(not_c_expr);
     // Only complement is allowed for unsigned integer.Cannot change
     //  // the operator of float types to any other.
     ASSERT_FALSE(MaybeApplyMutation(program,
-                                    MutationChangeUnaryOperator(not_c_id, ast::UnaryOp::kNot),
+                                    MutationChangeUnaryOperator(not_c_id, core::UnaryOp::kNot),
                                     node_id_map, &program, &node_id_map, nullptr));
     ASSERT_FALSE(MaybeApplyMutation(program,
-                                    MutationChangeUnaryOperator(not_c_id, ast::UnaryOp::kNegation),
+                                    MutationChangeUnaryOperator(not_c_id, core::UnaryOp::kNegation),
                                     node_id_map, &program, &node_id_map, nullptr));
     ASSERT_FALSE(MaybeApplyMutation(
-        program, MutationChangeUnaryOperator(not_c_id, ast::UnaryOp::kComplement), node_id_map,
+        program, MutationChangeUnaryOperator(not_c_id, core::UnaryOp::kComplement), node_id_map,
         &program, &node_id_map, nullptr));
 
     auto neg_d_id = node_id_map.GetId(neg_d_expr);
     // Only logical negation (not) is allowed for bool type.  Cannot change
     // the operator of float types to any other.
     ASSERT_FALSE(MaybeApplyMutation(
-        program, MutationChangeUnaryOperator(neg_d_id, ast::UnaryOp::kComplement), node_id_map,
+        program, MutationChangeUnaryOperator(neg_d_id, core::UnaryOp::kComplement), node_id_map,
         &program, &node_id_map, nullptr));
     ASSERT_FALSE(MaybeApplyMutation(program,
-                                    MutationChangeUnaryOperator(neg_d_id, ast::UnaryOp::kNegation),
+                                    MutationChangeUnaryOperator(neg_d_id, core::UnaryOp::kNegation),
                                     node_id_map, &program, &node_id_map, nullptr));
     ASSERT_FALSE(MaybeApplyMutation(program,
-                                    MutationChangeUnaryOperator(neg_d_id, ast::UnaryOp::kNot),
+                                    MutationChangeUnaryOperator(neg_d_id, core::UnaryOp::kNot),
                                     node_id_map, &program, &node_id_map, nullptr));
 }
 
@@ -135,7 +135,7 @@ TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable1) {
     }
   )";
     Source::File file("test.wgsl", content);
-    auto program = reader::wgsl::Parse(&file);
+    auto program = wgsl::reader::Parse(&file);
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
     NodeIdMap node_id_map(program);
@@ -153,20 +153,20 @@ TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable1) {
     // Assert mutation to be applicable and apply mutation.
     auto comp_a_id = node_id_map.GetId(comp_a_expr);
     ASSERT_TRUE(MaybeApplyMutation(program,
-                                   MutationChangeUnaryOperator(comp_a_id, ast::UnaryOp::kNegation),
+                                   MutationChangeUnaryOperator(comp_a_id, core::UnaryOp::kNegation),
                                    node_id_map, &program, &node_id_map, nullptr));
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
-    writer::wgsl::Options options;
-    auto result = writer::wgsl::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    wgsl::writer::Options options;
+    auto result = wgsl::writer::Generate(&program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   let a : i32 = 5;
   let comp_a = -(a);
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable2) {
@@ -176,7 +176,7 @@ TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable2) {
       var comp_b : vec3<i32> = ~b;
     })";
     Source::File file("test.wgsl", content);
-    auto program = reader::wgsl::Parse(&file);
+    auto program = wgsl::reader::Parse(&file);
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
     NodeIdMap node_id_map(program);
@@ -194,20 +194,20 @@ TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable2) {
     // Assert mutation to be applicable and apply mutation.
     auto comp_b_id = node_id_map.GetId(comp_b_expr);
     ASSERT_TRUE(MaybeApplyMutation(program,
-                                   MutationChangeUnaryOperator(comp_b_id, ast::UnaryOp::kNegation),
+                                   MutationChangeUnaryOperator(comp_b_id, core::UnaryOp::kNegation),
                                    node_id_map, &program, &node_id_map, nullptr));
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
-    writer::wgsl::Options options;
-    auto result = writer::wgsl::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    wgsl::writer::Options options;
+    auto result = wgsl::writer::Generate(&program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   let b : vec3<i32> = vec3<i32>(1, 3, -(1));
   var comp_b : vec3<i32> = -(b);
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable3) {
@@ -219,7 +219,7 @@ TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable3) {
     }
   )";
     Source::File file("test.wgsl", content);
-    auto program = reader::wgsl::Parse(&file);
+    auto program = wgsl::reader::Parse(&file);
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
     NodeIdMap node_id_map(program);
@@ -236,21 +236,21 @@ TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable3) {
 
     // Assert mutation to be applicable and apply mutation.
     auto neg_a_id = node_id_map.GetId(neg_a_expr);
-    ASSERT_TRUE(MaybeApplyMutation(program,
-                                   MutationChangeUnaryOperator(neg_a_id, ast::UnaryOp::kComplement),
-                                   node_id_map, &program, &node_id_map, nullptr));
+    ASSERT_TRUE(MaybeApplyMutation(
+        program, MutationChangeUnaryOperator(neg_a_id, core::UnaryOp::kComplement), node_id_map,
+        &program, &node_id_map, nullptr));
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
-    writer::wgsl::Options options;
-    auto result = writer::wgsl::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    wgsl::writer::Options options;
+    auto result = wgsl::writer::Generate(&program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   var a = -(5);
   var neg_a = ~(a);
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable4) {
@@ -261,7 +261,7 @@ TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable4) {
     }
   )";
     Source::File file("test.wgsl", content);
-    auto program = reader::wgsl::Parse(&file);
+    auto program = wgsl::reader::Parse(&file);
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
     NodeIdMap node_id_map(program);
@@ -278,21 +278,21 @@ TEST(ChangeUnaryOperatorTest, Signed_Integer_Types_Applicable4) {
 
     // Assert mutation to be applicable and apply mutation.
     auto neg_b_id = node_id_map.GetId(neg_b_expr);
-    ASSERT_TRUE(MaybeApplyMutation(program,
-                                   MutationChangeUnaryOperator(neg_b_id, ast::UnaryOp::kComplement),
-                                   node_id_map, &program, &node_id_map, nullptr));
+    ASSERT_TRUE(MaybeApplyMutation(
+        program, MutationChangeUnaryOperator(neg_b_id, core::UnaryOp::kComplement), node_id_map,
+        &program, &node_id_map, nullptr));
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
-    writer::wgsl::Options options;
-    auto result = writer::wgsl::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    wgsl::writer::Options options;
+    auto result = wgsl::writer::Generate(&program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   var b : vec3<i32> = vec3<i32>(1, 3, -(1));
   let neg_b : vec3<i32> = ~(b);
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 }  // namespace

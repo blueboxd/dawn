@@ -14,7 +14,7 @@
 
 #include "src/tint/fuzzers/tint_ast_fuzzer/expression_size.h"
 
-#include "src/tint/ast/traverse_expressions.h"
+#include "src/tint/lang/wgsl/ast/traverse_expressions.h"
 
 namespace tint::fuzzers::ast_fuzzer {
 
@@ -29,8 +29,7 @@ ExpressionSize::ExpressionSize(const Program& program) {
             continue;
         }
         size_t expr_size = 0;
-        diag::List empty;
-        ast::TraverseExpressions(expr_ast_node, empty, [&](const ast::Expression* expression) {
+        ast::TraverseExpressions(expr_ast_node, [&](const ast::Expression* expression) {
             if (expression == expr_ast_node) {
                 expr_size++;
                 return ast::TraverseAction::Descend;

@@ -30,14 +30,16 @@
 #include "spirv-tools/libspirv.hpp"
 #endif  // TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 
-#include "src/tint/ast/module.h"
-#include "src/tint/diagnostic/formatter.h"
-#include "src/tint/program.h"
-#include "src/tint/sem/binding_point.h"
-#include "src/tint/sem/variable.h"
-#include "src/tint/type/external_texture.h"
-#include "src/tint/utils/hash.h"
-#include "src/tint/writer/flatten_bindings.h"
+#include "src/tint/fuzzers/apply_substitute_overrides.h"
+#include "src/tint/lang/core/type/external_texture.h"
+#include "src/tint/lang/wgsl/ast/module.h"
+#include "src/tint/lang/wgsl/helpers/flatten_bindings.h"
+#include "src/tint/lang/wgsl/program/program.h"
+#include "src/tint/lang/wgsl/sem/variable.h"
+#include "src/tint/utils/diagnostic/formatter.h"
+#include "src/tint/utils/diagnostic/printer.h"
+#include "src/tint/utils/math/hash.h"
+#include "tint/binding_point.h"
 
 namespace tint::fuzzers {
 
@@ -58,21 +60,22 @@ namespace {
         __builtin_trap();                                          \
     } while (false)
 
-[[noreturn]] void TintInternalCompilerErrorReporter(const tint::diag::List& diagnostics) {
-    FATAL_ERROR(diagnostics, "");
+[[noreturn]] void TintInternalCompilerErrorReporter(const InternalCompilerError& err) {
+    std::cerr << err.Error() << std::endl;
+    __builtin_trap();
 }
 
 // Wrapping in a macro, so it can be a one-liner in the code, but not
 // introduce another level in the stack trace. This will help with de-duping
 // ClusterFuzz issues.
-#define CHECK_INSPECTOR(program, inspector)                                                    \
-    do {                                                                                       \
-        if ((inspector).has_error()) {                                                         \
-            if (!enforce_validity) {                                                           \
-                return;                                                                        \
-            }                                                                                  \
-            FATAL_ERROR((program)->Diagnostics(), "Inspector failed: " + (inspector).error()); \
-        }                                                                                      \
+#define CHECK_INSPECTOR(program, inspector)                                                  \
+    do {                                                                                     \
+        if ((inspector).has_error()) {                                                       \
+            if (!enforce_validity) {                                                         \
+                return;                                                                      \
+            }                                                                                \
+            FATAL_ERROR(program->Diagnostics(), "Inspector failed: " + (inspector).error()); \
+        }                                                                                    \
     } while (false)
 
 // Wrapping in a macro to make code more readable and help with issue de-duping.
@@ -103,20 +106,20 @@ bool SPIRVToolsValidationCheck(const tint::Program& program, const std::vector<u
 
 }  // namespace
 
-void GenerateSpirvOptions(DataBuilder* b, writer::spirv::Options* options) {
-    *options = b->build<writer::spirv::Options>();
+void GenerateSpirvOptions(DataBuilder* b, spirv::writer::Options* options) {
+    *options = b->build<spirv::writer::Options>();
 }
 
-void GenerateWgslOptions(DataBuilder* b, writer::wgsl::Options* options) {
-    *options = b->build<writer::wgsl::Options>();
+void GenerateWgslOptions(DataBuilder* b, wgsl::writer::Options* options) {
+    *options = b->build<wgsl::writer::Options>();
 }
 
-void GenerateHlslOptions(DataBuilder* b, writer::hlsl::Options* options) {
-    *options = b->build<writer::hlsl::Options>();
+void GenerateHlslOptions(DataBuilder* b, hlsl::writer::Options* options) {
+    *options = b->build<hlsl::writer::Options>();
 }
 
-void GenerateMslOptions(DataBuilder* b, writer::msl::Options* options) {
-    *options = b->build<writer::msl::Options>();
+void GenerateMslOptions(DataBuilder* b, msl::writer::Options* options) {
+    *options = b->build<msl::writer::Options>();
 }
 
 CommonFuzzer::CommonFuzzer(InputFormat input, OutputFormat output)
@@ -125,17 +128,8 @@ CommonFuzzer::CommonFuzzer(InputFormat input, OutputFormat output)
 CommonFuzzer::~CommonFuzzer() = default;
 
 int CommonFuzzer::Run(const uint8_t* data, size_t size) {
+    tint::Initialize();
     tint::SetInternalCompilerErrorReporter(&TintInternalCompilerErrorReporter);
-
-#if TINT_BUILD_WGSL_WRITER
-    tint::Program::printer = [](const tint::Program* program) {
-        auto result = tint::writer::wgsl::Generate(program, {});
-        if (!result.error.empty()) {
-            return "error: " + result.error;
-        }
-        return result.wgsl;
-    };
-#endif  // TINT_BUILD_WGSL_WRITER
 
     Program program;
 
@@ -146,7 +140,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
 
 #if TINT_BUILD_WGSL_READER || TINT_BUILD_SPV_READER
     auto dump_input_data = [&](auto& content, const char* extension) {
-        size_t hash = utils::Hash(content);
+        size_t hash = Hash(content);
         auto filename = "fuzzer_input_" + std::to_string(hash) + extension;  //
         std::ofstream fout(filename, std::ios::binary);
         fout.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
@@ -165,7 +159,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
             if (dump_input_) {
                 dump_input_data(str, ".wgsl");
             }
-            program = reader::wgsl::Parse(file_.get());
+            program = wgsl::reader::Parse(file_.get());
 #endif  // TINT_BUILD_WGSL_READER
             break;
         }
@@ -183,7 +177,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
             if (dump_input_) {
                 dump_input_data(spirv_input, ".spv");
             }
-            program = reader::spirv::Parse(spirv_input);
+            program = spirv::reader::Parse(spirv_input);
 #endif  // TINT_BUILD_SPV_READER
             break;
         }
@@ -225,42 +219,17 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
     };
 
     if (transform_manager_) {
-        transform::DataMap outputs;
+        ast::transform::DataMap outputs;
         auto out = transform_manager_->Run(&program, *transform_inputs_, outputs);
-        if (!validate_program(out)) {
+        if (!validate_program(out)) {  // Will move: program <- out on success
             return 0;
         }
     }
 
-    {
-        // Run SubstituteOverride if required
-
-        ast::transform::SubstituteOverride::Config cfg;
-        inspector::Inspector inspector(&program);
-        auto default_values = inspector.GetOverrideDefaultValues();
-        for (const auto& [override_id, scalar] : default_values) {
-            // If the override is not null, then it has a default value, we can just let it use the
-            // provided default instead of overriding.
-            if (!scalar.IsNull()) {
-                continue;
-            }
-
-            cfg.map.insert({override_id, 0.0});
-        }
-
-        if (!default_values.empty()) {
-            transform::DataMap override_data;
-            override_data.Add<ast::transform::SubstituteOverride::Config>(cfg);
-
-            transform::Manager mgr;
-            mgr.append(std::make_unique<ast::transform::SubstituteOverride>());
-
-            transform::DataMap outputs;
-            auto out = mgr.Run(&program, override_data, outputs);
-            if (!validate_program(out)) {
-                return 0;
-            }
-        }
+    // Run SubstituteOverride if required
+    program = ApplySubstituteOverrides(std::move(program));
+    if (!program.IsValid()) {
+        return 0;
     }
 
     // For the generates which use MultiPlanar, make sure the configuration options are provided so
@@ -270,7 +239,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
         // Gather external texture binding information
         // Collect next valid binding number per group
         std::unordered_map<uint32_t, uint32_t> group_to_next_binding_number;
-        std::vector<sem::BindingPoint> ext_tex_bps;
+        std::vector<BindingPoint> ext_tex_bps;
         for (auto* var : program.AST().GlobalVariables()) {
             if (auto* sem_var = program.Sem().Get(var)->As<sem::GlobalVariable>()) {
                 if (auto bp = sem_var->BindingPoint()) {
@@ -284,12 +253,11 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
             }
         }
 
-        writer::ExternalTextureOptions::BindingsMap new_bindings_map;
+        ExternalTextureOptions::BindingsMap new_bindings_map;
         for (auto bp : ext_tex_bps) {
             uint32_t g = bp.group;
             uint32_t& next_num = group_to_next_binding_number[g];
-            auto new_bps =
-                writer::ExternalTextureOptions::BindingPoints{{g, next_num++}, {g, next_num++}};
+            auto new_bps = ExternalTextureOptions::BindingPoints{{g, next_num++}, {g, next_num++}};
 
             new_bindings_map[bp] = new_bps;
         }
@@ -315,18 +283,20 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
     switch (output_) {
         case OutputFormat::kWGSL: {
 #if TINT_BUILD_WGSL_WRITER
-            writer::wgsl::Generate(&program, options_wgsl_);
+            (void)wgsl::writer::Generate(&program, options_wgsl_);
 #endif  // TINT_BUILD_WGSL_WRITER
             break;
         }
         case OutputFormat::kSpv: {
 #if TINT_BUILD_SPV_WRITER
-            auto result = writer::spirv::Generate(&program, options_spirv_);
-            generated_spirv_ = std::move(result.spirv);
+            auto result = spirv::writer::Generate(&program, options_spirv_);
+            if (result) {
+                generated_spirv_ = std::move(result->spirv);
 
-            if (!SPIRVToolsValidationCheck(program, generated_spirv_)) {
-                VALIDITY_ERROR(program.Diagnostics(),
-                               "Fuzzing detected invalid spirv being emitted by Tint");
+                if (!SPIRVToolsValidationCheck(program, generated_spirv_)) {
+                    VALIDITY_ERROR(program.Diagnostics(),
+                                   "Fuzzing detected invalid spirv being emitted by Tint");
+                }
             }
 
 #endif  // TINT_BUILD_SPV_WRITER
@@ -334,7 +304,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
         }
         case OutputFormat::kHLSL: {
 #if TINT_BUILD_HLSL_WRITER
-            writer::hlsl::Generate(&program, options_hlsl_);
+            (void)hlsl::writer::Generate(&program, options_hlsl_);
 #endif  // TINT_BUILD_HLSL_WRITER
             break;
         }
@@ -348,7 +318,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
                 input_program = &*flattened;
             }
 
-            writer::msl::Generate(input_program, options_msl_);
+            (void)msl::writer::Generate(input_program, options_msl_);
 #endif  // TINT_BUILD_MSL_WRITER
             break;
         }

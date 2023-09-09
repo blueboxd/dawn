@@ -138,7 +138,7 @@ class Device final : public d3d::Device {
     ResultOrError<Ref<d3d::Fence>> CreateFence(
         const d3d::ExternalImageDXGIFenceDescriptor* descriptor) override;
     ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> CreateExternalImageDXGIImplImpl(
-        const d3d::ExternalImageDescriptorDXGISharedHandle* descriptor) override;
+        const ExternalImageDescriptor* descriptor) override;
 
     Ref<TextureBase> CreateD3DExternalTexture(const TextureDescriptor* descriptor,
                                               ComPtr<IUnknown> d3dTexture,
@@ -173,9 +173,8 @@ class Device final : public d3d::Device {
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) override;
-    ResultOrError<Ref<BindGroupLayoutBase>> CreateBindGroupLayoutImpl(
-        const BindGroupLayoutDescriptor* descriptor,
-        PipelineCompatibilityToken pipelineCompatibilityToken) override;
+    ResultOrError<Ref<BindGroupLayoutInternalBase>> CreateBindGroupLayoutImpl(
+        const BindGroupLayoutDescriptor* descriptor) override;
     ResultOrError<Ref<BufferBase>> CreateBufferImpl(const BufferDescriptor* descriptor) override;
     ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayoutImpl(
         const PipelineLayoutDescriptor* descriptor) override;

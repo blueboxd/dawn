@@ -66,8 +66,6 @@ int Initialize(int* argc, char*** argv) {
     // Swiftshader crashes libFuzzer. When this is fixed, move this into Run so that error injection
     // for physical device discovery can be fuzzed.
     sInstance = std::make_unique<dawn::native::Instance>();
-    sInstance->DiscoverDefaultPhysicalDevices();
-
     return 0;
 }
 
@@ -99,7 +97,7 @@ int Run(const fuzzing::Program& program, bool (*AdapterSupported)(const dawn::na
     serverDesc.procs = &procs;
     serverDesc.serializer = &devNull;
 
-    std::unique_ptr<dawn::wire::WireServer> wireServer(new dawn_wire::WireServer(serverDesc));
+    std::unique_ptr<dawn::wire::WireServer> wireServer(new dawn::wire::WireServer(serverDesc));
     wireServer->InjectInstance(sInstance->Get(), kInstanceObjectId, 0);
 
     static dawn::utils::TerribleCommandBuffer* mCommandBuffer =

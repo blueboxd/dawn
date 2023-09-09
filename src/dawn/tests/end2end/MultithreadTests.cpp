@@ -107,6 +107,9 @@ TEST_P(MultithreadTests, Device_DroppedOnAnotherThread) {
     // NVIDIA.
     DAWN_SUPPRESS_TEST_IF(IsD3D12() && IsNvidia());
 
+    // TODO(crbug.com/dawn/1922): Flaky on Linux TSAN Release
+    DAWN_SUPPRESS_TEST_IF(IsLinux() && IsVulkan() && IsTsan());
+
     std::vector<wgpu::Device> devices(5);
 
     // Create devices.
@@ -876,6 +879,9 @@ TEST_P(MultithreadTextureCopyTests, CopyStencilToStencilNoRace) {
     // stencil.
     DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("disable_depth_stencil_read"));
 
+    // TODO(dawn:1924): Intel Gen9 specific.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntelGen9());
+
     enum class Step {
         Begin,
         WriteTexture,
@@ -1346,6 +1352,7 @@ TEST_P(MultithreadTimestampQueryTests, ResolveQuerySets_InParallel) {
 }
 
 DAWN_INSTANTIATE_TEST(MultithreadTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -1353,6 +1360,7 @@ DAWN_INSTANTIATE_TEST(MultithreadTests,
                       VulkanBackend());
 
 DAWN_INSTANTIATE_TEST(MultithreadCachingTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -1360,6 +1368,7 @@ DAWN_INSTANTIATE_TEST(MultithreadCachingTests,
                       VulkanBackend());
 
 DAWN_INSTANTIATE_TEST(MultithreadEncodingTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       D3D12Backend({"always_resolve_into_zero_level_and_layer"}),
                       MetalBackend(),
@@ -1371,6 +1380,7 @@ DAWN_INSTANTIATE_TEST(MultithreadEncodingTests,
 
 DAWN_INSTANTIATE_TEST(
     MultithreadTextureCopyTests,
+    D3D11Backend(),
     D3D12Backend(),
     MetalBackend(),
     MetalBackend({"use_blit_for_buffer_to_depth_texture_copy",
@@ -1381,6 +1391,7 @@ DAWN_INSTANTIATE_TEST(
     VulkanBackend());
 
 DAWN_INSTANTIATE_TEST(MultithreadDrawIndexedIndirectTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -1388,6 +1399,7 @@ DAWN_INSTANTIATE_TEST(MultithreadDrawIndexedIndirectTests,
                       VulkanBackend());
 
 DAWN_INSTANTIATE_TEST(MultithreadTimestampQueryTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),

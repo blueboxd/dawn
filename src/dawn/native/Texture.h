@@ -50,6 +50,11 @@ bool IsValidSampleCount(uint32_t sampleCount);
 static constexpr wgpu::TextureUsage kReadOnlyTextureUsages =
     wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::TextureBinding | kReadOnlyRenderAttachment;
 
+// Valid texture usages for a resolve texture that are loaded from at the beginning of a render
+// pass.
+static constexpr wgpu::TextureUsage kResolveTextureLoadAndStoreUsages =
+    kResolveAttachmentLoadingUsage | wgpu::TextureUsage::RenderAttachment;
+
 class TextureBase : public ApiObjectBase {
   public:
     enum class TextureState { OwnedInternal, OwnedExternal, Destroyed };
@@ -100,10 +105,15 @@ class TextureBase : public ApiObjectBase {
     Extent3D ClampToMipLevelVirtualSize(uint32_t level,
                                         const Origin3D& origin,
                                         const Extent3D& extent) const;
+    // For 2d-array textures, this keeps the array layers in contrast to
+    // GetMipLevelSingleSubresourceVirtualSize.
+    Extent3D GetMipLevelSubresourceVirtualSize(uint32_t level) const;
 
     ResultOrError<Ref<TextureViewBase>> CreateView(
         const TextureViewDescriptor* descriptor = nullptr);
     ApiObjectList* GetViewTrackingList();
+
+    bool IsImplicitMSAARenderTextureViewSupported() const;
 
     // Dawn API
     TextureViewBase* APICreateView(const TextureViewDescriptor* descriptor = nullptr);

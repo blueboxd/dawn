@@ -425,7 +425,7 @@ std::unique_ptr<native::Instance> DawnTestEnvironment::CreateInstance(
 void DawnTestEnvironment::SelectPreferredAdapterProperties(const native::Instance* instance) {
     // Get the first available preferred device type.
     std::optional<wgpu::AdapterType> preferredDeviceType;
-    [&]() {
+    [&] {
         for (wgpu::AdapterType devicePreference : mDevicePreferences) {
             for (bool compatibilityMode : {false, true}) {
                 wgpu::RequestAdapterOptions adapterOptions;
@@ -464,13 +464,6 @@ void DawnTestEnvironment::SelectPreferredAdapterProperties(const native::Instanc
 
             // All adapters are selected by default.
             bool selected = true;
-
-            // TODO(chromium:1448982, dawn:1847): Suspect causing undefined behavior due to
-            // incorrect API usage. Re-enable after fixing.
-            if (properties.backendType == wgpu::BackendType::D3D11 &&
-                gpu_info::IsNvidia(properties.vendorID)) {
-                selected = false;
-            }
 
             // The adapter is deselected if:
             if (mHasBackendTypeFilter) {
@@ -706,11 +699,18 @@ DawnTestBase::DawnTestBase(const AdapterTestParam& param) : mParam(param) {
                                       WGPURequestAdapterCallback callback, void* userdata) {
         ASSERT(gCurrentTest);
 
-        wgpu::RequestAdapterOptionsBackendType adapterBackendTypeOptions;
-        adapterBackendTypeOptions.backendType = gCurrentTest->mParam.adapterProperties.backendType;
+        // Use the required toggles of test case when creating adapter.
+        const auto& enabledToggles = gCurrentTest->mParam.forceEnabledWorkarounds;
+        const auto& disabledToggles = gCurrentTest->mParam.forceDisabledWorkarounds;
+        wgpu::DawnTogglesDescriptor adapterToggles;
+        adapterToggles.enabledTogglesCount = enabledToggles.size();
+        adapterToggles.enabledToggles = enabledToggles.data();
+        adapterToggles.disabledTogglesCount = disabledToggles.size();
+        adapterToggles.disabledToggles = disabledToggles.data();
 
         wgpu::RequestAdapterOptions adapterOptions;
-        adapterOptions.nextInChain = &adapterBackendTypeOptions;
+        adapterOptions.nextInChain = &adapterToggles;
+        adapterOptions.backendType = gCurrentTest->mParam.adapterProperties.backendType;
         adapterOptions.compatibilityMode = gCurrentTest->mParam.adapterProperties.compatibilityMode;
 
         // Find the adapter that exactly matches our adapter properties.
@@ -854,6 +854,11 @@ bool DawnTestBase::IsANGLESwiftShader() const {
 bool DawnTestBase::IsWARP() const {
     return gpu_info::IsMicrosoftWARP(mParam.adapterProperties.vendorID,
                                      mParam.adapterProperties.deviceID);
+}
+
+bool DawnTestBase::IsIntelGen9() const {
+    return gpu_info::IsIntelGen9(mParam.adapterProperties.vendorID,
+                                 mParam.adapterProperties.deviceID);
 }
 
 bool DawnTestBase::IsIntelGen12() const {

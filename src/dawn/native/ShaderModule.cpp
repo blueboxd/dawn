@@ -301,7 +301,7 @@ EntryPointMetadata::Override::Type FromTintOverrideType(tint::inspector::Overrid
 ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
                                        OwnedCompilationMessages* outMessages) {
 #if TINT_BUILD_WGSL_READER
-    tint::Program program = tint::reader::wgsl::Parse(file);
+    tint::Program program = tint::wgsl::reader::Parse(file);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
     }
@@ -319,11 +319,11 @@ ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
 ResultOrError<tint::Program> ParseSPIRV(const std::vector<uint32_t>& spirv,
                                         OwnedCompilationMessages* outMessages,
                                         const DawnShaderModuleSPIRVOptionsDescriptor* optionsDesc) {
-    tint::reader::spirv::Options options;
+    tint::spirv::reader::Options options;
     if (optionsDesc) {
         options.allow_non_uniform_derivatives = optionsDesc->allowNonUniformDerivatives;
     }
-    tint::Program program = tint::reader::spirv::Parse(spirv, options);
+    tint::Program program = tint::spirv::reader::Parse(spirv, options);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
     }
@@ -369,7 +369,7 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
                                                           SingleShaderStage entryPointStage,
                                                           BindingNumber bindingNumber,
                                                           const ShaderBindingInfo& shaderInfo) {
-    const BindGroupLayoutBase::BindingMap& layoutBindings = layout->GetBindingMap();
+    const BindGroupLayoutInternalBase::BindingMap& layoutBindings = layout->GetBindingMap();
 
     // An external texture binding found in the shader will later be expanded into multiple
     // bindings at compile time. This expansion will have already happened in the bgl - so
@@ -381,7 +381,7 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
         // key in the ExternalTextureBindingExpansions map.
         ExternalTextureBindingExpansionMap expansions =
             layout->GetExternalTextureBindingExpansionMap();
-        std::map<BindingNumber, dawn_native::ExternalTextureBindingExpansion>::iterator it =
+        std::map<BindingNumber, dawn::native::ExternalTextureBindingExpansion>::iterator it =
             expansions.find(bindingNumber);
         // TODO(dawn:563): Provide info about the binding types.
         DAWN_INVALID_IF(it == expansions.end(),
@@ -419,8 +419,16 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
                 layoutInfo.texture.multisampled, shaderInfo.texture.multisampled);
 
             // TODO(dawn:563): Provide info about the sample types.
-            DAWN_INVALID_IF(!(SampleTypeToSampleTypeBit(layoutInfo.texture.sampleType) &
-                              shaderInfo.texture.compatibleSampleTypes),
+            SampleTypeBit requiredType;
+            if (layoutInfo.texture.sampleType == kInternalResolveAttachmentSampleType) {
+                // If the layout's texture's sample type is kInternalResolveAttachmentSampleType,
+                // then the shader's compatible sample types must contain float.
+                requiredType = SampleTypeBit::UnfilterableFloat;
+            } else {
+                requiredType = SampleTypeToSampleTypeBit(layoutInfo.texture.sampleType);
+            }
+
+            DAWN_INVALID_IF(!(shaderInfo.texture.compatibleSampleTypes & requiredType),
                             "The sample type in the shader is not compatible with the "
                             "sample type of the layout.");
 
@@ -523,7 +531,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
     // error in metadata.infringedLimits. This is to delay the emission of these validation
     // errors until the entry point is used.
 #define DelayedInvalidIf(invalid, ...)                                              \
-    ([&]() {                                                                        \
+    ([&] {                                                                          \
         if (invalid) {                                                              \
             metadata->infringedLimitErrors.push_back(absl::StrFormat(__VA_ARGS__)); \
         }                                                                           \
@@ -950,11 +958,11 @@ MaybeError ValidateAndParseShaderModule(DeviceBase* device,
         tint::Program program;
         DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages, spirvOptions));
 
-        tint::writer::wgsl::Options options;
-        auto result = tint::writer::wgsl::Generate(&program, options);
-        DAWN_INVALID_IF(!result.success, "Tint WGSL failure: Generator: %s", result.error);
+        tint::wgsl::writer::Options options;
+        auto result = tint::wgsl::writer::Generate(&program, options);
+        DAWN_INVALID_IF(!result, "Tint WGSL failure: Generator: %s", result.Failure());
 
-        newWgslCode = std::move(result.wgsl);
+        newWgslCode = std::move(result->wgsl);
         newWgslDesc.code = newWgslCode.c_str();
 
         spirvDesc = nullptr;
@@ -1007,12 +1015,12 @@ RequiredBufferSizes ComputeRequiredBufferSizesForLayout(const EntryPointMetadata
     return bufferSizes;
 }
 
-ResultOrError<tint::Program> RunTransforms(tint::transform::Manager* transformManager,
+ResultOrError<tint::Program> RunTransforms(tint::ast::transform::Manager* transformManager,
                                            const tint::Program* program,
-                                           const tint::transform::DataMap& inputs,
-                                           tint::transform::DataMap* outputs,
+                                           const tint::ast::transform::DataMap& inputs,
+                                           tint::ast::transform::DataMap* outputs,
                                            OwnedCompilationMessages* outMessages) {
-    tint::transform::DataMap transform_outputs;
+    tint::ast::transform::DataMap transform_outputs;
     tint::Program result = transformManager->Run(program, inputs, transform_outputs);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(result.Diagnostics()));
@@ -1116,10 +1124,7 @@ ShaderModuleBase::ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag,
 ShaderModuleBase::~ShaderModuleBase() = default;
 
 void ShaderModuleBase::DestroyImpl() {
-    if (IsCachedReference()) {
-        // Do not uncache the actual cached object if we are a blueprint.
-        GetDevice()->UncacheShaderModule(this);
-    }
+    Uncache();
 }
 
 // static

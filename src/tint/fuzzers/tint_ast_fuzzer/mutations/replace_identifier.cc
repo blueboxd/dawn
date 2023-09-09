@@ -17,7 +17,7 @@
 #include <utility>
 
 #include "src/tint/fuzzers/tint_ast_fuzzer/util.h"
-#include "src/tint/program_builder.h"
+#include "src/tint/lang/wgsl/program/program_builder.h"
 
 namespace tint::fuzzers::ast_fuzzer {
 
@@ -74,16 +74,15 @@ bool MutationReplaceIdentifier::IsApplicable(const tint::Program& program,
 }
 
 void MutationReplaceIdentifier::Apply(const NodeIdMap& node_id_map,
-                                      tint::CloneContext* clone_context,
+                                      tint::program::CloneContext& clone_context,
                                       NodeIdMap* new_node_id_map) const {
     const auto* use_node = node_id_map.GetNode(message_.use_id());
     const auto* replacement_var =
         tint::As<ast::Variable>(node_id_map.GetNode(message_.replacement_id()));
 
-    auto* cloned_replacement =
-        clone_context->dst->Expr(clone_context->Clone(use_node->source),
-                                 clone_context->Clone(replacement_var->name->symbol));
-    clone_context->Replace(use_node, cloned_replacement);
+    auto* cloned_replacement = clone_context.dst->Expr(
+        clone_context.Clone(use_node->source), clone_context.Clone(replacement_var->name->symbol));
+    clone_context.Replace(use_node, cloned_replacement);
     new_node_id_map->Add(cloned_replacement, message_.use_id());
 }
 

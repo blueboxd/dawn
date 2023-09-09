@@ -495,6 +495,9 @@ MaybeError CommandBufferStateTracker::ValidateOperation(ValidationAspects requir
 
     DAWN_TRY(CheckMissingAspects(requiredAspects & ~mAspects));
 
+    // Validation for kMaxBindGroupsPlusVertexBuffers is skipped because it is not necessary so far.
+    static_assert(kMaxBindGroups + kMaxVertexBuffers <= kMaxBindGroupsPlusVertexBuffers);
+
     return {};
 }
 
@@ -507,7 +510,8 @@ void CommandBufferStateTracker::RecomputeLazyAspects(ValidationAspects aspects) 
 
         for (BindGroupIndex i : IterateBitSet(mLastPipelineLayout->GetBindGroupLayoutsMask())) {
             if (mBindgroups[i] == nullptr ||
-                mLastPipelineLayout->GetBindGroupLayout(i) != mBindgroups[i]->GetLayout() ||
+                mLastPipelineLayout->GetBindGroupLayout(i)->GetInternalBindGroupLayout() !=
+                    mBindgroups[i]->GetLayout()->GetInternalBindGroupLayout() ||
                 FindFirstUndersizedBuffer(mBindgroups[i]->GetUnverifiedBufferSizes(),
                                           (*mMinBufferSizes)[i])
                     .has_value()) {
@@ -629,7 +633,8 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                 mBindgroups[i], static_cast<uint32_t>(i), currentBGL, mLastPipeline);
 
             DAWN_INVALID_IF(
-                mLastPipelineLayout->GetBindGroupLayout(i) != mBindgroups[i]->GetLayout(),
+                mLastPipelineLayout->GetBindGroupLayout(i)->GetInternalBindGroupLayout() !=
+                    mBindgroups[i]->GetLayout()->GetInternalBindGroupLayout(),
                 "Bind group layout %s of pipeline layout %s does not match layout %s of bind "
                 "group %s set at group index %u.",
                 requiredBGL, mLastPipelineLayout, currentBGL, mBindgroups[i],

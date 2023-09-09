@@ -84,7 +84,7 @@ WGPUAdapter Adapter::Get() const {
 }
 
 std::vector<const char*> Adapter::GetSupportedFeatures() const {
-    FeaturesSet supportedFeaturesSet = mImpl->GetPhysicalDevice()->GetSupportedFeatures();
+    FeaturesSet supportedFeaturesSet = mImpl->GetSupportedFeatures();
     return supportedFeaturesSet.GetEnabledFeatureNames();
 }
 
@@ -307,11 +307,6 @@ const char* GetObjectLabelForTesting(void* objectHandle) {
 
 uint64_t GetAllocatedSizeForTesting(WGPUBuffer buffer) {
     return FromAPI(buffer)->GetAllocatedSize();
-}
-
-bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayout a, WGPUBindGroupLayout b) {
-    bool excludePipelineCompatibiltyToken = true;
-    return FromAPI(a)->IsLayoutEqual(FromAPI(b), excludePipelineCompatibiltyToken);
 }
 
 }  // namespace dawn::native

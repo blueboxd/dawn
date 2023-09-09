@@ -148,7 +148,6 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     if (mCommandQueue == nil) {
         return DAWN_INTERNAL_ERROR("Failed to allocate MTLCommandQueue.");
     }
-
     if (@available(macOS 10.14, *)) {
         mMtlSharedEvent.Acquire([*mMtlDevice newSharedEvent]);
     }
@@ -168,7 +167,7 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
                                    // value is, the more we can trust the measured value.
         mKalmanInfo->P = 1.0f;
 
-        if (@available(macos 10.15, iOS 14.0, *)) {
+        if (@available(macOS 10.15, iOS 14.0, *)) {
             // Sample CPU timestamp and GPU timestamp for first time at device creation
             [*mMtlDevice sampleTimestamps:&mCpuTimestamp gpuTimestamp:&mGpuTimestamp];
         }
@@ -181,10 +180,9 @@ ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     const BindGroupDescriptor* descriptor) {
     return BindGroup::Create(this, descriptor);
 }
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return BindGroupLayout::Create(this, descriptor, pipelineCompatibilityToken);
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return BindGroupLayout::Create(this, descriptor);
 }
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
     return Buffer::Create(this, descriptor);
@@ -276,7 +274,7 @@ MaybeError Device::TickImpl() {
     // Just run timestamp period calculation when timestamp feature is enabled and timestamp
     // conversion is not disabled.
     if (mIsTimestampQueryEnabled && !IsToggleEnabled(Toggle::DisableTimestampQueryConversion)) {
-        if (@available(macos 10.15, iOS 14.0, *)) {
+        if (@available(macOS 10.15, iOS 14.0, *)) {
             UpdateTimestampPeriod(GetMTLDevice(), mKalmanInfo.get(), &mCpuTimestamp, &mGpuTimestamp,
                                   &mTimestampPeriod);
         }
@@ -501,6 +499,10 @@ uint64_t Device::GetOptimalBufferToTextureCopyOffsetAlignment() const {
 
 float Device::GetTimestampPeriodInNS() const {
     return mTimestampPeriod;
+}
+
+bool Device::IsResolveTextureBlitWithDrawSupported() const {
+    return true;
 }
 
 bool Device::UseCounterSamplingAtCommandBoundary() const {

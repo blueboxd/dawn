@@ -84,10 +84,7 @@ PipelineLayoutBase::PipelineLayoutBase(DeviceBase* device,
 PipelineLayoutBase::~PipelineLayoutBase() = default;
 
 void PipelineLayoutBase::DestroyImpl() {
-    if (IsCachedReference()) {
-        // Do not uncache the actual cached object if we are a blueprint.
-        GetDevice()->UncachePipelineLayout(this);
-    }
+    Uncache();
 }
 
 // static
@@ -382,7 +379,7 @@ size_t PipelineLayoutBase::ComputeContentHash() {
     recorder.Record(mMask);
 
     for (BindGroupIndex group : IterateBitSet(mMask)) {
-        recorder.Record(GetBindGroupLayout(group)->GetContentHash());
+        recorder.Record(GetBindGroupLayout(group)->GetInternalBindGroupLayout()->GetContentHash());
     }
 
     return recorder.GetContentHash();

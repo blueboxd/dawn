@@ -21,8 +21,8 @@
 #include "src/tint/fuzzers/tint_ast_fuzzer/override_cli_params.h"
 #include "src/tint/fuzzers/tint_common_fuzzer.h"
 #include "src/tint/fuzzers/transform_builder.h"
-#include "src/tint/reader/wgsl/parser.h"
-#include "src/tint/writer/wgsl/generator.h"
+#include "src/tint/lang/wgsl/reader/reader.h"
+#include "src/tint/lang/wgsl/writer/writer.h"
 #include "testing/libfuzzer/libfuzzer_exports.h"
 
 namespace tint::fuzzers::ast_fuzzer {
@@ -45,7 +45,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t* data,
                                           size_t max_size,
                                           unsigned seed) {
     Source::File file("test.wgsl", {reinterpret_cast<char*>(data), size});
-    auto program = reader::wgsl::Parse(&file);
+    auto program = wgsl::reader::Parse(&file);
     if (!program.IsValid()) {
         std::cout << "Trying to mutate an invalid program:" << std::endl
                   << program.Diagnostics().str() << std::endl;
@@ -65,14 +65,14 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t* data,
         return 0;
     }
 
-    auto result = writer::wgsl::Generate(&program, writer::wgsl::Options());
-    if (!result.success) {
+    auto result = wgsl::writer::Generate(&program, wgsl::writer::Options());
+    if (!result) {
         std::cout << "Can't generate WGSL for a valid tint::Program:" << std::endl
-                  << result.error << std::endl;
+                  << result.Failure() << std::endl;
         return 0;
     }
 
-    if (result.wgsl.size() > max_size) {
+    if (result->wgsl.size() > max_size) {
         return 0;
     }
 
@@ -81,8 +81,8 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t* data,
     // cause all sorts of strange bugs. Thus, unless `data` below is used as a raw
     // C string, the \0 symbol should be ignored.
     std::memcpy(  // NOLINT - clang-tidy warns about lack of null termination.
-        data, result.wgsl.data(), result.wgsl.size());
-    return result.wgsl.size();
+        data, result->wgsl.data(), result->wgsl.size());
+    return result->wgsl.size();
 }
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
@@ -114,9 +114,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
         fuzzer.Run(data, size);
         if (fuzzer.HasErrors()) {
-            std::cout << "Fuzzing " << target.name << " produced an error" << std::endl;
-            auto printer = tint::diag::Printer::create(stderr, true);
-            tint::diag::Formatter{}.format(fuzzer.Diagnostics(), printer.get());
+            std::cout << "Fuzzing " << target.name << " produced an error" << std::endl
+                      << fuzzer.Diagnostics().str() << std::endl;
         }
     }
 

@@ -65,15 +65,9 @@ config("internal") {
   ]
 }
 
-config("weak_framework") {
-  if (is_mac && dawn_enable_metal) {
-    weak_frameworks = [ "Metal.framework" ]
-  }
-}
-
 # Config that adds the @executable_path rpath if needed so that Swiftshader or the Vulkan loader are found.
 config("vulkan_rpath") {
-  if (is_mac && dawn_enable_vulkan &&
+  if (is_apple && dawn_enable_vulkan &&
       (use_swiftshader || enable_vulkan_loader)) {
     ldflags = [
       "-rpath",
@@ -198,15 +192,19 @@ source_set("sources") {
     "BindGroup.h",
     "BindGroupLayout.cpp",
     "BindGroupLayout.h",
+    "BindGroupLayoutInternal.cpp",
+    "BindGroupLayoutInternal.h",
     "BindGroupTracker.h",
     "BindingInfo.cpp",
     "BindingInfo.h",
     "BlitBufferToDepthStencil.cpp",
     "BlitBufferToDepthStencil.h",
-    "BlitDepthStencilToBuffer.cpp",
-    "BlitDepthStencilToBuffer.h",
+    "BlitColorToColorWithDraw.cpp",
+    "BlitColorToColorWithDraw.h",
     "BlitDepthToDepth.cpp",
     "BlitDepthToDepth.h",
+    "BlitTextureToBuffer.cpp",
+    "BlitTextureToBuffer.h",
     "Blob.cpp",
     "Blob.h",
     "BlobCache.cpp",
@@ -265,6 +263,8 @@ source_set("sources") {
     "ErrorInjector.h",
     "ErrorScope.cpp",
     "ErrorScope.h",
+    "ExecutionQueue.cpp",
+    "ExecutionQueue.h",
     "ExternalTexture.cpp",
     "ExternalTexture.h",
     "Features.cpp",
@@ -336,6 +336,10 @@ source_set("sources") {
     "Serializable.h",
     "ShaderModule.cpp",
     "ShaderModule.h",
+    "SharedFence.cpp",
+    "SharedFence.h",
+    "SharedTextureMemory.cpp",
+    "SharedTextureMemory.h",
     "StreamImplTint.cpp",
     "Subresource.cpp",
     "Subresource.h",
@@ -484,6 +488,11 @@ source_set("sources") {
   }
 
   if (dawn_enable_d3d12) {
+    if (dawn_use_built_dxc) {
+      deps += [ "$dawn_root/third_party/gn/dxc:dxcompiler" ]
+      defines += [ "DAWN_USE_BUILT_DXC" ]
+      data_deps += [ "$dawn_root/third_party/gn/dxc:copy_dxil_dll" ]
+    }
     libs += [ "dxguid.lib" ]
     sources += [
       "d3d12/BackendD3D12.cpp",
@@ -565,11 +574,14 @@ source_set("sources") {
 
   if (dawn_enable_metal) {
     frameworks = [
-      "Cocoa.framework",
       "IOKit.framework",
       "IOSurface.framework",
+      "Metal.framework",
       "QuartzCore.framework",
     ]
+    if (is_mac) {
+      frameworks += [ "Cocoa.framework" ]
+    }
     sources += [
       "Surface_metal.mm",
       "metal/BackendMTL.h",
@@ -608,6 +620,12 @@ source_set("sources") {
       "metal/UtilsMetal.h",
       "metal/UtilsMetal.mm",
     ]
+
+    # If a "build with ARC" config is present, remove it.
+    if (filter_include(configs, [ "//build/config/compiler:enable_arc" ]) !=
+        []) {
+      configs -= [ "//build/config/compiler:enable_arc" ]
+    }
   }
 
   if (dawn_enable_null) {
@@ -844,10 +862,7 @@ dawn_component("native") {
   ]
   sources = [ "DawnNative.cpp" ]
   configs = [ ":internal" ]
-  public_configs = [
-    ":weak_framework",
-    ":vulkan_rpath",
-  ]
+  public_configs = [ ":vulkan_rpath" ]
 
   if (dawn_enable_d3d11 || dawn_enable_d3d12) {
     sources += [ "d3d/D3DBackend.cpp" ]

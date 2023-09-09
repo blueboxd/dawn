@@ -18,18 +18,18 @@
 
 #include "gtest/gtest.h"
 
-#include "src/tint/ast/block_statement.h"
-#include "src/tint/ast/break_statement.h"
-#include "src/tint/ast/discard_statement.h"
-#include "src/tint/ast/for_loop_statement.h"
-#include "src/tint/ast/if_statement.h"
-#include "src/tint/ast/loop_statement.h"
-#include "src/tint/ast/module.h"
-#include "src/tint/ast/return_statement.h"
-#include "src/tint/ast/switch_statement.h"
-#include "src/tint/ast/while_statement.h"
-#include "src/tint/program.h"
-#include "src/tint/reader/wgsl/parser.h"
+#include "src/tint/lang/wgsl/ast/block_statement.h"
+#include "src/tint/lang/wgsl/ast/break_statement.h"
+#include "src/tint/lang/wgsl/ast/discard_statement.h"
+#include "src/tint/lang/wgsl/ast/for_loop_statement.h"
+#include "src/tint/lang/wgsl/ast/if_statement.h"
+#include "src/tint/lang/wgsl/ast/loop_statement.h"
+#include "src/tint/lang/wgsl/ast/module.h"
+#include "src/tint/lang/wgsl/ast/return_statement.h"
+#include "src/tint/lang/wgsl/ast/switch_statement.h"
+#include "src/tint/lang/wgsl/ast/while_statement.h"
+#include "src/tint/lang/wgsl/program/program.h"
+#include "src/tint/lang/wgsl/reader/reader.h"
 
 namespace tint::fuzzers::ast_fuzzer {
 namespace {
@@ -71,7 +71,7 @@ fn main() {
 }
   )";
     Source::File file("test.wgsl", content);
-    auto program = reader::wgsl::Parse(&file);
+    auto program = wgsl::reader::Parse(&file);
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
     JumpTracker jump_tracker(program);
@@ -150,7 +150,7 @@ fn main() {
 }
   )";
     Source::File file("test.wgsl", content);
-    auto program = reader::wgsl::Parse(&file);
+    auto program = wgsl::reader::Parse(&file);
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
     JumpTracker jump_tracker(program);
@@ -214,7 +214,7 @@ fn main() {
 }
   )";
     Source::File file("test.wgsl", content);
-    auto program = reader::wgsl::Parse(&file);
+    auto program = wgsl::reader::Parse(&file);
     ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
 
     JumpTracker jump_tracker(program);

@@ -68,6 +68,10 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
             D3D12_SHARED_RESOURCE_COMPATIBILITY_TIER_1) {
             info.supportsSharedResourceCapabilityTier1 = true;
         }
+
+        // featureOptions4.MSAA64KBAlignedTextureSupported indicates whether 64KB-aligned MSAA
+        // textures are supported.
+        info.use64KBAlignedMSAATexture = featureOptions4.MSAA64KBAlignedTextureSupported;
     }
 
     // Windows builds 1809 and above can use the D3D12 render pass API. If we query
@@ -84,6 +88,14 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
             !gpu_info::IsIntel(physicalDevice.GetVendorId())) {
             info.supportsRenderPass = true;
         }
+    }
+
+    // D3D12_HEAP_FLAG_CREATE_NOT_ZEROED is available anytime that ID3D12Device8 is exposed, or a
+    // check for D3D12_FEATURE_D3D12_OPTIONS7 succeeds.
+    D3D12_FEATURE_DATA_D3D12_OPTIONS7 featureOptions7 = {};
+    if (SUCCEEDED(physicalDevice.GetDevice()->CheckFeatureSupport(
+            D3D12_FEATURE_D3D12_OPTIONS7, &featureOptions7, sizeof(featureOptions7)))) {
+        info.supportsHeapFlagCreateNotZeroed = true;
     }
 
     info.supportsRootSignatureVersion1_1 = false;

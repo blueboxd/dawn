@@ -26,6 +26,7 @@
 #include "dawn/native/stream/BlobSource.h"
 #include "dawn/native/stream/ByteVectorSink.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
 
 #include "tint/tint.h"
@@ -45,29 +46,30 @@ GLenum GLShaderType(SingleShaderStage stage) {
     UNREACHABLE();
 }
 
-tint::writer::glsl::Version::Standard ToTintGLStandard(opengl::OpenGLVersion::Standard standard) {
+tint::glsl::writer::Version::Standard ToTintGLStandard(opengl::OpenGLVersion::Standard standard) {
     switch (standard) {
         case opengl::OpenGLVersion::Standard::Desktop:
-            return tint::writer::glsl::Version::Standard::kDesktop;
+            return tint::glsl::writer::Version::Standard::kDesktop;
         case opengl::OpenGLVersion::Standard::ES:
-            return tint::writer::glsl::Version::Standard::kES;
+            return tint::glsl::writer::Version::Standard::kES;
     }
     UNREACHABLE();
 }
 
-using BindingMap = std::unordered_map<tint::writer::BindingPoint, tint::writer::BindingPoint>;
+using BindingMap = std::unordered_map<tint::BindingPoint, tint::BindingPoint>;
 
 #define GLSL_COMPILATION_REQUEST_MEMBERS(X)                                                      \
     X(const tint::Program*, inputProgram)                                                        \
     X(std::string, entryPointName)                                                               \
     X(SingleShaderStage, stage)                                                                  \
-    X(tint::writer::ExternalTextureOptions, externalTextureOptions)                              \
+    X(tint::ExternalTextureOptions, externalTextureOptions)                                      \
     X(BindingMap, glBindings)                                                                    \
     X(std::optional<tint::ast::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
     X(LimitsForCompilationRequest, limits)                                                       \
     X(opengl::OpenGLVersion::Standard, glVersionStandard)                                        \
     X(uint32_t, glVersionMajor)                                                                  \
-    X(uint32_t, glVersionMinor)
+    X(uint32_t, glVersionMinor)                                                                  \
+    X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, platform)
 
 DAWN_MAKE_CACHE_REQUEST(GLSLCompilationRequest, GLSL_COMPILATION_REQUEST_MEMBERS);
 #undef GLSL_COMPILATION_REQUEST_MEMBERS
@@ -148,14 +150,14 @@ ResultOrError<GLuint> ShaderModule::CompileShader(const OpenGLFunctions& gl,
 
     const OpenGLVersion& version = ToBackend(GetDevice())->GetGL().GetVersion();
 
-    using tint::writer::BindingPoint;
+    using tint::BindingPoint;
     // Since (non-Vulkan) GLSL does not support descriptor sets, generate a
     // mapping from the original group/binding pair to a binding-only
     // value. This mapping will be used by Tint to remap all global
     // variables to the 1D space.
     const BindingInfoArray& moduleBindingInfo =
         GetEntryPoint(programmableStage.entryPoint).bindings;
-    std::unordered_map<tint::writer::BindingPoint, tint::writer::BindingPoint> glBindings;
+    std::unordered_map<BindingPoint, BindingPoint> glBindings;
     for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
         const BindGroupLayoutBase* bgl = layout->GetBindGroupLayout(group);
         const auto& groupBindingInfo = moduleBindingInfo[group];
@@ -189,13 +191,14 @@ ResultOrError<GLuint> ShaderModule::CompileShader(const OpenGLFunctions& gl,
     req.glVersionStandard = version.GetStandard();
     req.glVersionMajor = version.GetMajor();
     req.glVersionMinor = version.GetMinor();
+    req.platform = UnsafeUnkeyedValue(GetDevice()->GetPlatform());
 
     CacheResult<GLSLCompilation> compilationResult;
     DAWN_TRY_LOAD_OR_RUN(
         compilationResult, GetDevice(), std::move(req), GLSLCompilation::FromBlob,
         [](GLSLCompilationRequest r) -> ResultOrError<GLSLCompilation> {
-            tint::transform::Manager transformManager;
-            tint::transform::DataMap transformInputs;
+            tint::ast::transform::Manager transformManager;
+            tint::ast::transform::DataMap transformInputs;
 
             if (r.substituteOverrideConfig) {
                 transformManager.Add<tint::ast::transform::SingleEntryPoint>();
@@ -219,8 +222,8 @@ ResultOrError<GLuint> ShaderModule::CompileShader(const OpenGLFunctions& gl,
                                        program, r.entryPointName.c_str(), r.limits));
             }
 
-            tint::writer::glsl::Options tintOptions;
-            tintOptions.version = tint::writer::glsl::Version(ToTintGLStandard(r.glVersionStandard),
+            tint::glsl::writer::Options tintOptions;
+            tintOptions.version = tint::glsl::writer::Version(ToTintGLStandard(r.glVersionStandard),
                                                               r.glVersionMajor, r.glVersionMinor);
 
             // TODO(crbug.com/dawn/1686): Robustness causes shader compilation failures.
@@ -264,13 +267,14 @@ ResultOrError<GLuint> ShaderModule::CompileShader(const OpenGLFunctions& gl,
             tintOptions.binding_points = std::move(r.glBindings);
             tintOptions.allow_collisions = true;
 
-            auto result = tint::writer::glsl::Generate(&program, tintOptions, r.entryPointName);
-            DAWN_INVALID_IF(!result.success, "An error occured while generating GLSL: %s.",
-                            result.error);
+            auto result = tint::glsl::writer::Generate(&program, tintOptions, r.entryPointName);
+            DAWN_INVALID_IF(!result, "An error occured while generating GLSL: %s.",
+                            result.Failure());
 
             return GLSLCompilation{
-                {std::move(result.glsl), needsPlaceholderSampler, std::move(combinedSamplerInfo)}};
-        });
+                {std::move(result->glsl), needsPlaceholderSampler, std::move(combinedSamplerInfo)}};
+        },
+        "OpenGL.CompileShaderToGLSL");
 
     if (GetDevice()->IsToggleEnabled(Toggle::DumpShaders)) {
         std::ostringstream dumpedMsg;

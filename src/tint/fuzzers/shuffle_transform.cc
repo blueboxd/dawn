@@ -17,17 +17,19 @@
 #include <random>
 #include <utility>
 
-#include "src/tint/program_builder.h"
+#include "src/tint/lang/wgsl/program/clone_context.h"
+#include "src/tint/lang/wgsl/program/program_builder.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
 
 namespace tint::fuzzers {
 
 ShuffleTransform::ShuffleTransform(size_t seed) : seed_(seed) {}
 
 ast::transform::Transform::ApplyResult ShuffleTransform::Apply(const Program* src,
-                                                               const transform::DataMap&,
-                                                               transform::DataMap&) const {
+                                                               const ast::transform::DataMap&,
+                                                               ast::transform::DataMap&) const {
     ProgramBuilder b;
-    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
 
     auto decls = src->AST().GlobalDeclarations();
     auto rng = std::mt19937_64{seed_};
@@ -37,7 +39,7 @@ ast::transform::Transform::ApplyResult ShuffleTransform::Apply(const Program* sr
     }
 
     ctx.Clone();
-    return Program(std::move(b));
+    return resolver::Resolve(b);
 }
 
 }  // namespace tint::fuzzers

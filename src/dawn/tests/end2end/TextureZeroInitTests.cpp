@@ -1185,9 +1185,8 @@ TEST_P(TextureZeroInitTest, ComputePassSampledTextureClear) {
 
 // This tests that the code path of CopyTextureToBuffer clears correctly for non-renderable textures
 TEST_P(TextureZeroInitTest, NonRenderableTextureClear) {
-    // TODO(crbug.com/dawn/667): Work around the fact that some platforms do not support reading
-    // from Snorm textures.
-    DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("disable_snorm_read"));
+    // TODO(dawn:1877): Snorm copy failing ANGLE Swiftshader, need further investigation.
+    DAWN_SUPPRESS_TEST_IF(IsANGLESwiftShader());
 
     wgpu::TextureDescriptor descriptor =
         CreateTextureDescriptor(1, 1, wgpu::TextureUsage::CopySrc, kNonrenderableColorFormat);
@@ -1218,9 +1217,8 @@ TEST_P(TextureZeroInitTest, NonRenderableTextureClear) {
 
 // This tests that the code path of CopyTextureToBuffer clears correctly for non-renderable textures
 TEST_P(TextureZeroInitTest, NonRenderableTextureClearUnalignedSize) {
-    // TODO(crbug.com/dawn/667): Work around the fact that some platforms do not support reading
-    // from Snorm textures.
-    DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("disable_snorm_read"));
+    // TODO(dawn:1877): Snorm copy failing ANGLE Swiftshader, need further investigation.
+    DAWN_SUPPRESS_TEST_IF(IsANGLESwiftShader());
 
     wgpu::TextureDescriptor descriptor =
         CreateTextureDescriptor(1, 1, wgpu::TextureUsage::CopySrc, kNonrenderableColorFormat);
@@ -1254,9 +1252,8 @@ TEST_P(TextureZeroInitTest, NonRenderableTextureClearUnalignedSize) {
 // This tests that the code path of CopyTextureToBuffer clears correctly for non-renderable textures
 // with more than 1 array layers
 TEST_P(TextureZeroInitTest, NonRenderableTextureClearWithMultiArrayLayers) {
-    // TODO(crbug.com/dawn/667): Work around the fact that some platforms do not support reading
-    // from Snorm textures.
-    DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("disable_snorm_read"));
+    // TODO(dawn:1877): Snorm copy failing ANGLE Swiftshader, need further investigation.
+    DAWN_SUPPRESS_TEST_IF(IsANGLESwiftShader());
 
     wgpu::TextureDescriptor descriptor =
         CreateTextureDescriptor(1, 2, wgpu::TextureUsage::CopySrc, kNonrenderableColorFormat);
@@ -1590,9 +1587,8 @@ TEST_P(TextureZeroInitTest, PreservesInitializedArrayLayer) {
 // This is a regression test for crbug.com/dawn/451 where the lazy texture
 // init path on D3D12 had a divide-by-zero exception in the copy split logic.
 TEST_P(TextureZeroInitTest, CopyTextureToBufferNonRenderableUnaligned) {
-    // TODO(crbug.com/dawn/667): Work around the fact that some platforms do not support reading
-    // from Snorm textures.
-    DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("disable_snorm_read"));
+    // TODO(dawn:1877): Snorm copy failing ANGLE Swiftshader, need further investigation.
+    DAWN_SUPPRESS_TEST_IF(IsANGLESwiftShader());
 
     wgpu::TextureDescriptor descriptor;
     descriptor.size.width = kUnalignedSize;
@@ -1881,6 +1877,7 @@ TEST_P(TextureZeroInitTest, ErrorTextureIsUninitialized) {
 
 DAWN_INSTANTIATE_TEST(
     TextureZeroInitTest,
+    D3D11Backend({"nonzero_clear_resources_on_creation_for_testing"}),
     D3D12Backend({"nonzero_clear_resources_on_creation_for_testing"}),
     D3D12Backend({"nonzero_clear_resources_on_creation_for_testing"}, {"use_d3d12_render_pass"}),
     OpenGLBackend({"nonzero_clear_resources_on_creation_for_testing"}),
@@ -2325,7 +2322,10 @@ TEST_P(CompressedTextureZeroInitTest, Copy2DArrayCompressedB2T2B) {
 }
 
 DAWN_INSTANTIATE_TEST(CompressedTextureZeroInitTest,
+                      D3D11Backend({"nonzero_clear_resources_on_creation_for_testing"}),
                       D3D12Backend({"nonzero_clear_resources_on_creation_for_testing"}),
+                      D3D12Backend({"nonzero_clear_resources_on_creation_for_testing"},
+                                   {"d3d12_create_not_zeroed_heap"}),
                       MetalBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       OpenGLBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       OpenGLESBackend({"nonzero_clear_resources_on_creation_for_testing"}),

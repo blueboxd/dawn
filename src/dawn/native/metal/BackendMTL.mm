@@ -146,14 +146,12 @@ MaybeError API_AVAILABLE(macos(10.13))
 MaybeError GetDevicePCIInfo(id<MTLDevice> device, PCIIDs* ids) {
     // [device registryID] is introduced on macOS 10.13+, otherwise workaround to get vendor
     // id by vendor name on old macOS
-    if (@available(macos 10.13, *)) {
-        auto result = GetDeviceIORegistryPCIInfo(device, ids);
-        if (result.IsError()) {
-            dawn::WarningLog() << "GetDeviceIORegistryPCIInfo failed: "
-                               << result.AcquireError()->GetFormattedMessage();
-        } else if (ids->vendorId != 0) {
-            return result;
-        }
+    auto result = GetDeviceIORegistryPCIInfo(device, ids);
+    if (result.IsError()) {
+        dawn::WarningLog() << "GetDeviceIORegistryPCIInfo failed: "
+                           << result.AcquireError()->GetFormattedMessage();
+    } else if (ids->vendorId != 0) {
+        return result;
     }
 
     return GetVendorIdFromVendors(device, ids);
@@ -269,14 +267,14 @@ class PhysicalDevice : public PhysicalDeviceBase {
         return Device::Create(adapter, mDevice, descriptor, deviceToggles);
     }
 
+    void SetupBackendAdapterToggles(TogglesState* adapterToggles) const override {}
+
     void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override {
         {
             bool haveStoreAndMSAAResolve = false;
 #if DAWN_PLATFORM_IS(MACOS)
-            if (@available(macOS 10.12, *)) {
-                haveStoreAndMSAAResolve =
-                    [*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v2];
-            }
+            haveStoreAndMSAAResolve =
+                [*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v2];
 #elif DAWN_PLATFORM_IS(IOS)
             haveStoreAndMSAAResolve = [*mDevice supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v2];
 #endif
@@ -443,7 +441,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         }
 
         if (@available(macOS 10.15, iOS 14.0, *)) {
-            auto ShouldLeakCounterSets = [this]() {
+            auto ShouldLeakCounterSets = [this] {
                 // Intentionally leak counterSets to workaround an issue where the driver
                 // over-releases the handle if it is accessed more than once. It becomes a zombie.
                 // For more information, see crbug.com/1443658.
@@ -532,6 +530,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         EnableFeature(Feature::RG11B10UfloatRenderable);
         EnableFeature(Feature::BGRA8UnormStorage);
         EnableFeature(Feature::SurfaceCapabilities);
+        EnableFeature(Feature::MSAARenderToSingleSampled);
     }
 
     void InitializeVendorArchitectureImpl() override {
@@ -815,7 +814,7 @@ std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
 #endif
 
         // iOS only has a single device so MTLCopyAllDevices doesn't exist there.
-#if defined(DAWN_PLATFORM_IOS)
+#if DAWN_PLATFORM_IS(IOS)
         Ref<PhysicalDevice> physicalDevice = AcquireRef(
             new PhysicalDevice(GetInstance(), AcquireNSPRef(MTLCreateSystemDefaultDevice())));
         if (!GetInstance()->ConsumedErrorAndWarnOnce(physicalDevice->Initialize())) {

@@ -20,8 +20,8 @@
 #include "src/tint/fuzzers/tint_ast_fuzzer/expression_size.h"
 #include "src/tint/fuzzers/tint_ast_fuzzer/mutations/wrap_unary_operator.h"
 #include "src/tint/fuzzers/tint_ast_fuzzer/util.h"
-#include "src/tint/sem/statement.h"
-#include "src/tint/sem/value_expression.h"
+#include "src/tint/lang/wgsl/sem/statement.h"
+#include "src/tint/lang/wgsl/sem/value_expression.h"
 
 namespace tint::fuzzers::ast_fuzzer {
 
@@ -59,7 +59,7 @@ MutationList MutationFinderWrapUnaryOperators::FindMutations(
             continue;
         }
 
-        std::vector<ast::UnaryOp> valid_operators =
+        std::vector<core::UnaryOp> valid_operators =
             MutationWrapUnaryOperator::GetValidUnaryWrapper(*expr_sem_node);
 
         // Transformation only applies when there are available unary operators
@@ -68,7 +68,7 @@ MutationList MutationFinderWrapUnaryOperators::FindMutations(
             continue;
         }
 
-        ast::UnaryOp unary_op_wrapper =
+        core::UnaryOp unary_op_wrapper =
             valid_operators[probability_context->GetRandomIndex(valid_operators)];
 
         result.push_back(std::make_unique<MutationWrapUnaryOperator>(

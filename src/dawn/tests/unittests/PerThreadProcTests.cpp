@@ -31,7 +31,9 @@ class PerThreadProcTests : public testing::Test {
     PerThreadProcTests()
         : mNativeInstance(native::InstanceBase::Create()),
           mAdapterBase(AcquireRef(new native::null::PhysicalDevice(mNativeInstance.Get())),
-                       native::FeatureLevel::Core) {}
+                       native::FeatureLevel::Core,
+                       native::TogglesState(native::ToggleStage::Adapter),
+                       wgpu::PowerPreference::Undefined) {}
     ~PerThreadProcTests() override = default;
 
   protected:
@@ -66,7 +68,7 @@ TEST_F(PerThreadProcTests, DispatchesPerThread) {
     wgpu::Device deviceB =
         wgpu::Device::Acquire(reinterpret_cast<WGPUDevice>(mAdapterBase.APICreateDevice()));
 
-    std::thread threadA([&]() {
+    std::thread threadA([&] {
         DawnProcTable procs = native::GetProcs();
         procs.deviceCreateBuffer = [](WGPUDevice device,
                                       WGPUBufferDescriptor const* descriptor) -> WGPUBuffer {
@@ -87,7 +89,7 @@ TEST_F(PerThreadProcTests, DispatchesPerThread) {
         dawnProcSetPerThreadProcs(nullptr);
     });
 
-    std::thread threadB([&]() {
+    std::thread threadB([&] {
         DawnProcTable procs = native::GetProcs();
         procs.deviceCreateBuffer = [](WGPUDevice device,
                                       WGPUBufferDescriptor const* bufferDesc) -> WGPUBuffer {
@@ -118,6 +120,87 @@ TEST_F(PerThreadProcTests, DispatchesPerThread) {
     EXPECT_EQ(threadACounter, kThreadATargetCount);
     EXPECT_EQ(threadBCounter, kThreadBTargetCount);
 
+    dawnProcSetProcs(nullptr);
+}
+
+TEST_F(PerThreadProcTests, DispatchesDefaultThread) {
+    dawnProcSetProcs(&dawnThreadDispatchProcTable);
+
+    // Threads will block on this atomic to be sure we set procs on both threads before
+    // either thread calls the procs.
+    std::atomic<bool> ready(false);
+
+    static int threadDefaultCounter = 0;
+    static int threadACounter = 0;
+
+    static std::atomic<std::thread::id> threadIdA;
+    static std::atomic<std::thread::id> threadIdB;
+
+    constexpr int kThreadATargetCount = 28347;
+    constexpr int kThreadBTargetCount = 40420;
+
+    {
+        DawnProcTable procs = native::GetProcs();
+        procs.deviceCreateBuffer = [](WGPUDevice device,
+                                      WGPUBufferDescriptor const* descriptor) -> WGPUBuffer {
+            EXPECT_EQ(std::this_thread::get_id(), threadIdB);
+            threadDefaultCounter++;
+            return nullptr;
+        };
+        dawnProcSetDefaultThreadProcs(&procs);
+    }
+
+    // Note: Acquire doesn't call reference or release.
+    wgpu::Device deviceA =
+        wgpu::Device::Acquire(reinterpret_cast<WGPUDevice>(mAdapterBase.APICreateDevice()));
+
+    wgpu::Device deviceB =
+        wgpu::Device::Acquire(reinterpret_cast<WGPUDevice>(mAdapterBase.APICreateDevice()));
+
+    std::thread threadA([&] {
+        DawnProcTable procs = native::GetProcs();
+        procs.deviceCreateBuffer = [](WGPUDevice device,
+                                      WGPUBufferDescriptor const* descriptor) -> WGPUBuffer {
+            EXPECT_EQ(std::this_thread::get_id(), threadIdA);
+            threadACounter++;
+            return nullptr;
+        };
+        dawnProcSetPerThreadProcs(&procs);
+
+        while (!ready) {
+        }  // Should be fast, so just spin.
+
+        for (int i = 0; i < kThreadATargetCount; ++i) {
+            deviceA.CreateBuffer(nullptr);
+        }
+
+        deviceA = nullptr;
+        dawnProcSetPerThreadProcs(nullptr);
+    });
+
+    std::thread threadB([&] {
+        while (!ready) {
+        }  // Should be fast, so just spin.
+
+        for (int i = 0; i < kThreadBTargetCount; ++i) {
+            deviceB.CreateBuffer(nullptr);
+        }
+
+        deviceB = nullptr;
+        dawnProcSetPerThreadProcs(nullptr);
+    });
+
+    threadIdA = threadA.get_id();
+    threadIdB = threadB.get_id();
+
+    ready = true;
+    threadA.join();
+    threadB.join();
+
+    EXPECT_EQ(threadDefaultCounter, kThreadBTargetCount);
+    EXPECT_EQ(threadACounter, kThreadATargetCount);
+
+    dawnProcSetDefaultThreadProcs(nullptr);
     dawnProcSetProcs(nullptr);
 }
 

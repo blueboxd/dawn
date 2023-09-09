@@ -6,6 +6,8 @@ gclient_gn_args = [
   'generate_location_tags',
 ]
 
+git_dependencies = 'SYNC'
+
 vars = {
   'chromium_git': 'https://chromium.googlesource.com',
   'dawn_git': 'https://dawn.googlesource.com',
@@ -32,16 +34,32 @@ vars = {
 
   # Fetch clang-tidy into the same bin/ directory as our clang binary.
   'checkout_clang_tidy': False,
+
+  # Fetch configuration files required for the 'use_remoteexec' gn arg
+  'download_remoteexec_cfg': False,
+  # RBE instance to use for running remote builds
+  'rbe_instance': 'projects/rbe-chrome-untrusted/instances/default_instance',
+  # RBE project to download rewrapper config files for. Only needed if
+  # different from the project used in 'rbe_instance'
+  'rewrapper_cfg_project': '',
+  # reclient CIPD package
+  'reclient_package': 'infra/rbe/client/',
+  # reclient CIPD package version
+  'reclient_version': 're_client_version:0.108.0.7cdbbe9-gomaip',
+
+  # 'magic' text to tell depot_tools that git submodules should be accepted
+  # but parity with DEPS file is expected.
+  'SUBMODULE_MIGRATION': 'True'
 }
 
 deps = {
   # Dependencies required to use GN/Clang in standalone
   'build': {
-    'url': '{chromium_git}/chromium/src/build@1103ef535ca1e100db5d4e59781a4e59369a9818',
+    'url': '{chromium_git}/chromium/src/build@5885d3c24833ad72845a52a1b913a2b8bc651b56',
     'condition': 'dawn_standalone',
   },
   'buildtools': {
-    'url': '{chromium_git}/chromium/src/buildtools@2ff42d2008f09f65de12e70c6ff0ad58ddb090ad',
+    'url': '{chromium_git}/chromium/src/buildtools@79ab87fa54614258c4c95891e873223371194525',
     'condition': 'dawn_standalone',
   },
   'third_party/clang-format/script': {
@@ -73,13 +91,13 @@ deps = {
     'condition': 'dawn_standalone and host_os == "win"',
   },
 
-  'buildtools/third_party/libc++/trunk': {
-    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxx.git@c1341b9a1a7de7c193a23bf003d5479c48957f7d',
+  'third_party/libc++/src': {
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxx.git@84fb809dd6dae36d556dc0bb702c6cc2ce9d4b80',
     'condition': 'dawn_standalone',
   },
 
-  'buildtools/third_party/libc++abi/trunk': {
-    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxxabi.git@f7460fc60ab56553f0b3b0853f1ea60aa51b9478',
+  'third_party/libc++abi/src': {
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxxabi.git@d4760c0af99ccc9bce077960d5ddde4d66146c05',
     'condition': 'dawn_standalone',
   },
 
@@ -131,22 +149,22 @@ deps = {
   },
 
   'third_party/vulkan_memory_allocator': {
-    'url': '{chromium_git}/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@5e49f57a6e71a026a54eb42e366de09a4142d24e',
+    'url': '{chromium_git}/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@e87036508bb156f9986ea959323de1869e328f58',
     'condition': 'dawn_standalone',
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@1be015356eb8530b43e4c71b6cd514570186e08e',
+    'url': '{chromium_git}/angle/angle@d1e26fa224ef30e22cdf693cf0d6c49daf33e425',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@f85911d274afbcdf3094664c5e1f53e96f954c7f',
+    'url': '{swiftshader_git}/SwiftShader@729e92f8ae07d7b695bdcf346318dec4d11d899e',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@73a4816c4b451e0e47b35478ba204acb7848b6b9',
+    'url': '{chromium_git}/vulkan-deps@04381109ae471509060a985c908fd53c4b981a31',
     'condition': 'dawn_standalone',
   },
 
@@ -160,9 +178,18 @@ deps = {
     'condition': 'dawn_standalone',
   },
 
+  'third_party/dxc': {
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@4cfac01422927198ee3c8f6fff9e1c563f2a32ee',
+  },
+  'third_party/dxheaders': {
+    # The non-Windows build of DXC depends on DirectX-Headers, and at a specific commit (not ToT)
+    'url': '{chromium_git}/external/github.com/microsoft/DirectX-Headers@980971e835876dc0cde415e8f9bc646e64667bf7',
+    'condition': 'host_os != "win"',
+  },
+
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@b033a4f1ae4a0e19ae4d5563fae023001bbf570f',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@02f3426192fcb2c84f757d2d1887fd982a974dca',
     'condition': 'build_with_chromium',
   },
 
@@ -205,6 +232,18 @@ deps = {
       }
     ],
     'dep_type': 'cipd',
+  },
+
+  # RBE dependencies
+  'buildtools/reclient': {
+    'packages': [
+      {
+        'package': Var('reclient_package') + '${{platform}}',
+        'version': Var('reclient_version'),
+      }
+    ],
+    'dep_type': 'cipd',
+    'condition': 'dawn_standalone',
   },
 
   # Misc dependencies inherited from Tint
@@ -428,7 +467,22 @@ hooks = [
                 '-o', 'third_party/node/node.exe',
     ],
   },
-
+ {
+   # Download remote exec cfg files
+   'name': 'fetch_reclient_cfgs',
+   'pattern': '.',
+   'condition': 'download_remoteexec_cfg and dawn_standalone',
+   'action': ['python3',
+              'buildtools/reclient_cfgs/fetch_reclient_cfgs.py',
+              '--rbe_instance',
+              Var('rbe_instance'),
+              '--reproxy_cfg_template',
+              'reproxy.cfg.template',
+              '--rewrapper_cfg_project',
+              Var('rewrapper_cfg_project'),
+              '--quiet',
+              ],
+ },
 ]
 
 recursedeps = [

@@ -15,6 +15,7 @@
 #include <thread>
 #include <utility>
 
+#include "dawn/common/Ref.h"
 #include "dawn/common/RefCounted.h"
 #include "gtest/gtest.h"
 
@@ -72,7 +73,7 @@ TEST(RefCounted, RaceOnReferenceRelease) {
     bool deleted = false;
     auto* test = new RCTest(&deleted);
 
-    auto referenceManyTimes = [test]() {
+    auto referenceManyTimes = [test] {
         for (uint32_t i = 0; i < 100000; ++i) {
             test->Reference();
         }
@@ -84,7 +85,7 @@ TEST(RefCounted, RaceOnReferenceRelease) {
     t2.join();
     EXPECT_EQ(test->GetRefCountForTesting(), 200001u);
 
-    auto releaseManyTimes = [test]() {
+    auto releaseManyTimes = [test] {
         for (uint32_t i = 0; i < 100000; ++i) {
             test->Release();
         }

@@ -67,6 +67,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     return {};
 }
 
+void PhysicalDevice::SetupBackendAdapterToggles(TogglesState* adpterToggles) const {}
+
 void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {}
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,
@@ -147,10 +149,9 @@ ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     const BindGroupDescriptor* descriptor) {
     return AcquireRef(new BindGroup(this, descriptor));
 }
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return AcquireRef(new BindGroupLayout(this, descriptor, pipelineCompatibilityToken));
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return AcquireRef(new BindGroupLayout(this, descriptor));
 }
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
     DAWN_TRY(IncrementMemoryUsage(descriptor->size));
@@ -310,10 +311,8 @@ BindGroup::BindGroup(DeviceBase* device, const BindGroupDescriptor* descriptor)
 
 // BindGroupLayout
 
-BindGroupLayout::BindGroupLayout(DeviceBase* device,
-                                 const BindGroupLayoutDescriptor* descriptor,
-                                 PipelineCompatibilityToken pipelineCompatibilityToken)
-    : BindGroupLayoutBase(device, descriptor, pipelineCompatibilityToken) {}
+BindGroupLayout::BindGroupLayout(DeviceBase* device, const BindGroupLayoutDescriptor* descriptor)
+    : BindGroupLayoutInternalBase(device, descriptor) {}
 
 // Buffer
 
@@ -400,8 +399,8 @@ MaybeError ComputePipeline::Initialize() {
 
     tint::Program transformedProgram;
     const tint::Program* program;
-    tint::transform::Manager transformManager;
-    tint::transform::DataMap transformInputs;
+    tint::ast::transform::Manager transformManager;
+    tint::ast::transform::DataMap transformInputs;
 
     if (!computeStage.metadata->overrides.empty()) {
         transformManager.Add<tint::ast::transform::SingleEntryPoint>();
@@ -499,6 +498,10 @@ uint64_t Device::GetOptimalBufferToTextureCopyOffsetAlignment() const {
 
 float Device::GetTimestampPeriodInNS() const {
     return 1.0f;
+}
+
+bool Device::IsResolveTextureBlitWithDrawSupported() const {
+    return true;
 }
 
 void Device::ForceEventualFlushOfCommands() {}

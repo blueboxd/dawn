@@ -16,10 +16,10 @@
 
 #include <memory>
 
-#include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/fuzzers/tint_ast_fuzzer/mutations/change_unary_operator.h"
 #include "src/tint/fuzzers/tint_ast_fuzzer/util.h"
-#include "src/tint/type/reference.h"
+#include "src/tint/lang/core/type/reference.h"
+#include "src/tint/lang/wgsl/ast/unary_op_expression.h"
 
 namespace tint::fuzzers::ast_fuzzer {
 
@@ -51,8 +51,8 @@ MutationList MutationFinderChangeUnaryOperators::FindMutations(
         }
 
         // Only complement and negation operators can be swapped.
-        if (!(unary_expr->op == ast::UnaryOp::kComplement ||
-              unary_expr->op == ast::UnaryOp::kNegation)) {
+        if (!(unary_expr->op == core::UnaryOp::kComplement ||
+              unary_expr->op == core::UnaryOp::kNegation)) {
             continue;
         }
 

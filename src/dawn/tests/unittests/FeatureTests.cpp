@@ -30,11 +30,15 @@ class FeatureTests : public testing::Test {
           mInstanceBase(native::InstanceBase::Create()),
           mPhysicalDevice(mInstanceBase.Get()),
           mUnsafePhysicalDevice(mInstanceBase.Get()),
-          mAdapterBase(&mPhysicalDevice, native::FeatureLevel::Core),
+          mAdapterBase(&mPhysicalDevice,
+                       native::FeatureLevel::Core,
+                       native::TogglesState(native::ToggleStage::Adapter),
+                       wgpu::PowerPreference::Undefined),
           mUnsafeAdapterBase(&mUnsafePhysicalDevice,
                              native::FeatureLevel::Core,
                              native::TogglesState(native::ToggleStage::Adapter)
-                                 .SetForTesting(native::Toggle::AllowUnsafeAPIs, true, true)) {}
+                                 .SetForTesting(native::Toggle::AllowUnsafeAPIs, true, true),
+                             wgpu::PowerPreference::Undefined) {}
 
     std::vector<wgpu::FeatureName> GetAllFeatureNames() {
         std::vector<wgpu::FeatureName> allFeatureNames(kTotalFeaturesCount);

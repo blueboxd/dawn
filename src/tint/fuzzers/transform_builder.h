@@ -20,10 +20,10 @@
 
 #include "include/tint/tint.h"
 
-#include "src/tint/ast/transform/binding_remapper.h"
-#include "src/tint/ast/transform/robustness.h"
 #include "src/tint/fuzzers/data_builder.h"
 #include "src/tint/fuzzers/shuffle_transform.h"
+#include "src/tint/lang/wgsl/ast/transform/binding_remapper.h"
+#include "src/tint/lang/wgsl/ast/transform/robustness.h"
 
 namespace tint::fuzzers {
 
@@ -45,10 +45,10 @@ class TransformBuilder {
     ~TransformBuilder() = default;
 
     /// @returns manager for transforms
-    transform::Manager* manager() { return &manager_; }
+    ast::transform::Manager* manager() { return &manager_; }
 
     /// @returns data for transforms
-    transform::DataMap* data_map() { return &data_map_; }
+    ast::transform::DataMap* data_map() { return &data_map_; }
 
     /// Adds a transform and needed data to |manager_| and |data_map_|.
     /// @tparam T - A class that inherits from ast::transform::Transform and has an
@@ -72,8 +72,8 @@ class TransformBuilder {
 
   private:
     DataBuilder builder_;
-    transform::Manager manager_;
-    transform::DataMap data_map_;
+    ast::transform::Manager manager_;
+    ast::transform::DataMap data_map_;
 
     DataBuilder* builder() { return &builder_; }
 
@@ -132,7 +132,7 @@ class TransformBuilder {
                 uint8_t old_binding;
                 uint8_t new_group;
                 uint8_t new_binding;
-                builtin::Access new_access;
+                core::Access new_access;
             };
 
             std::vector<Config> configs = tb->builder()->vector<Config>();

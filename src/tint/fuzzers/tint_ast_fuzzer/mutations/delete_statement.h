@@ -15,9 +15,9 @@
 #ifndef SRC_TINT_FUZZERS_TINT_AST_FUZZER_MUTATIONS_DELETE_STATEMENT_H_
 #define SRC_TINT_FUZZERS_TINT_AST_FUZZER_MUTATIONS_DELETE_STATEMENT_H_
 
-#include "src/tint/ast/statement.h"
 #include "src/tint/fuzzers/tint_ast_fuzzer/jump_tracker.h"
 #include "src/tint/fuzzers/tint_ast_fuzzer/mutation.h"
+#include "src/tint/lang/wgsl/ast/statement.h"
 
 namespace tint::fuzzers::ast_fuzzer {
 
@@ -52,7 +52,7 @@ class MutationDeleteStatement : public Mutation {
     ///
     /// @copydetails Mutation::Apply
     void Apply(const NodeIdMap& node_id_map,
-               tint::CloneContext* clone_context,
+               tint::program::CloneContext& clone_context,
                NodeIdMap* new_node_id_map) const override;
 
     protobufs::Mutation ToMessage() const override;

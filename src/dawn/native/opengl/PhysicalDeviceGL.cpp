@@ -57,15 +57,43 @@ uint32_t GetVendorIdFromVendors(const char* vendor) {
 // static
 ResultOrError<Ref<PhysicalDevice>> PhysicalDevice::Create(InstanceBase* instance,
                                                           wgpu::BackendType backendType,
-                                                          void* (*getProc)(const char*)) {
-    Ref<PhysicalDevice> physicalDevice = AcquireRef(new PhysicalDevice(instance, backendType));
+                                                          void* (*getProc)(const char*),
+                                                          EGLDisplay display) {
+    EGLFunctions egl;
+    egl.Init(getProc);
+
+    EGLenum api = backendType == wgpu::BackendType::OpenGLES ? EGL_OPENGL_ES_API : EGL_OPENGL_API;
+
+    if (display == EGL_NO_DISPLAY) {
+        display = egl.GetCurrentDisplay();
+    }
+
+    if (display == EGL_NO_DISPLAY) {
+        display = egl.GetDisplay(EGL_DEFAULT_DISPLAY);
+    }
+
+    std::unique_ptr<ContextEGL> context;
+    DAWN_TRY_ASSIGN(context, ContextEGL::Create(egl, api, display, false));
+
+    EGLContext prevDrawSurface = egl.GetCurrentSurface(EGL_DRAW);
+    EGLContext prevReadSurface = egl.GetCurrentSurface(EGL_READ);
+    EGLContext prevContext = egl.GetCurrentContext();
+
+    context->MakeCurrent();
+
+    Ref<PhysicalDevice> physicalDevice =
+        AcquireRef(new PhysicalDevice(instance, backendType, display));
     DAWN_TRY(physicalDevice->InitializeGLFunctions(getProc));
     DAWN_TRY(physicalDevice->Initialize());
+
+    egl.MakeCurrent(display, prevDrawSurface, prevReadSurface, prevContext);
     return physicalDevice;
 }
 
-PhysicalDevice::PhysicalDevice(InstanceBase* instance, wgpu::BackendType backendType)
-    : PhysicalDeviceBase(instance, backendType) {}
+PhysicalDevice::PhysicalDevice(InstanceBase* instance,
+                               wgpu::BackendType backendType,
+                               EGLDisplay display)
+    : PhysicalDeviceBase(instance, backendType), mDisplay(display) {}
 
 MaybeError PhysicalDevice::InitializeGLFunctions(void* (*getProc)(const char*)) {
     // Use getProc to populate the dispatch table
@@ -141,6 +169,9 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
             supportsBPTC) {
             EnableFeature(dawn::native::Feature::TextureCompressionBC);
         }
+    }
+    if (mName.find("ANGLE") != std::string::npos) {
+        EnableFeature(dawn::native::Feature::ANGLETextureSharing);
     }
 
     // Non-zero baseInstance requires at least desktop OpenGL 4.2, and it is not supported in
@@ -226,6 +257,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     return {};
 }
 
+void PhysicalDevice::SetupBackendAdapterToggles(TogglesState* adpterToggles) const {}
+
 void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
     const OpenGLFunctions& gl = mFunctions;
 
@@ -277,11 +310,9 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     deviceToggles->Default(Toggle::DisableBaseVertex, !supportsBaseVertex);
     deviceToggles->Default(Toggle::DisableBaseInstance, !supportsBaseInstance);
     deviceToggles->Default(Toggle::DisableIndexedDrawBuffers, !supportsIndexedDrawBuffers);
-    deviceToggles->Default(Toggle::DisableSnormRead, !supportsSnormRead);
     deviceToggles->Default(Toggle::DisableDepthRead, !supportsDepthRead);
     deviceToggles->Default(Toggle::DisableStencilRead, !supportsStencilRead);
     deviceToggles->Default(Toggle::DisableDepthStencilRead, !supportsDepthStencilRead);
-    deviceToggles->Default(Toggle::DisableBGRARead, !supportsBGRARead);
     deviceToggles->Default(Toggle::DisableSampleVariables, !supportsSampleVariables);
     deviceToggles->Default(Toggle::FlushBeforeClientWaitSync, gl.GetVersion().IsES());
     // For OpenGL ES, we must use a placeholder fragment shader for vertex-only render pipeline.
@@ -297,6 +328,13 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
 
     // For OpenGL ES, use compute shader blit to emulate stencil texture to buffer copies.
     deviceToggles->Default(Toggle::UseBlitForStencilTextureToBufferCopy, gl.GetVersion().IsES());
+
+    // For OpenGL ES, use compute shader blit to emulate snorm texture to buffer copies.
+    deviceToggles->Default(Toggle::UseBlitForSnormTextureToBufferCopy,
+                           gl.GetVersion().IsES() || !supportsSnormRead);
+
+    // For OpenGL ES, use compute shader blit to emulate bgra8unorm texture to buffer copies.
+    deviceToggles->Default(Toggle::UseBlitForBGRA8UnormTextureToBufferCopy, !supportsBGRARead);
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,
@@ -305,7 +343,15 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* ada
     EGLenum api =
         GetBackendType() == wgpu::BackendType::OpenGL ? EGL_OPENGL_API : EGL_OPENGL_ES_API;
     std::unique_ptr<Device::Context> context;
-    DAWN_TRY_ASSIGN(context, ContextEGL::Create(mEGLFunctions, api));
+    bool useANGLETextureSharing = false;
+    for (size_t i = 0; i < descriptor->requiredFeaturesCount; ++i) {
+        if (descriptor->requiredFeatures[i] == wgpu::FeatureName::ANGLETextureSharing) {
+            useANGLETextureSharing = true;
+        }
+    }
+
+    DAWN_TRY_ASSIGN(context,
+                    ContextEGL::Create(mEGLFunctions, api, mDisplay, useANGLETextureSharing));
     return Device::Create(adapter, descriptor, mFunctions, std::move(context), deviceToggles);
 }
 

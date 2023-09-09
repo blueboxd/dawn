@@ -457,6 +457,23 @@ void PhysicalDevice::CleanUpDebugLayerFilters() {
     infoQueue->PopStorageFilter();
 }
 
+void PhysicalDevice::SetupBackendAdapterToggles(TogglesState* adapterToggles) const {
+    // Check for use_dxc toggle
+#ifdef DAWN_USE_BUILT_DXC
+    // Default to using DXC. If shader model < 6.0, though, we must use FXC.
+    if (GetDeviceInfo().shaderModel <= 60) {
+        adapterToggles->ForceSet(Toggle::UseDXC, false);
+    }
+    adapterToggles->Default(Toggle::UseDXC, true);
+#else
+    // Default to using FXC
+    if (!GetBackend()->IsDXCAvailable()) {
+        adapterToggles->ForceSet(Toggle::UseDXC, false);
+    }
+    adapterToggles->Default(Toggle::UseDXC, false);
+#endif
+}
+
 void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
     const bool useResourceHeapTier2 = (GetDeviceInfo().resourceHeapTier >= 2);
     deviceToggles->Default(Toggle::UseD3D12ResourceHeapTier2, useResourceHeapTier2);
@@ -473,14 +490,6 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
         Toggle::D3D12UseTempBufferInDepthStencilTextureAndBufferCopyWithNonZeroBufferOffset,
         GetDeviceInfo().programmableSamplePositionsTier == 0);
 
-    // Check DXC for use_dxc toggle, and default to use FXC
-    // TODO(dawn:1495): When implementing adapter toggles, promote UseDXC as adapter toggle, and do
-    // the validation when creating adapters.
-    if (!GetBackend()->IsDXCAvailable()) {
-        deviceToggles->ForceSet(Toggle::UseDXC, false);
-    }
-    deviceToggles->Default(Toggle::UseDXC, false);
-
     // Disable optimizations when using FXC
     // See https://crbug.com/dawn/1203
     deviceToggles->Default(Toggle::FxcOptimizations, false);
@@ -488,9 +497,29 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // By default use the maximum shader-visible heap size allowed.
     deviceToggles->Default(Toggle::UseD3D12SmallShaderVisibleHeapForTesting, false);
 
-    // By default use D3D12 Root Signature Version 1.1 when possible
+    // By default use D3D12 Root Signature Version 1.1 when possible, otherwise we should never
+    // enable this toggle.
+    if (!GetDeviceInfo().supportsRootSignatureVersion1_1) {
+        deviceToggles->ForceSet(Toggle::D3D12UseRootSignatureVersion1_1, false);
+    }
     deviceToggles->Default(Toggle::D3D12UseRootSignatureVersion1_1,
                            GetDeviceInfo().supportsRootSignatureVersion1_1);
+
+    // By default create MSAA textures with 64KB (D3D12_SMALL_MSAA_RESOURCE_PLACEMENT_ALIGNMENT)
+    // alignment when possible, otherwise we should never enable this toggle.
+    if (!GetDeviceInfo().use64KBAlignedMSAATexture) {
+        deviceToggles->ForceSet(Toggle::D3D12Use64KBAlignedMSAATexture, false);
+    }
+    deviceToggles->Default(Toggle::D3D12Use64KBAlignedMSAATexture,
+                           GetDeviceInfo().use64KBAlignedMSAATexture);
+
+    // By default use D3D12_HEAP_FLAG_CREATE_NOT_ZEROED when possible, otherwise we should never
+    // enable this toggle.
+    if (!GetDeviceInfo().supportsHeapFlagCreateNotZeroed) {
+        deviceToggles->ForceSet(Toggle::D3D12CreateNotZeroedHeap, false);
+    }
+    deviceToggles->Default(Toggle::D3D12CreateNotZeroedHeap,
+                           GetDeviceInfo().supportsHeapFlagCreateNotZeroed);
 
     uint32_t deviceId = GetDeviceId();
     uint32_t vendorId = GetVendorId();
@@ -538,15 +567,19 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
         }
     }
 
-    // This workaround is needed on Intel Gen12LP GPUs with driver >= 30.0.101.4091.
-    // See http://crbug.com/dawn/1083 for more information.
-    if (gpu_info::IsIntelGen12LP(vendorId, deviceId)) {
-        const gpu_info::DriverVersion kDriverVersion = {30, 0, 101, 4091};
-        if (gpu_info::CompareWindowsDriverVersion(vendorId, GetDriverVersion(), kDriverVersion) !=
-            -1) {
-            deviceToggles->Default(Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
-                                   true);
-        }
+    // This workaround is needed on Intel Gen9 GPUs with driver >= 31.0.101.2121 and Gen12LP GPUs
+    // with driver >= 31.0.101.4091. See http://crbug.com/dawn/1083 for more information.
+    bool useBlitForT2T = false;
+    if (gpu_info::IsIntelGen9(vendorId, deviceId)) {
+        useBlitForT2T = gpu_info::CompareWindowsDriverVersion(vendorId, GetDriverVersion(),
+                                                              {31, 0, 101, 2121}) != -1;
+    } else if (gpu_info::IsIntelGen12LP(vendorId, deviceId)) {
+        useBlitForT2T = gpu_info::CompareWindowsDriverVersion(vendorId, GetDriverVersion(),
+                                                              {31, 0, 101, 4091}) != -1;
+    }
+    if (useBlitForT2T) {
+        deviceToggles->Default(Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
+                               true);
     }
 
     // D3D driver has a bug resolving overlapping queries to a same buffer on Intel Gen12 GPUs. This
@@ -605,7 +638,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
             Toggle::D3D12UseTempBufferInTextureToTextureCopyBetweenDifferentDimensions, true);
     }
 
-    // Polyfill reflect builtin for vec2<f32> on Intel device in usng FXC.
+    // Polyfill reflect builtin for vec2<f32> on Intel device if using FXC.
     // See https://crbug.com/tint/1798 for more information.
     if (gpu_info::IsIntel(vendorId) && !deviceToggles->IsEnabled(Toggle::UseDXC)) {
         deviceToggles->Default(Toggle::D3D12PolyfillReflectVec2F32, true);
