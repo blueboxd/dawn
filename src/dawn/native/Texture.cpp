@@ -171,7 +171,10 @@ MaybeError ValidateSampleCount(const TextureDescriptor* descriptor,
         ASSERT(!format->isCompressed);
 
         DAWN_INVALID_IF(usage & wgpu::TextureUsage::StorageBinding,
-                        "The sample count (%u) of a storage textures is not 1.",
+                        "The sample count (%u) of a storage texture is not 1.",
+                        descriptor->sampleCount);
+        DAWN_INVALID_IF(usage & wgpu::TextureUsage::StorageAttachment,
+                        "The sample count (%u) of a storage attachment texture is not 1.",
                         descriptor->sampleCount);
 
         DAWN_INVALID_IF((usage & wgpu::TextureUsage::RenderAttachment) == 0,
@@ -335,6 +338,11 @@ MaybeError ValidateTextureUsage(const DeviceBase* device,
         "The texture usage (%s) includes %s, which is incompatible with the format (%s).", usage,
         wgpu::TextureUsage::StorageBinding, format->format);
 
+    DAWN_INVALID_IF(
+        !format->supportsStorageAttachment && (usage & wgpu::TextureUsage::StorageAttachment),
+        "The texture usage (%s) includes %s, which is incompatible with the format (%s).", usage,
+        wgpu::TextureUsage::StorageAttachment, format->format);
+
     const auto kTransientAttachment = wgpu::TextureUsage::TransientAttachment;
     if (usage & kTransientAttachment) {
         DAWN_INVALID_IF(
@@ -348,13 +356,6 @@ MaybeError ValidateTextureUsage(const DeviceBase* device,
                         "The texture usage (%s) includes %s, which requires that the texture usage "
                         "be exactly %s",
                         usage, kTransientAttachment, kAllowedTransientUsage);
-    }
-
-    if (usage & wgpu::TextureUsage::StorageAttachment) {
-        DAWN_TRY_CONTEXT(ValidateHasPLSFeature(device), "validating usage of %s",
-                         wgpu::TextureUsage::StorageAttachment);
-
-        // TODO(dawn:1704): Validate the constraints on the dimension, format, etc.
     }
 
     if (!allowedSharedTextureMemoryUsage) {
@@ -678,7 +679,7 @@ TextureBase::TextureBase(DeviceBase* device, const TextureDescriptor* descriptor
         }
     }
     if (mInternalUsage & wgpu::TextureUsage::StorageBinding) {
-        AddInternalUsage(kReadOnlyStorageTexture);
+        AddInternalUsage(kReadOnlyStorageTexture | kWriteOnlyStorageTexture);
     }
 }
 
@@ -836,8 +837,8 @@ MaybeError TextureBase::ValidateCanUseInSubmitNow() const {
     if (DAWN_UNLIKELY(mState.destroyed || !mState.hasAccess)) {
         DAWN_INVALID_IF(mState.destroyed, "Destroyed texture %s used in a submit.", this);
         if (DAWN_UNLIKELY(!mState.hasAccess)) {
-            if (mSharedTextureMemoryState != nullptr) {
-                auto memory = mSharedTextureMemoryState->GetSharedTextureMemory().Promote();
+            if (mSharedTextureMemoryContents != nullptr) {
+                auto memory = mSharedTextureMemoryContents->GetSharedTextureMemory().Promote();
                 if (memory != nullptr) {
                     return DAWN_VALIDATION_ERROR("%s used in a submit without current access to %s",
                                                  this, memory.Get());
@@ -952,8 +953,8 @@ bool TextureBase::IsImplicitMSAARenderTextureViewSupported() const {
     return (GetUsage() & wgpu::TextureUsage::TextureBinding) != 0;
 }
 
-SharedTextureMemoryState* TextureBase::GetSharedTextureMemoryState() const {
-    return mSharedTextureMemoryState.Get();
+SharedTextureMemoryContents* TextureBase::GetSharedTextureMemoryContents() const {
+    return mSharedTextureMemoryContents.Get();
 }
 
 void TextureBase::APIDestroy() {

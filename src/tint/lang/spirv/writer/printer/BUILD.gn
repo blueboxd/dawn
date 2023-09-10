@@ -24,7 +24,7 @@
 import("../../../../../../scripts/tint_overrides_with_defaults.gni")
 
 import("${tint_src_dir}/tint.gni")
-if (tint_build_spv_writer && tint_build_ir) {
+if (tint_build_spv_writer) {
   libtint_source_set("printer") {
     sources = [
       "printer.cc",
@@ -35,7 +35,12 @@ if (tint_build_spv_writer && tint_build_ir) {
       "${tint_src_dir}/api/options",
       "${tint_src_dir}/lang/core",
       "${tint_src_dir}/lang/core/constant",
+      "${tint_src_dir}/lang/core/intrinsic",
+      "${tint_src_dir}/lang/core/intrinsic/data",
+      "${tint_src_dir}/lang/core/ir",
       "${tint_src_dir}/lang/core/type",
+      "${tint_src_dir}/lang/spirv/intrinsic/data",
+      "${tint_src_dir}/lang/spirv/ir",
       "${tint_src_dir}/lang/wgsl/ast",
       "${tint_src_dir}/lang/wgsl/program",
       "${tint_src_dir}/lang/wgsl/sem",
@@ -54,10 +59,6 @@ if (tint_build_spv_writer && tint_build_ir) {
       "${tint_src_dir}/utils/traits",
     ]
 
-    if (tint_build_ir) {
-      deps += [ "${tint_src_dir}/lang/core/ir" ]
-    }
-
     if (tint_build_spv_reader || tint_build_spv_writer) {
       deps += [ "${tint_spirv_headers_dir}:spv_headers" ]
     }
@@ -66,11 +67,8 @@ if (tint_build_spv_writer && tint_build_ir) {
       deps += [
         "${tint_src_dir}/lang/spirv/writer/ast_printer",
         "${tint_src_dir}/lang/spirv/writer/common",
+        "${tint_src_dir}/lang/spirv/writer/raise",
       ]
-    }
-
-    if (tint_build_spv_writer && tint_build_ir) {
-      deps += [ "${tint_src_dir}/lang/spirv/writer/raise" ]
     }
   }
 }

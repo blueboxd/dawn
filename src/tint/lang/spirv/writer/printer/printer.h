@@ -24,6 +24,8 @@
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/constant.h"
 #include "src/tint/lang/core/texel_format.h"
+#include "src/tint/lang/spirv/ir/builtin_call.h"
+#include "src/tint/lang/spirv/ir/intrinsic_call.h"
 #include "src/tint/lang/spirv/writer/common/binary_writer.h"
 #include "src/tint/lang/spirv/writer/common/function.h"
 #include "src/tint/lang/spirv/writer/common/module.h"
@@ -200,6 +202,10 @@ class Printer {
 
     /// Emit a builtin function call instruction.
     /// @param call the builtin call instruction to emit
+    void EmitSpirvBuiltinCall(spirv::ir::BuiltinCall* call);
+
+    /// Emit a builtin function call instruction.
+    /// @param call the builtin call instruction to emit
     void EmitCoreBuiltinCall(core::ir::CoreBuiltinCall* call);
 
     /// Emit a construct instruction.
@@ -212,7 +218,7 @@ class Printer {
 
     /// Emit an intrinsic call instruction.
     /// @param call the intrinsic call instruction to emit
-    void EmitIntrinsicCall(core::ir::IntrinsicCall* call);
+    void EmitIntrinsicCall(spirv::ir::IntrinsicCall* call);
 
     /// Emit a load instruction.
     /// @param load the load instruction to emit

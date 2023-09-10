@@ -22,6 +22,7 @@
 ################################################################################
 
 include(lang/glsl/writer/ast_printer/BUILD.cmake)
+include(lang/glsl/writer/ast_raise/BUILD.cmake)
 include(lang/glsl/writer/common/BUILD.cmake)
 
 if(TINT_BUILD_GLSL_WRITER)

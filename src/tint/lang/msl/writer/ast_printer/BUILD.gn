@@ -62,7 +62,10 @@ if (tint_build_msl_writer) {
     ]
 
     if (tint_build_msl_writer) {
-      deps += [ "${tint_src_dir}/lang/msl/writer/common" ]
+      deps += [
+        "${tint_src_dir}/lang/msl/writer/ast_raise",
+        "${tint_src_dir}/lang/msl/writer/common",
+      ]
     }
   }
 }

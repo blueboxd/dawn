@@ -42,7 +42,9 @@ function(tint_core_compile_options TARGET)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SPV_WRITER=$<BOOL:${TINT_BUILD_SPV_WRITER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_WGSL_WRITER=$<BOOL:${TINT_BUILD_WGSL_WRITER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SYNTAX_TREE_WRITER=$<BOOL:${TINT_BUILD_SYNTAX_TREE_WRITER}>)
-  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_IR=$<BOOL:${TINT_BUILD_IR}>)
+
+  # TODO(crbug.com/dawn/1704): Remove when chromium_experimental_pixel_local is production-ready
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_ENABLE_LOCAL_STORAGE_EXTENSION=$<BOOL:${TINT_ENABLE_LOCAL_STORAGE_EXTENSION}>)
 
   common_compile_options(${TARGET})
 endfunction()
@@ -169,6 +171,11 @@ function(tint_bench_compile_options TARGET)
   tint_core_compile_options(${TARGET})
   set_target_properties(${TARGET} PROPERTIES FOLDER "Benchmarks")
   target_link_libraries(${TARGET} PRIVATE benchmark::benchmark)
+  if(TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER)
+    target_compile_definitions(${TARGET} PRIVATE
+      "TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER=\"${TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER}\""
+    )
+  endif()
 endfunction()
 
 function(tint_test_cmd_compile_options TARGET)
@@ -217,9 +224,57 @@ endif()
 # Fuzzers
 ################################################################################
 if(TINT_BUILD_FUZZERS)
+  if(NOT COMPILER_IS_CLANG)
+    message(FATAL_ERROR "TINT_BUILD_FUZZERS can only be enabled with the Clang toolchain")
+  endif()
   add_subdirectory(fuzzers)
   set(TINT_FUZZ_SUFFIX "_fuzz")
 endif()
+
+################################################################################
+# Benchmarks
+################################################################################
+if(TINT_BUILD_BENCHMARKS AND TINT_EXTERNAL_BENCHMARK_CORPUS_DIR)
+  # Glob all the files at TINT_EXTERNAL_BENCHMARK_CORPUS_DIR, and create a header
+  # that lists these with the macros:
+  # TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS()
+  # TINT_BENCHMARK_EXTERNAL_SPV_PROGRAMS()
+  set(TINT_BENCHMARK_GEN_DIR "${DAWN_BUILD_GEN_DIR}/src/tint/benchmark/")
+  set(TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER "${TINT_BENCHMARK_GEN_DIR}/external_wgsl_programs.h")
+  message("Globbing ${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}...")
+
+  file(GLOB_RECURSE
+    TINT_EXTERNAL_WGSL_BENCHMARK_FILES
+    RELATIVE "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}"
+    "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/**.wgsl"
+  )
+  list(TRANSFORM TINT_EXTERNAL_WGSL_BENCHMARK_FILES REPLACE
+    "(.+)"
+    "    BENCHMARK_CAPTURE\(FUNC, \"\\1\", \"${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/\\1\")"
+  )
+  list(JOIN TINT_EXTERNAL_WGSL_BENCHMARK_FILES "; \\\n" TINT_EXTERNAL_WGSL_BENCHMARK_FILES)
+
+  file(GLOB_RECURSE
+    TINT_EXTERNAL_SPV_BENCHMARK_FILES
+    RELATIVE "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}"
+    "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/**.spv")
+
+  list(TRANSFORM TINT_EXTERNAL_SPV_BENCHMARK_FILES REPLACE
+    "(.+)"
+    "    BENCHMARK_CAPTURE\(FUNC, \"\\1\", \"${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/\\1\")"
+  )
+  list(JOIN TINT_EXTERNAL_SPV_BENCHMARK_FILES "; \\\n" TINT_EXTERNAL_SPV_BENCHMARK_FILES)
+
+  file(CONFIGURE
+    OUTPUT "${TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER}"
+    CONTENT "
+#define TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS(FUNC) \\
+${TINT_EXTERNAL_WGSL_BENCHMARK_FILES};
+
+#define TINT_BENCHMARK_EXTERNAL_SPV_PROGRAMS(FUNC) \\
+${TINT_EXTERNAL_SPV_BENCHMARK_FILES};"
+  )
+endif(TINT_BUILD_BENCHMARKS AND TINT_EXTERNAL_BENCHMARK_CORPUS_DIR)
 
 ################################################################################
 # Functions used by BUILD.cmake files
@@ -434,9 +489,14 @@ function(tint_target_add_external_dependencies UNSUFFIXED_TARGET KIND)
         target_include_directories(${TARGET} PRIVATE ${gmock_SOURCE_DIR}/include)
         target_link_libraries(${TARGET} PRIVATE gmock)
       elseif(${DEPENDENCY} STREQUAL "metal")
+        find_library(CoreGraphicsFramework CoreGraphics REQUIRED)
         find_library(FoundationFramework Foundation REQUIRED)
         find_library(MetalFramework Metal REQUIRED)
-        target_link_libraries(${TARGET} PRIVATE ${FoundationFramework} ${MetalFramework})
+        target_link_libraries(${TARGET} PRIVATE
+          ${CoreGraphicsFramework}
+          ${FoundationFramework}
+          ${MetalFramework}
+        )
       elseif(${DEPENDENCY} STREQUAL "spirv-headers")
         tint_spvheaders_compile_options(${TARGET})
       elseif(${DEPENDENCY} STREQUAL "spirv-tools")
@@ -501,6 +561,13 @@ endfunction()
 include("BUILD.cmake")
 
 ################################################################################
+# Bespoke target settings
+################################################################################
+if (MSVC)
+  target_sources(tint_api PRIVATE tint.natvis)
+endif()
+
+################################################################################
 # Additional fuzzer tests
 ################################################################################
 if(TINT_BUILD_TESTS)
@@ -518,56 +585,6 @@ if(TINT_BUILD_TESTS)
 
   add_test(NAME tint_unittests COMMAND tint_cmd_test_test_cmd)
 endif(TINT_BUILD_TESTS)
-
-################################################################################
-# Benchmarks
-################################################################################
-if(TINT_BUILD_BENCHMARKS AND TINT_EXTERNAL_BENCHMARK_CORPUS_DIR)
-  # Glob all the files at TINT_EXTERNAL_BENCHMARK_CORPUS_DIR, and create a header
-  # that lists these with the macros:
-  # TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS()
-  # TINT_BENCHMARK_EXTERNAL_SPV_PROGRAMS()
-  set(TINT_BENCHMARK_GEN_DIR "${DAWN_BUILD_GEN_DIR}/src/tint/benchmark/")
-  set(TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER "${TINT_BENCHMARK_GEN_DIR}/external_wgsl_programs.h")
-  message("Globbing ${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}...")
-
-  file(GLOB_RECURSE
-    TINT_EXTERNAL_WGSL_BENCHMARK_FILES
-    RELATIVE "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}"
-    "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/**.wgsl"
-  )
-  list(TRANSFORM TINT_EXTERNAL_WGSL_BENCHMARK_FILES REPLACE
-    "(.+)"
-    "    BENCHMARK_CAPTURE\(FUNC, \"\\1\", \"${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/\\1\")"
-  )
-  list(JOIN TINT_EXTERNAL_WGSL_BENCHMARK_FILES "; \\\n" TINT_EXTERNAL_WGSL_BENCHMARK_FILES)
-
-  file(GLOB_RECURSE
-    TINT_EXTERNAL_SPV_BENCHMARK_FILES
-    RELATIVE "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}"
-    "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/**.spv")
-
-  list(TRANSFORM TINT_EXTERNAL_SPV_BENCHMARK_FILES REPLACE
-    "(.+)"
-    "    BENCHMARK_CAPTURE\(FUNC, \"\\1\", \"${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/\\1\")"
-  )
-  list(JOIN TINT_EXTERNAL_SPV_BENCHMARK_FILES "; \\\n" TINT_EXTERNAL_SPV_BENCHMARK_FILES)
-
-  file(CONFIGURE
-    OUTPUT "${TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER}"
-    CONTENT "
-#define TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS(FUNC) \\
-${TINT_EXTERNAL_WGSL_BENCHMARK_FILES};
-
-#define TINT_BENCHMARK_EXTERNAL_SPV_PROGRAMS(FUNC) \\
-${TINT_EXTERNAL_SPV_BENCHMARK_FILES};"
-  )
-
-  # Define TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER to the generated header path
-  target_compile_definitions(tint_cmd_bench_bench_cmd PRIVATE
-    "TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER=\"${TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER}\""
-  )
-endif(TINT_BUILD_BENCHMARKS AND TINT_EXTERNAL_BENCHMARK_CORPUS_DIR)
 
 ################################################################################
 # Target aliases

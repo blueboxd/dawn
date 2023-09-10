@@ -371,6 +371,14 @@ std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingGroupInfoMap& shad
     return requiredBufferSizes;
 }
 
+bool IsShaderCompatibleWithPipelineLayoutOnStorageTextureAccess(
+    const BindingInfo& bindingInfo,
+    const ShaderBindingInfo& shaderBindingInfo) {
+    return bindingInfo.storageTexture.access == shaderBindingInfo.storageTexture.access ||
+           (bindingInfo.storageTexture.access == wgpu::StorageTextureAccess::ReadWrite &&
+            shaderBindingInfo.storageTexture.access == wgpu::StorageTextureAccess::WriteOnly);
+}
+
 MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* device,
                                                           const BindGroupLayoutInternalBase* layout,
                                                           SingleShaderStage entryPointStage,
@@ -451,10 +459,11 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
             ASSERT(layoutInfo.storageTexture.format != wgpu::TextureFormat::Undefined);
             ASSERT(shaderInfo.storageTexture.format != wgpu::TextureFormat::Undefined);
 
-            DAWN_INVALID_IF(layoutInfo.storageTexture.access != shaderInfo.storageTexture.access,
-                            "The layout's binding access (%s) isn't compatible with the shader's "
-                            "binding access (%s).",
-                            layoutInfo.storageTexture.access, shaderInfo.storageTexture.access);
+            DAWN_INVALID_IF(
+                !IsShaderCompatibleWithPipelineLayoutOnStorageTextureAccess(layoutInfo, shaderInfo),
+                "The layout's binding access (%s) isn't compatible with the shader's "
+                "binding access (%s).",
+                layoutInfo.storageTexture.access, shaderInfo.storageTexture.access);
 
             DAWN_INVALID_IF(layoutInfo.storageTexture.format != shaderInfo.storageTexture.format,
                             "The layout's binding format (%s) doesn't match the shader's binding "
@@ -955,30 +964,9 @@ MaybeError ValidateAndParseShaderModule(DeviceBase* device,
             const auto* spirvOptions =
                 std::get<const DawnShaderModuleSPIRVOptionsDescriptor*>(unpacked);
 
-            // We have a temporary toggle to force the SPIRV ingestion to go through a WGSL
-            // intermediate step. It is done by switching the spirvDesc for a wgslDesc below.
-            if (device->IsToggleEnabled(Toggle::ForceWGSLStep)) {
-#if TINT_BUILD_WGSL_WRITER
-                std::vector<uint32_t> spirv(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
-                tint::Program program;
-                DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages, spirvOptions));
-
-                tint::wgsl::writer::Options options;
-                auto result = tint::wgsl::writer::Generate(&program, options);
-                DAWN_INVALID_IF(!result, "Tint WGSL failure: Generator: %s", result.Failure());
-
-                newWgslCode = std::move(result->wgsl);
-                newWgslDesc.code = newWgslCode.c_str();
-                wgslDesc = &newWgslDesc;
-                break;
-#else
-                device->EmitLog(WGPULoggingType_Info,
-                                "Toggle::ForceWGSLStep skipped because TINT_BUILD_WGSL_WRITER is "
-                                "not defined\n");
-#endif  // TINT_BUILD_WGSL_WRITER
-            }
-
+            // TODO(dawn:2033): Avoid unnecessary copies of the SPIR-V code.
             std::vector<uint32_t> spirv(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
+
 #ifdef DAWN_ENABLE_SPIRV_VALIDATION
             const bool dumpSpirv = device->IsToggleEnabled(Toggle::DumpShaders);
             DAWN_TRY(ValidateSpirv(device, spirv.data(), spirv.size(), dumpSpirv));

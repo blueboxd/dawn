@@ -1,0 +1,119 @@
+// Copyright 2023 The Tint Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+////////////////////////////////////////////////////////////////////////////////
+// Spirv builtin definition file                                              //
+////////////////////////////////////////////////////////////////////////////////
+
+// TODO(crbug.com/2036): add an include facility and move these duplicate match and type lines
+// into a common file.
+
+type bool
+type f32
+type f16
+type i32
+type u32
+type vec2<T>
+type vec3<T>
+type vec4<T>
+type mat2x2<T>
+type mat2x3<T>
+type mat2x4<T>
+type mat3x2<T>
+type mat3x3<T>
+type mat3x4<T>
+type mat4x2<T>
+type mat4x3<T>
+type mat4x4<T>
+@display("vec{N}<{T}>")     type vec<N: num, T>
+@display("mat{N}x{M}<{T}>") type mat<N: num, M: num, T>
+type atomic<T>
+type ptr<S: address_space, T, A: access>
+
+type struct_with_runtime_array
+
+type __atomic_compare_exchange_result<T>
+
+enum address_space {
+  function
+  private
+  workgroup
+  uniform
+  storage
+  push_constant
+  pixel_local
+}
+
+enum access {
+  read
+  write
+  read_write
+}
+
+match f32_f16: f32 | f16
+match iu32: i32 | u32
+match scalar: f32 | f16 | i32 | u32 | bool
+
+match read_write: access.read_write
+match storage
+  : address_space.storage
+match workgroup_or_storage
+  : address_space.workgroup
+  | address_space.storage
+
+////////////////////////////////////////////////////////////////////////////////
+// Enumerators                                                                //
+////////////////////////////////////////////////////////////////////////////////
+
+enum intrinsic {
+  image_fetch
+  image_gather
+  image_dref_gather
+  image_query_size
+  image_query_size_lod
+  image_read
+  image_sample_implicit_lod
+  image_sample_explicit_lod
+  image_sample_dref_implicit_lod
+  image_sample_dref_explicit_lod
+  image_write
+  sampled_image
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Builtin Functions                                                          //
+////////////////////////////////////////////////////////////////////////////////
+fn array_length<I: u32, A: access>(ptr<storage, struct_with_runtime_array, A>, I) -> u32
+@stage("fragment", "compute") fn atomic_and<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+@stage("fragment", "compute") fn atomic_compare_exchange<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, U, T, T) -> __atomic_compare_exchange_result<T>
+@stage("fragment", "compute") fn atomic_exchange<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+@stage("fragment", "compute") fn atomic_iadd<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+@stage("fragment", "compute") fn atomic_isub<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+@stage("fragment", "compute") fn atomic_load<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U) -> T
+@stage("fragment", "compute") fn atomic_or<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+@stage("fragment", "compute") fn atomic_smax<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+@stage("fragment", "compute") fn atomic_smin<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+@stage("fragment", "compute") fn atomic_store<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+@stage("fragment", "compute") fn atomic_umax<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+@stage("fragment", "compute") fn atomic_umin<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+@stage("fragment", "compute") fn atomic_xor<T: iu32, U: u32, S: workgroup_or_storage>(ptr<S, atomic<T>, read_write>, U, U, T) -> T
+fn dot<N: num, T: f32_f16>(vec<N, T>, vec<N, T>) -> T
+fn matrix_times_matrix<T: f32_f16, K: num, C: num, R: num>(mat<K, R, T>, mat<C, K, T>) -> mat<C, R, T>
+fn matrix_times_scalar<T: f32_f16, N: num, M: num>(mat<N, M, T>, T) -> mat<N, M, T>
+fn matrix_times_vector<T: f32_f16, N: num, M: num>(mat<N, M, T>, vec<N, T>) -> vec<M, T>
+fn vector_times_matrix<T: f32_f16, N: num, M: num>(vec<N, T>, mat<M, N, T>) -> vec<M, T>
+fn select<T: scalar>(bool, T, T) -> T
+fn select<N: num, T: scalar>(vec<N, bool>, vec<N, T>, vec<N, T>) -> vec<N, T>
+fn vector_times_scalar<T: f32_f16, N: num>(vec<N, T>, T) -> vec<N, T>
+

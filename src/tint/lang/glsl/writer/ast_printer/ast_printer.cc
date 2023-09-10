@@ -33,7 +33,12 @@
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
+#include "src/tint/lang/glsl/writer/ast_raise/combine_samplers.h"
+#include "src/tint/lang/glsl/writer/ast_raise/pad_structs.h"
+#include "src/tint/lang/glsl/writer/ast_raise/texture_1d_to_2d.h"
+#include "src/tint/lang/glsl/writer/ast_raise/texture_builtins_from_uniform.h"
 #include "src/tint/lang/glsl/writer/common/options.h"
+#include "src/tint/lang/hlsl/writer/ast_raise/decompose_memory_access.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
 #include "src/tint/lang/wgsl/ast/id_attribute.h"
 #include "src/tint/lang/wgsl/ast/internal_attribute.h"
@@ -43,15 +48,12 @@
 #include "src/tint/lang/wgsl/ast/transform/binding_remapper.h"
 #include "src/tint/lang/wgsl/ast/transform/builtin_polyfill.h"
 #include "src/tint/lang/wgsl/ast/transform/canonicalize_entry_point_io.h"
-#include "src/tint/lang/wgsl/ast/transform/combine_samplers.h"
-#include "src/tint/lang/wgsl/ast/transform/decompose_memory_access.h"
 #include "src/tint/lang/wgsl/ast/transform/demote_to_helper.h"
 #include "src/tint/lang/wgsl/ast/transform/direct_variable_access.h"
 #include "src/tint/lang/wgsl/ast/transform/disable_uniformity_analysis.h"
 #include "src/tint/lang/wgsl/ast/transform/expand_compound_assignment.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
 #include "src/tint/lang/wgsl/ast/transform/multiplanar_external_texture.h"
-#include "src/tint/lang/wgsl/ast/transform/pad_structs.h"
 #include "src/tint/lang/wgsl/ast/transform/preserve_padding.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_initializers_to_let.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_side_effects_to_decl.h"
@@ -61,12 +63,11 @@
 #include "src/tint/lang/wgsl/ast/transform/simplify_pointers.h"
 #include "src/tint/lang/wgsl/ast/transform/single_entry_point.h"
 #include "src/tint/lang/wgsl/ast/transform/std140.h"
-#include "src/tint/lang/wgsl/ast/transform/texture_1d_to_2d.h"
-#include "src/tint/lang/wgsl/ast/transform/texture_builtins_from_uniform.h"
 #include "src/tint/lang/wgsl/ast/transform/unshadow.h"
 #include "src/tint/lang/wgsl/ast/transform/zero_init_workgroup_memory.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 #include "src/tint/lang/wgsl/helpers/append_vector.h"
+#include "src/tint/lang/wgsl/helpers/check_supported_extensions.h"
 #include "src/tint/lang/wgsl/sem/block_statement.h"
 #include "src/tint/lang/wgsl/sem/builtin_enum_expression.h"
 #include "src/tint/lang/wgsl/sem/call.h"
@@ -223,7 +224,7 @@ SanitizedResult Sanitize(const Program* in,
     manager.Add<ast::transform::CanonicalizeEntryPointIO>();
 
     // PadStructs must come after CanonicalizeEntryPointIO
-    manager.Add<ast::transform::PadStructs>();
+    manager.Add<PadStructs>();
 
     // DemoteToHelper must come after PromoteSideEffectsToDecl and ExpandCompoundAssignment.
     manager.Add<ast::transform::DemoteToHelper>();
@@ -234,14 +235,13 @@ SanitizedResult Sanitize(const Program* in,
     // info, instead of combined sampler binding point. As a result, TextureBuiltinsFromUniform also
     // comes before BindingRemapper so the binding point info it reflects is before remapping.
     if (options.texture_builtins_from_uniform) {
-        manager.Add<ast::transform::TextureBuiltinsFromUniform>();
-        data.Add<ast::transform::TextureBuiltinsFromUniform::Config>(
+        manager.Add<TextureBuiltinsFromUniform>();
+        data.Add<TextureBuiltinsFromUniform::Config>(
             options.texture_builtins_from_uniform->ubo_binding);
     }
 
-    data.Add<ast::transform::CombineSamplers::BindingInfo>(options.binding_map,
-                                                           options.placeholder_binding_point);
-    manager.Add<ast::transform::CombineSamplers>();
+    data.Add<CombineSamplers::BindingInfo>(options.binding_map, options.placeholder_binding_point);
+    manager.Add<CombineSamplers>();
 
     data.Add<ast::transform::BindingRemapper::Remappings>(
         options.binding_points, options.access_controls, options.allow_collisions);
@@ -254,7 +254,7 @@ SanitizedResult Sanitize(const Program* in,
     // Std140 must come after PromoteSideEffectsToDecl and before SimplifyPointers.
     manager.Add<ast::transform::Std140>();
 
-    manager.Add<ast::transform::Texture1DTo2D>();
+    manager.Add<Texture1DTo2D>();
 
     manager.Add<ast::transform::SimplifyPointers>();
 
@@ -264,7 +264,7 @@ SanitizedResult Sanitize(const Program* in,
     SanitizedResult result;
     ast::transform::DataMap outputs;
     result.program = manager.Run(in, data, outputs);
-    if (auto* res = outputs.Get<ast::transform::TextureBuiltinsFromUniform::Result>()) {
+    if (auto* res = outputs.Get<TextureBuiltinsFromUniform::Result>()) {
         result.needs_internal_uniform_buffer = true;
         result.bindpoint_to_data = std::move(res->bindpoint_to_data);
     }
@@ -277,6 +277,20 @@ ASTPrinter::ASTPrinter(const Program* program, const Version& version)
 ASTPrinter::~ASTPrinter() = default;
 
 bool ASTPrinter::Generate() {
+    if (!tint::writer::CheckSupportedExtensions(
+            "GLSL", builder_.AST(), diagnostics_,
+            Vector{
+                core::Extension::kChromiumDisableUniformityAnalysis,
+                core::Extension::kChromiumExperimentalDp4A,
+                core::Extension::kChromiumExperimentalFullPtrParameters,
+                core::Extension::kChromiumInternalDualSourceBlending,
+                core::Extension::kChromiumExperimentalReadWriteStorageTexture,
+                core::Extension::kChromiumExperimentalPushConstant,
+                core::Extension::kF16,
+            })) {
+        return false;
+    }
+
     {
         auto out = Line();
         out << "#version " << version_.major_version << version_.minor_version << "0";

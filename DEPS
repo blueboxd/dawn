@@ -59,7 +59,7 @@ deps = {
     'condition': 'dawn_standalone',
   },
   'buildtools': {
-    'url': '{chromium_git}/chromium/src/buildtools@79ab87fa54614258c4c95891e873223371194525',
+    'url': '{chromium_git}/chromium/src/buildtools@a9a6f0c49d0e8fa0cda37337430b4736ab3dc944',
     'condition': 'dawn_standalone',
   },
   'third_party/clang-format/script': {
@@ -154,17 +154,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@4e1053b96602566b522268b0ca86f9c0fb1e0db7',
+    'url': '{chromium_git}/angle/angle@9740b01b4e7232e0a98d0ee5f052c86aa89d0409',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@32f9332d1d7aacbdba7c1aa5df894bb1890bb2cc',
+    'url': '{swiftshader_git}/SwiftShader@9b300a6d6747be57610964ca01289c9d01995674',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@5857bae969d54323f987b6d1ebb4a7e809381eef',
+    'url': '{chromium_git}/vulkan-deps@ebf4563a1048ba9fc7bac690eaa88772b3802e1f',
     'condition': 'dawn_standalone',
   },
 
@@ -179,7 +179,7 @@ deps = {
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@babb2378e6fe83848be8b579c581ab8af6a4c031',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@18328d51057863c0d643a23d3b72ee77912d4b54',
   },
 
   'third_party/dxheaders': {

@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <tuple>
 #include <utility>
 
 #include "src/tint/lang/core/fluent_types.h"
@@ -1946,26 +1947,33 @@ bool Validator::PipelineStages(VectorRef<sem::Function*> entry_points) const {
         }
     };
 
-    auto check_workgroup_storage = [&](const sem::Function* func,
-                                       const sem::Function* entry_point) {
-        auto stage = entry_point->Declaration()->PipelineStage();
-        if (stage != ast::PipelineStage::kCompute) {
-            for (auto* var : func->DirectlyReferencedGlobals()) {
-                if (var->AddressSpace() == core::AddressSpace::kWorkgroup) {
-                    StringStream stage_name;
-                    stage_name << stage;
-                    for (auto* user : var->Users()) {
-                        if (func == user->Stmt()->Function()) {
-                            AddError("workgroup memory cannot be used by " + stage_name.str() +
-                                         " pipeline stage",
-                                     user->Declaration()->source);
-                            break;
-                        }
-                    }
-                    AddNote("variable is declared here", var->Declaration()->source);
-                    backtrace(func, entry_point);
-                    return false;
+    auto check_var_uses = [&](const sem::Function* func, const sem::Function* entry_point) {
+        auto err = [&](ast::PipelineStage stage, const sem::GlobalVariable* var) {
+            Source source;
+            for (auto* user : var->Users()) {
+                if (func == user->Stmt()->Function()) {
+                    source = user->Declaration()->source;
+                    break;
                 }
+            }
+            StringStream msg;
+            msg << "var with '" << var->AddressSpace() << "' address space cannot be used by "
+                << stage << " pipeline stage";
+            AddError(msg.str(), source);
+            AddNote("variable is declared here", var->Declaration()->source);
+            backtrace(func, entry_point);
+            return false;
+        };
+
+        auto stage = entry_point->Declaration()->PipelineStage();
+        for (auto* var : func->DirectlyReferencedGlobals()) {
+            if (stage != ast::PipelineStage::kCompute &&
+                var->AddressSpace() == core::AddressSpace::kWorkgroup) {
+                return err(stage, var);
+            }
+            if (stage != ast::PipelineStage::kFragment &&
+                var->AddressSpace() == core::AddressSpace::kPixelLocal) {
+                return err(stage, var);
             }
         }
         return true;
@@ -2000,7 +2008,7 @@ bool Validator::PipelineStages(VectorRef<sem::Function*> entry_points) const {
     };
 
     auto check_func = [&](const sem::Function* func, const sem::Function* entry_point) {
-        if (!check_workgroup_storage(func, entry_point)) {
+        if (!check_var_uses(func, entry_point)) {
             return false;
         }
         if (!check_builtin_calls(func, entry_point)) {
@@ -2661,20 +2669,52 @@ bool Validator::CheckTypeAccessAddressSpace(const core::type::Type* store_ty,
         return false;
     }
 
-    if (address_space == core::AddressSpace::kPushConstant &&
-        !enabled_extensions_.Contains(core::Extension::kChromiumExperimentalPushConstant) &&
-        IsValidationEnabled(attributes, ast::DisabledValidation::kIgnoreAddressSpace)) {
-        AddError(
-            "use of variable address space 'push_constant' requires enabling extension "
-            "'chromium_experimental_push_constant'",
-            source);
-        return false;
-    }
-
-    if (address_space == core::AddressSpace::kStorage && access == core::Access::kWrite) {
-        // The access mode for the storage address space can only be 'read' or 'read_write'.
-        AddError("access mode 'write' is not valid for the 'storage' address space", source);
-        return false;
+    switch (address_space) {
+        case core::AddressSpace::kPixelLocal:
+            using AllowedTypes = std::tuple<core::type::I32, core::type::U32, core::type::F32>;
+            if (auto* str = store_ty->As<sem::Struct>()) {
+                for (auto* member : str->Members()) {
+                    if (TINT_UNLIKELY(!member->Type()->TypeInfo().IsAnyOfTuple<AllowedTypes>())) {
+                        AddError(
+                            "struct members used in the 'pixel_local' address space can only be of "
+                            "the type 'i32', 'u32' or 'f32'",
+                            member->Declaration()->source);
+                        AddNote("struct '" + str->Name().Name() +
+                                    "' used in the 'pixel_local' address space here",
+                                source);
+                        return false;
+                    }
+                }
+            } else if (TINT_UNLIKELY(!store_ty->TypeInfo().IsAnyOfTuple<AllowedTypes>())) {
+                AddError(
+                    "'pixel_local' address space variables can only be of type 'i32', 'u32', 'f32' "
+                    "or a struct of those types",
+                    source);
+                return false;
+            }
+            break;
+        case core::AddressSpace::kPushConstant:
+            if (TINT_UNLIKELY(!enabled_extensions_.Contains(
+                                  core::Extension::kChromiumExperimentalPushConstant) &&
+                              IsValidationEnabled(attributes,
+                                                  ast::DisabledValidation::kIgnoreAddressSpace))) {
+                AddError(
+                    "use of variable address space 'push_constant' requires enabling extension "
+                    "'chromium_experimental_push_constant'",
+                    source);
+                return false;
+            }
+            break;
+        case core::AddressSpace::kStorage:
+            if (TINT_UNLIKELY(access == core::Access::kWrite)) {
+                // The access mode for the storage address space can only be 'read' or 'read_write'.
+                AddError("access mode 'write' is not valid for the 'storage' address space",
+                         source);
+                return false;
+            }
+            break;
+        default:
+            break;
     }
 
     auto atomic_error = [&]() -> const char* {

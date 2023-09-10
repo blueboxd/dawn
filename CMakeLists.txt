@@ -172,7 +172,6 @@ option_if_not_defined(TINT_BUILD_SPV_WRITER "Build the SPIR-V output writer" ${D
 option_if_not_defined(TINT_BUILD_WGSL_WRITER "Build the WGSL output writer" ON)
 
 option_if_not_defined(TINT_BUILD_SYNTAX_TREE_WRITER "Build the syntax tree writer" OFF)
-option_if_not_defined(TINT_BUILD_IR "Build the IR" ON)
 
 option_if_not_defined(TINT_BUILD_FUZZERS "Build fuzzers" OFF)
 option_if_not_defined(TINT_BUILD_SPIRV_TOOLS_FUZZER "Build SPIRV-Tools fuzzer" OFF)
@@ -187,6 +186,9 @@ set_if_not_defined(TINT_EXTERNAL_BENCHMARK_CORPUS_DIR "" "Directory that holds a
 option_if_not_defined(TINT_ENABLE_BREAK_IN_DEBUGGER "Enable tint::debugger::Break()" OFF)
 option_if_not_defined(TINT_CHECK_CHROMIUM_STYLE "Check for [chromium-style] issues during build" OFF)
 option_if_not_defined(TINT_RANDOMIZE_HASHES "Randomize the hash seed value to detect non-deterministic output" OFF)
+
+# TODO(crbug.com/dawn/1704): Remove when chromium_experimental_pixel_local is production-ready
+option_if_not_defined(TINT_ENABLE_LOCAL_STORAGE_EXTENSION "Enable the WIP 'chromium_experimental_pixel_local' extension" OFF)
 
 # Recommended setting for compability with future abseil releases.
 set(ABSL_PROPAGATE_CXX_STD ON)
@@ -315,7 +317,6 @@ message(STATUS "Tint build MSL writer: ${TINT_BUILD_MSL_WRITER}")
 message(STATUS "Tint build SPIR-V writer: ${TINT_BUILD_SPV_WRITER}")
 message(STATUS "Tint build WGSL writer: ${TINT_BUILD_WGSL_WRITER}")
 message(STATUS "Tint build Syntax Tree writer: ${TINT_BUILD_SYNTAX_TREE_WRITER}")
-message(STATUS "Tint build IR: ${TINT_BUILD_IR}")
 message(STATUS "Tint build fuzzers: ${TINT_BUILD_FUZZERS}")
 message(STATUS "Tint build SPIRV-Tools fuzzer: ${TINT_BUILD_SPIRV_TOOLS_FUZZER}")
 message(STATUS "Tint build AST fuzzer: ${TINT_BUILD_AST_FUZZER}")

@@ -74,6 +74,7 @@
 #include "src/tint/lang/core/type/u32.h"
 #include "src/tint/lang/core/type/vector.h"
 #include "src/tint/lang/core/type/void.h"
+#include "src/tint/lang/spirv/ir/intrinsic_call.h"
 #include "src/tint/lang/spirv/writer/ast_printer/ast_printer.h"
 #include "src/tint/lang/spirv/writer/common/module.h"
 #include "src/tint/lang/spirv/writer/raise/builtin_polyfill.h"
@@ -762,9 +763,10 @@ void Printer::EmitBlockInstructions(core::ir::Block* block) {
             [&](core::ir::Binary* b) { EmitBinary(b); },                          //
             [&](core::ir::Bitcast* b) { EmitBitcast(b); },                        //
             [&](core::ir::CoreBuiltinCall* b) { EmitCoreBuiltinCall(b); },        //
+            [&](spirv::ir::BuiltinCall* b) { EmitSpirvBuiltinCall(b); },          //
             [&](core::ir::Construct* c) { EmitConstruct(c); },                    //
             [&](core::ir::Convert* c) { EmitConvert(c); },                        //
-            [&](core::ir::IntrinsicCall* i) { EmitIntrinsicCall(i); },            //
+            [&](spirv::ir::IntrinsicCall* i) { EmitIntrinsicCall(i); },           //
             [&](core::ir::Load* l) { EmitLoad(l); },                              //
             [&](core::ir::LoadVectorElement* l) { EmitLoadVectorElement(l); },    //
             [&](core::ir::Loop* l) { EmitLoop(l); },                              //
@@ -1083,6 +1085,89 @@ void Printer::EmitBitcast(core::ir::Bitcast* bitcast) {
     }
     current_function_.push_inst(spv::Op::OpBitcast,
                                 {Type(ty), Value(bitcast), Value(bitcast->Val())});
+}
+
+void Printer::EmitSpirvBuiltinCall(spirv::ir::BuiltinCall* builtin) {
+    auto id = Value(builtin);
+
+    spv::Op op = spv::Op::Max;
+    switch (builtin->Func()) {
+        case spirv::ir::Function::kArrayLength:
+            op = spv::Op::OpArrayLength;
+            break;
+        case spirv::ir::Function::kAtomicIadd:
+            op = spv::Op::OpAtomicIAdd;
+            break;
+        case spirv::ir::Function::kAtomicIsub:
+            op = spv::Op::OpAtomicISub;
+            break;
+        case spirv::ir::Function::kAtomicAnd:
+            op = spv::Op::OpAtomicAnd;
+            break;
+        case spirv::ir::Function::kAtomicCompareExchange:
+            op = spv::Op::OpAtomicCompareExchange;
+            break;
+        case spirv::ir::Function::kAtomicExchange:
+            op = spv::Op::OpAtomicExchange;
+            break;
+        case spirv::ir::Function::kAtomicLoad:
+            op = spv::Op::OpAtomicLoad;
+            break;
+        case spirv::ir::Function::kAtomicOr:
+            op = spv::Op::OpAtomicOr;
+            break;
+        case spirv::ir::Function::kAtomicSmax:
+            op = spv::Op::OpAtomicSMax;
+            break;
+        case spirv::ir::Function::kAtomicSmin:
+            op = spv::Op::OpAtomicSMin;
+            break;
+        case spirv::ir::Function::kAtomicStore:
+            op = spv::Op::OpAtomicStore;
+            break;
+        case spirv::ir::Function::kAtomicUmax:
+            op = spv::Op::OpAtomicUMax;
+            break;
+        case spirv::ir::Function::kAtomicUmin:
+            op = spv::Op::OpAtomicUMin;
+            break;
+        case spirv::ir::Function::kAtomicXor:
+            op = spv::Op::OpAtomicXor;
+            break;
+        case spirv::ir::Function::kDot:
+            op = spv::Op::OpDot;
+            break;
+        case spirv::ir::Function::kMatrixTimesMatrix:
+            op = spv::Op::OpMatrixTimesMatrix;
+            break;
+        case spirv::ir::Function::kMatrixTimesScalar:
+            op = spv::Op::OpMatrixTimesScalar;
+            break;
+        case spirv::ir::Function::kMatrixTimesVector:
+            op = spv::Op::OpMatrixTimesVector;
+            break;
+        case spirv::ir::Function::kSelect:
+            op = spv::Op::OpSelect;
+            break;
+        case spirv::ir::Function::kVectorTimesMatrix:
+            op = spv::Op::OpVectorTimesMatrix;
+            break;
+        case spirv::ir::Function::kVectorTimesScalar:
+            op = spv::Op::OpVectorTimesScalar;
+            break;
+        case spirv::ir::Function::kNone:
+            TINT_ICE() << "undefined spirv ir function";
+            return;
+    }
+
+    OperandList operands;
+    if (!builtin->Result()->Type()->Is<core::type::Void>()) {
+        operands = {Type(builtin->Result()->Type()), id};
+    }
+    for (auto* arg : builtin->Args()) {
+        operands.push_back(Value(arg));
+    }
+    current_function_.push_inst(op, operands);
 }
 
 void Printer::EmitCoreBuiltinCall(core::ir::CoreBuiltinCall* builtin) {
@@ -1529,109 +1614,52 @@ void Printer::EmitConvert(core::ir::Convert* convert) {
     current_function_.push_inst(op, std::move(operands));
 }
 
-void Printer::EmitIntrinsicCall(core::ir::IntrinsicCall* call) {
+void Printer::EmitIntrinsicCall(spirv::ir::IntrinsicCall* call) {
     auto id = Value(call);
 
     spv::Op op = spv::Op::Max;
     switch (call->Kind()) {
-        case core::ir::IntrinsicCall::Kind::kSpirvArrayLength:
-            op = spv::Op::OpArrayLength;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicIAdd:
-            op = spv::Op::OpAtomicIAdd;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicISub:
-            op = spv::Op::OpAtomicISub;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicAnd:
-            op = spv::Op::OpAtomicAnd;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicCompareExchange:
-            op = spv::Op::OpAtomicCompareExchange;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicExchange:
-            op = spv::Op::OpAtomicExchange;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicLoad:
-            op = spv::Op::OpAtomicLoad;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicOr:
-            op = spv::Op::OpAtomicOr;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicSMax:
-            op = spv::Op::OpAtomicSMax;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicSMin:
-            op = spv::Op::OpAtomicSMin;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicStore:
-            op = spv::Op::OpAtomicStore;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicUMax:
-            op = spv::Op::OpAtomicUMax;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicUMin:
-            op = spv::Op::OpAtomicUMin;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvAtomicXor:
-            op = spv::Op::OpAtomicXor;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvDot:
-            op = spv::Op::OpDot;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvImageFetch:
+        case spirv::ir::Intrinsic::kImageFetch:
             op = spv::Op::OpImageFetch;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvImageGather:
+        case spirv::ir::Intrinsic::kImageGather:
             op = spv::Op::OpImageGather;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvImageDrefGather:
+        case spirv::ir::Intrinsic::kImageDrefGather:
             op = spv::Op::OpImageDrefGather;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvImageQuerySize:
+        case spirv::ir::Intrinsic::kImageQuerySize:
             module_.PushCapability(SpvCapabilityImageQuery);
             op = spv::Op::OpImageQuerySize;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvImageQuerySizeLod:
+        case spirv::ir::Intrinsic::kImageQuerySizeLod:
             module_.PushCapability(SpvCapabilityImageQuery);
             op = spv::Op::OpImageQuerySizeLod;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvImageSampleImplicitLod:
+        case spirv::ir::Intrinsic::kImageRead:
+            op = spv::Op::OpImageRead;
+            break;
+        case spirv::ir::Intrinsic::kImageSampleImplicitLod:
             op = spv::Op::OpImageSampleImplicitLod;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvImageSampleExplicitLod:
+        case spirv::ir::Intrinsic::kImageSampleExplicitLod:
             op = spv::Op::OpImageSampleExplicitLod;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvImageSampleDrefImplicitLod:
+        case spirv::ir::Intrinsic::kImageSampleDrefImplicitLod:
             op = spv::Op::OpImageSampleDrefImplicitLod;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvImageSampleDrefExplicitLod:
+        case spirv::ir::Intrinsic::kImageSampleDrefExplicitLod:
             op = spv::Op::OpImageSampleDrefExplicitLod;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvImageWrite:
+        case spirv::ir::Intrinsic::kImageWrite:
             op = spv::Op::OpImageWrite;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesMatrix:
-            op = spv::Op::OpMatrixTimesMatrix;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesScalar:
-            op = spv::Op::OpMatrixTimesScalar;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesVector:
-            op = spv::Op::OpMatrixTimesVector;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvSampledImage:
+        case spirv::ir::Intrinsic::kSampledImage:
             op = spv::Op::OpSampledImage;
             break;
-        case core::ir::IntrinsicCall::Kind::kSpirvSelect:
-            op = spv::Op::OpSelect;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvVectorTimesMatrix:
-            op = spv::Op::OpVectorTimesMatrix;
-            break;
-        case core::ir::IntrinsicCall::Kind::kSpirvVectorTimesScalar:
-            op = spv::Op::OpVectorTimesScalar;
-            break;
+        case spirv::ir::Intrinsic::kUndefined:
+            TINT_ICE() << "undefined spirv intrinsic";
+            return;
     }
 
     OperandList operands;

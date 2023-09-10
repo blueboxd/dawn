@@ -230,7 +230,7 @@ DAWN_NATIVE_EXPORT std::vector<const char*> GetProcMapNamesForTesting();
 
 DAWN_NATIVE_EXPORT bool DeviceTick(WGPUDevice device);
 
-DAWN_NATIVE_EXPORT bool InstanceProcessEvents(WGPUInstance instance);
+DAWN_NATIVE_EXPORT void InstanceProcessEvents(WGPUInstance instance);
 
 // ErrorInjector functions used for testing only. Defined in dawn_native/ErrorInjector.cpp
 DAWN_NATIVE_EXPORT void EnableErrorInjector();
@@ -289,11 +289,5 @@ DAWN_NATIVE_EXPORT std::vector<const ToggleInfo*> AllToggleInfos();
 DAWN_NATIVE_EXPORT FeatureInfo GetFeatureInfo(wgpu::FeatureName featureName);
 
 }  // namespace dawn::native
-
-// Alias the DawnInstanceDescriptor up to wgpu.
-// TODO(dawn:1374) Remove this aliasing once the usages are updated.
-namespace wgpu {
-using dawn::native::DawnInstanceDescriptor;
-}  // namespace wgpu
 
 #endif  // INCLUDE_DAWN_NATIVE_DAWNNATIVE_H_

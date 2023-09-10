@@ -15,7 +15,11 @@
 #ifndef SRC_TINT_LANG_CORE_IR_CORE_BUILTIN_CALL_H_
 #define SRC_TINT_LANG_CORE_IR_CORE_BUILTIN_CALL_H_
 
+#include <string>
+
 #include "src/tint/lang/core/function.h"
+#include "src/tint/lang/core/intrinsic/data/data.h"
+#include "src/tint/lang/core/intrinsic/table_data.h"
 #include "src/tint/lang/core/ir/builtin_call.h"
 #include "src/tint/utils/rtti/castable.h"
 
@@ -36,8 +40,17 @@ class CoreBuiltinCall : public Castable<CoreBuiltinCall, BuiltinCall> {
     /// @returns the builtin function
     core::Function Func() { return func_; }
 
+    /// @returns the identifier for the function
+    size_t FuncId() override { return static_cast<size_t>(func_); }
+
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "core-builtin-call"; }
+    std::string FriendlyName() override { return core::str(func_); }
+
+    /// @returns the intrinsic name
+    const char* IntrinsicName() override { return core::str(func_); }
+
+    /// @returns the table data to validate this builtin
+    const core::intrinsic::TableData& TableData() override { return core::intrinsic::data::kData; }
 
   private:
     core::Function func_;

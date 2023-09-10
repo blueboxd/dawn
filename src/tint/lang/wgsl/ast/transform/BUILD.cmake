@@ -36,22 +36,10 @@ tint_add_target(tint_lang_wgsl_ast_transform lib
   lang/wgsl/ast/transform/binding_remapper.h
   lang/wgsl/ast/transform/builtin_polyfill.cc
   lang/wgsl/ast/transform/builtin_polyfill.h
-  lang/wgsl/ast/transform/calculate_array_length.cc
-  lang/wgsl/ast/transform/calculate_array_length.h
   lang/wgsl/ast/transform/canonicalize_entry_point_io.cc
   lang/wgsl/ast/transform/canonicalize_entry_point_io.h
-  lang/wgsl/ast/transform/clamp_frag_depth.cc
-  lang/wgsl/ast/transform/clamp_frag_depth.h
-  lang/wgsl/ast/transform/combine_samplers.cc
-  lang/wgsl/ast/transform/combine_samplers.h
   lang/wgsl/ast/transform/data.cc
   lang/wgsl/ast/transform/data.h
-  lang/wgsl/ast/transform/decompose_memory_access.cc
-  lang/wgsl/ast/transform/decompose_memory_access.h
-  lang/wgsl/ast/transform/decompose_strided_array.cc
-  lang/wgsl/ast/transform/decompose_strided_array.h
-  lang/wgsl/ast/transform/decompose_strided_matrix.cc
-  lang/wgsl/ast/transform/decompose_strided_matrix.h
   lang/wgsl/ast/transform/demote_to_helper.cc
   lang/wgsl/ast/transform/demote_to_helper.h
   lang/wgsl/ast/transform/direct_variable_access.cc
@@ -62,40 +50,20 @@ tint_add_target(tint_lang_wgsl_ast_transform lib
   lang/wgsl/ast/transform/expand_compound_assignment.h
   lang/wgsl/ast/transform/first_index_offset.cc
   lang/wgsl/ast/transform/first_index_offset.h
-  lang/wgsl/ast/transform/fold_trivial_lets.cc
-  lang/wgsl/ast/transform/fold_trivial_lets.h
-  lang/wgsl/ast/transform/for_loop_to_loop.cc
-  lang/wgsl/ast/transform/for_loop_to_loop.h
   lang/wgsl/ast/transform/get_insertion_point.cc
   lang/wgsl/ast/transform/get_insertion_point.h
   lang/wgsl/ast/transform/hoist_to_decl_before.cc
   lang/wgsl/ast/transform/hoist_to_decl_before.h
-  lang/wgsl/ast/transform/localize_struct_array_assignment.cc
-  lang/wgsl/ast/transform/localize_struct_array_assignment.h
   lang/wgsl/ast/transform/manager.cc
   lang/wgsl/ast/transform/manager.h
-  lang/wgsl/ast/transform/merge_return.cc
-  lang/wgsl/ast/transform/merge_return.h
-  lang/wgsl/ast/transform/module_scope_var_to_entry_point_param.cc
-  lang/wgsl/ast/transform/module_scope_var_to_entry_point_param.h
-  lang/wgsl/ast/transform/msl_subgroup_ballot.cc
-  lang/wgsl/ast/transform/msl_subgroup_ballot.h
   lang/wgsl/ast/transform/multiplanar_external_texture.cc
   lang/wgsl/ast/transform/multiplanar_external_texture.h
-  lang/wgsl/ast/transform/num_workgroups_from_uniform.cc
-  lang/wgsl/ast/transform/num_workgroups_from_uniform.h
-  lang/wgsl/ast/transform/packed_vec3.cc
-  lang/wgsl/ast/transform/packed_vec3.h
-  lang/wgsl/ast/transform/pad_structs.cc
-  lang/wgsl/ast/transform/pad_structs.h
   lang/wgsl/ast/transform/preserve_padding.cc
   lang/wgsl/ast/transform/preserve_padding.h
   lang/wgsl/ast/transform/promote_initializers_to_let.cc
   lang/wgsl/ast/transform/promote_initializers_to_let.h
   lang/wgsl/ast/transform/promote_side_effects_to_decl.cc
   lang/wgsl/ast/transform/promote_side_effects_to_decl.h
-  lang/wgsl/ast/transform/remove_continue_in_switch.cc
-  lang/wgsl/ast/transform/remove_continue_in_switch.h
   lang/wgsl/ast/transform/remove_phonies.cc
   lang/wgsl/ast/transform/remove_phonies.h
   lang/wgsl/ast/transform/remove_unreachable_statements.cc
@@ -108,32 +76,18 @@ tint_add_target(tint_lang_wgsl_ast_transform lib
   lang/wgsl/ast/transform/simplify_pointers.h
   lang/wgsl/ast/transform/single_entry_point.cc
   lang/wgsl/ast/transform/single_entry_point.h
-  lang/wgsl/ast/transform/spirv_atomic.cc
-  lang/wgsl/ast/transform/spirv_atomic.h
   lang/wgsl/ast/transform/std140.cc
   lang/wgsl/ast/transform/std140.h
   lang/wgsl/ast/transform/substitute_override.cc
   lang/wgsl/ast/transform/substitute_override.h
-  lang/wgsl/ast/transform/texture_1d_to_2d.cc
-  lang/wgsl/ast/transform/texture_1d_to_2d.h
-  lang/wgsl/ast/transform/texture_builtins_from_uniform.cc
-  lang/wgsl/ast/transform/texture_builtins_from_uniform.h
   lang/wgsl/ast/transform/transform.cc
   lang/wgsl/ast/transform/transform.h
-  lang/wgsl/ast/transform/truncate_interstage_variables.cc
-  lang/wgsl/ast/transform/truncate_interstage_variables.h
   lang/wgsl/ast/transform/unshadow.cc
   lang/wgsl/ast/transform/unshadow.h
-  lang/wgsl/ast/transform/var_for_dynamic_index.cc
-  lang/wgsl/ast/transform/var_for_dynamic_index.h
-  lang/wgsl/ast/transform/vectorize_matrix_conversions.cc
-  lang/wgsl/ast/transform/vectorize_matrix_conversions.h
   lang/wgsl/ast/transform/vectorize_scalar_matrix_initializers.cc
   lang/wgsl/ast/transform/vectorize_scalar_matrix_initializers.h
   lang/wgsl/ast/transform/vertex_pulling.cc
   lang/wgsl/ast/transform/vertex_pulling.h
-  lang/wgsl/ast/transform/while_to_loop.cc
-  lang/wgsl/ast/transform/while_to_loop.h
   lang/wgsl/ast/transform/zero_init_workgroup_memory.cc
   lang/wgsl/ast/transform/zero_init_workgroup_memory.h
 )
@@ -173,58 +127,35 @@ tint_add_target(tint_lang_wgsl_ast_transform_test test
   lang/wgsl/ast/transform/array_length_from_uniform_test.cc
   lang/wgsl/ast/transform/binding_remapper_test.cc
   lang/wgsl/ast/transform/builtin_polyfill_test.cc
-  lang/wgsl/ast/transform/calculate_array_length_test.cc
   lang/wgsl/ast/transform/canonicalize_entry_point_io_test.cc
-  lang/wgsl/ast/transform/clamp_frag_depth_test.cc
-  lang/wgsl/ast/transform/combine_samplers_test.cc
-  lang/wgsl/ast/transform/decompose_memory_access_test.cc
-  lang/wgsl/ast/transform/decompose_strided_array_test.cc
-  lang/wgsl/ast/transform/decompose_strided_matrix_test.cc
   lang/wgsl/ast/transform/demote_to_helper_test.cc
   lang/wgsl/ast/transform/direct_variable_access_test.cc
   lang/wgsl/ast/transform/disable_uniformity_analysis_test.cc
   lang/wgsl/ast/transform/expand_compound_assignment_test.cc
   lang/wgsl/ast/transform/first_index_offset_test.cc
-  lang/wgsl/ast/transform/fold_trivial_lets_test.cc
-  lang/wgsl/ast/transform/for_loop_to_loop_test.cc
   lang/wgsl/ast/transform/get_insertion_point_test.cc
   lang/wgsl/ast/transform/helper_test.h
   lang/wgsl/ast/transform/hoist_to_decl_before_test.cc
-  lang/wgsl/ast/transform/localize_struct_array_assignment_test.cc
   lang/wgsl/ast/transform/manager_test.cc
-  lang/wgsl/ast/transform/merge_return_test.cc
-  lang/wgsl/ast/transform/module_scope_var_to_entry_point_param_test.cc
-  lang/wgsl/ast/transform/msl_subgroup_ballot_test.cc
   lang/wgsl/ast/transform/multiplanar_external_texture_test.cc
-  lang/wgsl/ast/transform/num_workgroups_from_uniform_test.cc
-  lang/wgsl/ast/transform/packed_vec3_test.cc
-  lang/wgsl/ast/transform/pad_structs_test.cc
   lang/wgsl/ast/transform/preserve_padding_test.cc
   lang/wgsl/ast/transform/promote_initializers_to_let_test.cc
   lang/wgsl/ast/transform/promote_side_effects_to_decl_test.cc
-  lang/wgsl/ast/transform/remove_continue_in_switch_test.cc
   lang/wgsl/ast/transform/remove_phonies_test.cc
   lang/wgsl/ast/transform/remove_unreachable_statements_test.cc
   lang/wgsl/ast/transform/renamer_test.cc
   lang/wgsl/ast/transform/robustness_test.cc
   lang/wgsl/ast/transform/simplify_pointers_test.cc
   lang/wgsl/ast/transform/single_entry_point_test.cc
-  lang/wgsl/ast/transform/spirv_atomic_test.cc
   lang/wgsl/ast/transform/std140_exhaustive_test.cc
   lang/wgsl/ast/transform/std140_f16_test.cc
   lang/wgsl/ast/transform/std140_f32_test.cc
   lang/wgsl/ast/transform/std140_test.cc
   lang/wgsl/ast/transform/substitute_override_test.cc
-  lang/wgsl/ast/transform/texture_1d_to_2d_test.cc
-  lang/wgsl/ast/transform/texture_builtins_from_uniform_test.cc
   lang/wgsl/ast/transform/transform_test.cc
-  lang/wgsl/ast/transform/truncate_interstage_variables_test.cc
   lang/wgsl/ast/transform/unshadow_test.cc
-  lang/wgsl/ast/transform/var_for_dynamic_index_test.cc
-  lang/wgsl/ast/transform/vectorize_matrix_conversions_test.cc
   lang/wgsl/ast/transform/vectorize_scalar_matrix_initializers_test.cc
   lang/wgsl/ast/transform/vertex_pulling_test.cc
-  lang/wgsl/ast/transform/while_to_loop_test.cc
   lang/wgsl/ast/transform/zero_init_workgroup_memory_test.cc
 )
 
@@ -239,7 +170,6 @@ tint_target_add_dependencies(tint_lang_wgsl_ast_transform_test test
   tint_lang_wgsl_ast_test
   tint_lang_wgsl_program
   tint_lang_wgsl_reader
-  tint_lang_wgsl_reader_parser
   tint_lang_wgsl_resolver
   tint_lang_wgsl_sem
   tint_lang_wgsl_writer

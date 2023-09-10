@@ -65,6 +65,7 @@ if (tint_build_unittests) {
       testonly = true
       sources = [
         "binary_writer_test.cc",
+        "helper_test.h",
         "instruction_test.cc",
         "module_test.cc",
         "operand_test.cc",
@@ -77,7 +78,12 @@ if (tint_build_unittests) {
         "${tint_src_dir}/api/options",
         "${tint_src_dir}/lang/core",
         "${tint_src_dir}/lang/core/constant",
+        "${tint_src_dir}/lang/core/intrinsic",
+        "${tint_src_dir}/lang/core/intrinsic/data",
+        "${tint_src_dir}/lang/core/ir",
         "${tint_src_dir}/lang/core/type",
+        "${tint_src_dir}/lang/spirv/intrinsic/data",
+        "${tint_src_dir}/lang/spirv/ir",
         "${tint_src_dir}/utils/containers",
         "${tint_src_dir}/utils/diagnostic",
         "${tint_src_dir}/utils/ice",
@@ -93,11 +99,6 @@ if (tint_build_unittests) {
         "${tint_src_dir}/utils/traits",
       ]
 
-      if (tint_build_ir) {
-        sources += [ "helper_test.h" ]
-        deps += [ "${tint_src_dir}/lang/core/ir" ]
-      }
-
       if (tint_build_spv_reader || tint_build_spv_writer) {
         deps += [
           "${tint_spirv_headers_dir}:spv_headers",
@@ -107,11 +108,8 @@ if (tint_build_unittests) {
       }
 
       if (tint_build_spv_writer) {
-        deps += [ "${tint_src_dir}/lang/spirv/writer/common" ]
-      }
-
-      if (tint_build_spv_writer && tint_build_ir) {
         deps += [
+          "${tint_src_dir}/lang/spirv/writer/common",
           "${tint_src_dir}/lang/spirv/writer/printer",
           "${tint_src_dir}/lang/spirv/writer/raise",
         ]

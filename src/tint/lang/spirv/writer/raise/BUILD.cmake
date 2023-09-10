@@ -21,11 +21,11 @@
 #                       Do not modify this file directly
 ################################################################################
 
-if(TINT_BUILD_SPV_WRITER AND TINT_BUILD_IR)
+if(TINT_BUILD_SPV_WRITER)
 ################################################################################
 # Target:    tint_lang_spirv_writer_raise
 # Kind:      lib
-# Condition: TINT_BUILD_SPV_WRITER AND TINT_BUILD_IR
+# Condition: TINT_BUILD_SPV_WRITER
 ################################################################################
 tint_add_target(tint_lang_spirv_writer_raise lib
   lang/spirv/writer/raise/builtin_polyfill.cc
@@ -49,7 +49,13 @@ tint_target_add_dependencies(tint_lang_spirv_writer_raise lib
   tint_api_options
   tint_lang_core
   tint_lang_core_constant
+  tint_lang_core_intrinsic
+  tint_lang_core_intrinsic_data
+  tint_lang_core_ir
+  tint_lang_core_ir_transform
   tint_lang_core_type
+  tint_lang_spirv_intrinsic_data
+  tint_lang_spirv_ir
   tint_utils_containers
   tint_utils_diagnostic
   tint_utils_ice
@@ -65,13 +71,6 @@ tint_target_add_dependencies(tint_lang_spirv_writer_raise lib
   tint_utils_traits
 )
 
-if(TINT_BUILD_IR)
-  tint_target_add_dependencies(tint_lang_spirv_writer_raise lib
-    tint_lang_core_ir
-    tint_lang_core_ir_transform
-  )
-endif(TINT_BUILD_IR)
-
 if(TINT_BUILD_SPV_READER OR TINT_BUILD_SPV_WRITER)
   tint_target_add_external_dependencies(tint_lang_spirv_writer_raise lib
     "spirv-headers"
@@ -84,12 +83,12 @@ if(TINT_BUILD_SPV_WRITER)
   )
 endif(TINT_BUILD_SPV_WRITER)
 
-endif(TINT_BUILD_SPV_WRITER AND TINT_BUILD_IR)
-if(TINT_BUILD_SPV_WRITER AND TINT_BUILD_IR)
+endif(TINT_BUILD_SPV_WRITER)
+if(TINT_BUILD_SPV_WRITER)
 ################################################################################
 # Target:    tint_lang_spirv_writer_raise_test
 # Kind:      test
-# Condition: TINT_BUILD_SPV_WRITER AND TINT_BUILD_IR
+# Condition: TINT_BUILD_SPV_WRITER
 ################################################################################
 tint_add_target(tint_lang_spirv_writer_raise_test test
   lang/spirv/writer/raise/builtin_polyfill_test.cc
@@ -104,6 +103,10 @@ tint_target_add_dependencies(tint_lang_spirv_writer_raise_test test
   tint_api_common
   tint_lang_core
   tint_lang_core_constant
+  tint_lang_core_intrinsic
+  tint_lang_core_intrinsic_data
+  tint_lang_core_ir
+  tint_lang_core_ir_transform_test
   tint_lang_core_type
   tint_utils_containers
   tint_utils_diagnostic
@@ -124,17 +127,10 @@ tint_target_add_external_dependencies(tint_lang_spirv_writer_raise_test test
   "gtest"
 )
 
-if(TINT_BUILD_IR)
-  tint_target_add_dependencies(tint_lang_spirv_writer_raise_test test
-    tint_lang_core_ir
-    tint_lang_core_ir_transform_test
-  )
-endif(TINT_BUILD_IR)
-
-if(TINT_BUILD_SPV_WRITER AND TINT_BUILD_IR)
+if(TINT_BUILD_SPV_WRITER)
   tint_target_add_dependencies(tint_lang_spirv_writer_raise_test test
     tint_lang_spirv_writer_raise
   )
-endif(TINT_BUILD_SPV_WRITER AND TINT_BUILD_IR)
+endif(TINT_BUILD_SPV_WRITER)
 
-endif(TINT_BUILD_SPV_WRITER AND TINT_BUILD_IR)
+endif(TINT_BUILD_SPV_WRITER)

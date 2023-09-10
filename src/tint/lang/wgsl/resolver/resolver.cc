@@ -117,10 +117,8 @@ Resolver::Resolver(ProgramBuilder* builder)
     : builder_(builder),
       diagnostics_(builder->Diagnostics()),
       const_eval_(builder->constants, diagnostics_),
-      intrinsic_table_(core::intrinsic::Table::Create(core::intrinsic::data::kData,
-                                                      builder->Types(),
-                                                      builder->Symbols(),
-                                                      builder->Diagnostics())),
+      intrinsic_context_{core::intrinsic::data::kData, builder->Types(), builder->Symbols(),
+                         builder->Diagnostics()},
       sem_(builder),
       validator_(builder,
                  sem_,
@@ -529,7 +527,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
     auto address_space = core::AddressSpace::kUndefined;
     if (var->declared_address_space) {
         auto expr = AddressSpaceExpression(var->declared_address_space);
-        if (!expr) {
+        if (TINT_UNLIKELY(!expr)) {
             return nullptr;
         }
         address_space = expr->Value();
@@ -1602,7 +1600,20 @@ core::type::Type* Resolver::Type(const ast::Expression* ast) {
 sem::BuiltinEnumExpression<core::AddressSpace>* Resolver::AddressSpaceExpression(
     const ast::Expression* expr) {
     identifier_resolve_hint_ = {expr, "address space", core::kAddressSpaceStrings};
-    return sem_.AsAddressSpace(Expression(expr));
+    auto address_space_expr = sem_.AsAddressSpace(Expression(expr));
+    if (TINT_UNLIKELY(!address_space_expr)) {
+        return nullptr;
+    }
+    if (TINT_UNLIKELY(
+            address_space_expr->Value() == core::AddressSpace::kPixelLocal &&
+            !enabled_extensions_.Contains(core::Extension::kChromiumExperimentalPixelLocal))) {
+        StringStream err;
+        err << "'pixel_local' address space requires the '"
+            << core::Extension::kChromiumExperimentalPixelLocal << "' extension enabled";
+        AddError(err.str(), expr->source);
+        return nullptr;
+    }
+    return address_space_expr;
 }
 
 sem::BuiltinEnumExpression<core::BuiltinValue>* Resolver::BuiltinValueExpression(
@@ -2072,7 +2083,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
     auto ctor_or_conv = [&](CtorConvIntrinsic ty,
                             const core::type::Type* template_arg) -> sem::Call* {
         auto arg_tys = tint::Transform(args, [](auto* arg) { return arg->Type(); });
-        auto match = intrinsic_table_->Lookup(ty, template_arg, arg_tys, args_stage, expr->source);
+        auto match = core::intrinsic::Lookup(intrinsic_context_, ty, template_arg, arg_tys,
+                                             args_stage, expr->source);
         if (!match) {
             return nullptr;
         }
@@ -2396,7 +2408,8 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
     }
 
     auto arg_tys = tint::Transform(args, [](auto* arg) { return arg->Type(); });
-    auto overload = intrinsic_table_->Lookup(fn, arg_tys, arg_stage, expr->source);
+    auto overload =
+        core::intrinsic::Lookup(intrinsic_context_, fn, arg_tys, arg_stage, expr->source);
     if (!overload) {
         return nullptr;
     }
@@ -3548,8 +3561,8 @@ sem::ValueExpression* Resolver::Binary(const ast::BinaryExpression* expr) {
     }
 
     auto stage = core::EarliestStage(lhs->Stage(), rhs->Stage());
-    auto overload =
-        intrinsic_table_->Lookup(expr->op, lhs->Type(), rhs->Type(), stage, expr->source, false);
+    auto overload = core::intrinsic::Lookup(intrinsic_context_, expr->op, lhs->Type(), rhs->Type(),
+                                            stage, expr->source, false);
     if (!overload) {
         return nullptr;
     }
@@ -3670,7 +3683,8 @@ sem::ValueExpression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
 
         default: {
             stage = expr->Stage();
-            auto overload = intrinsic_table_->Lookup(unary->op, expr_ty, stage, unary->source);
+            auto overload = core::intrinsic::Lookup(intrinsic_context_, unary->op, expr_ty, stage,
+                                                    unary->source);
             if (!overload) {
                 return nullptr;
             }
@@ -3984,6 +3998,16 @@ bool Resolver::Enable(const ast::Enable* enable) {
     for (auto* ext : enable->extensions) {
         Mark(ext);
         enabled_extensions_.Add(ext->name);
+
+// TODO(crbug.com/dawn/1704): Remove when chromium_experimental_pixel_local is production-ready
+#if !TINT_ENABLE_LOCAL_STORAGE_EXTENSION
+        if (ext->name == core::Extension::kChromiumExperimentalPixelLocal) {
+            AddError(std::string(core::ToString(core::Extension::kChromiumExperimentalPixelLocal)) +
+                         " requires TINT_ENABLE_LOCAL_STORAGE_EXTENSION",
+                     enable->source);
+            return false;
+        }
+#endif
     }
     return true;
 }
@@ -4698,8 +4722,8 @@ sem::Statement* Resolver::CompoundAssignmentStatement(
         auto stage = core::EarliestStage(lhs->Stage(), rhs->Stage());
 
         auto overload =
-            intrinsic_table_->Lookup(stmt->op, lhs->Type()->UnwrapRef(), rhs->Type()->UnwrapRef(),
-                                     stage, stmt->source, true);
+            core::intrinsic::Lookup(intrinsic_context_, stmt->op, lhs->Type()->UnwrapRef(),
+                                    rhs->Type()->UnwrapRef(), stage, stmt->source, true);
         if (!overload) {
             return false;
         }

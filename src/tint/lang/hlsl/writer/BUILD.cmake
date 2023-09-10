@@ -22,6 +22,7 @@
 ################################################################################
 
 include(lang/hlsl/writer/ast_printer/BUILD.cmake)
+include(lang/hlsl/writer/ast_raise/BUILD.cmake)
 include(lang/hlsl/writer/common/BUILD.cmake)
 
 if(TINT_BUILD_HLSL_WRITER)
@@ -67,6 +68,7 @@ tint_target_add_dependencies(tint_lang_hlsl_writer lib
 if(TINT_BUILD_HLSL_WRITER)
   tint_target_add_dependencies(tint_lang_hlsl_writer lib
     tint_lang_hlsl_writer_ast_printer
+    tint_lang_hlsl_writer_ast_raise
   )
 endif(TINT_BUILD_HLSL_WRITER)
 

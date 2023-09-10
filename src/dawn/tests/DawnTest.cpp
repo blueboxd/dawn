@@ -396,7 +396,7 @@ std::unique_ptr<native::Instance> DawnTestEnvironment::CreateInstance(
     instanceToggles.enabledToggleCount = 1;
     instanceToggles.enabledToggles = &allowUnsafeApisToggle;
 
-    wgpu::DawnInstanceDescriptor dawnInstanceDesc;
+    dawn::native::DawnInstanceDescriptor dawnInstanceDesc;
     dawnInstanceDesc.platform = platform;
     dawnInstanceDesc.nextInChain = &instanceToggles;
 
@@ -981,8 +981,8 @@ wgpu::BackendType DawnTestBase::GetBackendTypeFilter() const {
     return gTestEnv->GetBackendTypeFilter();
 }
 
-wgpu::Instance DawnTestBase::GetInstance() const {
-    return gTestEnv->GetInstance()->Get();
+const wgpu::Instance& DawnTestBase::GetInstance() const {
+    return mInstance;
 }
 
 native::Adapter DawnTestBase::GetAdapter() const {

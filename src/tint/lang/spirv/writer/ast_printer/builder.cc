@@ -1,4 +1,4 @@
-// Copyright 2020 The Tint Authors.  //
+// Copyright 2020 The Tint Authors.
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -248,10 +248,14 @@ Builder::AccessorInfo::AccessorInfo() : source_id(0), source_type(nullptr) {}
 
 Builder::AccessorInfo::~AccessorInfo() {}
 
-Builder::Builder(const Program* program, bool zero_initialize_workgroup_memory)
+Builder::Builder(const Program* program,
+                 bool zero_initialize_workgroup_memory,
+                 bool experimental_require_subgroup_uniform_control_flow)
     : builder_(ProgramBuilder::Wrap(program)),
       scope_stack_{Scope{}},
-      zero_initialize_workgroup_memory_(zero_initialize_workgroup_memory) {}
+      zero_initialize_workgroup_memory_(zero_initialize_workgroup_memory),
+      experimental_require_subgroup_uniform_control_flow_(
+          experimental_require_subgroup_uniform_control_flow) {}
 
 Builder::~Builder() = default;
 
@@ -278,6 +282,11 @@ bool Builder::Build() {
 
     for (auto ext : builder_.Sem().Module()->Extensions()) {
         GenerateExtension(ext);
+    }
+
+    // Emit SPV_KHR_subgroup_uniform_control_flow extension if required.
+    if (experimental_require_subgroup_uniform_control_flow_) {
+        module_.PushExtension("SPV_KHR_subgroup_uniform_control_flow");
     }
 
     for (auto* var : builder_.AST().GlobalVariables()) {
@@ -483,7 +492,16 @@ bool Builder::GenerateExecutionModes(const ast::Function* func, uint32_t id) {
         if (builtin == core::BuiltinValue::kFragDepth) {
             module_.PushExecutionMode(spv::Op::OpExecutionMode,
                                       {Operand(id), U32Operand(SpvExecutionModeDepthReplacing)});
+            break;
         }
+    }
+
+    // Use SubgroupUniformControlFlow execution mode for compute stage if required.
+    if (experimental_require_subgroup_uniform_control_flow_ &&
+        func->PipelineStage() == ast::PipelineStage::kCompute) {
+        module_.PushExecutionMode(
+            spv::Op::OpExecutionMode,
+            {Operand(id), U32Operand(SpvExecutionModeSubgroupUniformControlFlowKHR)});
     }
 
     return true;
@@ -1931,12 +1949,16 @@ uint32_t Builder::GenerateMatrixAddOrSub(uint32_t lhs_id,
     }
 
     // Create the result matrix from the added/subtracted column vectors
+    TINT_BEGIN_DISABLE_WARNING(MAYBE_UNINITIALIZED);  // GCC false-positive
+
     auto result_mat_id = result_op();
     ops.insert(ops.begin(), result_mat_id);
     ops.insert(ops.begin(), Operand(GenerateTypeIfNeeded(type)));
     if (!push_function_inst(spv::Op::OpCompositeConstruct, ops)) {
         return 0;
     }
+
+    TINT_END_DISABLE_WARNING(MAYBE_UNINITIALIZED);  // GCC false-positive
 
     return std::get<uint32_t>(result_mat_id);
 }
@@ -3964,8 +3986,8 @@ bool Builder::GenerateVectorType(const core::type::Vector* vec, const Operand& r
     return true;
 }
 
-SpvStorageClass Builder::ConvertAddressSpace(core::AddressSpace klass) const {
-    switch (klass) {
+SpvStorageClass Builder::ConvertAddressSpace(core::AddressSpace address_space) const {
+    switch (address_space) {
         case core::AddressSpace::kIn:
             return SpvStorageClassInput;
         case core::AddressSpace::kOut:
@@ -3984,9 +4006,12 @@ SpvStorageClass Builder::ConvertAddressSpace(core::AddressSpace klass) const {
             return SpvStorageClassPrivate;
         case core::AddressSpace::kFunction:
             return SpvStorageClassFunction;
+
+        case core::AddressSpace::kPixelLocal:
         case core::AddressSpace::kUndefined:
             break;
     }
+    TINT_UNREACHABLE() << "unhandled address space '" << address_space << "'";
     return SpvStorageClassMax;
 }
 

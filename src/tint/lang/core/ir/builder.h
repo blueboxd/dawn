@@ -620,17 +620,28 @@ class Builder {
             InstructionResult(type), func, Values(std::forward<ARGS>(args)...)));
     }
 
+    /// Creates a core builtin call instruction
+    /// @param type the return type of the call
+    /// @param func the builtin function to call
+    /// @param args the call arguments
+    /// @returns the instruction
+    template <typename KLASS, typename FUNC, typename... ARGS>
+    tint::traits::EnableIf<tint::traits::IsTypeOrDerived<KLASS, ir::BuiltinCall>, KLASS*>
+    Call(const core::type::Type* type, FUNC func, ARGS&&... args) {
+        return Append(ir.instructions.Create<KLASS>(InstructionResult(type), func,
+                                                    Values(std::forward<ARGS>(args)...)));
+    }
+
     /// Creates an intrinsic call instruction
     /// @param type the return type of the call
     /// @param kind the intrinsic function to call
     /// @param args the call arguments
     /// @returns the intrinsic call instruction
-    template <typename... ARGS>
-    ir::IntrinsicCall* Call(const core::type::Type* type,
-                            enum IntrinsicCall::Kind kind,
-                            ARGS&&... args) {
-        return Append(ir.instructions.Create<ir::IntrinsicCall>(
-            InstructionResult(type), kind, Values(std::forward<ARGS>(args)...)));
+    template <typename KLASS, typename KIND, typename... ARGS>
+    tint::traits::EnableIf<tint::traits::IsTypeOrDerived<KLASS, ir::IntrinsicCall>, KLASS*>
+    Call(const core::type::Type* type, KIND kind, ARGS&&... args) {
+        return Append(ir.instructions.Create<KLASS>(InstructionResult(type), kind,
+                                                    Values(std::forward<ARGS>(args)...)));
     }
 
     /// Creates a value conversion instruction

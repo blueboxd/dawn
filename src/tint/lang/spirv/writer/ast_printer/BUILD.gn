@@ -68,7 +68,10 @@ if (tint_build_spv_writer) {
     }
 
     if (tint_build_spv_writer) {
-      deps += [ "${tint_src_dir}/lang/spirv/writer/common" ]
+      deps += [
+        "${tint_src_dir}/lang/spirv/writer/ast_raise",
+        "${tint_src_dir}/lang/spirv/writer/common",
+      ]
     }
   }
 }
