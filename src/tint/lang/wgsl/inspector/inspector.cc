@@ -139,6 +139,7 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
     switch (func->PipelineStage()) {
         case ast::PipelineStage::kCompute: {
             entry_point.stage = PipelineStage::kCompute;
+            entry_point.workgroup_storage_size = ComputeWorkgroupStorageSize(func);
 
             auto wgsize = sem->WorkgroupSize();
             if (wgsize[0].has_value() && wgsize[1].has_value() && wgsize[2].has_value()) {
@@ -177,6 +178,10 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
             core::BuiltinValue::kSampleMask, param->Type(), param->Declaration()->attributes);
         entry_point.num_workgroups_used |= ContainsBuiltin(
             core::BuiltinValue::kNumWorkgroups, param->Type(), param->Declaration()->attributes);
+        entry_point.vertex_index_used |= ContainsBuiltin(
+            core::BuiltinValue::kVertexIndex, param->Type(), param->Declaration()->attributes);
+        entry_point.instance_index_used |= ContainsBuiltin(
+            core::BuiltinValue::kInstanceIndex, param->Type(), param->Declaration()->attributes);
     }
 
     if (!sem->ReturnType()->Is<core::type::Void>()) {
@@ -300,27 +305,6 @@ std::map<std::string, OverrideId> Inspector::GetNamedOverrideIds() {
         }
     }
     return result;
-}
-
-uint32_t Inspector::GetStorageSize(const std::string& entry_point) {
-    auto* func = FindEntryPointByName(entry_point);
-    if (!func) {
-        return 0;
-    }
-
-    size_t size = 0;
-    auto* func_sem = program_->Sem().Get(func);
-    for (auto& ruv : func_sem->TransitivelyReferencedUniformVariables()) {
-        size += ruv.first->Type()->UnwrapRef()->Size();
-    }
-    for (auto& rsv : func_sem->TransitivelyReferencedStorageBufferVariables()) {
-        size += rsv.first->Type()->UnwrapRef()->Size();
-    }
-
-    if (static_cast<uint64_t>(size) > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
-        return std::numeric_limits<uint32_t>::max();
-    }
-    return static_cast<uint32_t>(size);
 }
 
 std::vector<ResourceBinding> Inspector::GetResourceBindings(const std::string& entry_point) {
@@ -536,31 +520,6 @@ std::vector<SamplerTexturePair> Inspector::GetSamplerTextureUses(const std::stri
         new_pairs.push_back(new_pair);
     }
     return new_pairs;
-}
-
-uint32_t Inspector::GetWorkgroupStorageSize(const std::string& entry_point) {
-    auto* func = FindEntryPointByName(entry_point);
-    if (!func) {
-        return 0;
-    }
-
-    uint32_t total_size = 0;
-    auto* func_sem = program_->Sem().Get(func);
-    for (const sem::Variable* var : func_sem->TransitivelyReferencedGlobals()) {
-        if (var->AddressSpace() == core::AddressSpace::kWorkgroup) {
-            auto* ty = var->Type()->UnwrapRef();
-            uint32_t align = ty->Align();
-            uint32_t size = ty->Size();
-
-            // This essentially matches std430 layout rules from GLSL, which are in
-            // turn specified as an upper bound for Vulkan layout sizing. Since D3D
-            // and Metal are even less specific, we assume Vulkan behavior as a
-            // good-enough approximation everywhere.
-            total_size += tint::RoundUp(align, size);
-        }
-    }
-
-    return total_size;
 }
 
 std::vector<std::string> Inspector::GetUsedExtensionNames() {
@@ -922,6 +881,26 @@ std::tuple<InterpolationType, InterpolationSampling> Inspector::CalculateInterpo
     }
 
     return {interpolation_type, sampling_type};
+}
+
+uint32_t Inspector::ComputeWorkgroupStorageSize(const ast::Function* func) const {
+    uint32_t total_size = 0;
+    auto* func_sem = program_->Sem().Get(func);
+    for (const sem::Variable* var : func_sem->TransitivelyReferencedGlobals()) {
+        if (var->AddressSpace() == core::AddressSpace::kWorkgroup) {
+            auto* ty = var->Type()->UnwrapRef();
+            uint32_t align = ty->Align();
+            uint32_t size = ty->Size();
+
+            // This essentially matches std430 layout rules from GLSL, which are in
+            // turn specified as an upper bound for Vulkan layout sizing. Since D3D
+            // and Metal are even less specific, we assume Vulkan behavior as a
+            // good-enough approximation everywhere.
+            total_size += tint::RoundUp(align, size);
+        }
+    }
+
+    return total_size;
 }
 
 template <size_t N, typename F>

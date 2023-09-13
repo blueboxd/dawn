@@ -1048,15 +1048,16 @@ struct TestWithParams : ResolverTestWithParam<TestParams> {};
 using ResolverFunctionParameterValidationTest = TestWithParams;
 TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceNoExtension) {
     auto& param = GetParam();
-    auto ptr_type = ty("ptr", Ident(Source{{12, 34}}, param.address_space), ty.i32());
+    Structure("S", Vector{Member("a", ty.i32())});
+    auto ptr_type = ty("ptr", Ident(Source{{12, 34}}, param.address_space), ty("S"));
     auto* arg = Param(Source{{12, 34}}, "p", ptr_type);
     Func("f", Vector{arg}, ty.void_(), tint::Empty);
 
     if (param.address_space == core::AddressSpace::kPixelLocal) {
-#if !TINT_ENABLE_LOCAL_STORAGE_EXTENSION
+#if !TINT_ENABLE_PIXEL_LOCAL_EXTENSION
         // TODO(crbug.com/dawn/1704): Remove when chromium_experimental_pixel_local is
         // production-ready
-        GTEST_SKIP() << "requires TINT_ENABLE_LOCAL_STORAGE_EXTENSION";
+        GTEST_SKIP() << "requires TINT_ENABLE_PIXEL_LOCAL_EXTENSION";
 #else
         Enable(core::Extension::kChromiumExperimentalPixelLocal);
 #endif
@@ -1082,16 +1083,17 @@ TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceNoExtension) {
 }
 TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceWithFullPtrParameterExtension) {
     auto& param = GetParam();
-    auto ptr_type = ty("ptr", Ident(Source{{12, 34}}, param.address_space), ty.i32());
+    Structure("S", Vector{Member("a", ty.i32())});
+    auto ptr_type = ty("ptr", Ident(Source{{12, 34}}, param.address_space), ty("S"));
     auto* arg = Param(Source{{12, 34}}, "p", ptr_type);
     Enable(core::Extension::kChromiumExperimentalFullPtrParameters);
     Func("f", Vector{arg}, ty.void_(), tint::Empty);
 
     if (param.address_space == core::AddressSpace::kPixelLocal) {
-#if !TINT_ENABLE_LOCAL_STORAGE_EXTENSION
+#if !TINT_ENABLE_PIXEL_LOCAL_EXTENSION
         // TODO(crbug.com/dawn/1704): Remove when chromium_experimental_pixel_local is
         // production-ready
-        GTEST_SKIP() << "requires TINT_ENABLE_LOCAL_STORAGE_EXTENSION";
+        GTEST_SKIP() << "requires TINT_ENABLE_PIXEL_LOCAL_EXTENSION";
 #else
         Enable(core::Extension::kChromiumExperimentalPixelLocal);
 #endif

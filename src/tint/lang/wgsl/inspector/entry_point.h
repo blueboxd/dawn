@@ -138,6 +138,8 @@ struct EntryPoint {
     /// size is derived from an override-expression. In this situation you first need to run the
     /// tint::ast::transform::SubstituteOverride transform before using the inspector.
     std::optional<WorkgroupSize> workgroup_size;
+    /// The total size in bytes of all Workgroup storage-class storage accessed via the entry point.
+    uint32_t workgroup_storage_size = 0;
     /// List of the input variable accessed via this entry point.
     std::vector<StageVariable> input_variables;
     /// List of the output variable accessed via this entry point.
@@ -161,6 +163,10 @@ struct EntryPoint {
     bool num_workgroups_used = false;
     /// Does the entry point use the frag_depth builtin
     bool frag_depth_used = false;
+    /// Does the entry point use the vertex_index builtin
+    bool vertex_index_used = false;
+    /// Does the entry point use the instance_index builtin
+    bool instance_index_used = false;
 };
 
 }  // namespace tint::inspector

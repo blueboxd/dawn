@@ -634,6 +634,9 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
         DelayedInvalidIf(totalInterStageShaderComponents > maxInterStageShaderComponents,
                          "Total vertex output components count (%u) exceeds the maximum (%u).",
                          totalInterStageShaderComponents, maxInterStageShaderComponents);
+
+        metadata->usesVertexIndex = entryPoint.vertex_index_used;
+        metadata->usesInstanceIndex = entryPoint.instance_index_used;
     }
 
     if (metadata->stage == SingleShaderStage::Fragment) {
@@ -893,7 +896,7 @@ ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
                     "maximum allowed (%u).",
                     numInvocations, limits.maxComputeInvocationsPerWorkgroup);
 
-    const size_t workgroupStorageSize = inspector.GetWorkgroupStorageSize(entryPointName);
+    const size_t workgroupStorageSize = entryPoint.workgroup_storage_size;
     DAWN_INVALID_IF(workgroupStorageSize > limits.maxComputeWorkgroupStorageSize,
                     "The total use of workgroup storage (%u bytes) is larger than "
                     "the maximum allowed (%u bytes).",
