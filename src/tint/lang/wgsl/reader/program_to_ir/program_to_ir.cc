@@ -84,8 +84,9 @@
 #include "src/tint/lang/wgsl/ast/var.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 #include "src/tint/lang/wgsl/ast/while_statement.h"
+#include "src/tint/lang/wgsl/ir/builtin_call.h"
 #include "src/tint/lang/wgsl/program/program.h"
-#include "src/tint/lang/wgsl/sem/builtin.h"
+#include "src/tint/lang/wgsl/sem/builtin_fn.h"
 #include "src/tint/lang/wgsl/sem/call.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/index_accessor_expression.h"
@@ -111,14 +112,14 @@ using namespace tint::core::fluent_types;     // NOLINT
 namespace tint::wgsl::reader {
 namespace {
 
-using ResultType = tint::Result<core::ir::Module, diag::List>;
+using ResultType = tint::Result<core::ir::Module>;
 
 /// Impl is the private-implementation of FromProgram().
 class Impl {
   public:
     /// Constructor
     /// @param program the program to convert to IR
-    explicit Impl(const Program* program) : program_(program) {}
+    explicit Impl(const Program& program) : program_(program) {}
 
     /// Builds an IR module from the program passed to the constructor.
     /// @return the IR module or an error.
@@ -128,7 +129,7 @@ class Impl {
     enum class ControlFlags { kNone, kExcludeSwitch };
 
     // The input Program
-    const Program* program_ = nullptr;
+    const Program& program_;
 
     /// The IR module being built
     core::ir::Module mod;
@@ -139,7 +140,7 @@ class Impl {
     // The clone context used to clone data from #program_
     core::constant::CloneContext clone_ctx_{
         /* type_ctx */ core::type::CloneContext{
-            /* src */ {&program_->Symbols()},
+            /* src */ {&program_.Symbols()},
             /* dst */ {&builder_.ir.symbols, &builder_.ir.Types()},
         },
         /* dst */ {builder_.ir.constant_values},
@@ -216,7 +217,7 @@ class Impl {
     }
 
     ResultType EmitModule() {
-        auto* sem = program_->Sem().Module();
+        auto* sem = program_.Sem().Module();
 
         for (auto* decl : sem->DependencyOrderedDeclarations()) {
             tint::Switch(
@@ -231,7 +232,7 @@ class Impl {
                 [&](const ast::Variable* var) {
                     // Setup the current block to be the root block for the module. The builder
                     // will handle creating it if it doesn't exist already.
-                    TINT_SCOPED_ASSIGNMENT(current_block_, builder_.RootBlock());
+                    TINT_SCOPED_ASSIGNMENT(current_block_, mod.root_block);
                     EmitVariable(var);
                 },
                 [&](const ast::Function* func) { EmitFunction(func); },
@@ -251,14 +252,14 @@ class Impl {
         }
 
         if (diagnostics_.contains_errors()) {
-            return ResultType(std::move(diagnostics_));
+            return Failure{std::move(diagnostics_)};
         }
 
-        return ResultType{std::move(mod)};
+        return std::move(mod);
     }
 
     core::Interpolation ExtractInterpolation(const ast::InterpolateAttribute* interp) {
-        auto type = program_->Sem()
+        auto type = program_.Sem()
                         .Get(interp->type)
                         ->As<sem::BuiltinEnumExpression<core::InterpolationType>>();
         core::InterpolationType interpolation_type = type->Value();
@@ -266,7 +267,7 @@ class Impl {
         core::InterpolationSampling interpolation_sampling =
             core::InterpolationSampling::kUndefined;
         if (interp->sampling) {
-            auto sampling = program_->Sem()
+            auto sampling = program_.Sem()
                                 .Get(interp->sampling)
                                 ->As<sem::BuiltinEnumExpression<core::InterpolationSampling>>();
             interpolation_sampling = sampling->Value();
@@ -279,7 +280,7 @@ class Impl {
         // The flow stack should have been emptied when the previous function finished building.
         TINT_ASSERT(control_stack_.IsEmpty());
 
-        const auto* sem = program_->Sem().Get(ast_func);
+        const auto* sem = program_.Sem().Get(ast_func);
 
         auto* ir_func = builder_.Function(ast_func->name->symbol.NameView(),
                                           sem->ReturnType()->Clone(clone_ctx_.type_ctx));
@@ -321,7 +322,7 @@ class Impl {
                     [&](const ast::InvariantAttribute*) { ir_func->SetReturnInvariant(true); },
                     [&](const ast::BuiltinAttribute* b) {
                         if (auto* ident_sem =
-                                program_->Sem()
+                                program_.Sem()
                                     .Get(b)
                                     ->As<sem::BuiltinEnumExpression<core::BuiltinValue>>()) {
                             switch (ident_sem->Value()) {
@@ -358,7 +359,7 @@ class Impl {
 
         Vector<core::ir::FunctionParam*, 1> params;
         for (auto* p : ast_func->params) {
-            const auto* param_sem = program_->Sem().Get(p)->As<sem::Parameter>();
+            const auto* param_sem = program_.Sem().Get(p)->As<sem::Parameter>();
             auto* ty = param_sem->Type()->Clone(clone_ctx_.type_ctx);
             auto* param = builder_.FunctionParam(p->name->symbol.NameView(), ty);
 
@@ -374,7 +375,7 @@ class Impl {
                     [&](const ast::InvariantAttribute*) { param->SetInvariant(true); },
                     [&](const ast::BuiltinAttribute* b) {
                         if (auto* ident_sem =
-                                program_->Sem()
+                                program_.Sem()
                                     .Get(b)
                                     ->As<sem::BuiltinEnumExpression<core::BuiltinValue>>()) {
                             switch (ident_sem->Value()) {
@@ -421,6 +422,14 @@ class Impl {
                                     param->SetBuiltin(
                                         core::ir::FunctionParam::Builtin::kSampleMask);
                                     break;
+                                case core::BuiltinValue::kSubgroupInvocationId:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kSubgroupInvocationId);
+                                    break;
+                                case core::BuiltinValue::kSubgroupSize:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kSubgroupSize);
+                                    break;
                                 default:
                                     TINT_ICE() << "Unknown builtin value in parameter attributes "
                                                << ident_sem->Value();
@@ -451,7 +460,7 @@ class Impl {
 
         // Add a terminator if one was not already created.
         if (NeedTerminator()) {
-            if (!program_->Sem().Get(ast_func->body)->Behaviors().Contains(sem::Behavior::kNext)) {
+            if (!program_.Sem().Get(ast_func->body)->Behaviors().Contains(sem::Behavior::kNext)) {
                 SetTerminator(builder_.Unreachable());
             } else {
                 SetTerminator(builder_.Return(current_function_));
@@ -467,7 +476,7 @@ class Impl {
         for (auto* s : stmts) {
             EmitStatement(s);
 
-            if (auto* sem = program_->Sem().Get(s);
+            if (auto* sem = program_.Sem().Get(s);
                 sem && !sem->Behaviors().Contains(sem::Behavior::kNext)) {
                 break;  // Unreachable statement.
             }
@@ -531,7 +540,7 @@ class Impl {
     void EmitIncrementDecrement(const ast::IncrementDecrementStatement* stmt) {
         auto lhs = EmitExpression(stmt->lhs);
 
-        auto* one = program_->TypeOf(stmt->lhs)->UnwrapRef()->is_signed_integer_scalar()
+        auto* one = program_.TypeOf(stmt->lhs)->UnwrapRef()->is_signed_integer_scalar()
                         ? builder_.Constant(1_i)
                         : builder_.Constant(1_u);
 
@@ -749,7 +758,7 @@ class Impl {
 
         ControlStackScope scope(this, switch_inst);
 
-        const auto* sem = program_->Sem().Get(stmt);
+        const auto* sem = program_.Sem().Get(stmt);
         for (const auto* c : sem->Cases()) {
             Vector<core::ir::Switch::CaseSelector, 4> selectors;
             for (const auto* selector : c->Selectors()) {
@@ -855,7 +864,7 @@ class Impl {
 
             void Bind(const ast::Expression* expr, core::ir::Value* value) {
                 // If this expression maps to sem::Load, insert a load instruction to get the result
-                if (impl.program_->Sem().Get<sem::Load>(expr)) {
+                if (impl.program_.Sem().Get<sem::Load>(expr)) {
                     auto* load = impl.builder_.Load(value);
                     impl.current_block_->Append(load);
                     value = load->Result();
@@ -865,7 +874,7 @@ class Impl {
 
             void Bind(const ast::Expression* expr, const VectorRefElementAccess& access) {
                 // If this expression maps to sem::Load, insert a load instruction to get the result
-                if (impl.program_->Sem().Get<sem::Load>(expr)) {
+                if (impl.program_.Sem().Get<sem::Load>(expr)) {
                     auto* load = impl.builder_.LoadVectorElement(access.vector, access.index);
                     impl.current_block_->Append(load);
                     bindings_.Add(expr, load->Result());
@@ -899,7 +908,7 @@ class Impl {
             void PopBlock() { impl.current_block_ = blocks.Pop(); }
 
             core::ir::Value* EmitConstant(const ast::Expression* expr) {
-                if (auto* sem = impl.program_->Sem().GetVal(expr)) {
+                if (auto* sem = impl.program_.Sem().GetVal(expr)) {
                     if (auto* v = sem->ConstantValue()) {
                         if (auto* cv = v->Clone(impl.clone_ctx_)) {
                             auto* val = impl.builder_.Constant(cv);
@@ -923,7 +932,7 @@ class Impl {
                     return;
                 }
 
-                auto* sem = impl.program_->Sem().Get(expr)->Unwrap();
+                auto* sem = impl.program_.Sem().Get(expr)->Unwrap();
 
                 // The access result type should match the source result type. If the source is a
                 // pointer, we generate a pointer.
@@ -996,7 +1005,7 @@ class Impl {
             }
 
             void EmitBinary(const ast::BinaryExpression* b) {
-                auto* b_sem = impl.program_->Sem().Get(b);
+                auto* b_sem = impl.program_.Sem().Get(b);
                 auto* ty = b_sem->Type()->Clone(impl.clone_ctx_.type_ctx);
                 auto lhs = GetValue(b->lhs);
                 if (!lhs) {
@@ -1019,7 +1028,7 @@ class Impl {
                 if (!val) {
                     return;
                 }
-                auto* sem = impl.program_->Sem().Get(expr);
+                auto* sem = impl.program_.Sem().Get(expr);
                 auto* ty = sem->Type()->Clone(impl.clone_ctx_.type_ctx);
                 core::ir::Instruction* inst = nullptr;
                 switch (expr->op) {
@@ -1048,7 +1057,7 @@ class Impl {
                 if (!val) {
                     return;
                 }
-                auto* sem = impl.program_->Sem().Get(b);
+                auto* sem = impl.program_.Sem().Get(b);
                 auto* ty = sem->Type()->Clone(impl.clone_ctx_.type_ctx);
                 auto* inst = impl.builder_.Bitcast(ty, val);
                 impl.current_block_->Append(inst);
@@ -1057,7 +1066,7 @@ class Impl {
 
             void EmitCall(const ast::CallExpression* expr) {
                 // If this is a materialized semantic node, just use the constant value.
-                if (auto* mat = impl.program_->Sem().Get(expr)) {
+                if (auto* mat = impl.program_.Sem().Get(expr)) {
                     if (mat->ConstantValue()) {
                         auto* cv = mat->ConstantValue()->Clone(impl.clone_ctx_);
                         if (!cv) {
@@ -1080,7 +1089,7 @@ class Impl {
                     }
                     args.Push(value);
                 }
-                auto* sem = impl.program_->Sem().Get<sem::Call>(expr);
+                auto* sem = impl.program_.Sem().Get<sem::Call>(expr);
                 if (!sem) {
                     impl.add_error(expr->source, "failed to get semantic information for call " +
                                                      std::string(expr->TypeInfo().name));
@@ -1089,8 +1098,10 @@ class Impl {
                 auto* ty = sem->Target()->ReturnType()->Clone(impl.clone_ctx_.type_ctx);
                 core::ir::Instruction* inst = nullptr;
                 // If this is a builtin function, emit the specific builtin value
-                if (auto* b = sem->Target()->As<sem::Builtin>()) {
-                    inst = impl.builder_.Call(ty, b->Type(), args);
+                if (auto* b = sem->Target()->As<sem::BuiltinFn>()) {
+                    auto* res = impl.builder_.InstructionResult(ty);
+                    inst = impl.builder_.ir.instructions.Create<wgsl::ir::BuiltinCall>(
+                        res, b->Fn(), std::move(args));
                 } else if (sem->Target()->As<sem::ValueConstructor>()) {
                     inst = impl.builder_.Construct(ty, std::move(args));
                 } else if (sem->Target()->Is<sem::ValueConversion>()) {
@@ -1123,7 +1134,7 @@ class Impl {
             }
 
             void EmitLiteral(const ast::LiteralExpression* lit) {
-                auto* sem = impl.program_->Sem().Get(lit);
+                auto* sem = impl.program_.Sem().Get(lit);
                 if (!sem) {
                     impl.add_error(lit->source, "failed to get semantic information for node " +
                                                     std::string(lit->TypeInfo().name));
@@ -1142,7 +1153,7 @@ class Impl {
             std::optional<VectorRefElementAccess> AsVectorRefElementAccess(
                 const ast::Expression* expr) {
                 return AsVectorRefElementAccess(
-                    impl.program_->Sem().Get<sem::ValueExpression>(expr)->UnwrapLoad());
+                    impl.program_.Sem().Get<sem::ValueExpression>(expr)->UnwrapLoad());
             }
 
             std::optional<VectorRefElementAccess> AsVectorRefElementAccess(
@@ -1286,7 +1297,7 @@ class Impl {
     void EmitCall(const ast::CallStatement* stmt) { (void)EmitValueExpression(stmt->expr); }
 
     void EmitVariable(const ast::Variable* var) {
-        auto* sem = program_->Sem().Get(var);
+        auto* sem = program_.Sem().Get(var);
 
         return tint::Switch(  //
             var,
@@ -1409,15 +1420,17 @@ class Impl {
 
 }  // namespace
 
-tint::Result<core::ir::Module, std::string> ProgramToIR(const Program* program) {
-    if (!program->IsValid()) {
-        return std::string("input program is not valid");
+tint::Result<core::ir::Module> ProgramToIR(const Program& program) {
+    if (!program.IsValid()) {
+        return Failure{program.Diagnostics()};
     }
 
     Impl b(program);
     auto r = b.Build();
     if (!r) {
-        return r.Failure().str();
+        diag::List err = std::move(r.Failure().reason);
+        err.add_note(diag::System::IR, "AST:\n" + Program::printer(program), Source{});
+        return Failure{err};
     }
 
     return r.Move();

@@ -25,7 +25,6 @@
 #include "dawn/native/Commands.h"
 #include "dawn/native/ExternalTexture.h"
 #include "dawn/native/RenderBundle.h"
-#include "dawn/native/VertexFormat.h"
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d11/BindGroupTrackerD3D11.h"
 #include "dawn/native/d3d11/BufferD3D11.h"
@@ -49,7 +48,7 @@ DXGI_FORMAT DXGIIndexFormat(wgpu::IndexFormat format) {
         case wgpu::IndexFormat::Uint32:
             return DXGI_FORMAT_R32_UINT;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -72,7 +71,7 @@ class VertexBufferTracker {
     }
 
     void Apply(const RenderPipeline* renderPipeline) {
-        ASSERT(renderPipeline != nullptr);
+        DAWN_ASSERT(renderPipeline != nullptr);
 
         // If the vertex state has changed, we need to update the strides.
         if (mLastAppliedRenderPipeline != renderPipeline) {
@@ -458,12 +457,12 @@ MaybeError CommandBuffer::ExecuteComputePass(CommandRecordingContext* commandCon
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
     // EndComputePass should have been called
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
@@ -471,29 +470,26 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
     ID3D11DeviceContext1* d3d11DeviceContext1 = commandContext->GetD3D11DeviceContext1();
 
     // Hold ID3D11RenderTargetView ComPtr to make attachments alive.
-    ityp::array<ColorAttachmentIndex, ComPtr<ID3D11RenderTargetView>, kMaxColorAttachments>
-        d3d11RenderTargetViews = {};
     ityp::array<ColorAttachmentIndex, ID3D11RenderTargetView*, kMaxColorAttachments>
-        d3d11RenderTargetViewPtrs = {};
+        d3d11RenderTargetViews = {};
     ColorAttachmentIndex attachmentCount(uint8_t(0));
     // TODO(dawn:1815): Shrink the sparse attachments to accommodate more UAVs.
     for (ColorAttachmentIndex i :
          IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         TextureView* colorTextureView = ToBackend(renderPass->colorAttachments[i].view.Get());
-        DAWN_TRY_ASSIGN(d3d11RenderTargetViews[i], colorTextureView->CreateD3D11RenderTargetView(
-                                                       colorTextureView->GetBaseMipLevel()));
-        d3d11RenderTargetViewPtrs[i] = d3d11RenderTargetViews[i].Get();
+        DAWN_TRY_ASSIGN(d3d11RenderTargetViews[i],
+                        colorTextureView->GetOrCreateD3D11RenderTargetView());
         if (renderPass->colorAttachments[i].loadOp == wgpu::LoadOp::Clear) {
             std::array<float, 4> clearColor =
                 ConvertToFloatColor(renderPass->colorAttachments[i].clearColor);
-            d3d11DeviceContext1->ClearRenderTargetView(d3d11RenderTargetViews[i].Get(),
+            d3d11DeviceContext1->ClearRenderTargetView(d3d11RenderTargetViews[i],
                                                        clearColor.data());
         }
         attachmentCount = i;
         attachmentCount++;
     }
 
-    ComPtr<ID3D11DepthStencilView> d3d11DepthStencilView;
+    ID3D11DepthStencilView* d3d11DepthStencilView = nullptr;
     if (renderPass->attachmentState->HasDepthStencilAttachment()) {
         auto* attachmentInfo = &renderPass->depthStencilAttachment;
         const Format& attachmentFormat = attachmentInfo->view->GetTexture()->GetFormat();
@@ -501,9 +497,8 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
         TextureView* depthStencilTextureView =
             ToBackend(renderPass->depthStencilAttachment.view.Get());
         DAWN_TRY_ASSIGN(d3d11DepthStencilView,
-                        depthStencilTextureView->CreateD3D11DepthStencilView(
-                            attachmentInfo->depthReadOnly, attachmentInfo->stencilReadOnly,
-                            depthStencilTextureView->GetBaseMipLevel()));
+                        depthStencilTextureView->GetOrCreateD3D11DepthStencilView(
+                            attachmentInfo->depthReadOnly, attachmentInfo->stencilReadOnly));
         UINT clearFlags = 0;
         if (attachmentFormat.HasDepth() &&
             renderPass->depthStencilAttachment.depthLoadOp == wgpu::LoadOp::Clear) {
@@ -515,14 +510,13 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
             clearFlags |= D3D11_CLEAR_STENCIL;
         }
 
-        d3d11DeviceContext1->ClearDepthStencilView(d3d11DepthStencilView.Get(), clearFlags,
+        d3d11DeviceContext1->ClearDepthStencilView(d3d11DepthStencilView, clearFlags,
                                                    attachmentInfo->clearDepth,
                                                    attachmentInfo->clearStencil);
     }
 
     d3d11DeviceContext1->OMSetRenderTargets(static_cast<uint8_t>(attachmentCount),
-                                            d3d11RenderTargetViewPtrs.data(),
-                                            d3d11DepthStencilView.Get());
+                                            d3d11RenderTargetViews.data(), d3d11DepthStencilView);
 
     // Set viewport
     D3D11_VIEWPORT defautViewport;
@@ -581,7 +575,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 DrawIndirectCmd* draw = iter->NextCommand<DrawIndirectCmd>();
 
                 Buffer* indirectBuffer = ToBackend(draw->indirectBuffer.Get());
-                ASSERT(indirectBuffer != nullptr);
+                DAWN_ASSERT(indirectBuffer != nullptr);
 
                 DAWN_TRY(bindGroupTracker.Apply());
                 vertexBufferTracker.Apply(lastPipeline);
@@ -607,7 +601,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 DrawIndexedIndirectCmd* draw = iter->NextCommand<DrawIndexedIndirectCmd>();
 
                 Buffer* indirectBuffer = ToBackend(draw->indirectBuffer.Get());
-                ASSERT(indirectBuffer != nullptr);
+                DAWN_ASSERT(indirectBuffer != nullptr);
 
                 DAWN_TRY(bindGroupTracker.Apply());
                 vertexBufferTracker.Apply(lastPipeline);
@@ -680,7 +674,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
 
@@ -707,8 +701,8 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                         continue;
                     }
 
-                    ASSERT(attachment.view->GetAspects() == Aspect::Color);
-                    ASSERT(attachment.resolveTarget->GetAspects() == Aspect::Color);
+                    DAWN_ASSERT(attachment.view->GetAspects() == Aspect::Color);
+                    DAWN_ASSERT(attachment.resolveTarget->GetAspects() == Aspect::Color);
 
                     Texture* resolveTexture = ToBackend(attachment.resolveTarget->GetTexture());
                     Texture* colorTexture = ToBackend(attachment.view->GetTexture());
@@ -806,7 +800,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
     }
 
     // EndRenderPass should have been called
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 void CommandBuffer::HandleDebugCommands(CommandRecordingContext* commandContext,
@@ -833,7 +827,7 @@ void CommandBuffer::HandleDebugCommands(CommandRecordingContext* commandContext,
             break;
         }
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 

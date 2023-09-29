@@ -52,9 +52,9 @@ namespace tint::hlsl::writer {
 
 namespace {
 
-bool ShouldRun(const Program* program) {
-    for (auto* decl : program->AST().GlobalDeclarations()) {
-        if (auto* var = program->Sem().Get<sem::Variable>(decl)) {
+bool ShouldRun(const Program& program) {
+    for (auto* decl : program.AST().GlobalDeclarations()) {
+        if (auto* var = program.Sem().Get<sem::Variable>(decl)) {
             if (var->AddressSpace() == core::AddressSpace::kStorage ||
                 var->AddressSpace() == core::AddressSpace::kUniform) {
                 return true;
@@ -129,7 +129,7 @@ struct LoadStoreKey {
 /// AtomicKey is the unordered map key to an atomic intrinsic.
 struct AtomicKey {
     core::type::Type const* el_ty = nullptr;  // element type
-    core::Function const op;                  // atomic op
+    wgsl::BuiltinFn const op;                 // atomic op
     Symbol const buffer;                      // buffer name
     bool operator==(const AtomicKey& rhs) const {
         return el_ty == rhs.el_ty && op == rhs.op && buffer == rhs.buffer;
@@ -254,42 +254,42 @@ DecomposeMemoryAccess::Intrinsic* IntrinsicStoreFor(ast::Builder* builder,
 /// @returns a DecomposeMemoryAccess::Intrinsic attribute that can be applied to a stub function for
 /// the atomic op and the type @p ty.
 DecomposeMemoryAccess::Intrinsic* IntrinsicAtomicFor(ast::Builder* builder,
-                                                     core::Function ity,
+                                                     wgsl::BuiltinFn ity,
                                                      const core::type::Type* ty,
                                                      const Symbol& buffer) {
     auto op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicLoad;
     switch (ity) {
-        case core::Function::kAtomicLoad:
+        case wgsl::BuiltinFn::kAtomicLoad:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicLoad;
             break;
-        case core::Function::kAtomicStore:
+        case wgsl::BuiltinFn::kAtomicStore:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicStore;
             break;
-        case core::Function::kAtomicAdd:
+        case wgsl::BuiltinFn::kAtomicAdd:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicAdd;
             break;
-        case core::Function::kAtomicSub:
+        case wgsl::BuiltinFn::kAtomicSub:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicSub;
             break;
-        case core::Function::kAtomicMax:
+        case wgsl::BuiltinFn::kAtomicMax:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicMax;
             break;
-        case core::Function::kAtomicMin:
+        case wgsl::BuiltinFn::kAtomicMin:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicMin;
             break;
-        case core::Function::kAtomicAnd:
+        case wgsl::BuiltinFn::kAtomicAnd:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicAnd;
             break;
-        case core::Function::kAtomicOr:
+        case wgsl::BuiltinFn::kAtomicOr:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicOr;
             break;
-        case core::Function::kAtomicXor:
+        case wgsl::BuiltinFn::kAtomicXor:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicXor;
             break;
-        case core::Function::kAtomicExchange:
+        case wgsl::BuiltinFn::kAtomicExchange:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicExchange;
             break;
-        case core::Function::kAtomicCompareExchangeWeak:
+        case wgsl::BuiltinFn::kAtomicCompareExchangeWeak:
             op = DecomposeMemoryAccess::Intrinsic::Op::kAtomicCompareExchangeWeak;
             break;
         default:
@@ -629,38 +629,38 @@ struct DecomposeMemoryAccess::State {
         });
     }
 
-    /// AtomicFunc() returns a symbol to an intrinsic function that performs an  atomic operation on
+    /// AtomicFunc() returns a symbol to an builtin function that performs an  atomic operation on
     /// the storage buffer @p buffer. The function has the signature:
     // `fn atomic_op(offset : u32, ...) -> T`
     /// @param el_ty the storage buffer element type
-    /// @param intrinsic the atomic intrinsic
+    /// @param builtin the atomic builtin
     /// @param buffer the symbol of the storage buffer variable, owned by the target ProgramBuilder.
     /// @return the name of the function that performs the load
     Symbol AtomicFunc(const core::type::Type* el_ty,
-                      const sem::Builtin* intrinsic,
+                      const sem::BuiltinFn* builtin,
                       const Symbol& buffer) {
-        auto op = intrinsic->Type();
-        return tint::GetOrCreate(atomic_funcs, AtomicKey{el_ty, op, buffer}, [&] {
+        auto fn = builtin->Fn();
+        return tint::GetOrCreate(atomic_funcs, AtomicKey{el_ty, fn, buffer}, [&] {
             // The first parameter to all WGSL atomics is the expression to the
             // atomic. This is replaced with two parameters: the buffer and offset.
             Vector params{b.Param("offset", b.ty.u32())};
 
             // Other parameters are copied as-is:
-            for (size_t i = 1; i < intrinsic->Parameters().Length(); i++) {
-                auto* param = intrinsic->Parameters()[i];
+            for (size_t i = 1; i < builtin->Parameters().Length(); i++) {
+                auto* param = builtin->Parameters()[i];
                 auto ty = CreateASTTypeFor(ctx, param->Type());
                 params.Push(b.Param("param_" + std::to_string(i), ty));
             }
 
-            auto* atomic = IntrinsicAtomicFor(ctx.dst, op, el_ty, buffer);
+            auto* atomic = IntrinsicAtomicFor(ctx.dst, fn, el_ty, buffer);
             if (TINT_UNLIKELY(!atomic)) {
-                TINT_ICE() << "IntrinsicAtomicFor() returned nullptr for op " << op << " and type "
+                TINT_ICE() << "IntrinsicAtomicFor() returned nullptr for fn " << fn << " and type "
                            << el_ty->TypeInfo().name;
             }
 
-            ast::Type ret_ty = CreateASTTypeFor(ctx, intrinsic->ReturnType());
+            ast::Type ret_ty = CreateASTTypeFor(ctx, builtin->ReturnType());
 
-            auto name = b.Symbols().New(buffer.Name() + intrinsic->str());
+            auto name = b.Symbols().New(buffer.Name() + builtin->str());
             b.Func(name, std::move(params), ret_ty, nullptr,
                    Vector{
                        atomic,
@@ -795,16 +795,16 @@ DecomposeMemoryAccess::DecomposeMemoryAccess() = default;
 DecomposeMemoryAccess::~DecomposeMemoryAccess() = default;
 
 ast::transform::Transform::ApplyResult DecomposeMemoryAccess::Apply(
-    const Program* src,
+    const Program& src,
     const ast::transform::DataMap&,
     ast::transform::DataMap&) const {
     if (!ShouldRun(src)) {
         return SkipTransform;
     }
 
-    auto& sem = src->Sem();
+    auto& sem = src.Sem();
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
     State state(ctx);
 
     // Scan the AST nodes for storage and uniform buffer accesses. Complex
@@ -815,7 +815,7 @@ ast::transform::Transform::ApplyResult DecomposeMemoryAccess::Apply(
     // Inner-most expression nodes are guaranteed to be visited first because AST
     // nodes are fully immutable and require their children to be constructed
     // first so their pointer can be passed to the parent's initializer.
-    for (auto* node : src->ASTNodes().Objects()) {
+    for (auto* node : src.ASTNodes().Objects()) {
         if (auto* ident = node->As<ast::IdentifierExpression>()) {
             // X
             if (auto* sem_ident = sem.GetVal(ident)) {
@@ -921,8 +921,8 @@ ast::transform::Transform::ApplyResult DecomposeMemoryAccess::Apply(
 
         if (auto* call_expr = node->As<ast::CallExpression>()) {
             auto* call = sem.Get(call_expr)->UnwrapMaterialize()->As<sem::Call>();
-            if (auto* builtin = call->Target()->As<sem::Builtin>()) {
-                if (builtin->Type() == core::Function::kArrayLength) {
+            if (auto* builtin = call->Target()->As<sem::BuiltinFn>()) {
+                if (builtin->Fn() == wgsl::BuiltinFn::kArrayLength) {
                     // arrayLength(X)
                     // Don't convert X into a load, this builtin actually requires the real pointer.
                     state.TakeAccess(call_expr->args[0]);

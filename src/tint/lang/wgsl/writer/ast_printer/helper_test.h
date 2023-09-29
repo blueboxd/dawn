@@ -47,8 +47,10 @@ class TestHelperBase : public BASE, public ProgramBuilder {
         } else {
             program = std::make_unique<Program>(std::move(*this));
         }
-        [&] { ASSERT_TRUE(program->IsValid()) << program->Diagnostics().str(); }();
-        gen_ = std::make_unique<ASTPrinter>(program.get());
+        if (!program->IsValid()) {
+            ADD_FAILURE() << program->Diagnostics();
+        }
+        gen_ = std::make_unique<ASTPrinter>(*program);
         return *gen_;
     }
 

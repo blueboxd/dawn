@@ -43,7 +43,7 @@ class Inspector {
   public:
     /// Constructor
     /// @param program Shader program to extract information from.
-    explicit Inspector(const Program* program);
+    explicit Inspector(const Program& program);
 
     /// Destructor
     ~Inspector();
@@ -144,7 +144,7 @@ class Inspector {
     std::vector<std::pair<std::string, Source>> GetEnableDirectives();
 
   private:
-    const Program* program_;
+    const Program& program_;
     diag::List diagnostics_;
     std::unique_ptr<std::unordered_map<std::string, UniqueVector<SamplerTexturePair, 4>>>
         sampler_targets_;
@@ -221,6 +221,10 @@ class Inspector {
     /// @param func the root function of the callgraph to consider for the computation.
     /// @returns the total size in bytes of all Workgroup storage-class storage accessed via func.
     uint32_t ComputeWorkgroupStorageSize(const ast::Function* func) const;
+
+    /// @param func the root function of the callgraph to consider for the computation
+    /// @returns the list of member types for the `pixel_local` variable accessed via func, if any.
+    std::vector<PixelLocalMemberType> ComputePixelLocalMemberTypes(const ast::Function* func) const;
 
     /// For a N-uple of expressions, resolve to the appropriate global resources
     /// and call 'cb'.

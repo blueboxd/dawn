@@ -28,7 +28,7 @@ class Function;
 namespace tint::core::ir {
 
 /// A return instruction.
-class Return : public Castable<Return, Terminator> {
+class Return final : public Castable<Return, Terminator> {
   public:
     /// The offset in Operands() for the function being returned
     static constexpr size_t kFunctionOperandOffset = 0;
@@ -47,8 +47,11 @@ class Return : public Castable<Return, Terminator> {
 
     ~Return() override;
 
+    /// @copydoc Instruction::Clone()
+    Return* Clone(CloneContext& ctx) override;
+
     /// @returns the function being returned
-    Function* Func() { return tint::As<Function>(operands_[kFunctionOperandOffset]); }
+    Function* Func() const;
 
     /// @returns the return value, or nullptr
     ir::Value* Value() const {

@@ -51,11 +51,11 @@ CombineSamplers::BindingInfo::~BindingInfo() = default;
 /// PIMPL state for the transform
 struct CombineSamplers::State {
     /// The source program
-    const Program* const src;
+    const Program& src;
     /// The target program builder
     ProgramBuilder b;
     /// The clone context
-    program::CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx = {&b, &src, /* auto_clone_symbols */ true};
 
     /// The binding info
     const BindingInfo* binding_info;
@@ -91,7 +91,7 @@ struct CombineSamplers::State {
     /// Constructor
     /// @param program the source program
     /// @param info the binding map information
-    State(const Program* program, const BindingInfo* info) : src(program), binding_info(info) {}
+    State(const Program& program, const BindingInfo* info) : src(program), binding_info(info) {}
 
     /// Creates a combined sampler global variables.
     /// (Note this is actually a Texture node at the AST level, but it will be
@@ -145,6 +145,51 @@ struct CombineSamplers::State {
         }
     }
 
+    /// Insert a new texture/sampler pair into the combined samplers maps (global or local, as
+    /// appropriate). If local, also add a function parameter to "params".
+    /// @param pair the texture/sampler pair to insert
+    /// @param fn the function scope in which to insert (if local)
+    /// @param params the calling function's parameter list to modify (if local)
+    void InsertPair(sem::VariablePair pair,
+                    const sem::Function* fn,
+                    tint::Vector<const ast::Parameter*, 8>* params) {
+        const sem::Variable* texture_var = pair.first;
+        const sem::Variable* sampler_var = pair.second;
+        std::string name = texture_var->Declaration()->name->symbol.Name();
+        if (sampler_var) {
+            name += "_" + sampler_var->Declaration()->name->symbol.Name();
+        }
+        if (IsGlobal(pair)) {
+            // Both texture and sampler are global; add a new global variable
+            // to represent the combined sampler (if not already created).
+            GetOrCreate(global_combined_texture_samplers_, pair,
+                        [&] { return CreateCombinedGlobal(texture_var, sampler_var, name); });
+        } else {
+            // Either texture or sampler (or both) is a function parameter;
+            // add a new function parameter to represent the combined sampler.
+            ast::Type type = CreateCombinedASTTypeFor(texture_var, sampler_var);
+            auto* var = ctx.dst->Param(ctx.dst->Symbols().New(name), type);
+            params->Push(var);
+            function_combined_texture_samplers_[fn][pair] = var;
+        }
+    }
+
+    /// For a given texture, find any texture/sampler pair with a non-null sampler in the given
+    /// function scope.
+    /// @param texture_var the texture variable of interest
+    /// @param fn the function scope in which to search
+    /// @returns the full pair, if found
+    const sem::VariablePair* FindFullTextureSamplerPair(const sem::Variable* texture_var,
+                                                        const sem::Function* fn) {
+        for (auto pairIter = fn->TextureSamplerPairs().begin();
+             pairIter != fn->TextureSamplerPairs().end(); pairIter++) {
+            if (pairIter->first == texture_var && pairIter->second) {
+                return pairIter;
+            }
+        }
+        return nullptr;
+    }
+
     /// Runs the transform
     /// @returns the new program or SkipTransform if the transform is not required
     ApplyResult Run() {
@@ -177,25 +222,30 @@ struct CombineSamplers::State {
                 }
                 Vector<const ast::Parameter*, 8> params;
                 for (auto pair : fn->TextureSamplerPairs()) {
-                    const sem::Variable* texture_var = pair.first;
-                    const sem::Variable* sampler_var = pair.second;
-                    std::string name = texture_var->Declaration()->name->symbol.Name();
-                    if (sampler_var) {
-                        name += "_" + sampler_var->Declaration()->name->symbol.Name();
+                    if (!pair.second) {
+                        continue;
                     }
-                    if (IsGlobal(pair)) {
-                        // Both texture and sampler are global; add a new global variable
-                        // to represent the combined sampler (if not already created).
-                        GetOrCreate(global_combined_texture_samplers_, pair, [&] {
-                            return CreateCombinedGlobal(texture_var, sampler_var, name);
-                        });
+                    InsertPair(pair, fn, &params);
+                }
+                for (auto pair : fn->TextureSamplerPairs()) {
+                    if (pair.second) {
+                        continue;
+                    }
+                    // Look for another pair with a non-null sampler.
+                    // NOTE: this is O(N^2) in the number of pairs, since
+                    // FindFullTextureSamplerPair() also loops over all pairs. If this proves
+                    // problematic, it could be optimized.
+                    if (const sem::VariablePair* fullPair =
+                            FindFullTextureSamplerPair(pair.first, fn)) {
+                        if (IsGlobal(pair)) {
+                            global_combined_texture_samplers_[pair] =
+                                global_combined_texture_samplers_[*fullPair];
+                        } else {
+                            auto* var = function_combined_texture_samplers_[fn][*fullPair];
+                            function_combined_texture_samplers_[fn][pair] = var;
+                        }
                     } else {
-                        // Either texture or sampler (or both) is a function parameter;
-                        // add a new function parameter to represent the combined sampler.
-                        ast::Type type = CreateCombinedASTTypeFor(texture_var, sampler_var);
-                        auto* var = ctx.dst->Param(ctx.dst->Symbols().New(name), type);
-                        params.Push(var);
-                        function_combined_texture_samplers_[fn][pair] = var;
+                        InsertPair(pair, fn, &params);
                     }
                 }
                 // Filter out separate textures and samplers from the original
@@ -226,7 +276,7 @@ struct CombineSamplers::State {
             if (auto* call = sem.Get(expr)->UnwrapMaterialize()->As<sem::Call>()) {
                 Vector<const ast::Expression*, 8> args;
                 // Replace all texture builtin calls.
-                if (auto* builtin = call->Target()->As<sem::Builtin>()) {
+                if (auto* builtin = call->Target()->As<sem::BuiltinFn>()) {
                     const auto& signature = builtin->Signature();
                     auto sampler_index = signature.IndexOf(core::ParameterUsage::kSampler);
                     auto texture_index = signature.IndexOf(core::ParameterUsage::kTexture);
@@ -270,7 +320,7 @@ struct CombineSamplers::State {
                         }
                     }
                     const ast::Expression* value = ctx.dst->Call(ctx.Clone(expr->target), args);
-                    if (builtin->Type() == core::Function::kTextureLoad &&
+                    if (builtin->Fn() == wgsl::BuiltinFn::kTextureLoad &&
                         texture_var->Type()->UnwrapRef()->Is<core::type::DepthTexture>() &&
                         !call->Stmt()->Declaration()->Is<ast::CallStatement>()) {
                         value = ctx.dst->MemberAccessor(value, "x");
@@ -285,6 +335,12 @@ struct CombineSamplers::State {
                         if (IsGlobal(pair)) {
                             continue;
                         }
+                        // Texture-only pairs do not require a function parameter if they've been
+                        // replaced by a real pair.
+                        if (!pair.second && FindFullTextureSamplerPair(pair.first, callee)) {
+                            continue;
+                        }
+
                         const sem::Variable* texture_var = pair.first;
                         const sem::Variable* sampler_var = pair.second;
                         if (auto* param = texture_var->As<sem::Parameter>()) {
@@ -336,7 +392,7 @@ CombineSamplers::CombineSamplers() = default;
 
 CombineSamplers::~CombineSamplers() = default;
 
-ast::transform::Transform::ApplyResult CombineSamplers::Apply(const Program* src,
+ast::transform::Transform::ApplyResult CombineSamplers::Apply(const Program& src,
                                                               const ast::transform::DataMap& inputs,
                                                               ast::transform::DataMap&) const {
     auto* binding_info = inputs.Get<BindingInfo>();

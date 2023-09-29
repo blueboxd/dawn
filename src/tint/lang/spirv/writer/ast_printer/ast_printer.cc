@@ -14,6 +14,7 @@
 
 #include "src/tint/lang/spirv/writer/ast_printer/ast_printer.h"
 
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -47,7 +48,7 @@
 
 namespace tint::spirv::writer {
 
-SanitizedResult Sanitize(const Program* in, const Options& options) {
+SanitizedResult Sanitize(const Program& in, const Options& options) {
     ast::transform::Manager manager;
     ast::transform::DataMap data;
 
@@ -97,8 +98,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     manager.Add<ast::transform::BindingRemapper>();
     data.Add<ast::transform::BindingRemapper::Remappings>(
         options.binding_remapper_options.binding_points,
-        options.binding_remapper_options.access_controls,
-        options.binding_remapper_options.allow_collisions);
+        std::unordered_map<BindingPoint, core::Access>{}, /* allow_collisions */ false);
 
     // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
     data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(
@@ -179,7 +179,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     return result;
 }
 
-ASTPrinter::ASTPrinter(const Program* program,
+ASTPrinter::ASTPrinter(const Program& program,
                        bool zero_initialize_workgroup_memory,
                        bool experimental_require_subgroup_uniform_control_flow)
     : builder_(program,
@@ -190,7 +190,7 @@ bool ASTPrinter::Generate() {
     if (builder_.Build()) {
         auto& module = builder_.Module();
         writer_.WriteHeader(module.IdBound());
-        writer_.WriteModule(&module);
+        writer_.WriteModule(module);
         return true;
     }
     return false;

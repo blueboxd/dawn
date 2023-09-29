@@ -42,7 +42,7 @@ D3D12_INPUT_CLASSIFICATION VertexStepModeFunction(wgpu::VertexStepMode mode) {
         case wgpu::VertexStepMode::Instance:
             return D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA;
         case wgpu::VertexStepMode::VertexBufferNotUsed:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -393,7 +393,7 @@ MaybeError RenderPipeline::Initialize() {
         descriptorD3D12.BlendState.RenderTarget[static_cast<uint8_t>(i)] =
             ComputeColorDesc(device, GetColorTargetState(i));
     }
-    ASSERT(highestColorAttachmentIndexPlusOne <= kMaxColorAttachmentsTyped);
+    DAWN_ASSERT(highestColorAttachmentIndexPlusOne <= kMaxColorAttachmentsTyped);
     descriptorD3D12.NumRenderTargets = static_cast<uint8_t>(highestColorAttachmentIndexPlusOne);
 
     descriptorD3D12.BlendState.AlphaToCoverageEnable = IsAlphaToCoverageEnabled();

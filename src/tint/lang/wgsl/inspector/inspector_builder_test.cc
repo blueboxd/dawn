@@ -356,8 +356,10 @@ Inspector& InspectorBuilder::Build() {
         return *inspector_;
     }
     program_ = std::make_unique<Program>(resolver::Resolve(*this));
-    [&] { ASSERT_TRUE(program_->IsValid()) << program_->Diagnostics().str(); }();
-    inspector_ = std::make_unique<Inspector>(program_.get());
+    if (!program_->IsValid()) {
+        ADD_FAILURE() << program_->Diagnostics();
+    }
+    inspector_ = std::make_unique<Inspector>(*program_);
     return *inspector_;
 }
 

@@ -76,6 +76,45 @@ function (set_if_not_defined name value description)
     endif()
 endfunction()
 
+function (install_if_enabled target)
+    if(NOT DAWN_ENABLE_INSTALL)
+        return()
+    endif()
+
+    install(TARGETS ${target}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    get_target_property(targetHeaders ${target} INTERFACE_SOURCES)
+    if (NOT targetHeaders)
+        return()
+    endif()
+
+    foreach(headerFile ${targetHeaders})
+        # Starting from CMake 3.20 there is the cmake_path command that could simplify this code.
+        # Compute the install subdirectory for the header by stripping out the path to
+        # the include / gen/include directory...
+        string(FIND "${headerFile}" "${DAWN_INCLUDE_DIR}" foundIndex)
+        if (foundIndex EQUAL 0)
+            string(LENGTH "${DAWN_INCLUDE_DIR}/" lengthToRemove)
+        endif()
+        string(FIND "${headerFile}" "${DAWN_BUILD_GEN_DIR}/include/" foundIndex)
+        if (foundIndex EQUAL 0)
+            string(LENGTH "${DAWN_BUILD_GEN_DIR}/include/" lengthToRemove)
+        endif()
+        string(SUBSTRING "${headerFile}" "${lengthToRemove}" -1 headerRelDir)
+
+        # ... then remove everything after the last /
+        string(FIND "${headerRelDir}" "/" foundIndex REVERSE)
+        string(SUBSTRING "${headerRelDir}" 0 ${foundIndex} headerRelDir)
+
+        install(FILES "${headerFile}" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${headerRelDir})
+    endforeach()
+endfunction()
+
+
 # Default values for the backend-enabling options
 set(ENABLE_D3D11 OFF)
 set(ENABLE_D3D12 OFF)
@@ -121,6 +160,7 @@ if (DAWN_SUPPORTS_GLFW_FOR_WINDOWING)
 endif()
 
 option_if_not_defined(DAWN_ENABLE_ASAN "Enable address sanitizer" OFF)
+option_if_not_defined(DAWN_ENABLE_INSTALL "Enable install step for Dawn libraries" OFF)
 option_if_not_defined(DAWN_ENABLE_TSAN "Enable thread sanitizer" OFF)
 option_if_not_defined(DAWN_ENABLE_MSAN "Enable memory sanitizer" OFF)
 option_if_not_defined(DAWN_ENABLE_UBSAN "Enable undefined behaviour sanitizer" OFF)
@@ -155,6 +195,7 @@ else()
   set(TINT_DEFAULT_GLSL OFF)
 endif()
 
+option_if_not_defined(TINT_ENABLE_INSTALL "Enable install step for Tint libraries" OFF)
 option_if_not_defined(TINT_BUILD_CMD_TOOLS "Build the Tint command line tools" ON)
 option_if_not_defined(TINT_BUILD_DOCS "Build documentation" ON)
 option_if_not_defined(TINT_DOCS_WARN_AS_ERROR "When building documentation, treat warnings as errors" OFF)
@@ -174,7 +215,6 @@ option_if_not_defined(TINT_BUILD_WGSL_WRITER "Build the WGSL output writer" ON)
 option_if_not_defined(TINT_BUILD_SYNTAX_TREE_WRITER "Build the syntax tree writer" OFF)
 
 option_if_not_defined(TINT_BUILD_FUZZERS "Build fuzzers" OFF)
-option_if_not_defined(TINT_BUILD_SPIRV_TOOLS_FUZZER "Build SPIRV-Tools fuzzer" OFF)
 option_if_not_defined(TINT_BUILD_AST_FUZZER "Build AST fuzzer" OFF)
 option_if_not_defined(TINT_BUILD_REGEX_FUZZER "Build regex fuzzer" OFF)
 option_if_not_defined(TINT_BUILD_BENCHMARKS "Build Tint benchmarks" OFF)
@@ -186,9 +226,6 @@ set_if_not_defined(TINT_EXTERNAL_BENCHMARK_CORPUS_DIR "" "Directory that holds a
 option_if_not_defined(TINT_ENABLE_BREAK_IN_DEBUGGER "Enable tint::debugger::Break()" OFF)
 option_if_not_defined(TINT_CHECK_CHROMIUM_STYLE "Check for [chromium-style] issues during build" OFF)
 option_if_not_defined(TINT_RANDOMIZE_HASHES "Randomize the hash seed value to detect non-deterministic output" OFF)
-
-# TODO(crbug.com/dawn/1704): Remove when chromium_experimental_pixel_local is production-ready
-option_if_not_defined(TINT_ENABLE_PIXEL_LOCAL_EXTENSION "Enable the WIP 'chromium_experimental_pixel_local' extension" OFF)
 
 # Recommended setting for compability with future abseil releases.
 set(ABSL_PROPAGATE_CXX_STD ON)
@@ -206,7 +243,7 @@ set_if_not_defined(DAWN_SWIFTSHADER_DIR "${DAWN_THIRD_PARTY_DIR}/swiftshader" "D
 set_if_not_defined(DAWN_SPIRV_TOOLS_DIR "${DAWN_VULKAN_DEPS_DIR}/spirv-tools/src" "Directory in which to find SPIRV-Tools")
 set_if_not_defined(DAWN_SPIRV_HEADERS_DIR "${DAWN_VULKAN_DEPS_DIR}/spirv-headers/src" "Directory in which to find SPIRV-Headers")
 set_if_not_defined(DAWN_VULKAN_HEADERS_DIR "${DAWN_VULKAN_DEPS_DIR}/vulkan-headers/src" "Directory in which to find Vulkan-Headers")
-set_if_not_defined(DAWN_VULKAN_TOOLS_DIR "${DAWN_VULKAN_DEPS_DIR}/vulkan-tools/src" "Directory in which to find Vulkan-Tools")
+set_if_not_defined(DAWN_VULKAN_UTILITY_LIBRARIES_DIR "${DAWN_VULKAN_DEPS_DIR}/vulkan-utility-libraries/src" "Directory in which to find Vulkan-Utility-Libraries")
 
 # Dependencies for DAWN_BUILD_NODE_BINDINGS
 set_if_not_defined(NODE_ADDON_API_DIR "${DAWN_THIRD_PARTY_DIR}/node-addon-api" "Directory in which to find node-addon-api")
@@ -223,26 +260,6 @@ endif()
 
 if(DAWN_ENABLE_PIC)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-endif()
-
-if (${TINT_BUILD_SPIRV_TOOLS_FUZZER})
-  message(STATUS "TINT_BUILD_SPIRV_TOOLS_FUZZER is ON - setting
-      TINT_BUILD_FUZZERS
-      TINT_BUILD_SPV_READER
-      TINT_BUILD_SPV_WRITER
-      TINT_BUILD_WGSL_READER
-      TINT_BUILD_WGSL_WRITER
-      TINT_BUILD_GLSL_WRITER
-      TINT_BUILD_HLSL_WRITER
-      TINT_BUILD_MSL_WRITER to ON")
-  set(TINT_BUILD_FUZZERS ON CACHE BOOL "Build tint fuzzers" FORCE)
-  set(TINT_BUILD_SPV_READER ON CACHE BOOL "Build SPIR-V reader" FORCE)
-  set(TINT_BUILD_SPV_WRITER ON CACHE BOOL "Build SPIR-V writer" FORCE)
-  set(TINT_BUILD_WGSL_READER ON CACHE BOOL "Build WGSL reader" FORCE)
-  set(TINT_BUILD_WGSL_WRITER ON CACHE BOOL "Build WGSL writer" FORCE)
-  set(TINT_BUILD_GLSL_WRITER ON CACHE BOOL "Build HLSL writer" FORCE)
-  set(TINT_BUILD_HLSL_WRITER ON CACHE BOOL "Build HLSL writer" FORCE)
-  set(TINT_BUILD_MSL_WRITER ON CACHE BOOL "Build MSL writer" FORCE)
 endif()
 
 if (${TINT_BUILD_AST_FUZZER})
@@ -318,7 +335,6 @@ message(STATUS "Tint build SPIR-V writer: ${TINT_BUILD_SPV_WRITER}")
 message(STATUS "Tint build WGSL writer: ${TINT_BUILD_WGSL_WRITER}")
 message(STATUS "Tint build Syntax Tree writer: ${TINT_BUILD_SYNTAX_TREE_WRITER}")
 message(STATUS "Tint build fuzzers: ${TINT_BUILD_FUZZERS}")
-message(STATUS "Tint build SPIRV-Tools fuzzer: ${TINT_BUILD_SPIRV_TOOLS_FUZZER}")
 message(STATUS "Tint build AST fuzzer: ${TINT_BUILD_AST_FUZZER}")
 message(STATUS "Tint build regex fuzzer: ${TINT_BUILD_REGEX_FUZZER}")
 message(STATUS "Tint build benchmarks: ${TINT_BUILD_BENCHMARKS}")

@@ -35,7 +35,6 @@
 #include "src/tint/lang/core/ir/exit_switch.h"
 #include "src/tint/lang/core/ir/function.h"
 #include "src/tint/lang/core/ir/if.h"
-#include "src/tint/lang/core/ir/intrinsic_call.h"
 #include "src/tint/lang/core/ir/let.h"
 #include "src/tint/lang/core/ir/load.h"
 #include "src/tint/lang/core/ir/load_vector_element.h"
@@ -84,9 +83,8 @@ class Validator {
     ~Validator();
 
     /// Runs the validator over the module provided during construction
-    /// @returns the results of validation, either a success result object or the diagnostics of
-    /// validation failures.
-    Result<SuccessType, diag::List> IsValid();
+    /// @returns success or failure
+    Result<SuccessType> Run();
 
   protected:
     /// @param inst the instruction
@@ -192,6 +190,10 @@ class Validator {
     /// @param call the call to validate
     void CheckBuiltinCall(BuiltinCall* call);
 
+    /// Validates the given user call
+    /// @param call the call to validate
+    void CheckUserCall(UserCall* call);
+
     /// Validates the given access
     /// @param a the access to validate
     void CheckAccess(ir::Access* a);
@@ -246,6 +248,10 @@ class Validator {
     /// @param l the exit loop to validate
     void CheckExitLoop(ExitLoop* l);
 
+    /// Validates the given store
+    /// @param s the store to validate
+    void CheckStore(Store* s);
+
     /// Validates the given load vector element
     /// @param l the load vector element to validate
     void CheckLoadVectorElement(LoadVectorElement* l);
@@ -264,7 +270,7 @@ class Validator {
     diag::List diagnostics_;
     Disassembler dis_{mod_};
     Block* current_block_ = nullptr;
-    Hashset<Function*, 4> seen_functions_;
+    Hashset<Function*, 4> all_functions_;
     Vector<ControlInstruction*, 8> control_stack_;
 
     void DisassembleIfNeeded();
@@ -281,8 +287,14 @@ void Validator::DisassembleIfNeeded() {
     mod_.disassembly_file = std::make_unique<Source::File>("", dis_.Disassemble());
 }
 
-Result<SuccessType, diag::List> Validator::IsValid() {
+Result<SuccessType> Validator::Run() {
     CheckRootBlock(mod_.root_block);
+
+    for (auto* func : mod_.functions) {
+        if (!all_functions_.Add(func)) {
+            AddError("function '" + Name(func) + "' added to module multiple times");
+        }
+    }
 
     for (auto* func : mod_.functions) {
         CheckFunction(func);
@@ -292,7 +304,7 @@ Result<SuccessType, diag::List> Validator::IsValid() {
         DisassembleIfNeeded();
         diagnostics_.add_note(tint::diag::System::IR,
                               "# Disassembly\n" + mod_.disassembly_file->content.data, {});
-        return std::move(diagnostics_);
+        return Failure{std::move(diagnostics_)};
     }
     return Success;
 }
@@ -390,13 +402,15 @@ void Validator::CheckOperandsNotNull(ir::Instruction* inst,
 }
 
 void Validator::CheckRootBlock(Block* blk) {
-    if (!blk) {
-        return;
-    }
-
     TINT_SCOPED_ASSIGNMENT(current_block_, blk);
 
     for (auto* inst : *blk) {
+        if (inst->Block() != blk) {
+            AddError(
+                inst,
+                InstError(inst, "instruction in root block does not have root block as parent"));
+            continue;
+        }
         auto* var = inst->As<ir::Var>();
         if (!var) {
             AddError(inst,
@@ -408,10 +422,6 @@ void Validator::CheckRootBlock(Block* blk) {
 }
 
 void Validator::CheckFunction(Function* func) {
-    if (!seen_functions_.Add(func)) {
-        AddError("function '" + Name(func) + "' added to module multiple times");
-    }
-
     CheckBlock(func->Block());
 }
 
@@ -423,6 +433,11 @@ void Validator::CheckBlock(Block* blk) {
     }
 
     for (auto* inst : *blk) {
+        if (inst->Block() != blk) {
+            AddError(inst, InstError(inst, "block instruction does not have same block as parent"));
+            AddNote(current_block_, "In block");
+            continue;
+        }
         if (inst->Is<ir::Terminator>() && inst != blk->Terminator()) {
             AddError(inst, "block: terminator which isn't the final instruction");
             continue;
@@ -465,11 +480,14 @@ void Validator::CheckInstruction(Instruction* inst) {
         // Note, a `nullptr` is a valid operand in some cases, like `var` so we can't just check
         // for `nullptr` here.
         if (!op->Alive()) {
-            AddError(inst, i, InstError(inst, "instruction has operand which is not alive"));
+            AddError(inst, i,
+                     InstError(inst, "instruction operand " + std::to_string(i) + " is not alive"));
         }
 
         if (!op->Usages().Contains({inst, i})) {
-            AddError(inst, i, InstError(inst, "instruction operand missing usage"));
+            AddError(
+                inst, i,
+                InstError(inst, "instruction operand " + std::to_string(i) + " missing usage"));
         }
     }
 
@@ -483,7 +501,7 @@ void Validator::CheckInstruction(Instruction* inst) {
         [&](Load*) {},                                               //
         [&](LoadVectorElement* l) { CheckLoadVectorElement(l); },    //
         [&](Loop* l) { CheckLoop(l); },                              //
-        [&](Store*) {},                                              //
+        [&](Store* s) { CheckStore(s); },                            //
         [&](StoreVectorElement* s) { CheckStoreVectorElement(s); },  //
         [&](Switch* s) { CheckSwitch(s); },                          //
         [&](Swizzle*) {},                                            //
@@ -516,11 +534,10 @@ void Validator::CheckCall(Call* call) {
         call,                                          //
         [&](Bitcast*) {},                              //
         [&](BuiltinCall* c) { CheckBuiltinCall(c); },  //
-        [&](IntrinsicCall*) {},                        //
         [&](Construct*) {},                            //
         [&](Convert*) {},                              //
         [&](Discard*) {},                              //
-        [&](UserCall*) {},                             //
+        [&](UserCall* c) { CheckUserCall(c); },        //
         [&](Default) {
             // Validation of custom IR instructions
         });
@@ -530,9 +547,20 @@ void Validator::CheckBuiltinCall(BuiltinCall* call) {
     auto args = Transform<8>(call->Args(), [&](ir::Value* v) { return v->Type(); });
     intrinsic::Context context{call->TableData(), mod_.Types(), mod_.symbols, diagnostics_};
 
-    auto result = core::intrinsic::Lookup(context, call->IntrinsicName(), call->FuncId(), args,
-                                          core::EvaluationStage::kRuntime, Source{});
-    (void)result;  // Lookup returns an error diagnostic on overload failure
+    auto result = core::intrinsic::LookupFn(context, call->FriendlyName().c_str(), call->FuncId(),
+                                            args, core::EvaluationStage::kRuntime, Source{});
+    if (result) {
+        if (result->return_type != call->Result()->Type()) {
+            AddError(call, InstError(call, "call result type does not match builtin return type"));
+        }
+    }
+}
+
+void Validator::CheckUserCall(UserCall* call) {
+    if (!all_functions_.Contains(call->Target())) {
+        AddError(call, UserCall::kFunctionOperandOffset,
+                 InstError(call, "call target is not part of the module"));
+    }
 }
 
 void Validator::CheckAccess(ir::Access* a) {
@@ -790,6 +818,19 @@ void Validator::CheckExitLoop(ExitLoop* l) {
     }
 }
 
+void Validator::CheckStore(Store* s) {
+    CheckOperandsNotNull(s, Store::kToOperandOffset, Store::kFromOperandOffset);
+
+    if (auto* from = s->From()) {
+        if (auto* to = s->To()) {
+            if (from->Type() != to->Type()->UnwrapPtr()) {
+                AddError(s, Store::kFromOperandOffset,
+                         "value type does not match pointer element type");
+            }
+        }
+    }
+}
+
 void Validator::CheckLoadVectorElement(LoadVectorElement* l) {
     CheckOperandsNotNull(l,  //
                          LoadVectorElement::kFromOperandOffset,
@@ -844,29 +885,26 @@ const core::type::Type* Validator::GetVectorPtrElementType(Instruction* inst, si
 
 }  // namespace
 
-Result<SuccessType, diag::List> Validate(Module& mod) {
+Result<SuccessType> Validate(Module& mod) {
     Validator v(mod);
-    return v.IsValid();
+    return v.Run();
 }
 
-Result<SuccessType, std::string> ValidateAndDumpIfNeeded([[maybe_unused]] Module& ir,
-                                                         [[maybe_unused]] const char* msg) {
-#ifndef NDEBUG
-    auto result = Validate(ir);
-    if (!result) {
-        diag::List errors;
-        StringStream ss;
-        ss << "validating input to " << msg << " failed" << std::endl << result.Failure().str();
-        return ss.str();
-    }
-#endif
-
+Result<SuccessType> ValidateAndDumpIfNeeded([[maybe_unused]] Module& ir,
+                                            [[maybe_unused]] const char* msg) {
 #if TINT_DUMP_IR_WHEN_VALIDATING
     Disassembler disasm(ir);
     std::cout << "=========================================================" << std::endl;
     std::cout << "== IR dump before " << msg << ":" << std::endl;
     std::cout << "=========================================================" << std::endl;
     std::cout << disasm.Disassemble();
+#endif
+
+#ifndef NDEBUG
+    auto result = Validate(ir);
+    if (!result) {
+        return result.Failure();
+    }
 #endif
 
     return Success;

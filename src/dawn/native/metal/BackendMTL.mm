@@ -118,10 +118,18 @@ MaybeError API_AVAILABLE(macos(10.13))
         return DAWN_INTERNAL_ERROR("Failed to create the matching dict for the device");
     }
 
+    // Work around a breaking deprecation of kIOMasterPortDefault to kIOMainPortDefault. Both values
+    // are equivalent with NULL (given mach_port_t is an unsigned int they probably mean 0) as noted
+    // by the IOKitLib.h comments so use that directly.
+    // TODO(chromium:1400252): Use kIOMainPortDefault once the minimum supported version includes
+    // macOS 12.0
+    constexpr mach_port_t kIOMainPort = 0;
+
     // IOServiceGetMatchingService will consume the reference on the matching dictionary,
     // so we don't need to release the dictionary.
     IORef<io_registry_entry_t> acceleratorEntry =
-        AcquireIORef(IOServiceGetMatchingService(kIOMasterPortDefault, matchingDict.Detach()));
+        AcquireIORef(IOServiceGetMatchingService(kIOMainPort, matchingDict.Detach()));
+
     if (acceleratorEntry == IO_OBJECT_NULL) {
         return DAWN_INTERNAL_ERROR("Failed to get the IO registry entry for the accelerator");
     }
@@ -133,7 +141,7 @@ MaybeError API_AVAILABLE(macos(10.13))
         return DAWN_INTERNAL_ERROR("Failed to get the IO registry entry for the device");
     }
 
-    ASSERT(deviceEntry != IO_OBJECT_NULL);
+    DAWN_ASSERT(deviceEntry != IO_OBJECT_NULL);
 
     uint32_t vendorId = GetEntryProperty(deviceEntry.Get(), CFSTR("vendor-id"));
     uint32_t deviceId = GetEntryProperty(deviceEntry.Get(), CFSTR("device-id"));
@@ -515,6 +523,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         // on ios 11.0+ and macOS 11.0+
         if (@available(macOS 10.11, iOS 11.0, *)) {
             EnableFeature(Feature::DawnMultiPlanarFormats);
+            EnableFeature(Feature::MultiPlanarFormatP010);
         }
 
         if (@available(macOS 11.0, iOS 10.0, *)) {
@@ -555,6 +564,8 @@ class PhysicalDevice : public PhysicalDeviceBase {
         }
 
         EnableFeature(Feature::Norm16TextureFormats);
+
+        EnableFeature(Feature::HostMappedPointer);
     }
 
     void InitializeVendorArchitectureImpl() override {
@@ -714,7 +725,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
             mtlLimits.*limitsForFamily.limit = limitsForFamily.values[mtlGPUFamily];
         }
 
-        GetDefaultLimits(&limits->v1);
+        GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
 
         limits->v1.maxTextureDimension1D = mtlLimits.max1DTextureSize;
         limits->v1.maxTextureDimension2D = mtlLimits.max2DTextureSize;
@@ -729,7 +740,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
                                           limits->v1.maxUniformBuffersPerShaderStage +
                                           limits->v1.maxVertexBuffers;
 
-        ASSERT(maxBuffersPerStage >= baseMaxBuffersPerStage);
+        DAWN_ASSERT(maxBuffersPerStage >= baseMaxBuffersPerStage);
         {
             uint32_t additional = maxBuffersPerStage - baseMaxBuffersPerStage;
             limits->v1.maxStorageBuffersPerShaderStage += additional / 3;
@@ -740,7 +751,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         uint32_t baseMaxTexturesPerStage = limits->v1.maxSampledTexturesPerShaderStage +
                                            limits->v1.maxStorageTexturesPerShaderStage;
 
-        ASSERT(mtlLimits.maxTextureArgumentEntriesPerFunc >= baseMaxTexturesPerStage);
+        DAWN_ASSERT(mtlLimits.maxTextureArgumentEntriesPerFunc >= baseMaxTexturesPerStage);
         {
             uint32_t additional =
                 mtlLimits.maxTextureArgumentEntriesPerFunc - baseMaxTexturesPerStage;
@@ -793,6 +804,10 @@ class PhysicalDevice : public PhysicalDeviceBase {
 
         // TODO(crbug.com/dawn/1448):
         // - maxInterStageShaderVariables
+
+        // Experimental limits for subgroups
+        limits->experimentalSubgroupLimits.minSubgroupSize = 4;
+        limits->experimentalSubgroupLimits.maxSubgroupSize = 64;
 
         return {};
     }

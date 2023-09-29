@@ -37,13 +37,14 @@ class AtomicsTest : public ast::transform::TransformTest {
 
         auto& b = parser.builder();
 
-        core::Function two_params[] = {
-            core::Function::kAtomicExchange, core::Function::kAtomicAdd, core::Function::kAtomicSub,
-            core::Function::kAtomicMin,      core::Function::kAtomicMax, core::Function::kAtomicAnd,
-            core::Function::kAtomicOr,       core::Function::kAtomicXor,
+        wgsl::BuiltinFn two_params[] = {
+            wgsl::BuiltinFn::kAtomicExchange, wgsl::BuiltinFn::kAtomicAdd,
+            wgsl::BuiltinFn::kAtomicSub,      wgsl::BuiltinFn::kAtomicMin,
+            wgsl::BuiltinFn::kAtomicMax,      wgsl::BuiltinFn::kAtomicAnd,
+            wgsl::BuiltinFn::kAtomicOr,       wgsl::BuiltinFn::kAtomicXor,
         };
         for (auto& a : two_params) {
-            b.Func(std::string{"stub_"} + core::str(a) + "_u32",
+            b.Func(std::string{"stub_"} + wgsl::str(a) + "_u32",
                    tint::Vector{
                        b.Param("p0", b.ty.u32()),
                        b.Param("p1", b.ty.u32()),
@@ -55,7 +56,7 @@ class AtomicsTest : public ast::transform::TransformTest {
                    tint::Vector{
                        b.ASTNodes().Create<Atomics::Stub>(b.ID(), b.AllocateNodeID(), a),
                    });
-            b.Func(std::string{"stub_"} + core::str(a) + "_i32",
+            b.Func(std::string{"stub_"} + wgsl::str(a) + "_i32",
                    tint::Vector{
                        b.Param("p0", b.ty.i32()),
                        b.Param("p1", b.ty.i32()),
@@ -79,7 +80,7 @@ class AtomicsTest : public ast::transform::TransformTest {
                },
                tint::Vector{
                    b.ASTNodes().Create<Atomics::Stub>(b.ID(), b.AllocateNodeID(),
-                                                      core::Function::kAtomicLoad),
+                                                      wgsl::BuiltinFn::kAtomicLoad),
                });
         b.Func("stub_atomicLoad_i32",
                tint::Vector{
@@ -91,7 +92,7 @@ class AtomicsTest : public ast::transform::TransformTest {
                },
                tint::Vector{
                    b.ASTNodes().Create<Atomics::Stub>(b.ID(), b.AllocateNodeID(),
-                                                      core::Function::kAtomicLoad),
+                                                      wgsl::BuiltinFn::kAtomicLoad),
                });
 
         b.Func("stub_atomicStore_u32",
@@ -102,7 +103,7 @@ class AtomicsTest : public ast::transform::TransformTest {
                b.ty.void_(), tint::Empty,
                tint::Vector{
                    b.ASTNodes().Create<Atomics::Stub>(b.ID(), b.AllocateNodeID(),
-                                                      core::Function::kAtomicStore),
+                                                      wgsl::BuiltinFn::kAtomicStore),
                });
         b.Func("stub_atomicStore_i32",
                tint::Vector{
@@ -112,7 +113,7 @@ class AtomicsTest : public ast::transform::TransformTest {
                b.ty.void_(), tint::Empty,
                tint::Vector{
                    b.ASTNodes().Create<Atomics::Stub>(b.ID(), b.AllocateNodeID(),
-                                                      core::Function::kAtomicStore),
+                                                      wgsl::BuiltinFn::kAtomicStore),
                });
 
         b.Func("stub_atomic_compare_exchange_weak_u32",
@@ -127,7 +128,7 @@ class AtomicsTest : public ast::transform::TransformTest {
                },
                tint::Vector{
                    b.ASTNodes().Create<Atomics::Stub>(b.ID(), b.AllocateNodeID(),
-                                                      core::Function::kAtomicCompareExchangeWeak),
+                                                      wgsl::BuiltinFn::kAtomicCompareExchangeWeak),
                });
         b.Func("stub_atomic_compare_exchange_weak_i32",
                tint::Vector{b.Param("p0", b.ty.i32()), b.Param("p1", b.ty.i32()),
@@ -138,7 +139,7 @@ class AtomicsTest : public ast::transform::TransformTest {
                },
                tint::Vector{
                    b.ASTNodes().Create<Atomics::Stub>(b.ID(), b.AllocateNodeID(),
-                                                      core::Function::kAtomicCompareExchangeWeak),
+                                                      wgsl::BuiltinFn::kAtomicCompareExchangeWeak),
                });
 
         // Keep this pointer alive after Transform() returns
@@ -1376,5 +1377,76 @@ fn f() {
 
     EXPECT_EQ(expect, str(got));
 }
+
+TEST_F(AtomicsTest, ReplaceBitcastArgument_Scaler) {
+    auto* src = R"(
+var<workgroup> wg : u32;
+
+fn f() {
+  stub_atomicAdd_u32(wg, 1u);
+
+  wg = 0u;
+  var b : f32;
+  b = bitcast<f32>(wg);
+}
+)";
+
+    auto* expect = R"(
+var<workgroup> wg : atomic<u32>;
+
+fn f() {
+  atomicAdd(&(wg), 1u);
+  atomicStore(&(wg), 0u);
+  var b : f32;
+  b = bitcast<f32>(atomicLoad(&(wg)));
+}
+)";
+
+    auto got = Run(src);
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(AtomicsTest, ReplaceBitcastArgument_Struct) {
+    auto* src = R"(
+struct S {
+  a : u32,
+}
+
+var<workgroup> wg : S;
+
+fn f() {
+  stub_atomicAdd_u32(wg.a, 1u);
+
+  wg.a = 0u;
+  var b : f32;
+  b = bitcast<f32>(wg.a);
+}
+)";
+
+    auto* expect = R"(
+struct S_atomic {
+  a : atomic<u32>,
+}
+
+struct S {
+  a : u32,
+}
+
+var<workgroup> wg : S_atomic;
+
+fn f() {
+  atomicAdd(&(wg.a), 1u);
+  atomicStore(&(wg.a), 0u);
+  var b : f32;
+  b = bitcast<f32>(atomicLoad(&(wg.a)));
+}
+)";
+
+    auto got = Run(src);
+
+    EXPECT_EQ(expect, str(got));
+}
+
 }  // namespace
 }  // namespace tint::spirv::reader

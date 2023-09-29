@@ -35,7 +35,6 @@
 #include "src/tint/lang/core/ir/exit_switch.h"
 #include "src/tint/lang/core/ir/if.h"
 #include "src/tint/lang/core/ir/instruction_result.h"
-#include "src/tint/lang/core/ir/intrinsic_call.h"
 #include "src/tint/lang/core/ir/let.h"
 #include "src/tint/lang/core/ir/load.h"
 #include "src/tint/lang/core/ir/load_vector_element.h"
@@ -153,7 +152,7 @@ std::string Disassembler::Disassemble() {
         }
     }
 
-    if (mod_.root_block) {
+    if (!mod_.root_block->IsEmpty()) {
         EmitBlock(mod_.root_block, "root");
         EmitLine();
     }
@@ -414,6 +413,7 @@ void Disassembler::EmitValue(Value* val) {
         [&](ir::InstructionResult* rv) { out_ << "%" << IdOf(rv); },
         [&](ir::BlockParam* p) { out_ << "%" << IdOf(p) << ":" << p->Type()->FriendlyName(); },
         [&](ir::FunctionParam* p) { out_ << "%" << IdOf(p); },
+        [&](ir::Function* f) { out_ << "%" << IdOf(f); },
         [&](Default) {
             if (val == nullptr) {
                 out_ << "undef";
@@ -449,9 +449,9 @@ void Disassembler::EmitInstruction(Instruction* inst) {
         [&](Store* s) {
             EmitInstructionName(s);
             out_ << " ";
-            EmitValue(s->To());
+            EmitOperand(s, Store::kToOperandOffset);
             out_ << ", ";
-            EmitValue(s->From());
+            EmitOperand(s, Store::kFromOperandOffset);
         },
         [&](StoreVectorElement* s) {
             EmitInstructionName(s);
@@ -462,7 +462,8 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             EmitValueWithType(uc);
             out_ << " = ";
             EmitInstructionName(uc);
-            out_ << " %" << IdOf(uc->Func());
+            out_ << " ";
+            EmitOperand(uc, UserCall::kFunctionOperandOffset);
             if (!uc->Args().IsEmpty()) {
                 out_ << ", ";
             }
@@ -479,6 +480,26 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             if (v->BindingPoint().has_value()) {
                 out_ << " ";
                 EmitBindingPoint(v->BindingPoint().value());
+            }
+            if (v->Attributes().invariant) {
+                out_ << " @invariant";
+            }
+            if (v->Attributes().location.has_value()) {
+                out_ << " @location(" << v->Attributes().location.value() << ")";
+            }
+            if (v->Attributes().index.has_value()) {
+                out_ << " @index(" << v->Attributes().index.value() << ")";
+            }
+            if (v->Attributes().interpolation.has_value()) {
+                auto& interp = v->Attributes().interpolation.value();
+                out_ << " @interpolate(" << interp.type;
+                if (interp.sampling != core::InterpolationSampling::kUndefined) {
+                    out_ << ", " << interp.sampling;
+                }
+                out_ << ")";
+            }
+            if (v->Attributes().builtin.has_value()) {
+                out_ << " @builtin(" << v->Attributes().builtin.value() << ")";
             }
         },
         [&](Swizzle* s) {

@@ -52,7 +52,7 @@ namespace tint::sem {
 class Array;
 class BlockStatement;
 class BreakIfStatement;
-class Builtin;
+class BuiltinFn;
 class Call;
 class CaseStatement;
 class ForLoopStatement;
@@ -82,10 +82,13 @@ struct TypeAndAddressSpace {
     bool operator==(const TypeAndAddressSpace& other) const {
         return type == other.type && address_space == other.address_space;
     }
+
+    /// @returns the hash value of this object
+    std::size_t HashCode() const { return Hash(type, address_space); }
 };
 
 /// DiagnosticFilterStack is a scoped stack of diagnostic filters.
-using DiagnosticFilterStack = ScopeStack<core::DiagnosticRule, core::DiagnosticSeverity>;
+using DiagnosticFilterStack = ScopeStack<wgsl::DiagnosticRule, wgsl::DiagnosticSeverity>;
 
 /// Validation logic for various ast nodes. The validations in general should
 /// be shallow and depend on the resolver to call on children. The validations
@@ -101,7 +104,7 @@ class Validator {
     /// @param valid_type_storage_layouts a set of validated type layouts by address space
     Validator(ProgramBuilder* builder,
               SemHelper& helper,
-              const core::Extensions& enabled_extensions,
+              const wgsl::Extensions& enabled_extensions,
               const Hashmap<const core::type::Type*, const Source*, 8>& atomic_composite_info,
               Hashset<TypeAndAddressSpace, 8>& valid_type_storage_layouts);
     ~Validator();
@@ -126,7 +129,7 @@ class Validator {
     /// @param msg the diagnostic message
     /// @param source the diagnostic source
     /// @returns false if the diagnostic is an error for the given trigger rule
-    bool AddDiagnostic(core::DiagnosticRule rule,
+    bool AddDiagnostic(wgsl::DiagnosticRule rule,
                        const std::string& msg,
                        const Source& source) const;
 
@@ -454,17 +457,22 @@ class Validator {
     /// Validates a texture builtin function
     /// @param call the builtin call to validate
     /// @returns true on success, false otherwise
-    bool TextureBuiltinFunction(const sem::Call* call) const;
+    bool TextureBuiltinFn(const sem::Call* call) const;
 
     /// Validates a workgroupUniformLoad builtin function
     /// @param call the builtin call to validate
     /// @returns true on success, false otherwise
     bool WorkgroupUniformLoad(const sem::Call* call) const;
 
+    /// Validates a subgroupBroadcast builtin function
+    /// @param call the builtin call to validate
+    /// @returns true on success, false otherwise
+    bool SubgroupBroadcast(const sem::Call* call) const;
+
     /// Validates an optional builtin function and its required extension.
     /// @param call the builtin call to validate
     /// @returns true on success, false otherwise
-    bool RequiredExtensionForBuiltinFunction(const sem::Call* call) const;
+    bool RequiredExtensionForBuiltinFn(const sem::Call* call) const;
 
     /// Validates that 'f16' extension is enabled for f16 usage at @p source
     /// @param source the source of the f16 usage
@@ -561,26 +569,11 @@ class Validator {
     diag::List& diagnostics_;
     SemHelper& sem_;
     DiagnosticFilterStack diagnostic_filters_;
-    const core::Extensions& enabled_extensions_;
+    const wgsl::Extensions& enabled_extensions_;
     const Hashmap<const core::type::Type*, const Source*, 8>& atomic_composite_info_;
     Hashset<TypeAndAddressSpace, 8>& valid_type_storage_layouts_;
 };
 
 }  // namespace tint::resolver
-
-namespace std {
-
-/// Custom std::hash specialization for tint::resolver::TypeAndAddressSpace.
-template <>
-class hash<tint::resolver::TypeAndAddressSpace> {
-  public:
-    /// @param tas the TypeAndAddressSpace
-    /// @return the hash value
-    inline std::size_t operator()(const tint::resolver::TypeAndAddressSpace& tas) const {
-        return Hash(tas.type, tas.address_space);
-    }
-};
-
-}  // namespace std
 
 #endif  // SRC_TINT_LANG_WGSL_RESOLVER_VALIDATOR_H_

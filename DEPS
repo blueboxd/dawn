@@ -45,7 +45,7 @@ vars = {
   # reclient CIPD package
   'reclient_package': 'infra/rbe/client/',
   # reclient CIPD package version
-  'reclient_version': 're_client_version:0.108.0.7cdbbe9-gomaip',
+  'reclient_version': 're_client_version:0.114.2.81e819b-gomaip',
 
   # 'magic' text to tell depot_tools that git submodules should be accepted
   # but parity with DEPS file is expected.
@@ -116,7 +116,11 @@ deps = {
 
   # Testing, GTest and GMock
   'testing': {
-    'url': '{chromium_git}/chromium/src/testing@166db27fd0d53afc0c716b1ae9c15725e380871f',
+    'url': '{chromium_git}/chromium/src/testing@48d3bd9693702764fdf9cf8f2d13dfe3fcb5bb3e',
+    'condition': 'dawn_standalone',
+  },
+  'third_party/libFuzzer/src': {
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/compiler-rt/lib/fuzzer.git' + '@' + '26cc39e59b2bf5cbc20486296248a842c536878d',
     'condition': 'dawn_standalone',
   },
   'third_party/googletest': {
@@ -154,7 +158,7 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@ce263437ca353e2b600ee91181478185bed02980',
+    'url': '{chromium_git}/angle/angle@6717a65bdba0092086ace4257067bc88589be03c',
     'condition': 'dawn_standalone',
   },
 
@@ -164,7 +168,7 @@ deps = {
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@78257d7b3c7d577616b7f56b2023b0d05621aa2a',
+    'url': '{chromium_git}/vulkan-deps@31d03ed141e43647fb23091cc577018f676f3492',
     'condition': 'dawn_standalone',
   },
 
@@ -179,7 +183,7 @@ deps = {
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@da33b6ec94317b455db3a7d56e52ee654ff46c74',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@fb1f3036b185e2d8f668f4dd753d50873081c094',
   },
 
   'third_party/dxheaders': {
@@ -198,7 +202,7 @@ deps = {
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@03819a515332bd0ac6daf11ab13839bdd75eae7f',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@be1210e145e89e7a2943947d983f9592495e0f52',
     'condition': 'build_with_chromium',
   },
 
@@ -342,7 +346,18 @@ hooks = [
                 '--no_auth',
                 '--bucket', 'chromium-browser-clang/rc',
                 '-s', 'build/toolchain/win/rc/linux64/rc.sha1',
-    ]
+    ],
+  },
+  {
+    'name': 'rc_mac',
+    'pattern': '.',
+    'condition': 'dawn_standalone and checkout_win and host_os == "mac"',
+    'action': [ 'download_from_google_storage',
+                '--no_resume',
+                '--no_auth',
+                '--bucket', 'chromium-browser-clang/rc',
+                '-s', 'build/toolchain/win/rc/mac/rc.sha1',
+    ],
   },
   # Pull clang-format binaries using checked-in hashes.
   {

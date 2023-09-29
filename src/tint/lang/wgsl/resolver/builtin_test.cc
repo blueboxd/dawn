@@ -55,7 +55,7 @@ using ResolverBuiltinTest = ResolverTest;
 
 struct BuiltinData {
     const char* name;
-    core::Function builtin;
+    wgsl::BuiltinFn builtin;
 };
 
 inline std::ostream& operator<<(std::ostream& out, BuiltinData data) {
@@ -78,9 +78,9 @@ TEST_F(ResolverBuiltinTest, SameOverloadReturnsSameCallTarget) {
     // let a = select(1_i, 2_i, true);
     // let b = select(3_i, 4_i, false);
     // let c = select(5_u, 6_u, true);
-    auto* select_a = Call(core::Function::kSelect, 1_i, 2_i, true);
-    auto* select_b = Call(core::Function::kSelect, 3_i, 4_i, false);
-    auto* select_c = Call(core::Function::kSelect, 5_u, 6_u, true);
+    auto* select_a = Call(wgsl::BuiltinFn::kSelect, 1_i, 2_i, true);
+    auto* select_b = Call(wgsl::BuiltinFn::kSelect, 3_i, 4_i, false);
+    auto* select_c = Call(wgsl::BuiltinFn::kSelect, 5_u, 6_u, true);
     WrapInFunction(Decl(Let("i", Expr(42_i))),  //
                    Decl(Let("a", select_a)),    //
                    Decl(Let("b", select_b)),    //
@@ -273,7 +273,7 @@ namespace float_builtin_tests {
 struct BuiltinDataWithParamNum {
     uint32_t args_number;
     const char* name;
-    core::Function builtin;
+    wgsl::BuiltinFn builtin;
 };
 
 inline std::ostream& operator<<(std::ostream& out, BuiltinDataWithParamNum data) {
@@ -492,7 +492,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Vector_f32) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Scalar_f16) {
     auto param = GetParam();
 
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto val = 0.5_h;
     if (param.name == std::string("acosh")) {
@@ -520,7 +520,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Scalar_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Vector_f16) {
     auto param = GetParam();
 
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto val = param.name == std::string("acosh") ? Call<vec3<f16>>(1.0_h, 2.0_h, 3.0_h)
                                                   : Call<vec3<f16>>(0.5_h, 0.5_h, 0.8_h);
@@ -549,7 +549,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Vector_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Scalar_f16) {
     auto param = GetParam();
 
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call(param.name, 1_h, 1_h);
     WrapInFunction(call);
@@ -572,7 +572,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Scalar_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Vector_f16) {
     auto param = GetParam();
 
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call(param.name, Call<vec3<f16>>(1_h, 1_h, 3_h), Call<vec3<f16>>(1_h, 1_h, 3_h));
     WrapInFunction(call);
@@ -598,7 +598,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Vector_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Scalar_f16) {
     auto param = GetParam();
 
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call(param.name, 0_h, 1_h, 2_h);
     WrapInFunction(call);
@@ -621,7 +621,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Scalar_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Vector_f16) {
     auto param = GetParam();
 
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call(param.name, Call<vec3<f16>>(0_h, 0_h, 0_h), Call<vec3<f16>>(1_h, 1_h, 1_h),
                       Call<vec3<f16>>(2_h, 2_h, 2_h));
@@ -649,7 +649,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Vector_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Scalar_f16) {
     auto param = GetParam();
 
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call(param.name, 1_h, 1_h, 1_h, 1_h);
     WrapInFunction(call);
@@ -672,7 +672,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Scalar_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Vector_f16) {
     auto param = GetParam();
 
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call(param.name, Call<vec3<f16>>(1_h, 1_h, 3_h), Call<vec3<f16>>(1_h, 1_h, 3_h),
                       Call<vec3<f16>>(1_h, 1_h, 3_h), Call<vec3<f16>>(1_h, 1_h, 3_h));
@@ -700,55 +700,55 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Vector_f16) {
 INSTANTIATE_TEST_SUITE_P(
     ResolverTest,
     ResolverBuiltinTest_FloatBuiltin_IdenticalType,
-    testing::Values(BuiltinDataWithParamNum{1, "abs", core::Function::kAbs},
-                    BuiltinDataWithParamNum{1, "acos", core::Function::kAcos},
-                    BuiltinDataWithParamNum{1, "acosh", core::Function::kAcos},
-                    BuiltinDataWithParamNum{1, "asin", core::Function::kAsin},
-                    BuiltinDataWithParamNum{1, "asinh", core::Function::kAsin},
-                    BuiltinDataWithParamNum{1, "atan", core::Function::kAtan},
-                    BuiltinDataWithParamNum{1, "atanh", core::Function::kAtan},
-                    BuiltinDataWithParamNum{2, "atan2", core::Function::kAtan2},
-                    BuiltinDataWithParamNum{1, "ceil", core::Function::kCeil},
-                    BuiltinDataWithParamNum{3, "clamp", core::Function::kClamp},
-                    BuiltinDataWithParamNum{1, "cos", core::Function::kCos},
-                    BuiltinDataWithParamNum{1, "cosh", core::Function::kCosh},
+    testing::Values(BuiltinDataWithParamNum{1, "abs", wgsl::BuiltinFn::kAbs},
+                    BuiltinDataWithParamNum{1, "acos", wgsl::BuiltinFn::kAcos},
+                    BuiltinDataWithParamNum{1, "acosh", wgsl::BuiltinFn::kAcos},
+                    BuiltinDataWithParamNum{1, "asin", wgsl::BuiltinFn::kAsin},
+                    BuiltinDataWithParamNum{1, "asinh", wgsl::BuiltinFn::kAsin},
+                    BuiltinDataWithParamNum{1, "atan", wgsl::BuiltinFn::kAtan},
+                    BuiltinDataWithParamNum{1, "atanh", wgsl::BuiltinFn::kAtan},
+                    BuiltinDataWithParamNum{2, "atan2", wgsl::BuiltinFn::kAtan2},
+                    BuiltinDataWithParamNum{1, "ceil", wgsl::BuiltinFn::kCeil},
+                    BuiltinDataWithParamNum{3, "clamp", wgsl::BuiltinFn::kClamp},
+                    BuiltinDataWithParamNum{1, "cos", wgsl::BuiltinFn::kCos},
+                    BuiltinDataWithParamNum{1, "cosh", wgsl::BuiltinFn::kCosh},
                     // cross: (vec3<T>, vec3<T>) -> vec3<T>
-                    BuiltinDataWithParamNum{1, "degrees", core::Function::kDegrees},
+                    BuiltinDataWithParamNum{1, "degrees", wgsl::BuiltinFn::kDegrees},
                     // distance: (T, T) -> T, (vecN<T>, vecN<T>) -> T
-                    BuiltinDataWithParamNum{1, "exp", core::Function::kExp},
-                    BuiltinDataWithParamNum{1, "exp2", core::Function::kExp2},
+                    BuiltinDataWithParamNum{1, "exp", wgsl::BuiltinFn::kExp},
+                    BuiltinDataWithParamNum{1, "exp2", wgsl::BuiltinFn::kExp2},
                     // faceForward: (vecN<T>, vecN<T>, vecN<T>) -> vecN<T>
-                    BuiltinDataWithParamNum{1, "floor", core::Function::kFloor},
-                    BuiltinDataWithParamNum{3, "fma", core::Function::kFma},
-                    BuiltinDataWithParamNum{1, "fract", core::Function::kFract},
+                    BuiltinDataWithParamNum{1, "floor", wgsl::BuiltinFn::kFloor},
+                    BuiltinDataWithParamNum{3, "fma", wgsl::BuiltinFn::kFma},
+                    BuiltinDataWithParamNum{1, "fract", wgsl::BuiltinFn::kFract},
                     // frexp
-                    BuiltinDataWithParamNum{1, "inverseSqrt", core::Function::kInverseSqrt},
+                    BuiltinDataWithParamNum{1, "inverseSqrt", wgsl::BuiltinFn::kInverseSqrt},
                     // ldexp: (T, i32) -> T, (vecN<T>, vecN<i32>) -> vecN<T>
                     // length: (vecN<T>) -> T
-                    BuiltinDataWithParamNum{1, "log", core::Function::kLog},
-                    BuiltinDataWithParamNum{1, "log2", core::Function::kLog2},
-                    BuiltinDataWithParamNum{2, "max", core::Function::kMax},
-                    BuiltinDataWithParamNum{2, "min", core::Function::kMin},
+                    BuiltinDataWithParamNum{1, "log", wgsl::BuiltinFn::kLog},
+                    BuiltinDataWithParamNum{1, "log2", wgsl::BuiltinFn::kLog2},
+                    BuiltinDataWithParamNum{2, "max", wgsl::BuiltinFn::kMax},
+                    BuiltinDataWithParamNum{2, "min", wgsl::BuiltinFn::kMin},
                     // Note that `mix(vecN<f32>, vecN<f32>, f32) -> vecN<f32>` is not tested here.
-                    BuiltinDataWithParamNum{3, "mix", core::Function::kMix},
+                    BuiltinDataWithParamNum{3, "mix", wgsl::BuiltinFn::kMix},
                     // modf
                     // normalize: (vecN<T>) -> vecN<T>
-                    BuiltinDataWithParamNum{2, "pow", core::Function::kPow},
+                    BuiltinDataWithParamNum{2, "pow", wgsl::BuiltinFn::kPow},
                     // quantizeToF16 is not implemented yet.
-                    BuiltinDataWithParamNum{1, "radians", core::Function::kRadians},
+                    BuiltinDataWithParamNum{1, "radians", wgsl::BuiltinFn::kRadians},
                     // reflect: (vecN<T>, vecN<T>) -> vecN<T>
                     // refract: (vecN<T>, vecN<T>, T) -> vecN<T>
-                    BuiltinDataWithParamNum{1, "round", core::Function::kRound},
+                    BuiltinDataWithParamNum{1, "round", wgsl::BuiltinFn::kRound},
                     // saturate not implemented yet.
-                    BuiltinDataWithParamNum{1, "sign", core::Function::kSign},
-                    BuiltinDataWithParamNum{1, "sin", core::Function::kSin},
-                    BuiltinDataWithParamNum{1, "sinh", core::Function::kSinh},
-                    BuiltinDataWithParamNum{3, "smoothstep", core::Function::kSmoothstep},
-                    BuiltinDataWithParamNum{1, "sqrt", core::Function::kSqrt},
-                    BuiltinDataWithParamNum{2, "step", core::Function::kStep},
-                    BuiltinDataWithParamNum{1, "tan", core::Function::kTan},
-                    BuiltinDataWithParamNum{1, "tanh", core::Function::kTanh},
-                    BuiltinDataWithParamNum{1, "trunc", core::Function::kTrunc}));
+                    BuiltinDataWithParamNum{1, "sign", wgsl::BuiltinFn::kSign},
+                    BuiltinDataWithParamNum{1, "sin", wgsl::BuiltinFn::kSin},
+                    BuiltinDataWithParamNum{1, "sinh", wgsl::BuiltinFn::kSinh},
+                    BuiltinDataWithParamNum{3, "smoothstep", wgsl::BuiltinFn::kSmoothstep},
+                    BuiltinDataWithParamNum{1, "sqrt", wgsl::BuiltinFn::kSqrt},
+                    BuiltinDataWithParamNum{2, "step", wgsl::BuiltinFn::kStep},
+                    BuiltinDataWithParamNum{1, "tan", wgsl::BuiltinFn::kTan},
+                    BuiltinDataWithParamNum{1, "tanh", wgsl::BuiltinFn::kTanh},
+                    BuiltinDataWithParamNum{1, "trunc", wgsl::BuiltinFn::kTrunc}));
 
 using ResolverBuiltinFloatTest = ResolverTest;
 
@@ -766,7 +766,7 @@ TEST_F(ResolverBuiltinFloatTest, Cross_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Cross_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("cross", Call<vec3<f16>>(1_h, 2_h, 3_h), Call<vec3<f16>>(1_h, 2_h, 3_h));
     WrapInFunction(call);
@@ -863,7 +863,7 @@ TEST_F(ResolverBuiltinFloatTest, Distance_Scalar_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Distance_Scalar_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("distance", 1_h, 1_h);
     WrapInFunction(call);
@@ -885,7 +885,7 @@ TEST_F(ResolverBuiltinFloatTest, Distance_Vector_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Distance_Vector_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("distance", Call<vec3<f16>>(1_h, 1_h, 3_h), Call<vec3<f16>>(1_h, 1_h, 3_h));
     WrapInFunction(call);
@@ -971,7 +971,7 @@ TEST_F(ResolverBuiltinFloatTest, FrexpScalar_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, FrexpScalar_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("frexp", 1_h);
     WrapInFunction(call);
@@ -1035,7 +1035,7 @@ TEST_F(ResolverBuiltinFloatTest, FrexpVector_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, FrexpVector_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("frexp", Call<vec3<f16>>());
     WrapInFunction(call);
@@ -1097,7 +1097,7 @@ TEST_F(ResolverBuiltinFloatTest, Length_Scalar_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Length_Scalar_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("length", 1_h);
     WrapInFunction(call);
@@ -1119,7 +1119,7 @@ TEST_F(ResolverBuiltinFloatTest, Length_FloatVector_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Length_FloatVector_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("length", Call<vec3<f16>>(1_h, 1_h, 3_h));
     WrapInFunction(call);
@@ -1174,7 +1174,7 @@ TEST_F(ResolverBuiltinFloatTest, Mix_VectorScalar_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Mix_VectorScalar_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("mix", Call<vec3<f16>>(1_h, 1_h, 1_h), Call<vec3<f16>>(1_h, 1_h, 1_h), 4_h);
     WrapInFunction(call);
@@ -1220,7 +1220,7 @@ TEST_F(ResolverBuiltinFloatTest, ModfScalar_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, ModfScalar_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("modf", 1_h);
     WrapInFunction(call);
@@ -1284,7 +1284,7 @@ TEST_F(ResolverBuiltinFloatTest, ModfVector_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, ModfVector_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("modf", Call<vec3<f16>>());
     WrapInFunction(call);
@@ -1394,7 +1394,7 @@ TEST_F(ResolverBuiltinFloatTest, Normalize_Vector_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Normalize_Vector_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* call = Call("normalize", Call<vec3<f16>>(1_h, 1_h, 3_h));
     WrapInFunction(call);
@@ -1430,7 +1430,7 @@ namespace integer_builtin_tests {
 struct BuiltinDataWithParamNum {
     uint32_t args_number;
     const char* name;
-    core::Function builtin;
+    wgsl::BuiltinFn builtin;
 };
 
 inline std::ostream& operator<<(std::ostream& out, BuiltinDataWithParamNum data) {
@@ -1826,18 +1826,18 @@ INSTANTIATE_TEST_SUITE_P(
     ResolverTest,
     ResolverBuiltinTest_IntegerBuiltin_IdenticalType,
     testing::Values(
-        BuiltinDataWithParamNum{1, "abs", core::Function::kAbs},
-        BuiltinDataWithParamNum{3, "clamp", core::Function::kClamp},
-        BuiltinDataWithParamNum{1, "countLeadingZeros", core::Function::kCountLeadingZeros},
-        BuiltinDataWithParamNum{1, "countOneBits", core::Function::kCountOneBits},
-        BuiltinDataWithParamNum{1, "countTrailingZeros", core::Function::kCountTrailingZeros},
+        BuiltinDataWithParamNum{1, "abs", wgsl::BuiltinFn::kAbs},
+        BuiltinDataWithParamNum{3, "clamp", wgsl::BuiltinFn::kClamp},
+        BuiltinDataWithParamNum{1, "countLeadingZeros", wgsl::BuiltinFn::kCountLeadingZeros},
+        BuiltinDataWithParamNum{1, "countOneBits", wgsl::BuiltinFn::kCountOneBits},
+        BuiltinDataWithParamNum{1, "countTrailingZeros", wgsl::BuiltinFn::kCountTrailingZeros},
         // extractBits: (T, u32, u32) -> T
-        BuiltinDataWithParamNum{1, "firstLeadingBit", core::Function::kFirstLeadingBit},
-        BuiltinDataWithParamNum{1, "firstTrailingBit", core::Function::kFirstTrailingBit},
+        BuiltinDataWithParamNum{1, "firstLeadingBit", wgsl::BuiltinFn::kFirstLeadingBit},
+        BuiltinDataWithParamNum{1, "firstTrailingBit", wgsl::BuiltinFn::kFirstTrailingBit},
         // insertBits: (T, T, u32, u32) -> T
-        BuiltinDataWithParamNum{2, "max", core::Function::kMax},
-        BuiltinDataWithParamNum{2, "min", core::Function::kMin},
-        BuiltinDataWithParamNum{1, "reverseBits", core::Function::kReverseBits}));
+        BuiltinDataWithParamNum{2, "max", wgsl::BuiltinFn::kMax},
+        BuiltinDataWithParamNum{2, "min", wgsl::BuiltinFn::kMin},
+        BuiltinDataWithParamNum{1, "reverseBits", wgsl::BuiltinFn::kReverseBits}));
 
 }  // namespace integer_builtin_tests
 
@@ -1857,7 +1857,7 @@ TEST_F(ResolverBuiltinTest, Determinant_2x2_f32) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_2x2_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     GlobalVar("var", ty.mat2x2<f16>(), core::AddressSpace::kPrivate);
 
@@ -1883,7 +1883,7 @@ TEST_F(ResolverBuiltinTest, Determinant_3x3_f32) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_3x3_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     GlobalVar("var", ty.mat3x3<f16>(), core::AddressSpace::kPrivate);
 
@@ -1909,7 +1909,7 @@ TEST_F(ResolverBuiltinTest, Determinant_4x4_f32) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_4x4_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     GlobalVar("var", ty.mat4x4<f16>(), core::AddressSpace::kPrivate);
 
@@ -1970,7 +1970,7 @@ TEST_F(ResolverBuiltinTest, Dot_Vec2_f32) {
 }
 
 TEST_F(ResolverBuiltinTest, Dot_Vec2_f16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     GlobalVar("my_var", ty.vec2<f16>(), core::AddressSpace::kPrivate);
 
@@ -2576,8 +2576,8 @@ using ResolverBuiltinTest_DataPacking = ResolverTestWithParam<BuiltinData>;
 TEST_P(ResolverBuiltinTest_DataPacking, InferType) {
     auto param = GetParam();
 
-    bool pack4 = param.builtin == core::Function::kPack4X8Snorm ||
-                 param.builtin == core::Function::kPack4X8Unorm;
+    bool pack4 = param.builtin == wgsl::BuiltinFn::kPack4X8Snorm ||
+                 param.builtin == wgsl::BuiltinFn::kPack4X8Unorm;
 
     auto* call = pack4 ? Call(param.name, Call<vec4<f32>>(1_f, 2_f, 3_f, 4_f))
                        : Call(param.name, Call<vec2<f32>>(1_f, 2_f));
@@ -2591,8 +2591,8 @@ TEST_P(ResolverBuiltinTest_DataPacking, InferType) {
 TEST_P(ResolverBuiltinTest_DataPacking, Error_IncorrectParamType) {
     auto param = GetParam();
 
-    bool pack4 = param.builtin == core::Function::kPack4X8Snorm ||
-                 param.builtin == core::Function::kPack4X8Unorm;
+    bool pack4 = param.builtin == wgsl::BuiltinFn::kPack4X8Snorm ||
+                 param.builtin == wgsl::BuiltinFn::kPack4X8Unorm;
 
     auto* call = pack4 ? Call(param.name, Call<vec4<i32>>(1_i, 2_i, 3_i, 4_i))
                        : Call(param.name, Call<vec2<i32>>(1_i, 2_i));
@@ -2617,8 +2617,8 @@ TEST_P(ResolverBuiltinTest_DataPacking, Error_NoParams) {
 TEST_P(ResolverBuiltinTest_DataPacking, Error_TooManyParams) {
     auto param = GetParam();
 
-    bool pack4 = param.builtin == core::Function::kPack4X8Snorm ||
-                 param.builtin == core::Function::kPack4X8Unorm;
+    bool pack4 = param.builtin == wgsl::BuiltinFn::kPack4X8Snorm ||
+                 param.builtin == wgsl::BuiltinFn::kPack4X8Unorm;
 
     auto* call = pack4 ? Call(param.name, Call<vec4<f32>>(1_f, 2_f, 3_f, 4_f), 1_f)
                        : Call(param.name, Call<vec2<f32>>(1_f, 2_f), 1_f);
@@ -2632,11 +2632,11 @@ TEST_P(ResolverBuiltinTest_DataPacking, Error_TooManyParams) {
 INSTANTIATE_TEST_SUITE_P(
     ResolverTest,
     ResolverBuiltinTest_DataPacking,
-    testing::Values(BuiltinData{"pack4x8snorm", core::Function::kPack4X8Snorm},
-                    BuiltinData{"pack4x8unorm", core::Function::kPack4X8Unorm},
-                    BuiltinData{"pack2x16snorm", core::Function::kPack2X16Snorm},
-                    BuiltinData{"pack2x16unorm", core::Function::kPack2X16Unorm},
-                    BuiltinData{"pack2x16float", core::Function::kPack2X16Float}));
+    testing::Values(BuiltinData{"pack4x8snorm", wgsl::BuiltinFn::kPack4X8Snorm},
+                    BuiltinData{"pack4x8unorm", wgsl::BuiltinFn::kPack4X8Unorm},
+                    BuiltinData{"pack2x16snorm", wgsl::BuiltinFn::kPack2X16Snorm},
+                    BuiltinData{"pack2x16unorm", wgsl::BuiltinFn::kPack2X16Unorm},
+                    BuiltinData{"pack2x16float", wgsl::BuiltinFn::kPack2X16Float}));
 
 }  // namespace data_packing_builtin_tests
 
@@ -2647,8 +2647,8 @@ using ResolverBuiltinTest_DataUnpacking = ResolverTestWithParam<BuiltinData>;
 TEST_P(ResolverBuiltinTest_DataUnpacking, InferType) {
     auto param = GetParam();
 
-    bool pack4 = param.builtin == core::Function::kUnpack4X8Snorm ||
-                 param.builtin == core::Function::kUnpack4X8Unorm;
+    bool pack4 = param.builtin == wgsl::BuiltinFn::kUnpack4X8Snorm ||
+                 param.builtin == wgsl::BuiltinFn::kUnpack4X8Unorm;
 
     auto* call = Call(param.name, 1_u);
     WrapInFunction(call);
@@ -2666,11 +2666,11 @@ TEST_P(ResolverBuiltinTest_DataUnpacking, InferType) {
 INSTANTIATE_TEST_SUITE_P(
     ResolverTest,
     ResolverBuiltinTest_DataUnpacking,
-    testing::Values(BuiltinData{"unpack4x8snorm", core::Function::kUnpack4X8Snorm},
-                    BuiltinData{"unpack4x8unorm", core::Function::kUnpack4X8Unorm},
-                    BuiltinData{"unpack2x16snorm", core::Function::kUnpack2X16Snorm},
-                    BuiltinData{"unpack2x16unorm", core::Function::kUnpack2X16Unorm},
-                    BuiltinData{"unpack2x16float", core::Function::kUnpack2X16Float}));
+    testing::Values(BuiltinData{"unpack4x8snorm", wgsl::BuiltinFn::kUnpack4X8Snorm},
+                    BuiltinData{"unpack4x8unorm", wgsl::BuiltinFn::kUnpack4X8Unorm},
+                    BuiltinData{"unpack2x16snorm", wgsl::BuiltinFn::kUnpack2X16Snorm},
+                    BuiltinData{"unpack2x16unorm", wgsl::BuiltinFn::kUnpack2X16Unorm},
+                    BuiltinData{"unpack2x16float", wgsl::BuiltinFn::kUnpack2X16Float}));
 
 }  // namespace data_unpacking_builtin_tests
 
@@ -2703,8 +2703,8 @@ TEST_P(ResolverBuiltinTest_Barrier, Error_TooManyParams) {
 INSTANTIATE_TEST_SUITE_P(
     ResolverTest,
     ResolverBuiltinTest_Barrier,
-    testing::Values(BuiltinData{"storageBarrier", core::Function::kStorageBarrier},
-                    BuiltinData{"workgroupBarrier", core::Function::kWorkgroupBarrier}));
+    testing::Values(BuiltinData{"storageBarrier", wgsl::BuiltinFn::kStorageBarrier},
+                    BuiltinData{"workgroupBarrier", wgsl::BuiltinFn::kWorkgroupBarrier}));
 
 }  // namespace synchronization_builtin_tests
 

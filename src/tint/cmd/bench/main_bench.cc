@@ -107,9 +107,9 @@ std::variant<tint::Source::File, Error> LoadInputFile(std::string name) {
             if (!program.IsValid()) {
                 return Error{program.Diagnostics().str()};
             }
-            auto result = tint::wgsl::writer::Generate(&program, {});
+            auto result = tint::wgsl::writer::Generate(program, {});
             if (!result) {
-                return Error{result.Failure()};
+                return Error{result.Failure().reason.str()};
             }
             return tint::Source::File(path, result->wgsl);
         }

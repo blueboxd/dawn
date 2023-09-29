@@ -17,10 +17,10 @@
 #include <memory>
 #include <utility>
 
-#include "src/tint/lang/core/ir/transform/binding_remapper.h"
 #include "src/tint/lang/spirv/writer/ast_printer/ast_printer.h"
 #include "src/tint/lang/spirv/writer/printer/printer.h"
 #include "src/tint/lang/spirv/writer/raise/raise.h"
+#include "src/tint/lang/wgsl/reader/lower/lower.h"
 #include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 
 // Included by 'ast_printer.h', included again here for './tools/run gen' track the dependency.
@@ -32,9 +32,9 @@ Output::Output() = default;
 Output::~Output() = default;
 Output::Output(const Output&) = default;
 
-Result<Output, std::string> Generate(const Program* program, const Options& options) {
-    if (!program->IsValid()) {
-        return std::string("input program is not valid");
+Result<Output> Generate(const Program& program, const Options& options) {
+    if (!program.IsValid()) {
+        return Failure{program.Diagnostics()};
     }
 
     bool zero_initialize_workgroup_memory =
@@ -46,25 +46,23 @@ Result<Output, std::string> Generate(const Program* program, const Options& opti
         // Convert the AST program to an IR module.
         auto converted = wgsl::reader::ProgramToIR(program);
         if (!converted) {
-            return "IR converter: " + converted.Failure();
+            return converted.Failure();
         }
 
         auto ir = converted.Move();
 
-        // Apply transforms as required by writer options.
-        auto remapper = core::ir::transform::BindingRemapper(&ir, options.binding_remapper_options);
-        if (!remapper) {
-            return remapper.Failure();
+        // Lower from WGSL-dialect to core-dialect
+        if (auto res = wgsl::reader::Lower(ir); !res) {
+            return res.Failure();
         }
 
-        // Raise the IR to the SPIR-V dialect.
-        auto raised = raise::Raise(&ir, options);
-        if (!raised) {
-            return std::move(raised.Failure());
+        // Raise from core-dialect to SPIR-V-dialect.
+        if (auto res = raise::Raise(ir, options); !res) {
+            return std::move(res.Failure());
         }
 
         // Generate the SPIR-V code.
-        auto impl = std::make_unique<Printer>(&ir, zero_initialize_workgroup_memory);
+        auto impl = std::make_unique<Printer>(ir, zero_initialize_workgroup_memory);
         auto spirv = impl->Generate();
         if (!spirv) {
             return std::move(spirv.Failure());
@@ -74,15 +72,15 @@ Result<Output, std::string> Generate(const Program* program, const Options& opti
         // Sanitize the program.
         auto sanitized_result = Sanitize(program, options);
         if (!sanitized_result.program.IsValid()) {
-            return sanitized_result.program.Diagnostics().str();
+            return Failure{sanitized_result.program.Diagnostics()};
         }
 
         // Generate the SPIR-V code.
         auto impl = std::make_unique<ASTPrinter>(
-            &sanitized_result.program, zero_initialize_workgroup_memory,
+            sanitized_result.program, zero_initialize_workgroup_memory,
             options.experimental_require_subgroup_uniform_control_flow);
         if (!impl->Generate()) {
-            return impl->Diagnostics().str();
+            return Failure{impl->Diagnostics()};
         }
         output.spirv = std::move(impl->Result());
     }

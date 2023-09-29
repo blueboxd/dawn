@@ -30,17 +30,17 @@ class ErrorSharedTextureMemory : public SharedTextureMemoryBase {
     ErrorSharedTextureMemory(DeviceBase* device, const SharedTextureMemoryDescriptor* descriptor)
         : SharedTextureMemoryBase(device, descriptor, ObjectBase::kError) {}
 
-    Ref<SharedTextureMemoryContents> CreateContents() override { UNREACHABLE(); }
+    Ref<SharedTextureMemoryContents> CreateContents() override { DAWN_UNREACHABLE(); }
     ResultOrError<Ref<TextureBase>> CreateTextureImpl(
         const TextureDescriptor* descriptor) override {
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
     }
     MaybeError BeginAccessImpl(TextureBase* texture,
                                const BeginAccessDescriptor* descriptor) override {
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
     }
     ResultOrError<FenceAndSignalValue> EndAccessImpl(TextureBase* texture) override {
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
     }
 };
 
@@ -71,10 +71,10 @@ SharedTextureMemoryBase::SharedTextureMemoryBase(DeviceBase* device,
     : ApiObjectBase(device, label), mProperties(properties) {
     const Format& internalFormat = device->GetValidInternalFormat(properties.format);
     if (!internalFormat.supportsStorageUsage) {
-        ASSERT(!(mProperties.usage & wgpu::TextureUsage::StorageBinding));
+        DAWN_ASSERT(!(mProperties.usage & wgpu::TextureUsage::StorageBinding));
     }
     if (!internalFormat.isRenderable) {
-        ASSERT(!(mProperties.usage & wgpu::TextureUsage::RenderAttachment));
+        DAWN_ASSERT(!(mProperties.usage & wgpu::TextureUsage::RenderAttachment));
     }
     GetObjectTrackingList()->Track(this);
 }
@@ -86,7 +86,7 @@ ObjectType SharedTextureMemoryBase::GetType() const {
 void SharedTextureMemoryBase::DestroyImpl() {}
 
 void SharedTextureMemoryBase::Initialize() {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     mContents = CreateContents();
 }
 

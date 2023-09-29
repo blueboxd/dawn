@@ -16,6 +16,8 @@
 
 #include "dawn/common/Math.h"
 #include "dawn/common/Platform.h"
+#include "dawn/native/CallbackTaskManager.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/CommandBuffer.h"
 #include "dawn/native/metal/CommandRecordingContext.h"
 #include "dawn/native/metal/DeviceMTL.h"
@@ -31,7 +33,15 @@ static constexpr uint32_t kMinUniformOrStorageBufferAlignment = 16u;
 // static
 ResultOrError<Ref<Buffer>> Buffer::Create(Device* device, const BufferDescriptor* descriptor) {
     Ref<Buffer> buffer = AcquireRef(new Buffer(device, descriptor));
-    DAWN_TRY(buffer->Initialize(descriptor->mappedAtCreation));
+
+    const BufferHostMappedPointer* hostMappedDesc = nullptr;
+    FindInChain(descriptor->nextInChain, &hostMappedDesc);
+
+    if (hostMappedDesc != nullptr) {
+        DAWN_TRY(buffer->InitializeHostMapped(hostMappedDesc));
+    } else {
+        DAWN_TRY(buffer->Initialize(descriptor->mappedAtCreation));
+    }
     return std::move(buffer);
 }
 
@@ -65,7 +75,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
     // buffer must be aligned to the largest alignment of its members.
     if (GetUsage() &
         (wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage | kInternalStorageBuffer)) {
-        ASSERT(IsAligned(kMinUniformOrStorageBufferAlignment, alignment));
+        DAWN_ASSERT(IsAligned(kMinUniformOrStorageBufferAlignment, alignment));
         alignment = kMinUniformOrStorageBufferAlignment;
     }
 
@@ -123,6 +133,38 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
             ClearBuffer(commandContext, 0, clearOffset, clearSize);
         }
     }
+    return {};
+}
+
+// static
+MaybeError Buffer::InitializeHostMapped(const BufferHostMappedPointer* hostMappedDesc) {
+    if (GetSize() > std::numeric_limits<NSUInteger>::max()) {
+        return DAWN_OUT_OF_MEMORY_ERROR("Buffer allocation is too large");
+    }
+
+    mAllocatedSize = GetSize();
+
+    Ref<DeviceBase> deviceRef = GetDevice();
+    wgpu::Callback callback = hostMappedDesc->disposeCallback;
+    void* userdata = hostMappedDesc->userdata;
+    auto dispose = ^(void*, NSUInteger) {
+        deviceRef->GetCallbackTaskManager()->AddCallbackTask(
+            [callback, userdata] { callback(userdata); });
+    };
+
+    mMtlBuffer.Acquire([ToBackend(GetDevice())->GetMTLDevice()
+        newBufferWithBytesNoCopy:hostMappedDesc->pointer
+                          length:GetSize()
+                         options:MTLResourceCPUCacheModeDefaultCache
+                     deallocator:dispose]);
+    if (mMtlBuffer == nil) {
+        dispose(hostMappedDesc->pointer, GetSize());
+        return DAWN_INTERNAL_ERROR("Buffer allocation failed");
+    }
+
+    // Data is assumed to be initialized since it is externally allocated.
+    SetIsDataInitialized();
+    SetLabelImpl();
     return {};
 }
 
@@ -206,7 +248,7 @@ bool Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* command
 }
 
 void Buffer::InitializeToZero(CommandRecordingContext* commandContext) {
-    ASSERT(NeedsInitialization());
+    DAWN_ASSERT(NeedsInitialization());
 
     ClearBuffer(commandContext, uint8_t(0u));
 
@@ -218,9 +260,9 @@ void Buffer::ClearBuffer(CommandRecordingContext* commandContext,
                          uint8_t clearValue,
                          uint64_t offset,
                          uint64_t size) {
-    ASSERT(commandContext != nullptr);
+    DAWN_ASSERT(commandContext != nullptr);
     size = size > 0 ? size : GetAllocatedSize();
-    ASSERT(size > 0);
+    DAWN_ASSERT(size > 0);
     TrackUsage();
     [commandContext->EnsureBlit() fillBuffer:mMtlBuffer.Get()
                                        range:NSMakeRange(offset, size)

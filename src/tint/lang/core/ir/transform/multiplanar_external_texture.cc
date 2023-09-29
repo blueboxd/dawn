@@ -35,16 +35,16 @@ struct State {
     const ExternalTextureOptions& options;
 
     /// The IR module.
-    Module* ir = nullptr;
+    Module& ir;
 
     /// The IR builder.
-    Builder b{*ir};
+    Builder b{ir};
 
     /// The type manager.
-    core::type::Manager& ty{ir->Types()};
+    core::type::Manager& ty{ir.Types()};
 
     /// The symbol table.
-    SymbolTable& sym{ir->symbols};
+    SymbolTable& sym{ir.symbols};
 
     /// The gamma transfer parameters structure.
     const core::type::Struct* gamma_transfer_params_struct = nullptr;
@@ -64,9 +64,9 @@ struct State {
     /// Process the module.
     void Process() {
         // Find module-scope variables that need to be replaced.
-        if (ir->root_block) {
+        if (!ir.root_block->IsEmpty()) {
             Vector<Instruction*, 4> to_remove;
-            for (auto inst : *ir->root_block) {
+            for (auto inst : *ir.root_block) {
                 auto* var = inst->As<Var>();
                 if (!var) {
                     continue;
@@ -83,7 +83,7 @@ struct State {
         }
 
         // Find function parameters that need to be replaced.
-        for (auto* func : ir->functions) {
+        for (auto* func : ir.functions) {
             for (uint32_t index = 0; index < func->Params().Length(); index++) {
                 auto* param = func->Params()[index];
                 if (param->Type()->Is<core::type::ExternalTexture>()) {
@@ -101,7 +101,7 @@ struct State {
     /// Replace an external texture variable declaration.
     /// @param old_var the variable declaration to replace
     void ReplaceVar(Var* old_var) {
-        auto name = ir->NameOf(old_var);
+        auto name = ir.NameOf(old_var);
         auto bp = old_var->BindingPoint();
         auto itr = options.bindings_map.find(bp.value());
         TINT_ASSERT_OR_RETURN(itr != options.bindings_map.end());
@@ -112,7 +112,7 @@ struct State {
         plane_0->SetBindingPoint(bp->group, bp->binding);
         plane_0->InsertBefore(old_var);
         if (name) {
-            ir->SetName(plane_0, name.Name() + "_plane0");
+            ir.SetName(plane_0, name.Name() + "_plane0");
         }
 
         // Create a sampled texture for the second plane.
@@ -121,7 +121,7 @@ struct State {
                                  new_binding_points.plane_1.binding);
         plane_1->InsertBefore(old_var);
         if (name) {
-            ir->SetName(plane_1, name.Name() + "_plane1");
+            ir.SetName(plane_1, name.Name() + "_plane1");
         }
 
         // Create a uniform buffer for the external texture parameters.
@@ -130,7 +130,7 @@ struct State {
                                                  new_binding_points.params.binding);
         external_texture_params->InsertBefore(old_var);
         if (name) {
-            ir->SetName(external_texture_params, name.Name() + "_params");
+            ir.SetName(external_texture_params, name.Name() + "_params");
         }
 
         // Replace all uses of the old variable with the new ones.
@@ -143,24 +143,24 @@ struct State {
     /// @param old_param the function parameter to replace
     /// @param index the index of the function parameter
     void ReplaceParameter(Function* func, FunctionParam* old_param, uint32_t index) {
-        auto name = ir->NameOf(old_param);
+        auto name = ir.NameOf(old_param);
 
         // Create a sampled texture for the first plane.
         auto* plane_0 = b.FunctionParam(SampledTexture());
         if (name) {
-            ir->SetName(plane_0, name.Name() + "_plane0");
+            ir.SetName(plane_0, name.Name() + "_plane0");
         }
 
         // Create a sampled texture for the second plane.
         auto* plane_1 = b.FunctionParam(SampledTexture());
         if (name) {
-            ir->SetName(plane_1, name.Name() + "_plane1");
+            ir.SetName(plane_1, name.Name() + "_plane1");
         }
 
         // Create the external texture parameters struct.
         auto* external_texture_params = b.FunctionParam(ExternalTextureParams());
         if (name) {
-            ir->SetName(external_texture_params, name.Name() + "_params");
+            ir.SetName(external_texture_params, name.Name() + "_params");
         }
 
         Vector<FunctionParam*, 4> new_params;
@@ -202,10 +202,10 @@ struct State {
                     load->Destroy();
                 },
                 [&](CoreBuiltinCall* call) {
-                    if (call->Func() == core::Function::kTextureDimensions) {
+                    if (call->Func() == core::BuiltinFn::kTextureDimensions) {
                         // Use the first plane for the `textureDimensions()` call.
                         call->SetOperand(use.operand_index, plane_0);
-                    } else if (call->Func() == core::Function::kTextureLoad) {
+                    } else if (call->Func() == core::BuiltinFn::kTextureLoad) {
                         // Convert the coordinates to unsigned integers if necessary.
                         auto* coords = call->Args()[1];
                         if (coords->Type()->is_signed_integer_vector()) {
@@ -220,7 +220,7 @@ struct State {
                         helper->InsertBefore(call);
                         call->Result()->ReplaceAllUsesWith(helper->Result());
                         call->Destroy();
-                    } else if (call->Func() == core::Function::kTextureSampleBaseClampToEdge) {
+                    } else if (call->Func() == core::BuiltinFn::kTextureSampleBaseClampToEdge) {
                         // Call the `TextureSampleExternal()` helper function.
                         auto* sampler = call->Args()[1];
                         auto* coords = call->Args()[2];
@@ -320,17 +320,17 @@ struct State {
             auto* F = b.Access(ty.f32(), params, 6_u);
             auto* G_splat = b.Construct(vec3f, G);
             auto* D_splat = b.Construct(vec3f, D);
-            auto* abs_v = b.Call(vec3f, core::Function::kAbs, v);
-            auto* sign_v = b.Call(vec3f, core::Function::kSign, v);
+            auto* abs_v = b.Call(vec3f, core::BuiltinFn::kAbs, v);
+            auto* sign_v = b.Call(vec3f, core::BuiltinFn::kSign, v);
             auto* cond = b.LessThan(ty.vec3<bool>(), abs_v, D_splat);
             auto* t = b.Multiply(vec3f, sign_v, b.Add(vec3f, b.Multiply(vec3f, C, abs_v), F));
             auto* f =
                 b.Multiply(vec3f, sign_v,
                            b.Add(vec3f,
-                                 b.Call(vec3f, core::Function::kPow,
+                                 b.Call(vec3f, core::BuiltinFn::kPow,
                                         b.Add(vec3f, b.Multiply(vec3f, A, abs_v), B), G_splat),
                                  E));
-            b.Return(gamma_correction, b.Call(vec3f, core::Function::kSelect, f, t, cond));
+            b.Return(gamma_correction, b.Call(vec3f, core::BuiltinFn::kSelect, f, t, cond));
         });
 
         return gamma_correction;
@@ -390,7 +390,7 @@ struct State {
             if_planes_eq_1->SetResults(rgb_result, alpha_result);
             b.Append(if_planes_eq_1->True(), [&] {
                 // Load the texel from the first plane and split into separate rgb and a values.
-                auto* texel = b.Call(vec4f, core::Function::kTextureLoad, plane_0, coords, 0_u);
+                auto* texel = b.Call(vec4f, core::BuiltinFn::kTextureLoad, plane_0, coords, 0_u);
                 auto* rgb = b.Swizzle(vec3f, texel, {0u, 1u, 2u});
                 auto* a = b.Access(ty.f32(), texel, 3_u);
                 b.ExitIf(if_planes_eq_1, rgb, a);
@@ -398,14 +398,14 @@ struct State {
             b.Append(if_planes_eq_1->False(), [&] {
                 // Load the y value from the first plane.
                 auto* y = b.Access(
-                    ty.f32(), b.Call(vec4f, core::Function::kTextureLoad, plane_0, coords, 0_u),
+                    ty.f32(), b.Call(vec4f, core::BuiltinFn::kTextureLoad, plane_0, coords, 0_u),
                     0_u);
 
                 // Load the uv value from the second plane.
                 auto* coord_uv =
                     b.ShiftRight(ty.vec2<u32>(), coords, b.Splat(ty.vec2<u32>(), 1_u, 2u));
                 auto* uv = b.Swizzle(
-                    vec2f, b.Call(vec4f, core::Function::kTextureLoad, plane_1, coord_uv, 0_u),
+                    vec2f, b.Call(vec4f, core::BuiltinFn::kTextureLoad, plane_1, coord_uv, 0_u),
                     {0u, 1u});
 
                 // Convert the combined yuv value into rgb and set the alpha to 1.0.
@@ -498,16 +498,16 @@ struct State {
             auto* modified_coords =
                 b.Multiply(vec2f, transformation_matrix, b.Construct(vec3f, coords, 1_f));
             auto* plane0_dims = b.Convert(
-                vec2f, b.Call(ty.vec2<u32>(), core::Function::kTextureDimensions, plane_0));
+                vec2f, b.Call(ty.vec2<u32>(), core::BuiltinFn::kTextureDimensions, plane_0));
             auto* plane0_half_texel = b.Divide(vec2f, b.Splat(vec2f, 0.5_f, 2u), plane0_dims);
             auto* plane0_clamped =
-                b.Call(vec2f, core::Function::kClamp, modified_coords, plane0_half_texel,
+                b.Call(vec2f, core::BuiltinFn::kClamp, modified_coords, plane0_half_texel,
                        b.Subtract(vec2f, 1_f, plane0_half_texel));
             auto* plane1_dims = b.Convert(
-                vec2f, b.Call(ty.vec2<u32>(), core::Function::kTextureDimensions, plane_1));
+                vec2f, b.Call(ty.vec2<u32>(), core::BuiltinFn::kTextureDimensions, plane_1));
             auto* plane1_half_texel = b.Divide(vec2f, b.Splat(vec2f, 0.5_f, 2u), plane1_dims);
             auto* plane1_clamped =
-                b.Call(vec2f, core::Function::kClamp, modified_coords, plane1_half_texel,
+                b.Call(vec2f, core::BuiltinFn::kClamp, modified_coords, plane1_half_texel,
                        b.Subtract(vec2f, 1_f, plane1_half_texel));
 
             auto* rgb_result = b.InstructionResult(vec3f);
@@ -517,7 +517,7 @@ struct State {
             if_planes_eq_1->SetResults(rgb_result, alpha_result);
             b.Append(if_planes_eq_1->True(), [&] {
                 // Sample the texel from the first plane and split into separate rgb and a values.
-                auto* texel = b.Call(vec4f, core::Function::kTextureSampleLevel, plane_0, sampler,
+                auto* texel = b.Call(vec4f, core::BuiltinFn::kTextureSampleLevel, plane_0, sampler,
                                      plane0_clamped, 0_f);
                 auto* rgb = b.Swizzle(vec3f, texel, {0u, 1u, 2u});
                 auto* a = b.Access(ty.f32(), texel, 3_u);
@@ -526,13 +526,13 @@ struct State {
             b.Append(if_planes_eq_1->False(), [&] {
                 // Sample the y value from the first plane.
                 auto* y = b.Access(ty.f32(),
-                                   b.Call(vec4f, core::Function::kTextureSampleLevel, plane_0,
+                                   b.Call(vec4f, core::BuiltinFn::kTextureSampleLevel, plane_0,
                                           sampler, plane0_clamped, 0_f),
                                    0_u);
 
                 // Sample the uv value from the second plane.
                 auto* uv = b.Swizzle(vec2f,
-                                     b.Call(vec4f, core::Function::kTextureSampleLevel, plane_1,
+                                     b.Call(vec4f, core::BuiltinFn::kTextureSampleLevel, plane_1,
                                             sampler, plane1_clamped, 0_f),
                                      {0u, 1u});
 
@@ -568,9 +568,8 @@ struct State {
 
 }  // namespace
 
-Result<SuccessType, std::string> MultiplanarExternalTexture(Module* ir,
-                                                            const ExternalTextureOptions& options) {
-    auto result = ValidateAndDumpIfNeeded(*ir, "MultiplanarExternalTexture transform");
+Result<SuccessType> MultiplanarExternalTexture(Module& ir, const ExternalTextureOptions& options) {
+    auto result = ValidateAndDumpIfNeeded(ir, "MultiplanarExternalTexture transform");
     if (!result) {
         return result;
     }

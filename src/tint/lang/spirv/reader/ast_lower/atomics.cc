@@ -28,6 +28,7 @@
 #include "src/tint/lang/wgsl/sem/block_statement.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/index_accessor_expression.h"
+#include "src/tint/lang/wgsl/sem/load.h"
 #include "src/tint/lang/wgsl/sem/member_accessor_expression.h"
 #include "src/tint/lang/wgsl/sem/statement.h"
 #include "src/tint/utils/containers/map.h"
@@ -52,11 +53,11 @@ struct Atomics::State {
     };
 
     /// The source program
-    const Program* const src;
+    const Program& src;
     /// The target program builder
     ProgramBuilder b;
     /// The clone context
-    program::CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx = {&b, &src, /* auto_clone_symbols */ true};
     std::unordered_map<const core::type::Struct*, ForkedStruct> forked_structs;
     std::unordered_set<const sem::Variable*> atomic_variables;
     UniqueVector<const sem::ValueExpression*, 8> atomic_expressions;
@@ -64,7 +65,7 @@ struct Atomics::State {
   public:
     /// Constructor
     /// @param program the source program
-    explicit State(const Program* program) : src(program) {}
+    explicit State(const Program& program) : src(program) {}
 
     /// Runs the transform
     /// @returns the new program or SkipTransform if the transform is not required
@@ -86,7 +87,7 @@ struct Atomics::State {
                     out_args[0] = b.AddressOf(out_args[0]);
 
                     // Replace all callsites of this stub to a call to the real builtin
-                    if (stub->builtin == core::Function::kAtomicCompareExchangeWeak) {
+                    if (stub->builtin == wgsl::BuiltinFn::kAtomicCompareExchangeWeak) {
                         // atomicCompareExchangeWeak returns a struct, so insert a call to it above
                         // the current statement, and replace the current call with the struct's
                         // `old_value` member.
@@ -94,14 +95,14 @@ struct Atomics::State {
                         auto old_value = b.Symbols().New("old_value");
                         auto old_value_decl = b.Decl(b.Let(
                             old_value,
-                            b.MemberAccessor(b.Call(core::str(stub->builtin), std::move(out_args)),
+                            b.MemberAccessor(b.Call(wgsl::str(stub->builtin), std::move(out_args)),
                                              "old_value")));
                         ctx.InsertBefore(block->statements, call->Stmt()->Declaration(),
                                          old_value_decl);
                         ctx.Replace(call->Declaration(), b.Expr(old_value));
                     } else {
                         ctx.Replace(call->Declaration(),
-                                    b.Call(core::str(stub->builtin), std::move(out_args)));
+                                    b.Call(wgsl::str(stub->builtin), std::move(out_args)));
                     }
 
                     // Keep track of this expression. We'll need to modify the root identifier /
@@ -247,48 +248,26 @@ struct Atomics::State {
             return false;
         };
 
-        // Look for loads and stores via assignments and decls of atomic variables we've collected
-        // so far, and replace them with atomicLoad and atomicStore.
-        for (auto* atomic_var : atomic_variables) {
-            for (auto* vu : atomic_var->Users()) {
-                Switch(
-                    vu->Stmt()->Declaration(),
-                    [&](const ast::AssignmentStatement* assign) {
-                        auto* sem_lhs = ctx.src->Sem().GetVal(assign->lhs);
-                        if (is_ref_to_atomic_var(sem_lhs)) {
-                            ctx.Replace(assign, [=] {
-                                auto* lhs = ctx.CloneWithoutTransform(assign->lhs);
-                                auto* rhs = ctx.CloneWithoutTransform(assign->rhs);
-                                auto* call = b.Call(core::str(core::Function::kAtomicStore),
-                                                    b.AddressOf(lhs), rhs);
-                                return b.CallStmt(call);
-                            });
-                            return;
-                        }
-
-                        auto sem_rhs = ctx.src->Sem().GetVal(assign->rhs);
-                        if (is_ref_to_atomic_var(sem_rhs->UnwrapLoad())) {
-                            ctx.Replace(assign->rhs, [=] {
-                                auto* rhs = ctx.CloneWithoutTransform(assign->rhs);
-                                return b.Call(core::str(core::Function::kAtomicLoad),
-                                              b.AddressOf(rhs));
-                            });
-                            return;
-                        }
-                    },
-                    [&](const ast::VariableDeclStatement* decl) {
-                        auto* var = decl->variable;
-                        if (auto* sem_init = ctx.src->Sem().GetVal(var->initializer)) {
-                            if (is_ref_to_atomic_var(sem_init->UnwrapLoad())) {
-                                ctx.Replace(var->initializer, [=] {
-                                    auto* rhs = ctx.CloneWithoutTransform(var->initializer);
-                                    return b.Call(core::str(core::Function::kAtomicLoad),
-                                                  b.AddressOf(rhs));
-                                });
-                                return;
-                            }
-                        }
+        // Look for loads and stores of atomic variables we've collected so far, and replace them
+        // with atomicLoad and atomicStore.
+        for (auto* node : ctx.src->ASTNodes().Objects()) {
+            if (auto* load = ctx.src->Sem().Get<sem::Load>(node)) {
+                if (is_ref_to_atomic_var(load->Reference())) {
+                    ctx.Replace(load->Reference()->Declaration(), [=] {
+                        auto* expr = ctx.CloneWithoutTransform(load->Reference()->Declaration());
+                        return b.Call(wgsl::BuiltinFn::kAtomicLoad, b.AddressOf(expr));
                     });
+                }
+            } else if (auto* assign = node->As<ast::AssignmentStatement>()) {
+                auto* sem_lhs = ctx.src->Sem().GetVal(assign->lhs);
+                if (is_ref_to_atomic_var(sem_lhs)) {
+                    ctx.Replace(assign, [=] {
+                        auto* lhs = ctx.CloneWithoutTransform(assign->lhs);
+                        auto* rhs = ctx.CloneWithoutTransform(assign->rhs);
+                        auto* call = b.Call(wgsl::BuiltinFn::kAtomicStore, b.AddressOf(lhs), rhs);
+                        return b.CallStmt(call);
+                    });
+                }
             }
         }
     }
@@ -297,11 +276,11 @@ struct Atomics::State {
 Atomics::Atomics() = default;
 Atomics::~Atomics() = default;
 
-Atomics::Stub::Stub(GenerationID pid, ast::NodeID nid, core::Function b)
+Atomics::Stub::Stub(GenerationID pid, ast::NodeID nid, wgsl::BuiltinFn b)
     : Base(pid, nid, tint::Empty), builtin(b) {}
 Atomics::Stub::~Stub() = default;
 std::string Atomics::Stub::InternalName() const {
-    return "@internal(spirv-atomic " + std::string(core::str(builtin)) + ")";
+    return "@internal(spirv-atomic " + std::string(wgsl::str(builtin)) + ")";
 }
 
 const Atomics::Stub* Atomics::Stub::Clone(ast::CloneContext& ctx) const {
@@ -309,7 +288,7 @@ const Atomics::Stub* Atomics::Stub::Clone(ast::CloneContext& ctx) const {
                                                      builtin);
 }
 
-ast::transform::Transform::ApplyResult Atomics::Apply(const Program* src,
+ast::transform::Transform::ApplyResult Atomics::Apply(const Program& src,
                                                       const ast::transform::DataMap&,
                                                       ast::transform::DataMap&) const {
     return State{src}.Run();

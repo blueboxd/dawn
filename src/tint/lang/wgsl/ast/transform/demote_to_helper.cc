@@ -40,14 +40,14 @@ DemoteToHelper::DemoteToHelper() = default;
 
 DemoteToHelper::~DemoteToHelper() = default;
 
-Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&, DataMap&) const {
-    auto& sem = src->Sem();
+Transform::ApplyResult DemoteToHelper::Apply(const Program& src, const DataMap&, DataMap&) const {
+    auto& sem = src.Sem();
 
     // Collect the set of functions that need to be processed.
     // A function needs to be processed if it is reachable by a shader that contains a discard at
     // any point in its call hierarchy.
     std::unordered_set<const sem::Function*> functions_to_process;
-    for (auto* func : src->AST().Functions()) {
+    for (auto* func : src.AST().Functions()) {
         if (!func->IsEntryPoint()) {
             continue;
         }
@@ -80,7 +80,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
     }
 
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
 
     // Create a module-scope flag that indicates whether the current invocation has been discarded.
     auto flag = b.Symbols().New("tint_discarded");
@@ -107,7 +107,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
     // We also insert a discard statement before all return statements in entry points for shaders
     // that discard.
     std::unordered_map<const core::type::Type*, Symbol> atomic_cmpxchg_result_types;
-    for (auto* node : src->ASTNodes().Objects()) {
+    for (auto* node : src.ASTNodes().Objects()) {
         Switch(
             node,
 
@@ -149,17 +149,17 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                 auto* sem_call = sem.Get<sem::Call>(call);
                 auto* stmt = sem_call ? sem_call->Stmt() : nullptr;
                 auto* func = stmt ? stmt->Function() : nullptr;
-                auto* builtin = sem_call ? sem_call->Target()->As<sem::Builtin>() : nullptr;
+                auto* builtin = sem_call ? sem_call->Target()->As<sem::BuiltinFn>() : nullptr;
                 if (functions_to_process.count(func) == 0 || !builtin) {
                     return;
                 }
 
-                if (builtin->Type() == core::Function::kTextureStore) {
+                if (builtin->Fn() == wgsl::BuiltinFn::kTextureStore) {
                     // A call to textureStore() will always be a statement.
                     // Wrap it inside a conditional block.
                     auto* masked_call = b.If(b.Not(flag), b.Block(ctx.Clone(stmt->Declaration())));
                     ctx.Replace(stmt->Declaration(), masked_call);
-                } else if (builtin->IsAtomic() && builtin->Type() != core::Function::kAtomicLoad) {
+                } else if (builtin->IsAtomic() && builtin->Fn() != wgsl::BuiltinFn::kAtomicLoad) {
                     // A call to an atomic builtin can be a statement or an expression.
                     if (auto* call_stmt = stmt->Declaration()->As<CallStatement>();
                         call_stmt && call_stmt->expr == call) {
@@ -180,7 +180,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                         auto result = b.Sym();
                         Type result_ty;
                         const Statement* masked_call = nullptr;
-                        if (builtin->Type() == core::Function::kAtomicCompareExchangeWeak) {
+                        if (builtin->Fn() == wgsl::BuiltinFn::kAtomicCompareExchangeWeak) {
                             // Special case for atomicCompareExchangeWeak as we cannot name its
                             // result type. We have to declare an equivalent struct and copy the
                             // original member values over to it.

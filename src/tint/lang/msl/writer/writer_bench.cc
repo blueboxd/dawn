@@ -61,9 +61,9 @@ void GenerateMSL(benchmark::State& state, std::string input_name) {
         }
     }
     for (auto _ : state) {
-        auto res = Generate(&program, gen_options);
+        auto res = Generate(program, gen_options);
         if (!res) {
-            state.SkipWithError(res.Failure().c_str());
+            state.SkipWithError(res.Failure().reason.str());
         }
     }
 }

@@ -22,9 +22,12 @@
 namespace tint::core::ir {
 
 /// An terminate invocation instruction in the IR.
-class TerminateInvocation : public Castable<TerminateInvocation, Terminator> {
+class TerminateInvocation final : public Castable<TerminateInvocation, Terminator> {
   public:
     ~TerminateInvocation() override;
+
+    /// @copydoc Instruction::Clone()
+    TerminateInvocation* Clone(CloneContext& ctx) override;
 
     /// @returns the friendly name for the instruction
     std::string FriendlyName() override { return "terminate_invocation"; }

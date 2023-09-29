@@ -120,7 +120,7 @@ TEST_F(SpirvASTPrinterTest, GlobalConst_Vec_Initializer) {
 TEST_F(SpirvASTPrinterTest, GlobalConst_Vec_F16_Initializer) {
     // const c = vec3<f16>(1h, 2h, 3h);
     // var v = c;
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* c = GlobalConst("c", Call<vec3<f16>>(1_h, 2_h, 3_h));
     GlobalVar("v", core::AddressSpace::kPrivate, Expr(c));
@@ -513,7 +513,7 @@ TEST_F(SpirvASTPrinterTest, GlobalVar_WorkgroupWithZeroInit) {
 
     constexpr bool kZeroInitializeWorkgroupMemory = true;
     std::unique_ptr<Builder> b =
-        std::make_unique<Builder>(program.get(), kZeroInitializeWorkgroupMemory);
+        std::make_unique<Builder>(*program, kZeroInitializeWorkgroupMemory);
 
     EXPECT_TRUE(b->GenerateGlobalVariable(var_scalar)) << b->Diagnostics();
     EXPECT_TRUE(b->GenerateGlobalVariable(var_array)) << b->Diagnostics();

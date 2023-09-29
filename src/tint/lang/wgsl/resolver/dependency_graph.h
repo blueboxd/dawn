@@ -19,13 +19,13 @@
 #include <vector>
 
 #include "src/tint/lang/core/access.h"
-#include "src/tint/lang/core/builtin.h"
+#include "src/tint/lang/core/builtin_type.h"
 #include "src/tint/lang/core/builtin_value.h"
-#include "src/tint/lang/core/function.h"
 #include "src/tint/lang/core/interpolation_sampling.h"
 #include "src/tint/lang/core/interpolation_type.h"
 #include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/wgsl/ast/module.h"
+#include "src/tint/lang/wgsl/builtin_fn.h"
 #include "src/tint/utils/containers/hashmap.h"
 #include "src/tint/utils/diagnostic/diagnostic.h"
 
@@ -43,10 +43,10 @@ struct UnresolvedIdentifier {
 /// - const ast::TypeDecl*  (as const ast::Node*)
 /// - const ast::Variable*  (as const ast::Node*)
 /// - const ast::Function*  (as const ast::Node*)
-/// - core::Function
+/// - wgsl::BuiltinFn
 /// - core::Access
 /// - core::AddressSpace
-/// - core::Builtin
+/// - core::BuiltinType
 /// - core::BuiltinValue
 /// - core::InterpolationSampling
 /// - core::InterpolationType
@@ -74,13 +74,13 @@ class ResolvedIdentifier {
         return nullptr;
     }
 
-    /// @return the builtin function if the ResolvedIdentifier holds core::Function, otherwise
-    /// core::Function::kNone
-    core::Function BuiltinFunction() const {
-        if (auto n = std::get_if<core::Function>(&value_)) {
+    /// @return the builtin function if the ResolvedIdentifier holds wgsl::BuiltinFn, otherwise
+    /// wgsl::BuiltinFn::kNone
+    wgsl::BuiltinFn BuiltinFn() const {
+        if (auto n = std::get_if<wgsl::BuiltinFn>(&value_)) {
             return *n;
         }
-        return core::Function::kNone;
+        return wgsl::BuiltinFn::kNone;
     }
 
     /// @return the access if the ResolvedIdentifier holds core::Access, otherwise
@@ -101,13 +101,13 @@ class ResolvedIdentifier {
         return core::AddressSpace::kUndefined;
     }
 
-    /// @return the builtin type if the ResolvedIdentifier holds core::Builtin, otherwise
-    /// core::Builtin::kUndefined
-    core::Builtin BuiltinType() const {
-        if (auto n = std::get_if<core::Builtin>(&value_)) {
+    /// @return the builtin type if the ResolvedIdentifier holds core::BuiltinType, otherwise
+    /// core::BuiltinType::kUndefined
+    core::BuiltinType BuiltinType() const {
+        if (auto n = std::get_if<core::BuiltinType>(&value_)) {
             return *n;
         }
-        return core::Builtin::kUndefined;
+        return core::BuiltinType::kUndefined;
     }
 
     /// @return the builtin value if the ResolvedIdentifier holds core::BuiltinValue, otherwise
@@ -169,10 +169,10 @@ class ResolvedIdentifier {
   private:
     std::variant<UnresolvedIdentifier,
                  const ast::Node*,
-                 core::Function,
+                 wgsl::BuiltinFn,
                  core::Access,
                  core::AddressSpace,
-                 core::Builtin,
+                 core::BuiltinType,
                  core::BuiltinValue,
                  core::InterpolationSampling,
                  core::InterpolationType,

@@ -35,6 +35,8 @@ if (tint_build_msl_writer) {
       "module_scope_var_to_entry_point_param.h",
       "packed_vec3.cc",
       "packed_vec3.h",
+      "pixel_local.cc",
+      "pixel_local.h",
       "subgroup_ballot.cc",
       "subgroup_ballot.h",
     ]
@@ -43,6 +45,7 @@ if (tint_build_msl_writer) {
       "${tint_src_dir}/lang/core",
       "${tint_src_dir}/lang/core/constant",
       "${tint_src_dir}/lang/core/type",
+      "${tint_src_dir}/lang/wgsl",
       "${tint_src_dir}/lang/wgsl/ast",
       "${tint_src_dir}/lang/wgsl/ast/transform",
       "${tint_src_dir}/lang/wgsl/program",
@@ -71,6 +74,7 @@ if (tint_build_unittests) {
       sources = [
         "module_scope_var_to_entry_point_param_test.cc",
         "packed_vec3_test.cc",
+        "pixel_local_test.cc",
         "subgroup_ballot_test.cc",
       ]
       deps = [
@@ -78,7 +82,9 @@ if (tint_build_unittests) {
         "${tint_src_dir}/api/common",
         "${tint_src_dir}/lang/core",
         "${tint_src_dir}/lang/core/constant",
+        "${tint_src_dir}/lang/core/ir",
         "${tint_src_dir}/lang/core/type",
+        "${tint_src_dir}/lang/wgsl",
         "${tint_src_dir}/lang/wgsl/ast",
         "${tint_src_dir}/lang/wgsl/ast/transform",
         "${tint_src_dir}/lang/wgsl/ast/transform:unittests",

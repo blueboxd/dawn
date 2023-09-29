@@ -58,7 +58,7 @@ HANDLE AsHANDLE(const SystemEventPrimitive& p) {
 }
 #elif DAWN_PLATFORM_IS(POSIX)
 int AsFD(const SystemEventPrimitive& p) {
-    ASSERT(p.value <= std::numeric_limits<int>::max());
+    DAWN_ASSERT(p.value <= std::numeric_limits<int>::max());
     return p.value;
 }
 #endif
@@ -71,18 +71,18 @@ SystemEventPrimitive::SystemEventPrimitive(void* win32Handle)
     : value(reinterpret_cast<uintptr_t>(win32Handle)) {
 #if DAWN_PLATFORM_IS(WINDOWS)
     static_assert(std::is_same_v<void*, HANDLE>);
-    ASSERT(win32Handle != nullptr);
+    DAWN_ASSERT(win32Handle != nullptr);
 #else
-    ASSERT(false);  // Wrong platform.
+    DAWN_ASSERT(false);  // Wrong platform.
 #endif
 }
 
 SystemEventPrimitive::SystemEventPrimitive(int posixFd) : value(posixFd) {
 #if DAWN_PLATFORM_IS(POSIX)
     static_assert(sizeof(uintptr_t) >= sizeof(int));
-    ASSERT(posixFd > 0);
+    DAWN_ASSERT(posixFd > 0);
 #else
-    ASSERT(false);  // Wrong platform.
+    DAWN_ASSERT(false);  // Wrong platform.
 #endif
 }
 
@@ -111,14 +111,14 @@ bool SystemEventPrimitive::IsValid() const {
 }
 
 void SystemEventPrimitive::Close() {
-    ASSERT(IsValid());
+    DAWN_ASSERT(IsValid());
 
 #if DAWN_PLATFORM_IS(WINDOWS)
     CloseHandle(AsHANDLE(*this));
 #elif DAWN_PLATFORM_IS(POSIX)
     close(AsFD(*this));
 #else
-    CHECK(false);  // Not implemented.
+    DAWN_CHECK(false);  // Not implemented.
 #endif
 
     value = kInvalid;
@@ -139,22 +139,22 @@ SystemEventReceiver SystemEventReceiver::CreateAlreadySignaled() {
 SystemEventPipeSender::~SystemEventPipeSender() {
     // Make sure it's been Signaled (or is empty) before being dropped.
     // Dropping this would "leak" the receiver (it'll never get signalled).
-    ASSERT(!mPrimitive.IsValid());
+    DAWN_ASSERT(!mPrimitive.IsValid());
 }
 
 void SystemEventPipeSender::Signal() && {
-    ASSERT(mPrimitive.IsValid());
+    DAWN_ASSERT(mPrimitive.IsValid());
 #if DAWN_PLATFORM_IS(WINDOWS)
     // This is not needed on Windows yet. It's implementable using SetEvent().
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 #elif DAWN_PLATFORM_IS(POSIX)
     // Send one byte to signal the receiver
     char zero[1] = {0};
     int status = write(AsFD(mPrimitive), zero, 1);
-    CHECK(status >= 0);
+    DAWN_CHECK(status >= 0);
 #else
     // Not implemented for this platform.
-    CHECK(false);
+    DAWN_CHECK(false);
 #endif
 
     mPrimitive.Close();
@@ -164,8 +164,8 @@ void SystemEventPipeSender::Signal() && {
 
 bool WaitAnySystemEvent(size_t count, TrackedFutureWaitInfo* futures, Nanoseconds timeout) {
 #if DAWN_PLATFORM_IS(WINDOWS)
-    // TODO(crbug.com/dawn/1987): Implement this.
-    CHECK(false);
+    // TODO(crbug.com/dawn/2054): Implement this.
+    DAWN_CHECK(false);
 #elif DAWN_PLATFORM_IS(POSIX)
     std::vector<pollfd> pollfds(count);
     for (size_t i = 0; i < count; ++i) {
@@ -175,7 +175,7 @@ bool WaitAnySystemEvent(size_t count, TrackedFutureWaitInfo* futures, Nanosecond
 
     int status = poll(pollfds.data(), pollfds.size(), ToMilliseconds(timeout));
 
-    CHECK(status >= 0);
+    DAWN_CHECK(status >= 0);
     if (status == 0) {
         return false;
     }
@@ -183,7 +183,7 @@ bool WaitAnySystemEvent(size_t count, TrackedFutureWaitInfo* futures, Nanosecond
     for (size_t i = 0; i < count; ++i) {
         int revents = pollfds[i].revents;
         static constexpr int kAllowedEvents = POLLIN | POLLHUP;
-        CHECK((revents & kAllowedEvents) == revents);
+        DAWN_CHECK((revents & kAllowedEvents) == revents);
     }
 
     for (size_t i = 0; i < count; ++i) {
@@ -193,18 +193,18 @@ bool WaitAnySystemEvent(size_t count, TrackedFutureWaitInfo* futures, Nanosecond
 
     return true;
 #else
-    CHECK(false);  // Not implemented.
+    DAWN_CHECK(false);  // Not implemented.
 #endif
 }
 
 std::pair<SystemEventPipeSender, SystemEventReceiver> CreateSystemEventPipe() {
 #if DAWN_PLATFORM_IS(WINDOWS)
     // This is not needed on Windows yet. It's implementable using CreateEvent().
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 #elif DAWN_PLATFORM_IS(POSIX)
     int pipeFds[2];
     int status = pipe(pipeFds);
-    CHECK(status >= 0);
+    DAWN_CHECK(status >= 0);
 
     SystemEventReceiver receiver;
     receiver.mPrimitive = SystemEventPrimitive{pipeFds[0]};
@@ -215,7 +215,7 @@ std::pair<SystemEventPipeSender, SystemEventReceiver> CreateSystemEventPipe() {
     return std::make_pair(std::move(sender), std::move(receiver));
 #else
     // Not implemented for this platform.
-    CHECK(false);
+    DAWN_CHECK(false);
 #endif
 }
 

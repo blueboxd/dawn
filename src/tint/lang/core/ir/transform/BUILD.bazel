@@ -33,10 +33,13 @@ cc_library(
     "block_decorated_structs.cc",
     "builtin_polyfill.cc",
     "demote_to_helper.cc",
+    "direct_variable_access.cc",
     "multiplanar_external_texture.cc",
+    "preserve_padding.cc",
     "robustness.cc",
     "shader_io.cc",
     "std140.cc",
+    "zero_init_workgroup_memory.cc",
   ],
   hdrs = [
     "add_empty_entry_point.h",
@@ -46,10 +49,13 @@ cc_library(
     "block_decorated_structs.h",
     "builtin_polyfill.h",
     "demote_to_helper.h",
+    "direct_variable_access.h",
     "multiplanar_external_texture.h",
+    "preserve_padding.h",
     "robustness.h",
     "shader_io.h",
     "std140.h",
+    "zero_init_workgroup_memory.h",
   ],
   deps = [
     "//src/tint/api/common",
@@ -57,7 +63,6 @@ cc_library(
     "//src/tint/lang/core",
     "//src/tint/lang/core/constant",
     "//src/tint/lang/core/intrinsic",
-    "//src/tint/lang/core/intrinsic/data",
     "//src/tint/lang/core/ir",
     "//src/tint/lang/core/type",
     "//src/tint/utils/containers",
@@ -88,21 +93,36 @@ cc_library(
     "block_decorated_structs_test.cc",
     "builtin_polyfill_test.cc",
     "demote_to_helper_test.cc",
+    "direct_variable_access_test.cc",
     "helper_test.h",
     "multiplanar_external_texture_test.cc",
+    "preserve_padding_test.cc",
     "robustness_test.cc",
     "std140_test.cc",
-  ],
+    "zero_init_workgroup_memory_test.cc",
+  ] + select({
+    ":tint_build_wgsl_reader_and_tint_build_wgsl_writer": [
+      "direct_variable_access_wgsl_test.cc",
+    ],
+    "//conditions:default": [],
+  }),
   deps = [
     "//src/tint/api/common",
     "//src/tint/api/options",
     "//src/tint/lang/core",
     "//src/tint/lang/core/constant",
     "//src/tint/lang/core/intrinsic",
-    "//src/tint/lang/core/intrinsic/data",
     "//src/tint/lang/core/ir",
     "//src/tint/lang/core/ir/transform",
     "//src/tint/lang/core/type",
+    "//src/tint/lang/wgsl",
+    "//src/tint/lang/wgsl/ast",
+    "//src/tint/lang/wgsl/program",
+    "//src/tint/lang/wgsl/reader",
+    "//src/tint/lang/wgsl/reader/program_to_ir",
+    "//src/tint/lang/wgsl/sem",
+    "//src/tint/lang/wgsl/writer",
+    "//src/tint/lang/wgsl/writer/ir_to_program",
     "//src/tint/utils/containers",
     "//src/tint/utils/diagnostic",
     "//src/tint/utils/ice",
@@ -120,5 +140,23 @@ cc_library(
   ],
   copts = COPTS,
   visibility = ["//visibility:public"],
+)
+
+alias(
+  name = "tint_build_wgsl_reader",
+  actual = "//src/tint:tint_build_wgsl_reader_true",
+)
+
+alias(
+  name = "tint_build_wgsl_writer",
+  actual = "//src/tint:tint_build_wgsl_writer_true",
+)
+
+selects.config_setting_group(
+    name = "tint_build_wgsl_reader_and_tint_build_wgsl_writer",
+    match_all = [
+        ":tint_build_wgsl_reader",
+        ":tint_build_wgsl_writer",
+    ],
 )
 

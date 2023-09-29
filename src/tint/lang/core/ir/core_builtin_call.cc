@@ -16,6 +16,8 @@
 
 #include <utility>
 
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/utils/ice/ice.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::core::ir::CoreBuiltinCall);
@@ -23,13 +25,19 @@ TINT_INSTANTIATE_TYPEINFO(tint::core::ir::CoreBuiltinCall);
 namespace tint::core::ir {
 
 CoreBuiltinCall::CoreBuiltinCall(InstructionResult* result,
-                                 core::Function func,
+                                 core::BuiltinFn func,
                                  VectorRef<Value*> arguments)
     : Base(result, arguments), func_(func) {
-    TINT_ASSERT(func != core::Function::kNone);
-    TINT_ASSERT(func != core::Function::kTintMaterialize);
+    TINT_ASSERT(func != core::BuiltinFn::kNone);
+    TINT_ASSERT(func != core::BuiltinFn::kTintMaterialize);
 }
 
 CoreBuiltinCall::~CoreBuiltinCall() = default;
+
+CoreBuiltinCall* CoreBuiltinCall::Clone(CloneContext& ctx) {
+    auto* new_result = ctx.Clone(Result());
+    auto args = ctx.Remap<CoreBuiltinCall::kDefaultNumOperands>(Args());
+    return ctx.ir.instructions.Create<CoreBuiltinCall>(new_result, func_, args);
+}
 
 }  // namespace tint::core::ir

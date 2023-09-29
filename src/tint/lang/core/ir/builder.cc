@@ -25,16 +25,10 @@ namespace tint::core::ir {
 
 Builder::Builder(Module& mod) : ir(mod) {}
 
-Builder::Builder(Module& mod, ir::Block* block) : current_block_(block), ir(mod) {}
+Builder::Builder(Module& mod, ir::Block* block)
+    : insertion_point_(InsertionPoints::AppendToBlock{block}), ir(mod) {}
 
 Builder::~Builder() = default;
-
-ir::Block* Builder::RootBlock() {
-    if (!ir.root_block) {
-        ir.root_block = Block();
-    }
-    return ir.root_block;
-}
 
 Block* Builder::Block() {
     return ir.blocks.Create<ir::Block>();

@@ -63,7 +63,8 @@ MaybeError Queue::Initialize() {
 }
 
 void Queue::UpdateWaitingEvents(ExecutionSerial completedSerial) {
-    ASSERT(mCompletedSerial >= uint64_t(completedSerial) || completedSerial == kMaxExecutionSerial);
+    DAWN_ASSERT(mCompletedSerial >= uint64_t(completedSerial) ||
+                completedSerial == kMaxExecutionSerial);
     mWaitingEvents.Use([&](auto waitingEvents) {
         for (auto& waiting : waitingEvents->IterateUpTo(completedSerial)) {
             std::move(waiting).Signal();
@@ -75,7 +76,7 @@ void Queue::UpdateWaitingEvents(ExecutionSerial completedSerial) {
 SystemEventReceiver Queue::InsertWorkDoneEvent() {
     ExecutionSerial serial = GetScheduledWorkDoneSerial();
 
-    // TODO(crbug.com/dawn/1987): Optimize to not create a pipe for every WorkDone/MapAsync event.
+    // TODO(crbug.com/dawn/2051): Optimize to not create a pipe for every WorkDone/MapAsync event.
     // Possible ways to do this:
     // - Don't create the pipe until needed (see the todo on TrackedEvent::mReceiver).
     // - Dedup event pipes when one serial is needed for multiple events (and add a
@@ -174,7 +175,7 @@ MaybeError Queue::SubmitPendingCommandBuffer() {
     [*pendingCommands addCompletedHandler:^(id<MTLCommandBuffer>) {
         TRACE_EVENT_ASYNC_END0(platform, GPUWork, "DeviceMTL::SubmitPendingCommandBuffer",
                                uint64_t(pendingSerial));
-        ASSERT(uint64_t(pendingSerial) > mCompletedSerial.load());
+        DAWN_ASSERT(uint64_t(pendingSerial) > mCompletedSerial.load());
         this->mCompletedSerial = uint64_t(pendingSerial);
 
         this->UpdateWaitingEvents(pendingSerial);

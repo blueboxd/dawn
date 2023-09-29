@@ -47,7 +47,7 @@ TEST_F(IR_MultiplanarExternalTextureTest, NoRootBlock) {
 TEST_F(IR_MultiplanarExternalTextureTest, DeclWithNoUses) {
     auto* var = b.Var("texture", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var->SetBindingPoint(1, 2);
-    b.RootBlock()->Append(var);
+    mod.root_block->Append(var);
 
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {  //
@@ -111,7 +111,7 @@ tint_ExternalTextureParams = struct @align(16) {
 TEST_F(IR_MultiplanarExternalTextureTest, LoadWithNoUses) {
     auto* var = b.Var("texture", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var->SetBindingPoint(1, 2);
-    b.RootBlock()->Append(var);
+    mod.root_block->Append(var);
 
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
@@ -180,12 +180,12 @@ tint_ExternalTextureParams = struct @align(16) {
 TEST_F(IR_MultiplanarExternalTextureTest, TextureDimensions) {
     auto* var = b.Var("texture", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var->SetBindingPoint(1, 2);
-    b.RootBlock()->Append(var);
+    mod.root_block->Append(var);
 
     auto* func = b.Function("foo", ty.vec2<u32>());
     b.Append(func->Block(), [&] {
         auto* load = b.Load(var->Result());
-        auto* result = b.Call(ty.vec2<u32>(), core::Function::kTextureDimensions, load);
+        auto* result = b.Call(ty.vec2<u32>(), core::BuiltinFn::kTextureDimensions, load);
         b.Return(func, result);
         mod.SetName(result, "result");
     });
@@ -253,14 +253,14 @@ tint_ExternalTextureParams = struct @align(16) {
 TEST_F(IR_MultiplanarExternalTextureTest, TextureLoad) {
     auto* var = b.Var("texture", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var->SetBindingPoint(1, 2);
-    b.RootBlock()->Append(var);
+    mod.root_block->Append(var);
 
     auto* func = b.Function("foo", ty.vec4<f32>());
     auto* coords = b.FunctionParam("coords", ty.vec2<u32>());
     func->SetParams({coords});
     b.Append(func->Block(), [&] {
         auto* load = b.Load(var->Result());
-        auto* result = b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, load, coords);
+        auto* result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, load, coords);
         b.Return(func, result);
         mod.SetName(result, "result");
     });
@@ -397,14 +397,14 @@ tint_ExternalTextureParams = struct @align(16) {
 TEST_F(IR_MultiplanarExternalTextureTest, TextureLoad_SignedCoords) {
     auto* var = b.Var("texture", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var->SetBindingPoint(1, 2);
-    b.RootBlock()->Append(var);
+    mod.root_block->Append(var);
 
     auto* func = b.Function("foo", ty.vec4<f32>());
     auto* coords = b.FunctionParam("coords", ty.vec2<i32>());
     func->SetParams({coords});
     b.Append(func->Block(), [&] {
         auto* load = b.Load(var->Result());
-        auto* result = b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, load, coords);
+        auto* result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, load, coords);
         b.Return(func, result);
         mod.SetName(result, "result");
     });
@@ -542,7 +542,7 @@ tint_ExternalTextureParams = struct @align(16) {
 TEST_F(IR_MultiplanarExternalTextureTest, TextureSampleBaseClampToEdge) {
     auto* var = b.Var("texture", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var->SetBindingPoint(1, 2);
-    b.RootBlock()->Append(var);
+    mod.root_block->Append(var);
 
     auto* func = b.Function("foo", ty.vec4<f32>());
     auto* sampler = b.FunctionParam("sampler", ty.sampler());
@@ -550,7 +550,7 @@ TEST_F(IR_MultiplanarExternalTextureTest, TextureSampleBaseClampToEdge) {
     func->SetParams({sampler, coords});
     b.Append(func->Block(), [&] {
         auto* load = b.Load(var->Result());
-        auto* result = b.Call(ty.vec4<f32>(), core::Function::kTextureSampleBaseClampToEdge, load,
+        auto* result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureSampleBaseClampToEdge, load,
                               sampler, coords);
         b.Return(func, result);
         mod.SetName(result, "result");
@@ -700,7 +700,7 @@ tint_ExternalTextureParams = struct @align(16) {
 TEST_F(IR_MultiplanarExternalTextureTest, ViaUserFunctionParameter) {
     auto* var = b.Var("texture", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var->SetBindingPoint(1, 2);
-    b.RootBlock()->Append(var);
+    mod.root_block->Append(var);
 
     auto* foo = b.Function("foo", ty.vec4<f32>());
     {
@@ -709,7 +709,7 @@ TEST_F(IR_MultiplanarExternalTextureTest, ViaUserFunctionParameter) {
         auto* coords = b.FunctionParam("coords", ty.vec2<f32>());
         foo->SetParams({texture, sampler, coords});
         b.Append(foo->Block(), [&] {
-            auto* result = b.Call(ty.vec4<f32>(), core::Function::kTextureSampleBaseClampToEdge,
+            auto* result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureSampleBaseClampToEdge,
                                   texture, sampler, coords);
             b.Return(foo, result);
             mod.SetName(result, "result");
@@ -885,7 +885,7 @@ tint_ExternalTextureParams = struct @align(16) {
 TEST_F(IR_MultiplanarExternalTextureTest, MultipleUses) {
     auto* var = b.Var("texture", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var->SetBindingPoint(1, 2);
-    b.RootBlock()->Append(var);
+    mod.root_block->Append(var);
 
     auto* foo = b.Function("foo", ty.vec4<f32>());
     {
@@ -894,7 +894,7 @@ TEST_F(IR_MultiplanarExternalTextureTest, MultipleUses) {
         auto* coords = b.FunctionParam("coords", ty.vec2<f32>());
         foo->SetParams({texture, sampler, coords});
         b.Append(foo->Block(), [&] {
-            auto* result = b.Call(ty.vec4<f32>(), core::Function::kTextureSampleBaseClampToEdge,
+            auto* result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureSampleBaseClampToEdge,
                                   texture, sampler, coords);
             b.Return(foo, result);
             mod.SetName(result, "result");
@@ -908,12 +908,12 @@ TEST_F(IR_MultiplanarExternalTextureTest, MultipleUses) {
         bar->SetParams({sampler, coords_f});
         b.Append(bar->Block(), [&] {
             auto* load_a = b.Load(var->Result());
-            b.Call(ty.vec2<u32>(), core::Function::kTextureDimensions, load_a);
+            b.Call(ty.vec2<u32>(), core::BuiltinFn::kTextureDimensions, load_a);
             auto* load_b = b.Load(var->Result());
-            b.Call(ty.vec4<f32>(), core::Function::kTextureSampleBaseClampToEdge, load_b, sampler,
+            b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureSampleBaseClampToEdge, load_b, sampler,
                    coords_f);
             auto* load_c = b.Load(var->Result());
-            b.Call(ty.vec4<f32>(), core::Function::kTextureSampleBaseClampToEdge, load_c, sampler,
+            b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureSampleBaseClampToEdge, load_c, sampler,
                    coords_f);
             auto* load_d = b.Load(var->Result());
             auto* result_a = b.Call(ty.vec4<f32>(), foo, load_d, sampler, coords_f);
@@ -1102,26 +1102,26 @@ tint_ExternalTextureParams = struct @align(16) {
 TEST_F(IR_MultiplanarExternalTextureTest, MultipleTextures) {
     auto* var_a = b.Var("texture_a", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var_a->SetBindingPoint(1, 2);
-    b.RootBlock()->Append(var_a);
+    mod.root_block->Append(var_a);
 
     auto* var_b = b.Var("texture_b", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var_b->SetBindingPoint(2, 2);
-    b.RootBlock()->Append(var_b);
+    mod.root_block->Append(var_b);
 
     auto* var_c = b.Var("texture_c", ty.ptr(handle, ty.Get<core::type::ExternalTexture>()));
     var_c->SetBindingPoint(3, 2);
-    b.RootBlock()->Append(var_c);
+    mod.root_block->Append(var_c);
 
     auto* foo = b.Function("foo", ty.void_());
     auto* coords = b.FunctionParam("coords", ty.vec2<u32>());
     foo->SetParams({coords});
     b.Append(foo->Block(), [&] {
         auto* load_a = b.Load(var_a->Result());
-        b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, load_a, coords);
+        b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, load_a, coords);
         auto* load_b = b.Load(var_b->Result());
-        b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, load_b, coords);
+        b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, load_b, coords);
         auto* load_c = b.Load(var_c->Result());
-        b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, load_c, coords);
+        b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, load_c, coords);
         b.Return(foo);
     });
 

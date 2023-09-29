@@ -17,8 +17,8 @@
 
 #include <string>
 
-#include "src/tint/lang/core/function.h"
-#include "src/tint/lang/core/intrinsic/data/data.h"
+#include "src/tint/lang/core/builtin_fn.h"
+#include "src/tint/lang/core/intrinsic/dialect.h"
 #include "src/tint/lang/core/intrinsic/table_data.h"
 #include "src/tint/lang/core/ir/builtin_call.h"
 #include "src/tint/utils/rtti/castable.h"
@@ -26,19 +26,22 @@
 namespace tint::core::ir {
 
 /// A core builtin call instruction in the IR.
-class CoreBuiltinCall : public Castable<CoreBuiltinCall, BuiltinCall> {
+class CoreBuiltinCall final : public Castable<CoreBuiltinCall, BuiltinCall> {
   public:
     /// Constructor
     /// @param result the result value
     /// @param func the builtin function
     /// @param args the conversion arguments
     CoreBuiltinCall(InstructionResult* result,
-                    core::Function func,
+                    core::BuiltinFn func,
                     VectorRef<Value*> args = tint::Empty);
     ~CoreBuiltinCall() override;
 
+    /// @copydoc Instruction::Clone()
+    CoreBuiltinCall* Clone(CloneContext& ctx) override;
+
     /// @returns the builtin function
-    core::Function Func() { return func_; }
+    core::BuiltinFn Func() { return func_; }
 
     /// @returns the identifier for the function
     size_t FuncId() override { return static_cast<size_t>(func_); }
@@ -46,14 +49,13 @@ class CoreBuiltinCall : public Castable<CoreBuiltinCall, BuiltinCall> {
     /// @returns the friendly name for the instruction
     std::string FriendlyName() override { return core::str(func_); }
 
-    /// @returns the intrinsic name
-    const char* IntrinsicName() override { return core::str(func_); }
-
     /// @returns the table data to validate this builtin
-    const core::intrinsic::TableData& TableData() override { return core::intrinsic::data::kData; }
+    const core::intrinsic::TableData& TableData() override {
+        return core::intrinsic::Dialect::kData;
+    }
 
   private:
-    core::Function func_;
+    core::BuiltinFn func_;
 };
 
 }  // namespace tint::core::ir

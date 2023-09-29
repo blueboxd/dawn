@@ -93,7 +93,7 @@ void KHRONOS_APIENTRY OnGLDebugMessage(GLenum source,
                            << "\n    Message: " << message;
 
         // Abort on an error when in Debug mode.
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
     }
 }
 
@@ -176,11 +176,11 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
 }
 
 const GLFormat& Device::GetGLFormat(const Format& format) {
-    ASSERT(format.IsSupported());
-    ASSERT(format.GetIndex() < mFormatTable.size());
+    DAWN_ASSERT(format.IsSupported());
+    DAWN_ASSERT(format.GetIndex() < mFormatTable.size());
 
     const GLFormat& result = mFormatTable[format.GetIndex()];
-    ASSERT(result.isSupportedOnBackend);
+    DAWN_ASSERT(result.isSupportedOnBackend);
     return result;
 }
 
@@ -287,10 +287,9 @@ MaybeError Device::ValidateTextureCanBeWrapped(const TextureDescriptor* descript
     DAWN_INVALID_IF(descriptor->sampleCount != 1, "Sample count (%u) is not 1.",
                     descriptor->sampleCount);
 
-    DAWN_INVALID_IF(descriptor->usage &
-                        (wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding),
-                    "Texture usage (%s) cannot have %s or %s.", descriptor->usage,
-                    wgpu::TextureUsage::TextureBinding, wgpu::TextureUsage::StorageBinding);
+    DAWN_INVALID_IF(descriptor->usage & wgpu::TextureUsage::StorageBinding,
+                    "Texture usage (%s) cannot have %s.", descriptor->usage,
+                    wgpu::TextureUsage::StorageBinding);
 
     return {};
 }
@@ -310,6 +309,7 @@ TextureBase* Device::CreateTextureWrappingEGLImage(const ExternalImageDescriptor
     gl.GenTextures(1, &tex);
     gl.BindTexture(GL_TEXTURE_2D, tex);
     gl.EGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+    gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 
     GLint width, height;
     gl.GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
@@ -327,7 +327,10 @@ TextureBase* Device::CreateTextureWrappingEGLImage(const ExternalImageDescriptor
 
     // TODO(dawn:803): Validate the OpenGL texture format from the EGLImage against the format
     // in the passed-in TextureDescriptor.
-    return new Texture(this, textureDescriptor, tex);
+    auto result = new Texture(this, textureDescriptor, tex);
+    result->SetIsSubresourceContentInitialized(descriptor->isInitialized,
+                                               result->GetAllSubresources());
+    return result;
 }
 
 TextureBase* Device::CreateTextureWrappingGLTexture(const ExternalImageDescriptor* descriptor,
@@ -361,7 +364,10 @@ TextureBase* Device::CreateTextureWrappingGLTexture(const ExternalImageDescripto
         return nullptr;
     }
 
-    return new Texture(this, textureDescriptor, texture);
+    auto result = new Texture(this, textureDescriptor, texture);
+    result->SetIsSubresourceContentInitialized(descriptor->isInitialized,
+                                               result->GetAllSubresources());
+    return result;
 }
 
 MaybeError Device::TickImpl() {
@@ -393,7 +399,7 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
 
         mFencesInFlight.pop();
 
-        ASSERT(fenceSerial > GetQueue()->GetCompletedCommandSerial());
+        DAWN_ASSERT(fenceSerial > GetQueue()->GetCompletedCommandSerial());
     }
     return fenceSerial;
 }
@@ -414,14 +420,14 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
 }
 
 void Device::DestroyImpl() {
-    ASSERT(GetState() == State::Disconnected);
+    DAWN_ASSERT(GetState() == State::Disconnected);
 }
 
 MaybeError Device::WaitForIdleForDestruction() {
     const OpenGLFunctions& gl = GetGL();
     gl.Finish();
     DAWN_TRY(GetQueue()->CheckPassedSerials());
-    ASSERT(mFencesInFlight.empty());
+    DAWN_ASSERT(mFencesInFlight.empty());
 
     return {};
 }

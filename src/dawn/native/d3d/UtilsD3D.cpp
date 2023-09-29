@@ -238,7 +238,7 @@ DXGI_FORMAT DXGITypelessTextureFormat(wgpu::TextureFormat format) {
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
         case wgpu::TextureFormat::Undefined:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -384,7 +384,7 @@ DXGI_FORMAT DXGITextureFormat(wgpu::TextureFormat format) {
         case wgpu::TextureFormat::ASTC12x12UnormSrgb:
 
         case wgpu::TextureFormat::Undefined:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -465,8 +465,10 @@ DXGI_FORMAT DXGIVertexFormat(wgpu::VertexFormat format) {
             return DXGI_FORMAT_R32G32B32_SINT;
         case wgpu::VertexFormat::Sint32x4:
             return DXGI_FORMAT_R32G32B32A32_SINT;
+        case wgpu::VertexFormat::Unorm10_10_10_2:
+            return DXGI_FORMAT_R10G10B10A2_UNORM;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 

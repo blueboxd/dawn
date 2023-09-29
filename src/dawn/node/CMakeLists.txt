@@ -75,7 +75,7 @@ target_link_libraries(dawn_node dawn_node_binding dawn_node_interop dawn_native 
                       libtint)
 target_include_directories(dawn_node PRIVATE
     "${PROJECT_SOURCE_DIR}"
-    "${DAWN_THIRD_PARTY_DIR}"
+    "${NODE_ADDON_API_DIR}"
     "${NODE_API_HEADERS_DIR}/include"
     "${DAWN_NODE_GEN_DIR}"
 )
@@ -141,7 +141,7 @@ macro(javascript file)
         TARGET dawn_node POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${PROJECT_SOURCE_DIR}/src/dawn/node/${file}"
-            "${Dawn_BINARY_DIR}/${file}")
+            "$<TARGET_FILE_DIR:dawn_node>/${file}")
 endmacro()
 
 javascript("index.js")

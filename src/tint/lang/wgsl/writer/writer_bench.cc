@@ -28,9 +28,9 @@ void GenerateWGSL(benchmark::State& state, std::string input_name) {
     }
     auto& program = std::get<bench::ProgramAndFile>(res).program;
     for (auto _ : state) {
-        auto res = Generate(&program, {});
+        auto res = Generate(program, {});
         if (!res) {
-            state.SkipWithError(res.Failure().c_str());
+            state.SkipWithError(res.Failure().reason.str());
         }
     }
 }

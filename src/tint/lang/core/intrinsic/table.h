@@ -17,22 +17,21 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "src/tint/lang/core/binary_op.h"
-#include "src/tint/lang/core/function.h"
+#include "src/tint/lang/core/builtin_fn.h"
 #include "src/tint/lang/core/intrinsic/ctor_conv.h"
 #include "src/tint/lang/core/intrinsic/table_data.h"
 #include "src/tint/lang/core/parameter_usage.h"
 #include "src/tint/lang/core/unary_op.h"
 #include "src/tint/utils/containers/vector.h"
+#include "src/tint/utils/text/string.h"
 
 // Forward declarations
 namespace tint::diag {
 class List;
 }  // namespace tint::diag
-namespace tint::type {
-class Manager;
-}  // namespace tint::type
 
 namespace tint::core::intrinsic {
 
@@ -99,26 +98,7 @@ struct Context {
 /// Lookup looks for the builtin overload with the given signature, raising an error diagnostic
 /// if the builtin was not found.
 /// @param context the intrinsic context
-/// @param builtin_type the builtin identifier
-/// @param args the argument types passed to the builtin function
-/// @param earliest_eval_stage the the earliest evaluation stage that a call to
-///        the builtin can be made. This can alter the overloads considered.
-///        For example, if the earliest evaluation stage is `EvaluationStage::kRuntime`, then
-///        only overloads with concrete argument types will be considered, as all
-///        abstract-numerics will have been materialized after shader creation time
-///        (EvaluationStage::kConstant).
-/// @param source the source of the builtin call
-/// @return the resolved builtin function overload
-Result<Overload> Lookup(Context& context,
-                        core::Function builtin_type,
-                        VectorRef<const core::type::Type*> args,
-                        EvaluationStage earliest_eval_stage,
-                        const Source& source);
-
-/// Lookup looks for the builtin overload with the given signature, raising an error diagnostic
-/// if the builtin was not found.
-/// @param context the intrinsic context
-/// @param intrinsic_name the name of the intrinsi
+/// @param function_name the name of the function
 /// @param function_id the function identifier
 /// @param args the argument types passed to the builtin function
 /// @param earliest_eval_stage the the earliest evaluation stage that a call to
@@ -129,12 +109,12 @@ Result<Overload> Lookup(Context& context,
 ///        (EvaluationStage::kConstant).
 /// @param source the source of the builtin call
 /// @return the resolved builtin function overload
-Result<Overload> Lookup(Context& context,
-                        const char* intrinsic_name,
-                        size_t function_id,
-                        VectorRef<const core::type::Type*> args,
-                        EvaluationStage earliest_eval_stage,
-                        const Source& source);
+Result<Overload> LookupFn(Context& context,
+                          std::string_view function_name,
+                          size_t function_id,
+                          VectorRef<const core::type::Type*> args,
+                          EvaluationStage earliest_eval_stage,
+                          const Source& source);
 
 /// Lookup looks for the unary op overload with the given signature, raising an error
 /// diagnostic if the operator was not found.
@@ -149,11 +129,11 @@ Result<Overload> Lookup(Context& context,
 ///        after shader creation time (EvaluationStage::kConstant).
 /// @param source the source of the operator call
 /// @return the resolved unary operator overload
-Result<Overload> Lookup(Context& context,
-                        core::UnaryOp op,
-                        const core::type::Type* arg,
-                        EvaluationStage earliest_eval_stage,
-                        const Source& source);
+Result<Overload> LookupUnary(Context& context,
+                             core::UnaryOp op,
+                             const core::type::Type* arg,
+                             EvaluationStage earliest_eval_stage,
+                             const Source& source);
 
 /// Lookup looks for the binary op overload with the given signature, raising an error
 /// diagnostic if the operator was not found.
@@ -170,17 +150,18 @@ Result<Overload> Lookup(Context& context,
 ///        after shader creation time (EvaluationStage::kConstant).
 /// @param is_compound true if the binary operator is being used as a compound assignment
 /// @return the resolved binary operator overload
-Result<Overload> Lookup(Context& context,
-                        core::BinaryOp op,
-                        const core::type::Type* lhs,
-                        const core::type::Type* rhs,
-                        EvaluationStage earliest_eval_stage,
-                        const Source& source,
-                        bool is_compound);
+Result<Overload> LookupBinary(Context& context,
+                              core::BinaryOp op,
+                              const core::type::Type* lhs,
+                              const core::type::Type* rhs,
+                              EvaluationStage earliest_eval_stage,
+                              const Source& source,
+                              bool is_compound);
 
 /// Lookup looks for the value constructor or conversion overload for the given CtorConv.
 /// @param context the intrinsic context
-/// @param type the type being constructed or converted
+/// @param type_name the name of the type being constructed or converted
+/// @param type_id the type identifier
 /// @param template_arg the optional template argument
 /// @param args the argument types passed to the constructor / conversion call
 /// @param earliest_eval_stage the the earliest evaluation stage that a call to
@@ -191,12 +172,121 @@ Result<Overload> Lookup(Context& context,
 ///        after shader creation time (EvaluationStage::kConstant).
 /// @param source the source of the call
 /// @return the resolved type constructor or conversion function overload
-Result<Overload> Lookup(Context& context,
-                        CtorConv type,
-                        const core::type::Type* template_arg,
-                        VectorRef<const core::type::Type*> args,
-                        EvaluationStage earliest_eval_stage,
-                        const Source& source);
+Result<Overload> LookupCtorConv(Context& context,
+                                std::string_view type_name,
+                                size_t type_id,
+                                const core::type::Type* template_arg,
+                                VectorRef<const core::type::Type*> args,
+                                EvaluationStage earliest_eval_stage,
+                                const Source& source);
+
+/// Table is a wrapper around a dialect to provide type-safe interface to the intrinsic table.
+template <typename DIALECT>
+struct Table {
+    /// Alias to DIALECT::BuiltinFn
+    using BuiltinFn = typename DIALECT::BuiltinFn;
+
+    /// Alias to DIALECT::CtorConv
+    using CtorConv = typename DIALECT::CtorConv;
+
+    static_assert(std::is_enum_v<BuiltinFn>);
+    static_assert(std::is_enum_v<CtorConv>);
+
+    /// @param types The type manager
+    /// @param symbols The symbol table
+    /// @param diags The diagnostics
+    Table(core::type::Manager& types, SymbolTable& symbols, diag::List& diags)
+        : context{DIALECT::kData, types, symbols, diags} {}
+
+    /// Lookup looks for the builtin overload with the given signature, raising an error diagnostic
+    /// if the builtin was not found.
+    /// @param builtin_fn the builtin function
+    /// @param args the argument types passed to the builtin function
+    /// @param earliest_eval_stage the the earliest evaluation stage that a call to
+    ///        the builtin can be made. This can alter the overloads considered.
+    ///        For example, if the earliest evaluation stage is `EvaluationStage::kRuntime`, then
+    ///        only overloads with concrete argument types will be considered, as all
+    ///        abstract-numerics will have been materialized after shader creation time
+    ///        (EvaluationStage::kConstant).
+    /// @param source the source of the builtin call
+    /// @return the resolved builtin function overload
+    Result<Overload> Lookup(BuiltinFn builtin_fn,
+                            VectorRef<const core::type::Type*> args,
+                            EvaluationStage earliest_eval_stage,
+                            const Source& source) {
+        std::string_view name = DIALECT::ToString(builtin_fn);
+        size_t id = static_cast<size_t>(builtin_fn);
+        return LookupFn(context, name, id, std::move(args), earliest_eval_stage, source);
+    }
+
+    /// Lookup looks for the unary op overload with the given signature, raising an error
+    /// diagnostic if the operator was not found.
+    /// @param op the unary operator
+    /// @param arg the type of the expression passed to the operator
+    /// @param earliest_eval_stage the the earliest evaluation stage that a call to
+    ///        the unary operator can be made. This can alter the overloads considered.
+    ///        For example, if the earliest evaluation stage is
+    ///        `EvaluationStage::kRuntime`, then only overloads with concrete argument types
+    ///        will be considered, as all abstract-numerics will have been materialized
+    ///        after shader creation time (EvaluationStage::kConstant).
+    /// @param source the source of the operator call
+    /// @return the resolved unary operator overload
+    Result<Overload> Lookup(core::UnaryOp op,
+                            const core::type::Type* arg,
+                            EvaluationStage earliest_eval_stage,
+                            const Source& source) {
+        return LookupUnary(context, op, arg, earliest_eval_stage, source);
+    }
+
+    /// Lookup looks for the binary op overload with the given signature, raising an error
+    /// diagnostic if the operator was not found.
+    /// @param op the binary operator
+    /// @param lhs the LHS value type passed to the operator
+    /// @param rhs the RHS value type passed to the operator
+    /// @param source the source of the operator call
+    /// @param earliest_eval_stage the the earliest evaluation stage that a call to
+    ///        the binary operator can be made. This can alter the overloads considered.
+    ///        For example, if the earliest evaluation stage is
+    ///        `EvaluationStage::kRuntime`, then only overloads with concrete argument types
+    ///        will be considered, as all abstract-numerics will have been materialized
+    ///        after shader creation time (EvaluationStage::kConstant).
+    /// @param is_compound true if the binary operator is being used as a compound assignment
+    /// @return the resolved binary operator overload
+    Result<Overload> Lookup(core::BinaryOp op,
+                            const core::type::Type* lhs,
+                            const core::type::Type* rhs,
+                            EvaluationStage earliest_eval_stage,
+                            const Source& source,
+                            bool is_compound) {
+        return LookupBinary(context, op, lhs, rhs, earliest_eval_stage, source, is_compound);
+    }
+
+    /// Lookup looks for the value constructor or conversion overload for the given CtorConv.
+    /// @param type the type being constructed or converted
+    /// @param template_arg the optional template argument
+    /// @param args the argument types passed to the constructor / conversion call
+    /// @param earliest_eval_stage the the earliest evaluation stage that a call to
+    ///        the constructor or conversion can be made. This can alter the overloads considered.
+    ///        For example, if the earliest evaluation stage is
+    ///        `EvaluationStage::kRuntime`, then only overloads with concrete argument types
+    ///        will be considered, as all abstract-numerics will have been materialized
+    ///        after shader creation time (EvaluationStage::kConstant).
+    /// @param source the source of the call
+    /// @return the resolved type constructor or conversion function overload
+    Result<Overload> Lookup(CtorConv type,
+                            const core::type::Type* template_arg,
+                            VectorRef<const core::type::Type*> args,
+                            EvaluationStage earliest_eval_stage,
+                            const Source& source) {
+        std::string_view name = DIALECT::ToString(type);
+        size_t id = static_cast<size_t>(type);
+        return LookupCtorConv(context, name, id, template_arg, std::move(args), earliest_eval_stage,
+                              source);
+    }
+
+    /// The intrinsic context
+    Context context;
+};
 
 }  // namespace tint::core::intrinsic
 

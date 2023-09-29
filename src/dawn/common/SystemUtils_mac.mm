@@ -24,10 +24,10 @@ namespace dawn {
 void GetMacOSVersion(int32_t* majorVersion, int32_t* minorVersion) {
     if (@available(macOS 10.10, *)) {
       NSOperatingSystemVersion version = [[NSProcessInfo processInfo] operatingSystemVersion];
-      ASSERT(majorVersion != nullptr);
+      DAWN_ASSERT(majorVersion != nullptr);
       *majorVersion = version.majorVersion;
       if (minorVersion != nullptr) {
-          *minorVersion = version.minorVersion;
+        *minorVersion = version.minorVersion;
       }
     } else {
       extern OSErr Gestalt(OSType selector, SInt32 *response) __attribute__((weak_import, weak));

@@ -31,7 +31,7 @@ class ErrorQuerySet final : public QuerySetBase {
         : QuerySetBase(device, descriptor, ObjectBase::kError) {}
 
   private:
-    void DestroyImpl() override { UNREACHABLE(); }
+    void DestroyImpl() override { DAWN_UNREACHABLE(); }
 };
 
 }  // anonymous namespace
@@ -120,7 +120,7 @@ QuerySetBase::QuerySetBase(DeviceBase* device,
 
 QuerySetBase::~QuerySetBase() {
     // Uninitialized or already destroyed
-    ASSERT(mState == QuerySetState::Unavailable || mState == QuerySetState::Destroyed);
+    DAWN_ASSERT(mState == QuerySetState::Unavailable || mState == QuerySetState::Destroyed);
 }
 
 void QuerySetBase::DestroyImpl() {
@@ -157,7 +157,7 @@ void QuerySetBase::SetQueryAvailability(uint32_t index, bool available) {
 }
 
 MaybeError QuerySetBase::ValidateCanUseInSubmitNow() const {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     DAWN_INVALID_IF(mState == QuerySetState::Destroyed, "%s used while destroyed.", this);
     return {};
 }

@@ -43,8 +43,8 @@ using StructMemberList = tint::Vector<const ast::StructMember*, 8>;
 // The name of the struct member for arrays that are wrapped in structures.
 const char* kWrappedArrayMemberName = "arr";
 
-bool ShouldRun(const Program* program) {
-    for (auto* decl : program->AST().GlobalDeclarations()) {
+bool ShouldRun(const Program& program) {
+    for (auto* decl : program.AST().GlobalDeclarations()) {
         if (decl->Is<ast::Variable>()) {
             return true;
         }
@@ -201,6 +201,8 @@ struct ModuleScopeVarToEntryPointParam::State {
                 }
                 break;
             }
+            case core::AddressSpace::kPixelLocal:
+                break;  // Ignore
             default: {
                 TINT_ICE() << "unhandled module-scope address space (" << sc << ")";
                 break;
@@ -362,7 +364,7 @@ struct ModuleScopeVarToEntryPointParam::State {
             ctx.dst->Structure(PrivateStructName(), std::move(private_struct_members));
             // Passing a pointer to a private variable will now involve passing a pointer to the
             // member of a structure, so enable the extension that allows this.
-            ctx.dst->Enable(core::Extension::kChromiumExperimentalFullPtrParameters);
+            ctx.dst->Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
         }
 
         // Build a list of `&ident` expressions. We'll use this later to avoid generating
@@ -585,7 +587,7 @@ ModuleScopeVarToEntryPointParam::ModuleScopeVarToEntryPointParam() = default;
 ModuleScopeVarToEntryPointParam::~ModuleScopeVarToEntryPointParam() = default;
 
 ast::transform::Transform::ApplyResult ModuleScopeVarToEntryPointParam::Apply(
-    const Program* src,
+    const Program& src,
     const ast::transform::DataMap&,
     ast::transform::DataMap&) const {
     if (!ShouldRun(src)) {
@@ -593,7 +595,7 @@ ast::transform::Transform::ApplyResult ModuleScopeVarToEntryPointParam::Apply(
     }
 
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
     State state{ctx};
     state.Process();
 

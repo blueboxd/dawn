@@ -56,7 +56,7 @@ D3D12_HEAP_TYPE GetD3D12HeapType(ResourceHeapKind resourceHeapKind) {
         case Upload_AllBuffersAndTextures:
             return D3D12_HEAP_TYPE_UPLOAD;
         case EnumCount:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -75,7 +75,7 @@ D3D12_HEAP_FLAGS GetD3D12HeapFlags(ResourceHeapKind resourceHeapKind) {
         case Default_OnlyRenderableOrDepthTextures:
             return D3D12_HEAP_FLAG_ALLOW_ONLY_RT_DS_TEXTURES;
         case EnumCount:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -92,7 +92,7 @@ ResourceHeapKind GetResourceHeapKind(D3D12_RESOURCE_DIMENSION dimension,
             case D3D12_HEAP_TYPE_READBACK:
                 return Readback_AllBuffersAndTextures;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -106,7 +106,7 @@ ResourceHeapKind GetResourceHeapKind(D3D12_RESOURCE_DIMENSION dimension,
                 case D3D12_HEAP_TYPE_READBACK:
                     return Readback_OnlyBuffers;
                 default:
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
             }
             break;
         }
@@ -123,12 +123,12 @@ ResourceHeapKind GetResourceHeapKind(D3D12_RESOURCE_DIMENSION dimension,
                 }
 
                 default:
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
             }
             break;
         }
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -160,7 +160,7 @@ uint64_t GetInitialResourcePlacementAlignment(
         }
         case D3D12_RESOURCE_DIMENSION_UNKNOWN:
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -267,7 +267,7 @@ uint32_t ComputeExtraArraySizeForIntelGen12(uint32_t width,
             tileHeight = 64;
             break;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
     uint32_t tileWidth = kTileSize / tileHeight;
 
@@ -366,8 +366,8 @@ ResourceAllocatorManager::~ResourceAllocatorManager() {
     Tick(std::numeric_limits<ExecutionSerial>::max());
     DestroyPool();
 
-    ASSERT(mAllocationsToDelete.Empty());
-    ASSERT(mHeapsToDelete.Empty());
+    DAWN_ASSERT(mAllocationsToDelete.Empty());
+    DAWN_ASSERT(mHeapsToDelete.Empty());
 }
 
 ResultOrError<ResourceHeapAllocation> ResourceAllocatorManager::AllocateMemory(
@@ -396,7 +396,7 @@ ResultOrError<ResourceHeapAllocation> ResourceAllocatorManager::AllocateMemory(
         resourceDescriptor.DepthOrArraySize > 1 && colorFormatBytesPerBlock > 0) {
         // Multisample textures have one layer at most. Only non-multisample textures need the
         // workaround.
-        ASSERT(revisedDescriptor.SampleDesc.Count <= 1);
+        DAWN_ASSERT(revisedDescriptor.SampleDesc.Count <= 1);
         revisedDescriptor.DepthOrArraySize += ComputeExtraArraySizeForIntelGen12(
             resourceDescriptor.Width, resourceDescriptor.Height,
             resourceDescriptor.DepthOrArraySize, resourceDescriptor.MipLevels,
@@ -460,11 +460,11 @@ void ResourceAllocatorManager::DeallocateMemory(ResourceHeapAllocation& allocati
     // calls DeallocateMemory again using the same allocation.
     allocation.Invalidate();
 
-    ASSERT(allocation.GetD3D12Resource() == nullptr);
+    DAWN_ASSERT(allocation.GetD3D12Resource() == nullptr);
 }
 
 void ResourceAllocatorManager::FreeMemory(ResourceHeapAllocation& allocation) {
-    ASSERT(allocation.GetInfo().mMethod == AllocationMethod::kSubAllocated);
+    DAWN_ASSERT(allocation.GetInfo().mMethod == AllocationMethod::kSubAllocated);
 
     D3D12_HEAP_PROPERTIES heapProp;
     allocation.GetD3D12Resource()->GetHeapProperties(&heapProp, nullptr);

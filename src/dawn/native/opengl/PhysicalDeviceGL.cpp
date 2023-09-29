@@ -129,9 +129,9 @@ bool PhysicalDevice::SupportsExternalImages() const {
 
 MaybeError PhysicalDevice::InitializeImpl() {
     if (mFunctions.GetVersion().IsES()) {
-        ASSERT(GetBackendType() == wgpu::BackendType::OpenGLES);
+        DAWN_ASSERT(GetBackendType() == wgpu::BackendType::OpenGLES);
     } else {
-        ASSERT(GetBackendType() == wgpu::BackendType::OpenGL);
+        DAWN_ASSERT(GetBackendType() == wgpu::BackendType::OpenGL);
     }
 
     mName = reinterpret_cast<const char*>(mFunctions.GetString(GL_RENDERER));
@@ -241,7 +241,7 @@ GLint GetIndexed(const OpenGLFunctions& gl, GLenum pname, GLuint index) {
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     const OpenGLFunctions& gl = mFunctions;
-    GetDefaultLimits(&limits->v1);
+    GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
 
     limits->v1.maxTextureDimension1D = limits->v1.maxTextureDimension2D =
         Get(gl, GL_MAX_TEXTURE_SIZE);

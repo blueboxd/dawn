@@ -34,7 +34,7 @@ TEST_F(GenerateExternalTextureBindingsTest, None) {
 
     tint::Program program(resolver::Resolve(b));
     ASSERT_TRUE(program.IsValid());
-    auto bindings = GenerateExternalTextureBindings(&program);
+    auto bindings = GenerateExternalTextureBindings(program);
     ASSERT_TRUE(bindings.empty());
 }
 
@@ -44,7 +44,7 @@ TEST_F(GenerateExternalTextureBindingsTest, One) {
 
     tint::Program program(resolver::Resolve(b));
     ASSERT_TRUE(program.IsValid());
-    auto bindings = GenerateExternalTextureBindings(&program);
+    auto bindings = GenerateExternalTextureBindings(program);
     ASSERT_EQ(bindings.size(), 1u);
 
     auto to = bindings[BindingPoint{0, 0}];
@@ -61,7 +61,7 @@ TEST_F(GenerateExternalTextureBindingsTest, Two_SameGroup) {
 
     tint::Program program(resolver::Resolve(b));
     ASSERT_TRUE(program.IsValid());
-    auto bindings = GenerateExternalTextureBindings(&program);
+    auto bindings = GenerateExternalTextureBindings(program);
     ASSERT_EQ(bindings.size(), 2u);
 
     auto to0 = bindings[BindingPoint{0, 0}];
@@ -84,7 +84,7 @@ TEST_F(GenerateExternalTextureBindingsTest, Two_DifferentGroup) {
 
     tint::Program program(resolver::Resolve(b));
     ASSERT_TRUE(program.IsValid());
-    auto bindings = GenerateExternalTextureBindings(&program);
+    auto bindings = GenerateExternalTextureBindings(program);
     ASSERT_EQ(bindings.size(), 2u);
 
     auto to0 = bindings[BindingPoint{0, 0}];
@@ -109,8 +109,8 @@ TEST_F(GenerateExternalTextureBindingsTest, Two_WithOtherBindingsInSameGroup) {
     b.GlobalVar("v4", b.ty.i32(), b.Group(0_a), b.Binding(4_a), kUniform);
 
     tint::Program program(resolver::Resolve(b));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
-    auto bindings = GenerateExternalTextureBindings(&program);
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
+    auto bindings = GenerateExternalTextureBindings(program);
     ASSERT_EQ(bindings.size(), 2u);
 
     auto to0 = bindings[BindingPoint{0, 1}];

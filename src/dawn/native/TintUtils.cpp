@@ -104,11 +104,13 @@ tint::ast::transform::VertexFormat ToTintVertexFormat(wgpu::VertexFormat format)
             return tint::ast::transform::VertexFormat::kSint32x3;
         case wgpu::VertexFormat::Sint32x4:
             return tint::ast::transform::VertexFormat::kSint32x4;
+        case wgpu::VertexFormat::Unorm10_10_10_2:
+            return tint::ast::transform::VertexFormat::kUnorm10_10_10_2;
 
         case wgpu::VertexFormat::Undefined:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 tint::ast::transform::VertexStepMode ToTintVertexStepMode(wgpu::VertexStepMode mode) {
@@ -120,7 +122,7 @@ tint::ast::transform::VertexStepMode ToTintVertexStepMode(wgpu::VertexStepMode m
         case wgpu::VertexStepMode::VertexBufferNotUsed:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 }  // namespace
@@ -133,7 +135,7 @@ ScopedTintICEHandler::ScopedTintICEHandler(DeviceBase* device) {
     (void)init_once_tint_error_reporter;
 
     // Shouldn't have overlapping instances of this handler.
-    ASSERT(tlDevice == nullptr);
+    DAWN_ASSERT(tlDevice == nullptr);
     tlDevice = device;
 }
 

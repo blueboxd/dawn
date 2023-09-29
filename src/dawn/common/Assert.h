@@ -20,7 +20,7 @@
 #include "dawn/common/Compiler.h"
 
 // Dawn asserts to be used instead of the regular C stdlib assert function (if you don't use assert
-// yet, you should start now!). In debug ASSERT(condition) will trigger an error, otherwise in
+// yet, you should start now!). In debug DAWN_ASSERT(condition) will trigger an error, otherwise in
 // release it does nothing at runtime.
 //
 // In case of name clashes (with for example a testing library), you can define the
@@ -91,15 +91,9 @@
         DAWN_ASSERT(DAWN_ASSERT_LOOP_CONDITION && "Unreachable code hit"); \
         DAWN_BUILTIN_UNREACHABLE();                                        \
     } while (DAWN_ASSERT_LOOP_CONDITION)
-// Release-mode assert (similar to Chromium CHECK).
+// Release-mode assert (similar to Chromium DAWN_CHECK).
 // First does a debug-mode assert for better a better debugging experience, then hard-aborts.
 #define DAWN_CHECK(condition) DAWN_CHECK_CALLSITE_HELPER(__FILE__, __func__, __LINE__, condition)
-
-#if !defined(DAWN_SKIP_ASSERT_SHORTHANDS)
-#define ASSERT DAWN_ASSERT
-#define UNREACHABLE DAWN_UNREACHABLE
-#define CHECK DAWN_CHECK
-#endif
 
 namespace dawn {
 

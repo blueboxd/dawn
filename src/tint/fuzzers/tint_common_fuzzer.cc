@@ -31,9 +31,9 @@
 #endif  // TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 
 #include "src/tint/api/common/binding_point.h"
-#include "src/tint/fuzzers/apply_substitute_overrides.h"
 #include "src/tint/lang/core/type/external_texture.h"
 #include "src/tint/lang/wgsl/ast/module.h"
+#include "src/tint/lang/wgsl/helpers/apply_substitute_overrides.h"
 #include "src/tint/lang/wgsl/helpers/flatten_bindings.h"
 #include "src/tint/lang/wgsl/program/program.h"
 #include "src/tint/lang/wgsl/sem/variable.h"
@@ -68,14 +68,14 @@ namespace {
 // Wrapping in a macro, so it can be a one-liner in the code, but not
 // introduce another level in the stack trace. This will help with de-duping
 // ClusterFuzz issues.
-#define CHECK_INSPECTOR(program, inspector)                                                  \
-    do {                                                                                     \
-        if ((inspector).has_error()) {                                                       \
-            if (!enforce_validity) {                                                         \
-                return;                                                                      \
-            }                                                                                \
-            FATAL_ERROR(program->Diagnostics(), "Inspector failed: " + (inspector).error()); \
-        }                                                                                    \
+#define CHECK_INSPECTOR(program, inspector)                                                 \
+    do {                                                                                    \
+        if ((inspector).has_error()) {                                                      \
+            if (!enforce_validity) {                                                        \
+                return;                                                                     \
+            }                                                                               \
+            FATAL_ERROR(program.Diagnostics(), "Inspector failed: " + (inspector).error()); \
+        }                                                                                   \
     } while (false)
 
 // Wrapping in a macro to make code more readable and help with issue de-duping.
@@ -188,6 +188,16 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
         return 0;
     }
 
+    // Helper that returns `true` if the program uses the given extension.
+    auto uses_extension = [&program](tint::wgsl::Extension extension) {
+        for (auto* enable : program.AST().Enables()) {
+            if (enable->HasExtension(extension)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
 #if TINT_BUILD_SPV_READER
     if (input_ == InputFormat::kSpv && !SPIRVToolsValidationCheck(program, spirv_input)) {
         FATAL_ERROR(program.Diagnostics(),
@@ -195,7 +205,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
     }
 #endif  // TINT_BUILD_SPV_READER
 
-    RunInspector(&program);
+    RunInspector(program);
     diagnostics_ = program.Diagnostics();
 
     auto validate_program = [&](auto& out) {
@@ -214,20 +224,20 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
         }
 
         program = std::move(out);
-        RunInspector(&program);
+        RunInspector(program);
         return 1;
     };
 
     if (transform_manager_) {
         ast::transform::DataMap outputs;
-        auto out = transform_manager_->Run(&program, *transform_inputs_, outputs);
+        auto out = transform_manager_->Run(program, *transform_inputs_, outputs);
         if (!validate_program(out)) {  // Will move: program <- out on success
             return 0;
         }
     }
 
     // Run SubstituteOverride if required
-    program = ApplySubstituteOverrides(std::move(program));
+    program = tint::wgsl::ApplySubstituteOverrides(std::move(program));
     if (!program.IsValid()) {
         return 0;
     }
@@ -283,13 +293,20 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
     switch (output_) {
         case OutputFormat::kWGSL: {
 #if TINT_BUILD_WGSL_WRITER
-            (void)wgsl::writer::Generate(&program, options_wgsl_);
+            (void)wgsl::writer::Generate(program, options_wgsl_);
 #endif  // TINT_BUILD_WGSL_WRITER
             break;
         }
         case OutputFormat::kSpv: {
 #if TINT_BUILD_SPV_WRITER
-            auto result = spirv::writer::Generate(&program, options_spirv_);
+            // Skip fuzzing the SPIR-V writer when the `clamp_frag_depth` option is used with a
+            // module that already contains push constants.
+            if (uses_extension(tint::wgsl::Extension::kChromiumExperimentalPushConstant) &&
+                options_spirv_.clamp_frag_depth) {
+                return 0;
+            }
+
+            auto result = spirv::writer::Generate(program, options_spirv_);
             if (result) {
                 generated_spirv_ = std::move(result->spirv);
 
@@ -304,21 +321,25 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
         }
         case OutputFormat::kHLSL: {
 #if TINT_BUILD_HLSL_WRITER
-            (void)hlsl::writer::Generate(&program, options_hlsl_);
+            (void)hlsl::writer::Generate(program, options_hlsl_);
 #endif  // TINT_BUILD_HLSL_WRITER
             break;
         }
         case OutputFormat::kMSL: {
 #if TINT_BUILD_MSL_WRITER
-            // Remap resource numbers to a flat namespace.
-            // TODO(crbug.com/tint/1501): Do this via Options::BindingMap.
-            auto input_program = &program;
-            auto flattened = tint::writer::FlattenBindings(&program);
-            if (flattened) {
-                input_program = &*flattened;
+            // TODO(crbug.com/tint/1967): Skip fuzzing of the IR version of the MSL writer, which is
+            // still under construction.
+            if (options_msl_.use_tint_ir) {
+                return 0;
             }
 
-            (void)msl::writer::Generate(input_program, options_msl_);
+            // Remap resource numbers to a flat namespace.
+            // TODO(crbug.com/tint/1501): Do this via Options::BindingMap.
+            if (auto flattened = tint::writer::FlattenBindings(program)) {
+                program = std::move(*flattened);
+            }
+
+            (void)msl::writer::Generate(program, options_msl_);
 #endif  // TINT_BUILD_MSL_WRITER
             break;
         }
@@ -327,11 +348,11 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
     return 0;
 }
 
-void CommonFuzzer::RunInspector(Program* program) {
+void CommonFuzzer::RunInspector(Program& program) {
     inspector::Inspector inspector(program);
-    diagnostics_ = program->Diagnostics();
+    diagnostics_ = program.Diagnostics();
 
-    if (!program->IsValid()) {
+    if (!program.IsValid()) {
         // It's not safe to use the inspector on invalid programs.
         return;
     }

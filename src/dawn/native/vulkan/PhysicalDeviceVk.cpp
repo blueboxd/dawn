@@ -78,8 +78,8 @@ VulkanInstance* PhysicalDevice::GetVulkanInstance() const {
 }
 
 bool PhysicalDevice::IsDepthStencilFormatSupported(VkFormat format) const {
-    ASSERT(format == VK_FORMAT_D16_UNORM_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT ||
-           format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_S8_UINT);
+    DAWN_ASSERT(format == VK_FORMAT_D16_UNORM_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT ||
+                format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_S8_UINT);
 
     VkFormatProperties properties;
     mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(mVkPhysicalDevice, format,
@@ -344,10 +344,18 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
          VK_TRUE)) {
         EnableFeature(Feature::ChromiumExperimentalSubgroupUniformControlFlow);
     }
+
+    if (mDeviceInfo.HasExt(DeviceExt::ExternalMemoryHost) &&
+        mDeviceInfo.externalMemoryHostProperties.minImportedHostPointerAlignment <= 4096) {
+        // TODO(crbug.com/dawn/2018): properly surface the limit.
+        // Linux nearly always exposes 4096.
+        // https://vulkan.gpuinfo.org/displayextensionproperty.php?platform=linux&extensionname=VK_EXT_external_memory_host&extensionproperty=minImportedHostPointerAlignment
+        EnableFeature(Feature::HostMappedPointer);
+    }
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
-    GetDefaultLimits(&limits->v1);
+    GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
     CombinedLimits baseLimits = *limits;
 
     const VkPhysicalDeviceLimits& vkLimits = mDeviceInfo.properties.limits;
@@ -510,6 +518,12 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // TODO(crbug.com/dawn/1448):
     // - maxInterStageShaderVariables
 
+    // Experimental limits for subgroups
+    limits->experimentalSubgroupLimits.minSubgroupSize =
+        mDeviceInfo.subgroupSizeControlProperties.minSubgroupSize;
+    limits->experimentalSubgroupLimits.maxSubgroupSize =
+        mDeviceInfo.subgroupSizeControlProperties.maxSubgroupSize;
+
     return {};
 }
 
@@ -591,7 +605,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     bool supportsD24s8 = IsDepthStencilFormatSupported(VK_FORMAT_D24_UNORM_S8_UINT);
     bool supportsS8 = IsDepthStencilFormatSupported(VK_FORMAT_S8_UINT);
 
-    ASSERT(supportsD32s8 || supportsD24s8);
+    DAWN_ASSERT(supportsD32s8 || supportsD24s8);
 
     if (!supportsD24s8) {
         deviceToggles->ForceSet(Toggle::VulkanUseD32S8, true);

@@ -29,7 +29,7 @@
     "create instance": {
         "category": "function",
         "returns": "instance",
-        "_comment": "TODO(crbug.com/dawn/1987): The return type should be nullable; null is returned in error cases.",
+        "_comment": "TODO(crbug.com/dawn/2048): The return type should be nullable; null is returned in error cases.",
         "args": [
             {"name": "descriptor", "type": "instance descriptor", "annotation": "const*", "optional": true}
         ]
@@ -521,12 +521,39 @@
             {"name": "mapped at creation", "type": "bool", "default": "false"}
         ]
     },
+    "buffer host mapped pointer": {
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["buffer descriptor"],
+        "tags": ["dawn"],
+        "members": [
+            {"name": "pointer", "type": "void *"},
+            {"name": "dispose callback", "type": "callback"},
+            {"name": "userdata", "type": "void *"}
+        ]
+    },
+    "callback": {
+        "category": "function pointer",
+        "tags": ["dawn"],
+        "args": [
+            {"name": "userdata", "type": "void *"}
+        ]
+    },
     "buffer map callback": {
         "category": "function pointer",
         "args": [
             {"name": "status", "type": "buffer map async status"},
             {"name": "userdata", "type": "void *"}
         ]
+    },
+    "buffer map callback info": {
+        "category": "structure",
+        "extensible": "in",
+        "members": [
+            {"name": "mode", "type": "callback mode"},
+            {"name": "callback", "type": "buffer map callback"},
+            {"name": "userdata", "type": "void *"}
+	]
     },
     "buffer map async status": {
         "category": "enum",
@@ -818,8 +845,7 @@
         "extensible": "in",
         "members": [
             {"name": "label", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
-            {"name": "timestamp write count", "type": "size_t", "default": 0},
-            {"name": "timestamp writes", "type": "compute pass timestamp write", "annotation": "const*", "length": "timestamp write count"}
+            {"name": "timestamp writes", "type": "compute pass timestamp writes", "annotation": "const*", "optional": true}
         ]
     },
     "compute pass encoder": {
@@ -915,19 +941,12 @@
             {"value": 4, "name": "inherit"}
         ]
     },
-    "compute pass timestamp location": {
-        "category": "enum",
-        "values": [
-            {"value": 0, "name": "beginning"},
-            {"value": 1, "name": "end"}
-        ]
-    },
-    "compute pass timestamp write": {
+    "compute pass timestamp writes": {
         "category": "structure",
         "members": [
             {"name": "query set", "type": "query set"},
-            {"name": "query index", "type": "uint32_t"},
-            {"name": "location", "type": "compute pass timestamp location"}
+            {"name": "beginning of pass write index", "type": "uint32_t", "default": "WGPU_QUERY_SET_INDEX_UNDEFINED"},
+            {"name": "end of pass write index", "type": "uint32_t", "default": "WGPU_QUERY_SET_INDEX_UNDEFINED"}
         ]
     },
     "compute pipeline": {
@@ -1370,6 +1389,15 @@
             {"name": "max compute workgroup size y", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute workgroup size z", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute workgroups per dimension", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"}
+        ]
+    },
+    "dawn experimental subgroup limits": {
+        "category": "structure",
+        "chained": "out",
+        "chain roots": ["supported limits"],
+        "members": [
+            {"name": "min subgroup size", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
+            {"name": "max subgroup size", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"}
         ]
     },
     "required limits": {
@@ -1867,6 +1895,7 @@
             {"value": 1019, "name": "norm16 texture formats", "tags": ["dawn"]},
             {"value": 1020, "name": "multi planar format extended usages", "tags": ["dawn"]},
             {"value": 1021, "name": "multi planar format p010", "tags": ["dawn"]},
+            {"value": 1022, "name": "host mapped pointer", "tags": ["dawn"]},
 
             {"value": 1100, "name": "shared texture memory vk dedicated allocation", "tags": ["dawn", "native"]},
             {"value": 1101, "name": "shared texture memory a hardware buffer", "tags": ["dawn", "native"]},
@@ -1971,12 +2000,11 @@
         ]
     },
     "callback mode": {
-        "_comment": "TODO(crbug.com/dawn/1987): Change this to an enum, and always return a future (https://github.com/webgpu-native/webgpu-headers/issues/199#issuecomment-1710784711).",
-        "category": "bitmask",
+        "category": "enum",
         "values": [
-            {"name": "future", "value": 1},
-            {"name": "process events", "value": 2},
-            {"name": "spontaneous", "value": 4}
+            {"name": "wait any only", "value": 0},
+            {"name": "allow process events", "value": 1},
+            {"name": "allow spontaneous", "value": 2}
         ]
     },
     "future": {
@@ -1987,7 +2015,7 @@
     },
     "wait status": {
         "category": "enum",
-        "_comment": "TODO(crbug.com/dawn/1987): This could be possibly be [[nodiscard]].",
+        "_comment": "TODO(crbug.com/dawn/2053): This could possibly be [[nodiscard]].",
         "emscripten_no_enum_table": true,
         "values": [
             {"name": "success", "value": 0},
@@ -2536,8 +2564,7 @@
             {"name": "color attachments", "type": "render pass color attachment", "annotation": "const*", "length": "color attachment count"},
             {"name": "depth stencil attachment", "type": "render pass depth stencil attachment", "annotation": "const*", "optional": true},
             {"name": "occlusion query set", "type": "query set", "optional": true},
-            {"name": "timestamp write count", "type": "size_t", "default": 0},
-            {"name": "timestamp writes", "type": "render pass timestamp write", "annotation": "const*", "length": "timestamp write count"}
+            {"name": "timestamp writes", "type": "render pass timestamp writes", "annotation": "const*", "optional": true}
         ]
     },
     "render pass descriptor max draw count": {
@@ -2741,19 +2768,12 @@
             }
         ]
     },
-    "render pass timestamp location": {
-        "category": "enum",
-        "values": [
-            {"value": 0, "name": "beginning"},
-            {"value": 1, "name": "end"}
-        ]
-    },
-    "render pass timestamp write": {
+    "render pass timestamp writes": {
         "category": "structure",
         "members": [
             {"name": "query set", "type": "query set"},
-            {"name": "query index", "type": "uint32_t"},
-            {"name": "location", "type": "render pass timestamp location"}
+            {"name": "beginning of pass write index", "type": "uint32_t", "default": "WGPU_QUERY_SET_INDEX_UNDEFINED"},
+            {"name": "end of pass write index", "type": "uint32_t", "default": "WGPU_QUERY_SET_INDEX_UNDEFINED"}
         ]
     },
     "render pipeline": {
@@ -3243,6 +3263,8 @@
             {"value": 1013, "name": "dawn render pass color attachment render to single sampled", "tags": ["dawn"]},
             {"value": 1014, "name": "render pass pixel local storage", "tags": ["dawn"]},
             {"value": 1015, "name": "pipeline layout pixel local storage", "tags": ["dawn"]},
+            {"value": 1016, "name": "buffer host mapped pointer", "tags": ["dawn"]},
+            {"value": 1017, "name": "dawn experimental subgroup limits", "tags": ["dawn"]},
 
             {"value": 1100, "name": "shared texture memory vk image descriptor", "tags": ["dawn", "native"]},
             {"value": 1101, "name": "shared texture memory vk dedicated allocation descriptor", "tags": ["dawn", "native"]},
@@ -3582,7 +3604,8 @@
             {"value": 27, "name": "sint32"},
             {"value": 28, "name": "sint32x2"},
             {"value": 29, "name": "sint32x3"},
-            {"value": 30, "name": "sint32x4"}
+            {"value": 30, "name": "sint32x4"},
+            {"value": 31, "name": "unorm 10_10_10_2", "jsrepr": "'unorm10-10-10-2'"}
         ]
     },
     "whole size" : {
@@ -3616,6 +3639,11 @@
         "value":  "(0xffffffffUL)"
     },
     "mip level count undefined" : {
+        "category": "constant",
+        "type": "uint32_t",
+        "value":  "(0xffffffffUL)"
+    },
+    "query set index undefined" : {
         "category": "constant",
         "type": "uint32_t",
         "value":  "(0xffffffffUL)"

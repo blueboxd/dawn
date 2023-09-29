@@ -75,6 +75,9 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
         operands_.Clear();
     }
 
+    /// Removes all results from the instruction.
+    void ClearResults() { results_.Clear(); }
+
     /// @returns the operands of the instruction
     VectorRef<ir::Value*> Operands() override { return operands_; }
 
@@ -134,6 +137,9 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
     Vector<ir::Value*, N> operands_;
     /// The results of this instruction.
     Vector<ir::InstructionResult*, R> results_;
+
+    /// The default number of operands
+    static constexpr size_t kDefaultNumOperands = N;
 };
 
 }  // namespace tint::core::ir

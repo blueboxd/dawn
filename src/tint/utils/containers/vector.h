@@ -365,6 +365,31 @@ class Vector {
         }
     }
 
+    /// Removes all the elements from the vector that match the predicate function.
+    /// @param predicate the predicate function with the signature `bool(const T&)`. This function
+    /// should return `true` for elements that should be removed from the vector.
+    template <typename PREDICATE>
+    void EraseIf(PREDICATE&& predicate) {
+        // Shuffle
+        size_t num_removed = 0;
+        for (size_t i = 0; i < impl_.slice.len; i++) {
+            auto& el = impl_.slice.data[i];
+            bool remove = predicate(const_cast<const T&>(el));
+            if (num_removed > 0) {
+                auto& dst = impl_.slice.data[i - num_removed];
+                dst = std::move(el);
+            }
+            if (remove) {
+                num_removed++;
+            }
+        }
+        // Pop
+        for (size_t i = 0; i < num_removed; i++) {
+            auto& el = impl_.slice.data[--impl_.slice.len];
+            el.~T();
+        }
+    }
+
     /// Sort sorts the vector in-place using the predicate function @p pred
     /// @param pred a function that has the signature `bool(const T& a, const T& b)` which returns
     /// true if `a` is ordered before `b`.
@@ -374,8 +399,10 @@ class Vector {
     }
 
     /// Sort sorts the vector in-place using `T::operator<()`
-    void Sort() {
+    /// @returns this vector so calls can be chained
+    Vector& Sort() {
         Sort([](auto& a, auto& b) { return a < b; });
+        return *this;
     }
 
     /// Reverse reversed the vector in-place
@@ -440,6 +467,15 @@ class Vector {
 
     /// @returns the end for a reverse iterator
     auto rend() const { return impl_.slice.rend(); }
+
+    /// @returns a hash code for this Vector
+    size_t HashCode() const {
+        auto hash = Hash(Length());
+        for (auto& el : *this) {
+            hash = HashCombine(hash, el);
+        }
+        return hash;
+    }
 
     /// Equality operator
     /// @param other the other vector
@@ -775,6 +811,15 @@ class VectorRef {
     /// @returns the end for a reverse iterator
     auto rend() const { return slice_.rend(); }
 
+    /// @returns a hash code of the Vector
+    size_t HashCode() const {
+        auto hash = Hash(Length());
+        for (auto& el : *this) {
+            hash = HashCombine(hash, el);
+        }
+        return hash;
+    }
+
   private:
     /// Friend class
     template <typename, size_t>
@@ -859,34 +904,6 @@ auto& operator<<(STREAM& o, VectorRef<T> vec) {
     o << "]";
     return o;
 }
-
-/// Hasher specialization for Vector
-template <typename T, size_t N>
-struct Hasher<Vector<T, N>> {
-    /// @param vector the Vector to hash
-    /// @returns a hash of the Vector
-    size_t operator()(const Vector<T, N>& vector) const {
-        auto hash = Hash(vector.Length());
-        for (auto& el : vector) {
-            hash = HashCombine(hash, el);
-        }
-        return hash;
-    }
-};
-
-/// Hasher specialization for VectorRef
-template <typename T>
-struct Hasher<VectorRef<T>> {
-    /// @param vector the VectorRef reference to hash
-    /// @returns a hash of the Vector
-    size_t operator()(const VectorRef<T>& vector) const {
-        auto hash = Hash(vector.Length());
-        for (auto& el : vector) {
-            hash = HashCombine(hash, el);
-        }
-        return hash;
-    }
-};
 
 namespace detail {
 

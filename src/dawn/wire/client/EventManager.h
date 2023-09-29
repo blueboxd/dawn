@@ -17,7 +17,9 @@
 
 #include <cstddef>
 #include <functional>
-#include <unordered_map>
+#include <map>
+#include <memory>
+#include <utility>
 
 #include "dawn/common/FutureUtils.h"
 #include "dawn/common/MutexProtected.h"
@@ -30,45 +32,47 @@ namespace dawn::wire::client {
 
 class Client;
 
-// Code to run to complete the event (after receiving a ready notification from the wire).
-using EventCallback = std::function<void(EventCompletionType)>;
+struct TrackedEvent : NonMovable {
+    TrackedEvent(WGPUCallbackMode mode, void* userdata);
+    virtual ~TrackedEvent();
+
+    void Complete(EventCompletionType type);
+
+    WGPUCallbackMode mMode;
+    void* mUserdata = nullptr;
+    // These states don't need to be atomic because they're always protected by mTrackedEventsMutex
+    // (or moved out to a local variable).
+    bool mReady = false;
+
+  protected:
+    virtual void CompleteImpl(EventCompletionType type) = 0;
+};
 
 // Subcomponent which tracks callback events for the Future-based callback
 // entrypoints. All events from this instance (regardless of whether from an adapter, device, queue,
 // etc.) are tracked here, and used by the instance-wide ProcessEvents and WaitAny entrypoints.
 //
-// TODO(crbug.com/dawn/1987): This should probably be merged together with RequestTracker.
+// TODO(crbug.com/dawn/2060): This should probably be merged together with RequestTracker.
 class EventManager final : NonMovable {
   public:
     explicit EventManager(Client*);
     ~EventManager() = default;
 
-    FutureID TrackEvent(WGPUCallbackModeFlags mode, EventCallback&& callback);
+    // Returns a pair of the FutureID and a bool that is true iff the event was successfuly tracked,
+    // false otherwise. Events may not be tracked if the client is already disconnected.
+    std::pair<FutureID, bool> TrackEvent(TrackedEvent* event);
     void ShutDown();
-    void SetFutureReady(FutureID futureID);
+    void SetFutureReady(FutureID futureID, std::function<void(TrackedEvent&)>&& ready = {});
     void ProcessPollEvents();
     WGPUWaitStatus WaitAny(size_t count, WGPUFutureWaitInfo* infos, uint64_t timeoutNS);
 
   private:
-    struct TrackedEvent : dawn::NonCopyable {
-        TrackedEvent(WGPUCallbackModeFlags mode, EventCallback&& callback);
-        ~TrackedEvent();
-
-        TrackedEvent(TrackedEvent&&) = default;
-        TrackedEvent& operator=(TrackedEvent&&) = default;
-
-        WGPUCallbackModeFlags mMode;
-        // Callback. Falsey if already called.
-        EventCallback mCallback;
-        // These states don't need to be atomic because they're always protected by
-        // mTrackedEventsMutex (or moved out to a local variable).
-        bool mReady = false;
-    };
-
     Client* mClient;
 
-    // Tracks all kinds of events (for both WaitAny and ProcessEvents).
-    MutexProtected<std::unordered_map<FutureID, TrackedEvent>> mTrackedEvents;
+    // Tracks all kinds of events (for both WaitAny and ProcessEvents). We use an ordered map so
+    // that in most cases, event ordering is already implicit when we iterate the map. (Not true for
+    // WaitAny though because the user could specify the FutureIDs out of order.)
+    MutexProtected<std::map<FutureID, std::unique_ptr<TrackedEvent>>> mTrackedEvents;
     std::atomic<FutureID> mNextFutureID = 1;
 };
 

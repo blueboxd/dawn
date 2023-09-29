@@ -20,10 +20,9 @@
 #include <limits>
 #include <utility>
 
-#include "src/tint/lang/core/builtin.h"
+#include "src/tint/lang/core/builtin_type.h"
 #include "src/tint/lang/core/constant/scalar.h"
 #include "src/tint/lang/core/fluent_types.h"
-#include "src/tint/lang/core/intrinsic/data/data.h"
 #include "src/tint/lang/core/type/abstract_float.h"
 #include "src/tint/lang/core/type/abstract_int.h"
 #include "src/tint/lang/core/type/array.h"
@@ -60,6 +59,8 @@
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 #include "src/tint/lang/wgsl/ast/while_statement.h"
 #include "src/tint/lang/wgsl/ast/workgroup_attribute.h"
+#include "src/tint/lang/wgsl/intrinsic/ctor_conv.h"
+#include "src/tint/lang/wgsl/intrinsic/dialect.h"
 #include "src/tint/lang/wgsl/resolver/uniformity.h"
 #include "src/tint/lang/wgsl/sem/break_if_statement.h"
 #include "src/tint/lang/wgsl/sem/builtin_enum_expression.h"
@@ -104,7 +105,7 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::BuiltinEnumExpression<tint::core::TexelForm
 namespace tint::resolver {
 namespace {
 
-using CtorConvIntrinsic = core::intrinsic::CtorConv;
+using CtorConvIntrinsic = wgsl::intrinsic::CtorConv;
 using OverloadFlag = core::intrinsic::OverloadFlag;
 
 constexpr int64_t kMaxArrayElementCount = 65536;
@@ -117,8 +118,7 @@ Resolver::Resolver(ProgramBuilder* builder)
     : builder_(builder),
       diagnostics_(builder->Diagnostics()),
       const_eval_(builder->constants, diagnostics_),
-      intrinsic_context_{core::intrinsic::data::kData, builder->Types(), builder->Symbols(),
-                         builder->Diagnostics()},
+      intrinsic_table_{builder->Types(), builder->Symbols(), builder->Diagnostics()},
       sem_(builder),
       validator_(builder,
                  sem_,
@@ -155,7 +155,7 @@ bool Resolver::Resolve() {
     builder_->Sem().SetModule(mod);
 
     const bool disable_uniformity_analysis =
-        enabled_extensions_.Contains(core::Extension::kChromiumDisableUniformityAnalysis);
+        enabled_extensions_.Contains(wgsl::Extension::kChromiumDisableUniformityAnalysis);
     if (result && !disable_uniformity_analysis) {
         // Run the uniformity analysis, which requires a complete semantic module.
         if (!AnalyzeUniformity(builder_, dependencies_)) {
@@ -1606,10 +1606,10 @@ sem::BuiltinEnumExpression<core::AddressSpace>* Resolver::AddressSpaceExpression
     }
     if (TINT_UNLIKELY(
             address_space_expr->Value() == core::AddressSpace::kPixelLocal &&
-            !enabled_extensions_.Contains(core::Extension::kChromiumExperimentalPixelLocal))) {
+            !enabled_extensions_.Contains(wgsl::Extension::kChromiumExperimentalPixelLocal))) {
         StringStream err;
         err << "'pixel_local' address space requires the '"
-            << core::Extension::kChromiumExperimentalPixelLocal << "' extension enabled";
+            << wgsl::Extension::kChromiumExperimentalPixelLocal << "' extension enabled";
         AddError(err.str(), expr->source);
         return nullptr;
     }
@@ -1941,7 +1941,7 @@ tint::Result<Vector<const core::constant::Value*, N>> Resolver::ConvertArguments
     for (size_t i = 0, n = std::min(args.Length(), target->Parameters().Length()); i < n; i++) {
         if (!Convert(const_args[i], target->Parameters()[i]->Type(),
                      args[i]->Declaration()->source)) {
-            return tint::Failure;
+            return Failure{};
         }
     }
     return const_args;
@@ -2083,8 +2083,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
     auto ctor_or_conv = [&](CtorConvIntrinsic ty,
                             const core::type::Type* template_arg) -> sem::Call* {
         auto arg_tys = tint::Transform(args, [](auto* arg) { return arg->Type(); });
-        auto match = core::intrinsic::Lookup(intrinsic_context_, ty, template_arg, arg_tys,
-                                             args_stage, expr->source);
+        auto match = intrinsic_table_.Lookup(ty, template_arg, arg_tys, args_stage, expr->source);
         if (!match) {
             return nullptr;
         }
@@ -2196,10 +2195,10 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                     TINT_ASSERT(v->Width() == 3u);
                     return ctor_or_conv(CtorConvIntrinsic::kPackedVec3, v->type());
                 }
-                return ctor_or_conv(core::intrinsic::VectorCtorConv(v->Width()), v->type());
+                return ctor_or_conv(wgsl::intrinsic::VectorCtorConv(v->Width()), v->type());
             },
             [&](const core::type::Matrix* m) {
-                return ctor_or_conv(core::intrinsic::MatrixCtorConv(m->columns(), m->rows()),
+                return ctor_or_conv(wgsl::intrinsic::MatrixCtorConv(m->columns(), m->rows()),
                                     m->type());
             },
             [&](const core::type::Array* arr) -> sem::Call* {
@@ -2325,43 +2324,43 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                 });
         }
 
-        if (auto f = resolved->BuiltinFunction(); f != core::Function::kNone) {
+        if (auto f = resolved->BuiltinFn(); f != wgsl::BuiltinFn::kNone) {
             if (!TINT_LIKELY(CheckNotTemplated("builtin", ident))) {
                 return nullptr;
             }
             return BuiltinCall(expr, f, args);
         }
 
-        if (auto b = resolved->BuiltinType(); b != core::Builtin::kUndefined) {
+        if (auto b = resolved->BuiltinType(); b != core::BuiltinType::kUndefined) {
             if (!ident->Is<ast::TemplatedIdentifier>()) {
                 // No template arguments provided.
                 // Check to see if this is an inferred-element-type call.
                 switch (b) {
-                    case core::Builtin::kArray:
+                    case core::BuiltinType::kArray:
                         return inferred_array();
-                    case core::Builtin::kVec2:
+                    case core::BuiltinType::kVec2:
                         return ctor_or_conv(CtorConvIntrinsic::kVec2, nullptr);
-                    case core::Builtin::kVec3:
+                    case core::BuiltinType::kVec3:
                         return ctor_or_conv(CtorConvIntrinsic::kVec3, nullptr);
-                    case core::Builtin::kVec4:
+                    case core::BuiltinType::kVec4:
                         return ctor_or_conv(CtorConvIntrinsic::kVec4, nullptr);
-                    case core::Builtin::kMat2X2:
+                    case core::BuiltinType::kMat2X2:
                         return ctor_or_conv(CtorConvIntrinsic::kMat2x2, nullptr);
-                    case core::Builtin::kMat2X3:
+                    case core::BuiltinType::kMat2X3:
                         return ctor_or_conv(CtorConvIntrinsic::kMat2x3, nullptr);
-                    case core::Builtin::kMat2X4:
+                    case core::BuiltinType::kMat2X4:
                         return ctor_or_conv(CtorConvIntrinsic::kMat2x4, nullptr);
-                    case core::Builtin::kMat3X2:
+                    case core::BuiltinType::kMat3X2:
                         return ctor_or_conv(CtorConvIntrinsic::kMat3x2, nullptr);
-                    case core::Builtin::kMat3X3:
+                    case core::BuiltinType::kMat3X3:
                         return ctor_or_conv(CtorConvIntrinsic::kMat3x3, nullptr);
-                    case core::Builtin::kMat3X4:
+                    case core::BuiltinType::kMat3X4:
                         return ctor_or_conv(CtorConvIntrinsic::kMat3x4, nullptr);
-                    case core::Builtin::kMat4X2:
+                    case core::BuiltinType::kMat4X2:
                         return ctor_or_conv(CtorConvIntrinsic::kMat4x2, nullptr);
-                    case core::Builtin::kMat4X3:
+                    case core::BuiltinType::kMat4X3:
                         return ctor_or_conv(CtorConvIntrinsic::kMat4x3, nullptr);
-                    case core::Builtin::kMat4X4:
+                    case core::BuiltinType::kMat4X4:
                         return ctor_or_conv(CtorConvIntrinsic::kMat4x4, nullptr);
                     default:
                         break;
@@ -2400,7 +2399,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
 
 template <size_t N>
 sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
-                                 core::Function fn,
+                                 wgsl::BuiltinFn fn,
                                  Vector<const sem::ValueExpression*, N>& args) {
     auto arg_stage = core::EvaluationStage::kConstant;
     for (auto* arg : args) {
@@ -2408,8 +2407,7 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
     }
 
     auto arg_tys = tint::Transform(args, [](auto* arg) { return arg->Type(); });
-    auto overload =
-        core::intrinsic::Lookup(intrinsic_context_, fn, arg_tys, arg_stage, expr->source);
+    auto overload = intrinsic_table_.Lookup(fn, arg_tys, arg_stage, expr->source);
     if (!overload) {
         return nullptr;
     }
@@ -2434,12 +2432,12 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         }
         auto eval_stage = overload->const_eval_fn ? core::EvaluationStage::kConstant
                                                   : core::EvaluationStage::kRuntime;
-        return builder_->create<sem::Builtin>(
+        return builder_->create<sem::BuiltinFn>(
             fn, overload->return_type, std::move(params), eval_stage, supported_stages,
             flags.Contains(OverloadFlag::kIsDeprecated), flags.Contains(OverloadFlag::kMustUse));
     });
 
-    if (fn == core::Function::kTintMaterialize) {
+    if (fn == wgsl::BuiltinFn::kTintMaterialize) {
         args[0] = Materialize(args[0]);
         if (!args[0]) {
             return nullptr;
@@ -2487,19 +2485,25 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         current_function_->AddDirectCall(call);
     }
 
-    if (!validator_.RequiredExtensionForBuiltinFunction(call)) {
+    if (!validator_.RequiredExtensionForBuiltinFn(call)) {
         return nullptr;
     }
 
-    if (IsTextureBuiltin(fn)) {
-        if (!validator_.TextureBuiltinFunction(call)) {
+    if (IsTexture(fn)) {
+        if (!validator_.TextureBuiltinFn(call)) {
             return nullptr;
         }
         CollectTextureSamplerPairs(target, call->Arguments());
     }
 
-    if (fn == core::Function::kWorkgroupUniformLoad) {
+    if (fn == wgsl::BuiltinFn::kWorkgroupUniformLoad) {
         if (!validator_.WorkgroupUniformLoad(call)) {
+            return nullptr;
+        }
+    }
+
+    if (fn == wgsl::BuiltinFn::kSubgroupBroadcast) {
+        if (!validator_.SubgroupBroadcast(call)) {
             return nullptr;
         }
     }
@@ -2511,7 +2515,8 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
     return call;
 }
 
-core::type::Type* Resolver::BuiltinType(core::Builtin builtin_ty, const ast::Identifier* ident) {
+core::type::Type* Resolver::BuiltinType(core::BuiltinType builtin_ty,
+                                        const ast::Identifier* ident) {
     auto& b = *builder_;
 
     auto check_no_tmpl_args = [&](core::type::Type* ty) -> core::type::Type* {
@@ -2778,226 +2783,226 @@ core::type::Type* Resolver::BuiltinType(core::Builtin builtin_ty, const ast::Ide
     };
 
     switch (builtin_ty) {
-        case core::Builtin::kBool:
+        case core::BuiltinType::kBool:
             return check_no_tmpl_args(b.create<core::type::Bool>());
-        case core::Builtin::kI32:
+        case core::BuiltinType::kI32:
             return check_no_tmpl_args(i32());
-        case core::Builtin::kU32:
+        case core::BuiltinType::kU32:
             return check_no_tmpl_args(u32());
-        case core::Builtin::kF16:
+        case core::BuiltinType::kF16:
             return check_no_tmpl_args(f16());
-        case core::Builtin::kF32:
+        case core::BuiltinType::kF32:
             return check_no_tmpl_args(b.create<core::type::F32>());
-        case core::Builtin::kVec2:
+        case core::BuiltinType::kVec2:
             return vec_t(2);
-        case core::Builtin::kVec3:
+        case core::BuiltinType::kVec3:
             return vec_t(3);
-        case core::Builtin::kVec4:
+        case core::BuiltinType::kVec4:
             return vec_t(4);
-        case core::Builtin::kMat2X2:
+        case core::BuiltinType::kMat2X2:
             return mat_t(2, 2);
-        case core::Builtin::kMat2X3:
+        case core::BuiltinType::kMat2X3:
             return mat_t(2, 3);
-        case core::Builtin::kMat2X4:
+        case core::BuiltinType::kMat2X4:
             return mat_t(2, 4);
-        case core::Builtin::kMat3X2:
+        case core::BuiltinType::kMat3X2:
             return mat_t(3, 2);
-        case core::Builtin::kMat3X3:
+        case core::BuiltinType::kMat3X3:
             return mat_t(3, 3);
-        case core::Builtin::kMat3X4:
+        case core::BuiltinType::kMat3X4:
             return mat_t(3, 4);
-        case core::Builtin::kMat4X2:
+        case core::BuiltinType::kMat4X2:
             return mat_t(4, 2);
-        case core::Builtin::kMat4X3:
+        case core::BuiltinType::kMat4X3:
             return mat_t(4, 3);
-        case core::Builtin::kMat4X4:
+        case core::BuiltinType::kMat4X4:
             return mat_t(4, 4);
-        case core::Builtin::kMat2X2F:
+        case core::BuiltinType::kMat2X2F:
             return check_no_tmpl_args(mat(f32(), 2u, 2u));
-        case core::Builtin::kMat2X3F:
+        case core::BuiltinType::kMat2X3F:
             return check_no_tmpl_args(mat(f32(), 2u, 3u));
-        case core::Builtin::kMat2X4F:
+        case core::BuiltinType::kMat2X4F:
             return check_no_tmpl_args(mat(f32(), 2u, 4u));
-        case core::Builtin::kMat3X2F:
+        case core::BuiltinType::kMat3X2F:
             return check_no_tmpl_args(mat(f32(), 3u, 2u));
-        case core::Builtin::kMat3X3F:
+        case core::BuiltinType::kMat3X3F:
             return check_no_tmpl_args(mat(f32(), 3u, 3u));
-        case core::Builtin::kMat3X4F:
+        case core::BuiltinType::kMat3X4F:
             return check_no_tmpl_args(mat(f32(), 3u, 4u));
-        case core::Builtin::kMat4X2F:
+        case core::BuiltinType::kMat4X2F:
             return check_no_tmpl_args(mat(f32(), 4u, 2u));
-        case core::Builtin::kMat4X3F:
+        case core::BuiltinType::kMat4X3F:
             return check_no_tmpl_args(mat(f32(), 4u, 3u));
-        case core::Builtin::kMat4X4F:
+        case core::BuiltinType::kMat4X4F:
             return check_no_tmpl_args(mat(f32(), 4u, 4u));
-        case core::Builtin::kMat2X2H:
+        case core::BuiltinType::kMat2X2H:
             return check_no_tmpl_args(mat(f16(), 2u, 2u));
-        case core::Builtin::kMat2X3H:
+        case core::BuiltinType::kMat2X3H:
             return check_no_tmpl_args(mat(f16(), 2u, 3u));
-        case core::Builtin::kMat2X4H:
+        case core::BuiltinType::kMat2X4H:
             return check_no_tmpl_args(mat(f16(), 2u, 4u));
-        case core::Builtin::kMat3X2H:
+        case core::BuiltinType::kMat3X2H:
             return check_no_tmpl_args(mat(f16(), 3u, 2u));
-        case core::Builtin::kMat3X3H:
+        case core::BuiltinType::kMat3X3H:
             return check_no_tmpl_args(mat(f16(), 3u, 3u));
-        case core::Builtin::kMat3X4H:
+        case core::BuiltinType::kMat3X4H:
             return check_no_tmpl_args(mat(f16(), 3u, 4u));
-        case core::Builtin::kMat4X2H:
+        case core::BuiltinType::kMat4X2H:
             return check_no_tmpl_args(mat(f16(), 4u, 2u));
-        case core::Builtin::kMat4X3H:
+        case core::BuiltinType::kMat4X3H:
             return check_no_tmpl_args(mat(f16(), 4u, 3u));
-        case core::Builtin::kMat4X4H:
+        case core::BuiltinType::kMat4X4H:
             return check_no_tmpl_args(mat(f16(), 4u, 4u));
-        case core::Builtin::kVec2F:
+        case core::BuiltinType::kVec2F:
             return check_no_tmpl_args(vec(f32(), 2u));
-        case core::Builtin::kVec3F:
+        case core::BuiltinType::kVec3F:
             return check_no_tmpl_args(vec(f32(), 3u));
-        case core::Builtin::kVec4F:
+        case core::BuiltinType::kVec4F:
             return check_no_tmpl_args(vec(f32(), 4u));
-        case core::Builtin::kVec2H:
+        case core::BuiltinType::kVec2H:
             return check_no_tmpl_args(vec(f16(), 2u));
-        case core::Builtin::kVec3H:
+        case core::BuiltinType::kVec3H:
             return check_no_tmpl_args(vec(f16(), 3u));
-        case core::Builtin::kVec4H:
+        case core::BuiltinType::kVec4H:
             return check_no_tmpl_args(vec(f16(), 4u));
-        case core::Builtin::kVec2I:
+        case core::BuiltinType::kVec2I:
             return check_no_tmpl_args(vec(i32(), 2u));
-        case core::Builtin::kVec3I:
+        case core::BuiltinType::kVec3I:
             return check_no_tmpl_args(vec(i32(), 3u));
-        case core::Builtin::kVec4I:
+        case core::BuiltinType::kVec4I:
             return check_no_tmpl_args(vec(i32(), 4u));
-        case core::Builtin::kVec2U:
+        case core::BuiltinType::kVec2U:
             return check_no_tmpl_args(vec(u32(), 2u));
-        case core::Builtin::kVec3U:
+        case core::BuiltinType::kVec3U:
             return check_no_tmpl_args(vec(u32(), 3u));
-        case core::Builtin::kVec4U:
+        case core::BuiltinType::kVec4U:
             return check_no_tmpl_args(vec(u32(), 4u));
-        case core::Builtin::kArray:
+        case core::BuiltinType::kArray:
             return array();
-        case core::Builtin::kAtomic:
+        case core::BuiltinType::kAtomic:
             return atomic();
-        case core::Builtin::kPtr:
+        case core::BuiltinType::kPtr:
             return ptr();
-        case core::Builtin::kSampler:
+        case core::BuiltinType::kSampler:
             return check_no_tmpl_args(
                 builder_->create<core::type::Sampler>(core::type::SamplerKind::kSampler));
-        case core::Builtin::kSamplerComparison:
+        case core::BuiltinType::kSamplerComparison:
             return check_no_tmpl_args(
                 builder_->create<core::type::Sampler>(core::type::SamplerKind::kComparisonSampler));
-        case core::Builtin::kTexture1D:
+        case core::BuiltinType::kTexture1D:
             return sampled_texture(core::type::TextureDimension::k1d);
-        case core::Builtin::kTexture2D:
+        case core::BuiltinType::kTexture2D:
             return sampled_texture(core::type::TextureDimension::k2d);
-        case core::Builtin::kTexture2DArray:
+        case core::BuiltinType::kTexture2DArray:
             return sampled_texture(core::type::TextureDimension::k2dArray);
-        case core::Builtin::kTexture3D:
+        case core::BuiltinType::kTexture3D:
             return sampled_texture(core::type::TextureDimension::k3d);
-        case core::Builtin::kTextureCube:
+        case core::BuiltinType::kTextureCube:
             return sampled_texture(core::type::TextureDimension::kCube);
-        case core::Builtin::kTextureCubeArray:
+        case core::BuiltinType::kTextureCubeArray:
             return sampled_texture(core::type::TextureDimension::kCubeArray);
-        case core::Builtin::kTextureDepth2D:
+        case core::BuiltinType::kTextureDepth2D:
             return check_no_tmpl_args(
                 builder_->create<core::type::DepthTexture>(core::type::TextureDimension::k2d));
-        case core::Builtin::kTextureDepth2DArray:
+        case core::BuiltinType::kTextureDepth2DArray:
             return check_no_tmpl_args(
                 builder_->create<core::type::DepthTexture>(core::type::TextureDimension::k2dArray));
-        case core::Builtin::kTextureDepthCube:
+        case core::BuiltinType::kTextureDepthCube:
             return check_no_tmpl_args(
                 builder_->create<core::type::DepthTexture>(core::type::TextureDimension::kCube));
-        case core::Builtin::kTextureDepthCubeArray:
+        case core::BuiltinType::kTextureDepthCubeArray:
             return check_no_tmpl_args(builder_->create<core::type::DepthTexture>(
                 core::type::TextureDimension::kCubeArray));
-        case core::Builtin::kTextureDepthMultisampled2D:
+        case core::BuiltinType::kTextureDepthMultisampled2D:
             return check_no_tmpl_args(builder_->create<core::type::DepthMultisampledTexture>(
                 core::type::TextureDimension::k2d));
-        case core::Builtin::kTextureExternal:
+        case core::BuiltinType::kTextureExternal:
             return check_no_tmpl_args(builder_->create<core::type::ExternalTexture>());
-        case core::Builtin::kTextureMultisampled2D:
+        case core::BuiltinType::kTextureMultisampled2D:
             return multisampled_texture(core::type::TextureDimension::k2d);
-        case core::Builtin::kTextureStorage1D:
+        case core::BuiltinType::kTextureStorage1D:
             return storage_texture(core::type::TextureDimension::k1d);
-        case core::Builtin::kTextureStorage2D:
+        case core::BuiltinType::kTextureStorage2D:
             return storage_texture(core::type::TextureDimension::k2d);
-        case core::Builtin::kTextureStorage2DArray:
+        case core::BuiltinType::kTextureStorage2DArray:
             return storage_texture(core::type::TextureDimension::k2dArray);
-        case core::Builtin::kTextureStorage3D:
+        case core::BuiltinType::kTextureStorage3D:
             return storage_texture(core::type::TextureDimension::k3d);
-        case core::Builtin::kPackedVec3:
+        case core::BuiltinType::kPackedVec3:
             return packed_vec3_t();
-        case core::Builtin::kAtomicCompareExchangeResultI32:
+        case core::BuiltinType::kAtomicCompareExchangeResultI32:
             return core::type::CreateAtomicCompareExchangeResult(builder_->Types(),
                                                                  builder_->Symbols(), i32());
-        case core::Builtin::kAtomicCompareExchangeResultU32:
+        case core::BuiltinType::kAtomicCompareExchangeResultU32:
             return core::type::CreateAtomicCompareExchangeResult(builder_->Types(),
                                                                  builder_->Symbols(), u32());
-        case core::Builtin::kFrexpResultAbstract:
+        case core::BuiltinType::kFrexpResultAbstract:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(), af());
-        case core::Builtin::kFrexpResultF16:
+        case core::BuiltinType::kFrexpResultF16:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(), f16());
-        case core::Builtin::kFrexpResultF32:
+        case core::BuiltinType::kFrexpResultF32:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(), f32());
-        case core::Builtin::kFrexpResultVec2Abstract:
+        case core::BuiltinType::kFrexpResultVec2Abstract:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(),
                                                  vec(af(), 2));
-        case core::Builtin::kFrexpResultVec2F16:
+        case core::BuiltinType::kFrexpResultVec2F16:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(),
                                                  vec(f16(), 2));
-        case core::Builtin::kFrexpResultVec2F32:
+        case core::BuiltinType::kFrexpResultVec2F32:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(),
                                                  vec(f32(), 2));
-        case core::Builtin::kFrexpResultVec3Abstract:
+        case core::BuiltinType::kFrexpResultVec3Abstract:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(),
                                                  vec(af(), 3));
-        case core::Builtin::kFrexpResultVec3F16:
+        case core::BuiltinType::kFrexpResultVec3F16:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(),
                                                  vec(f16(), 3));
-        case core::Builtin::kFrexpResultVec3F32:
+        case core::BuiltinType::kFrexpResultVec3F32:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(),
                                                  vec(f32(), 3));
-        case core::Builtin::kFrexpResultVec4Abstract:
+        case core::BuiltinType::kFrexpResultVec4Abstract:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(),
                                                  vec(af(), 4));
-        case core::Builtin::kFrexpResultVec4F16:
+        case core::BuiltinType::kFrexpResultVec4F16:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(),
                                                  vec(f16(), 4));
-        case core::Builtin::kFrexpResultVec4F32:
+        case core::BuiltinType::kFrexpResultVec4F32:
             return core::type::CreateFrexpResult(builder_->Types(), builder_->Symbols(),
                                                  vec(f32(), 4));
-        case core::Builtin::kModfResultAbstract:
+        case core::BuiltinType::kModfResultAbstract:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(), af());
-        case core::Builtin::kModfResultF16:
+        case core::BuiltinType::kModfResultF16:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(), f16());
-        case core::Builtin::kModfResultF32:
+        case core::BuiltinType::kModfResultF32:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(), f32());
-        case core::Builtin::kModfResultVec2Abstract:
+        case core::BuiltinType::kModfResultVec2Abstract:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(),
                                                 vec(af(), 2));
-        case core::Builtin::kModfResultVec2F16:
+        case core::BuiltinType::kModfResultVec2F16:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(),
                                                 vec(f16(), 2));
-        case core::Builtin::kModfResultVec2F32:
+        case core::BuiltinType::kModfResultVec2F32:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(),
                                                 vec(f32(), 2));
-        case core::Builtin::kModfResultVec3Abstract:
+        case core::BuiltinType::kModfResultVec3Abstract:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(),
                                                 vec(af(), 3));
-        case core::Builtin::kModfResultVec3F16:
+        case core::BuiltinType::kModfResultVec3F16:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(),
                                                 vec(f16(), 3));
-        case core::Builtin::kModfResultVec3F32:
+        case core::BuiltinType::kModfResultVec3F32:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(),
                                                 vec(f32(), 3));
-        case core::Builtin::kModfResultVec4Abstract:
+        case core::BuiltinType::kModfResultVec4Abstract:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(),
                                                 vec(af(), 4));
-        case core::Builtin::kModfResultVec4F16:
+        case core::BuiltinType::kModfResultVec4F16:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(),
                                                 vec(f16(), 4));
-        case core::Builtin::kModfResultVec4F32:
+        case core::BuiltinType::kModfResultVec4F32:
             return core::type::CreateModfResult(builder_->Types(), builder_->Symbols(),
                                                 vec(f32(), 4));
-        case core::Builtin::kUndefined:
+        case core::BuiltinType::kUndefined:
             break;
     }
 
@@ -3021,7 +3026,7 @@ size_t Resolver::NestDepth(const core::type::Type* ty) const {
         });
 }
 
-void Resolver::CollectTextureSamplerPairs(const sem::Builtin* builtin,
+void Resolver::CollectTextureSamplerPairs(const sem::BuiltinFn* builtin,
                                           VectorRef<const sem::ValueExpression*> args) const {
     // Collect a texture/sampler pair for this builtin.
     const auto& signature = builtin->Signature();
@@ -3318,7 +3323,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
             });
     }
 
-    if (auto builtin_ty = resolved->BuiltinType(); builtin_ty != core::Builtin::kUndefined) {
+    if (auto builtin_ty = resolved->BuiltinType(); builtin_ty != core::BuiltinType::kUndefined) {
         auto* ty = BuiltinType(builtin_ty, ident);
         if (!ty) {
             return nullptr;
@@ -3326,7 +3331,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
         return builder_->create<sem::TypeExpression>(expr, current_statement_, ty);
     }
 
-    if (resolved->BuiltinFunction() != core::Function::kNone) {
+    if (resolved->BuiltinFn() != wgsl::BuiltinFn::kNone) {
         AddError("missing '(' for builtin function call", expr->source.End());
         return nullptr;
     }
@@ -3561,8 +3566,8 @@ sem::ValueExpression* Resolver::Binary(const ast::BinaryExpression* expr) {
     }
 
     auto stage = core::EarliestStage(lhs->Stage(), rhs->Stage());
-    auto overload = core::intrinsic::Lookup(intrinsic_context_, expr->op, lhs->Type(), rhs->Type(),
-                                            stage, expr->source, false);
+    auto overload =
+        intrinsic_table_.Lookup(expr->op, lhs->Type(), rhs->Type(), stage, expr->source, false);
     if (!overload) {
         return nullptr;
     }
@@ -3683,8 +3688,7 @@ sem::ValueExpression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
 
         default: {
             stage = expr->Stage();
-            auto overload = core::intrinsic::Lookup(intrinsic_context_, unary->op, expr_ty, stage,
-                                                    unary->source);
+            auto overload = intrinsic_table_.Lookup(unary->op, expr_ty, stage, unary->source);
             if (!overload) {
                 return nullptr;
             }
@@ -3732,19 +3736,19 @@ tint::Result<uint32_t> Resolver::LocationAttribute(const ast::LocationAttribute*
 
     auto* materialized = Materialize(ValueExpression(attr->expr));
     if (!materialized) {
-        return tint::Failure;
+        return Failure{};
     }
 
     if (!materialized->Type()->IsAnyOf<core::type::I32, core::type::U32>()) {
         AddError("@location must be an i32 or u32 value", attr->source);
-        return tint::Failure;
+        return Failure{};
     }
 
     auto const_value = materialized->ConstantValue();
     auto value = const_value->ValueAs<AInt>();
     if (value < 0) {
         AddError("@location value must be non-negative", attr->source);
-        return tint::Failure;
+        return Failure{};
     }
 
     return static_cast<uint32_t>(value);
@@ -3756,19 +3760,19 @@ tint::Result<uint32_t> Resolver::IndexAttribute(const ast::IndexAttribute* attr)
 
     auto* materialized = Materialize(ValueExpression(attr->expr));
     if (!materialized) {
-        return tint::Failure;
+        return Failure{};
     }
 
     if (!materialized->Type()->IsAnyOf<core::type::I32, core::type::U32>()) {
         AddError("@location must be an i32 or u32 value", attr->source);
-        return tint::Failure;
+        return Failure{};
     }
 
     auto const_value = materialized->ConstantValue();
     auto value = const_value->ValueAs<AInt>();
     if (value != 0 && value != 1) {
         AddError("@index value must be zero or one", attr->source);
-        return tint::Failure;
+        return Failure{};
     }
 
     return static_cast<uint32_t>(value);
@@ -3780,18 +3784,18 @@ tint::Result<uint32_t> Resolver::BindingAttribute(const ast::BindingAttribute* a
 
     auto* materialized = Materialize(ValueExpression(attr->expr));
     if (!materialized) {
-        return tint::Failure;
+        return Failure{};
     }
     if (!materialized->Type()->IsAnyOf<core::type::I32, core::type::U32>()) {
         AddError("@binding must be an i32 or u32 value", attr->source);
-        return tint::Failure;
+        return Failure{};
     }
 
     auto const_value = materialized->ConstantValue();
     auto value = const_value->ValueAs<AInt>();
     if (value < 0) {
         AddError("@binding value must be non-negative", attr->source);
-        return tint::Failure;
+        return Failure{};
     }
     return static_cast<uint32_t>(value);
 }
@@ -3802,18 +3806,18 @@ tint::Result<uint32_t> Resolver::GroupAttribute(const ast::GroupAttribute* attr)
 
     auto* materialized = Materialize(ValueExpression(attr->expr));
     if (!materialized) {
-        return tint::Failure;
+        return Failure{};
     }
     if (!materialized->Type()->IsAnyOf<core::type::I32, core::type::U32>()) {
         AddError("@group must be an i32 or u32 value", attr->source);
-        return tint::Failure;
+        return Failure{};
     }
 
     auto const_value = materialized->ConstantValue();
     auto value = const_value->ValueAs<AInt>();
     if (value < 0) {
         AddError("@group value must be non-negative", attr->source);
-        return tint::Failure;
+        return Failure{};
     }
     return static_cast<uint32_t>(value);
 }
@@ -3842,18 +3846,18 @@ tint::Result<sem::WorkgroupSize> Resolver::WorkgroupAttribute(const ast::Workgro
         }
         const auto* expr = ValueExpression(value);
         if (!expr) {
-            return tint::Failure;
+            return Failure{};
         }
         auto* ty = expr->Type();
         if (!ty->IsAnyOf<core::type::I32, core::type::U32, core::type::AbstractInt>()) {
             AddError(kErrBadExpr, value->source);
-            return tint::Failure;
+            return Failure{};
         }
 
         if (expr->Stage() != core::EvaluationStage::kConstant &&
             expr->Stage() != core::EvaluationStage::kOverride) {
             AddError(kErrBadExpr, value->source);
-            return tint::Failure;
+            return Failure{};
         }
 
         args.Push(expr);
@@ -3864,7 +3868,7 @@ tint::Result<sem::WorkgroupSize> Resolver::WorkgroupAttribute(const ast::Workgro
     if (!common_ty) {
         AddError("workgroup_size arguments must be of the same type, either i32 or u32",
                  attr->source);
-        return tint::Failure;
+        return Failure{};
     }
 
     // If all arguments are abstract-integers, then materialize to i32.
@@ -3875,12 +3879,12 @@ tint::Result<sem::WorkgroupSize> Resolver::WorkgroupAttribute(const ast::Workgro
     for (size_t i = 0; i < args.Length(); i++) {
         auto* materialized = Materialize(args[i], common_ty);
         if (!materialized) {
-            return tint::Failure;
+            return Failure{};
         }
         if (auto* value = materialized->ConstantValue()) {
             if (value->ValueAs<AInt>() < 1) {
                 AddError("workgroup_size argument must be at least 1", values[i]->source);
-                return tint::Failure;
+                return Failure{};
             }
             ws[i] = value->ValueAs<u32>();
         } else {
@@ -3893,7 +3897,7 @@ tint::Result<sem::WorkgroupSize> Resolver::WorkgroupAttribute(const ast::Workgro
         total_size *= static_cast<uint64_t>(ws[i].value_or(1));
         if (total_size > 0xffffffff) {
             AddError("total workgroup grid size cannot exceed 0xffffffff", values[i]->source);
-            return tint::Failure;
+            return Failure{};
         }
     }
 
@@ -3904,7 +3908,7 @@ tint::Result<tint::core::BuiltinValue> Resolver::BuiltinAttribute(
     const ast::BuiltinAttribute* attr) {
     auto* builtin_expr = BuiltinValueExpression(attr->builtin);
     if (!builtin_expr) {
-        return tint::Failure;
+        return Failure{};
     }
     // Apply the resolved tint::sem::BuiltinEnumExpression<tint::core::BuiltinValue> to the
     // attribute.
@@ -3937,13 +3941,13 @@ tint::Result<core::Interpolation> Resolver::InterpolateAttribute(
     core::Interpolation out;
     auto* type = InterpolationType(attr->type);
     if (!type) {
-        return tint::Failure;
+        return Failure{};
     }
     out.type = type->Value();
     if (attr->sampling) {
         auto* sampling = InterpolationSampling(attr->sampling);
         if (!sampling) {
-            return tint::Failure;
+            return Failure{};
         }
         out.sampling = sampling->Value();
     }
@@ -3967,28 +3971,28 @@ bool Resolver::DiagnosticControl(const ast::DiagnosticControl& control) {
     if (control.rule_name->category) {
         Mark(control.rule_name->category);
         if (control.rule_name->category->symbol.Name() == "chromium") {
-            auto rule = core::ParseChromiumDiagnosticRule(name);
-            if (rule != core::ChromiumDiagnosticRule::kUndefined) {
+            auto rule = wgsl::ParseChromiumDiagnosticRule(name);
+            if (rule != wgsl::ChromiumDiagnosticRule::kUndefined) {
                 validator_.DiagnosticFilters().Set(rule, control.severity);
             } else {
                 StringStream ss;
                 ss << "unrecognized diagnostic rule 'chromium." << name << "'\n";
                 tint::SuggestAlternativeOptions opts;
                 opts.prefix = "chromium.";
-                tint::SuggestAlternatives(name, core::kChromiumDiagnosticRuleStrings, ss, opts);
+                tint::SuggestAlternatives(name, wgsl::kChromiumDiagnosticRuleStrings, ss, opts);
                 AddWarning(ss.str(), control.rule_name->source);
             }
         }
         return true;
     }
 
-    auto rule = core::ParseCoreDiagnosticRule(name);
-    if (rule != core::CoreDiagnosticRule::kUndefined) {
+    auto rule = wgsl::ParseCoreDiagnosticRule(name);
+    if (rule != wgsl::CoreDiagnosticRule::kUndefined) {
         validator_.DiagnosticFilters().Set(rule, control.severity);
     } else {
         StringStream ss;
         ss << "unrecognized diagnostic rule '" << name << "'\n";
-        tint::SuggestAlternatives(name, core::kCoreDiagnosticRuleStrings, ss);
+        tint::SuggestAlternatives(name, wgsl::kCoreDiagnosticRuleStrings, ss);
         AddWarning(ss.str(), control.rule_name->source);
     }
     return true;
@@ -3998,16 +4002,6 @@ bool Resolver::Enable(const ast::Enable* enable) {
     for (auto* ext : enable->extensions) {
         Mark(ext);
         enabled_extensions_.Add(ext->name);
-
-// TODO(crbug.com/dawn/1704): Remove when chromium_experimental_pixel_local is production-ready
-#if !TINT_ENABLE_PIXEL_LOCAL_EXTENSION
-        if (ext->name == core::Extension::kChromiumExperimentalPixelLocal) {
-            AddError(std::string(core::ToString(core::Extension::kChromiumExperimentalPixelLocal)) +
-                         " requires TINT_ENABLE_PIXEL_LOCAL_EXTENSION",
-                     enable->source);
-            return false;
-        }
-#endif
     }
     return true;
 }
@@ -4722,8 +4716,8 @@ sem::Statement* Resolver::CompoundAssignmentStatement(
         auto stage = core::EarliestStage(lhs->Stage(), rhs->Stage());
 
         auto overload =
-            core::intrinsic::Lookup(intrinsic_context_, stmt->op, lhs->Type()->UnwrapRef(),
-                                    rhs->Type()->UnwrapRef(), stage, stmt->source, true);
+            intrinsic_table_.Lookup(stmt->op, lhs->Type()->UnwrapRef(), rhs->Type()->UnwrapRef(),
+                                    stage, stmt->source, true);
         if (!overload) {
             return false;
         }

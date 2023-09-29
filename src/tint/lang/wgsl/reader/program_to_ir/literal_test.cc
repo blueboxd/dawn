@@ -28,7 +28,7 @@ namespace tint::wgsl::reader {
 namespace {
 
 core::ir::Value* GlobalVarInitializer(core::ir::Module& m) {
-    if (m.root_block->Length() == 0u) {
+    if (m.root_block->IsEmpty()) {
         ADD_FAILURE() << "m.root_block has no instruction";
         return nullptr;
     }
@@ -51,7 +51,7 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_Bool_True) {
     GlobalVar("a", ty.bool_(), core::AddressSpace::kPrivate, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto* init = GlobalVarInitializer(m.Get());
     ASSERT_TRUE(Is<core::ir::Constant>(init));
@@ -65,7 +65,7 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_Bool_False) {
     GlobalVar("a", ty.bool_(), core::AddressSpace::kPrivate, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto* init = GlobalVarInitializer(m.Get());
     ASSERT_TRUE(Is<core::ir::Constant>(init));
@@ -81,7 +81,7 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_Bool_Deduped) {
     GlobalVar("d", ty.bool_(), core::AddressSpace::kPrivate, Expr(false));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto itr = m.Get().root_block->begin();
     auto* var_a = (*itr)->As<core::ir::Var>();
@@ -109,7 +109,7 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_F32) {
     GlobalVar("a", ty.f32(), core::AddressSpace::kPrivate, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto* init = GlobalVarInitializer(m.Get());
     ASSERT_TRUE(Is<core::ir::Constant>(init));
@@ -124,7 +124,7 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_F32_Deduped) {
     GlobalVar("c", ty.f32(), core::AddressSpace::kPrivate, Expr(1.2_f));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto itr = m.Get().root_block->begin();
     auto* var_a = (*itr)->As<core::ir::Var>();
@@ -143,12 +143,12 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_F32_Deduped) {
 }
 
 TEST_F(ProgramToIRLiteralTest, EmitLiteral_F16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
     auto* expr = Expr(1.2_h);
     GlobalVar("a", ty.f16(), core::AddressSpace::kPrivate, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto* init = GlobalVarInitializer(m.Get());
     ASSERT_TRUE(Is<core::ir::Constant>(init));
@@ -158,13 +158,13 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_F16) {
 }
 
 TEST_F(ProgramToIRLiteralTest, EmitLiteral_F16_Deduped) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
     GlobalVar("a", ty.f16(), core::AddressSpace::kPrivate, Expr(1.2_h));
     GlobalVar("b", ty.f16(), core::AddressSpace::kPrivate, Expr(1.25_h));
     GlobalVar("c", ty.f16(), core::AddressSpace::kPrivate, Expr(1.2_h));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto itr = m.Get().root_block->begin();
     auto* var_a = (*itr)->As<core::ir::Var>();
@@ -187,7 +187,7 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_I32) {
     GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto* init = GlobalVarInitializer(m.Get());
     ASSERT_TRUE(Is<core::ir::Constant>(init));
@@ -202,7 +202,7 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_I32_Deduped) {
     GlobalVar("c", ty.i32(), core::AddressSpace::kPrivate, Expr(-2_i));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto itr = m.Get().root_block->begin();
     auto* var_a = (*itr)->As<core::ir::Var>();
@@ -225,7 +225,7 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_U32) {
     GlobalVar("a", ty.u32(), core::AddressSpace::kPrivate, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto* init = GlobalVarInitializer(m.Get());
     ASSERT_TRUE(Is<core::ir::Constant>(init));
@@ -240,7 +240,7 @@ TEST_F(ProgramToIRLiteralTest, EmitLiteral_U32_Deduped) {
     GlobalVar("c", ty.u32(), core::AddressSpace::kPrivate, Expr(2_u));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     auto itr = m.Get().root_block->begin();
     auto* var_a = (*itr)->As<core::ir::Var>();

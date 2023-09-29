@@ -402,7 +402,7 @@ TEST_P(InspectorGetEntryPointComponentAndCompositionTest, Test) {
     std::function<ast::Type()> tint_type = GetTypeFunction(component, composition);
 
     if (component == ComponentType::kF16) {
-        Enable(core::Extension::kF16);
+        Enable(wgsl::Extension::kF16);
     }
 
     auto* in_var = Param("in_var", tint_type(),
@@ -1021,7 +1021,7 @@ TEST_F(InspectorGetEntryPointTest, OverrideReferencedByArraySizeViaAlias) {
 }
 
 TEST_F(InspectorGetEntryPointTest, OverrideTypes) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     Override("bool_var", ty.bool_());
     Override("float_var", ty.f32());
@@ -1515,6 +1515,59 @@ TEST_F(InspectorGetEntryPointTest, ImplicitInterpolate) {
     EXPECT_EQ(InterpolationSampling::kCenter, result[0].input_variables[0].interpolation_sampling);
 }
 
+TEST_F(InspectorGetEntryPointTest, PixelLocalMemberDefault) {
+    // @fragment fn foo() {}
+    MakeEmptyBodyFunction("foo", Vector{
+                                     Stage(ast::PipelineStage::kFragment),
+                                 });
+
+    Inspector& inspector = Build();
+    auto result = inspector.GetEntryPoints();
+    ASSERT_FALSE(inspector.has_error()) << inspector.error();
+
+    ASSERT_EQ(1u, result.size());
+    EXPECT_EQ(0u, result[0].pixel_local_members.size());
+}
+
+TEST_F(InspectorGetEntryPointTest, PixelLocalMemberTypes) {
+    // enable chromium_experimental_pixel_local;
+    // struct Ure {
+    //   toto : u32;
+    //   titi : f32;
+    //   tata: i32;
+    //   tonton : u32; // Check having the same type multiple times
+    // }
+    // var<pixel_local> pls : Ure;
+    // @fragment fn foo() {  _ = pls; }
+
+    Enable(wgsl::Extension::kChromiumExperimentalPixelLocal);
+    Structure("Ure", Vector{
+                         Member("toto", ty.u32()),
+                         Member("titi", ty.f32()),
+                         Member("tata", ty.i32()),
+                         Member("tonton", ty.u32()),
+                     });
+    GlobalVar("pls", core::AddressSpace::kPixelLocal, ty("Ure"));
+    Func("foo", tint::Empty, ty.void_(),
+         Vector{
+             Assign(Phony(), "pls"),
+         },
+         Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
+
+    Inspector& inspector = Build();
+    auto result = inspector.GetEntryPoints();
+    ASSERT_FALSE(inspector.has_error()) << inspector.error();
+
+    ASSERT_EQ(1u, result.size());
+    ASSERT_EQ(4u, result[0].pixel_local_members.size());
+    ASSERT_EQ(PixelLocalMemberType::kU32, result[0].pixel_local_members[0]);
+    ASSERT_EQ(PixelLocalMemberType::kF32, result[0].pixel_local_members[1]);
+    ASSERT_EQ(PixelLocalMemberType::kI32, result[0].pixel_local_members[2]);
+    ASSERT_EQ(PixelLocalMemberType::kU32, result[0].pixel_local_members[3]);
+}
+
 TEST_P(InspectorGetEntryPointInterpolateTest, Test) {
     auto& params = GetParam();
     Structure("in_struct",
@@ -1724,7 +1777,7 @@ TEST_F(InspectorGetOverrideDefaultValuesTest, F32) {
 }
 
 TEST_F(InspectorGetOverrideDefaultValuesTest, F16) {
-    Enable(core::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     Override("a", ty.f16(), Id(1_a));
     Override("b", ty.f16(), Expr(0_h), Id(20_a));
@@ -3034,11 +3087,11 @@ TEST_P(InspectorGetStorageTextureResourceBindingsTestWithParam, Simple) {
             expectedResourceType = ResourceBinding::ResourceType::kWriteOnlyStorageTexture;
             break;
         case core::Access::kRead:
-            Enable(core::Extension::kChromiumExperimentalReadWriteStorageTexture);
+            Enable(wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
             expectedResourceType = ResourceBinding::ResourceType::kReadOnlyStorageTexture;
             break;
         case core::Access::kReadWrite:
-            Enable(core::Extension::kChromiumExperimentalReadWriteStorageTexture);
+            Enable(wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
             expectedResourceType = ResourceBinding::ResourceType::kReadWriteStorageTexture;
             break;
         case core::Access::kUndefined:

@@ -784,7 +784,7 @@ structure = struct @align(16) {
 
 TEST_P(IR_RobustnessTest, Private_LoadVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(private_, ty.vec4<u32>()));
-    b.RootBlock()->Append(vec);
+    mod.root_block->Append(vec);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -831,7 +831,7 @@ TEST_P(IR_RobustnessTest, Private_LoadVectorElement) {
 
 TEST_P(IR_RobustnessTest, Private_StoreVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(private_, ty.vec4<u32>()));
-    b.RootBlock()->Append(vec);
+    mod.root_block->Append(vec);
 
     auto* func = b.Function("foo", ty.void_());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -878,7 +878,7 @@ TEST_P(IR_RobustnessTest, Private_StoreVectorElement) {
 
 TEST_P(IR_RobustnessTest, Private_Access) {
     auto* arr = b.Var("arr", ty.ptr(private_, ty.array<u32, 4>()));
-    b.RootBlock()->Append(arr);
+    mod.root_block->Append(arr);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -928,7 +928,7 @@ TEST_P(IR_RobustnessTest, Private_Access) {
 
 TEST_P(IR_RobustnessTest, PushConstant_LoadVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(push_constant, ty.vec4<u32>()));
-    b.RootBlock()->Append(vec);
+    mod.root_block->Append(vec);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -975,7 +975,7 @@ TEST_P(IR_RobustnessTest, PushConstant_LoadVectorElement) {
 
 TEST_P(IR_RobustnessTest, PushConstant_StoreVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(push_constant, ty.vec4<u32>()));
-    b.RootBlock()->Append(vec);
+    mod.root_block->Append(vec);
 
     auto* func = b.Function("foo", ty.void_());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1022,7 +1022,7 @@ TEST_P(IR_RobustnessTest, PushConstant_StoreVectorElement) {
 
 TEST_P(IR_RobustnessTest, PushConstant_Access) {
     auto* arr = b.Var("arr", ty.ptr(push_constant, ty.array<u32, 4>()));
-    b.RootBlock()->Append(arr);
+    mod.root_block->Append(arr);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1073,7 +1073,7 @@ TEST_P(IR_RobustnessTest, PushConstant_Access) {
 TEST_P(IR_RobustnessTest, Storage_LoadVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(storage, ty.vec4<u32>()));
     vec->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(vec);
+    mod.root_block->Append(vec);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1121,7 +1121,7 @@ TEST_P(IR_RobustnessTest, Storage_LoadVectorElement) {
 TEST_P(IR_RobustnessTest, Storage_StoreVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(storage, ty.vec4<u32>()));
     vec->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(vec);
+    mod.root_block->Append(vec);
 
     auto* func = b.Function("foo", ty.void_());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1169,7 +1169,7 @@ TEST_P(IR_RobustnessTest, Storage_StoreVectorElement) {
 TEST_P(IR_RobustnessTest, Storage_Access) {
     auto* arr = b.Var("arr", ty.ptr(storage, ty.array<u32, 4>()));
     arr->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(arr);
+    mod.root_block->Append(arr);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1220,7 +1220,7 @@ TEST_P(IR_RobustnessTest, Storage_Access) {
 TEST_P(IR_RobustnessTest, Unifom_LoadVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(uniform, ty.vec4<u32>()));
     vec->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(vec);
+    mod.root_block->Append(vec);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1268,7 +1268,7 @@ TEST_P(IR_RobustnessTest, Unifom_LoadVectorElement) {
 TEST_P(IR_RobustnessTest, Unifom_StoreVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(uniform, ty.vec4<u32>()));
     vec->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(vec);
+    mod.root_block->Append(vec);
 
     auto* func = b.Function("foo", ty.void_());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1316,7 +1316,7 @@ TEST_P(IR_RobustnessTest, Unifom_StoreVectorElement) {
 TEST_P(IR_RobustnessTest, Unifom_Access) {
     auto* arr = b.Var("arr", ty.ptr(uniform, ty.array<u32, 4>()));
     arr->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(arr);
+    mod.root_block->Append(arr);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1366,7 +1366,7 @@ TEST_P(IR_RobustnessTest, Unifom_Access) {
 
 TEST_P(IR_RobustnessTest, Workgroup_LoadVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(workgroup, ty.vec4<u32>()));
-    b.RootBlock()->Append(vec);
+    mod.root_block->Append(vec);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1413,7 +1413,7 @@ TEST_P(IR_RobustnessTest, Workgroup_LoadVectorElement) {
 
 TEST_P(IR_RobustnessTest, Workgroup_StoreVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(workgroup, ty.vec4<u32>()));
-    b.RootBlock()->Append(vec);
+    mod.root_block->Append(vec);
 
     auto* func = b.Function("foo", ty.void_());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1460,7 +1460,7 @@ TEST_P(IR_RobustnessTest, Workgroup_StoreVectorElement) {
 
 TEST_P(IR_RobustnessTest, Workgroup_Access) {
     auto* arr = b.Var("arr", ty.ptr(workgroup, ty.array<u32, 4>()));
-    b.RootBlock()->Append(arr);
+    mod.root_block->Append(arr);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1643,7 +1643,7 @@ INSTANTIATE_TEST_SUITE_P(, IR_RobustnessTest, testing::Values(false, true));
 TEST_P(IR_RobustnessTest, RuntimeSizedArray_ConstIndex) {
     auto* arr = b.Var("arr", ty.ptr(storage, ty.array<u32>()));
     arr->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(arr);
+    mod.root_block->Append(arr);
 
     auto* func = b.Function("foo", ty.u32());
     b.Append(func->Block(), [&] {
@@ -1694,7 +1694,7 @@ TEST_P(IR_RobustnessTest, RuntimeSizedArray_ConstIndex) {
 TEST_P(IR_RobustnessTest, RuntimeSizedArray_DynamicIndex) {
     auto* arr = b.Var("arr", ty.ptr(storage, ty.array<u32>()));
     arr->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(arr);
+    mod.root_block->Append(arr);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1752,7 +1752,7 @@ TEST_P(IR_RobustnessTest, RuntimeSizedArray_InStruct_ConstIndex) {
 
     auto* buffer = b.Var("buffer", ty.ptr(storage, structure));
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* func = b.Function("foo", ty.u32());
     b.Append(func->Block(), [&] {
@@ -1817,7 +1817,7 @@ TEST_P(IR_RobustnessTest, RuntimeSizedArray_InStruct_DynamicIndex) {
 
     auto* buffer = b.Var("buffer", ty.ptr(storage, structure));
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1879,7 +1879,7 @@ structure = struct @align(4) {
 TEST_P(IR_RobustnessTest, RuntimeSizedArray_DisableClamping) {
     auto* arr = b.Var("arr", ty.ptr(storage, ty.array<u32>()));
     arr->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(arr);
+    mod.root_block->Append(arr);
 
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1939,12 +1939,12 @@ TEST_P(IR_RobustnessTest, TextureDimensions) {
         "texture",
         ty.ptr(handle, ty.Get<type::SampledTexture>(type::TextureDimension::k2d, ty.f32()), read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     auto* func = b.Function("foo", ty.vec2<u32>());
     b.Append(func->Block(), [&] {
         auto* handle = b.Load(texture);
-        auto* dims = b.Call(ty.vec2<u32>(), core::Function::kTextureDimensions, handle);
+        auto* dims = b.Call(ty.vec2<u32>(), core::BuiltinFn::kTextureDimensions, handle);
         b.Return(func, dims);
     });
 
@@ -1977,14 +1977,14 @@ TEST_P(IR_RobustnessTest, TextureDimensions_WithLevel) {
         "texture",
         ty.ptr(handle, ty.Get<type::SampledTexture>(type::TextureDimension::k2d, ty.f32()), read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     auto* func = b.Function("foo", ty.vec2<u32>());
     auto* level = b.FunctionParam("level", ty.u32());
     func->SetParams({level});
     b.Append(func->Block(), [&] {
         auto* handle = b.Load(texture);
-        auto* dims = b.Call(ty.vec2<u32>(), core::Function::kTextureDimensions, handle, level);
+        auto* dims = b.Call(ty.vec2<u32>(), core::BuiltinFn::kTextureDimensions, handle, level);
         b.Return(func, dims);
     });
 
@@ -2032,7 +2032,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled1D) {
         "texture",
         ty.ptr(handle, ty.Get<type::SampledTexture>(type::TextureDimension::k1d, ty.f32()), read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.vec4<f32>());
@@ -2042,7 +2042,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled1D) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, level);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, level);
             b.Return(func, texel);
         });
     }
@@ -2055,7 +2055,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled1D) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, level);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, level);
             b.Return(func, texel);
         });
     }
@@ -2129,7 +2129,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled2D) {
         "texture",
         ty.ptr(handle, ty.Get<type::SampledTexture>(type::TextureDimension::k2d, ty.f32()), read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.vec4<f32>());
@@ -2139,7 +2139,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled2D) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, level);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, level);
             b.Return(func, texel);
         });
     }
@@ -2152,7 +2152,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled2D) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, level);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, level);
             b.Return(func, texel);
         });
     }
@@ -2227,7 +2227,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled2DArray) {
         ty.ptr(handle, ty.Get<type::SampledTexture>(type::TextureDimension::k2dArray, ty.f32()),
                read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.vec4<f32>());
@@ -2238,7 +2238,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled2DArray) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, layer, level);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, layer, level);
             b.Return(func, texel);
         });
     }
@@ -2252,7 +2252,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled2DArray) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, layer, level);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, layer, level);
             b.Return(func, texel);
         });
     }
@@ -2333,7 +2333,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled3D) {
         "texture",
         ty.ptr(handle, ty.Get<type::SampledTexture>(type::TextureDimension::k3d, ty.f32()), read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.vec4<f32>());
@@ -2343,7 +2343,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled3D) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, level);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, level);
             b.Return(func, texel);
         });
     }
@@ -2356,7 +2356,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Sampled3D) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, level);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, level);
             b.Return(func, texel);
         });
     }
@@ -2431,7 +2431,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Multisampled2D) {
         ty.ptr(handle, ty.Get<type::MultisampledTexture>(type::TextureDimension::k2d, ty.f32()),
                read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.vec4<f32>());
@@ -2441,7 +2441,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Multisampled2D) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, level);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, level);
             b.Return(func, texel);
         });
     }
@@ -2454,7 +2454,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Multisampled2D) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, level);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, level);
             b.Return(func, texel);
         });
     }
@@ -2520,7 +2520,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Depth2D) {
     auto* texture = b.Var(
         "texture", ty.ptr(handle, ty.Get<type::DepthTexture>(type::TextureDimension::k2d), read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.f32());
@@ -2529,7 +2529,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Depth2D) {
         func->SetParams({coords, level});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.f32(), core::Function::kTextureLoad, handle, coords, level);
+            auto* texel = b.Call(ty.f32(), core::BuiltinFn::kTextureLoad, handle, coords, level);
             b.Return(func, texel);
         });
     }
@@ -2541,7 +2541,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Depth2D) {
         func->SetParams({coords, level});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.f32(), core::Function::kTextureLoad, handle, coords, level);
+            auto* texel = b.Call(ty.f32(), core::BuiltinFn::kTextureLoad, handle, coords, level);
             b.Return(func, texel);
         });
     }
@@ -2615,7 +2615,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Depth2DArray) {
         b.Var("texture",
               ty.ptr(handle, ty.Get<type::DepthTexture>(type::TextureDimension::k2dArray), read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.f32());
@@ -2626,7 +2626,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Depth2DArray) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.f32(), core::Function::kTextureLoad, handle, coords, layer, level);
+                b.Call(ty.f32(), core::BuiltinFn::kTextureLoad, handle, coords, layer, level);
             b.Return(func, texel);
         });
     }
@@ -2640,7 +2640,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Depth2DArray) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.f32(), core::Function::kTextureLoad, handle, coords, layer, level);
+                b.Call(ty.f32(), core::BuiltinFn::kTextureLoad, handle, coords, layer, level);
             b.Return(func, texel);
         });
     }
@@ -2721,7 +2721,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_DepthMultisampled2D) {
         "texture",
         ty.ptr(handle, ty.Get<type::DepthMultisampledTexture>(type::TextureDimension::k2d), read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.f32());
@@ -2730,7 +2730,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_DepthMultisampled2D) {
         func->SetParams({coords, index});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.f32(), core::Function::kTextureLoad, handle, coords, index);
+            auto* texel = b.Call(ty.f32(), core::BuiltinFn::kTextureLoad, handle, coords, index);
             b.Return(func, texel);
         });
     }
@@ -2742,7 +2742,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_DepthMultisampled2D) {
         func->SetParams({coords, index});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.f32(), core::Function::kTextureLoad, handle, coords, index);
+            auto* texel = b.Call(ty.f32(), core::BuiltinFn::kTextureLoad, handle, coords, index);
             b.Return(func, texel);
         });
     }
@@ -2807,7 +2807,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_DepthMultisampled2D) {
 TEST_P(IR_RobustnessTest, TextureLoad_External) {
     auto* texture = b.Var("texture", ty.ptr(handle, ty.Get<type::ExternalTexture>(), read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.vec4<f32>());
@@ -2815,7 +2815,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_External) {
         func->SetParams({coords});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords);
+            auto* texel = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords);
             b.Return(func, texel);
         });
     }
@@ -2826,7 +2826,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_External) {
         func->SetParams({coords});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords);
+            auto* texel = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords);
             b.Return(func, texel);
         });
     }
@@ -2897,7 +2897,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage1D) {
                                                   type::StorageTexture::SubtypeFor(format, ty)),
                      read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.vec4<f32>());
@@ -2905,7 +2905,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage1D) {
         func->SetParams({coords});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords);
+            auto* texel = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords);
             b.Return(func, texel);
         });
     }
@@ -2916,7 +2916,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage1D) {
         func->SetParams({coords});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords);
+            auto* texel = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords);
             b.Return(func, texel);
         });
     }
@@ -2987,7 +2987,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage2D) {
                                                   type::StorageTexture::SubtypeFor(format, ty)),
                      read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.vec4<f32>());
@@ -2995,7 +2995,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage2D) {
         func->SetParams({coords});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords);
+            auto* texel = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords);
             b.Return(func, texel);
         });
     }
@@ -3006,7 +3006,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage2D) {
         func->SetParams({coords});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords);
+            auto* texel = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords);
             b.Return(func, texel);
         });
     }
@@ -3077,7 +3077,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage2DArray) {
                                             type::StorageTexture::SubtypeFor(format, ty)),
                read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.vec4<f32>());
@@ -3087,7 +3087,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage2DArray) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, layer);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, layer);
             b.Return(func, texel);
         });
     }
@@ -3100,7 +3100,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage2DArray) {
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
             auto* texel =
-                b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords, layer);
+                b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords, layer);
             b.Return(func, texel);
         });
     }
@@ -3178,7 +3178,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage3D) {
                                                   type::StorageTexture::SubtypeFor(format, ty)),
                      read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.vec4<f32>());
@@ -3186,7 +3186,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage3D) {
         func->SetParams({coords});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords);
+            auto* texel = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords);
             b.Return(func, texel);
         });
     }
@@ -3197,7 +3197,7 @@ TEST_P(IR_RobustnessTest, TextureLoad_Storage3D) {
         func->SetParams({coords});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            auto* texel = b.Call(ty.vec4<f32>(), core::Function::kTextureLoad, handle, coords);
+            auto* texel = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, handle, coords);
             b.Return(func, texel);
         });
     }
@@ -3268,7 +3268,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage1D) {
                                                   type::StorageTexture::SubtypeFor(format, ty)),
                      read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.void_());
@@ -3277,7 +3277,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage1D) {
         func->SetParams({coords, value});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            b.Call(ty.vec4<f32>(), core::Function::kTextureStore, handle, coords, value);
+            b.Call(ty.void_(), core::BuiltinFn::kTextureStore, handle, coords, value);
             b.Return(func);
         });
     }
@@ -3289,7 +3289,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage1D) {
         func->SetParams({coords, value});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            b.Call(ty.vec4<f32>(), core::Function::kTextureStore, handle, coords, value);
+            b.Call(ty.void_(), core::BuiltinFn::kTextureStore, handle, coords, value);
             b.Return(func);
         });
     }
@@ -3302,14 +3302,14 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage1D) {
 %load_signed = func(%coords:i32, %value:vec4<f32>):void -> %b2 {
   %b2 = block {
     %5:texture_storage_1d<rgba8unorm, write> = load %texture
-    %6:vec4<f32> = textureStore %5, %coords, %value
+    %6:void = textureStore %5, %coords, %value
     ret
   }
 }
 %load_unsigned = func(%coords_1:u32, %value_1:vec4<f32>):void -> %b3 {  # %coords_1: 'coords', %value_1: 'value'
   %b3 = block {
     %10:texture_storage_1d<rgba8unorm, write> = load %texture
-    %11:vec4<f32> = textureStore %10, %coords_1, %value_1
+    %11:void = textureStore %10, %coords_1, %value_1
     ret
   }
 }
@@ -3328,7 +3328,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage1D) {
     %7:u32 = sub %6, 1u
     %8:u32 = convert %coords
     %9:u32 = min %8, %7
-    %10:vec4<f32> = textureStore %5, %9, %value
+    %10:void = textureStore %5, %9, %value
     ret
   }
 }
@@ -3338,7 +3338,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage1D) {
     %15:u32 = textureDimensions %14
     %16:u32 = sub %15, 1u
     %17:u32 = min %coords_1, %16
-    %18:vec4<f32> = textureStore %14, %17, %value_1
+    %18:void = textureStore %14, %17, %value_1
     ret
   }
 }
@@ -3360,7 +3360,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2D) {
                                                   type::StorageTexture::SubtypeFor(format, ty)),
                      read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.void_());
@@ -3369,7 +3369,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2D) {
         func->SetParams({coords, value});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            b.Call(ty.vec4<f32>(), core::Function::kTextureStore, handle, coords, value);
+            b.Call(ty.void_(), core::BuiltinFn::kTextureStore, handle, coords, value);
             b.Return(func);
         });
     }
@@ -3381,7 +3381,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2D) {
         func->SetParams({coords, value});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            b.Call(ty.vec4<f32>(), core::Function::kTextureStore, handle, coords, value);
+            b.Call(ty.void_(), core::BuiltinFn::kTextureStore, handle, coords, value);
             b.Return(func);
         });
     }
@@ -3394,14 +3394,14 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2D) {
 %load_signed = func(%coords:vec2<i32>, %value:vec4<f32>):void -> %b2 {
   %b2 = block {
     %5:texture_storage_2d<rgba8unorm, write> = load %texture
-    %6:vec4<f32> = textureStore %5, %coords, %value
+    %6:void = textureStore %5, %coords, %value
     ret
   }
 }
 %load_unsigned = func(%coords_1:vec2<u32>, %value_1:vec4<f32>):void -> %b3 {  # %coords_1: 'coords', %value_1: 'value'
   %b3 = block {
     %10:texture_storage_2d<rgba8unorm, write> = load %texture
-    %11:vec4<f32> = textureStore %10, %coords_1, %value_1
+    %11:void = textureStore %10, %coords_1, %value_1
     ret
   }
 }
@@ -3420,7 +3420,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2D) {
     %7:vec2<u32> = sub %6, vec2<u32>(1u)
     %8:vec2<u32> = convert %coords
     %9:vec2<u32> = min %8, %7
-    %10:vec4<f32> = textureStore %5, %9, %value
+    %10:void = textureStore %5, %9, %value
     ret
   }
 }
@@ -3430,7 +3430,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2D) {
     %15:vec2<u32> = textureDimensions %14
     %16:vec2<u32> = sub %15, vec2<u32>(1u)
     %17:vec2<u32> = min %coords_1, %16
-    %18:vec4<f32> = textureStore %14, %17, %value_1
+    %18:void = textureStore %14, %17, %value_1
     ret
   }
 }
@@ -3452,7 +3452,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2DArray) {
                                                   type::StorageTexture::SubtypeFor(format, ty)),
                      read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.void_());
@@ -3462,7 +3462,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2DArray) {
         func->SetParams({coords, layer, value});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            b.Call(ty.vec4<f32>(), core::Function::kTextureStore, handle, coords, layer, value);
+            b.Call(ty.void_(), core::BuiltinFn::kTextureStore, handle, coords, layer, value);
             b.Return(func);
         });
     }
@@ -3475,7 +3475,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2DArray) {
         func->SetParams({coords, layer, value});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            b.Call(ty.vec4<f32>(), core::Function::kTextureStore, handle, coords, layer, value);
+            b.Call(ty.void_(), core::BuiltinFn::kTextureStore, handle, coords, layer, value);
             b.Return(func);
         });
     }
@@ -3488,14 +3488,14 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2DArray) {
 %load_signed = func(%coords:vec2<i32>, %layer:i32, %value:vec4<f32>):void -> %b2 {
   %b2 = block {
     %6:texture_storage_2d_array<rgba8unorm, write> = load %texture
-    %7:vec4<f32> = textureStore %6, %coords, %layer, %value
+    %7:void = textureStore %6, %coords, %layer, %value
     ret
   }
 }
 %load_unsigned = func(%coords_1:vec2<u32>, %layer_1:u32, %value_1:vec4<f32>):void -> %b3 {  # %coords_1: 'coords', %layer_1: 'layer', %value_1: 'value'
   %b3 = block {
     %12:texture_storage_2d_array<rgba8unorm, write> = load %texture
-    %13:vec4<f32> = textureStore %12, %coords_1, %layer_1, %value_1
+    %13:void = textureStore %12, %coords_1, %layer_1, %value_1
     ret
   }
 }
@@ -3518,7 +3518,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2DArray) {
     %12:u32 = sub %11, 1u
     %13:u32 = convert %layer
     %14:u32 = min %13, %12
-    %15:vec4<f32> = textureStore %6, %10, %14, %value
+    %15:void = textureStore %6, %10, %14, %value
     ret
   }
 }
@@ -3531,7 +3531,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage2DArray) {
     %24:u32 = textureNumLayers %20
     %25:u32 = sub %24, 1u
     %26:u32 = min %layer_1, %25
-    %27:vec4<f32> = textureStore %20, %23, %26, %value_1
+    %27:void = textureStore %20, %23, %26, %value_1
     ret
   }
 }
@@ -3553,7 +3553,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage3D) {
                                                   type::StorageTexture::SubtypeFor(format, ty)),
                      read));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     {
         auto* func = b.Function("load_signed", ty.void_());
@@ -3562,7 +3562,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage3D) {
         func->SetParams({coords, value});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            b.Call(ty.vec4<f32>(), core::Function::kTextureStore, handle, coords, value);
+            b.Call(ty.void_(), core::BuiltinFn::kTextureStore, handle, coords, value);
             b.Return(func);
         });
     }
@@ -3574,7 +3574,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage3D) {
         func->SetParams({coords, value});
         b.Append(func->Block(), [&] {
             auto* handle = b.Load(texture);
-            b.Call(ty.vec4<f32>(), core::Function::kTextureStore, handle, coords, value);
+            b.Call(ty.void_(), core::BuiltinFn::kTextureStore, handle, coords, value);
             b.Return(func);
         });
     }
@@ -3587,14 +3587,14 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage3D) {
 %load_signed = func(%coords:vec3<i32>, %value:vec4<f32>):void -> %b2 {
   %b2 = block {
     %5:texture_storage_3d<rgba8unorm, write> = load %texture
-    %6:vec4<f32> = textureStore %5, %coords, %value
+    %6:void = textureStore %5, %coords, %value
     ret
   }
 }
 %load_unsigned = func(%coords_1:vec3<u32>, %value_1:vec4<f32>):void -> %b3 {  # %coords_1: 'coords', %value_1: 'value'
   %b3 = block {
     %10:texture_storage_3d<rgba8unorm, write> = load %texture
-    %11:vec4<f32> = textureStore %10, %coords_1, %value_1
+    %11:void = textureStore %10, %coords_1, %value_1
     ret
   }
 }
@@ -3613,7 +3613,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage3D) {
     %7:vec3<u32> = sub %6, vec3<u32>(1u)
     %8:vec3<u32> = convert %coords
     %9:vec3<u32> = min %8, %7
-    %10:vec4<f32> = textureStore %5, %9, %value
+    %10:void = textureStore %5, %9, %value
     ret
   }
 }
@@ -3623,7 +3623,7 @@ TEST_P(IR_RobustnessTest, TextureStore_Storage3D) {
     %15:vec3<u32> = textureDimensions %14
     %16:vec3<u32> = sub %15, vec3<u32>(1u)
     %17:vec3<u32> = min %coords_1, %16
-    %18:vec4<f32> = textureStore %14, %17, %value_1
+    %18:void = textureStore %14, %17, %value_1
     ret
   }
 }

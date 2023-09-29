@@ -31,33 +31,29 @@ namespace {
 /// PIMPL state for the transform.
 struct State {
     /// The IR module.
-    Module* ir = nullptr;
+    Module& ir;
 
     /// The IR builder.
-    Builder b{*ir};
+    Builder b{ir};
 
     /// The type manager.
-    core::type::Manager& ty{ir->Types()};
+    core::type::Manager& ty{ir.Types()};
 
     /// The global "has not discarded" flag.
     Var* continue_execution = nullptr;
 
     /// Map from function to a flag that indicates whether it (transitively) contains a discard.
-    Hashmap<Function*, bool, 4> function_discard_status;
+    Hashmap<Function*, bool, 4> function_discard_status{};
 
     /// Set of functions that have been processed.
-    Hashset<Function*, 4> processed_functions;
-
-    /// Constructor
-    /// @param mod the module
-    explicit State(Module* mod) : ir(mod) {}
+    Hashset<Function*, 4> processed_functions{};
 
     /// Process the module.
     void Process() {
         // Check each fragment shader entry point for discard instruction, potentially inside
         // functions called (transitively) by the entry point.
         Vector<Function*, 4> to_process;
-        for (auto* func : ir->functions) {
+        for (auto* func : ir.functions) {
             // If the function is a fragment shader that contains a discard, we need to process it.
             if (func->Stage() == Function::PipelineStage::kFragment) {
                 if (HasDiscard(func)) {
@@ -72,7 +68,7 @@ struct State {
         // Create a boolean variable that can be used to check whether the shader has discarded.
         continue_execution = b.Var("continue_execution", ty.ptr<private_, bool>());
         continue_execution->SetInitializer(b.Constant(true));
-        b.RootBlock()->Append(continue_execution);
+        ir.root_block->Append(continue_execution);
 
         // Process each entry point function that contains a discard.
         for (auto* ep : to_process) {
@@ -102,7 +98,7 @@ struct State {
                 },
                 [&](UserCall* call) {
                     // Check if we are calling a function that contains a discard.
-                    discard = HasDiscard(call->Func());
+                    discard = HasDiscard(call->Target());
                 },
                 [&](ControlInstruction* ctrl) {
                     // Recurse into control instructions and check their blocks.
@@ -165,7 +161,7 @@ struct State {
                 },
                 [&](UserCall* call) {
                     // Recurse into user functions.
-                    ProcessFunction(call->Func());
+                    ProcessFunction(call->Target());
                 },
                 [&](Store* store) {
                     // Conditionalize stores to host-visible address spaces.
@@ -203,8 +199,8 @@ struct State {
 
 }  // namespace
 
-Result<SuccessType, std::string> DemoteToHelper(Module* ir) {
-    auto result = ValidateAndDumpIfNeeded(*ir, "DemoteToHelper transform");
+Result<SuccessType> DemoteToHelper(Module& ir) {
+    auto result = ValidateAndDumpIfNeeded(ir, "DemoteToHelper transform");
     if (!result) {
         return result;
     }

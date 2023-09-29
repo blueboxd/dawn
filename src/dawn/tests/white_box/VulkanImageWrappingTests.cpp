@@ -74,7 +74,7 @@ class VulkanImageWrappingTestBase : public DawnTestWithParams<ImageWrappingParam
                 mBackend = CreateDMABufBackend(device);
                 break;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         VulkanImageWrappingTestBackend::TestParams params;
@@ -165,7 +165,7 @@ class VulkanImageWrappingTestBase : public DawnTestWithParams<ImageWrappingParam
     void IgnoreSignalSemaphore(wgpu::Texture wrappedTexture) {
         ExternalImageExportInfoVkForTesting exportInfo = GetExternalImageExportInfo();
         bool result = mBackend->ExportImage(wrappedTexture, &exportInfo);
-        ASSERT(result);
+        DAWN_ASSERT(result);
     }
 
   protected:

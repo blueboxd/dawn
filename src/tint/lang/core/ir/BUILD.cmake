@@ -46,6 +46,8 @@ tint_add_target(tint_lang_core_ir lib
   lang/core/ir/builtin_call.h
   lang/core/ir/call.cc
   lang/core/ir/call.h
+  lang/core/ir/clone_context.cc
+  lang/core/ir/clone_context.h
   lang/core/ir/constant.cc
   lang/core/ir/constant.h
   lang/core/ir/construct.cc
@@ -80,8 +82,6 @@ tint_add_target(tint_lang_core_ir lib
   lang/core/ir/instruction.h
   lang/core/ir/instruction_result.cc
   lang/core/ir/instruction_result.h
-  lang/core/ir/intrinsic_call.cc
-  lang/core/ir/intrinsic_call.h
   lang/core/ir/let.cc
   lang/core/ir/let.h
   lang/core/ir/load.cc
@@ -113,6 +113,7 @@ tint_add_target(tint_lang_core_ir lib
   lang/core/ir/terminate_invocation.h
   lang/core/ir/terminator.cc
   lang/core/ir/terminator.h
+  lang/core/ir/traverse.h
   lang/core/ir/unary.cc
   lang/core/ir/unary.h
   lang/core/ir/unreachable.cc
@@ -132,7 +133,6 @@ tint_target_add_dependencies(tint_lang_core_ir lib
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_intrinsic
-  tint_lang_core_intrinsic_data
   tint_lang_core_type
   tint_utils_containers
   tint_utils_diagnostic
@@ -188,7 +188,10 @@ tint_add_target(tint_lang_core_ir_test test
   lang/core/ir/store_vector_element_test.cc
   lang/core/ir/switch_test.cc
   lang/core/ir/swizzle_test.cc
+  lang/core/ir/terminate_invocation_test.cc
+  lang/core/ir/traverse_test.cc
   lang/core/ir/unary_test.cc
+  lang/core/ir/unreachable_test.cc
   lang/core/ir/user_call_test.cc
   lang/core/ir/validator_test.cc
   lang/core/ir/value_test.cc
@@ -200,7 +203,6 @@ tint_target_add_dependencies(tint_lang_core_ir_test test
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_intrinsic
-  tint_lang_core_intrinsic_data
   tint_lang_core_ir
   tint_lang_core_type
   tint_utils_containers

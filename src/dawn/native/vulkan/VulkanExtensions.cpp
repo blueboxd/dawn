@@ -56,8 +56,8 @@ static constexpr std::array<InstanceExtInfo, kInstanceExtCount> sInstanceExtInfo
 
 const InstanceExtInfo& GetInstanceExtInfo(InstanceExt ext) {
     uint32_t index = static_cast<uint32_t>(ext);
-    ASSERT(index < sInstanceExtInfos.size());
-    ASSERT(sInstanceExtInfos[index].index == ext);
+    DAWN_ASSERT(index < sInstanceExtInfos.size());
+    DAWN_ASSERT(sInstanceExtInfos[index].index == ext);
     return sInstanceExtInfos[index];
 }
 
@@ -79,7 +79,7 @@ InstanceExtSet EnsureDependencies(const InstanceExtSet& advertisedExts) {
     InstanceExtSet trimmedSet;
 
     auto HasDep = [&](InstanceExt ext) -> bool {
-        ASSERT(visitedSet[ext]);
+        DAWN_ASSERT(visitedSet[ext]);
         return trimmedSet[ext];
     };
 
@@ -111,7 +111,7 @@ InstanceExtSet EnsureDependencies(const InstanceExtSet& advertisedExts) {
                 break;
 
             case InstanceExt::EnumCount:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         trimmedSet.set(ext, hasDependencies && advertisedExts[ext]);
@@ -174,6 +174,7 @@ static constexpr std::array<DeviceExtInfo, kDeviceExtCount> sDeviceExtInfos{{
     {DeviceExt::ExternalMemoryFD, "VK_KHR_external_memory_fd", NeverPromoted},
     {DeviceExt::ExternalMemoryDmaBuf, "VK_EXT_external_memory_dma_buf", NeverPromoted},
     {DeviceExt::ExternalMemoryZirconHandle, "VK_FUCHSIA_external_memory", NeverPromoted},
+    {DeviceExt::ExternalMemoryHost, "VK_EXT_external_memory_host", NeverPromoted},
     {DeviceExt::ExternalSemaphoreFD, "VK_KHR_external_semaphore_fd", NeverPromoted},
     {DeviceExt::ExternalSemaphoreZirconHandle, "VK_FUCHSIA_external_semaphore", NeverPromoted},
     //
@@ -181,8 +182,8 @@ static constexpr std::array<DeviceExtInfo, kDeviceExtCount> sDeviceExtInfos{{
 
 const DeviceExtInfo& GetDeviceExtInfo(DeviceExt ext) {
     uint32_t index = static_cast<uint32_t>(ext);
-    ASSERT(index < sDeviceExtInfos.size());
-    ASSERT(sDeviceExtInfos[index].index == ext);
+    DAWN_ASSERT(index < sDeviceExtInfos.size());
+    DAWN_ASSERT(sDeviceExtInfos[index].index == ext);
     return sDeviceExtInfos[index];
 }
 
@@ -202,7 +203,7 @@ DeviceExtSet EnsureDependencies(const DeviceExtSet& advertisedExts,
     DeviceExtSet trimmedSet;
 
     auto HasDep = [&](DeviceExt ext) -> bool {
-        ASSERT(visitedSet[ext]);
+        DAWN_ASSERT(visitedSet[ext]);
         return trimmedSet[ext];
     };
 
@@ -282,6 +283,7 @@ DeviceExtSet EnsureDependencies(const DeviceExtSet& advertisedExts,
 
             case DeviceExt::ExternalMemoryFD:
             case DeviceExt::ExternalMemoryZirconHandle:
+            case DeviceExt::ExternalMemoryHost:
             case DeviceExt::QueueFamilyForeign:
                 hasDependencies = HasDep(DeviceExt::ExternalMemory);
                 break;
@@ -311,7 +313,7 @@ DeviceExtSet EnsureDependencies(const DeviceExtSet& advertisedExts,
                 break;
 
             case DeviceExt::EnumCount:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         trimmedSet.set(ext, hasDependencies && advertisedExts[ext]);
@@ -344,8 +346,8 @@ static constexpr std::array<VulkanLayerInfo, kVulkanLayerCount> sVulkanLayerInfo
 
 const VulkanLayerInfo& GetVulkanLayerInfo(VulkanLayer layer) {
     uint32_t index = static_cast<uint32_t>(layer);
-    ASSERT(index < sVulkanLayerInfos.size());
-    ASSERT(sVulkanLayerInfos[index].layer == layer);
+    DAWN_ASSERT(index < sVulkanLayerInfos.size());
+    DAWN_ASSERT(sVulkanLayerInfos[index].layer == layer);
     return sVulkanLayerInfos[index];
 }
 

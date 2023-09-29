@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <string>
 #include <vector>
 
 #include "dawn/common/NonCopyable.h"
@@ -83,6 +84,13 @@ TEST_F(PixelLocalStorageDisabledTest, RenderPassPixelLocalStorageDisallowed) {
     }
 }
 
+// Check that it is not possible to use the WGSL extension without the device extension enabled.
+TEST_F(PixelLocalStorageDisabledTest, WGSLExtensionDisallowed) {
+    ASSERT_DEVICE_ERROR(utils::CreateShaderModule(device, R"(
+        enable chromium_experimental_pixel_local;
+    )"));
+}
+
 // Check that PixelLocalStorageBarrier() is disallowed without the extension.
 TEST_F(PixelLocalStorageDisabledTest, PixelLocalStorageBarrierDisallowed) {
     utils::BasicRenderPass rp = utils::CreateBasicRenderPass(device, 1, 1);
@@ -141,6 +149,11 @@ TEST_F(PixelLocalStorageOtherExtensionTest, SmokeTest) {
     pass.PixelLocalStorageBarrier();
     pass.End();
     encoder.Finish();
+
+    // Creating a shader with the extension is allowed.
+    utils::CreateShaderModule(device, R"(
+        enable chromium_experimental_pixel_local;
+    )");
 }
 
 struct OffsetAndFormat {
@@ -283,20 +296,52 @@ class PixelLocalStorageTest : public ValidationTest {
     }
 
     wgpu::RenderPipeline MakePipeline(const PLSSpec& spec) {
+        std::vector<const char*> plsTypes;
+        plsTypes.resize(spec.totalSize / kPLSSlotByteSize, "u32");
+        for (const auto& attachment : spec.attachments) {
+            switch (attachment.format) {
+                case wgpu::TextureFormat::R32Uint:
+                    plsTypes[attachment.offset / kPLSSlotByteSize] = "u32";
+                    break;
+                case wgpu::TextureFormat::R32Sint:
+                    plsTypes[attachment.offset / kPLSSlotByteSize] = "i32";
+                    break;
+                case wgpu::TextureFormat::R32Float:
+                    plsTypes[attachment.offset / kPLSSlotByteSize] = "f32";
+                    break;
+                default:
+                    DAWN_UNREACHABLE();
+            }
+        }
+
+        bool outputPLS = spec.active && !plsTypes.empty();
+
+        std::ostringstream fsStream;
+        fsStream << "enable chromium_experimental_pixel_local;\n";
+        if (outputPLS) {
+            fsStream << "struct PLS {\n";
+            for (size_t i = 0; i < plsTypes.size(); i++) {
+                fsStream << "  a" << i << " : " << plsTypes[i] << ",\n";
+            }
+            fsStream << "}\n";
+            fsStream << "var<pixel_local> pls : PLS;\n";
+        }
+        fsStream << "@fragment fn fs() -> @location(0) u32 {\n";
+        if (outputPLS) {
+            fsStream << "  _ = pls;\n";
+        }
+        fsStream << "  return 0u;\n";
+        fsStream << "}\n";
+
         utils::ComboRenderPipelineDescriptor desc;
-        wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
+        desc.layout = MakePipelineLayout(spec);
+        desc.cFragment.module = utils::CreateShaderModule(device, fsStream.str().c_str());
+        desc.cFragment.entryPoint = "fs";
+        desc.vertex.module = utils::CreateShaderModule(device, R"(
             @vertex fn vs() -> @builtin(position) vec4f {
                 return vec4f();
             }
-            @fragment fn fs() -> @location(0) u32 {
-                return 0u;
-            }
         )");
-
-        desc.layout = MakePipelineLayout(spec);
-        desc.cFragment.module = module;
-        desc.cFragment.entryPoint = "fs";
-        desc.vertex.module = module;
         desc.vertex.entryPoint = "vs";
         desc.cTargets[0].format = kColorAttachmentFormat;
         return device.CreateRenderPipeline(&desc);
@@ -312,8 +357,47 @@ class PixelLocalStorageTest : public ValidationTest {
         }
     }
 
+    void TestFragmentAndLayoutCompat(const PLSSpec& layoutSpec,
+                                     absl::string_view fs,
+                                     bool success) {
+        TestFragmentAndLayoutCompat(MakePipelineLayout(layoutSpec), fs, success);
+    }
+
+    void TestFragmentAndLayoutCompat(const wgpu::PipelineLayout& layout,
+                                     absl::string_view fs,
+                                     bool success) {
+        wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, fs.data());
+        wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
+            @vertex fn vs() -> @builtin(position) vec4f {
+                return vec4f();
+            }
+        )");
+
+        utils::ComboRenderPipelineDescriptor desc;
+        desc.layout = layout;
+        desc.cFragment.module = fsModule;
+        desc.cFragment.entryPoint = "fs";
+        desc.vertex.module = vsModule;
+        desc.vertex.entryPoint = "vs";
+        desc.cTargets[0].format = kColorAttachmentFormat;
+        desc.cTargets[0].writeMask = wgpu::ColorWriteMask::None;
+
+        if (success) {
+            device.CreateRenderPipeline(&desc);
+        } else {
+            ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&desc));
+        }
+    }
+
     static constexpr wgpu::TextureFormat kColorAttachmentFormat = wgpu::TextureFormat::R32Uint;
 };
+
+// Check that it is possible to use the WGSL extension when the device extension is enabled.
+TEST_F(PixelLocalStorageTest, WGSLExtensionAllowed) {
+    utils::CreateShaderModule(device, R"(
+        enable chromium_experimental_pixel_local;
+    )");
+}
 
 // Check that StorageAttachment textures must be one of the supported formats.
 TEST_F(PixelLocalStorageTest, TextureFormatMustSupportStorageAttachment) {
@@ -797,11 +881,301 @@ TEST_F(PixelLocalStorageTest, PLSStateMatching_StorageAttachmentOrder) {
     CheckPLSStateMatching(pls1, pls2, true);
 }
 
+// Check that a shader using pixel_local cannot be used for an implicit layout.
+TEST_F(PixelLocalStorageTest, ImplicitLayoutDisallowed) {
+    // Control case: not using a pixel_local block is ok.
+    TestFragmentAndLayoutCompat(nullptr, R"(
+        enable chromium_experimental_pixel_local;
+        @fragment fn fs() {}
+    )",
+                                true);
+
+    // Error case: using a pixel_local block is not ok.
+    TestFragmentAndLayoutCompat(nullptr, R"(
+        enable chromium_experimental_pixel_local;
+        struct PLS { a : u32 }
+        var<pixel_local> pls : PLS;
+        @fragment fn fs() {
+            _ = pls;
+        }
+    )",
+                                false);
+}
+
+// Check that the FS can have PLS iff the layout has it.
+TEST_F(PixelLocalStorageTest, Reflection_PLSPresenceMatches) {
+    // Control case: both without PLS is ok.
+    TestFragmentAndLayoutCompat({0, {}, false}, R"(
+        enable chromium_experimental_pixel_local;
+        @fragment fn fs() {}
+    )",
+                                true);
+
+    // Control case: both with PLS is ok.
+    TestFragmentAndLayoutCompat({4, {}}, R"(
+        enable chromium_experimental_pixel_local;
+        struct PLS { a : u32 }
+        var<pixel_local> pls : PLS;
+        @fragment fn fs() {
+            _ = pls;
+        }
+    )",
+                                true);
+
+    // Error case: only shader has PLS
+    TestFragmentAndLayoutCompat({0, {}, false}, R"(
+        enable chromium_experimental_pixel_local;
+        struct PLS { a : u32 }
+        var<pixel_local> pls : PLS;
+        @fragment fn fs() {
+            _ = pls;
+        }
+    )",
+                                false);
+
+    // Error case: only layout has PLS
+    TestFragmentAndLayoutCompat({4, {}}, R"(
+        enable chromium_experimental_pixel_local;
+        @fragment fn fs() {
+        }
+    )",
+                                false);
+
+    // Special valid case: shader doesn't have PLS but the layout's PLS is empty
+    TestFragmentAndLayoutCompat({0, {}}, R"(
+        enable chromium_experimental_pixel_local;
+        @fragment fn fs() {
+        }
+    )",
+                                true);
+}
+
+// Check that layout's total PLS size must match the shader's pixel_local block size.
+TEST_F(PixelLocalStorageTest, Reflection_PLSSize) {
+    // Control case: 8 bytes for both!
+    TestFragmentAndLayoutCompat({8, {}}, R"(
+        enable chromium_experimental_pixel_local;
+        struct PLS {
+            a : u32,
+            b : u32,
+        }
+        var<pixel_local> pls : PLS;
+        @fragment fn fs() {
+            _ = pls;
+        }
+    )",
+                                true);
+
+    // Error case: shader PLS is 4 bytes smaller.
+    TestFragmentAndLayoutCompat({8, {}}, R"(
+        enable chromium_experimental_pixel_local;
+        struct PLS { a : u32 }
+        var<pixel_local> pls : PLS;
+        @fragment fn fs() {
+            _ = pls;
+        }
+    )",
+                                false);
+
+    // Error case: layout PLS is 4 bytes smaller.
+    TestFragmentAndLayoutCompat({4, {}}, R"(
+        enable chromium_experimental_pixel_local;
+        struct PLS {
+            a : u32,
+            b : u32,
+        }
+        var<pixel_local> pls : PLS;
+        @fragment fn fs() {
+            _ = pls;
+        }
+    )",
+                                false);
+}
+
+// Check the validation of the layout's PLS format with the shader types.
+TEST_F(PixelLocalStorageTest, Reflection_FormatMatching) {
+    std::array<wgpu::TextureFormat, 4> testFormats = {
+        wgpu::TextureFormat::R32Uint, wgpu::TextureFormat::R32Sint, wgpu::TextureFormat::R32Float,
+        wgpu::TextureFormat::Undefined,  // No storageAttachment.
+    };
+
+    std::array<std::string, 3> shaderTypes = {"f32", "i32", "u32"};
+
+    for (wgpu::TextureFormat format : testFormats) {
+        for (const std::string& type : shaderTypes) {
+            PLSSpec spec = {4, {}};
+            if (format != wgpu::TextureFormat::Undefined) {
+                spec = PLSSpec{4, {{0, format}}};
+            }
+
+            std::string shader = R"(
+                enable chromium_experimental_pixel_local;
+                struct PLS { a : )" +
+                                 type + R"(}
+                var<pixel_local> pls : PLS;
+                @fragment fn fs() {
+                    _ = pls;
+                })";
+
+            // List valid combinations to avoid writing the exact same switch statement as in
+            // ShaderModule.cpp
+            bool success = (format == wgpu::TextureFormat::R32Uint && type == "u32") ||
+                           (format == wgpu::TextureFormat::R32Sint && type == "i32") ||
+                           (format == wgpu::TextureFormat::R32Float && type == "f32") ||
+                           (format == wgpu::TextureFormat::Undefined && type == "u32");
+            TestFragmentAndLayoutCompat(spec, shader, success);
+        }
+    }
+}
+
+// Check that it is allowed to create render passes with only a storage attachment.
+TEST_F(PixelLocalStorageTest, RenderPassOnlyStorageAttachment) {
+    wgpu::TextureDescriptor tDesc;
+    tDesc.format = wgpu::TextureFormat::R32Uint;
+    tDesc.size = {1, 1};
+    tDesc.usage = wgpu::TextureUsage::StorageAttachment;
+    wgpu::Texture tex = device.CreateTexture(&tDesc);
+
+    wgpu::RenderPassStorageAttachment rpAttachment;
+    rpAttachment.storage = tex.CreateView();
+    rpAttachment.offset = 0;
+    rpAttachment.loadOp = wgpu::LoadOp::Load;
+    rpAttachment.storeOp = wgpu::StoreOp::Store;
+
+    wgpu::RenderPassPixelLocalStorage rpPlsDesc;
+    rpPlsDesc.totalPixelLocalStorageSize = 4;
+    rpPlsDesc.storageAttachmentCount = 1;
+    rpPlsDesc.storageAttachments = &rpAttachment;
+
+    wgpu::RenderPassDescriptor rpDesc;
+    rpDesc.nextInChain = &rpPlsDesc;
+    rpDesc.colorAttachmentCount = 0;
+    rpDesc.depthStencilAttachment = nullptr;
+
+    // Success case: a render pass with just a storage attachment is valid.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&rpDesc);
+        pass.End();
+        encoder.Finish();
+    }
+
+    // Error case: a render pass with PLS but no attachments is invalid.
+    {
+        rpPlsDesc.storageAttachmentCount = 0;
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&rpDesc);
+        pass.End();
+        ASSERT_DEVICE_ERROR(encoder.Finish());
+    }
+}
+
+// Check that it is allowed to create render pipelines with only a storage attachment.
+TEST_F(PixelLocalStorageTest, RenderPipelineOnlyStorageAttachment) {
+    wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
+        enable chromium_experimental_pixel_local;
+
+        @vertex fn vs() -> @builtin(position) vec4f {
+            return vec4f(0, 0, 0, 0.5);
+        }
+
+        struct PLS {
+            value : u32,
+        };
+        var<pixel_local> pls : PLS;
+        @fragment fn fs() {
+            pls.value = pls.value + 1;
+        }
+    )");
+
+    wgpu::PipelineLayoutStorageAttachment plAttachment;
+    plAttachment.offset = 0;
+    plAttachment.format = wgpu::TextureFormat::R32Uint;
+
+    wgpu::PipelineLayoutPixelLocalStorage plPlsDesc;
+    plPlsDesc.totalPixelLocalStorageSize = 4;
+    plPlsDesc.storageAttachmentCount = 1;
+    plPlsDesc.storageAttachments = &plAttachment;
+
+    wgpu::PipelineLayoutDescriptor plDesc;
+    plDesc.nextInChain = &plPlsDesc;
+    plDesc.bindGroupLayoutCount = 0;
+    wgpu::PipelineLayout pl = device.CreatePipelineLayout(&plDesc);
+
+    utils::ComboRenderPipelineDescriptor pDesc;
+    pDesc.layout = pl;
+    pDesc.vertex.module = module;
+    pDesc.vertex.entryPoint = "vs";
+    pDesc.cFragment.module = module;
+    pDesc.cFragment.entryPoint = "fs";
+    pDesc.cFragment.targetCount = 0;
+
+    // Success case: a render pipeline with just a storage attachment is valid.
+    device.CreateRenderPipeline(&pDesc);
+
+    // Error case: a render pass with PLS but no attachments is invalid.
+    plPlsDesc.storageAttachmentCount = 0;
+    pDesc.layout = device.CreatePipelineLayout(&plDesc);
+    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&pDesc));
+}
+
+// Check that the size of the render pass is correctly deduced when there is only a storage
+// attachment. Use the SetViewport validation to check this.
+TEST_F(PixelLocalStorageTest, RenderPassSizeDetectionWithOnlyStorageAttachment) {
+    wgpu::TextureDescriptor tDesc;
+    tDesc.format = wgpu::TextureFormat::R32Uint;
+    tDesc.size = {7, 11};
+    tDesc.usage = wgpu::TextureUsage::StorageAttachment;
+    wgpu::Texture tex = device.CreateTexture(&tDesc);
+
+    wgpu::RenderPassStorageAttachment rpAttachment;
+    rpAttachment.storage = tex.CreateView();
+    rpAttachment.offset = 0;
+    rpAttachment.loadOp = wgpu::LoadOp::Load;
+    rpAttachment.storeOp = wgpu::StoreOp::Store;
+
+    wgpu::RenderPassPixelLocalStorage rpPlsDesc;
+    rpPlsDesc.totalPixelLocalStorageSize = 4;
+    rpPlsDesc.storageAttachmentCount = 1;
+    rpPlsDesc.storageAttachments = &rpAttachment;
+
+    wgpu::RenderPassDescriptor rpDesc;
+    rpDesc.nextInChain = &rpPlsDesc;
+    rpDesc.colorAttachmentCount = 0;
+    rpDesc.depthStencilAttachment = nullptr;
+
+    // Success case: viewport is exactly the size of the render pass.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&rpDesc);
+        pass.SetViewport(0, 0, tDesc.size.width, tDesc.size.height, 0.0, 1.0);
+        pass.End();
+        encoder.Finish();
+    }
+
+    // Error case: viewport width is larger than the render pass's.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&rpDesc);
+        pass.SetViewport(0, 0, tDesc.size.width + 1, tDesc.size.height, 0.0, 1.0);
+        pass.End();
+        ASSERT_DEVICE_ERROR(encoder.Finish());
+    }
+
+    // Error case: viewport width is larger than the render pass's.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&rpDesc);
+        pass.SetViewport(0, 0, tDesc.size.width, tDesc.size.height + 1, 0.0, 1.0);
+        pass.End();
+        ASSERT_DEVICE_ERROR(encoder.Finish());
+    }
+}
+
 class PixelLocalStorageAndRenderToSingleSampledTest : public PixelLocalStorageTest {
   protected:
     WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
                                 wgpu::DeviceDescriptor descriptor) override {
-        // TODO(dawn:1704): Do we need to test both extensions?
         wgpu::FeatureName requiredFeatures[2] = {wgpu::FeatureName::PixelLocalStorageNonCoherent,
                                                  wgpu::FeatureName::MSAARenderToSingleSampled};
         descriptor.requiredFeatures = requiredFeatures;
@@ -825,7 +1199,32 @@ TEST_F(PixelLocalStorageAndRenderToSingleSampledTest, CombinationIsNotAllowed) {
     ASSERT_DEVICE_ERROR(RecordRenderPass(&desc.rpDesc));
 }
 
+class PixelLocalStorageAndTransientAttachmentTest : public PixelLocalStorageTest {
+    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
+                                wgpu::DeviceDescriptor descriptor) override {
+        wgpu::FeatureName requiredFeatures[2] = {wgpu::FeatureName::PixelLocalStorageNonCoherent,
+                                                 wgpu::FeatureName::TransientAttachments};
+        descriptor.requiredFeatures = requiredFeatures;
+        descriptor.requiredFeatureCount = 2;
+        return dawnAdapter.CreateDevice(&descriptor);
+    }
+};
+
+// Check that a transient + storage attachment is allowed.
+TEST_F(PixelLocalStorageAndTransientAttachmentTest, TransientStorageAttachment) {
+    wgpu::TextureDescriptor desc;
+    desc.size = {1, 1};
+    desc.format = wgpu::TextureFormat::R32Uint;
+    desc.usage = wgpu::TextureUsage::StorageAttachment | wgpu::TextureUsage::TransientAttachment;
+    device.CreateTexture(&desc);
+
+    desc.usage |= wgpu::TextureUsage::RenderAttachment;
+    device.CreateTexture(&desc);
+}
+
 // TODO(dawn:1704): Add tests for limits
+// TODO(dawn:1704): Add tests for load/store op validation with transient.
+// TODO(dawn:1704): Allow multisampled storage attachments
 
 }  // anonymous namespace
 }  // namespace dawn

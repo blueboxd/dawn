@@ -32,6 +32,8 @@ tint_add_target(tint_lang_msl_writer_ast_raise lib
   lang/msl/writer/ast_raise/module_scope_var_to_entry_point_param.h
   lang/msl/writer/ast_raise/packed_vec3.cc
   lang/msl/writer/ast_raise/packed_vec3.h
+  lang/msl/writer/ast_raise/pixel_local.cc
+  lang/msl/writer/ast_raise/pixel_local.h
   lang/msl/writer/ast_raise/subgroup_ballot.cc
   lang/msl/writer/ast_raise/subgroup_ballot.h
 )
@@ -41,6 +43,7 @@ tint_target_add_dependencies(tint_lang_msl_writer_ast_raise lib
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_ast_transform
   tint_lang_wgsl_program
@@ -71,6 +74,7 @@ if(TINT_BUILD_MSL_WRITER)
 tint_add_target(tint_lang_msl_writer_ast_raise_test test
   lang/msl/writer/ast_raise/module_scope_var_to_entry_point_param_test.cc
   lang/msl/writer/ast_raise/packed_vec3_test.cc
+  lang/msl/writer/ast_raise/pixel_local_test.cc
   lang/msl/writer/ast_raise/subgroup_ballot_test.cc
 )
 
@@ -78,7 +82,9 @@ tint_target_add_dependencies(tint_lang_msl_writer_ast_raise_test test
   tint_api_common
   tint_lang_core
   tint_lang_core_constant
+  tint_lang_core_ir
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_ast_transform
   tint_lang_wgsl_ast_transform_test
