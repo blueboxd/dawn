@@ -86,6 +86,8 @@ dawn_json_generator("utils_gen") {
   outputs = [
     "src/dawn/native/ChainUtils_autogen.h",
     "src/dawn/native/ChainUtils_autogen.cpp",
+    "src/dawn/native/Features_autogen.h",
+    "src/dawn/native/Features_autogen.inl",
     "src/dawn/native/ProcTable.cpp",
     "src/dawn/native/dawn_platform_autogen.h",
     "src/dawn/native/wgpu_structs_autogen.h",
@@ -105,7 +107,7 @@ if (dawn_enable_opengl) {
     script = "${dawn_root}/generator/opengl_loader_generator.py"
     args = [
       "--gl-xml",
-      rebase_path("${dawn_root}/third_party/khronos/gl.xml", root_build_dir),
+      rebase_path("${dawn_opengl_registry_dir}/xml/gl.xml", root_build_dir),
       "--supported-extensions",
       rebase_path("opengl/supported_extensions.json", root_build_dir),
     ]
@@ -146,7 +148,7 @@ source_set("sources") {
     ":headers",
     ":utils_gen",
     "${dawn_root}/src/dawn/common",
-    "${dawn_root}/src/tint:libtint",
+    "${dawn_root}/src/tint/api",
 
     # TODO(dawn:286): These should only be necessary if SPIR-V validation is
     # enabled with dawn_enable_spirv_validation
@@ -225,6 +227,7 @@ source_set("sources") {
     "CallbackTaskManager.cpp",
     "CallbackTaskManager.h",
     "ChainUtils.h",
+    "ChainUtilsImpl.h",
     "CommandAllocator.cpp",
     "CommandAllocator.h",
     "CommandBuffer.cpp",
@@ -375,10 +378,9 @@ source_set("sources") {
   ]
 
   if (dawn_use_x11) {
-    libs += [ "X11" ]
     sources += [
-      "XlibXcbFunctions.cpp",
-      "XlibXcbFunctions.h",
+      "X11Functions.cpp",
+      "X11Functions.h",
     ]
   }
 
@@ -426,6 +428,10 @@ source_set("sources") {
       "d3d/PlatformFunctions.h",
       "d3d/ShaderUtils.cpp",
       "d3d/ShaderUtils.h",
+      "d3d/SharedFenceD3D.cpp",
+      "d3d/SharedFenceD3D.h",
+      "d3d/SharedTextureMemoryD3D.cpp",
+      "d3d/SharedTextureMemoryD3D.h",
       "d3d/SwapChainD3D.cpp",
       "d3d/SwapChainD3D.h",
       "d3d/TextureD3D.cpp",
@@ -478,6 +484,10 @@ source_set("sources") {
       "d3d11/SamplerD3D11.h",
       "d3d11/ShaderModuleD3D11.cpp",
       "d3d11/ShaderModuleD3D11.h",
+      "d3d11/SharedFenceD3D11.cpp",
+      "d3d11/SharedFenceD3D11.h",
+      "d3d11/SharedTextureMemoryD3D11.cpp",
+      "d3d11/SharedTextureMemoryD3D11.h",
       "d3d11/SwapChainD3D11.cpp",
       "d3d11/SwapChainD3D11.h",
       "d3d11/TextureD3D11.cpp",
@@ -557,6 +567,10 @@ source_set("sources") {
       "d3d12/ShaderModuleD3D12.h",
       "d3d12/ShaderVisibleDescriptorAllocatorD3D12.cpp",
       "d3d12/ShaderVisibleDescriptorAllocatorD3D12.h",
+      "d3d12/SharedFenceD3D12.cpp",
+      "d3d12/SharedFenceD3D12.h",
+      "d3d12/SharedTextureMemoryD3D12.cpp",
+      "d3d12/SharedTextureMemoryD3D12.h",
       "d3d12/StagingDescriptorAllocatorD3D12.cpp",
       "d3d12/StagingDescriptorAllocatorD3D12.h",
       "d3d12/StreamImplD3D12.cpp",
@@ -613,6 +627,10 @@ source_set("sources") {
       "metal/SamplerMTL.mm",
       "metal/ShaderModuleMTL.h",
       "metal/ShaderModuleMTL.mm",
+      "metal/SharedFenceMTL.h",
+      "metal/SharedFenceMTL.mm",
+      "metal/SharedTextureMemoryMTL.h",
+      "metal/SharedTextureMemoryMTL.mm",
       "metal/SwapChainMTL.h",
       "metal/SwapChainMTL.mm",
       "metal/TextureMTL.h",

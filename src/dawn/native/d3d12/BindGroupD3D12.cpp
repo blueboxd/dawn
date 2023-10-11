@@ -39,7 +39,7 @@ BindGroup::BindGroup(Device* device,
                      uint32_t viewSizeIncrement,
                      const CPUDescriptorHeapAllocation& viewAllocation)
     : BindGroupBase(this, device, descriptor) {
-    BindGroupLayout* bgl = ToBackend(GetLayout()->GetInternalBindGroupLayout());
+    BindGroupLayout* bgl = ToBackend(GetLayout());
 
     mCPUViewAllocation = viewAllocation;
 
@@ -162,7 +162,8 @@ BindGroup::BindGroup(Device* device,
                 }
 
                 switch (bindingInfo.storageTexture.access) {
-                    case wgpu::StorageTextureAccess::WriteOnly: {
+                    case wgpu::StorageTextureAccess::WriteOnly:
+                    case wgpu::StorageTextureAccess::ReadWrite: {
                         D3D12_UNORDERED_ACCESS_VIEW_DESC uav = view->GetUAVDescriptor();
                         d3d12Device->CreateUnorderedAccessView(
                             resource, nullptr, &uav,
@@ -170,7 +171,14 @@ BindGroup::BindGroup(Device* device,
                                                       descriptorHeapOffsets[bindingIndex]));
                         break;
                     }
-
+                    case wgpu::StorageTextureAccess::ReadOnly: {
+                        D3D12_SHADER_RESOURCE_VIEW_DESC srv = view->GetSRVDescriptor();
+                        d3d12Device->CreateShaderResourceView(
+                            resource, &srv,
+                            viewAllocation.OffsetFrom(viewSizeIncrement,
+                                                      descriptorHeapOffsets[bindingIndex]));
+                        break;
+                    }
                     case wgpu::StorageTextureAccess::Undefined:
                         UNREACHABLE();
                 }
@@ -208,13 +216,12 @@ BindGroup::~BindGroup() = default;
 
 void BindGroup::DestroyImpl() {
     BindGroupBase::DestroyImpl();
-    ToBackend(GetLayout()->GetInternalBindGroupLayout())
-        ->DeallocateBindGroup(this, &mCPUViewAllocation);
+    ToBackend(GetLayout())->DeallocateBindGroup(this, &mCPUViewAllocation);
     ASSERT(!mCPUViewAllocation.IsValid());
 }
 
-bool BindGroup::PopulateViews(ShaderVisibleDescriptorAllocator* viewAllocator) {
-    const BindGroupLayout* bgl = ToBackend(GetLayout()->GetInternalBindGroupLayout());
+bool BindGroup::PopulateViews(MutexProtected<ShaderVisibleDescriptorAllocator>& viewAllocator) {
+    const BindGroupLayout* bgl = ToBackend(GetLayout());
 
     const uint32_t descriptorCount = bgl->GetCbvUavSrvDescriptorCount();
     if (descriptorCount == 0 || viewAllocator->IsAllocationStillValid(mGPUViewAllocation)) {
@@ -250,8 +257,9 @@ D3D12_GPU_DESCRIPTOR_HANDLE BindGroup::GetBaseSamplerDescriptor() const {
     return mSamplerAllocationEntry->GetBaseDescriptor();
 }
 
-bool BindGroup::PopulateSamplers(Device* device,
-                                 ShaderVisibleDescriptorAllocator* samplerAllocator) {
+bool BindGroup::PopulateSamplers(
+    Device* device,
+    MutexProtected<ShaderVisibleDescriptorAllocator>& samplerAllocator) {
     if (mSamplerAllocationEntry == nullptr) {
         return true;
     }

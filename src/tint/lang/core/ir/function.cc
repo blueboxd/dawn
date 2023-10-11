@@ -17,11 +17,11 @@
 #include "src/tint/utils/containers/predicates.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Function);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Function);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
-Function::Function(const type::Type* rt,
+Function::Function(const core::type::Type* rt,
                    PipelineStage stage,
                    std::optional<std::array<uint32_t, 3>> wg_size)
     : pipeline_stage_(stage), workgroup_size_(wg_size) {
@@ -68,4 +68,4 @@ std::string_view ToString(enum Function::ReturnBuiltin value) {
     return "<unknown>";
 }
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir

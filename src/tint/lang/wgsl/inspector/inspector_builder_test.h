@@ -30,9 +30,11 @@
 #include "src/tint/lang/wgsl/ast/id_attribute.h"
 #include "src/tint/lang/wgsl/ast/stage_attribute.h"
 #include "src/tint/lang/wgsl/ast/workgroup_attribute.h"
+#include "src/tint/lang/wgsl/inspector/entry_point.h"
+#include "src/tint/lang/wgsl/inspector/inspector.h"
+#include "src/tint/lang/wgsl/inspector/resource_binding.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/sem/variable.h"
-#include "tint/tint.h"
 
 namespace tint::inspector {
 
@@ -280,13 +282,16 @@ class InspectorBuilder : public ProgramBuilder {
     /// @param dim dimensionality of the texture being sampled
     /// @param scalar the scalar type
     /// @returns a pointer to a type appropriate for the coord param
-    ast::Type GetCoordsType(type::TextureDimension dim, ast::Type scalar);
+    ast::Type GetCoordsType(core::type::TextureDimension dim, ast::Type scalar);
 
-    /// Generates appropriate types for a Read-Only StorageTexture
+    /// Generates appropriate types for a StorageTexture
     /// @param dim the texture dimension of the storage texture
     /// @param format the texel format of the storage texture
+    /// @param access the storage texture access
     /// @returns the storage texture type
-    ast::Type MakeStorageTextureTypes(type::TextureDimension dim, core::TexelFormat format);
+    ast::Type MakeStorageTextureTypes(core::type::TextureDimension dim,
+                                      core::TexelFormat format,
+                                      core::Access access);
 
     /// Adds a storage texture variable to the program
     /// @param name the name of the variable

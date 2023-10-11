@@ -15,15 +15,16 @@
 #include "src/tint/lang/wgsl/resolver/resolver.h"
 
 #include "gmock/gmock.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 #include "src/tint/lang/wgsl/sem/index_accessor_expression.h"
 
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+
 namespace tint::resolver {
 namespace {
-
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
 
 using ResolverIndexAccessorTest = ResolverTest;
 
@@ -109,8 +110,8 @@ TEST_F(ResolverIndexAccessorTest, Matrix) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(acc), nullptr);
-    ASSERT_TRUE(TypeOf(acc)->Is<type::Vector>());
-    EXPECT_EQ(TypeOf(acc)->As<type::Vector>()->Width(), 3u);
+    ASSERT_TRUE(TypeOf(acc)->Is<core::type::Vector>());
+    EXPECT_EQ(TypeOf(acc)->As<core::type::Vector>()->Width(), 3u);
 
     auto idx_sem = Sem().Get(acc)->UnwrapLoad()->As<sem::IndexAccessorExpression>();
     ASSERT_NE(idx_sem, nullptr);
@@ -127,7 +128,7 @@ TEST_F(ResolverIndexAccessorTest, Matrix_BothDimensions) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(acc), nullptr);
-    EXPECT_TRUE(TypeOf(acc)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(acc)->Is<core::type::F32>());
 
     auto idx_sem = Sem().Get(acc)->UnwrapLoad()->As<sem::IndexAccessorExpression>();
     ASSERT_NE(idx_sem, nullptr);
@@ -176,7 +177,7 @@ TEST_F(ResolverIndexAccessorTest, Vector) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(acc), nullptr);
-    EXPECT_TRUE(TypeOf(acc)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(acc)->Is<core::type::F32>());
 
     auto idx_sem = Sem().Get(acc)->UnwrapLoad()->As<sem::IndexAccessorExpression>();
     ASSERT_NE(idx_sem, nullptr);
@@ -189,7 +190,7 @@ TEST_F(ResolverIndexAccessorTest, Array_Literal_i32) {
     auto* acc = IndexAccessor("my_var", 2_i);
     WrapInFunction(acc);
     EXPECT_TRUE(r()->Resolve()) << r()->error();
-    EXPECT_TRUE(TypeOf(acc)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(acc)->Is<core::type::F32>());
 
     auto idx_sem = Sem().Get(acc)->UnwrapLoad()->As<sem::IndexAccessorExpression>();
     ASSERT_NE(idx_sem, nullptr);
@@ -202,7 +203,7 @@ TEST_F(ResolverIndexAccessorTest, Array_Literal_u32) {
     auto* acc = IndexAccessor("my_var", 2_u);
     WrapInFunction(acc);
     EXPECT_TRUE(r()->Resolve()) << r()->error();
-    EXPECT_TRUE(TypeOf(acc)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(acc)->Is<core::type::F32>());
 
     auto idx_sem = Sem().Get(acc)->UnwrapLoad()->As<sem::IndexAccessorExpression>();
     ASSERT_NE(idx_sem, nullptr);
@@ -215,7 +216,7 @@ TEST_F(ResolverIndexAccessorTest, Array_Literal_AInt) {
     auto* acc = IndexAccessor("my_var", 2_a);
     WrapInFunction(acc);
     EXPECT_TRUE(r()->Resolve()) << r()->error();
-    EXPECT_TRUE(TypeOf(acc)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(acc)->Is<core::type::F32>());
 
     auto idx_sem = Sem().Get(acc)->UnwrapLoad()->As<sem::IndexAccessorExpression>();
     ASSERT_NE(idx_sem, nullptr);
@@ -234,7 +235,7 @@ TEST_F(ResolverIndexAccessorTest, Alias_Array) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(acc), nullptr);
-    EXPECT_TRUE(TypeOf(acc)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(acc)->Is<core::type::F32>());
 
     auto idx_sem = Sem().Get(acc)->UnwrapLoad()->As<sem::IndexAccessorExpression>();
     ASSERT_NE(idx_sem, nullptr);
@@ -251,7 +252,7 @@ TEST_F(ResolverIndexAccessorTest, Array_Constant) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(acc), nullptr);
-    EXPECT_TRUE(TypeOf(acc)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(acc)->Is<core::type::F32>());
 }
 
 TEST_F(ResolverIndexAccessorTest, Array_Dynamic_I32) {

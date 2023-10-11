@@ -44,7 +44,7 @@ namespace dawn::native {
 class CallbackTaskManager;
 class DeviceBase;
 class Surface;
-class XlibXcbFunctions;
+class X11Functions;
 
 using BackendsBitset = ityp::bitset<wgpu::BackendType, kEnumCount<wgpu::BackendType>>;
 using BackendsArray = ityp::
@@ -141,7 +141,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     const Ref<CallbackTaskManager>& GetCallbackTaskManager() const;
 
     // Get backend-independent libraries that need to be loaded dynamically.
-    const XlibXcbFunctions* GetOrCreateXlibXcbFunctions();
+    const X11Functions* GetOrLoadX11Functions();
 
     // Dawn API
     Surface* APICreateSurface(const SurfaceDescriptor* descriptor);
@@ -198,12 +198,10 @@ class InstanceBase final : public RefCountedWithExternalCount {
     bool mDeprecatedDiscoveredDefaultPhysicalDevices = false;
 
     TogglesState mToggles;
-
-    FeaturesInfo mFeaturesInfo;
     TogglesInfo mTogglesInfo;
 
 #if defined(DAWN_USE_X11)
-    std::unique_ptr<XlibXcbFunctions> mXlibXcbFunctions;
+    std::unique_ptr<X11Functions> mX11Functions;
 #endif  // defined(DAWN_USE_X11)
 
     Ref<CallbackTaskManager> mCallbackTaskManager;

@@ -17,11 +17,11 @@
 #include "src/tint/lang/wgsl/reader/reader.h"
 #include "src/tint/utils/result/result.h"
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using ::testing::HasSubstr;
 
-namespace tint::constant::test {
+namespace tint::core::constant::test {
 namespace {
 
 struct Case {
@@ -1195,7 +1195,7 @@ TEST_F(ConstEvalTest, BinaryAbstractShiftLeftRemainsAbstract) {
     auto* sem2 = Sem().Get(expr2);
     ASSERT_NE(sem2, nullptr);
 
-    auto aint_ty = create<type::AbstractInt>();
+    auto aint_ty = create<core::type::AbstractInt>();
     EXPECT_EQ(sem1->Type(), aint_ty);
     EXPECT_EQ(sem2->Type(), aint_ty);
 }
@@ -2482,4 +2482,4 @@ INSTANTIATE_TEST_SUITE_P(Nested,
 }  // namespace LogicalShortCircuit
 
 }  // namespace
-}  // namespace tint::constant::test
+}  // namespace tint::core::constant::test

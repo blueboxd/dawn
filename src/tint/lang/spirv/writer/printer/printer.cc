@@ -20,6 +20,7 @@
 #include "spirv/unified1/spirv.h"
 #include "src/tint/lang/core/constant/scalar.h"
 #include "src/tint/lang/core/constant/splat.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/access.h"
 #include "src/tint/lang/core/ir/binary.h"
 #include "src/tint/lang/core/ir/bitcast.h"
@@ -79,11 +80,11 @@
 #include "src/tint/utils/macros/scoped_assignment.h"
 #include "src/tint/utils/rtti/switch.h"
 
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+
 namespace tint::spirv::writer {
-
 namespace {
-
-using namespace tint::number_suffixes;  // NOLINT
 
 constexpr uint32_t kWriterVersion = 1;
 
@@ -112,31 +113,31 @@ SpvStorageClass StorageClass(core::AddressSpace addrspace) {
     }
 }
 
-const type::Type* DedupType(const type::Type* ty, type::Manager& types) {
+const core::type::Type* DedupType(const core::type::Type* ty, core::type::Manager& types) {
     return Switch(
         ty,
 
         // Atomics are not a distinct type in SPIR-V.
-        [&](const type::Atomic* atomic) { return atomic->Type(); },
+        [&](const core::type::Atomic* atomic) { return atomic->Type(); },
 
         // Depth textures are always declared as sampled textures.
-        [&](const type::DepthTexture* depth) {
-            return types.Get<type::SampledTexture>(depth->dim(), types.f32());
+        [&](const core::type::DepthTexture* depth) {
+            return types.Get<core::type::SampledTexture>(depth->dim(), types.f32());
         },
-        [&](const type::DepthMultisampledTexture* depth) {
-            return types.Get<type::MultisampledTexture>(depth->dim(), types.f32());
+        [&](const core::type::DepthMultisampledTexture* depth) {
+            return types.Get<core::type::MultisampledTexture>(depth->dim(), types.f32());
         },
 
         // Both sampler types are the same in SPIR-V.
-        [&](const type::Sampler* s) -> const type::Type* {
+        [&](const core::type::Sampler* s) -> const core::type::Type* {
             if (s->IsComparison()) {
-                return types.Get<type::Sampler>(type::SamplerKind::kSampler);
+                return types.Get<core::type::Sampler>(core::type::SamplerKind::kSampler);
             }
             return s;
         },
 
         // Dedup a SampledImage if its underlying image will be deduped.
-        [&](const raise::SampledImage* si) -> const type::Type* {
+        [&](const raise::SampledImage* si) -> const core::type::Type* {
             auto* img = DedupType(si->Image(), types);
             if (img != si->Image()) {
                 return types.Get<raise::SampledImage>(img);
@@ -149,11 +150,11 @@ const type::Type* DedupType(const type::Type* ty, type::Manager& types) {
 
 }  // namespace
 
-Printer::Printer(ir::Module* module, bool zero_init_workgroup_mem)
+Printer::Printer(core::ir::Module* module, bool zero_init_workgroup_mem)
     : ir_(module), b_(*module), zero_init_workgroup_memory_(zero_init_workgroup_mem) {}
 
 Result<std::vector<uint32_t>, std::string> Printer::Generate() {
-    auto valid = ir::ValidateAndDumpIfNeeded(*ir_, "SPIR-V writer");
+    auto valid = core::ir::ValidateAndDumpIfNeeded(*ir_, "SPIR-V writer");
     if (!valid) {
         return std::move(valid.Failure());
     }
@@ -230,7 +231,7 @@ uint32_t Printer::Builtin(core::BuiltinValue builtin, core::AddressSpace addrspa
     return SpvBuiltInMax;
 }
 
-uint32_t Printer::Constant(ir::Constant* constant) {
+uint32_t Printer::Constant(core::ir::Constant* constant) {
     // If it is a literal operand, just return the value.
     if (auto* literal = constant->As<raise::LiteralOperand>()) {
         return literal->Value()->ValueAs<uint32_t>();
@@ -246,47 +247,47 @@ uint32_t Printer::Constant(ir::Constant* constant) {
     return id;
 }
 
-uint32_t Printer::Constant(const constant::Value* constant) {
+uint32_t Printer::Constant(const core::constant::Value* constant) {
     return constants_.GetOrCreate(constant, [&] {
         auto id = module_.NextId();
         auto* ty = constant->Type();
         Switch(
             ty,  //
-            [&](const type::Bool*) {
+            [&](const core::type::Bool*) {
                 module_.PushType(
                     constant->ValueAs<bool>() ? spv::Op::OpConstantTrue : spv::Op::OpConstantFalse,
                     {Type(ty), id});
             },
-            [&](const type::I32*) {
+            [&](const core::type::I32*) {
                 module_.PushType(spv::Op::OpConstant, {Type(ty), id, constant->ValueAs<u32>()});
             },
-            [&](const type::U32*) {
+            [&](const core::type::U32*) {
                 module_.PushType(spv::Op::OpConstant,
                                  {Type(ty), id, U32Operand(constant->ValueAs<i32>())});
             },
-            [&](const type::F32*) {
+            [&](const core::type::F32*) {
                 module_.PushType(spv::Op::OpConstant, {Type(ty), id, constant->ValueAs<f32>()});
             },
-            [&](const type::F16*) {
+            [&](const core::type::F16*) {
                 module_.PushType(
                     spv::Op::OpConstant,
                     {Type(ty), id, U32Operand(constant->ValueAs<f16>().BitsRepresentation())});
             },
-            [&](const type::Vector* vec) {
+            [&](const core::type::Vector* vec) {
                 OperandList operands = {Type(ty), id};
                 for (uint32_t i = 0; i < vec->Width(); i++) {
                     operands.push_back(Constant(constant->Index(i)));
                 }
                 module_.PushType(spv::Op::OpConstantComposite, operands);
             },
-            [&](const type::Matrix* mat) {
+            [&](const core::type::Matrix* mat) {
                 OperandList operands = {Type(ty), id};
                 for (uint32_t i = 0; i < mat->columns(); i++) {
                     operands.push_back(Constant(constant->Index(i)));
                 }
                 module_.PushType(spv::Op::OpConstantComposite, operands);
             },
-            [&](const type::Array* arr) {
+            [&](const core::type::Array* arr) {
                 TINT_ASSERT(arr->ConstantCount());
                 OperandList operands = {Type(ty), id};
                 for (uint32_t i = 0; i < arr->ConstantCount(); i++) {
@@ -294,7 +295,7 @@ uint32_t Printer::Constant(const constant::Value* constant) {
                 }
                 module_.PushType(spv::Op::OpConstantComposite, operands);
             },
-            [&](const type::Struct* str) {
+            [&](const core::type::Struct* str) {
                 OperandList operands = {Type(ty), id};
                 for (uint32_t i = 0; i < str->Members().Length(); i++) {
                     operands.push_back(Constant(constant->Index(i)));
@@ -306,7 +307,7 @@ uint32_t Printer::Constant(const constant::Value* constant) {
     });
 }
 
-uint32_t Printer::ConstantNull(const type::Type* type) {
+uint32_t Printer::ConstantNull(const core::type::Type* type) {
     return constant_nulls_.GetOrCreate(type, [&] {
         auto id = module_.NextId();
         module_.PushType(spv::Op::OpConstantNull, {Type(type), id});
@@ -314,7 +315,7 @@ uint32_t Printer::ConstantNull(const type::Type* type) {
     });
 }
 
-uint32_t Printer::Undef(const type::Type* type) {
+uint32_t Printer::Undef(const core::type::Type* type) {
     return undef_values_.GetOrCreate(type, [&] {
         auto id = module_.NextId();
         module_.PushType(spv::Op::OpUndef, {Type(type), id});
@@ -322,57 +323,58 @@ uint32_t Printer::Undef(const type::Type* type) {
     });
 }
 
-uint32_t Printer::Type(const type::Type* ty, core::AddressSpace addrspace /* = kUndefined */) {
+uint32_t Printer::Type(const core::type::Type* ty,
+                       core::AddressSpace addrspace /* = kUndefined */) {
     ty = DedupType(ty, ir_->Types());
     return types_.GetOrCreate(ty, [&] {
         auto id = module_.NextId();
         Switch(
             ty,  //
-            [&](const type::Void*) { module_.PushType(spv::Op::OpTypeVoid, {id}); },
-            [&](const type::Bool*) { module_.PushType(spv::Op::OpTypeBool, {id}); },
-            [&](const type::I32*) {
+            [&](const core::type::Void*) { module_.PushType(spv::Op::OpTypeVoid, {id}); },
+            [&](const core::type::Bool*) { module_.PushType(spv::Op::OpTypeBool, {id}); },
+            [&](const core::type::I32*) {
                 module_.PushType(spv::Op::OpTypeInt, {id, 32u, 1u});
             },
-            [&](const type::U32*) {
+            [&](const core::type::U32*) {
                 module_.PushType(spv::Op::OpTypeInt, {id, 32u, 0u});
             },
-            [&](const type::F32*) {
+            [&](const core::type::F32*) {
                 module_.PushType(spv::Op::OpTypeFloat, {id, 32u});
             },
-            [&](const type::F16*) {
+            [&](const core::type::F16*) {
                 module_.PushCapability(SpvCapabilityFloat16);
                 module_.PushCapability(SpvCapabilityUniformAndStorageBuffer16BitAccess);
                 module_.PushCapability(SpvCapabilityStorageBuffer16BitAccess);
                 module_.PushCapability(SpvCapabilityStorageInputOutput16);
                 module_.PushType(spv::Op::OpTypeFloat, {id, 16u});
             },
-            [&](const type::Vector* vec) {
+            [&](const core::type::Vector* vec) {
                 module_.PushType(spv::Op::OpTypeVector, {id, Type(vec->type()), vec->Width()});
             },
-            [&](const type::Matrix* mat) {
+            [&](const core::type::Matrix* mat) {
                 module_.PushType(spv::Op::OpTypeMatrix,
                                  {id, Type(mat->ColumnType()), mat->columns()});
             },
-            [&](const type::Array* arr) {
+            [&](const core::type::Array* arr) {
                 if (arr->ConstantCount()) {
                     auto* count = b_.ConstantValue(u32(arr->ConstantCount().value()));
                     module_.PushType(spv::Op::OpTypeArray,
                                      {id, Type(arr->ElemType()), Constant(count)});
                 } else {
-                    TINT_ASSERT(arr->Count()->Is<type::RuntimeArrayCount>());
+                    TINT_ASSERT(arr->Count()->Is<core::type::RuntimeArrayCount>());
                     module_.PushType(spv::Op::OpTypeRuntimeArray, {id, Type(arr->ElemType())});
                 }
                 module_.PushAnnot(spv::Op::OpDecorate,
                                   {id, U32Operand(SpvDecorationArrayStride), arr->Stride()});
             },
-            [&](const type::Pointer* ptr) {
+            [&](const core::type::Pointer* ptr) {
                 module_.PushType(spv::Op::OpTypePointer,
                                  {id, U32Operand(StorageClass(ptr->AddressSpace())),
                                   Type(ptr->StoreType(), ptr->AddressSpace())});
             },
-            [&](const type::Struct* str) { EmitStructType(id, str, addrspace); },
-            [&](const type::Texture* tex) { EmitTextureType(id, tex); },
-            [&](const type::Sampler*) { module_.PushType(spv::Op::OpTypeSampler, {id}); },
+            [&](const core::type::Struct* str) { EmitStructType(id, str, addrspace); },
+            [&](const core::type::Texture* tex) { EmitTextureType(id, tex); },
+            [&](const core::type::Sampler*) { module_.PushType(spv::Op::OpTypeSampler, {id}); },
             [&](const raise::SampledImage* s) {
                 module_.PushType(spv::Op::OpTypeSampledImage, {id, Type(s->Image())});
             },
@@ -381,31 +383,33 @@ uint32_t Printer::Type(const type::Type* ty, core::AddressSpace addrspace /* = k
     });
 }
 
-uint32_t Printer::Value(ir::Instruction* inst) {
+uint32_t Printer::Value(core::ir::Instruction* inst) {
     return Value(inst->Result());
 }
 
-uint32_t Printer::Value(ir::Value* value) {
+uint32_t Printer::Value(core::ir::Value* value) {
     return Switch(
         value,  //
-        [&](ir::Constant* constant) { return Constant(constant); },
-        [&](ir::Value*) { return values_.GetOrCreate(value, [&] { return module_.NextId(); }); });
+        [&](core::ir::Constant* constant) { return Constant(constant); },
+        [&](core::ir::Value*) {
+            return values_.GetOrCreate(value, [&] { return module_.NextId(); });
+        });
 }
 
-uint32_t Printer::Label(ir::Block* block) {
+uint32_t Printer::Label(core::ir::Block* block) {
     return block_labels_.GetOrCreate(block, [&] { return module_.NextId(); });
 }
 
 void Printer::EmitStructType(uint32_t id,
-                             const type::Struct* str,
+                             const core::type::Struct* str,
                              core::AddressSpace addrspace /* = kUndefined */) {
     // Helper to return `type` or a potentially nested array element type within `type` as a matrix
     // type, or nullptr if no such matrix type is present.
-    auto get_nested_matrix_type = [&](const type::Type* type) {
-        while (auto* arr = type->As<type::Array>()) {
+    auto get_nested_matrix_type = [&](const core::type::Type* type) {
+        while (auto* arr = type->As<core::type::Array>()) {
             type = arr->ElemType();
         }
-        return type->As<type::Matrix>();
+        return type->As<core::type::Matrix>();
     };
 
     OperandList operands = {id};
@@ -485,7 +489,7 @@ void Printer::EmitStructType(uint32_t id,
     module_.PushType(spv::Op::OpTypeStruct, std::move(operands));
 
     // Add a Block decoration if necessary.
-    if (str->StructFlags().Contains(type::StructFlag::kBlock)) {
+    if (str->StructFlags().Contains(core::type::StructFlag::kBlock)) {
         module_.PushAnnot(spv::Op::OpDecorate, {id, U32Operand(SpvDecorationBlock)});
     }
 
@@ -494,49 +498,53 @@ void Printer::EmitStructType(uint32_t id,
     }
 }
 
-void Printer::EmitTextureType(uint32_t id, const type::Texture* texture) {
+void Printer::EmitTextureType(uint32_t id, const core::type::Texture* texture) {
     uint32_t sampled_type = Switch(
         texture,  //
-        [&](const type::SampledTexture* t) { return Type(t->type()); },
-        [&](const type::MultisampledTexture* t) { return Type(t->type()); },
-        [&](const type::StorageTexture* t) { return Type(t->type()); });
+        [&](const core::type::SampledTexture* t) { return Type(t->type()); },
+        [&](const core::type::MultisampledTexture* t) { return Type(t->type()); },
+        [&](const core::type::StorageTexture* t) { return Type(t->type()); },
+        [&](Default) {
+            TINT_ICE() << "unhandled texture type: " << texture->TypeInfo().name;
+            return 0u;
+        });
 
     uint32_t dim = SpvDimMax;
     uint32_t array = 0u;
     switch (texture->dim()) {
-        case type::TextureDimension::kNone: {
+        case core::type::TextureDimension::kNone: {
             break;
         }
-        case type::TextureDimension::k1d: {
+        case core::type::TextureDimension::k1d: {
             dim = SpvDim1D;
-            if (texture->Is<type::SampledTexture>()) {
+            if (texture->Is<core::type::SampledTexture>()) {
                 module_.PushCapability(SpvCapabilitySampled1D);
-            } else if (texture->Is<type::StorageTexture>()) {
+            } else if (texture->Is<core::type::StorageTexture>()) {
                 module_.PushCapability(SpvCapabilityImage1D);
             }
             break;
         }
-        case type::TextureDimension::k2d: {
+        case core::type::TextureDimension::k2d: {
             dim = SpvDim2D;
             break;
         }
-        case type::TextureDimension::k2dArray: {
+        case core::type::TextureDimension::k2dArray: {
             dim = SpvDim2D;
             array = 1u;
             break;
         }
-        case type::TextureDimension::k3d: {
+        case core::type::TextureDimension::k3d: {
             dim = SpvDim3D;
             break;
         }
-        case type::TextureDimension::kCube: {
+        case core::type::TextureDimension::kCube: {
             dim = SpvDimCube;
             break;
         }
-        case type::TextureDimension::kCubeArray: {
+        case core::type::TextureDimension::kCubeArray: {
             dim = SpvDimCube;
             array = 1u;
-            if (texture->Is<type::SampledTexture>()) {
+            if (texture->Is<core::type::SampledTexture>()) {
                 module_.PushCapability(SpvCapabilitySampledCubeArray);
             }
             break;
@@ -549,17 +557,17 @@ void Printer::EmitTextureType(uint32_t id, const type::Texture* texture) {
     uint32_t depth = 0u;
 
     uint32_t ms = 0u;
-    if (texture->Is<type::MultisampledTexture>()) {
+    if (texture->Is<core::type::MultisampledTexture>()) {
         ms = 1u;
     }
 
     uint32_t sampled = 2u;
-    if (texture->IsAnyOf<type::MultisampledTexture, type::SampledTexture>()) {
+    if (texture->IsAnyOf<core::type::MultisampledTexture, core::type::SampledTexture>()) {
         sampled = 1u;
     }
 
     uint32_t format = SpvImageFormat_::SpvImageFormatUnknown;
-    if (auto* st = texture->As<type::StorageTexture>()) {
+    if (auto* st = texture->As<core::type::StorageTexture>()) {
         format = TexelFormat(st->texel_format());
     }
 
@@ -567,14 +575,14 @@ void Printer::EmitTextureType(uint32_t id, const type::Texture* texture) {
                      {id, sampled_type, dim, depth, array, ms, sampled, format});
 }
 
-void Printer::EmitFunction(ir::Function* func) {
+void Printer::EmitFunction(core::ir::Function* func) {
     auto id = Value(func);
 
     // Emit the function name.
     module_.PushDebug(spv::Op::OpName, {id, Operand(ir_->NameOf(func).Name())});
 
     // Emit OpEntryPoint and OpExecutionMode declarations if needed.
-    if (func->Stage() != ir::Function::PipelineStage::kUndefined) {
+    if (func->Stage() != core::ir::Function::PipelineStage::kUndefined) {
         EmitEntryPoint(func, id);
     }
 
@@ -622,10 +630,10 @@ void Printer::EmitFunction(ir::Function* func) {
     module_.PushFunction(current_function_);
 }
 
-void Printer::EmitEntryPoint(ir::Function* func, uint32_t id) {
+void Printer::EmitEntryPoint(core::ir::Function* func, uint32_t id) {
     SpvExecutionModel stage = SpvExecutionModelMax;
     switch (func->Stage()) {
-        case ir::Function::PipelineStage::kCompute: {
+        case core::ir::Function::PipelineStage::kCompute: {
             stage = SpvExecutionModelGLCompute;
             module_.PushExecutionMode(
                 spv::Op::OpExecutionMode,
@@ -633,17 +641,17 @@ void Printer::EmitEntryPoint(ir::Function* func, uint32_t id) {
                  func->WorkgroupSize()->at(1), func->WorkgroupSize()->at(2)});
             break;
         }
-        case ir::Function::PipelineStage::kFragment: {
+        case core::ir::Function::PipelineStage::kFragment: {
             stage = SpvExecutionModelFragment;
             module_.PushExecutionMode(spv::Op::OpExecutionMode,
                                       {id, U32Operand(SpvExecutionModeOriginUpperLeft)});
             break;
         }
-        case ir::Function::PipelineStage::kVertex: {
+        case core::ir::Function::PipelineStage::kVertex: {
             stage = SpvExecutionModelVertex;
             break;
         }
-        case ir::Function::PipelineStage::kUndefined:
+        case core::ir::Function::PipelineStage::kUndefined:
             TINT_ICE() << "undefined pipeline stage for entry point";
             return;
     }
@@ -653,12 +661,12 @@ void Printer::EmitEntryPoint(ir::Function* func, uint32_t id) {
     // Add the list of all referenced shader IO variables.
     if (ir_->root_block) {
         for (auto* global : *ir_->root_block) {
-            auto* var = global->As<ir::Var>();
+            auto* var = global->As<core::ir::Var>();
             if (!var) {
                 continue;
             }
 
-            auto* ptr = var->Result()->Type()->As<type::Pointer>();
+            auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
             if (!(ptr->AddressSpace() == core::AddressSpace::kIn ||
                   ptr->AddressSpace() == core::AddressSpace::kOut)) {
                 continue;
@@ -682,7 +690,7 @@ void Printer::EmitEntryPoint(ir::Function* func, uint32_t id) {
             operands.push_back(Value(var));
 
             // Add the `DepthReplacing` execution mode if `frag_depth` is used.
-            if (auto* str = ptr->StoreType()->As<type::Struct>()) {
+            if (auto* str = ptr->StoreType()->As<core::type::Struct>()) {
                 for (auto* member : str->Members()) {
                     if (member->Attributes().builtin == core::BuiltinValue::kFragDepth) {
                         module_.PushExecutionMode(spv::Op::OpExecutionMode,
@@ -696,18 +704,18 @@ void Printer::EmitEntryPoint(ir::Function* func, uint32_t id) {
     module_.PushEntryPoint(spv::Op::OpEntryPoint, operands);
 }
 
-void Printer::EmitRootBlock(ir::Block* root_block) {
+void Printer::EmitRootBlock(core::ir::Block* root_block) {
     for (auto* inst : *root_block) {
         Switch(
             inst,  //
-            [&](ir::Var* v) { return EmitVar(v); },
+            [&](core::ir::Var* v) { return EmitVar(v); },
             [&](Default) {
                 TINT_ICE() << "unimplemented root block instruction: " << inst->TypeInfo().name;
             });
     }
 }
 
-void Printer::EmitBlock(ir::Block* block) {
+void Printer::EmitBlock(core::ir::Block* block) {
     // Emit the label.
     // Skip if this is the function's entry block, as it will be emitted by the function object.
     if (!current_function_.instructions().empty()) {
@@ -721,7 +729,7 @@ void Printer::EmitBlock(ir::Block* block) {
         return;
     }
 
-    if (auto* mib = block->As<ir::MultiInBlock>()) {
+    if (auto* mib = block->As<core::ir::MultiInBlock>()) {
         // Emit all OpPhi nodes for incoming branches to block.
         EmitIncomingPhis(mib);
     }
@@ -730,7 +738,7 @@ void Printer::EmitBlock(ir::Block* block) {
     EmitBlockInstructions(block);
 }
 
-void Printer::EmitIncomingPhis(ir::MultiInBlock* block) {
+void Printer::EmitIncomingPhis(core::ir::MultiInBlock* block) {
     // Emit Phi nodes for all the incoming block parameters
     for (size_t param_idx = 0; param_idx < block->Params().Length(); param_idx++) {
         auto* param = block->Params()[param_idx];
@@ -746,34 +754,34 @@ void Printer::EmitIncomingPhis(ir::MultiInBlock* block) {
     }
 }
 
-void Printer::EmitBlockInstructions(ir::Block* block) {
+void Printer::EmitBlockInstructions(core::ir::Block* block) {
     for (auto* inst : *block) {
         Switch(
-            inst,                                                           //
-            [&](ir::Access* a) { EmitAccess(a); },                          //
-            [&](ir::Binary* b) { EmitBinary(b); },                          //
-            [&](ir::Bitcast* b) { EmitBitcast(b); },                        //
-            [&](ir::CoreBuiltinCall* b) { EmitCoreBuiltinCall(b); },        //
-            [&](ir::Construct* c) { EmitConstruct(c); },                    //
-            [&](ir::Convert* c) { EmitConvert(c); },                        //
-            [&](ir::IntrinsicCall* i) { EmitIntrinsicCall(i); },            //
-            [&](ir::Load* l) { EmitLoad(l); },                              //
-            [&](ir::LoadVectorElement* l) { EmitLoadVectorElement(l); },    //
-            [&](ir::Loop* l) { EmitLoop(l); },                              //
-            [&](ir::Switch* sw) { EmitSwitch(sw); },                        //
-            [&](ir::Swizzle* s) { EmitSwizzle(s); },                        //
-            [&](ir::Store* s) { EmitStore(s); },                            //
-            [&](ir::StoreVectorElement* s) { EmitStoreVectorElement(s); },  //
-            [&](ir::UserCall* c) { EmitUserCall(c); },                      //
-            [&](ir::Unary* u) { EmitUnary(u); },                            //
-            [&](ir::Var* v) { EmitVar(v); },                                //
-            [&](ir::Let* l) { EmitLet(l); },                                //
-            [&](ir::If* i) { EmitIf(i); },                                  //
-            [&](ir::Terminator* t) { EmitTerminator(t); },                  //
+            inst,                                                                 //
+            [&](core::ir::Access* a) { EmitAccess(a); },                          //
+            [&](core::ir::Binary* b) { EmitBinary(b); },                          //
+            [&](core::ir::Bitcast* b) { EmitBitcast(b); },                        //
+            [&](core::ir::CoreBuiltinCall* b) { EmitCoreBuiltinCall(b); },        //
+            [&](core::ir::Construct* c) { EmitConstruct(c); },                    //
+            [&](core::ir::Convert* c) { EmitConvert(c); },                        //
+            [&](core::ir::IntrinsicCall* i) { EmitIntrinsicCall(i); },            //
+            [&](core::ir::Load* l) { EmitLoad(l); },                              //
+            [&](core::ir::LoadVectorElement* l) { EmitLoadVectorElement(l); },    //
+            [&](core::ir::Loop* l) { EmitLoop(l); },                              //
+            [&](core::ir::Switch* sw) { EmitSwitch(sw); },                        //
+            [&](core::ir::Swizzle* s) { EmitSwizzle(s); },                        //
+            [&](core::ir::Store* s) { EmitStore(s); },                            //
+            [&](core::ir::StoreVectorElement* s) { EmitStoreVectorElement(s); },  //
+            [&](core::ir::UserCall* c) { EmitUserCall(c); },                      //
+            [&](core::ir::Unary* u) { EmitUnary(u); },                            //
+            [&](core::ir::Var* v) { EmitVar(v); },                                //
+            [&](core::ir::Let* l) { EmitLet(l); },                                //
+            [&](core::ir::If* i) { EmitIf(i); },                                  //
+            [&](core::ir::Terminator* t) { EmitTerminator(t); },                  //
             [&](Default) { TINT_ICE() << "unimplemented instruction: " << inst->TypeInfo().name; });
 
         // Set the name for the SPIR-V result ID if provided in the module.
-        if (inst->Result() && !inst->Is<ir::Var>()) {
+        if (inst->Result() && !inst->Is<core::ir::Var>()) {
             if (auto name = ir_->NameOf(inst)) {
                 module_.PushDebug(spv::Op::OpName, {Value(inst), Operand(name.Name())});
             }
@@ -786,10 +794,10 @@ void Printer::EmitBlockInstructions(ir::Block* block) {
     }
 }
 
-void Printer::EmitTerminator(ir::Terminator* t) {
+void Printer::EmitTerminator(core::ir::Terminator* t) {
     tint::Switch(  //
         t,         //
-        [&](ir::Return*) {
+        [&](core::ir::Return*) {
             if (!t->Args().IsEmpty()) {
                 TINT_ASSERT(t->Args().Length() == 1u);
                 OperandList operands;
@@ -800,7 +808,7 @@ void Printer::EmitTerminator(ir::Terminator* t) {
             }
             return;
         },
-        [&](ir::BreakIf* breakif) {
+        [&](core::ir::BreakIf* breakif) {
             current_function_.push_inst(spv::Op::OpBranchConditional,
                                         {
                                             Value(breakif->Condition()),
@@ -808,24 +816,28 @@ void Printer::EmitTerminator(ir::Terminator* t) {
                                             loop_header_label_,
                                         });
         },
-        [&](ir::Continue* cont) {
+        [&](core::ir::Continue* cont) {
             current_function_.push_inst(spv::Op::OpBranch, {Label(cont->Loop()->Continuing())});
         },
-        [&](ir::ExitIf*) { current_function_.push_inst(spv::Op::OpBranch, {if_merge_label_}); },
-        [&](ir::ExitLoop*) { current_function_.push_inst(spv::Op::OpBranch, {loop_merge_label_}); },
-        [&](ir::ExitSwitch*) {
+        [&](core::ir::ExitIf*) {
+            current_function_.push_inst(spv::Op::OpBranch, {if_merge_label_});
+        },
+        [&](core::ir::ExitLoop*) {
+            current_function_.push_inst(spv::Op::OpBranch, {loop_merge_label_});
+        },
+        [&](core::ir::ExitSwitch*) {
             current_function_.push_inst(spv::Op::OpBranch, {switch_merge_label_});
         },
-        [&](ir::NextIteration*) {
+        [&](core::ir::NextIteration*) {
             current_function_.push_inst(spv::Op::OpBranch, {loop_header_label_});
         },
-        [&](ir::TerminateInvocation*) { current_function_.push_inst(spv::Op::OpKill, {}); },
-        [&](ir::Unreachable*) { current_function_.push_inst(spv::Op::OpUnreachable, {}); },
+        [&](core::ir::TerminateInvocation*) { current_function_.push_inst(spv::Op::OpKill, {}); },
+        [&](core::ir::Unreachable*) { current_function_.push_inst(spv::Op::OpUnreachable, {}); },
 
         [&](Default) { TINT_ICE() << "unimplemented branch: " << t->TypeInfo().name; });
 }
 
-void Printer::EmitIf(ir::If* i) {
+void Printer::EmitIf(core::ir::If* i) {
     auto* true_block = i->True();
     auto* false_block = i->False();
 
@@ -840,11 +852,11 @@ void Printer::EmitIf(ir::If* i) {
     uint32_t true_label = merge_label;
     uint32_t false_label = merge_label;
     if (true_block->Length() > 1 || i->HasResults() ||
-        (true_block->HasTerminator() && !true_block->Terminator()->Is<ir::ExitIf>())) {
+        (true_block->HasTerminator() && !true_block->Terminator()->Is<core::ir::ExitIf>())) {
         true_label = Label(true_block);
     }
     if (false_block->Length() > 1 || i->HasResults() ||
-        (false_block->HasTerminator() && !false_block->Terminator()->Is<ir::ExitIf>())) {
+        (false_block->HasTerminator() && !false_block->Terminator()->Is<core::ir::ExitIf>())) {
         false_label = Label(false_block);
     }
 
@@ -868,13 +880,13 @@ void Printer::EmitIf(ir::If* i) {
     EmitExitPhis(i);
 }
 
-void Printer::EmitAccess(ir::Access* access) {
+void Printer::EmitAccess(core::ir::Access* access) {
     auto* ty = access->Result()->Type();
 
     auto id = Value(access);
     OperandList operands = {Type(ty), id, Value(access->Object())};
 
-    if (ty->Is<type::Pointer>()) {
+    if (ty->Is<core::type::Pointer>()) {
         // Use OpAccessChain for accesses into pointer types.
         for (auto* idx : access->Indices()) {
             operands.push_back(Value(idx));
@@ -887,7 +899,7 @@ void Printer::EmitAccess(ir::Access* access) {
     // If we hit a non-constant index into a vector type, use OpVectorExtractDynamic for it.
     auto* source_ty = access->Object()->Type();
     for (auto* idx : access->Indices()) {
-        if (auto* constant = idx->As<ir::Constant>()) {
+        if (auto* constant = idx->As<core::ir::Constant>()) {
             // Push the index to the chain and update the current type.
             auto i = constant->Value()->ValueAs<u32>();
             operands.push_back(i);
@@ -895,7 +907,7 @@ void Printer::EmitAccess(ir::Access* access) {
         } else {
             // The VarForDynamicIndex transform ensures that only value types that are vectors
             // will be dynamically indexed, as we can use OpVectorExtractDynamic for this case.
-            TINT_ASSERT(source_ty->Is<type::Vector>());
+            TINT_ASSERT(source_ty->Is<core::type::Vector>());
 
             // If this wasn't the first access in the chain then emit the chain so far as an
             // OpCompositeExtract, creating a new result ID for the resulting vector.
@@ -916,7 +928,7 @@ void Printer::EmitAccess(ir::Access* access) {
     current_function_.push_inst(spv::Op::OpCompositeExtract, std::move(operands));
 }
 
-void Printer::EmitBinary(ir::Binary* binary) {
+void Printer::EmitBinary(core::ir::Binary* binary) {
     auto id = Value(binary);
     auto lhs = Value(binary->LHS());
     auto rhs = Value(binary->RHS());
@@ -926,11 +938,11 @@ void Printer::EmitBinary(ir::Binary* binary) {
     // Determine the opcode.
     spv::Op op = spv::Op::Max;
     switch (binary->Kind()) {
-        case ir::Binary::Kind::kAdd: {
+        case core::ir::Binary::Kind::kAdd: {
             op = ty->is_integer_scalar_or_vector() ? spv::Op::OpIAdd : spv::Op::OpFAdd;
             break;
         }
-        case ir::Binary::Kind::kDivide: {
+        case core::ir::Binary::Kind::kDivide: {
             if (ty->is_signed_integer_scalar_or_vector()) {
                 op = spv::Op::OpSDiv;
             } else if (ty->is_unsigned_integer_scalar_or_vector()) {
@@ -940,7 +952,7 @@ void Printer::EmitBinary(ir::Binary* binary) {
             }
             break;
         }
-        case ir::Binary::Kind::kMultiply: {
+        case core::ir::Binary::Kind::kMultiply: {
             if (ty->is_integer_scalar_or_vector()) {
                 op = spv::Op::OpIMul;
             } else if (ty->is_float_scalar_or_vector()) {
@@ -948,11 +960,11 @@ void Printer::EmitBinary(ir::Binary* binary) {
             }
             break;
         }
-        case ir::Binary::Kind::kSubtract: {
+        case core::ir::Binary::Kind::kSubtract: {
             op = ty->is_integer_scalar_or_vector() ? spv::Op::OpISub : spv::Op::OpFSub;
             break;
         }
-        case ir::Binary::Kind::kModulo: {
+        case core::ir::Binary::Kind::kModulo: {
             if (ty->is_signed_integer_scalar_or_vector()) {
                 op = spv::Op::OpSRem;
             } else if (ty->is_unsigned_integer_scalar_or_vector()) {
@@ -963,7 +975,7 @@ void Printer::EmitBinary(ir::Binary* binary) {
             break;
         }
 
-        case ir::Binary::Kind::kAnd: {
+        case core::ir::Binary::Kind::kAnd: {
             if (ty->is_integer_scalar_or_vector()) {
                 op = spv::Op::OpBitwiseAnd;
             } else if (ty->is_bool_scalar_or_vector()) {
@@ -971,7 +983,7 @@ void Printer::EmitBinary(ir::Binary* binary) {
             }
             break;
         }
-        case ir::Binary::Kind::kOr: {
+        case core::ir::Binary::Kind::kOr: {
             if (ty->is_integer_scalar_or_vector()) {
                 op = spv::Op::OpBitwiseOr;
             } else if (ty->is_bool_scalar_or_vector()) {
@@ -979,16 +991,16 @@ void Printer::EmitBinary(ir::Binary* binary) {
             }
             break;
         }
-        case ir::Binary::Kind::kXor: {
+        case core::ir::Binary::Kind::kXor: {
             op = spv::Op::OpBitwiseXor;
             break;
         }
 
-        case ir::Binary::Kind::kShiftLeft: {
+        case core::ir::Binary::Kind::kShiftLeft: {
             op = spv::Op::OpShiftLeftLogical;
             break;
         }
-        case ir::Binary::Kind::kShiftRight: {
+        case core::ir::Binary::Kind::kShiftRight: {
             if (ty->is_signed_integer_scalar_or_vector()) {
                 op = spv::Op::OpShiftRightArithmetic;
             } else if (ty->is_unsigned_integer_scalar_or_vector()) {
@@ -997,7 +1009,7 @@ void Printer::EmitBinary(ir::Binary* binary) {
             break;
         }
 
-        case ir::Binary::Kind::kEqual: {
+        case core::ir::Binary::Kind::kEqual: {
             if (lhs_ty->is_bool_scalar_or_vector()) {
                 op = spv::Op::OpLogicalEqual;
             } else if (lhs_ty->is_float_scalar_or_vector()) {
@@ -1007,7 +1019,7 @@ void Printer::EmitBinary(ir::Binary* binary) {
             }
             break;
         }
-        case ir::Binary::Kind::kNotEqual: {
+        case core::ir::Binary::Kind::kNotEqual: {
             if (lhs_ty->is_bool_scalar_or_vector()) {
                 op = spv::Op::OpLogicalNotEqual;
             } else if (lhs_ty->is_float_scalar_or_vector()) {
@@ -1017,7 +1029,7 @@ void Printer::EmitBinary(ir::Binary* binary) {
             }
             break;
         }
-        case ir::Binary::Kind::kGreaterThan: {
+        case core::ir::Binary::Kind::kGreaterThan: {
             if (lhs_ty->is_float_scalar_or_vector()) {
                 op = spv::Op::OpFOrdGreaterThan;
             } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -1027,7 +1039,7 @@ void Printer::EmitBinary(ir::Binary* binary) {
             }
             break;
         }
-        case ir::Binary::Kind::kGreaterThanEqual: {
+        case core::ir::Binary::Kind::kGreaterThanEqual: {
             if (lhs_ty->is_float_scalar_or_vector()) {
                 op = spv::Op::OpFOrdGreaterThanEqual;
             } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -1037,7 +1049,7 @@ void Printer::EmitBinary(ir::Binary* binary) {
             }
             break;
         }
-        case ir::Binary::Kind::kLessThan: {
+        case core::ir::Binary::Kind::kLessThan: {
             if (lhs_ty->is_float_scalar_or_vector()) {
                 op = spv::Op::OpFOrdLessThan;
             } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -1047,7 +1059,7 @@ void Printer::EmitBinary(ir::Binary* binary) {
             }
             break;
         }
-        case ir::Binary::Kind::kLessThanEqual: {
+        case core::ir::Binary::Kind::kLessThanEqual: {
             if (lhs_ty->is_float_scalar_or_vector()) {
                 op = spv::Op::OpFOrdLessThanEqual;
             } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -1063,7 +1075,7 @@ void Printer::EmitBinary(ir::Binary* binary) {
     current_function_.push_inst(op, {Type(ty), id, lhs, rhs});
 }
 
-void Printer::EmitBitcast(ir::Bitcast* bitcast) {
+void Printer::EmitBitcast(core::ir::Bitcast* bitcast) {
     auto* ty = bitcast->Result()->Type();
     if (ty == bitcast->Val()->Type()) {
         values_.Add(bitcast->Result(), Value(bitcast->Val()));
@@ -1073,7 +1085,7 @@ void Printer::EmitBitcast(ir::Bitcast* bitcast) {
                                 {Type(ty), Value(bitcast), Value(bitcast->Val())});
 }
 
-void Printer::EmitCoreBuiltinCall(ir::CoreBuiltinCall* builtin) {
+void Printer::EmitCoreBuiltinCall(core::ir::CoreBuiltinCall* builtin) {
     auto* result_ty = builtin->Result()->Type();
 
     if (builtin->Func() == core::Function::kAbs &&
@@ -1083,7 +1095,7 @@ void Printer::EmitCoreBuiltinCall(ir::CoreBuiltinCall* builtin) {
         return;
     }
     if ((builtin->Func() == core::Function::kAll || builtin->Func() == core::Function::kAny) &&
-        builtin->Args()[0]->Type()->Is<type::Bool>()) {
+        builtin->Args()[0]->Type()->Is<core::type::Bool>()) {
         // all() and any() are passthroughs for scalar arguments.
         values_.Add(builtin->Result(), Value(builtin->Args()[0]));
         return;
@@ -1358,6 +1370,15 @@ void Printer::EmitCoreBuiltinCall(ir::CoreBuiltinCall* builtin) {
         case core::Function::kTanh:
             glsl_ext_inst(GLSLstd450Tanh);
             break;
+        case core::Function::kTextureBarrier:
+            op = spv::Op::OpControlBarrier;
+            operands.clear();
+            operands.push_back(Constant(b_.ConstantValue(u32(spv::Scope::Workgroup))));
+            operands.push_back(Constant(b_.ConstantValue(u32(spv::Scope::Workgroup))));
+            operands.push_back(
+                Constant(b_.ConstantValue(u32(spv::MemorySemanticsMask::ImageMemory |
+                                              spv::MemorySemanticsMask::AcquireRelease))));
+            break;
         case core::Function::kTextureNumLevels:
             module_.PushCapability(SpvCapabilityImageQuery);
             op = spv::Op::OpImageQueryLevels;
@@ -1410,7 +1431,7 @@ void Printer::EmitCoreBuiltinCall(ir::CoreBuiltinCall* builtin) {
     current_function_.push_inst(op, operands);
 }
 
-void Printer::EmitConstruct(ir::Construct* construct) {
+void Printer::EmitConstruct(core::ir::Construct* construct) {
     // If there is just a single argument with the same type as the result, this is an identity
     // constructor and we can just pass through the ID of the argument.
     if (construct->Args().Length() == 1 &&
@@ -1426,7 +1447,7 @@ void Printer::EmitConstruct(ir::Construct* construct) {
     current_function_.push_inst(spv::Op::OpCompositeConstruct, std::move(operands));
 }
 
-void Printer::EmitConvert(ir::Convert* convert) {
+void Printer::EmitConvert(core::ir::Convert* convert) {
     auto* res_ty = convert->Result()->Type();
     auto* arg_ty = convert->Args()[0]->Type();
 
@@ -1470,29 +1491,29 @@ void Printer::EmitConvert(ir::Convert* convert) {
         operands.push_back(ConstantNull(arg_ty));
     } else if (arg_ty->is_bool_scalar_or_vector()) {
         // Select between constant one and zero, splatting them to vectors if necessary.
-        ir::Constant* one = nullptr;
-        ir::Constant* zero = nullptr;
+        core::ir::Constant* one = nullptr;
+        core::ir::Constant* zero = nullptr;
         Switch(
             res_ty->DeepestElement(),  //
-            [&](const type::F32*) {
+            [&](const core::type::F32*) {
                 one = b_.Constant(1_f);
                 zero = b_.Constant(0_f);
             },
-            [&](const type::F16*) {
+            [&](const core::type::F16*) {
                 one = b_.Constant(1_h);
                 zero = b_.Constant(0_h);
             },
-            [&](const type::I32*) {
+            [&](const core::type::I32*) {
                 one = b_.Constant(1_i);
                 zero = b_.Constant(0_i);
             },
-            [&](const type::U32*) {
+            [&](const core::type::U32*) {
                 one = b_.Constant(1_u);
                 zero = b_.Constant(0_u);
             });
         TINT_ASSERT_OR_RETURN(one && zero);
 
-        if (auto* vec = res_ty->As<type::Vector>()) {
+        if (auto* vec = res_ty->As<core::type::Vector>()) {
             // Splat the scalars into vectors.
             one = b_.Splat(vec, one, vec->Width());
             zero = b_.Splat(vec, zero, vec->Width());
@@ -1508,113 +1529,113 @@ void Printer::EmitConvert(ir::Convert* convert) {
     current_function_.push_inst(op, std::move(operands));
 }
 
-void Printer::EmitIntrinsicCall(ir::IntrinsicCall* call) {
+void Printer::EmitIntrinsicCall(core::ir::IntrinsicCall* call) {
     auto id = Value(call);
 
     spv::Op op = spv::Op::Max;
     switch (call->Kind()) {
-        case ir::IntrinsicCall::Kind::kSpirvArrayLength:
+        case core::ir::IntrinsicCall::Kind::kSpirvArrayLength:
             op = spv::Op::OpArrayLength;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicIAdd:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicIAdd:
             op = spv::Op::OpAtomicIAdd;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicISub:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicISub:
             op = spv::Op::OpAtomicISub;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicAnd:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicAnd:
             op = spv::Op::OpAtomicAnd;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicCompareExchange:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicCompareExchange:
             op = spv::Op::OpAtomicCompareExchange;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicExchange:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicExchange:
             op = spv::Op::OpAtomicExchange;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicLoad:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicLoad:
             op = spv::Op::OpAtomicLoad;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicOr:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicOr:
             op = spv::Op::OpAtomicOr;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicSMax:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicSMax:
             op = spv::Op::OpAtomicSMax;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicSMin:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicSMin:
             op = spv::Op::OpAtomicSMin;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicStore:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicStore:
             op = spv::Op::OpAtomicStore;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicUMax:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicUMax:
             op = spv::Op::OpAtomicUMax;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicUMin:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicUMin:
             op = spv::Op::OpAtomicUMin;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvAtomicXor:
+        case core::ir::IntrinsicCall::Kind::kSpirvAtomicXor:
             op = spv::Op::OpAtomicXor;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvDot:
+        case core::ir::IntrinsicCall::Kind::kSpirvDot:
             op = spv::Op::OpDot;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvImageFetch:
+        case core::ir::IntrinsicCall::Kind::kSpirvImageFetch:
             op = spv::Op::OpImageFetch;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvImageGather:
+        case core::ir::IntrinsicCall::Kind::kSpirvImageGather:
             op = spv::Op::OpImageGather;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvImageDrefGather:
+        case core::ir::IntrinsicCall::Kind::kSpirvImageDrefGather:
             op = spv::Op::OpImageDrefGather;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvImageQuerySize:
+        case core::ir::IntrinsicCall::Kind::kSpirvImageQuerySize:
             module_.PushCapability(SpvCapabilityImageQuery);
             op = spv::Op::OpImageQuerySize;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvImageQuerySizeLod:
+        case core::ir::IntrinsicCall::Kind::kSpirvImageQuerySizeLod:
             module_.PushCapability(SpvCapabilityImageQuery);
             op = spv::Op::OpImageQuerySizeLod;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvImageSampleImplicitLod:
+        case core::ir::IntrinsicCall::Kind::kSpirvImageSampleImplicitLod:
             op = spv::Op::OpImageSampleImplicitLod;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvImageSampleExplicitLod:
+        case core::ir::IntrinsicCall::Kind::kSpirvImageSampleExplicitLod:
             op = spv::Op::OpImageSampleExplicitLod;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvImageSampleDrefImplicitLod:
+        case core::ir::IntrinsicCall::Kind::kSpirvImageSampleDrefImplicitLod:
             op = spv::Op::OpImageSampleDrefImplicitLod;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvImageSampleDrefExplicitLod:
+        case core::ir::IntrinsicCall::Kind::kSpirvImageSampleDrefExplicitLod:
             op = spv::Op::OpImageSampleDrefExplicitLod;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvImageWrite:
+        case core::ir::IntrinsicCall::Kind::kSpirvImageWrite:
             op = spv::Op::OpImageWrite;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvMatrixTimesMatrix:
+        case core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesMatrix:
             op = spv::Op::OpMatrixTimesMatrix;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvMatrixTimesScalar:
+        case core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesScalar:
             op = spv::Op::OpMatrixTimesScalar;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvMatrixTimesVector:
+        case core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesVector:
             op = spv::Op::OpMatrixTimesVector;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvSampledImage:
+        case core::ir::IntrinsicCall::Kind::kSpirvSampledImage:
             op = spv::Op::OpSampledImage;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvSelect:
+        case core::ir::IntrinsicCall::Kind::kSpirvSelect:
             op = spv::Op::OpSelect;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvVectorTimesMatrix:
+        case core::ir::IntrinsicCall::Kind::kSpirvVectorTimesMatrix:
             op = spv::Op::OpVectorTimesMatrix;
             break;
-        case ir::IntrinsicCall::Kind::kSpirvVectorTimesScalar:
+        case core::ir::IntrinsicCall::Kind::kSpirvVectorTimesScalar:
             op = spv::Op::OpVectorTimesScalar;
             break;
     }
 
     OperandList operands;
-    if (!call->Result()->Type()->Is<type::Void>()) {
+    if (!call->Result()->Type()->Is<core::type::Void>()) {
         operands = {Type(call->Result()->Type()), id};
     }
     for (auto* arg : call->Args()) {
@@ -1623,13 +1644,13 @@ void Printer::EmitIntrinsicCall(ir::IntrinsicCall* call) {
     current_function_.push_inst(op, operands);
 }
 
-void Printer::EmitLoad(ir::Load* load) {
+void Printer::EmitLoad(core::ir::Load* load) {
     current_function_.push_inst(spv::Op::OpLoad,
                                 {Type(load->Result()->Type()), Value(load), Value(load->From())});
 }
 
-void Printer::EmitLoadVectorElement(ir::LoadVectorElement* load) {
-    auto* vec_ptr_ty = load->From()->Type()->As<type::Pointer>();
+void Printer::EmitLoadVectorElement(core::ir::LoadVectorElement* load) {
+    auto* vec_ptr_ty = load->From()->Type()->As<core::type::Pointer>();
     auto* el_ty = load->Result()->Type();
     auto* el_ptr_ty = ir_->Types().ptr(vec_ptr_ty->AddressSpace(), el_ty, vec_ptr_ty->Access());
     auto el_ptr_id = module_.NextId();
@@ -1640,7 +1661,7 @@ void Printer::EmitLoadVectorElement(ir::LoadVectorElement* load) {
                                 {Type(load->Result()->Type()), Value(load), el_ptr_id});
 }
 
-void Printer::EmitLoop(ir::Loop* loop) {
+void Printer::EmitLoop(core::ir::Loop* loop) {
     auto init_label = loop->HasInitializer() ? Label(loop->Initializer()) : 0;
     auto body_label = Label(loop->Body());
     auto continuing_label = Label(loop->Continuing());
@@ -1688,7 +1709,7 @@ void Printer::EmitLoop(ir::Loop* loop) {
     EmitExitPhis(loop);
 }
 
-void Printer::EmitSwitch(ir::Switch* swtch) {
+void Printer::EmitSwitch(core::ir::Switch* swtch) {
     // Find the default selector. There must be exactly one.
     uint32_t default_label = 0u;
     for (auto& c : swtch->Cases()) {
@@ -1733,7 +1754,7 @@ void Printer::EmitSwitch(ir::Switch* swtch) {
     EmitExitPhis(swtch);
 }
 
-void Printer::EmitSwizzle(ir::Swizzle* swizzle) {
+void Printer::EmitSwizzle(core::ir::Swizzle* swizzle) {
     auto id = Value(swizzle);
     auto obj = Value(swizzle->Object());
     OperandList operands = {Type(swizzle->Result()->Type()), id, obj, obj};
@@ -1743,12 +1764,12 @@ void Printer::EmitSwizzle(ir::Swizzle* swizzle) {
     current_function_.push_inst(spv::Op::OpVectorShuffle, operands);
 }
 
-void Printer::EmitStore(ir::Store* store) {
+void Printer::EmitStore(core::ir::Store* store) {
     current_function_.push_inst(spv::Op::OpStore, {Value(store->To()), Value(store->From())});
 }
 
-void Printer::EmitStoreVectorElement(ir::StoreVectorElement* store) {
-    auto* vec_ptr_ty = store->To()->Type()->As<type::Pointer>();
+void Printer::EmitStoreVectorElement(core::ir::StoreVectorElement* store) {
+    auto* vec_ptr_ty = store->To()->Type()->As<core::type::Pointer>();
     auto* el_ty = store->Value()->Type();
     auto* el_ptr_ty = ir_->Types().ptr(vec_ptr_ty->AddressSpace(), el_ty, vec_ptr_ty->Access());
     auto el_ptr_id = module_.NextId();
@@ -1758,15 +1779,15 @@ void Printer::EmitStoreVectorElement(ir::StoreVectorElement* store) {
     current_function_.push_inst(spv::Op::OpStore, {el_ptr_id, Value(store->Value())});
 }
 
-void Printer::EmitUnary(ir::Unary* unary) {
+void Printer::EmitUnary(core::ir::Unary* unary) {
     auto id = Value(unary);
     auto* ty = unary->Result()->Type();
     spv::Op op = spv::Op::Max;
     switch (unary->Kind()) {
-        case ir::Unary::Kind::kComplement:
+        case core::ir::Unary::Kind::kComplement:
             op = spv::Op::OpNot;
             break;
-        case ir::Unary::Kind::kNegation:
+        case core::ir::Unary::Kind::kNegation:
             if (ty->is_float_scalar_or_vector()) {
                 op = spv::Op::OpFNegate;
             } else if (ty->is_signed_integer_scalar_or_vector()) {
@@ -1777,7 +1798,7 @@ void Printer::EmitUnary(ir::Unary* unary) {
     current_function_.push_inst(op, {Type(ty), id, Value(unary->Val())});
 }
 
-void Printer::EmitUserCall(ir::UserCall* call) {
+void Printer::EmitUserCall(core::ir::UserCall* call) {
     auto id = Value(call);
     OperandList operands = {Type(call->Result()->Type()), id, Value(call->Func())};
     for (auto* arg : call->Args()) {
@@ -1786,17 +1807,20 @@ void Printer::EmitUserCall(ir::UserCall* call) {
     current_function_.push_inst(spv::Op::OpFunctionCall, operands);
 }
 
-void Printer::EmitVar(ir::Var* var) {
+void Printer::EmitVar(core::ir::Var* var) {
     auto id = Value(var);
-    auto* ptr = var->Result()->Type()->As<type::Pointer>();
+    auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
     auto ty = Type(ptr);
 
     switch (ptr->AddressSpace()) {
         case core::AddressSpace::kFunction: {
             TINT_ASSERT(current_function_);
-            current_function_.push_var({ty, id, U32Operand(SpvStorageClassFunction)});
             if (var->Initializer()) {
+                current_function_.push_var({ty, id, U32Operand(SpvStorageClassFunction)});
                 current_function_.push_inst(spv::Op::OpStore, {id, Value(var->Initializer())});
+            } else {
+                current_function_.push_var(
+                    {ty, id, U32Operand(SpvStorageClassFunction), ConstantNull(ptr->StoreType())});
             }
             break;
         }
@@ -1809,8 +1833,10 @@ void Printer::EmitVar(ir::Var* var) {
             TINT_ASSERT(!current_function_);
             OperandList operands = {ty, id, U32Operand(SpvStorageClassPrivate)};
             if (var->Initializer()) {
-                TINT_ASSERT(var->Initializer()->Is<ir::Constant>());
+                TINT_ASSERT(var->Initializer()->Is<core::ir::Constant>());
                 operands.push_back(Value(var->Initializer()));
+            } else {
+                operands.push_back(ConstantNull(ptr->StoreType()));
             }
             module_.PushType(spv::Op::OpVariable, operands);
             break;
@@ -1861,15 +1887,15 @@ void Printer::EmitVar(ir::Var* var) {
     }
 }
 
-void Printer::EmitLet(ir::Let* let) {
+void Printer::EmitLet(core::ir::Let* let) {
     auto id = Value(let->Value());
     values_.Add(let->Result(), id);
 }
 
-void Printer::EmitExitPhis(ir::ControlInstruction* inst) {
+void Printer::EmitExitPhis(core::ir::ControlInstruction* inst) {
     struct Branch {
         uint32_t label = 0;
-        ir::Value* value = nullptr;
+        core::ir::Value* value = nullptr;
         bool operator<(const Branch& other) const { return label < other.label; }
     };
 

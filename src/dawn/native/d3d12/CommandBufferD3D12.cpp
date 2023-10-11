@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "dawn/common/MutexProtected.h"
 #include "dawn/native/BindGroupTracker.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/DynamicUploader.h"
@@ -548,10 +549,9 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
             return;
         }
 
-        const uint32_t cbvUavSrvCount = ToBackend(group->GetLayout()->GetInternalBindGroupLayout())
-                                            ->GetCbvUavSrvDescriptorCount();
-        const uint32_t samplerCount = ToBackend(group->GetLayout()->GetInternalBindGroupLayout())
-                                          ->GetSamplerDescriptorCount();
+        const uint32_t cbvUavSrvCount =
+            ToBackend(group->GetLayout())->GetCbvUavSrvDescriptorCount();
+        const uint32_t samplerCount = ToBackend(group->GetLayout())->GetSamplerDescriptorCount();
 
         if (cbvUavSrvCount > 0) {
             uint32_t parameterIndex = pipelineLayout->GetCbvUavSrvRootParameterIndex(index);
@@ -606,8 +606,8 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
     ityp::array<BindGroupIndex, D3D12_GPU_DESCRIPTOR_HANDLE, kMaxBindGroups>
         mBoundRootSamplerTables = {};
 
-    ShaderVisibleDescriptorAllocator* mViewAllocator;
-    ShaderVisibleDescriptorAllocator* mSamplerAllocator;
+    MutexProtected<ShaderVisibleDescriptorAllocator>& mViewAllocator;
+    MutexProtected<ShaderVisibleDescriptorAllocator>& mSamplerAllocator;
 };
 
 class DescriptorHeapState {

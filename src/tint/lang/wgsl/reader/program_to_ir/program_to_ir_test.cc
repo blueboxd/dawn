@@ -14,6 +14,7 @@
 
 #include "gmock/gmock.h"
 #include "src/tint/lang/core/constant/scalar.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/block.h"
 #include "src/tint/lang/core/ir/if.h"
 #include "src/tint/lang/core/ir/loop.h"
@@ -23,6 +24,8 @@
 #include "src/tint/lang/wgsl/ast/int_literal_expression.h"
 #include "src/tint/lang/wgsl/helpers/ir_program_test.h"
 
+using namespace tint::core::fluent_types;  // NOLINT
+
 namespace tint::wgsl::reader {
 namespace {
 
@@ -31,7 +34,7 @@ namespace {
 /// If multiple instructions are found with the type T, then an error is raised and the first is
 /// returned.
 template <typename T>
-T* FindSingleInstruction(ir::Module& mod) {
+T* FindSingleInstruction(core::ir::Module& mod) {
     T* found = nullptr;
     size_t count = 0;
     for (auto* node : mod.instructions.Objects()) {
@@ -49,7 +52,7 @@ T* FindSingleInstruction(ir::Module& mod) {
     return found;
 }
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using IR_FromProgramTest = helpers::IRProgramTest;
 
@@ -64,7 +67,7 @@ TEST_F(IR_FromProgramTest, Func) {
     auto* f = m->functions[0];
     ASSERT_NE(f->Block(), nullptr);
 
-    EXPECT_EQ(m->functions[0]->Stage(), ir::Function::PipelineStage::kUndefined);
+    EXPECT_EQ(m->functions[0]->Stage(), core::ir::Function::PipelineStage::kUndefined);
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%f = func():void -> %b1 {
   %b1 = block {
@@ -85,7 +88,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam) {
     auto* f = m->functions[0];
     ASSERT_NE(f->Block(), nullptr);
 
-    EXPECT_EQ(m->functions[0]->Stage(), ir::Function::PipelineStage::kUndefined);
+    EXPECT_EQ(m->functions[0]->Stage(), core::ir::Function::PipelineStage::kUndefined);
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%f = func(%a:u32):u32 -> %b1 {
   %b1 = block {
@@ -107,7 +110,7 @@ TEST_F(IR_FromProgramTest, Func_WithMultipleParam) {
     auto* f = m->functions[0];
     ASSERT_NE(f->Block(), nullptr);
 
-    EXPECT_EQ(m->functions[0]->Stage(), ir::Function::PipelineStage::kUndefined);
+    EXPECT_EQ(m->functions[0]->Stage(), core::ir::Function::PipelineStage::kUndefined);
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%f = func(%a:u32, %b:i32, %c:bool):void -> %b1 {
   %b1 = block {
@@ -123,7 +126,7 @@ TEST_F(IR_FromProgramTest, EntryPoint) {
     auto m = Build();
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
-    EXPECT_EQ(m->functions[0]->Stage(), ir::Function::PipelineStage::kFragment);
+    EXPECT_EQ(m->functions[0]->Stage(), core::ir::Function::PipelineStage::kFragment);
 }
 
 TEST_F(IR_FromProgramTest, IfStatement) {
@@ -275,7 +278,7 @@ TEST_F(IR_FromProgramTest, Loop_WithBreak) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -308,7 +311,7 @@ TEST_F(IR_FromProgramTest, Loop_WithContinue) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -346,7 +349,7 @@ TEST_F(IR_FromProgramTest, Loop_WithContinuing_BreakIf) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -407,7 +410,7 @@ TEST_F(IR_FromProgramTest, Loop_WithReturn) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -444,7 +447,7 @@ TEST_F(IR_FromProgramTest, Loop_WithOnlyReturn) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -485,7 +488,7 @@ TEST_F(IR_FromProgramTest, Loop_WithOnlyReturn_ContinuingBreakIf) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -523,7 +526,7 @@ TEST_F(IR_FromProgramTest, Loop_WithIf_BothBranchesBreak) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -636,7 +639,7 @@ TEST_F(IR_FromProgramTest, While) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -676,7 +679,7 @@ TEST_F(IR_FromProgramTest, While_Return) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -716,7 +719,7 @@ TEST_F(IR_FromProgramTest, For) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -765,7 +768,7 @@ TEST_F(IR_FromProgramTest, For_Init_NoCondOrContinuing) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -798,7 +801,7 @@ TEST_F(IR_FromProgramTest, For_NoInitCondOrContinuing) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* loop = FindSingleInstruction<ir::Loop>(m);
+    auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -830,7 +833,7 @@ TEST_F(IR_FromProgramTest, Switch) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* swtch = FindSingleInstruction<ir::Switch>(m);
+    auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -838,14 +841,14 @@ TEST_F(IR_FromProgramTest, Switch) {
     ASSERT_EQ(3u, cases.Length());
 
     ASSERT_EQ(1u, cases[0].selectors.Length());
-    ASSERT_TRUE(cases[0].selectors[0].val->Value()->Is<constant::Scalar<tint::i32>>());
+    ASSERT_TRUE(cases[0].selectors[0].val->Value()->Is<core::constant::Scalar<i32>>());
     EXPECT_EQ(0_i,
-              cases[0].selectors[0].val->Value()->As<constant::Scalar<tint::i32>>()->ValueOf());
+              cases[0].selectors[0].val->Value()->As<core::constant::Scalar<i32>>()->ValueOf());
 
     ASSERT_EQ(1u, cases[1].selectors.Length());
-    ASSERT_TRUE(cases[1].selectors[0].val->Value()->Is<constant::Scalar<tint::i32>>());
+    ASSERT_TRUE(cases[1].selectors[0].val->Value()->Is<core::constant::Scalar<i32>>());
     EXPECT_EQ(1_i,
-              cases[1].selectors[0].val->Value()->As<constant::Scalar<tint::i32>>()->ValueOf());
+              cases[1].selectors[0].val->Value()->As<core::constant::Scalar<i32>>()->ValueOf());
 
     ASSERT_EQ(1u, cases[2].selectors.Length());
     EXPECT_TRUE(cases[2].selectors[0].IsDefault());
@@ -881,20 +884,20 @@ TEST_F(IR_FromProgramTest, Switch_MultiSelector) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* swtch = FindSingleInstruction<ir::Switch>(m);
+    auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
     auto cases = swtch->Cases();
     ASSERT_EQ(1u, cases.Length());
     ASSERT_EQ(3u, cases[0].selectors.Length());
-    ASSERT_TRUE(cases[0].selectors[0].val->Value()->Is<constant::Scalar<tint::i32>>());
+    ASSERT_TRUE(cases[0].selectors[0].val->Value()->Is<core::constant::Scalar<i32>>());
     EXPECT_EQ(0_i,
-              cases[0].selectors[0].val->Value()->As<constant::Scalar<tint::i32>>()->ValueOf());
+              cases[0].selectors[0].val->Value()->As<core::constant::Scalar<i32>>()->ValueOf());
 
-    ASSERT_TRUE(cases[0].selectors[1].val->Value()->Is<constant::Scalar<tint::i32>>());
+    ASSERT_TRUE(cases[0].selectors[1].val->Value()->Is<core::constant::Scalar<i32>>());
     EXPECT_EQ(1_i,
-              cases[0].selectors[1].val->Value()->As<constant::Scalar<tint::i32>>()->ValueOf());
+              cases[0].selectors[1].val->Value()->As<core::constant::Scalar<i32>>()->ValueOf());
 
     EXPECT_TRUE(cases[0].selectors[2].IsDefault());
 
@@ -920,7 +923,7 @@ TEST_F(IR_FromProgramTest, Switch_OnlyDefault) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* swtch = FindSingleInstruction<ir::Switch>(m);
+    auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
@@ -953,16 +956,16 @@ TEST_F(IR_FromProgramTest, Switch_WithBreak) {
     ASSERT_TRUE(res) << (!res ? res.Failure() : "");
 
     auto m = res.Move();
-    auto* swtch = FindSingleInstruction<ir::Switch>(m);
+    auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
     auto cases = swtch->Cases();
     ASSERT_EQ(2u, cases.Length());
     ASSERT_EQ(1u, cases[0].selectors.Length());
-    ASSERT_TRUE(cases[0].selectors[0].val->Value()->Is<constant::Scalar<tint::i32>>());
+    ASSERT_TRUE(cases[0].selectors[0].val->Value()->Is<core::constant::Scalar<i32>>());
     EXPECT_EQ(0_i,
-              cases[0].selectors[0].val->Value()->As<constant::Scalar<tint::i32>>()->ValueOf());
+              cases[0].selectors[0].val->Value()->As<core::constant::Scalar<i32>>()->ValueOf());
 
     ASSERT_EQ(1u, cases[1].selectors.Length());
     EXPECT_TRUE(cases[1].selectors[0].IsDefault());
@@ -997,16 +1000,16 @@ TEST_F(IR_FromProgramTest, Switch_AllReturn) {
 
     auto m = res.Move();
 
-    auto* swtch = FindSingleInstruction<ir::Switch>(m);
+    auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
     auto cases = swtch->Cases();
     ASSERT_EQ(2u, cases.Length());
     ASSERT_EQ(1u, cases[0].selectors.Length());
-    ASSERT_TRUE(cases[0].selectors[0].val->Value()->Is<constant::Scalar<tint::i32>>());
+    ASSERT_TRUE(cases[0].selectors[0].val->Value()->Is<core::constant::Scalar<i32>>());
     EXPECT_EQ(0_i,
-              cases[0].selectors[0].val->Value()->As<constant::Scalar<tint::i32>>()->ValueOf());
+              cases[0].selectors[0].val->Value()->As<core::constant::Scalar<i32>>()->ValueOf());
 
     ASSERT_EQ(1u, cases[1].selectors.Length());
     EXPECT_TRUE(cases[1].selectors[0].IsDefault());

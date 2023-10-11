@@ -30,6 +30,7 @@
 #include "spirv-tools/libspirv.hpp"
 #endif  // TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 
+#include "src/tint/api/common/binding_point.h"
 #include "src/tint/fuzzers/apply_substitute_overrides.h"
 #include "src/tint/lang/core/type/external_texture.h"
 #include "src/tint/lang/wgsl/ast/module.h"
@@ -39,7 +40,6 @@
 #include "src/tint/utils/diagnostic/formatter.h"
 #include "src/tint/utils/diagnostic/printer.h"
 #include "src/tint/utils/math/hash.h"
-#include "tint/binding_point.h"
 
 namespace tint::fuzzers {
 
@@ -177,7 +177,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
             if (dump_input_) {
                 dump_input_data(spirv_input, ".spv");
             }
-            program = spirv::reader::Parse(spirv_input);
+            program = spirv::reader::Read(spirv_input);
 #endif  // TINT_BUILD_SPV_READER
             break;
         }
@@ -246,7 +246,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
                     auto& n = group_to_next_binding_number[bp->group];
                     n = std::max(n, bp->binding + 1);
 
-                    if (sem_var->Type()->UnwrapRef()->Is<type::ExternalTexture>()) {
+                    if (sem_var->Type()->UnwrapRef()->Is<core::type::ExternalTexture>()) {
                         ext_tex_bps.emplace_back(*bp);
                     }
                 }
@@ -373,7 +373,7 @@ void CommonFuzzer::RunInspector(Program* program) {
         inspector.GetMultisampledTextureResourceBindings(ep.name);
         CHECK_INSPECTOR(program, inspector);
 
-        inspector.GetWriteOnlyStorageTextureResourceBindings(ep.name);
+        inspector.GetStorageTextureResourceBindings(ep.name);
         CHECK_INSPECTOR(program, inspector);
 
         inspector.GetDepthTextureResourceBindings(ep.name);

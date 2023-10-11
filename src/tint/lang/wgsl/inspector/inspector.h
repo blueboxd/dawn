@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-#include "tint/override_id.h"
+#include "src/tint/api/common/override_id.h"
 
 #include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/wgsl/inspector/entry_point.h"
@@ -108,8 +108,7 @@ class Inspector {
 
     /// @param entry_point name of the entry point to get information about.
     /// @returns vector of all of the bindings for write-only storage textures.
-    std::vector<ResourceBinding> GetWriteOnlyStorageTextureResourceBindings(
-        const std::string& entry_point);
+    std::vector<ResourceBinding> GetStorageTextureResourceBindings(const std::string& entry_point);
 
     /// @param entry_point name of the entry point to get information about.
     /// @returns vector of all of the bindings for depth textures.
@@ -174,7 +173,7 @@ class Inspector {
     /// @param location the location value if provided
     /// @param variables the list to add the variables to
     void AddEntryPointInOutVariables(std::string name,
-                                     const type::Type* type,
+                                     const core::type::Type* type,
                                      VectorRef<const ast::Attribute*> attributes,
                                      std::optional<uint32_t> location,
                                      std::vector<StageVariable>& variables) const;
@@ -183,7 +182,7 @@ class Inspector {
     /// If `type` is a struct, recurse into members to check for the attribute.
     /// Otherwise, check `attributes` for the attribute.
     bool ContainsBuiltin(core::BuiltinValue builtin,
-                         const type::Type* type,
+                         const core::type::Type* type,
                          VectorRef<const ast::Attribute*> attributes) const;
 
     /// Gathers all the texture resource bindings of the given type for the given
@@ -226,7 +225,7 @@ class Inspector {
     /// @param attributes attributes associated with the parameter or structure member
     /// @returns the interpolation type and sampling modes for the value
     std::tuple<InterpolationType, InterpolationSampling> CalculateInterpolationData(
-        const type::Type* type,
+        const core::type::Type* type,
         VectorRef<const ast::Attribute*> attributes) const;
 
     /// For a N-uple of expressions, resolve to the appropriate global resources

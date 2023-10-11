@@ -22,9 +22,9 @@
 #include "src/tint/utils/result/result.h"
 #include "src/tint/utils/text/string.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
-namespace tint::ir::transform {
+namespace tint::core::ir::transform {
 
 namespace {
 
@@ -52,8 +52,7 @@ Result<SuccessType, std::string> Run(ir::Module* ir, const BindingRemapperOption
         }
 
         // Replace group and binding index if requested.
-        tint::BindingPoint from{bp->group, bp->binding};
-        auto to = options.binding_points.find(from);
+        auto to = options.binding_points.find(bp.value());
         if (to != options.binding_points.end()) {
             var->SetBindingPoint(to->second.group, to->second.binding);
         }
@@ -74,4 +73,4 @@ Result<SuccessType, std::string> BindingRemapper(Module* ir,
     return Run(ir, options);
 }
 
-}  // namespace tint::ir::transform
+}  // namespace tint::core::ir::transform

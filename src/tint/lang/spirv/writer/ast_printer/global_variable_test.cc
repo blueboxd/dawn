@@ -14,15 +14,15 @@
 
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/spirv/writer/ast_printer/helper_test.h"
-#include "src/tint/lang/spirv/writer/common/spv_dump.h"
+#include "src/tint/lang/spirv/writer/common/spv_dump_test.h"
 #include "src/tint/lang/wgsl/ast/id_attribute.h"
 #include "src/tint/lang/wgsl/ast/stage_attribute.h"
 
 namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using SpirvASTPrinterTest = TestHelper;
 
@@ -235,7 +235,8 @@ TEST_F(SpirvASTPrinterTest, GlobalConst_Nested_Vec_Initializer) {
 }
 
 TEST_F(SpirvASTPrinterTest, GlobalVar_WithBindingAndGroup) {
-    auto* v = GlobalVar("var", ty.sampler(type::SamplerKind::kSampler), Binding(2_a), Group(3_a));
+    auto* v =
+        GlobalVar("var", ty.sampler(core::type::SamplerKind::kSampler), Binding(2_a), Group(3_a));
 
     Builder& b = Build();
 
@@ -475,7 +476,7 @@ OpName %9 "unused_entry_point"
 TEST_F(SpirvASTPrinterTest, GlobalVar_TextureStorageWriteOnly) {
     // var<uniform_constant> a : texture_storage_2d<r32uint, write>;
 
-    auto type = ty.storage_texture(type::TextureDimension::k2d, core::TexelFormat::kR32Uint,
+    auto type = ty.storage_texture(core::type::TextureDimension::k2d, core::TexelFormat::kR32Uint,
                                    core::Access::kWrite);
 
     auto* var_a = GlobalVar("a", type, Binding(0_a), Group(0_a));

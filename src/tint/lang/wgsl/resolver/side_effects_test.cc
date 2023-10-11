@@ -17,6 +17,7 @@
 #include "gtest/gtest.h"
 #include "src/tint/lang/core/address_space.h"
 #include "src/tint/lang/core/extension.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
@@ -25,7 +26,8 @@
 #include "src/tint/lang/wgsl/sem/value_expression.h"
 #include "src/tint/utils/containers/vector.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::resolver {
 namespace {
@@ -186,22 +188,22 @@ TEST_P(SideEffectsBuiltinTest, Test) {
     GlobalVar("a", ty.atomic(ty.i32()), tint::core::AddressSpace::kStorage,
               tint::core::Access::kReadWrite, Group(0_a), Binding(AInt(next_binding++)));
     if (c.pipeline_stage != ast::PipelineStage::kCompute) {
-        GlobalVar("t2d", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()), Group(0_a),
-                  Binding(AInt(next_binding++)));
-        GlobalVar("tdepth2d", ty.depth_texture(type::TextureDimension::k2d), Group(0_a),
-                  Binding(AInt(next_binding++)));
-        GlobalVar("t2d_arr", ty.sampled_texture(type::TextureDimension::k2dArray, ty.f32()),
+        GlobalVar("t2d", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()),
                   Group(0_a), Binding(AInt(next_binding++)));
-        GlobalVar("t2d_multi", ty.multisampled_texture(type::TextureDimension::k2d, ty.f32()),
+        GlobalVar("tdepth2d", ty.depth_texture(core::type::TextureDimension::k2d), Group(0_a),
+                  Binding(AInt(next_binding++)));
+        GlobalVar("t2d_arr", ty.sampled_texture(core::type::TextureDimension::k2dArray, ty.f32()),
+                  Group(0_a), Binding(AInt(next_binding++)));
+        GlobalVar("t2d_multi", ty.multisampled_texture(core::type::TextureDimension::k2d, ty.f32()),
                   Group(0_a), Binding(AInt(next_binding++)));
         GlobalVar(
             "tstorage2d",
-            ty.storage_texture(type::TextureDimension::k2d, tint::core::TexelFormat::kR32Float,
-                               tint::core::Access::kWrite),
+            ty.storage_texture(core::type::TextureDimension::k2d,
+                               tint::core::TexelFormat::kR32Float, tint::core::Access::kWrite),
             Group(0_a), Binding(AInt(next_binding++)));
-        GlobalVar("s2d", ty.sampler(type::SamplerKind::kSampler), Group(0_a),
+        GlobalVar("s2d", ty.sampler(core::type::SamplerKind::kSampler), Group(0_a),
                   Binding(AInt(next_binding++)));
-        GlobalVar("scomp", ty.sampler(type::SamplerKind::kComparisonSampler), Group(0_a),
+        GlobalVar("scomp", ty.sampler(core::type::SamplerKind::kComparisonSampler), Group(0_a),
                   Binding(AInt(next_binding++)));
     }
 

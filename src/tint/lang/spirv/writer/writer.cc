@@ -18,6 +18,10 @@
 #include <utility>
 
 #include "src/tint/lang/spirv/writer/ast_printer/ast_printer.h"
+
+// Included by 'ast_printer.h', included again here for './tools/run gen' track the dependency.
+#include "spirv/unified1/spirv.h"
+
 #if TINT_BUILD_IR
 #include "src/tint/lang/core/ir/transform/binding_remapper.h"
 #include "src/tint/lang/spirv/writer/printer/printer.h"             // nogncheck
@@ -51,13 +55,13 @@ Result<Output, std::string> Generate(const Program* program, const Options& opti
         auto ir = converted.Move();
 
         // Apply transforms as required by writer options.
-        auto remapper = ir::transform::BindingRemapper(&ir, options.binding_remapper_options);
+        auto remapper = core::ir::transform::BindingRemapper(&ir, options.binding_remapper_options);
         if (!remapper) {
             return remapper.Failure();
         }
 
         // Raise the IR to the SPIR-V dialect.
-        auto raised = raise::Raise(&ir);
+        auto raised = raise::Raise(&ir, options);
         if (!raised) {
             return std::move(raised.Failure());
         }

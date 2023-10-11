@@ -394,7 +394,7 @@ void DeviceBase::DestroyObjects() {
     // can destroy the frontend cache.
 
     // clang-format off
-        static constexpr std::array<ObjectType, 18> kObjectTypeDependencyOrder = {
+        static constexpr std::array<ObjectType, 20> kObjectTypeDependencyOrder = {
             ObjectType::ComputePassEncoder,
             ObjectType::RenderPassEncoder,
             ObjectType::RenderBundleEncoder,
@@ -408,6 +408,8 @@ void DeviceBase::DestroyObjects() {
             ObjectType::BindGroup,
             ObjectType::BindGroupLayout,
             ObjectType::ShaderModule,
+            ObjectType::SharedTextureMemory,
+            ObjectType::SharedFence,
             ObjectType::ExternalTexture,
             ObjectType::Texture,  // Note that Textures own the TextureViews.
             ObjectType::QuerySet,
@@ -462,8 +464,8 @@ void DeviceBase::Destroy() {
             // Alive is the only state which can have GPU work happening. Wait for all of it to
             // complete before proceeding with destruction.
             // Ignore errors so that we can continue with destruction
-            IgnoreErrors(WaitForIdleForDestruction());
-            AssumeCommandsComplete();
+            IgnoreErrors(mQueue->WaitForIdleForDestruction());
+            mQueue->AssumeCommandsComplete();
             break;
 
         case State::BeingDisconnected:
@@ -481,15 +483,16 @@ void DeviceBase::Destroy() {
             UNREACHABLE();
             break;
     }
-    ASSERT(GetCompletedCommandSerial() == GetLastSubmittedCommandSerial());
 
     if (mState != State::BeingCreated) {
         // The GPU timeline is finished.
+        ASSERT(mQueue->GetCompletedCommandSerial() == GetLastSubmittedCommandSerial());
+
         // Finish destroying all objects owned by the device and tick the queue-related tasks
         // since they should be complete. This must be done before DestroyImpl() it may
         // relinquish resources that will be freed by backends in the DestroyImpl() call.
         DestroyObjects();
-        mQueue->Tick(GetCompletedCommandSerial());
+        mQueue->Tick(mQueue->GetCompletedCommandSerial());
         // Call TickImpl once last time to clean up resources
         // Ignore errors so that we can continue with destruction
         IgnoreErrors(TickImpl());
@@ -508,7 +511,7 @@ void DeviceBase::Destroy() {
     mInternalPipelineStore = nullptr;
     mExternalTexturePlaceholderView = nullptr;
 
-    AssumeCommandsComplete();
+    mQueue->AssumeCommandsComplete();
 
     // Now that the GPU timeline is empty, destroy the backend device.
     DestroyImpl();
@@ -535,12 +538,12 @@ void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
         // still be executing commands. Force a wait for idle in this case, with State being
         // Disconnected so we can detect this case in WaitForIdleForDestruction.
         if (ErrorInjectorEnabled()) {
-            IgnoreErrors(WaitForIdleForDestruction());
+            IgnoreErrors(mQueue->WaitForIdleForDestruction());
         }
 
         // A real device lost happened. Set the state to disconnected as the device cannot be
         // used. Also tags all commands as completed since the device stopped running.
-        AssumeCommandsComplete();
+        mQueue->AssumeCommandsComplete();
     } else if (!(allowedErrors & type)) {
         // If we receive an error which we did not explicitly allow, assume the backend can't
         // recover and proceed with device destruction. We first wait for all previous commands to
@@ -556,9 +559,9 @@ void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
 
         // Ignore errors so that we can continue with destruction
         // Assume all commands are complete after WaitForIdleForDestruction (because they were)
-        IgnoreErrors(WaitForIdleForDestruction());
+        IgnoreErrors(mQueue->WaitForIdleForDestruction());
         IgnoreErrors(TickImpl());
-        AssumeCommandsComplete();
+        mQueue->AssumeCommandsComplete();
         mState = State::Disconnected;
 
         // Now everything is as if the device was lost.
@@ -771,7 +774,7 @@ bool DeviceBase::IsDeviceIdle() {
     if (HasPendingTasks()) {
         return false;
     }
-    return !HasScheduledCommands();
+    return !mQueue->HasScheduledCommands();
 }
 
 ResultOrError<const Format*> DeviceBase::GetInternalFormat(wgpu::TextureFormat format) const {
@@ -1315,21 +1318,21 @@ bool DeviceBase::APITick() {
 }
 
 MaybeError DeviceBase::Tick() {
-    if (IsLost() || !HasScheduledCommands()) {
+    if (IsLost() || !mQueue->HasScheduledCommands()) {
         return {};
     }
 
     // To avoid overly ticking, we only want to tick when:
     // 1. the last submitted serial has moved beyond the completed serial
     // 2. or the backend still has pending commands to submit.
-    DAWN_TRY(CheckPassedSerials());
+    DAWN_TRY(mQueue->CheckPassedSerials());
     DAWN_TRY(TickImpl());
 
     // TODO(crbug.com/dawn/833): decouple TickImpl from updating the serial so that we can
     // tick the dynamic uploader before the backend resource allocators. This would allow
     // reclaiming resources one tick earlier.
-    mDynamicUploader->Deallocate(GetCompletedCommandSerial());
-    mQueue->Tick(GetCompletedCommandSerial());
+    mDynamicUploader->Deallocate(mQueue->GetCompletedCommandSerial());
+    mQueue->Tick(mQueue->GetCompletedCommandSerial());
 
     return {};
 }
@@ -1362,8 +1365,12 @@ ExternalTextureBase* DeviceBase::APICreateExternalTexture(
 SharedTextureMemoryBase* DeviceBase::APIImportSharedTextureMemory(
     const SharedTextureMemoryDescriptor* descriptor) {
     Ref<SharedTextureMemoryBase> result = nullptr;
-    if (ConsumedError(ImportSharedTextureMemoryImpl(descriptor), &result,
-                      "calling %s.ImportSharedTextureMemory(%s).", this, descriptor)) {
+    if (ConsumedError(
+            [&]() -> ResultOrError<Ref<SharedTextureMemoryBase>> {
+                DAWN_TRY(ValidateIsAlive());
+                return ImportSharedTextureMemoryImpl(descriptor);
+            }(),
+            &result, "calling %s.ImportSharedTextureMemory(%s).", this, descriptor)) {
         return SharedTextureMemoryBase::MakeError(this, descriptor);
     }
     return result.Detach();
@@ -1376,8 +1383,12 @@ ResultOrError<Ref<SharedTextureMemoryBase>> DeviceBase::ImportSharedTextureMemor
 
 SharedFenceBase* DeviceBase::APIImportSharedFence(const SharedFenceDescriptor* descriptor) {
     Ref<SharedFenceBase> result = nullptr;
-    if (ConsumedError(ImportSharedFenceImpl(descriptor), &result,
-                      "calling %s.ImportSharedFence(%s).", this, descriptor)) {
+    if (ConsumedError(
+            [&]() -> ResultOrError<Ref<SharedFenceBase>> {
+                DAWN_TRY(ValidateIsAlive());
+                return ImportSharedFenceImpl(descriptor);
+            }(),
+            &result, "calling %s.ImportSharedFence(%s).", this, descriptor)) {
         return SharedFenceBase::MakeError(this, descriptor);
     }
     return result.Detach();
@@ -1392,9 +1403,9 @@ void DeviceBase::ApplyFeatures(const DeviceDescriptor* deviceDescriptor) {
     ASSERT(deviceDescriptor);
     // Validate all required features with device toggles.
     ASSERT(GetPhysicalDevice()->SupportsAllRequiredFeatures(
-        {deviceDescriptor->requiredFeatures, deviceDescriptor->requiredFeaturesCount}, mToggles));
+        {deviceDescriptor->requiredFeatures, deviceDescriptor->requiredFeatureCount}, mToggles));
 
-    for (uint32_t i = 0; i < deviceDescriptor->requiredFeaturesCount; ++i) {
+    for (uint32_t i = 0; i < deviceDescriptor->requiredFeatureCount; ++i) {
         mEnabledFeatures.EnableFeature(deviceDescriptor->requiredFeatures[i]);
     }
 }
@@ -1412,8 +1423,17 @@ void DeviceBase::SetWGSLExtensionAllowList() {
     if (mEnabledFeatures.IsEnabled(Feature::ShaderF16)) {
         mWGSLExtensionAllowList.insert("f16");
     }
+    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalSubgroups)) {
+        mWGSLExtensionAllowList.insert("chromium_experimental_subgroups");
+    }
+    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalReadWriteStorageTexture)) {
+        mWGSLExtensionAllowList.insert("chromium_experimental_read_write_storage_texture");
+    }
     if (IsToggleEnabled(Toggle::AllowUnsafeAPIs)) {
         mWGSLExtensionAllowList.insert("chromium_disable_uniformity_analysis");
+    }
+    if (mEnabledFeatures.IsEnabled(Feature::DualSourceBlending)) {
+        mWGSLExtensionAllowList.insert("chromium_internal_dual_source_blending");
     }
 }
 
@@ -1505,7 +1525,13 @@ void DeviceBase::APIInjectError(wgpu::ErrorType type, const char* message) {
 }
 
 void DeviceBase::APIValidateTextureDescriptor(const TextureDescriptor* desc) {
-    DAWN_UNUSED(ConsumedError(ValidateTextureDescriptor(this, desc)));
+    AllowMultiPlanarTextureFormat allowMultiPlanar;
+    if (HasFeature(Feature::MultiPlanarFormatExtendedUsages)) {
+        allowMultiPlanar = AllowMultiPlanarTextureFormat::Yes;
+    } else {
+        allowMultiPlanar = AllowMultiPlanarTextureFormat::No;
+    }
+    DAWN_UNUSED(ConsumedError(ValidateTextureDescriptor(this, desc, allowMultiPlanar)));
 }
 
 QueueBase* DeviceBase::GetQueue() const {
@@ -1786,7 +1812,14 @@ ResultOrError<Ref<SwapChainBase>> DeviceBase::CreateSwapChain(
 ResultOrError<Ref<TextureBase>> DeviceBase::CreateTexture(const TextureDescriptor* descriptor) {
     DAWN_TRY(ValidateIsAlive());
     if (IsValidationEnabled()) {
-        DAWN_TRY_CONTEXT(ValidateTextureDescriptor(this, descriptor), "validating %s.", descriptor);
+        AllowMultiPlanarTextureFormat allowMultiPlanar;
+        if (HasFeature(Feature::MultiPlanarFormatExtendedUsages)) {
+            allowMultiPlanar = AllowMultiPlanarTextureFormat::Yes;
+        } else {
+            allowMultiPlanar = AllowMultiPlanarTextureFormat::No;
+        }
+        DAWN_TRY_CONTEXT(ValidateTextureDescriptor(this, descriptor, allowMultiPlanar),
+                         "validating %s.", descriptor);
     }
     return CreateTextureImpl(descriptor);
 }
@@ -1985,6 +2018,14 @@ void DeviceBase::APISetLabel(const char* label) {
 
 void DeviceBase::SetLabelImpl() {}
 
+ExecutionSerial DeviceBase::GetLastSubmittedCommandSerial() const {
+    return mQueue->GetLastSubmittedCommandSerial();
+}
+
+ExecutionSerial DeviceBase::GetPendingCommandSerial() const {
+    return mQueue->GetPendingCommandSerial();
+}
+
 bool DeviceBase::ShouldDuplicateNumWorkgroupsForDispatchIndirect(
     ComputePipelineBase* computePipeline) const {
     return false;
@@ -2017,7 +2058,7 @@ MaybeError DeviceBase::CopyFromStagingToBuffer(BufferBase* source,
     DAWN_TRY(
         CopyFromStagingToBufferImpl(source, sourceOffset, destination, destinationOffset, size));
     if (GetDynamicUploader()->ShouldFlush()) {
-        ForceEventualFlushOfCommands();
+        mQueue->ForceEventualFlushOfCommands();
     }
     return {};
 }
@@ -2042,7 +2083,7 @@ MaybeError DeviceBase::CopyFromStagingToTexture(BufferBase* source,
     }
 
     if (GetDynamicUploader()->ShouldFlush()) {
-        ForceEventualFlushOfCommands();
+        mQueue->ForceEventualFlushOfCommands();
     }
     return {};
 }

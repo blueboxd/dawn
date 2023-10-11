@@ -18,6 +18,7 @@
 
 #include "src/tint/lang/core/constant/composite.h"
 #include "src/tint/lang/core/constant/splat.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/binary.h"
 #include "src/tint/lang/core/ir/constant.h"
 #include "src/tint/lang/core/ir/exit_if.h"
@@ -53,31 +54,24 @@
 #include "src/tint/utils/rtti/switch.h"
 #include "src/tint/utils/text/string.h"
 
+using namespace tint::core::fluent_types;  // NOLINT
+
 namespace tint::msl::writer {
-namespace {
-
-void Sanitize(ir::Module*) {}
-
-}  // namespace
 
 // Helper for calling TINT_UNIMPLEMENTED() from a Switch(object_ptr) default case.
 #define UNHANDLED_CASE(object_ptr)                         \
     TINT_UNIMPLEMENTED() << "unhandled case in Switch(): " \
                          << (object_ptr ? object_ptr->TypeInfo().name : "<null>")
 
-Printer::Printer(ir::Module* module) : ir_(module) {}
+Printer::Printer(core::ir::Module* module) : ir_(module) {}
 
 Printer::~Printer() = default;
 
-bool Printer::Generate() {
-    auto valid = ir::Validate(*ir_);
+tint::Result<SuccessType, std::string> Printer::Generate() {
+    auto valid = core::ir::ValidateAndDumpIfNeeded(*ir_, "MSL writer");
     if (!valid) {
-        diagnostics_ = valid.Failure();
-        return false;
+        return std::move(valid.Failure());
     }
-
-    // Run the IR transformations to prepare for MSL emission.
-    Sanitize(ir_);
 
     {
         TINT_SCOPED_ASSIGNMENT(current_buffer_, &preamble_buffer_);
@@ -95,11 +89,7 @@ bool Printer::Generate() {
         EmitFunction(func);
     }
 
-    if (diagnostics_.contains_errors()) {
-        return false;
-    }
-
-    return true;
+    return Success;
 }
 
 std::string Printer::Result() const {
@@ -135,7 +125,7 @@ const std::string& Printer::ArrayTemplateName() {
     return array_template_name_;
 }
 
-void Printer::EmitFunction(ir::Function* func) {
+void Printer::EmitFunction(core::ir::Function* func) {
     TINT_SCOPED_ASSIGNMENT(current_function_, func);
 
     {
@@ -157,34 +147,34 @@ void Printer::EmitFunction(ir::Function* func) {
     Line() << "}";
 }
 
-void Printer::EmitBlock(ir::Block* block) {
+void Printer::EmitBlock(core::ir::Block* block) {
     MarkInlinable(block);
 
     EmitBlockInstructions(block);
 }
 
-void Printer::EmitBlockInstructions(ir::Block* block) {
+void Printer::EmitBlockInstructions(core::ir::Block* block) {
     TINT_SCOPED_ASSIGNMENT(current_block_, block);
 
     for (auto* inst : *block) {
         Switch(
-            inst,                                          //
-            [&](ir::Binary* b) { EmitBinary(b); },         //
-            [&](ir::ExitIf* e) { EmitExitIf(e); },         //
-            [&](ir::If* if_) { EmitIf(if_); },             //
-            [&](ir::Let* l) { EmitLet(l); },               //
-            [&](ir::Load* l) { EmitLoad(l); },             //
-            [&](ir::Return* r) { EmitReturn(r); },         //
-            [&](ir::Unreachable*) { EmitUnreachable(); },  //
-            [&](ir::Var* v) { EmitVar(v); },               //
+            inst,                                                //
+            [&](core::ir::Binary* b) { EmitBinary(b); },         //
+            [&](core::ir::ExitIf* e) { EmitExitIf(e); },         //
+            [&](core::ir::If* if_) { EmitIf(if_); },             //
+            [&](core::ir::Let* l) { EmitLet(l); },               //
+            [&](core::ir::Load* l) { EmitLoad(l); },             //
+            [&](core::ir::Return* r) { EmitReturn(r); },         //
+            [&](core::ir::Unreachable*) { EmitUnreachable(); },  //
+            [&](core::ir::Var* v) { EmitVar(v); },               //
             [&](Default) { TINT_ICE() << "unimplemented instruction: " << inst->TypeInfo().name; });
     }
 }
 
-void Printer::EmitBinary(ir::Binary* b) {
-    if (b->Kind() == ir::Binary::Kind::kEqual) {
-        auto* rhs = b->RHS()->As<ir::Constant>();
-        if (rhs && rhs->Type()->Is<type::Bool>() && rhs->Value()->ValueAs<bool>() == false) {
+void Printer::EmitBinary(core::ir::Binary* b) {
+    if (b->Kind() == core::ir::Binary::Kind::kEqual) {
+        auto* rhs = b->RHS()->As<core::ir::Constant>();
+        if (rhs && rhs->Type()->Is<core::type::Bool>() && rhs->Value()->ValueAs<bool>() == false) {
             // expr == false
             Bind(b->Result(), "!(" + Expr(b->LHS()) + ")");
             return;
@@ -193,37 +183,37 @@ void Printer::EmitBinary(ir::Binary* b) {
 
     auto kind = [&] {
         switch (b->Kind()) {
-            case ir::Binary::Kind::kAdd:
+            case core::ir::Binary::Kind::kAdd:
                 return "+";
-            case ir::Binary::Kind::kSubtract:
+            case core::ir::Binary::Kind::kSubtract:
                 return "-";
-            case ir::Binary::Kind::kMultiply:
+            case core::ir::Binary::Kind::kMultiply:
                 return "*";
-            case ir::Binary::Kind::kDivide:
+            case core::ir::Binary::Kind::kDivide:
                 return "/";
-            case ir::Binary::Kind::kModulo:
+            case core::ir::Binary::Kind::kModulo:
                 return "%";
-            case ir::Binary::Kind::kAnd:
+            case core::ir::Binary::Kind::kAnd:
                 return "&";
-            case ir::Binary::Kind::kOr:
+            case core::ir::Binary::Kind::kOr:
                 return "|";
-            case ir::Binary::Kind::kXor:
+            case core::ir::Binary::Kind::kXor:
                 return "^";
-            case ir::Binary::Kind::kEqual:
+            case core::ir::Binary::Kind::kEqual:
                 return "==";
-            case ir::Binary::Kind::kNotEqual:
+            case core::ir::Binary::Kind::kNotEqual:
                 return "!=";
-            case ir::Binary::Kind::kLessThan:
+            case core::ir::Binary::Kind::kLessThan:
                 return "<";
-            case ir::Binary::Kind::kGreaterThan:
+            case core::ir::Binary::Kind::kGreaterThan:
                 return ">";
-            case ir::Binary::Kind::kLessThanEqual:
+            case core::ir::Binary::Kind::kLessThanEqual:
                 return "<=";
-            case ir::Binary::Kind::kGreaterThanEqual:
+            case core::ir::Binary::Kind::kGreaterThanEqual:
                 return ">=";
-            case ir::Binary::Kind::kShiftLeft:
+            case core::ir::Binary::Kind::kShiftLeft:
                 return "<<";
-            case ir::Binary::Kind::kShiftRight:
+            case core::ir::Binary::Kind::kShiftRight:
                 return ">>";
         }
         return "<error>";
@@ -235,15 +225,15 @@ void Printer::EmitBinary(ir::Binary* b) {
     Bind(b->Result(), str.str());
 }
 
-void Printer::EmitLoad(ir::Load* l) {
+void Printer::EmitLoad(core::ir::Load* l) {
     // Force loads to be bound as inlines
     bindings_.Add(l->Result(), InlinedValue{Expr(l->From()), PtrKind::kRef});
 }
 
-void Printer::EmitVar(ir::Var* v) {
+void Printer::EmitVar(core::ir::Var* v) {
     auto out = Line();
 
-    auto* ptr = v->Result()->Type()->As<type::Pointer>();
+    auto* ptr = v->Result()->Type()->As<core::type::Pointer>();
     TINT_ASSERT_OR_RETURN(ptr);
 
     auto space = ptr->AddressSpace();
@@ -279,11 +269,11 @@ void Printer::EmitVar(ir::Var* v) {
     Bind(v->Result(), name, PtrKind::kRef);
 }
 
-void Printer::EmitLet(ir::Let* l) {
+void Printer::EmitLet(core::ir::Let* l) {
     Bind(l->Result(), Expr(l->Value(), PtrKind::kPtr), PtrKind::kPtr);
 }
 
-void Printer::EmitIf(ir::If* if_) {
+void Printer::EmitIf(core::ir::If* if_) {
     // Emit any nodes that need to be used as PHI nodes
     for (auto* phi : if_->Results()) {
         if (!ir_->NameOf(phi).IsValid()) {
@@ -316,7 +306,7 @@ void Printer::EmitIf(ir::If* if_) {
     Line() << "}";
 }
 
-void Printer::EmitExitIf(ir::ExitIf* e) {
+void Printer::EmitExitIf(core::ir::ExitIf* e) {
     auto results = e->If()->Results();
     auto args = e->Args();
     for (size_t i = 0; i < e->Args().Length(); ++i) {
@@ -327,7 +317,7 @@ void Printer::EmitExitIf(ir::ExitIf* e) {
     }
 }
 
-void Printer::EmitReturn(ir::Return* r) {
+void Printer::EmitReturn(core::ir::Return* r) {
     // If this return has no arguments and the current block is for the function which is
     // being returned, skip the return.
     if (current_block_ == current_function_->Block() && r->Args().IsEmpty()) {
@@ -368,23 +358,23 @@ void Printer::EmitAddressSpace(StringStream& out, core::AddressSpace sc) {
     }
 }
 
-void Printer::EmitType(StringStream& out, const type::Type* ty) {
+void Printer::EmitType(StringStream& out, const core::type::Type* ty) {
     tint::Switch(
-        ty,                                         //
-        [&](const type::Bool*) { out << "bool"; },  //
-        [&](const type::Void*) { out << "void"; },  //
-        [&](const type::F32*) { out << "float"; },  //
-        [&](const type::F16*) { out << "half"; },   //
-        [&](const type::I32*) { out << "int"; },    //
-        [&](const type::U32*) { out << "uint"; },   //
-        [&](const type::Array* arr) { EmitArrayType(out, arr); },
-        [&](const type::Vector* vec) { EmitVectorType(out, vec); },
-        [&](const type::Matrix* mat) { EmitMatrixType(out, mat); },
-        [&](const type::Atomic* atomic) { EmitAtomicType(out, atomic); },
-        [&](const type::Pointer* ptr) { EmitPointerType(out, ptr); },
-        [&](const type::Sampler*) { out << "sampler"; },  //
-        [&](const type::Texture* tex) { EmitTextureType(out, tex); },
-        [&](const type::Struct* str) {
+        ty,                                               //
+        [&](const core::type::Bool*) { out << "bool"; },  //
+        [&](const core::type::Void*) { out << "void"; },  //
+        [&](const core::type::F32*) { out << "float"; },  //
+        [&](const core::type::F16*) { out << "half"; },   //
+        [&](const core::type::I32*) { out << "int"; },    //
+        [&](const core::type::U32*) { out << "uint"; },   //
+        [&](const core::type::Array* arr) { EmitArrayType(out, arr); },
+        [&](const core::type::Vector* vec) { EmitVectorType(out, vec); },
+        [&](const core::type::Matrix* mat) { EmitMatrixType(out, mat); },
+        [&](const core::type::Atomic* atomic) { EmitAtomicType(out, atomic); },
+        [&](const core::type::Pointer* ptr) { EmitPointerType(out, ptr); },
+        [&](const core::type::Sampler*) { out << "sampler"; },  //
+        [&](const core::type::Texture* tex) { EmitTextureType(out, tex); },
+        [&](const core::type::Struct* str) {
             out << StructName(str);
 
             TINT_SCOPED_ASSIGNMENT(current_buffer_, &preamble_buffer_);
@@ -393,7 +383,7 @@ void Printer::EmitType(StringStream& out, const type::Type* ty) {
         [&](Default) { UNHANDLED_CASE(ty); });
 }
 
-void Printer::EmitPointerType(StringStream& out, const type::Pointer* ptr) {
+void Printer::EmitPointerType(StringStream& out, const core::type::Pointer* ptr) {
     if (ptr->Access() == core::Access::kRead) {
         out << "const ";
     }
@@ -403,28 +393,28 @@ void Printer::EmitPointerType(StringStream& out, const type::Pointer* ptr) {
     out << "*";
 }
 
-void Printer::EmitAtomicType(StringStream& out, const type::Atomic* atomic) {
-    if (atomic->Type()->Is<type::I32>()) {
+void Printer::EmitAtomicType(StringStream& out, const core::type::Atomic* atomic) {
+    if (atomic->Type()->Is<core::type::I32>()) {
         out << "atomic_int";
         return;
     }
-    if (TINT_LIKELY(atomic->Type()->Is<type::U32>())) {
+    if (TINT_LIKELY(atomic->Type()->Is<core::type::U32>())) {
         out << "atomic_uint";
         return;
     }
     TINT_ICE() << "unhandled atomic type " << atomic->Type()->FriendlyName();
 }
 
-void Printer::EmitArrayType(StringStream& out, const type::Array* arr) {
+void Printer::EmitArrayType(StringStream& out, const core::type::Array* arr) {
     out << ArrayTemplateName() << "<";
     EmitType(out, arr->ElemType());
     out << ", ";
-    if (arr->Count()->Is<type::RuntimeArrayCount>()) {
+    if (arr->Count()->Is<core::type::RuntimeArrayCount>()) {
         out << "1";
     } else {
         auto count = arr->ConstantCount();
         if (!count) {
-            TINT_ICE() << type::Array::kErrExpectedConstantCount;
+            TINT_ICE() << core::type::Array::kErrExpectedConstantCount;
             return;
         }
         out << count.value();
@@ -432,7 +422,7 @@ void Printer::EmitArrayType(StringStream& out, const type::Array* arr) {
     out << ">";
 }
 
-void Printer::EmitVectorType(StringStream& out, const type::Vector* vec) {
+void Printer::EmitVectorType(StringStream& out, const core::type::Vector* vec) {
     if (vec->Packed()) {
         out << "packed_";
     }
@@ -440,47 +430,47 @@ void Printer::EmitVectorType(StringStream& out, const type::Vector* vec) {
     out << vec->Width();
 }
 
-void Printer::EmitMatrixType(StringStream& out, const type::Matrix* mat) {
+void Printer::EmitMatrixType(StringStream& out, const core::type::Matrix* mat) {
     EmitType(out, mat->type());
     out << mat->columns() << "x" << mat->rows();
 }
 
-void Printer::EmitTextureType(StringStream& out, const type::Texture* tex) {
-    if (TINT_UNLIKELY(tex->Is<type::ExternalTexture>())) {
+void Printer::EmitTextureType(StringStream& out, const core::type::Texture* tex) {
+    if (TINT_UNLIKELY(tex->Is<core::type::ExternalTexture>())) {
         TINT_ICE() << "Multiplanar external texture transform was not run.";
         return;
     }
 
-    if (tex->IsAnyOf<type::DepthTexture, type::DepthMultisampledTexture>()) {
+    if (tex->IsAnyOf<core::type::DepthTexture, core::type::DepthMultisampledTexture>()) {
         out << "depth";
     } else {
         out << "texture";
     }
 
     switch (tex->dim()) {
-        case type::TextureDimension::k1d:
+        case core::type::TextureDimension::k1d:
             out << "1d";
             break;
-        case type::TextureDimension::k2d:
+        case core::type::TextureDimension::k2d:
             out << "2d";
             break;
-        case type::TextureDimension::k2dArray:
+        case core::type::TextureDimension::k2dArray:
             out << "2d_array";
             break;
-        case type::TextureDimension::k3d:
+        case core::type::TextureDimension::k3d:
             out << "3d";
             break;
-        case type::TextureDimension::kCube:
+        case core::type::TextureDimension::kCube:
             out << "cube";
             break;
-        case type::TextureDimension::kCubeArray:
+        case core::type::TextureDimension::kCubeArray:
             out << "cube_array";
             break;
         default:
             TINT_ICE() << "invalid texture dimensions";
             return;
     }
-    if (tex->IsAnyOf<type::MultisampledTexture, type::DepthMultisampledTexture>()) {
+    if (tex->IsAnyOf<core::type::MultisampledTexture, core::type::DepthMultisampledTexture>()) {
         out << "_ms";
     }
     out << "<";
@@ -488,9 +478,9 @@ void Printer::EmitTextureType(StringStream& out, const type::Texture* tex) {
 
     tint::Switch(
         tex,  //
-        [&](const type::DepthTexture*) { out << "float, access::sample"; },
-        [&](const type::DepthMultisampledTexture*) { out << "float, access::read"; },
-        [&](const type::StorageTexture* storage) {
+        [&](const core::type::DepthTexture*) { out << "float, access::sample"; },
+        [&](const core::type::DepthMultisampledTexture*) { out << "float, access::read"; },
+        [&](const core::type::StorageTexture* storage) {
             EmitType(out, storage->type());
             out << ", ";
 
@@ -504,18 +494,18 @@ void Printer::EmitTextureType(StringStream& out, const type::Texture* tex) {
                 return;
             }
         },
-        [&](const type::MultisampledTexture* ms) {
+        [&](const core::type::MultisampledTexture* ms) {
             EmitType(out, ms->type());
             out << ", access::read";
         },
-        [&](const type::SampledTexture* sampled) {
+        [&](const core::type::SampledTexture* sampled) {
             EmitType(out, sampled->type());
             out << ", access::sample";
         },
         [&](Default) { TINT_ICE() << "invalid texture type"; });
 }
 
-void Printer::EmitStructType(const type::Struct* str) {
+void Printer::EmitStructType(const core::type::Struct* str) {
     auto it = emitted_structs_.emplace(str);
     if (!it.second) {
         return;
@@ -597,14 +587,14 @@ void Printer::EmitStructType(const type::Struct* str) {
                 return;
             }
 
-            if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexInput)) {
+            if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kVertexInput)) {
                 out << " [[attribute(" + std::to_string(location.value()) + ")]]";
-            } else if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexOutput)) {
+            } else if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kVertexOutput)) {
                 out << " [[user(locn" + std::to_string(location.value()) + ")]]";
-            } else if (pipeline_stage_uses.count(type::PipelineStageUsage::kFragmentInput)) {
+            } else if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kFragmentInput)) {
                 out << " [[user(locn" + std::to_string(location.value()) + ")]]";
-            } else if (TINT_LIKELY(
-                           pipeline_stage_uses.count(type::PipelineStageUsage::kFragmentOutput))) {
+            } else if (TINT_LIKELY(pipeline_stage_uses.count(
+                           core::type::PipelineStageUsage::kFragmentOutput))) {
                 out << " [[color(" + std::to_string(location.value()) + ")]]";
             } else {
                 TINT_ICE() << "invalid use of location decoration";
@@ -651,11 +641,11 @@ void Printer::EmitStructType(const type::Struct* str) {
     preamble_buffer_.Append(str_buf);
 }
 
-void Printer::EmitConstant(StringStream& out, ir::Constant* c) {
+void Printer::EmitConstant(StringStream& out, core::ir::Constant* c) {
     EmitConstant(out, c->Value());
 }
 
-void Printer::EmitConstant(StringStream& out, const constant::Value* c) {
+void Printer::EmitConstant(StringStream& out, const core::constant::Value* c) {
     auto emit_values = [&](uint32_t count) {
         for (size_t i = 0; i < count; i++) {
             if (i > 0) {
@@ -667,27 +657,27 @@ void Printer::EmitConstant(StringStream& out, const constant::Value* c) {
 
     tint::Switch(
         c->Type(),  //
-        [&](const type::Bool*) { out << (c->ValueAs<bool>() ? "true" : "false"); },
-        [&](const type::I32*) { PrintI32(out, c->ValueAs<i32>()); },
-        [&](const type::U32*) { out << c->ValueAs<u32>() << "u"; },
-        [&](const type::F32*) { PrintF32(out, c->ValueAs<f32>()); },
-        [&](const type::F16*) { PrintF16(out, c->ValueAs<f16>()); },
-        [&](const type::Vector* v) {
+        [&](const core::type::Bool*) { out << (c->ValueAs<bool>() ? "true" : "false"); },
+        [&](const core::type::I32*) { PrintI32(out, c->ValueAs<i32>()); },
+        [&](const core::type::U32*) { out << c->ValueAs<u32>() << "u"; },
+        [&](const core::type::F32*) { PrintF32(out, c->ValueAs<f32>()); },
+        [&](const core::type::F16*) { PrintF16(out, c->ValueAs<f16>()); },
+        [&](const core::type::Vector* v) {
             EmitType(out, v);
 
             ScopedParen sp(out);
-            if (auto* splat = c->As<constant::Splat>()) {
+            if (auto* splat = c->As<core::constant::Splat>()) {
                 EmitConstant(out, splat->el);
                 return;
             }
             emit_values(v->Width());
         },
-        [&](const type::Matrix* m) {
+        [&](const core::type::Matrix* m) {
             EmitType(out, m);
             ScopedParen sp(out);
             emit_values(m->columns());
         },
-        [&](const type::Array* a) {
+        [&](const core::type::Array* a) {
             EmitType(out, a);
             out << "{";
             TINT_DEFER(out << "}");
@@ -698,12 +688,12 @@ void Printer::EmitConstant(StringStream& out, const constant::Value* c) {
 
             auto count = a->ConstantCount();
             if (!count) {
-                TINT_ICE() << type::Array::kErrExpectedConstantCount;
+                TINT_ICE() << core::type::Array::kErrExpectedConstantCount;
                 return;
             }
             emit_values(*count);
         },
-        [&](const type::Struct* s) {
+        [&](const core::type::Struct* s) {
             EmitStructType(s);
             out << StructName(s) << "{";
             TINT_DEFER(out << "}");
@@ -724,26 +714,26 @@ void Printer::EmitConstant(StringStream& out, const constant::Value* c) {
         [&](Default) { UNHANDLED_CASE(c->Type()); });
 }
 
-void Printer::EmitZeroValue(StringStream& out, const type::Type* ty) {
+void Printer::EmitZeroValue(StringStream& out, const core::type::Type* ty) {
     Switch(
-        ty, [&](const type::Bool*) { out << "false"; },                     //
-        [&](const type::F16*) { out << "0.0h"; },                           //
-        [&](const type::F32*) { out << "0.0f"; },                           //
-        [&](const type::I32*) { out << "0"; },                              //
-        [&](const type::U32*) { out << "0u"; },                             //
-        [&](const type::Vector* vec) { EmitZeroValue(out, vec->type()); },  //
-        [&](const type::Matrix* mat) {
+        ty, [&](const core::type::Bool*) { out << "false"; },                     //
+        [&](const core::type::F16*) { out << "0.0h"; },                           //
+        [&](const core::type::F32*) { out << "0.0f"; },                           //
+        [&](const core::type::I32*) { out << "0"; },                              //
+        [&](const core::type::U32*) { out << "0u"; },                             //
+        [&](const core::type::Vector* vec) { EmitZeroValue(out, vec->type()); },  //
+        [&](const core::type::Matrix* mat) {
             EmitType(out, mat);
 
             ScopedParen sp(out);
             EmitZeroValue(out, mat->type());
         },
-        [&](const type::Array*) { out << "{}"; },   //
-        [&](const type::Struct*) { out << "{}"; },  //
+        [&](const core::type::Array*) { out << "{}"; },   //
+        [&](const core::type::Struct*) { out << "{}"; },  //
         [&](Default) { TINT_ICE() << "Invalid type for zero emission: " << ty->FriendlyName(); });
 }
 
-std::string Printer::StructName(const type::Struct* s) {
+std::string Printer::StructName(const core::type::Struct* s) {
     auto name = s->Name().Name();
     if (HasPrefix(name, "__")) {
         name = tint::GetOrCreate(builtin_struct_names_, s,
@@ -758,12 +748,12 @@ std::string Printer::UniqueIdentifier(const std::string& prefix /* = "" */) {
 
 TINT_BEGIN_DISABLE_WARNING(UNREACHABLE_CODE);
 
-std::string Printer::Expr(ir::Value* value, PtrKind want_ptr_kind) {
+std::string Printer::Expr(core::ir::Value* value, PtrKind want_ptr_kind) {
     using ExprAndPtrKind = std::pair<std::string, PtrKind>;
 
     auto [expr, got_ptr_kind] = tint::Switch(
         value,
-        [&](ir::Constant* c) -> ExprAndPtrKind {
+        [&](core::ir::Constant* c) -> ExprAndPtrKind {
             StringStream str;
             EmitConstant(str, c);
             return {str.str(), PtrKind::kRef};
@@ -807,7 +797,7 @@ std::string Printer::Expr(ir::Value* value, PtrKind want_ptr_kind) {
         return "<error>";
     }
 
-    if (value->Type()->Is<type::Pointer>()) {
+    if (value->Type()->Is<core::type::Pointer>()) {
         return ToPtrKind(expr, got_ptr_kind, want_ptr_kind);
     }
 
@@ -826,7 +816,7 @@ std::string Printer::ToPtrKind(const std::string& in, PtrKind got, PtrKind want)
     return in;
 }
 
-void Printer::Bind(ir::Value* value, const std::string& expr, PtrKind ptr_kind) {
+void Printer::Bind(core::ir::Value* value, const std::string& expr, PtrKind ptr_kind) {
     TINT_ASSERT(value);
 
     if (can_inline_.Remove(value)) {
@@ -846,7 +836,7 @@ void Printer::Bind(ir::Value* value, const std::string& expr, PtrKind ptr_kind) 
             auto out = Line();
             EmitType(out, value->Type());
             out << " const " << mod_name.Name() << " = ";
-            if (value->Type()->Is<type::Pointer>()) {
+            if (value->Type()->Is<core::type::Pointer>()) {
                 out << ToPtrKind(expr, ptr_kind, PtrKind::kPtr);
             } else {
                 out << expr;
@@ -861,7 +851,7 @@ void Printer::Bind(ir::Value* value, const std::string& expr, PtrKind ptr_kind) 
     TINT_ICE() << "Bind(" << value->TypeInfo().name << ") called twice for same value";
 }
 
-void Printer::Bind(ir::Value* value, Symbol name, PtrKind ptr_kind) {
+void Printer::Bind(core::ir::Value* value, Symbol name, PtrKind ptr_kind) {
     TINT_ASSERT(value);
 
     bool added = bindings_.Add(value, VariableValue{name, ptr_kind});
@@ -870,10 +860,10 @@ void Printer::Bind(ir::Value* value, Symbol name, PtrKind ptr_kind) {
     }
 }
 
-void Printer::MarkInlinable(ir::Block* block) {
+void Printer::MarkInlinable(core::ir::Block* block) {
     // An ordered list of possibly-inlinable values returned by sequenced instructions that have
     // not yet been marked-for or ruled-out-for inlining.
-    UniqueVector<ir::Value*, 32> pending_resolution;
+    UniqueVector<core::ir::Value*, 32> pending_resolution;
 
     // Walk the instructions of the block starting with the first.
     for (auto* inst : *block) {

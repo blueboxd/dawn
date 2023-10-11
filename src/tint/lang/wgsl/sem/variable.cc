@@ -29,11 +29,11 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::VariableUser);
 
 namespace tint::sem {
 Variable::Variable(const ast::Variable* declaration,
-                   const type::Type* type,
+                   const core::type::Type* type,
                    core::EvaluationStage stage,
                    core::AddressSpace address_space,
                    core::Access access,
-                   const constant::Value* constant_value)
+                   const core::constant::Value* constant_value)
     : declaration_(declaration),
       type_(type),
       stage_(stage),
@@ -44,23 +44,23 @@ Variable::Variable(const ast::Variable* declaration,
 Variable::~Variable() = default;
 
 LocalVariable::LocalVariable(const ast::Variable* declaration,
-                             const type::Type* type,
+                             const core::type::Type* type,
                              core::EvaluationStage stage,
                              core::AddressSpace address_space,
                              core::Access access,
                              const sem::Statement* statement,
-                             const constant::Value* constant_value)
+                             const core::constant::Value* constant_value)
     : Base(declaration, type, stage, address_space, access, constant_value),
       statement_(statement) {}
 
 LocalVariable::~LocalVariable() = default;
 
 GlobalVariable::GlobalVariable(const ast::Variable* declaration,
-                               const type::Type* type,
+                               const core::type::Type* type,
                                core::EvaluationStage stage,
                                core::AddressSpace address_space,
                                core::Access access,
-                               const constant::Value* constant_value,
+                               const core::constant::Value* constant_value,
                                std::optional<tint::BindingPoint> binding_point,
                                std::optional<uint32_t> location,
                                std::optional<uint32_t> index)
@@ -73,10 +73,10 @@ GlobalVariable::~GlobalVariable() = default;
 
 Parameter::Parameter(const ast::Parameter* declaration,
                      uint32_t index,
-                     const type::Type* type,
+                     const core::type::Type* type,
                      core::AddressSpace address_space,
                      core::Access access,
-                     const ParameterUsage usage /* = ParameterUsage::kNone */,
+                     const core::ParameterUsage usage /* = ParameterUsage::kNone */,
                      std::optional<tint::BindingPoint> binding_point /* = {} */,
                      std::optional<uint32_t> location /* = std::nullopt */)
     : Base(declaration, type, core::EvaluationStage::kRuntime, address_space, access, nullptr),
@@ -90,7 +90,7 @@ Parameter::~Parameter() = default;
 VariableUser::VariableUser(const ast::IdentifierExpression* declaration,
                            core::EvaluationStage stage,
                            Statement* statement,
-                           const constant::Value* constant,
+                           const core::constant::Value* constant,
                            sem::Variable* variable)
     : Base(declaration,
            variable->Type(),
@@ -100,7 +100,7 @@ VariableUser::VariableUser(const ast::IdentifierExpression* declaration,
            /* has_side_effects */ false),
       variable_(variable) {
     auto* type = variable->Type();
-    if (type->Is<type::Pointer>() && variable->Initializer()) {
+    if (type->Is<core::type::Pointer>() && variable->Initializer()) {
         root_identifier_ = variable->Initializer()->RootIdentifier();
     } else {
         root_identifier_ = variable;

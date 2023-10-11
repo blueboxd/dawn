@@ -38,6 +38,7 @@ MaybeError PhysicalDeviceBase::Initialize() {
     EnableFeature(Feature::DawnNative);
     EnableFeature(Feature::DawnInternalUsages);
     EnableFeature(Feature::ImplicitDeviceSynchronization);
+    EnableFeature(Feature::ChromiumExperimentalReadWriteStorageTexture);
     InitializeSupportedFeaturesImpl();
 
     DAWN_TRY_CONTEXT(
@@ -117,10 +118,8 @@ FeaturesSet PhysicalDeviceBase::GetSupportedFeatures(const TogglesState& toggles
     FeaturesSet supportedFeaturesWithToggles;
     // Iterate each PhysicalDevice's supported feature and check if it is supported with given
     // toggles
-    for (uint32_t i : IterateBitSet(mSupportedFeatures.featuresBitSet)) {
-        Feature feature = static_cast<Feature>(i);
-        wgpu::FeatureName featureName = FeatureEnumToAPIFeature(feature);
-        if (IsFeatureSupportedWithToggles(featureName, toggles)) {
+    for (Feature feature : IterateBitSet(mSupportedFeatures.featuresBitSet)) {
+        if (IsFeatureSupportedWithToggles(ToAPI(feature), toggles)) {
             supportedFeaturesWithToggles.EnableFeature(feature);
         }
     }

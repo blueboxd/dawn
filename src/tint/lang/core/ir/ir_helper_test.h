@@ -19,7 +19,7 @@
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/module.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// Helper class for testing
 template <typename BASE>
@@ -33,7 +33,7 @@ class IRTestHelperBase : public BASE {
     /// The IR builder
     Builder b{mod};
     /// The type manager
-    type::Manager& ty{mod.Types()};
+    core::type::Manager& ty{mod.Types()};
 };
 
 using IRTestHelper = IRTestHelperBase<testing::Test>;
@@ -41,6 +41,6 @@ using IRTestHelper = IRTestHelperBase<testing::Test>;
 template <typename T>
 using IRTestParamHelper = IRTestHelperBase<testing::TestWithParam<T>>;
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_IR_HELPER_TEST_H_

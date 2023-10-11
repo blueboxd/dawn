@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_ir)
+
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(SpirvWriterTest, Access_Array_Value_ConstantIndex) {
     auto* arr_val = b.FunctionParam("arr", ty.array(ty.i32(), 4));
@@ -92,8 +94,8 @@ TEST_F(SpirvWriterTest, Access_Matrix_Pointer_ConstantIndex) {
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST("%result_vector = OpAccessChain %_ptr_Function_v2float %mat %uint_1");
-    EXPECT_INST("%14 = OpAccessChain %_ptr_Function_float %result_vector %uint_0");
-    EXPECT_INST("%result_scalar = OpLoad %float %14");
+    EXPECT_INST("%15 = OpAccessChain %_ptr_Function_float %result_vector %uint_0");
+    EXPECT_INST("%result_scalar = OpLoad %float %15");
 }
 
 TEST_F(SpirvWriterTest, Access_Matrix_Pointer_DynamicIndex) {
@@ -111,8 +113,8 @@ TEST_F(SpirvWriterTest, Access_Matrix_Pointer_DynamicIndex) {
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST("%result_vector = OpAccessChain %_ptr_Function_v2float %mat %idx");
-    EXPECT_INST("%14 = OpAccessChain %_ptr_Function_float %result_vector %idx");
-    EXPECT_INST("%result_scalar = OpLoad %float %14");
+    EXPECT_INST("%15 = OpAccessChain %_ptr_Function_float %result_vector %idx");
+    EXPECT_INST("%result_scalar = OpLoad %float %15");
 }
 
 TEST_F(SpirvWriterTest, Access_Vector_Value_ConstantIndex) {
@@ -213,8 +215,8 @@ TEST_F(SpirvWriterTest, LoadVectorElement_ConstantIndex) {
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
-    EXPECT_INST("%9 = OpAccessChain %_ptr_Function_int %vec %uint_1");
-    EXPECT_INST("%result = OpLoad %int %9");
+    EXPECT_INST("%10 = OpAccessChain %_ptr_Function_int %vec %uint_1");
+    EXPECT_INST("%result = OpLoad %int %10");
 }
 
 TEST_F(SpirvWriterTest, LoadVectorElement_DynamicIndex) {
@@ -229,8 +231,8 @@ TEST_F(SpirvWriterTest, LoadVectorElement_DynamicIndex) {
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
-    EXPECT_INST("%10 = OpAccessChain %_ptr_Function_int %vec %idx");
-    EXPECT_INST("%result = OpLoad %int %10");
+    EXPECT_INST("%11 = OpAccessChain %_ptr_Function_int %vec %idx");
+    EXPECT_INST("%result = OpLoad %int %11");
 }
 
 TEST_F(SpirvWriterTest, StoreVectorElement_ConstantIndex) {
@@ -242,8 +244,8 @@ TEST_F(SpirvWriterTest, StoreVectorElement_ConstantIndex) {
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
-    EXPECT_INST("%9 = OpAccessChain %_ptr_Function_int %vec %uint_1");
-    EXPECT_INST("OpStore %9 %int_42");
+    EXPECT_INST("%10 = OpAccessChain %_ptr_Function_int %vec %uint_1");
+    EXPECT_INST("OpStore %10 %int_42");
 }
 
 TEST_F(SpirvWriterTest, StoreVectorElement_DynamicIndex) {
@@ -257,8 +259,8 @@ TEST_F(SpirvWriterTest, StoreVectorElement_DynamicIndex) {
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
-    EXPECT_INST("%10 = OpAccessChain %_ptr_Function_int %vec %idx");
-    EXPECT_INST("OpStore %10 %int_42");
+    EXPECT_INST("%11 = OpAccessChain %_ptr_Function_int %vec %idx");
+    EXPECT_INST("OpStore %11 %int_42");
 }
 
 }  // namespace

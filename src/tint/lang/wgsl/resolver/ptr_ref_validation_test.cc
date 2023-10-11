@@ -22,8 +22,8 @@
 namespace tint::resolver {
 namespace {
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 struct ResolverPtrRefValidationTest : public resolver::TestHelper, public testing::Test {};
 
@@ -55,7 +55,7 @@ TEST_F(ResolverPtrRefValidationTest, AddressOfLet) {
 TEST_F(ResolverPtrRefValidationTest, AddressOfHandle) {
     // @group(0) @binding(0) var t: texture_3d<f32>;
     // &t
-    GlobalVar("t", ty.sampled_texture(type::TextureDimension::k3d, ty.f32()), Group(0_a),
+    GlobalVar("t", ty.sampled_texture(core::type::TextureDimension::k3d, ty.f32()), Group(0_a),
               Binding(0_a));
     auto* expr = AddressOf(Expr(Source{{12, 34}}, "t"));
     WrapInFunction(expr);
@@ -95,7 +95,7 @@ TEST_F(ResolverPtrRefValidationTest, AddressOfVectorComponent_IndexAccessor) {
 TEST_F(ResolverPtrRefValidationTest, IndirectOfAddressOfHandle) {
     // @group(0) @binding(0) var t: texture_3d<f32>;
     // *&t
-    GlobalVar("t", ty.sampled_texture(type::TextureDimension::k3d, ty.f32()), Group(0_a),
+    GlobalVar("t", ty.sampled_texture(core::type::TextureDimension::k3d, ty.f32()), Group(0_a),
               Binding(0_a));
     auto* expr = Deref(AddressOf(Expr(Source{{12, 34}}, "t")));
     WrapInFunction(expr);

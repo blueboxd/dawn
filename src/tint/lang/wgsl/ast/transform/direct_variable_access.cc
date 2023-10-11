@@ -18,6 +18,7 @@
 #include <string>
 #include <utility>
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/abstract_int.h"
 #include "src/tint/lang/wgsl/ast/transform/hoist_to_decl_before.h"
 #include "src/tint/lang/wgsl/ast/traverse_expressions.h"
@@ -39,7 +40,8 @@
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::DirectVariableAccess);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::DirectVariableAccess::Config);
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace {
 
@@ -48,7 +50,7 @@ struct AccessRoot {
     /// The pointer-unwrapped type of the *transformed* variable.
     /// This may be different for pointers in 'private' and 'function' address space, as the pointer
     /// parameter type is to the *base object* instead of the input pointer type.
-    tint::type::Type const* type = nullptr;
+    tint::core::type::Type const* type = nullptr;
     /// The originating module-scope variable ('private', 'storage', 'uniform', 'workgroup'),
     /// function-scope variable ('function'), or pointer parameter in the source program.
     tint::sem::Variable const* variable = nullptr;
@@ -444,7 +446,7 @@ struct DirectVariableAccess::State {
                     chain->root.variable = variable;
                     chain->root.type = variable->Type();
                     chain->root.address_space = variable->AddressSpace();
-                    if (auto* ptr = chain->root.type->As<type::Pointer>()) {
+                    if (auto* ptr = chain->root.type->As<core::type::Pointer>()) {
                         chain->root.address_space = ptr->AddressSpace();
                     }
                     access_chains.Add(expr, chain);
@@ -459,13 +461,13 @@ struct DirectVariableAccess::State {
                         }
                     },
                     [&](const Parameter*) {
-                        if (variable->Type()->Is<type::Pointer>()) {
+                        if (variable->Type()->Is<core::type::Pointer>()) {
                             // Start a new access chain for the pointer parameter access
                             create_new_chain();
                         }
                     },
                     [&](const Let*) {
-                        if (variable->Type()->Is<type::Pointer>()) {
+                        if (variable->Type()->Is<core::type::Pointer>()) {
                             // variable is a pointer-let.
                             auto* init = sem.GetVal(variable->Declaration()->initializer);
                             // Note: We do not use take_chain() here, as we need to preserve the
@@ -576,7 +578,7 @@ struct DirectVariableAccess::State {
             if (!idx->UnwrapMaterialize()
                      ->Type()
                      ->UnwrapRef()
-                     ->IsAnyOf<type::U32, type::AbstractInt>()) {
+                     ->IsAnyOf<core::type::U32, core::type::AbstractInt>()) {
                 expr = b.Call<u32>(expr);
             }
         }
@@ -640,7 +642,7 @@ struct DirectVariableAccess::State {
             for (size_t i = 0; i < call->Arguments().Length(); i++) {
                 const auto* arg = call->Arguments()[i];
                 const auto* param = target->Parameters()[i];
-                const auto* param_ty = param->Type()->As<type::Pointer>();
+                const auto* param_ty = param->Type()->As<core::type::Pointer>();
                 if (!param_ty) {
                     continue;  // Parameter type is not a pointer.
                 }
@@ -883,7 +885,7 @@ struct DirectVariableAccess::State {
             for (size_t arg_idx = 0; arg_idx < call->Arguments().Length(); arg_idx++) {
                 auto* arg = call->Arguments()[arg_idx];
                 auto* param = call->Target()->Parameters()[arg_idx];
-                auto* param_ty = param->Type()->As<type::Pointer>();
+                auto* param_ty = param->Type()->As<core::type::Pointer>();
                 if (!param_ty) {
                     // Parameter is not a pointer.
                     // Just clone the unaltered argument.
@@ -1051,7 +1053,7 @@ struct DirectVariableAccess::State {
 
             // BuildAccessExpr() always returns a non-pointer.
             // If the expression we're replacing is a pointer, take the address.
-            if (expr->Type()->Is<type::Pointer>()) {
+            if (expr->Type()->Is<core::type::Pointer>()) {
                 chain_expr = b.AddressOf(chain_expr);
             }
 
@@ -1127,7 +1129,7 @@ struct DirectVariableAccess::State {
 
         const Expression* expr = b.Expr(ctx.Clone(root.variable->Declaration()->name->symbol));
         if (deref) {
-            if (root.variable->Type()->Is<type::Pointer>()) {
+            if (root.variable->Type()->Is<core::type::Pointer>()) {
                 expr = b.Deref(expr);
             }
         }
@@ -1168,7 +1170,7 @@ struct DirectVariableAccess::State {
     /// @returns true if the function @p fn has at least one pointer parameter.
     static bool HasPointerParameter(const sem::Function* fn) {
         for (auto* param : fn->Parameters()) {
-            if (param->Type()->Is<type::Pointer>()) {
+            if (param->Type()->Is<core::type::Pointer>()) {
                 return true;
             }
         }
@@ -1180,7 +1182,7 @@ struct DirectVariableAccess::State {
     /// generated, and must be stripped.
     static bool MustBeCalled(const sem::Function* fn) {
         for (auto* param : fn->Parameters()) {
-            if (auto* ptr = param->Type()->As<type::Pointer>()) {
+            if (auto* ptr = param->Type()->As<core::type::Pointer>()) {
                 switch (ptr->AddressSpace()) {
                     case core::AddressSpace::kUniform:
                     case core::AddressSpace::kStorage:

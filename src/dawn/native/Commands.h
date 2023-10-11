@@ -55,6 +55,7 @@ enum class Command {
     EndRenderPass,
     ExecuteBundles,
     InsertDebugMarker,
+    PixelLocalStorageBarrier,
     PopDebugGroup,
     PushDebugGroup,
     ResolveQuerySet,
@@ -101,6 +102,7 @@ struct RenderPassColorAttachmentInfo {
     ~RenderPassColorAttachmentInfo();
 
     Ref<TextureViewBase> view;
+    uint32_t depthSlice;
     Ref<TextureViewBase> resolveTarget;
     wgpu::LoadOp loadOp;
     wgpu::StoreOp storeOp;
@@ -265,6 +267,8 @@ struct ClearBufferCmd {
 struct InsertDebugMarkerCmd {
     uint32_t length;
 };
+
+struct PixelLocalStorageBarrierCmd {};
 
 struct PopDebugGroupCmd {};
 

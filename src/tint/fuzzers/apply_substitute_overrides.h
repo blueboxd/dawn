@@ -15,7 +15,10 @@
 #ifndef SRC_TINT_FUZZERS_APPLY_SUBSTITUTE_OVERRIDES_H_
 #define SRC_TINT_FUZZERS_APPLY_SUBSTITUTE_OVERRIDES_H_
 
-#include "tint/tint.h"
+// Forward declarations
+namespace tint {
+class Program;
+}
 
 namespace tint::fuzzers {
 

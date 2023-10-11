@@ -19,6 +19,7 @@
 #include <utility>
 
 #include "src/tint/lang/core/builtin_value.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
@@ -26,6 +27,8 @@
 #include "src/tint/lang/wgsl/sem/member_accessor_expression.h"
 #include "src/tint/lang/wgsl/sem/struct.h"
 #include "src/tint/lang/wgsl/sem/variable.h"
+
+using namespace tint::core::fluent_types;  // NOLINT
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::FirstIndexOffset);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::FirstIndexOffset::BindingPoint);
@@ -81,7 +84,7 @@ Transform::ApplyResult FirstIndexOffset::Apply(const Program* src,
 
     // Map of builtin usages
     std::unordered_map<const sem::Variable*, const char*> builtin_vars;
-    std::unordered_map<const type::StructMember*, const char*> builtin_members;
+    std::unordered_map<const core::type::StructMember*, const char*> builtin_members;
 
     bool has_vertex_index = false;
     bool has_instance_index = false;

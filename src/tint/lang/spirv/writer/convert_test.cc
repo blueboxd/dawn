@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_ir)
+
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 /// A parameterized test case.
 struct ConvertCase {

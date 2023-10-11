@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "source/opt/build_module.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
@@ -34,8 +35,9 @@
 #include "src/tint/utils/containers/unique_vector.h"
 #include "src/tint/utils/rtti/switch.h"
 
-namespace tint::spirv::reader {
+using namespace tint::core::fluent_types;  // NOLINT
 
+namespace tint::spirv::reader::ast_parser {
 namespace {
 
 // Input SPIR-V needs only to conform to Vulkan 1.1 requirements.
@@ -2022,7 +2024,7 @@ TypedExpression ASTParser::MakeConstantExpressionForScalarSpirvConstant(
                                        ast::IntLiteralExpression::Suffix::kU)};
         },
         [&](const F32*) {
-            if (auto f = CheckedConvert<f32>(AFloat(spirv_const->GetFloat()))) {
+            if (auto f = core::CheckedConvert<f32>(AFloat(spirv_const->GetFloat()))) {
                 return TypedExpression{ty_.F32(),
                                        create<ast::FloatLiteralExpression>(
                                            source, static_cast<double>(spirv_const->GetFloat()),
@@ -2508,8 +2510,8 @@ const Type* ASTParser::GetHandleTypeForSpirvHandle(const spvtools::opt::Instruct
     const Type* ast_handle_type = nullptr;
     if (usage.IsSampler()) {
         ast_handle_type =
-            ty_.Sampler(usage.IsComparisonSampler() ? type::SamplerKind::kComparisonSampler
-                                                    : type::SamplerKind::kSampler);
+            ty_.Sampler(usage.IsComparisonSampler() ? core::type::SamplerKind::kComparisonSampler
+                                                    : core::type::SamplerKind::kSampler);
     } else if (usage.IsTexture()) {
         const spvtools::opt::analysis::Image* image_type =
             type_mgr_->GetType(raw_handle_type->result_id())->AsImage();
@@ -2534,15 +2536,14 @@ const Type* ASTParser::GetHandleTypeForSpirvHandle(const spvtools::opt::Instruct
             }
         }
 
-        const type::TextureDimension dim =
+        const core::type::TextureDimension dim =
             enum_converter_.ToDim(image_type->dim(), image_type->is_arrayed());
-        if (dim == type::TextureDimension::kNone) {
+        if (dim == core::type::TextureDimension::kNone) {
             return nullptr;
         }
 
-        // WGSL textures are always formatted.  Unformatted textures are always
-        // sampled.
-        if (usage.IsSampledTexture() || usage.IsStorageReadTexture() ||
+        // WGSL storage textures are always formatted.  Unformatted textures are always sampled.
+        if (usage.IsSampledTexture() || usage.IsStorageReadOnlyTexture() ||
             (uint32_t(image_type->format()) == uint32_t(spv::ImageFormat::Unknown))) {
             // Make a sampled texture type.
             auto* ast_sampled_component_type =
@@ -2552,14 +2553,14 @@ const Type* ASTParser::GetHandleTypeForSpirvHandle(const spvtools::opt::Instruct
             // usage as well.  That is, it's valid for a Vulkan shader to use an
             // OpImage variable with an OpImage*Dref* instruction.  In WGSL we must
             // treat that as a depth texture.
-            if (image_type->depth() || usage.IsDepthTexture()) {
+            if (image_type->depth() == 1 || usage.IsDepthTexture()) {
                 if (image_type->is_multisampled()) {
                     ast_handle_type = ty_.DepthMultisampledTexture(dim);
                 } else {
                     ast_handle_type = ty_.DepthTexture(dim);
                 }
             } else if (image_type->is_multisampled()) {
-                if (dim != type::TextureDimension::k2d) {
+                if (dim != core::type::TextureDimension::k2d) {
                     Fail() << "WGSL multisampled textures must be 2d and non-arrayed: "
                               "invalid multisampled texture variable or function parameter "
                            << namer_.Name(obj.result_id()) << ": " << obj.PrettyPrint();
@@ -2570,7 +2571,11 @@ const Type* ASTParser::GetHandleTypeForSpirvHandle(const spvtools::opt::Instruct
                 ast_handle_type = ty_.SampledTexture(dim, ast_sampled_component_type);
             }
         } else {
-            const auto access = core::Access::kWrite;
+            const auto access =
+                usage.IsStorageReadWriteTexture() ? core::Access::kReadWrite : core::Access::kWrite;
+            if (access == core::Access::kReadWrite) {
+                Enable(core::Extension::kChromiumExperimentalReadWriteStorageTexture);
+            }
             const auto format = enum_converter_.ToTexelFormat(image_type->format());
             if (format == core::TexelFormat::kUndefined) {
                 return nullptr;
@@ -2831,4 +2836,4 @@ WorkgroupSizeInfo::WorkgroupSizeInfo() = default;
 
 WorkgroupSizeInfo::~WorkgroupSizeInfo() = default;
 
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser

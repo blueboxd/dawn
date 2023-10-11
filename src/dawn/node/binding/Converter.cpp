@@ -1610,6 +1610,12 @@ bool Converter::Convert(wgpu::FeatureName& out, interop::GPUFeatureName in) {
         case interop::GPUFeatureName::kFloat32Filterable:
             out = wgpu::FeatureName::Float32Filterable;
             return true;
+        case interop::GPUFeatureName::kChromiumExperimentalSubgroups:
+            out = wgpu::FeatureName::ChromiumExperimentalSubgroups;
+            return true;
+        case interop::GPUFeatureName::kChromiumExperimentalSubgroupUniformControlFlow:
+            out = wgpu::FeatureName::ChromiumExperimentalSubgroupUniformControlFlow;
+            return true;
     }
     return false;
 }
@@ -1649,9 +1655,14 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::Float32Filterable:
             out = interop::GPUFeatureName::kFloat32Filterable;
             return true;
+        case wgpu::FeatureName::ChromiumExperimentalSubgroups:
+            out = interop::GPUFeatureName::kChromiumExperimentalSubgroups;
+            return true;
+        case wgpu::FeatureName::ChromiumExperimentalSubgroupUniformControlFlow:
+            out = interop::GPUFeatureName::kChromiumExperimentalSubgroupUniformControlFlow;
+            return true;
 
         case wgpu::FeatureName::PipelineStatisticsQuery:
-        case wgpu::FeatureName::DawnShaderFloat16:
         case wgpu::FeatureName::DawnInternalUsages:
         case wgpu::FeatureName::DawnMultiPlanarFormats:
         case wgpu::FeatureName::DawnNative:
@@ -1661,6 +1672,10 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::SurfaceCapabilities:
         case wgpu::FeatureName::TransientAttachments:
         case wgpu::FeatureName::MSAARenderToSingleSampled:
+        case wgpu::FeatureName::PixelLocalStorageCoherent:
+        case wgpu::FeatureName::PixelLocalStorageNonCoherent:
+        case wgpu::FeatureName::DualSourceBlending:
+        case wgpu::FeatureName::D3D11MultithreadProtected:
         case wgpu::FeatureName::Undefined:
             return false;
     }

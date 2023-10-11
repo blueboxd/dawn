@@ -17,7 +17,6 @@
 #include "dawn/common/Log.h"
 
 #include "dawn/native/BackendConnection.h"
-#include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/opengl/BindGroupGL.h"
@@ -267,7 +266,7 @@ void Device::SubmitFenceSync() {
 
     const OpenGLFunctions& gl = GetGL();
     GLsync sync = gl.FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    IncrementLastSubmittedCommandSerial();
+    GetQueue()->IncrementLastSubmittedCommandSerial();
     mFencesInFlight.emplace(sync, GetLastSubmittedCommandSerial());
 
     // Reset mHasPendingCommands after GetGL() which will set mHasPendingCommands to true.
@@ -328,7 +327,7 @@ TextureBase* Device::CreateTextureWrappingEGLImage(const ExternalImageDescriptor
 
     // TODO(dawn:803): Validate the OpenGL texture format from the EGLImage against the format
     // in the passed-in TextureDescriptor.
-    return new Texture(this, textureDescriptor, tex, TextureBase::TextureState::OwnedInternal);
+    return new Texture(this, textureDescriptor, tex);
 }
 
 TextureBase* Device::CreateTextureWrappingGLTexture(const ExternalImageDescriptor* descriptor,
@@ -362,7 +361,7 @@ TextureBase* Device::CreateTextureWrappingGLTexture(const ExternalImageDescripto
         return nullptr;
     }
 
-    return new Texture(this, textureDescriptor, texture, TextureBase::TextureState::OwnedInternal);
+    return new Texture(this, textureDescriptor, texture);
 }
 
 MaybeError Device::TickImpl() {
@@ -394,7 +393,7 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
 
         mFencesInFlight.pop();
 
-        ASSERT(fenceSerial > GetCompletedCommandSerial());
+        ASSERT(fenceSerial > GetQueue()->GetCompletedCommandSerial());
     }
     return fenceSerial;
 }
@@ -421,7 +420,7 @@ void Device::DestroyImpl() {
 MaybeError Device::WaitForIdleForDestruction() {
     const OpenGLFunctions& gl = GetGL();
     gl.Finish();
-    DAWN_TRY(CheckPassedSerials());
+    DAWN_TRY(GetQueue()->CheckPassedSerials());
     ASSERT(mFencesInFlight.empty());
 
     return {};

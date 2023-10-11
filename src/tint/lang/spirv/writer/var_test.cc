@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_ir)
+
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
@@ -19,8 +21,8 @@
 namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(SpirvWriterTest, FunctionVar_NoInit) {
     auto* func = b.Function("foo", ty.void_());
@@ -122,7 +124,7 @@ TEST_F(SpirvWriterTest, PrivateVar_LoadAndStore) {
     v->SetInitializer(b.Constant(42_i));
     b.RootBlock()->Append(v);
 
-    auto* func = b.Function("foo", ty.void_(), ir::Function::PipelineStage::kFragment);
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
         auto* load = b.Load(v);
         auto* add = b.Add(ty.i32(), load, 1_i);
@@ -148,7 +150,7 @@ TEST_F(SpirvWriterTest, WorkgroupVar) {
 TEST_F(SpirvWriterTest, WorkgroupVar_LoadAndStore) {
     auto* v = b.RootBlock()->Append(b.Var("v", ty.ptr<workgroup, i32>()));
 
-    auto* func = b.Function("foo", ty.void_(), ir::Function::PipelineStage::kCompute,
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute,
                             std::array{1u, 1u, 1u});
     b.Append(func->Block(), [&] {
         auto* load = b.Load(v);
@@ -198,7 +200,7 @@ TEST_F(SpirvWriterTest, StorageVar_LoadAndStore) {
     v->SetBindingPoint(0, 0);
     b.RootBlock()->Append(v);
 
-    auto* func = b.Function("foo", ty.void_(), ir::Function::PipelineStage::kCompute,
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute,
                             std::array{1u, 1u, 1u});
     b.Append(func->Block(), [&] {
         auto* load = b.Load(v);
@@ -242,7 +244,7 @@ TEST_F(SpirvWriterTest, UniformVar_Load) {
     v->SetBindingPoint(0, 0);
     b.RootBlock()->Append(v);
 
-    auto* func = b.Function("foo", ty.void_(), ir::Function::PipelineStage::kCompute,
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute,
                             std::array{1u, 1u, 1u});
     b.Append(func->Block(), [&] {
         auto* load = b.Load(v);
@@ -325,9 +327,10 @@ TEST_F(SpirvWriterTest, SamplerVar_Load) {
 }
 
 TEST_F(SpirvWriterTest, TextureVar) {
-    auto* v = b.Var("v", ty.ptr(core::AddressSpace::kHandle,
-                                ty.Get<type::SampledTexture>(type::TextureDimension::k2d, ty.f32()),
-                                core::Access::kRead));
+    auto* v = b.Var(
+        "v", ty.ptr(core::AddressSpace::kHandle,
+                    ty.Get<core::type::SampledTexture>(core::type::TextureDimension::k2d, ty.f32()),
+                    core::Access::kRead));
     v->SetBindingPoint(0, 0);
     b.RootBlock()->Append(v);
 
@@ -344,9 +347,10 @@ TEST_F(SpirvWriterTest, TextureVar) {
 }
 
 TEST_F(SpirvWriterTest, TextureVar_Load) {
-    auto* v = b.Var("v", ty.ptr(core::AddressSpace::kHandle,
-                                ty.Get<type::SampledTexture>(type::TextureDimension::k2d, ty.f32()),
-                                core::Access::kRead));
+    auto* v = b.Var(
+        "v", ty.ptr(core::AddressSpace::kHandle,
+                    ty.Get<core::type::SampledTexture>(core::type::TextureDimension::k2d, ty.f32()),
+                    core::Access::kRead));
     v->SetBindingPoint(0, 0);
     b.RootBlock()->Append(v);
 

@@ -31,6 +31,7 @@
 #include "dawn/native/d3d11/DeviceD3D11.h"
 #include "dawn/native/d3d11/FenceD3D11.h"
 #include "dawn/native/d3d11/Forward.h"
+#include "dawn/native/d3d11/SharedTextureMemoryD3D11.h"
 #include "dawn/native/d3d11/UtilsD3D11.h"
 
 namespace dawn::native::d3d11 {
@@ -43,7 +44,7 @@ UINT D3D11TextureBindFlags(wgpu::TextureUsage usage, const Format& format) {
         bindFlags |= D3D11_BIND_SHADER_RESOURCE;
     }
     if (usage & wgpu::TextureUsage::StorageBinding) {
-        bindFlags |= D3D11_BIND_UNORDERED_ACCESS;
+        bindFlags |= D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
     }
     if (usage & wgpu::TextureUsage::RenderAttachment) {
         bindFlags |= isDepthOrStencilFormat ? D3D11_BIND_DEPTH_STENCIL : D3D11_BIND_RENDER_TARGET;
@@ -165,6 +166,7 @@ MaybeError ValidateVideoTextureCanBeShared(Device* device, DXGI_FORMAT textureFo
         device->GetDeviceInfo().supportsSharedResourceCapabilityTier2;
     switch (textureFormat) {
         case DXGI_FORMAT_NV12:
+        case DXGI_FORMAT_P010:
             if (supportsSharedResourceCapabilityTier2) {
                 return {};
             }
@@ -178,8 +180,7 @@ MaybeError ValidateVideoTextureCanBeShared(Device* device, DXGI_FORMAT textureFo
 
 // static
 ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescriptor* descriptor) {
-    Ref<Texture> texture =
-        AcquireRef(new Texture(device, descriptor, TextureState::OwnedInternal, Kind::Normal));
+    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor, Kind::Normal));
     DAWN_TRY(texture->InitializeAsInternalTexture());
     return std::move(texture);
 }
@@ -188,8 +189,7 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescrip
 ResultOrError<Ref<Texture>> Texture::Create(Device* device,
                                             const TextureDescriptor* descriptor,
                                             ComPtr<ID3D11Resource> d3d11Texture) {
-    Ref<Texture> dawnTexture =
-        AcquireRef(new Texture(device, descriptor, TextureState::OwnedExternal, Kind::Normal));
+    Ref<Texture> dawnTexture = AcquireRef(new Texture(device, descriptor, Kind::Normal));
     DAWN_TRY(dawnTexture->InitializeAsSwapChainTexture(std::move(d3d11Texture)));
     return std::move(dawnTexture);
 }
@@ -197,8 +197,7 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device,
 ResultOrError<Ref<Texture>> Texture::CreateInternal(Device* device,
                                                     const TextureDescriptor* descriptor,
                                                     Kind kind) {
-    Ref<Texture> texture =
-        AcquireRef(new Texture(device, descriptor, TextureState::OwnedInternal, kind));
+    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor, kind));
     DAWN_TRY(texture->InitializeAsInternalTexture());
     return std::move(texture);
 }
@@ -210,9 +209,7 @@ ResultOrError<Ref<Texture>> Texture::CreateExternalImage(Device* device,
                                                          std::vector<Ref<d3d::Fence>> waitFences,
                                                          bool isSwapChainTexture,
                                                          bool isInitialized) {
-    Ref<Texture> dawnTexture =
-        AcquireRef(new Texture(device, descriptor, TextureState::OwnedExternal, Kind::Normal));
-
+    Ref<Texture> dawnTexture = AcquireRef(new Texture(device, descriptor, Kind::Normal));
     DAWN_TRY(dawnTexture->InitializeAsExternalTexture(std::move(d3dTexture), std::move(waitFences),
                                                       isSwapChainTexture));
 
@@ -226,6 +223,17 @@ ResultOrError<Ref<Texture>> Texture::CreateExternalImage(Device* device,
     dawnTexture->SetIsSubresourceContentInitialized(isInitialized,
                                                     dawnTexture->GetAllSubresources());
     return std::move(dawnTexture);
+}
+
+// static
+ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
+    SharedTextureMemory* memory,
+    const TextureDescriptor* descriptor) {
+    Device* device = ToBackend(memory->GetDevice());
+    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor, Kind::Normal));
+    DAWN_TRY(texture->InitializeAsExternalTexture(memory->GetD3DResource(), {}, false));
+    texture->mSharedTextureMemoryState = memory->GetState();
+    return texture;
 }
 
 template <typename T>
@@ -351,8 +359,8 @@ MaybeError Texture::InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
     return {};
 }
 
-Texture::Texture(Device* device, const TextureDescriptor* descriptor, TextureState state, Kind kind)
-    : Base(device, descriptor, state), mKind(kind) {}
+Texture::Texture(Device* device, const TextureDescriptor* descriptor, Kind kind)
+    : Base(device, descriptor), mKind(kind) {}
 
 Texture::~Texture() = default;
 

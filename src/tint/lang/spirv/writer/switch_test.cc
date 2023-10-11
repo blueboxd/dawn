@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_ir)
+
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::spirv::writer {
 namespace {
@@ -24,7 +26,7 @@ TEST_F(SpirvWriterTest, Switch_Basic) {
     b.Append(func->Block(), [&] {
         auto* swtch = b.Switch(42_i);
 
-        auto* def_case = b.Case(swtch, Vector{ir::Switch::CaseSelector()});
+        auto* def_case = b.Case(swtch, Vector{core::ir::Switch::CaseSelector()});
         b.Append(def_case, [&] {  //
             b.ExitSwitch(swtch);
         });
@@ -50,17 +52,17 @@ TEST_F(SpirvWriterTest, Switch_MultipleCases) {
     b.Append(func->Block(), [&] {
         auto* swtch = b.Switch(42_i);
 
-        auto* case_a = b.Case(swtch, Vector{ir::Switch::CaseSelector{b.Constant(1_i)}});
+        auto* case_a = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)}});
         b.Append(case_a, [&] {  //
             b.ExitSwitch(swtch);
         });
 
-        auto* case_b = b.Case(swtch, Vector{ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(swtch);
         });
 
-        auto* def_case = b.Case(swtch, Vector{ir::Switch::CaseSelector()});
+        auto* def_case = b.Case(swtch, Vector{core::ir::Switch::CaseSelector()});
         b.Append(def_case, [&] {  //
             b.ExitSwitch(swtch);
         });
@@ -90,20 +92,20 @@ TEST_F(SpirvWriterTest, Switch_MultipleSelectorsPerCase) {
     b.Append(func->Block(), [&] {
         auto* swtch = b.Switch(42_i);
 
-        auto* case_a = b.Case(swtch, Vector{ir::Switch::CaseSelector{b.Constant(1_i)},
-                                            ir::Switch::CaseSelector{b.Constant(3_i)}});
+        auto* case_a = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
+                                            core::ir::Switch::CaseSelector{b.Constant(3_i)}});
         b.Append(case_a, [&] {  //
             b.ExitSwitch(swtch);
         });
 
-        auto* case_b = b.Case(swtch, Vector{ir::Switch::CaseSelector{b.Constant(2_i)},
-                                            ir::Switch::CaseSelector{b.Constant(4_i)}});
+        auto* case_b = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)},
+                                            core::ir::Switch::CaseSelector{b.Constant(4_i)}});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(swtch);
         });
 
-        auto* def_case = b.Case(
-            swtch, Vector{ir::Switch::CaseSelector{b.Constant(5_i)}, ir::Switch::CaseSelector()});
+        auto* def_case = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(5_i)},
+                                              core::ir::Switch::CaseSelector()});
         b.Append(def_case, [&] {  //
             b.ExitSwitch(swtch);
         });
@@ -133,17 +135,17 @@ TEST_F(SpirvWriterTest, Switch_AllCasesReturn) {
     b.Append(func->Block(), [&] {
         auto* swtch = b.Switch(42_i);
 
-        auto* case_a = b.Case(swtch, Vector{ir::Switch::CaseSelector{b.Constant(1_i)}});
+        auto* case_a = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)}});
         b.Append(case_a, [&] {  //
             b.Return(func);
         });
 
-        auto* case_b = b.Case(swtch, Vector{ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
         b.Append(case_b, [&] {  //
             b.Return(func);
         });
 
-        auto* def_case = b.Case(swtch, Vector{ir::Switch::CaseSelector()});
+        auto* def_case = b.Case(swtch, Vector{core::ir::Switch::CaseSelector()});
         b.Append(def_case, [&] {  //
             b.Return(func);
         });
@@ -173,7 +175,7 @@ TEST_F(SpirvWriterTest, Switch_ConditionalBreak) {
     b.Append(func->Block(), [&] {
         auto* swtch = b.Switch(42_i);
 
-        auto* case_a = b.Case(swtch, Vector{ir::Switch::CaseSelector{b.Constant(1_i)}});
+        auto* case_a = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)}});
         b.Append(case_a, [&] {
             auto* cond_break = b.If(true);
             b.Append(cond_break->True(), [&] {  //
@@ -186,7 +188,7 @@ TEST_F(SpirvWriterTest, Switch_ConditionalBreak) {
             b.Return(func);
         });
 
-        auto* def_case = b.Case(swtch, Vector{ir::Switch::CaseSelector()});
+        auto* def_case = b.Case(swtch, Vector{core::ir::Switch::CaseSelector()});
         b.Append(def_case, [&] {  //
             b.ExitSwitch(swtch);
         });
@@ -219,13 +221,13 @@ TEST_F(SpirvWriterTest, Switch_Phi_SingleValue) {
     b.Append(func->Block(), [&] {
         auto* s = b.Switch(42_i);
         s->SetResults(b.InstructionResult(ty.i32()));
-        auto* case_a = b.Case(s, Vector{ir::Switch::CaseSelector{b.Constant(1_i)},
-                                        ir::Switch::CaseSelector{nullptr}});
+        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
+                                        core::ir::Switch::CaseSelector{nullptr}});
         b.Append(case_a, [&] {  //
             b.ExitSwitch(s, 10_i);
         });
 
-        auto* case_b = b.Case(s, Vector{ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(s, 20_i);
         });
@@ -254,13 +256,13 @@ TEST_F(SpirvWriterTest, Switch_Phi_SingleValue_CaseReturn) {
     b.Append(func->Block(), [&] {
         auto* s = b.Switch(42_i);
         s->SetResults(b.InstructionResult(ty.i32()));
-        auto* case_a = b.Case(s, Vector{ir::Switch::CaseSelector{b.Constant(1_i)},
-                                        ir::Switch::CaseSelector{nullptr}});
+        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
+                                        core::ir::Switch::CaseSelector{nullptr}});
         b.Append(case_a, [&] {  //
             b.Return(func, 10_i);
         });
 
-        auto* case_b = b.Case(s, Vector{ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(s, 20_i);
         });
@@ -271,28 +273,28 @@ TEST_F(SpirvWriterTest, Switch_Phi_SingleValue_CaseReturn) {
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST(R"(
           %4 = OpLabel
-%return_value = OpVariable %_ptr_Function_int Function
+%return_value = OpVariable %_ptr_Function_int Function %7
 %continue_execution = OpVariable %_ptr_Function_bool Function
                OpStore %continue_execution %true
-               OpSelectionMerge %14 None
-               OpSwitch %int_42 %11 1 %11 2 %13
-         %11 = OpLabel
+               OpSelectionMerge %15 None
+               OpSwitch %int_42 %12 1 %12 2 %14
+         %12 = OpLabel
                OpStore %continue_execution %false
                OpStore %return_value %int_10
-               OpBranch %14
-         %13 = OpLabel
-               OpBranch %14
+               OpBranch %15
          %14 = OpLabel
-         %17 = OpPhi %int %18 %11 %int_20 %13
-         %20 = OpLoad %bool %continue_execution
-               OpSelectionMerge %21 None
-               OpBranchConditional %20 %22 %21
+               OpBranch %15
+         %15 = OpLabel
+         %18 = OpPhi %int %19 %12 %int_20 %14
+         %21 = OpLoad %bool %continue_execution
+               OpSelectionMerge %22 None
+               OpBranchConditional %21 %23 %22
+         %23 = OpLabel
+               OpStore %return_value %18
+               OpBranch %22
          %22 = OpLabel
-               OpStore %return_value %17
-               OpBranch %21
-         %21 = OpLabel
-         %23 = OpLoad %int %return_value
-               OpReturnValue %23
+         %24 = OpLoad %int %return_value
+               OpReturnValue %24
                OpFunctionEnd
 )");
 }
@@ -302,13 +304,13 @@ TEST_F(SpirvWriterTest, Switch_Phi_MultipleValue_0) {
     b.Append(func->Block(), [&] {
         auto* s = b.Switch(42_i);
         s->SetResults(b.InstructionResult(ty.i32()), b.InstructionResult(ty.bool_()));
-        auto* case_a = b.Case(s, Vector{ir::Switch::CaseSelector{b.Constant(1_i)},
-                                        ir::Switch::CaseSelector{nullptr}});
+        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
+                                        core::ir::Switch::CaseSelector{nullptr}});
         b.Append(case_a, [&] {  //
             b.ExitSwitch(s, 10_i, true);
         });
 
-        auto* case_b = b.Case(s, Vector{ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(s, 20_i, false);
         });
@@ -338,13 +340,13 @@ TEST_F(SpirvWriterTest, Switch_Phi_MultipleValue_1) {
     b.Append(func->Block(), [&] {
         auto* s = b.Switch(b.Constant(42_i));
         s->SetResults(b.InstructionResult(ty.i32()), b.InstructionResult(ty.bool_()));
-        auto* case_a = b.Case(s, Vector{ir::Switch::CaseSelector{b.Constant(1_i)},
-                                        ir::Switch::CaseSelector{nullptr}});
+        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
+                                        core::ir::Switch::CaseSelector{nullptr}});
         b.Append(case_a, [&] {  //
             b.ExitSwitch(s, 10_i, true);
         });
 
-        auto* case_b = b.Case(s, Vector{ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(s, 20_i, false);
         });

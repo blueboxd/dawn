@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/array.h"
 #include "src/tint/lang/wgsl/ast/module.h"
 #include "src/tint/lang/wgsl/ast/transform/helper_test.h"
@@ -26,6 +27,8 @@
 #include "src/tint/lang/wgsl/sem/struct.h"
 #include "src/tint/lang/wgsl/sem/variable.h"
 #include "src/tint/utils/text/string.h"
+
+using namespace tint::core::fluent_types;  // NOLINT
 
 namespace tint::ast::transform {
 namespace {
@@ -4329,7 +4332,7 @@ fn main() {
         // The first member should have an alignment of 16 bytes, a size of 12 bytes, and the second
         // member should have an offset of 12 bytes.
         auto* sem_str = got.program.Sem().Get(vars[0]);
-        auto* str_ty = sem_str->Type()->UnwrapRef()->As<type::Struct>();
+        auto* str_ty = sem_str->Type()->UnwrapRef()->As<core::type::Struct>();
         ASSERT_NE(str_ty, nullptr);
         ASSERT_EQ(str_ty->Members().Length(), 2u);
         EXPECT_EQ(str_ty->Members()[0]->Align(), 16u);
@@ -4341,7 +4344,7 @@ fn main() {
         // Check the layout of the array type of "arr".
         // The element stride should be 16 bytes.
         auto* sem_arr = got.program.Sem().Get(vars[1]);
-        auto* arr_ty = sem_arr->Type()->UnwrapRef()->As<type::Array>();
+        auto* arr_ty = sem_arr->Type()->UnwrapRef()->As<core::type::Array>();
         ASSERT_NE(arr_ty, nullptr);
         EXPECT_EQ(arr_ty->Stride(), 16u);
     }

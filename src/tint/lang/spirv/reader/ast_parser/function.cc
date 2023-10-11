@@ -18,6 +18,7 @@
 #include <array>
 
 #include "src/tint/lang/core/builtin_value.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/function.h"
 #include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
@@ -141,9 +142,10 @@
 //           constructs
 //
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 
 namespace {
 
@@ -3999,8 +4001,8 @@ TypedExpression FunctionEmitter::EmitGlslStd450ExtInst(const spvtools::opt::Inst
 
             case GLSLstd450Normalize:
                 // WGSL does not have scalar form of the normalize builtin.
-                // The answer would be 1 anyway, so return that directly.
-                return {ty_.F32(), builder_.Expr(1_f)};
+                // In this case we map normalize(x) to sign(x).
+                return {ty_.F32(), builder_.Call("sign", MakeOperand(inst, 2).expr)};
 
             case GLSLstd450FaceForward: {
                 // If dot(Nref, Incident) < 0, the result is Normal, otherwise -Normal.
@@ -5299,11 +5301,19 @@ bool FunctionEmitter::EmitControlBarrier(const spvtools::opt::Instruction& inst)
         semantics &= ~static_cast<uint32_t>(spv::MemorySemanticsMask::WorkgroupMemory);
     }
     if (semantics & uint32_t(spv::MemorySemanticsMask::UniformMemory)) {
-        if (memory != uint32_t(spv::Scope::Device)) {
-            return Fail() << "storageBarrier requires device memory scope";
+        if (memory != uint32_t(spv::Scope::Workgroup)) {
+            return Fail() << "storageBarrier requires workgroup memory scope";
         }
         AddStatement(builder_.CallStmt(builder_.Call("storageBarrier")));
         semantics &= ~static_cast<uint32_t>(spv::MemorySemanticsMask::UniformMemory);
+    }
+    if (semantics & uint32_t(spv::MemorySemanticsMask::ImageMemory)) {
+        if (memory != uint32_t(spv::Scope::Workgroup)) {
+            return Fail() << "textureBarrier requires workgroup memory scope";
+        }
+        parser_impl_.Enable(core::Extension::kChromiumExperimentalReadWriteStorageTexture);
+        AddStatement(builder_.CallStmt(builder_.Call("textureBarrier")));
+        semantics &= ~static_cast<uint32_t>(spv::MemorySemanticsMask::ImageMemory);
     }
     if (semantics) {
         return Fail() << "unsupported control barrier semantics: " << semantics;
@@ -5631,9 +5641,10 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
         image_operands_mask ^= uint32_t(spv::ImageOperandsMask::Lod);
         arg_index++;
     } else if ((op == spv::Op::OpImageFetch || op == spv::Op::OpImageRead) &&
-               !texture_type->IsAnyOf<DepthMultisampledTexture, MultisampledTexture>()) {
-        // textureLoad requires an explicit level-of-detail parameter for
-        // non-multisampled texture types.
+               !texture_type
+                    ->IsAnyOf<DepthMultisampledTexture, MultisampledTexture, StorageTexture>()) {
+        // textureLoad requires an explicit level-of-detail parameter for non-multisampled and
+        // non-storage texture types.
         args.Push(parser_impl_.MakeNullValue(ty_.I32()));
     }
     if (arg_index + 1 < num_args &&
@@ -5662,9 +5673,9 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
                           << inst.PrettyPrint();
         }
         switch (texture_type->dims) {
-            case type::TextureDimension::k2d:
-            case type::TextureDimension::k2dArray:
-            case type::TextureDimension::k3d:
+            case core::type::TextureDimension::k2d:
+            case core::type::TextureDimension::k2dArray:
+            case core::type::TextureDimension::k3d:
                 break;
             default:
                 return Fail() << "ConstOffset is only permitted for 2D, 2D Arrayed, "
@@ -5787,14 +5798,14 @@ bool FunctionEmitter::EmitImageQuery(const spvtools::opt::Instruction& inst) {
             const ast::Expression* dims_call =
                 builder_.Call("textureDimensions", std::move(dims_args));
             auto dims = texture_type->dims;
-            if ((dims == type::TextureDimension::kCube) ||
-                (dims == type::TextureDimension::kCubeArray)) {
+            if ((dims == core::type::TextureDimension::kCube) ||
+                (dims == core::type::TextureDimension::kCubeArray)) {
                 // textureDimension returns a 3-element vector but SPIR-V expects 2.
                 dims_call =
                     create<ast::MemberAccessorExpression>(Source{}, dims_call, PrefixSwizzle(2));
             }
             exprs.Push(dims_call);
-            if (type::IsTextureArray(dims)) {
+            if (core::type::IsTextureArray(dims)) {
                 auto num_layers = builder_.Call("textureNumLayers", GetImageExpression(inst));
                 exprs.Push(num_layers);
             }
@@ -5979,10 +5990,10 @@ FunctionEmitter::ExpressionList FunctionEmitter::MakeCoordinateOperandsForImageA
     if (!texture_type) {
         return {};
     }
-    type::TextureDimension dim = texture_type->dims;
+    core::type::TextureDimension dim = texture_type->dims;
     // Number of regular coordinates.
-    uint32_t num_axes = static_cast<uint32_t>(type::NumCoordinateAxes(dim));
-    bool is_arrayed = type::IsTextureArray(dim);
+    uint32_t num_axes = static_cast<uint32_t>(core::type::NumCoordinateAxes(dim));
+    bool is_arrayed = core::type::IsTextureArray(dim);
     if ((num_axes == 0) || (num_axes > 3)) {
         Fail() << "unsupported image dimensionality for " << texture_type->TypeInfo().name
                << " prompted by " << inst.PrettyPrint();
@@ -6423,9 +6434,9 @@ bool FunctionEmitter::IsFloatOne(uint32_t value_id) {
 FunctionEmitter::FunctionDeclaration::FunctionDeclaration() = default;
 FunctionEmitter::FunctionDeclaration::~FunctionDeclaration() = default;
 
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser
 
-TINT_INSTANTIATE_TYPEINFO(tint::spirv::reader::StatementBuilder);
-TINT_INSTANTIATE_TYPEINFO(tint::spirv::reader::SwitchStatementBuilder);
-TINT_INSTANTIATE_TYPEINFO(tint::spirv::reader::IfStatementBuilder);
-TINT_INSTANTIATE_TYPEINFO(tint::spirv::reader::LoopStatementBuilder);
+TINT_INSTANTIATE_TYPEINFO(tint::spirv::reader::ast_parser::StatementBuilder);
+TINT_INSTANTIATE_TYPEINFO(tint::spirv::reader::ast_parser::SwitchStatementBuilder);
+TINT_INSTANTIATE_TYPEINFO(tint::spirv::reader::ast_parser::IfStatementBuilder);
+TINT_INSTANTIATE_TYPEINFO(tint::spirv::reader::ast_parser::LoopStatementBuilder);

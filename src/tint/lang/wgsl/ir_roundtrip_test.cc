@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_wgsl_reader && tint_build_wgsl_writer && tint_build_ir)
+
 #include "src/tint/lang/wgsl/helpers/ir_program_test.h"
 #include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 #include "src/tint/lang/wgsl/reader/reader.h"
@@ -19,14 +21,10 @@
 #include "src/tint/lang/wgsl/writer/writer.h"
 #include "src/tint/utils/text/string.h"
 
-#if !TINT_BUILD_WGSL_READER || !TINT_BUILD_WGSL_WRITER
-#error "ir_roundtrip_test.cc requires both the WGSL reader and writer to be enabled"
-#endif
-
 namespace tint::wgsl {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 class IRToProgramRoundtripTest : public helpers::IRProgramTest {
   public:
@@ -39,7 +37,7 @@ class IRToProgramRoundtripTest : public helpers::IRProgramTest {
         auto ir_module = wgsl::reader::ProgramToIR(&input_program);
         ASSERT_TRUE(ir_module) << (ir_module ? "" : ir_module.Failure());
 
-        tint::ir::Disassembler d{ir_module.Get()};
+        tint::core::ir::Disassembler d{ir_module.Get()};
         auto disassembly = d.Disassemble();
 
         auto output_program = wgsl::writer::IRToProgram(ir_module.Get());

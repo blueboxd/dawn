@@ -17,10 +17,10 @@
 #include "gmock/gmock.h"
 #include "src/tint/lang/core/ir/ir_helper_test.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using IR_ExitSwitchTest = IRTestHelper;
 
 TEST_F(IR_ExitSwitchTest, Usage) {
@@ -54,4 +54,4 @@ TEST_F(IR_ExitSwitchTest, Destroy) {
 }
 
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

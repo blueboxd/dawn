@@ -23,7 +23,6 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_Undefined:
         case WGPUFeatureName_Force32:
         case WGPUFeatureName_DawnNative:
-        case WGPUFeatureName_DawnShaderFloat16:  // Deprecated
         case WGPUFeatureName_ImplicitDeviceSynchronization:
         case WGPUFeatureName_SurfaceCapabilities:
         case WGPUFeatureName_D3D11MultithreadProtected:
@@ -53,6 +52,8 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_DepthClipControl:
         case WGPUFeatureName_DawnInternalUsages:
         case WGPUFeatureName_DawnMultiPlanarFormats:
+        case WGPUFeatureName_MultiPlanarFormatExtendedUsages:
+        case WGPUFeatureName_MultiPlanarFormatP010:
         case WGPUFeatureName_ChromiumExperimentalDp4a:
         case WGPUFeatureName_ShaderF16:
         case WGPUFeatureName_RG11B10UfloatRenderable:
@@ -62,6 +63,12 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_MSAARenderToSingleSampled:
         case WGPUFeatureName_DualSourceBlending:
         case WGPUFeatureName_ANGLETextureSharing:
+        case WGPUFeatureName_ChromiumExperimentalSubgroups:
+        case WGPUFeatureName_ChromiumExperimentalSubgroupUniformControlFlow:
+        case WGPUFeatureName_ChromiumExperimentalReadWriteStorageTexture:
+        case WGPUFeatureName_PixelLocalStorageCoherent:
+        case WGPUFeatureName_PixelLocalStorageNonCoherent:
+        case WGPUFeatureName_Norm16TextureFormats:
             return true;
     }
 

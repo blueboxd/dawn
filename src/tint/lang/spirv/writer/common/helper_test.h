@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_ir)
+
 #ifndef SRC_TINT_LANG_SPIRV_WRITER_COMMON_HELPER_TEST_H_
 #define SRC_TINT_LANG_SPIRV_WRITER_COMMON_HELPER_TEST_H_
 
@@ -30,13 +32,13 @@
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
-#include "src/tint/lang/spirv/writer/common/spv_dump.h"
+#include "src/tint/lang/spirv/writer/common/spv_dump_test.h"
 #include "src/tint/lang/spirv/writer/printer/printer.h"
 #include "src/tint/lang/spirv/writer/raise/raise.h"
 
 namespace tint::spirv::writer {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 // Helper macro to check whether the SPIR-V output contains an instruction, dumping the full output
 // if the instruction was not present.
@@ -79,11 +81,11 @@ class SpirvWriterTestHelperBase : public BASE {
     SpirvWriterTestHelperBase() : writer_(&mod, false) {}
 
     /// The test module.
-    ir::Module mod;
+    core::ir::Module mod;
     /// The test builder.
-    ir::Builder b{mod};
+    core::ir::Builder b{mod};
     /// The type manager.
-    type::Manager& ty{mod.Types()};
+    core::type::Manager& ty{mod.Types()};
 
   protected:
     /// The SPIR-V writer.
@@ -102,7 +104,7 @@ class SpirvWriterTestHelperBase : public BASE {
     /// @param writer the writer to use for SPIR-V generation
     /// @returns true if generation and validation succeeded
     bool Generate(Printer& writer) {
-        auto raised = raise::Raise(&mod);
+        auto raised = raise::Raise(&mod, {});
         if (!raised) {
             err_ = raised.Failure();
             return false;
@@ -170,7 +172,7 @@ class SpirvWriterTestHelperBase : public BASE {
     /// Helper to make a scalar type corresponding to the element type `type`.
     /// @param type the element type
     /// @returns the scalar type
-    const type::Type* MakeScalarType(TestElementType type) {
+    const core::type::Type* MakeScalarType(TestElementType type) {
         switch (type) {
             case kBool:
                 return ty.bool_();
@@ -189,24 +191,26 @@ class SpirvWriterTestHelperBase : public BASE {
     /// Helper to make a vector type corresponding to the element type `type`.
     /// @param type the element type
     /// @returns the vector type
-    const type::Type* MakeVectorType(TestElementType type) { return ty.vec2(MakeScalarType(type)); }
+    const core::type::Type* MakeVectorType(TestElementType type) {
+        return ty.vec2(MakeScalarType(type));
+    }
 
     /// Helper to make a scalar value with the scalar type `type`.
     /// @param type the element type
     /// @param value the optional value to use
     /// @returns the scalar value
-    ir::Constant* MakeScalarValue(TestElementType type, uint32_t value = 1) {
+    core::ir::Constant* MakeScalarValue(TestElementType type, uint32_t value = 1) {
         switch (type) {
             case kBool:
                 return b.Constant(true);
             case kI32:
-                return b.Constant(i32(value));
+                return b.Constant(core::i32(value));
             case kU32:
-                return b.Constant(u32(value));
+                return b.Constant(core::u32(value));
             case kF32:
-                return b.Constant(f32(value));
+                return b.Constant(core::f32(value));
             case kF16:
-                return b.Constant(f16(value));
+                return b.Constant(core::f16(value));
         }
         return nullptr;
     }
@@ -214,7 +218,7 @@ class SpirvWriterTestHelperBase : public BASE {
     /// Helper to make a vector value with an element type of `type`.
     /// @param type the element type
     /// @returns the vector value
-    ir::Constant* MakeVectorValue(TestElementType type) {
+    core::ir::Constant* MakeVectorValue(TestElementType type) {
         switch (type) {
             case kBool:
                 return b.Composite(MakeVectorType(type), true, false);

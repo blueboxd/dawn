@@ -14,11 +14,11 @@
 
 #include "src/tint/lang/core/constant/eval_test.h"
 
-namespace tint::constant::test {
+namespace tint::core::constant::test {
 namespace {
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 struct Case {
     Value input;
@@ -191,4 +191,4 @@ INSTANTIATE_TEST_SUITE_P(Bitcast,
                          }));
 
 }  // namespace
-}  // namespace tint::constant::test
+}  // namespace tint::core::constant::test

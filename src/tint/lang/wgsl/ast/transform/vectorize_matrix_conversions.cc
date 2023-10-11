@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/abstract_numeric.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
@@ -28,10 +29,11 @@
 #include "src/tint/utils/containers/map.h"
 #include "src/tint/utils/math/hash.h"
 
+using namespace tint::core::fluent_types;  // NOLINT
+
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::VectorizeMatrixConversions);
 
 namespace tint::ast::transform {
-
 namespace {
 
 bool ShouldRun(const Program* program) {
@@ -39,7 +41,7 @@ bool ShouldRun(const Program* program) {
         if (auto* sem = program->Sem().GetVal(node)) {
             if (auto* call = sem->UnwrapMaterialize()->As<sem::Call>()) {
                 if (call->Target()->Is<sem::ValueConversion>() &&
-                    call->Type()->Is<type::Matrix>()) {
+                    call->Type()->Is<core::type::Matrix>()) {
                     auto& args = call->Arguments();
                     if (args.Length() == 1 && args[0]->Type()->UnwrapRef()->is_float_matrix()) {
                         return true;
@@ -68,7 +70,7 @@ Transform::ApplyResult VectorizeMatrixConversions::Apply(const Program* src,
     program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
 
     using HelperFunctionKey =
-        tint::UnorderedKeyWrapper<std::tuple<const type::Matrix*, const type::Matrix*>>;
+        tint::UnorderedKeyWrapper<std::tuple<const core::type::Matrix*, const core::type::Matrix*>>;
 
     std::unordered_map<HelperFunctionKey, Symbol> matrix_convs;
 
@@ -78,7 +80,7 @@ Transform::ApplyResult VectorizeMatrixConversions::Apply(const Program* src,
         if (!ty_conv) {
             return nullptr;
         }
-        auto* dst_type = call->Type()->As<type::Matrix>();
+        auto* dst_type = call->Type()->As<core::type::Matrix>();
         if (!dst_type) {
             return nullptr;
         }
@@ -90,7 +92,7 @@ Transform::ApplyResult VectorizeMatrixConversions::Apply(const Program* src,
 
         auto& matrix = args[0];
 
-        auto* src_type = matrix->Type()->UnwrapRef()->As<type::Matrix>();
+        auto* src_type = matrix->Type()->UnwrapRef()->As<core::type::Matrix>();
         if (!src_type) {
             return nullptr;
         }
@@ -106,7 +108,7 @@ Transform::ApplyResult VectorizeMatrixConversions::Apply(const Program* src,
             tint::Vector<const Expression*, 4> columns;
             for (uint32_t c = 0; c < dst_type->columns(); c++) {
                 auto* src_matrix_expr = src_expression_builder();
-                auto* src_column_expr = b.IndexAccessor(src_matrix_expr, b.Expr(tint::AInt(c)));
+                auto* src_column_expr = b.IndexAccessor(src_matrix_expr, b.Expr(AInt(c)));
                 columns.Push(
                     b.Call(CreateASTTypeFor(ctx, dst_type->ColumnType()), src_column_expr));
             }

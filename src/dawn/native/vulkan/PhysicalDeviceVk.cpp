@@ -216,6 +216,10 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::IndirectFirstInstance);
     }
 
+    if (mDeviceInfo.features.dualSrcBlend == VK_TRUE) {
+        EnableFeature(Feature::DualSourceBlending);
+    }
+
     if (mDeviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
         mDeviceInfo.HasExt(DeviceExt::_16BitStorage) &&
         mDeviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
@@ -256,6 +260,23 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::BGRA8UnormStorage);
     }
 
+    bool norm16TextureFormatsSupported = true;
+    for (const auto& norm16Format :
+         {VK_FORMAT_R16_UNORM, VK_FORMAT_R16G16_UNORM, VK_FORMAT_R16G16B16A16_UNORM,
+          VK_FORMAT_R16_SNORM, VK_FORMAT_R16G16_SNORM, VK_FORMAT_R16G16B16A16_SNORM}) {
+        VkFormatProperties norm16Properties;
+        mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+            mVkPhysicalDevice, norm16Format, &norm16Properties);
+        norm16TextureFormatsSupported &= IsSubset(
+            static_cast<VkFormatFeatureFlags>(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                                              VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                                              VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT),
+            norm16Properties.optimalTilingFeatures);
+    }
+    if (norm16TextureFormatsSupported) {
+        EnableFeature(Feature::Norm16TextureFormats);
+    }
+
     // 32 bit float channel formats.
     VkFormatProperties r32Properties;
     VkFormatProperties rg32Properties;
@@ -274,14 +295,55 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::Float32Filterable);
     }
 
-#if DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
-    // TODO(chromium:1258986): Precisely enable the feature by querying the device's format
-    // features.
-    EnableFeature(Feature::MultiPlanarFormats);
-#endif  // DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
+    // Multiplanar formats.
+    constexpr VkFormat multiplanarFormats[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+    };
+
+    bool allMultiplanarFormatsSupported = true;
+    for (const auto multiplanarFormat : multiplanarFormats) {
+        VkFormatProperties multiplanarProps;
+        mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+            mVkPhysicalDevice, multiplanarFormat, &multiplanarProps);
+
+        if (!IsSubset(static_cast<VkFormatFeatureFlagBits>(
+                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+                          VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT),
+                      multiplanarProps.optimalTilingFeatures)) {
+            allMultiplanarFormatsSupported = false;
+        }
+    }
+
+    if (allMultiplanarFormatsSupported) {
+        EnableFeature(Feature::DawnMultiPlanarFormats);
+        EnableFeature(Feature::MultiPlanarFormatExtendedUsages);
+    }
 
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::TransientAttachments);
+
+    // Enable ChromiumExperimentalSubgroups feature if:
+    // 1. Vulkan API version is 1.1 or later, and
+    // 2. subgroupSupportedStages includes compute stage bit, and
+    // 3. subgroupSupportedOperations includes basic and ballot bits, and
+    // 4. VK_EXT_subgroup_size_control extension is valid, and both subgroupSizeControl
+    //    and computeFullSubgroups is TRUE in VkPhysicalDeviceSubgroupSizeControlFeaturesEXT.
+    if ((mDeviceInfo.properties.apiVersion >= VK_API_VERSION_1_1) &&
+        (mDeviceInfo.subgroupProperties.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT) &&
+        (mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) &&
+        (mDeviceInfo.subgroupSizeControlFeatures.subgroupSizeControl == VK_TRUE) &&
+        (mDeviceInfo.subgroupSizeControlFeatures.computeFullSubgroups == VK_TRUE)) {
+        EnableFeature(Feature::ChromiumExperimentalSubgroups);
+    }
+    // Enable ChromiumExperimentalSubgroupUniformControlFlow if
+    // VK_KHR_shader_subgroup_uniform_control_flow is supported.
+    if (mDeviceInfo.HasExt(DeviceExt::ShaderSubgroupUniformControlFlow) &&
+        (mDeviceInfo.shaderSubgroupUniformControlFlowFeatures.shaderSubgroupUniformControlFlow ==
+         VK_TRUE)) {
+        EnableFeature(Feature::ChromiumExperimentalSubgroupUniformControlFlow);
+    }
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {

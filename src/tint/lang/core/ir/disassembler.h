@@ -30,11 +30,11 @@
 #include "src/tint/utils/text/string_stream.h"
 
 // Forward declarations.
-namespace tint::type {
+namespace tint::core::type {
 class Struct;
 }
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// Helper class to disassemble the IR
 class Disassembler {
@@ -140,7 +140,7 @@ class Disassembler {
     void EmitSwitch(Switch* s);
     void EmitLoop(Loop* l);
     void EmitIf(If* i);
-    void EmitStructDecl(const type::Struct* str);
+    void EmitStructDecl(const core::type::Struct* str);
     void EmitLine();
     void EmitOperand(Instruction* inst, size_t index);
     void EmitOperandList(Instruction* inst, size_t start_index = 0);
@@ -166,6 +166,6 @@ class Disassembler {
     Hashmap<Switch*, std::string, 8> switch_names_;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_DISASSEMBLER_H_

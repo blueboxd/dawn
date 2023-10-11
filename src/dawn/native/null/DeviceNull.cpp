@@ -57,7 +57,7 @@ MaybeError PhysicalDevice::InitializeImpl() {
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     // Enable all features by default for the convenience of tests.
-    for (uint32_t i = 0; i < static_cast<uint32_t>(Feature::EnumCount); i++) {
+    for (uint32_t i = 0; i < kEnumCount<Feature>; i++) {
         EnableFeature(static_cast<Feature>(i));
     }
 }
@@ -195,7 +195,7 @@ ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
 ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
-    return AcquireRef(new Texture(this, descriptor, TextureBase::TextureState::OwnedInternal));
+    return AcquireRef(new Texture(this, descriptor));
 }
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     TextureBase* texture,
@@ -217,13 +217,8 @@ void Device::DestroyImpl() {
     ASSERT(mMemoryUsage == 0);
 }
 
-MaybeError Device::WaitForIdleForDestruction() {
+void Device::ForgetPendingOperations() {
     mPendingOperations.clear();
-    return {};
-}
-
-bool Device::HasPendingCommands() const {
-    return false;
 }
 
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
@@ -272,10 +267,6 @@ MaybeError Device::TickImpl() {
     return SubmitPendingOperations();
 }
 
-ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
-    return GetLastSubmittedCommandSerial();
-}
-
 void Device::AddPendingOperation(std::unique_ptr<PendingOperation> operation) {
     mPendingOperations.emplace_back(std::move(operation));
 }
@@ -286,8 +277,8 @@ MaybeError Device::SubmitPendingOperations() {
     }
     mPendingOperations.clear();
 
-    DAWN_TRY(CheckPassedSerials());
-    IncrementLastSubmittedCommandSerial();
+    DAWN_TRY(GetQueue()->CheckPassedSerials());
+    GetQueue()->IncrementLastSubmittedCommandSerial();
 
     return {};
 }
@@ -306,7 +297,7 @@ BindGroupDataHolder::~BindGroupDataHolder() {
 // BindGroup
 
 BindGroup::BindGroup(DeviceBase* device, const BindGroupDescriptor* descriptor)
-    : BindGroupDataHolder(descriptor->layout->GetBindingDataSize()),
+    : BindGroupDataHolder(descriptor->layout->GetInternalBindGroupLayout()->GetBindingDataSize()),
       BindGroupBase(device, descriptor, mBindingDataAllocation) {}
 
 // BindGroupLayout
@@ -393,6 +384,21 @@ MaybeError Queue::WriteBufferImpl(BufferBase* buffer,
     return {};
 }
 
+ResultOrError<ExecutionSerial> Queue::CheckAndUpdateCompletedSerials() {
+    return GetLastSubmittedCommandSerial();
+}
+
+void Queue::ForceEventualFlushOfCommands() {}
+
+bool Queue::HasPendingCommands() const {
+    return false;
+}
+
+MaybeError Queue::WaitForIdleForDestruction() {
+    ToBackend(GetDevice())->ForgetPendingOperations();
+    return {};
+}
+
 // ComputePipeline
 MaybeError ComputePipeline::Initialize() {
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
@@ -469,8 +475,7 @@ MaybeError SwapChain::PresentImpl() {
 
 ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureImpl() {
     TextureDescriptor textureDesc = GetSwapChainBaseTextureDescriptor(this);
-    mTexture = AcquireRef(
-        new Texture(GetDevice(), &textureDesc, TextureBase::TextureState::OwnedInternal));
+    mTexture = AcquireRef(new Texture(GetDevice(), &textureDesc));
     return mTexture;
 }
 
@@ -504,9 +509,7 @@ bool Device::IsResolveTextureBlitWithDrawSupported() const {
     return true;
 }
 
-void Device::ForceEventualFlushOfCommands() {}
-
-Texture::Texture(DeviceBase* device, const TextureDescriptor* descriptor, TextureState state)
-    : TextureBase(device, descriptor, state) {}
+Texture::Texture(DeviceBase* device, const TextureDescriptor* descriptor)
+    : TextureBase(device, descriptor) {}
 
 }  // namespace dawn::native::null

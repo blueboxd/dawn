@@ -20,49 +20,49 @@
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::spirv::writer::raise {
 
 namespace {
 
-void Run(ir::Module* ir) {
-    ir::Builder b(*ir);
+void Run(core::ir::Module* ir) {
+    core::ir::Builder b(*ir);
 
     // Find the instructions that use implicit splats and either modify them in place or record them
     // to be replaced in a second pass.
-    Vector<ir::Binary*, 4> binary_worklist;
-    Vector<ir::CoreBuiltinCall*, 4> builtin_worklist;
+    Vector<core::ir::Binary*, 4> binary_worklist;
+    Vector<core::ir::CoreBuiltinCall*, 4> builtin_worklist;
     for (auto* inst : ir->instructions.Objects()) {
         if (!inst->Alive()) {
             continue;
         }
-        if (auto* construct = inst->As<ir::Construct>()) {
+        if (auto* construct = inst->As<core::ir::Construct>()) {
             // A vector constructor with a single scalar argument needs to be modified to replicate
             // the argument N times.
-            auto* vec = construct->Result()->Type()->As<type::Vector>();
+            auto* vec = construct->Result()->Type()->As<core::type::Vector>();
             if (vec &&  //
                 construct->Args().Length() == 1 &&
-                construct->Args()[0]->Type()->Is<type::Scalar>()) {
+                construct->Args()[0]->Type()->Is<core::type::Scalar>()) {
                 for (uint32_t i = 1; i < vec->Width(); i++) {
                     construct->AppendArg(construct->Args()[0]);
                 }
             }
-        } else if (auto* binary = inst->As<ir::Binary>()) {
+        } else if (auto* binary = inst->As<core::ir::Binary>()) {
             // A binary instruction that mixes vector and scalar operands needs to have the scalar
             // operand replaced with an explicit vector constructor.
-            if (binary->Result()->Type()->Is<type::Vector>()) {
-                if (binary->LHS()->Type()->Is<type::Scalar>() ||
-                    binary->RHS()->Type()->Is<type::Scalar>()) {
+            if (binary->Result()->Type()->Is<core::type::Vector>()) {
+                if (binary->LHS()->Type()->Is<core::type::Scalar>() ||
+                    binary->RHS()->Type()->Is<core::type::Scalar>()) {
                     binary_worklist.Push(binary);
                 }
             }
-        } else if (auto* builtin = inst->As<ir::CoreBuiltinCall>()) {
+        } else if (auto* builtin = inst->As<core::ir::CoreBuiltinCall>()) {
             // A mix builtin call that mixes vector and scalar operands needs to have the scalar
             // operand replaced with an explicit vector constructor.
             if (builtin->Func() == core::Function::kMix) {
-                if (builtin->Result()->Type()->Is<type::Vector>()) {
-                    if (builtin->Args()[2]->Type()->Is<type::Scalar>()) {
+                if (builtin->Result()->Type()->Is<core::type::Vector>()) {
+                    if (builtin->Args()[2]->Type()->Is<core::type::Scalar>()) {
                         builtin_worklist.Push(builtin);
                     }
                 }
@@ -72,10 +72,10 @@ void Run(ir::Module* ir) {
 
     // Helper to expand a scalar operand of an instruction by replacing it with an explicitly
     // constructed vector that matches the result type.
-    auto expand_operand = [&](ir::Instruction* inst, size_t operand_idx) {
-        auto* vec = inst->Result()->Type()->As<type::Vector>();
+    auto expand_operand = [&](core::ir::Instruction* inst, size_t operand_idx) {
+        auto* vec = inst->Result()->Type()->As<core::type::Vector>();
 
-        Vector<ir::Value*, 4> args;
+        Vector<core::ir::Value*, 4> args;
         args.Resize(vec->Width(), inst->Operands()[operand_idx]);
 
         auto* construct = b.Construct(vec, std::move(args));
@@ -86,10 +86,10 @@ void Run(ir::Module* ir) {
     // Replace scalar operands to binary instructions that produce vectors.
     for (auto* binary : binary_worklist) {
         auto* result_ty = binary->Result()->Type();
-        if (result_ty->is_float_vector() && binary->Kind() == ir::Binary::Kind::kMultiply) {
+        if (result_ty->is_float_vector() && binary->Kind() == core::ir::Binary::Kind::kMultiply) {
             // Use OpVectorTimesScalar for floating point multiply.
-            auto* vts = b.Call(result_ty, ir::IntrinsicCall::Kind::kSpirvVectorTimesScalar);
-            if (binary->LHS()->Type()->Is<type::Scalar>()) {
+            auto* vts = b.Call(result_ty, core::ir::IntrinsicCall::Kind::kSpirvVectorTimesScalar);
+            if (binary->LHS()->Type()->Is<core::type::Scalar>()) {
                 vts->AppendArg(binary->RHS());
                 vts->AppendArg(binary->LHS());
             } else {
@@ -104,10 +104,10 @@ void Run(ir::Module* ir) {
             binary->Destroy();
         } else {
             // Expand the scalar argument into an explicitly constructed vector.
-            if (binary->LHS()->Type()->Is<type::Scalar>()) {
-                expand_operand(binary, ir::Binary::kLhsOperandOffset);
-            } else if (binary->RHS()->Type()->Is<type::Scalar>()) {
-                expand_operand(binary, ir::Binary::kRhsOperandOffset);
+            if (binary->LHS()->Type()->Is<core::type::Scalar>()) {
+                expand_operand(binary, core::ir::Binary::kLhsOperandOffset);
+            } else if (binary->RHS()->Type()->Is<core::type::Scalar>()) {
+                expand_operand(binary, core::ir::Binary::kRhsOperandOffset);
             }
         }
     }
@@ -117,7 +117,7 @@ void Run(ir::Module* ir) {
         switch (builtin->Func()) {
             case core::Function::kMix:
                 // Expand the scalar argument into an explicitly constructed vector.
-                expand_operand(builtin, ir::CoreBuiltinCall::kArgsOperandOffset + 2);
+                expand_operand(builtin, core::ir::CoreBuiltinCall::kArgsOperandOffset + 2);
                 break;
             default:
                 TINT_UNREACHABLE() << "unhandled builtin call";
@@ -128,7 +128,7 @@ void Run(ir::Module* ir) {
 
 }  // namespace
 
-Result<SuccessType, std::string> ExpandImplicitSplats(ir::Module* ir) {
+Result<SuccessType, std::string> ExpandImplicitSplats(core::ir::Module* ir) {
     auto result = ValidateAndDumpIfNeeded(*ir, "ExpandImplicitSplats transform");
     if (!result) {
         return result;

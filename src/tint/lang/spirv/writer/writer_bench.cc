@@ -12,9 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_ir)
+
 #include <string>
 
-#include "src/tint/bench/benchmark.h"
+#include "src/tint/cmd/bench/bench.h"
+#include "src/tint/lang/spirv/writer/writer.h"
 
 namespace tint::spirv::writer {
 namespace {

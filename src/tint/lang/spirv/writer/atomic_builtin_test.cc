@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_ir)
+
 #include "src/tint/lang/core/type/builtin_structs.h"
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 #include "src/tint/lang/core/function.h"
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::spirv::writer {
 namespace {
@@ -86,7 +88,7 @@ TEST_F(SpirvWriterTest, AtomicCompareExchangeWeak) {
     func->SetParams({cmp, val});
 
     b.Append(func->Block(), [&] {
-        auto* result_ty = type::CreateAtomicCompareExchangeResult(ty, mod.symbols, ty.i32());
+        auto* result_ty = core::type::CreateAtomicCompareExchangeResult(ty, mod.symbols, ty.i32());
         auto* result = b.Call(result_ty, core::Function::kAtomicCompareExchangeWeak, var, cmp, val);
         auto* original = b.Access(ty.i32(), result, 0_u);
         b.Return(func, original);

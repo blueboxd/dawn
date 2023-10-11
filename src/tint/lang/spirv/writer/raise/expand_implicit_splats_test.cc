@@ -21,10 +21,10 @@
 namespace tint::spirv::writer::raise {
 namespace {
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
-using SpirvWriter_ExpandImplicitSplatsTest = ir::transform::TransformTest;
+using SpirvWriter_ExpandImplicitSplatsTest = core::ir::transform::TransformTest;
 
 TEST_F(SpirvWriter_ExpandImplicitSplatsTest, NoModify_Construct_VectorIdentity) {
     auto* vector = b.FunctionParam("vector", ty.vec2<i32>());

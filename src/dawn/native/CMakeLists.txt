@@ -77,6 +77,7 @@ target_sources(dawn_native PRIVATE
     "CallbackTaskManager.cpp"
     "CallbackTaskManager.h"
     "ChainUtils.h"
+    "ChainUtilsImpl.h"
     "CommandAllocator.cpp"
     "CommandAllocator.h"
     "CommandBuffer.cpp"
@@ -239,12 +240,10 @@ target_link_libraries(dawn_native
 target_include_directories(dawn_native PRIVATE ${DAWN_ABSEIL_DIR})
 
 if (DAWN_USE_X11)
-    find_package(X11 REQUIRED)
-    target_link_libraries(dawn_native PRIVATE ${X11_LIBRARIES})
     target_include_directories(dawn_native PRIVATE ${X11_INCLUDE_DIR})
     target_sources(dawn_native PRIVATE
-        "XlibXcbFunctions.cpp"
-        "XlibXcbFunctions.h"
+        "X11Functions.cpp"
+        "X11Functions.h"
     )
 endif()
 
@@ -289,6 +288,10 @@ if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
         "d3d/PlatformFunctions.h"
         "d3d/ShaderUtils.cpp"
         "d3d/ShaderUtils.h"
+        "d3d/SharedFenceD3D.cpp"
+        "d3d/SharedFenceD3D.h"
+        "d3d/SharedTextureMemoryD3D.cpp"
+        "d3d/SharedTextureMemoryD3D.h"
         "d3d/SwapChainD3D.cpp"
         "d3d/SwapChainD3D.h"
         "d3d/TextureD3D.cpp"
@@ -339,6 +342,10 @@ if (DAWN_ENABLE_D3D11)
         "d3d11/RenderPipelineD3D11.h"
         "d3d11/SamplerD3D11.cpp"
         "d3d11/SamplerD3D11.h"
+        "d3d11/SharedFenceD3D11.cpp"
+        "d3d11/SharedFenceD3D11.h"
+        "d3d11/SharedTextureMemoryD3D11.cpp"
+        "d3d11/SharedTextureMemoryD3D11.h"
         "d3d11/ShaderModuleD3D11.cpp"
         "d3d11/ShaderModuleD3D11.h"
         "d3d11/SwapChainD3D11.cpp"
@@ -417,6 +424,10 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/ShaderVisibleDescriptorAllocatorD3D12.h"
         "d3d12/StagingDescriptorAllocatorD3D12.cpp"
         "d3d12/StagingDescriptorAllocatorD3D12.h"
+        "d3d12/SharedFenceD3D12.cpp"
+        "d3d12/SharedFenceD3D12.h"
+        "d3d12/SharedTextureMemoryD3D12.cpp"
+        "d3d12/SharedTextureMemoryD3D12.h"
         "d3d12/StreamImplD3D12.cpp"
         "d3d12/SwapChainD3D12.cpp"
         "d3d12/SwapChainD3D12.h"
@@ -464,6 +475,10 @@ if (DAWN_ENABLE_METAL)
         "metal/SamplerMTL.mm"
         "metal/ShaderModuleMTL.h"
         "metal/ShaderModuleMTL.mm"
+        "metal/SharedFenceMTL.h"
+        "metal/SharedFenceMTL.mm"
+        "metal/SharedTextureMemoryMTL.h"
+        "metal/SharedTextureMemoryMTL.mm"
         "metal/SwapChainMTL.h"
         "metal/SwapChainMTL.mm"
         "metal/TextureMTL.h"
@@ -501,7 +516,7 @@ if (DAWN_ENABLE_OPENGL)
         SCRIPT "${Dawn_SOURCE_DIR}/generator/opengl_loader_generator.py"
         PRINT_NAME "OpenGL function loader"
         ARGS "--gl-xml"
-             "${Dawn_SOURCE_DIR}/third_party/khronos/gl.xml"
+             "${Dawn_SOURCE_DIR}/third_party/khronos/OpenGL-Registry/xml/gl.xml"
              "--supported-extensions"
              "${Dawn_SOURCE_DIR}/src/dawn/native/opengl/supported_extensions.json"
         RESULT_VARIABLE "DAWN_NATIVE_OPENGL_AUTOGEN_SOURCES"

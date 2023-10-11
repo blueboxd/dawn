@@ -23,6 +23,7 @@
 
 #include "src/tint/lang/core/constant/splat.h"
 #include "src/tint/lang/core/constant/value.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/array.h"
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/core/type/bool.h"
@@ -59,6 +60,7 @@
 #include "src/tint/lang/wgsl/ast/transform/expand_compound_assignment.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
 #include "src/tint/lang/wgsl/ast/transform/module_scope_var_to_entry_point_param.h"
+#include "src/tint/lang/wgsl/ast/transform/msl_subgroup_ballot.h"
 #include "src/tint/lang/wgsl/ast/transform/multiplanar_external_texture.h"
 #include "src/tint/lang/wgsl/ast/transform/packed_vec3.h"
 #include "src/tint/lang/wgsl/ast/transform/preserve_padding.h"
@@ -87,6 +89,8 @@
 #include "src/tint/utils/rtti/switch.h"
 #include "src/tint/utils/text/string_stream.h"
 
+using namespace tint::core::fluent_types;  // NOLINT
+
 namespace tint::msl::writer {
 namespace {
 
@@ -98,14 +102,14 @@ class ScopedBitCast {
   public:
     ScopedBitCast(ASTPrinter* generator,
                   StringStream& stream,
-                  const type::Type* curr_type,
-                  const type::Type* target_type)
+                  const core::type::Type* curr_type,
+                  const core::type::Type* target_type)
         : s(stream) {
-        auto* target_vec_type = target_type->As<type::Vector>();
+        auto* target_vec_type = target_type->As<core::type::Vector>();
 
         // If we need to promote from scalar to vector, bitcast the scalar to the
         // vector element type.
-        if (curr_type->Is<type::Scalar>() && target_vec_type) {
+        if (curr_type->Is<core::type::Scalar>() && target_vec_type) {
             target_type = target_vec_type->type();
         }
 
@@ -205,6 +209,9 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     manager.Add<ast::transform::RemovePhonies>();
     manager.Add<ast::transform::SimplifyPointers>();
 
+    // MslSubgroupBallot() must come after CanonicalizeEntryPointIO.
+    manager.Add<ast::transform::MslSubgroupBallot>();
+
     // ArrayLengthFromUniform must come after SimplifyPointers, as
     // it assumes that the form of the array length argument is &var.array.
     manager.Add<ast::transform::ArrayLengthFromUniform>();
@@ -243,9 +250,12 @@ bool ASTPrinter::Generate() {
                 core::Extension::kChromiumDisableUniformityAnalysis,
                 core::Extension::kChromiumExperimentalFullPtrParameters,
                 core::Extension::kChromiumExperimentalPushConstant,
+                core::Extension::kChromiumExperimentalReadWriteStorageTexture,
+                core::Extension::kChromiumExperimentalSubgroups,
                 core::Extension::kChromiumInternalRelaxedUniformLayout,
                 core::Extension::kF16,
                 core::Extension::kChromiumInternalDualSourceBlending,
+                core::Extension::kChromiumExperimentalDp4A,
             })) {
         return false;
     }
@@ -325,8 +335,8 @@ bool ASTPrinter::Generate() {
     return true;
 }
 
-bool ASTPrinter::EmitTypeDecl(const type::Type* ty) {
-    if (auto* str = ty->As<type::Struct>()) {
+bool ASTPrinter::EmitTypeDecl(const core::type::Type* ty) {
+    if (auto* str = ty->As<core::type::Struct>()) {
         if (!EmitStructType(current_buffer_, str)) {
             return false;
         }
@@ -465,20 +475,22 @@ bool ASTPrinter::EmitBinary(StringStream& out, const ast::BinaryExpression* expr
         return true;
     };
 
-    auto signed_type_of = [&](const type::Type* ty) -> const type::Type* {
+    auto signed_type_of = [&](const core::type::Type* ty) -> const core::type::Type* {
         if (ty->is_integer_scalar()) {
-            return builder_.create<type::I32>();
-        } else if (auto* v = ty->As<type::Vector>()) {
-            return builder_.create<type::Vector>(builder_.create<type::I32>(), v->Width());
+            return builder_.create<core::type::I32>();
+        } else if (auto* v = ty->As<core::type::Vector>()) {
+            return builder_.create<core::type::Vector>(builder_.create<core::type::I32>(),
+                                                       v->Width());
         }
         return {};
     };
 
-    auto unsigned_type_of = [&](const type::Type* ty) -> const type::Type* {
+    auto unsigned_type_of = [&](const core::type::Type* ty) -> const core::type::Type* {
         if (ty->is_integer_scalar()) {
-            return builder_.create<type::U32>();
-        } else if (auto* v = ty->As<type::Vector>()) {
-            return builder_.create<type::Vector>(builder_.create<type::U32>(), v->Width());
+            return builder_.create<core::type::U32>();
+        } else if (auto* v = ty->As<core::type::Vector>()) {
+            return builder_.create<core::type::Vector>(builder_.create<core::type::U32>(),
+                                                       v->Width());
         }
         return {};
     };
@@ -506,9 +518,9 @@ bool ASTPrinter::EmitBinary(StringStream& out, const ast::BinaryExpression* expr
         rhs_type->is_signed_integer_scalar_or_vector()) {
         // If lhs or rhs is a vector, use that type (support implicit scalar to
         // vector promotion)
-        auto* target_type = lhs_type->Is<type::Vector>()
+        auto* target_type = lhs_type->Is<core::type::Vector>()
                                 ? lhs_type
-                                : (rhs_type->Is<type::Vector>() ? rhs_type : lhs_type);
+                                : (rhs_type->Is<core::type::Vector>() ? rhs_type : lhs_type);
 
         // WGSL defines behaviour for signed overflow, MSL does not. For these
         // cases, bitcast operands to unsigned, then cast result to signed.
@@ -557,7 +569,7 @@ bool ASTPrinter::EmitBinary(StringStream& out, const ast::BinaryExpression* expr
     }
 
     // Handle '&' and '|' of booleans.
-    if ((expr->IsAnd() || expr->IsOr()) && lhs_type->Is<type::Bool>()) {
+    if ((expr->IsAnd() || expr->IsOr()) && lhs_type->Is<core::type::Bool>()) {
         out << "bool";
         ScopedParen sp(out);
         if (!EmitExpression(out, expr->lhs)) {
@@ -619,6 +631,12 @@ bool ASTPrinter::EmitCall(StringStream& out, const ast::CallExpression* expr) {
 bool ASTPrinter::EmitFunctionCall(StringStream& out,
                                   const sem::Call* call,
                                   const sem::Function* fn) {
+    if (ast::GetAttribute<ast::transform::MslSubgroupBallot::SimdActiveThreadsMask>(
+            fn->Declaration()->attributes) != nullptr) {
+        out << "as_type<uint2>((ulong)simd_active_threads_mask())";
+        return true;
+    }
+
     out << fn->Declaration()->name->symbol.Name() << "(";
 
     bool first = true;
@@ -661,6 +679,10 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
             return EmitDegreesCall(out, expr, builtin);
         case core::Function::kRadians:
             return EmitRadiansCall(out, expr, builtin);
+        case core::Function::kDot4I8Packed:
+            return EmitDot4I8PackedCall(out, expr, builtin);
+        case core::Function::kDot4U8Packed:
+            return EmitDot4U8PackedCall(out, expr, builtin);
 
         case core::Function::kPack2X16Float:
         case core::Function::kUnpack2X16Float: {
@@ -677,7 +699,7 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
         }
         case core::Function::kQuantizeToF16: {
             std::string width = "";
-            if (auto* vec = builtin->ReturnType()->As<type::Vector>()) {
+            if (auto* vec = builtin->ReturnType()->As<core::type::Vector>()) {
                 width = std::to_string(vec->Width());
             }
             out << "float" << width << "(half" << width << "(";
@@ -697,10 +719,14 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
             out << "threadgroup_barrier(mem_flags::mem_threadgroup)";
             return true;
         }
+        case core::Function::kTextureBarrier: {
+            out << "threadgroup_barrier(mem_flags::mem_texture)";
+            return true;
+        }
 
         case core::Function::kLength: {
             auto* sem = builder_.Sem().GetVal(expr->args[0]);
-            if (sem->Type()->UnwrapRef()->Is<type::Scalar>()) {
+            if (sem->Type()->UnwrapRef()->Is<core::type::Scalar>()) {
                 // Emulate scalar overload using fabs(x).
                 name = "fabs";
             }
@@ -709,7 +735,7 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
 
         case core::Function::kDistance: {
             auto* sem = builder_.Sem().GetVal(expr->args[0]);
-            if (sem->Type()->UnwrapRef()->Is<type::Scalar>()) {
+            if (sem->Type()->UnwrapRef()->Is<core::type::Scalar>()) {
                 // Emulate scalar overload using fabs(x - y);
                 out << "fabs";
                 ScopedParen sp(out);
@@ -777,7 +803,7 @@ bool ASTPrinter::EmitTypeInitializer(StringStream& out,
 
     bool ok = Switch(
         type,
-        [&](const type::Array*) {
+        [&](const core::type::Array*) {
             if (!EmitType(out, type)) {
                 return false;
             }
@@ -785,7 +811,7 @@ bool ASTPrinter::EmitTypeInitializer(StringStream& out,
             terminator = "}";
             return true;
         },
-        [&](const type::Struct*) {
+        [&](const core::type::Struct*) {
             out << "{";
             terminator = "}";
             return true;
@@ -807,7 +833,7 @@ bool ASTPrinter::EmitTypeInitializer(StringStream& out,
             out << ", ";
         }
 
-        if (auto* struct_ty = type->As<type::Struct>()) {
+        if (auto* struct_ty = type->As<core::type::Struct>()) {
             // Emit field designators for structures to account for padding members.
             auto name = struct_ty->Members()[i]->Name().Name();
             out << "." << name << "=";
@@ -878,13 +904,14 @@ bool ASTPrinter::EmitAtomicCall(StringStream& out,
             return call("atomic_exchange_explicit", true);
 
         case core::Function::kAtomicCompareExchangeWeak: {
-            auto* ptr_ty = TypeOf(expr->args[0])->UnwrapRef()->As<type::Pointer>();
+            auto* ptr_ty = TypeOf(expr->args[0])->UnwrapRef()->As<core::type::Pointer>();
             auto sc = ptr_ty->AddressSpace();
-            auto* str = builtin->ReturnType()->As<type::Struct>();
+            auto* str = builtin->ReturnType()->As<core::type::Struct>();
 
             auto func = tint::GetOrCreate(
                 atomicCompareExchangeWeak_, ACEWKeyType{{sc, str}}, [&]() -> std::string {
-                    if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
+                    if (!EmitStructType(&helpers_,
+                                        builtin->ReturnType()->As<core::type::Struct>())) {
                         return "";
                     }
 
@@ -895,7 +922,7 @@ bool ASTPrinter::EmitAtomicCall(StringStream& out,
 
                     {
                         auto f = Line(&buf);
-                        auto str_name = StructName(builtin->ReturnType()->As<type::Struct>());
+                        auto str_name = StructName(builtin->ReturnType()->As<core::type::Struct>());
                         f << str_name << " " << name << "(";
                         if (!EmitTypeAndName(f, atomic_ty, "atomic")) {
                             return "";
@@ -950,7 +977,7 @@ bool ASTPrinter::EmitAtomicCall(StringStream& out,
 bool ASTPrinter::EmitTextureCall(StringStream& out,
                                  const sem::Call* call,
                                  const sem::Builtin* builtin) {
-    using Usage = sem::ParameterUsage;
+    using Usage = core::ParameterUsage;
 
     auto& signature = builtin->Signature();
     auto* expr = call->Declaration();
@@ -968,7 +995,7 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
         return false;
     }
 
-    auto* texture_type = TypeOf(texture)->UnwrapRef()->As<type::Texture>();
+    auto* texture_type = TypeOf(texture)->UnwrapRef()->As<core::type::Texture>();
 
     // Helper to emit the texture expression, wrapped in parentheses if the
     // expression includes an operator with lower precedence than the member
@@ -989,25 +1016,25 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
     };
 
     // MSL requires that `lod` is a constant 0 for 1D textures.
-    bool level_is_constant_zero = texture_type->dim() == type::TextureDimension::k1d;
+    bool level_is_constant_zero = texture_type->dim() == core::type::TextureDimension::k1d;
 
     switch (builtin->Type()) {
         case core::Function::kTextureDimensions: {
             std::vector<const char*> dims;
             switch (texture_type->dim()) {
-                case type::TextureDimension::kNone:
+                case core::type::TextureDimension::kNone:
                     diagnostics_.add_error(diag::System::Writer, "texture dimension is kNone");
                     return false;
-                case type::TextureDimension::k1d:
+                case core::type::TextureDimension::k1d:
                     dims = {"width"};
                     break;
-                case type::TextureDimension::k2d:
-                case type::TextureDimension::k2dArray:
-                case type::TextureDimension::kCube:
-                case type::TextureDimension::kCubeArray:
+                case core::type::TextureDimension::k2d:
+                case core::type::TextureDimension::k2dArray:
+                case core::type::TextureDimension::kCube:
+                case core::type::TextureDimension::kCubeArray:
                     dims = {"width", "height"};
                     break;
-                case type::TextureDimension::k3d:
+                case core::type::TextureDimension::k3d:
                     dims = {"width", "height", "depth"};
                     break;
             }
@@ -1123,14 +1150,14 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
             if (usage == Usage::kCoords && e->Type()->UnwrapRef()->is_integer_scalar_or_vector()) {
                 casted = true;
                 switch (texture_type->dim()) {
-                    case type::TextureDimension::k1d:
+                    case core::type::TextureDimension::k1d:
                         out << "uint(";
                         break;
-                    case type::TextureDimension::k2d:
-                    case type::TextureDimension::k2dArray:
+                    case core::type::TextureDimension::k2d:
+                    case core::type::TextureDimension::k2dArray:
                         out << "uint2(";
                         break;
-                    case type::TextureDimension::k3d:
+                    case core::type::TextureDimension::k3d:
                         out << "uint3(";
                         break;
                     default:
@@ -1180,17 +1207,17 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
     if (auto* ddx = arg(Usage::kDdx)) {
         auto dim = texture_type->dim();
         switch (dim) {
-            case type::TextureDimension::k2d:
-            case type::TextureDimension::k2dArray:
+            case core::type::TextureDimension::k2d:
+            case core::type::TextureDimension::k2dArray:
                 maybe_write_comma();
                 out << "gradient2d(";
                 break;
-            case type::TextureDimension::k3d:
+            case core::type::TextureDimension::k3d:
                 maybe_write_comma();
                 out << "gradient3d(";
                 break;
-            case type::TextureDimension::kCube:
-            case type::TextureDimension::kCubeArray:
+            case core::type::TextureDimension::kCube:
+            case core::type::TextureDimension::kCubeArray:
                 maybe_write_comma();
                 out << "gradientcube(";
                 break;
@@ -1225,8 +1252,8 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
         if (!has_offset) {
             // offset argument may need to be provided if we have a component.
             switch (texture_type->dim()) {
-                case type::TextureDimension::k2d:
-                case type::TextureDimension::k2dArray:
+                case core::type::TextureDimension::k2d:
+                case core::type::TextureDimension::k2dArray:
                     out << "int2(0), ";
                     break;
                 default:
@@ -1255,13 +1282,23 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
 
     out << ")";
 
+    // If this is a `textureStore()` for a read-write texture, add a fence to ensure that the
+    // written values are visible to subsequent reads from the same thread.
+    if (auto* storage = texture_type->As<core::type::StorageTexture>();
+        builtin->Type() == core::Function::kTextureStore &&
+        storage->access() == core::Access::kReadWrite) {
+        out << "; ";
+        texture_expr();
+        out << ".fence()";
+    }
+
     return true;
 }
 
 bool ASTPrinter::EmitDotCall(StringStream& out,
                              const ast::CallExpression* expr,
                              const sem::Builtin* builtin) {
-    auto* vec_ty = builtin->Parameters()[0]->Type()->As<type::Vector>();
+    auto* vec_ty = builtin->Parameters()[0]->Type()->As<core::type::Vector>();
     std::string fn = "dot";
     if (vec_ty->type()->is_integer_scalar()) {
         // MSL does not have a builtin for dot() with integer vector types.
@@ -1303,6 +1340,32 @@ bool ASTPrinter::EmitDotCall(StringStream& out,
     return true;
 }
 
+bool ASTPrinter::EmitDot4I8PackedCall(StringStream& out,
+                                      const ast::CallExpression* expr,
+                                      const sem::Builtin* builtin) {
+    return CallBuiltinHelper(
+        out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
+            Line(b) << "packed_char4 vec1 = as_type<packed_char4>(" << params[0] << ");";
+            Line(b) << "packed_char4 vec2 = as_type<packed_char4>(" << params[1] << ");";
+            Line(b) << "return vec1[0] * vec2[0] + vec1[1] * vec2[1] + vec1[2] * vec2[2] + vec1[3] "
+                       "* vec2[3];";
+            return true;
+        });
+}
+
+bool ASTPrinter::EmitDot4U8PackedCall(StringStream& out,
+                                      const ast::CallExpression* expr,
+                                      const sem::Builtin* builtin) {
+    return CallBuiltinHelper(
+        out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
+            Line(b) << "packed_uchar4 vec1 = as_type<packed_uchar4>(" << params[0] << ");";
+            Line(b) << "packed_uchar4 vec2 = as_type<packed_uchar4>(" << params[1] << ");";
+            Line(b) << "return vec1[0] * vec2[0] + vec1[1] * vec2[1] + vec1[2] * vec2[2] + vec1[3] "
+                       "* vec2[3];";
+            return true;
+        });
+}
+
 bool ASTPrinter::EmitModfCall(StringStream& out,
                               const ast::CallExpression* expr,
                               const sem::Builtin* builtin) {
@@ -1312,17 +1375,17 @@ bool ASTPrinter::EmitModfCall(StringStream& out,
             auto in = params[0];
 
             std::string width;
-            if (auto* vec = ty->As<type::Vector>()) {
+            if (auto* vec = ty->As<core::type::Vector>()) {
                 width = std::to_string(vec->Width());
             }
 
             // Emit the builtin return type unique to this overload. This does not
             // exist in the AST, so it will not be generated in Generate().
-            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
+            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<core::type::Struct>())) {
                 return false;
             }
 
-            Line(b) << StructName(builtin->ReturnType()->As<type::Struct>()) << " result;";
+            Line(b) << StructName(builtin->ReturnType()->As<core::type::Struct>()) << " result;";
             Line(b) << "result.fract = modf(" << in << ", result.whole);";
             Line(b) << "return result;";
             return true;
@@ -1338,17 +1401,17 @@ bool ASTPrinter::EmitFrexpCall(StringStream& out,
             auto in = params[0];
 
             std::string width;
-            if (auto* vec = ty->As<type::Vector>()) {
+            if (auto* vec = ty->As<core::type::Vector>()) {
                 width = std::to_string(vec->Width());
             }
 
             // Emit the builtin return type unique to this overload. This does not
             // exist in the AST, so it will not be generated in Generate().
-            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
+            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<core::type::Struct>())) {
                 return false;
             }
 
-            Line(b) << StructName(builtin->ReturnType()->As<type::Struct>()) << " result;";
+            Line(b) << StructName(builtin->ReturnType()->As<core::type::Struct>()) << " result;";
             Line(b) << "result.fract = frexp(" << in << ", result.exp);";
             Line(b) << "return result;";
             return true;
@@ -1578,44 +1641,44 @@ bool ASTPrinter::EmitContinue(const ast::ContinueStatement*) {
     return true;
 }
 
-bool ASTPrinter::EmitZeroValue(StringStream& out, const type::Type* type) {
+bool ASTPrinter::EmitZeroValue(StringStream& out, const core::type::Type* type) {
     return Switch(
         type,
-        [&](const type::Bool*) {
+        [&](const core::type::Bool*) {
             out << "false";
             return true;
         },
-        [&](const type::F16*) {
+        [&](const core::type::F16*) {
             out << "0.0h";
             return true;
         },
-        [&](const type::F32*) {
+        [&](const core::type::F32*) {
             out << "0.0f";
             return true;
         },
-        [&](const type::I32*) {
+        [&](const core::type::I32*) {
             out << "0";
             return true;
         },
-        [&](const type::U32*) {
+        [&](const core::type::U32*) {
             out << "0u";
             return true;
         },
-        [&](const type::Vector* vec) {  //
+        [&](const core::type::Vector* vec) {  //
             return EmitZeroValue(out, vec->type());
         },
-        [&](const type::Matrix* mat) {
+        [&](const core::type::Matrix* mat) {
             if (!EmitType(out, mat)) {
                 return false;
             }
             ScopedParen sp(out);
             return EmitZeroValue(out, mat->type());
         },
-        [&](const type::Array*) {
+        [&](const core::type::Array*) {
             out << "{}";
             return true;
         },
-        [&](const type::Struct*) {
+        [&](const core::type::Struct*) {
             out << "{}";
             return true;
         },
@@ -1626,37 +1689,37 @@ bool ASTPrinter::EmitZeroValue(StringStream& out, const type::Type* type) {
         });
 }
 
-bool ASTPrinter::EmitConstant(StringStream& out, const constant::Value* constant) {
+bool ASTPrinter::EmitConstant(StringStream& out, const core::constant::Value* constant) {
     return Switch(
         constant->Type(),  //
-        [&](const type::Bool*) {
+        [&](const core::type::Bool*) {
             out << (constant->ValueAs<AInt>() ? "true" : "false");
             return true;
         },
-        [&](const type::F32*) {
+        [&](const core::type::F32*) {
             PrintF32(out, constant->ValueAs<f32>());
             return true;
         },
-        [&](const type::F16*) {
+        [&](const core::type::F16*) {
             PrintF16(out, constant->ValueAs<f16>());
             return true;
         },
-        [&](const type::I32*) {
+        [&](const core::type::I32*) {
             PrintI32(out, constant->ValueAs<i32>());
             return true;
         },
-        [&](const type::U32*) {
+        [&](const core::type::U32*) {
             out << constant->ValueAs<AInt>() << "u";
             return true;
         },
-        [&](const type::Vector* v) {
+        [&](const core::type::Vector* v) {
             if (!EmitType(out, v)) {
                 return false;
             }
 
             ScopedParen sp(out);
 
-            if (auto* splat = constant->As<constant::Splat>()) {
+            if (auto* splat = constant->As<core::constant::Splat>()) {
                 if (!EmitConstant(out, splat->el)) {
                     return false;
                 }
@@ -1673,7 +1736,7 @@ bool ASTPrinter::EmitConstant(StringStream& out, const constant::Value* constant
             }
             return true;
         },
-        [&](const type::Matrix* m) {
+        [&](const core::type::Matrix* m) {
             if (!EmitType(out, m)) {
                 return false;
             }
@@ -1690,7 +1753,7 @@ bool ASTPrinter::EmitConstant(StringStream& out, const constant::Value* constant
             }
             return true;
         },
-        [&](const type::Array* a) {
+        [&](const core::type::Array* a) {
             if (!EmitType(out, a)) {
                 return false;
             }
@@ -1705,7 +1768,7 @@ bool ASTPrinter::EmitConstant(StringStream& out, const constant::Value* constant
             auto count = a->ConstantCount();
             if (!count) {
                 diagnostics_.add_error(diag::System::Writer,
-                                       type::Array::kErrExpectedConstantCount);
+                                       core::type::Array::kErrExpectedConstantCount);
                 return false;
             }
 
@@ -1720,7 +1783,7 @@ bool ASTPrinter::EmitConstant(StringStream& out, const constant::Value* constant
 
             return true;
         },
-        [&](const type::Struct* s) {
+        [&](const core::type::Struct* s) {
             if (!EmitStructType(&helpers_, s)) {
                 return false;
             }
@@ -1829,6 +1892,11 @@ void ASTPrinter::EmitStage(StringStream& out, ast::PipelineStage stage) {
 }
 
 bool ASTPrinter::EmitFunction(const ast::Function* func) {
+    if (func->body == nullptr) {
+        // An internal function. Do not emit.
+        return true;
+    }
+
     auto* func_sem = builder_.Sem().Get(func);
 
     {
@@ -1850,7 +1918,7 @@ bool ASTPrinter::EmitFunction(const ast::Function* func) {
             if (!EmitType(out, type)) {
                 return false;
             }
-            if (type->Is<type::Pointer>()) {
+            if (type->Is<core::type::Pointer>()) {
                 out << " const";
             }
             out << " " << v->name->symbol.Name();
@@ -1919,11 +1987,11 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
 
             bool ok = Switch(
                 type,  //
-                [&](const type::Struct*) {
+                [&](const core::type::Struct*) {
                     out << " [[stage_in]]";
                     return true;
                 },
-                [&](const type::Texture*) {
+                [&](const core::type::Texture*) {
                     uint32_t binding = get_binding_index(param);
                     if (binding == kInvalidBindingIndex) {
                         return false;
@@ -1931,7 +1999,7 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
                     out << " [[texture(" << binding << ")]]";
                     return true;
                 },
-                [&](const type::Sampler*) {
+                [&](const core::type::Sampler*) {
                     uint32_t binding = get_binding_index(param);
                     if (binding == kInvalidBindingIndex) {
                         return false;
@@ -1939,7 +2007,7 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
                     out << " [[sampler(" << binding << ")]]";
                     return true;
                 },
-                [&](const type::Pointer* ptr) {
+                [&](const core::type::Pointer* ptr) {
                     switch (ptr->AddressSpace()) {
                         case core::AddressSpace::kWorkgroup: {
                             auto& allocations = workgroup_allocations_[func_name];
@@ -2427,34 +2495,34 @@ bool ASTPrinter::EmitSwitch(const ast::SwitchStatement* stmt) {
     return true;
 }
 
-bool ASTPrinter::EmitType(StringStream& out, const type::Type* type) {
+bool ASTPrinter::EmitType(StringStream& out, const core::type::Type* type) {
     return Switch(
         type,
-        [&](const type::Atomic* atomic) {
-            if (atomic->Type()->Is<type::I32>()) {
+        [&](const core::type::Atomic* atomic) {
+            if (atomic->Type()->Is<core::type::I32>()) {
                 out << "atomic_int";
                 return true;
             }
-            if (TINT_LIKELY(atomic->Type()->Is<type::U32>())) {
+            if (TINT_LIKELY(atomic->Type()->Is<core::type::U32>())) {
                 out << "atomic_uint";
                 return true;
             }
             TINT_ICE() << "unhandled atomic type " << atomic->Type()->FriendlyName();
             return false;
         },
-        [&](const type::Array* arr) {
+        [&](const core::type::Array* arr) {
             out << ArrayType() << "<";
             if (!EmitType(out, arr->ElemType())) {
                 return false;
             }
             out << ", ";
-            if (arr->Count()->Is<type::RuntimeArrayCount>()) {
+            if (arr->Count()->Is<core::type::RuntimeArrayCount>()) {
                 out << "1";
             } else {
                 auto count = arr->ConstantCount();
                 if (!count) {
                     diagnostics_.add_error(diag::System::Writer,
-                                           type::Array::kErrExpectedConstantCount);
+                                           core::type::Array::kErrExpectedConstantCount);
                     return false;
                 }
 
@@ -2463,30 +2531,30 @@ bool ASTPrinter::EmitType(StringStream& out, const type::Type* type) {
             out << ">";
             return true;
         },
-        [&](const type::Bool*) {
+        [&](const core::type::Bool*) {
             out << "bool";
             return true;
         },
-        [&](const type::F16*) {
+        [&](const core::type::F16*) {
             out << "half";
             return true;
         },
-        [&](const type::F32*) {
+        [&](const core::type::F32*) {
             out << "float";
             return true;
         },
-        [&](const type::I32*) {
+        [&](const core::type::I32*) {
             out << "int";
             return true;
         },
-        [&](const type::Matrix* mat) {
+        [&](const core::type::Matrix* mat) {
             if (!EmitType(out, mat->type())) {
                 return false;
             }
             out << mat->columns() << "x" << mat->rows();
             return true;
         },
-        [&](const type::Pointer* ptr) {
+        [&](const core::type::Pointer* ptr) {
             if (ptr->Access() == core::Access::kRead) {
                 out << "const ";
             }
@@ -2500,52 +2568,53 @@ bool ASTPrinter::EmitType(StringStream& out, const type::Type* type) {
             out << "*";
             return true;
         },
-        [&](const type::Sampler*) {
+        [&](const core::type::Sampler*) {
             out << "sampler";
             return true;
         },
-        [&](const type::Struct* str) {
+        [&](const core::type::Struct* str) {
             // The struct type emits as just the name. The declaration would be
             // emitted as part of emitting the declared types.
             out << StructName(str);
             return true;
         },
-        [&](const type::Texture* tex) {
-            if (TINT_UNLIKELY(tex->Is<type::ExternalTexture>())) {
+        [&](const core::type::Texture* tex) {
+            if (TINT_UNLIKELY(tex->Is<core::type::ExternalTexture>())) {
                 TINT_ICE() << "Multiplanar external texture transform was not run.";
                 return false;
             }
 
-            if (tex->IsAnyOf<type::DepthTexture, type::DepthMultisampledTexture>()) {
+            if (tex->IsAnyOf<core::type::DepthTexture, core::type::DepthMultisampledTexture>()) {
                 out << "depth";
             } else {
                 out << "texture";
             }
 
             switch (tex->dim()) {
-                case type::TextureDimension::k1d:
+                case core::type::TextureDimension::k1d:
                     out << "1d";
                     break;
-                case type::TextureDimension::k2d:
+                case core::type::TextureDimension::k2d:
                     out << "2d";
                     break;
-                case type::TextureDimension::k2dArray:
+                case core::type::TextureDimension::k2dArray:
                     out << "2d_array";
                     break;
-                case type::TextureDimension::k3d:
+                case core::type::TextureDimension::k3d:
                     out << "3d";
                     break;
-                case type::TextureDimension::kCube:
+                case core::type::TextureDimension::kCube:
                     out << "cube";
                     break;
-                case type::TextureDimension::kCubeArray:
+                case core::type::TextureDimension::kCubeArray:
                     out << "cube_array";
                     break;
                 default:
                     diagnostics_.add_error(diag::System::Writer, "Invalid texture dimensions");
                     return false;
             }
-            if (tex->IsAnyOf<type::MultisampledTexture, type::DepthMultisampledTexture>()) {
+            if (tex->IsAnyOf<core::type::MultisampledTexture,
+                             core::type::DepthMultisampledTexture>()) {
                 out << "_ms";
             }
             out << "<";
@@ -2553,15 +2622,15 @@ bool ASTPrinter::EmitType(StringStream& out, const type::Type* type) {
 
             return Switch(
                 tex,
-                [&](const type::DepthTexture*) {
+                [&](const core::type::DepthTexture*) {
                     out << "float, access::sample";
                     return true;
                 },
-                [&](const type::DepthMultisampledTexture*) {
+                [&](const core::type::DepthMultisampledTexture*) {
                     out << "float, access::read";
                     return true;
                 },
-                [&](const type::StorageTexture* storage) {
+                [&](const core::type::StorageTexture* storage) {
                     if (!EmitType(out, storage->type())) {
                         return false;
                     }
@@ -2569,6 +2638,8 @@ bool ASTPrinter::EmitType(StringStream& out, const type::Type* type) {
                     std::string access_str;
                     if (storage->access() == core::Access::kRead) {
                         out << ", access::read";
+                    } else if (storage->access() == core::Access::kReadWrite) {
+                        out << ", access::read_write";
                     } else if (storage->access() == core::Access::kWrite) {
                         out << ", access::write";
                     } else {
@@ -2578,14 +2649,14 @@ bool ASTPrinter::EmitType(StringStream& out, const type::Type* type) {
                     }
                     return true;
                 },
-                [&](const type::MultisampledTexture* ms) {
+                [&](const core::type::MultisampledTexture* ms) {
                     if (!EmitType(out, ms->type())) {
                         return false;
                     }
                     out << ", access::read";
                     return true;
                 },
-                [&](const type::SampledTexture* sampled) {
+                [&](const core::type::SampledTexture* sampled) {
                     if (!EmitType(out, sampled->type())) {
                         return false;
                     }
@@ -2597,11 +2668,11 @@ bool ASTPrinter::EmitType(StringStream& out, const type::Type* type) {
                     return false;
                 });
         },
-        [&](const type::U32*) {
+        [&](const core::type::U32*) {
             out << "uint";
             return true;
         },
-        [&](const type::Vector* vec) {
+        [&](const core::type::Vector* vec) {
             if (vec->Packed()) {
                 out << "packed_";
             }
@@ -2611,7 +2682,7 @@ bool ASTPrinter::EmitType(StringStream& out, const type::Type* type) {
             out << vec->Width();
             return true;
         },
-        [&](const type::Void*) {
+        [&](const core::type::Void*) {
             out << "void";
             return true;
         },
@@ -2623,7 +2694,7 @@ bool ASTPrinter::EmitType(StringStream& out, const type::Type* type) {
 }
 
 bool ASTPrinter::EmitTypeAndName(StringStream& out,
-                                 const type::Type* type,
+                                 const core::type::Type* type,
                                  const std::string& name) {
     if (!EmitType(out, type)) {
         return false;
@@ -2655,7 +2726,7 @@ bool ASTPrinter::EmitAddressSpace(StringStream& out, core::AddressSpace sc) {
     return false;
 }
 
-bool ASTPrinter::EmitStructType(TextBuffer* b, const type::Struct* str) {
+bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
     auto it = emitted_structs_.emplace(str);
     if (!it.second) {
         return true;
@@ -2734,14 +2805,14 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const type::Struct* str) {
                 return false;
             }
 
-            if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexInput)) {
+            if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kVertexInput)) {
                 out << " [[attribute(" + std::to_string(location.value()) + ")]]";
-            } else if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexOutput)) {
+            } else if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kVertexOutput)) {
                 out << " [[user(locn" + std::to_string(location.value()) + ")]]";
-            } else if (pipeline_stage_uses.count(type::PipelineStageUsage::kFragmentInput)) {
+            } else if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kFragmentInput)) {
                 out << " [[user(locn" + std::to_string(location.value()) + ")]]";
-            } else if (TINT_LIKELY(
-                           pipeline_stage_uses.count(type::PipelineStageUsage::kFragmentOutput))) {
+            } else if (TINT_LIKELY(pipeline_stage_uses.count(
+                           core::type::PipelineStageUsage::kFragmentOutput))) {
                 if (auto index = attributes.index) {
                     out << " [[color(" + std::to_string(location.value()) + ") index(" +
                                std::to_string(index.value()) + ")]]";
@@ -3031,7 +3102,7 @@ const std::string& ASTPrinter::ArrayType() {
     return array_template_name_;
 }
 
-std::string ASTPrinter::StructName(const type::Struct* s) {
+std::string ASTPrinter::StructName(const core::type::Struct* s) {
     auto name = s->Name().Name();
     if (HasPrefix(name, "__")) {
         name = tint::GetOrCreate(builtin_struct_names_, s,

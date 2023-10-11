@@ -449,6 +449,12 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Create D3D12 heap with D3D12_HEAP_FLAG_CREATE_NOT_ZEROED when it is supported. It is safe "
       "because in Dawn we always clear the resources manually when needed.",
       "https://crbug.com/dawn/484", ToggleStage::Device}},
+    {Toggle::D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources,
+     {"d3d12_dont_use_not_zeroed_heap_flag_on_textures_as_commited_resources",
+      "Don't set the heap flag D3D12_HEAP_FLAG_CREATE_NOT_ZEROED on the D3D12 textures created "
+      "with CreateCommittedResource() as a workaround of some driver issues on Intel Gen9 and "
+      "Gen11 GPUs.",
+      "https://crbug.com/dawn/484", ToggleStage::Device}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
       "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "
@@ -500,7 +506,7 @@ TogglesState TogglesState::CreateFromTogglesDescriptor(const DawnTogglesDescript
     }
 
     TogglesInfo togglesInfo;
-    for (uint32_t i = 0; i < togglesDesc->enabledTogglesCount; ++i) {
+    for (uint32_t i = 0; i < togglesDesc->enabledToggleCount; ++i) {
         Toggle toggle = togglesInfo.ToggleNameToEnum(togglesDesc->enabledToggles[i]);
         if (toggle != Toggle::InvalidEnum) {
             const ToggleInfo* toggleInfo = togglesInfo.GetToggleInfo(toggle);
@@ -512,7 +518,7 @@ TogglesState TogglesState::CreateFromTogglesDescriptor(const DawnTogglesDescript
             }
         }
     }
-    for (uint32_t i = 0; i < togglesDesc->disabledTogglesCount; ++i) {
+    for (uint32_t i = 0; i < togglesDesc->disabledToggleCount; ++i) {
         Toggle toggle = togglesInfo.ToggleNameToEnum(togglesDesc->disabledToggles[i]);
         if (toggle != Toggle::InvalidEnum) {
             const ToggleInfo* toggleInfo = togglesInfo.GetToggleInfo(toggle);
@@ -648,6 +654,17 @@ const char* ToggleEnumToName(Toggle toggle) {
         kToggleNameAndInfoList[static_cast<size_t>(toggle)];
     ASSERT(toggleNameAndInfo.toggle == toggle);
     return toggleNameAndInfo.info.name;
+}
+
+// static
+std::vector<const ToggleInfo*> TogglesInfo::AllToggleInfos() {
+    std::vector<const ToggleInfo*> infos;
+    infos.reserve(kToggleNameAndInfoList.size());
+
+    for (const auto& entry : kToggleNameAndInfoList) {
+        infos.push_back(&(entry.info));
+    }
+    return infos;
 }
 
 TogglesInfo::TogglesInfo() = default;

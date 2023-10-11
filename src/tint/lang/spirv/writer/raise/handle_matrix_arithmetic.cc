@@ -16,36 +16,38 @@
 
 #include <utility>
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/type/matrix.h"
 #include "src/tint/utils/ice/ice.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::spirv::writer::raise {
 
 namespace {
 
-void Run(ir::Module* ir) {
-    ir::Builder b(*ir);
+void Run(core::ir::Module* ir) {
+    core::ir::Builder b(*ir);
 
     // Find the instructions that need to be modified.
-    Vector<ir::Binary*, 4> binary_worklist;
-    Vector<ir::Convert*, 4> convert_worklist;
+    Vector<core::ir::Binary*, 4> binary_worklist;
+    Vector<core::ir::Convert*, 4> convert_worklist;
     for (auto* inst : ir->instructions.Objects()) {
         if (!inst->Alive()) {
             continue;
         }
-        if (auto* binary = inst->As<ir::Binary>()) {
+        if (auto* binary = inst->As<core::ir::Binary>()) {
             TINT_ASSERT(binary->Operands().Length() == 2);
-            if (binary->LHS()->Type()->Is<type::Matrix>() ||
-                binary->RHS()->Type()->Is<type::Matrix>()) {
+            if (binary->LHS()->Type()->Is<core::type::Matrix>() ||
+                binary->RHS()->Type()->Is<core::type::Matrix>()) {
                 binary_worklist.Push(binary);
             }
-        } else if (auto* convert = inst->As<ir::Convert>()) {
-            if (convert->Result()->Type()->Is<type::Matrix>()) {
+        } else if (auto* convert = inst->As<core::ir::Convert>()) {
+            if (convert->Result()->Type()->Is<core::type::Matrix>()) {
                 convert_worklist.Push(convert);
             }
         }
@@ -60,7 +62,7 @@ void Run(ir::Module* ir) {
         auto* ty = binary->Result()->Type();
 
         // Helper to replace the instruction with a new one.
-        auto replace = [&](ir::Instruction* inst) {
+        auto replace = [&](core::ir::Instruction* inst) {
             if (auto name = ir->NameOf(binary)) {
                 ir->SetName(inst->Result(), name);
             }
@@ -70,9 +72,9 @@ void Run(ir::Module* ir) {
         };
 
         // Helper to replace the instruction with a column-wise operation.
-        auto column_wise = [&](enum ir::Binary::Kind op) {
-            auto* mat = ty->As<type::Matrix>();
-            Vector<ir::Value*, 4> args;
+        auto column_wise = [&](auto op) {
+            auto* mat = ty->As<core::type::Matrix>();
+            Vector<core::ir::Value*, 4> args;
             for (uint32_t col = 0; col < mat->columns(); col++) {
                 b.InsertBefore(binary, [&] {
                     auto* lhs_col = b.Access(mat->ColumnType(), lhs, u32(col));
@@ -85,32 +87,32 @@ void Run(ir::Module* ir) {
         };
 
         switch (binary->Kind()) {
-            case ir::Binary::Kind::kAdd:
-                column_wise(ir::Binary::Kind::kAdd);
+            case core::ir::Binary::Kind::kAdd:
+                column_wise(core::ir::Binary::Kind::kAdd);
                 break;
-            case ir::Binary::Kind::kSubtract:
-                column_wise(ir::Binary::Kind::kSubtract);
+            case core::ir::Binary::Kind::kSubtract:
+                column_wise(core::ir::Binary::Kind::kSubtract);
                 break;
-            case ir::Binary::Kind::kMultiply:
+            case core::ir::Binary::Kind::kMultiply:
                 // Select the SPIR-V intrinsic that corresponds to the operation being performed.
-                if (lhs_ty->Is<type::Matrix>()) {
-                    if (rhs_ty->Is<type::Scalar>()) {
-                        replace(
-                            b.Call(ty, ir::IntrinsicCall::Kind::kSpirvMatrixTimesScalar, lhs, rhs));
-                    } else if (rhs_ty->Is<type::Vector>()) {
-                        replace(
-                            b.Call(ty, ir::IntrinsicCall::Kind::kSpirvMatrixTimesVector, lhs, rhs));
-                    } else if (rhs_ty->Is<type::Matrix>()) {
-                        replace(
-                            b.Call(ty, ir::IntrinsicCall::Kind::kSpirvMatrixTimesMatrix, lhs, rhs));
+                if (lhs_ty->Is<core::type::Matrix>()) {
+                    if (rhs_ty->Is<core::type::Scalar>()) {
+                        replace(b.Call(ty, core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesScalar,
+                                       lhs, rhs));
+                    } else if (rhs_ty->Is<core::type::Vector>()) {
+                        replace(b.Call(ty, core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesVector,
+                                       lhs, rhs));
+                    } else if (rhs_ty->Is<core::type::Matrix>()) {
+                        replace(b.Call(ty, core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesMatrix,
+                                       lhs, rhs));
                     }
                 } else {
-                    if (lhs_ty->Is<type::Scalar>()) {
-                        replace(
-                            b.Call(ty, ir::IntrinsicCall::Kind::kSpirvMatrixTimesScalar, rhs, lhs));
-                    } else if (lhs_ty->Is<type::Vector>()) {
-                        replace(
-                            b.Call(ty, ir::IntrinsicCall::Kind::kSpirvVectorTimesMatrix, lhs, rhs));
+                    if (lhs_ty->Is<core::type::Scalar>()) {
+                        replace(b.Call(ty, core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesScalar,
+                                       rhs, lhs));
+                    } else if (lhs_ty->Is<core::type::Vector>()) {
+                        replace(b.Call(ty, core::ir::IntrinsicCall::Kind::kSpirvVectorTimesMatrix,
+                                       lhs, rhs));
                     }
                 }
                 break;
@@ -123,12 +125,12 @@ void Run(ir::Module* ir) {
 
     // Replace the matrix convert instructions that we found.
     for (auto* convert : convert_worklist) {
-        auto* arg = convert->Args()[ir::Convert::kValueOperandOffset];
-        auto* in_mat = arg->Type()->As<type::Matrix>();
-        auto* out_mat = convert->Result()->Type()->As<type::Matrix>();
+        auto* arg = convert->Args()[core::ir::Convert::kValueOperandOffset];
+        auto* in_mat = arg->Type()->As<core::type::Matrix>();
+        auto* out_mat = convert->Result()->Type()->As<core::type::Matrix>();
 
         // Extract and convert each column separately.
-        Vector<ir::Value*, 4> args;
+        Vector<core::ir::Value*, 4> args;
         for (uint32_t c = 0; c < out_mat->columns(); c++) {
             b.InsertBefore(convert, [&] {
                 auto* col = b.Access(in_mat->ColumnType(), arg, u32(c));
@@ -150,7 +152,7 @@ void Run(ir::Module* ir) {
 
 }  // namespace
 
-Result<SuccessType, std::string> HandleMatrixArithmetic(ir::Module* ir) {
+Result<SuccessType, std::string> HandleMatrixArithmetic(core::ir::Module* ir) {
     auto result = ValidateAndDumpIfNeeded(*ir, "HandleMatrixArithmetic transform");
     if (!result) {
         return result;

@@ -16,10 +16,10 @@
 #include "gtest/gtest-spi.h"
 #include "src/tint/lang/core/ir/ir_helper_test.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using IR_BlockParamTest = IRTestHelper;
 
 TEST_F(IR_BlockParamTest, Fail_NullType) {
@@ -33,4 +33,4 @@ TEST_F(IR_BlockParamTest, Fail_NullType) {
 }
 
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

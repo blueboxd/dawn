@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_ir)
+
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 #include "src/tint/lang/core/function.h"
 #include "src/tint/lang/core/type/builtin_structs.h"
 
-using namespace tint::number_suffixes;     // NOLINT
-using namespace tint::core::fluent_types;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::spirv::writer {
 namespace {
@@ -255,7 +257,7 @@ TEST_F(SpirvWriterTest, Builtin_Determinant_Mat3x3h) {
 }
 
 TEST_F(SpirvWriterTest, Builtin_Frexp_F32) {
-    auto* str = type::CreateFrexpResult(ty, mod.symbols, ty.f32());
+    auto* str = core::type::CreateFrexpResult(ty, mod.symbols, ty.f32());
     auto* arg = b.FunctionParam("arg", ty.f32());
     auto* func = b.Function("foo", str);
     func->SetParams({arg});
@@ -270,7 +272,7 @@ TEST_F(SpirvWriterTest, Builtin_Frexp_F32) {
 }
 
 TEST_F(SpirvWriterTest, Builtin_Frexp_F16) {
-    auto* str = type::CreateFrexpResult(ty, mod.symbols, ty.f16());
+    auto* str = core::type::CreateFrexpResult(ty, mod.symbols, ty.f16());
     auto* arg = b.FunctionParam("arg", ty.f16());
     auto* func = b.Function("foo", str);
     func->SetParams({arg});
@@ -285,7 +287,7 @@ TEST_F(SpirvWriterTest, Builtin_Frexp_F16) {
 }
 
 TEST_F(SpirvWriterTest, Builtin_Frexp_Vec2f) {
-    auto* str = type::CreateFrexpResult(ty, mod.symbols, ty.vec2<f32>());
+    auto* str = core::type::CreateFrexpResult(ty, mod.symbols, ty.vec2<f32>());
     auto* arg = b.FunctionParam("arg", ty.vec2<f32>());
     auto* func = b.Function("foo", str);
     func->SetParams({arg});
@@ -300,7 +302,7 @@ TEST_F(SpirvWriterTest, Builtin_Frexp_Vec2f) {
 }
 
 TEST_F(SpirvWriterTest, Builtin_Frexp_Vec3h) {
-    auto* str = type::CreateFrexpResult(ty, mod.symbols, ty.vec3<f16>());
+    auto* str = core::type::CreateFrexpResult(ty, mod.symbols, ty.vec3<f16>());
     auto* arg = b.FunctionParam("arg", ty.vec3<f16>());
     auto* func = b.Function("foo", str);
     func->SetParams({arg});
@@ -329,7 +331,7 @@ TEST_F(SpirvWriterTest, Builtin_Length_vec4f) {
 }
 
 TEST_F(SpirvWriterTest, Builtin_Modf_F32) {
-    auto* str = type::CreateModfResult(ty, mod.symbols, ty.f32());
+    auto* str = core::type::CreateModfResult(ty, mod.symbols, ty.f32());
     auto* arg = b.FunctionParam("arg", ty.f32());
     auto* func = b.Function("foo", str);
     func->SetParams({arg});
@@ -344,7 +346,7 @@ TEST_F(SpirvWriterTest, Builtin_Modf_F32) {
 }
 
 TEST_F(SpirvWriterTest, Builtin_Modf_F16) {
-    auto* str = type::CreateModfResult(ty, mod.symbols, ty.f16());
+    auto* str = core::type::CreateModfResult(ty, mod.symbols, ty.f16());
     auto* arg = b.FunctionParam("arg", ty.f16());
     auto* func = b.Function("foo", str);
     func->SetParams({arg});
@@ -359,7 +361,7 @@ TEST_F(SpirvWriterTest, Builtin_Modf_F16) {
 }
 
 TEST_F(SpirvWriterTest, Builtin_Modf_Vec2f) {
-    auto* str = type::CreateModfResult(ty, mod.symbols, ty.vec2<f32>());
+    auto* str = core::type::CreateModfResult(ty, mod.symbols, ty.vec2<f32>());
     auto* arg = b.FunctionParam("arg", ty.vec2<f32>());
     auto* func = b.Function("foo", str);
     func->SetParams({arg});
@@ -374,7 +376,7 @@ TEST_F(SpirvWriterTest, Builtin_Modf_Vec2f) {
 }
 
 TEST_F(SpirvWriterTest, Builtin_Modf_Vec3h) {
-    auto* str = type::CreateModfResult(ty, mod.symbols, ty.vec3<f16>());
+    auto* str = core::type::CreateModfResult(ty, mod.symbols, ty.vec3<f16>());
     auto* arg = b.FunctionParam("arg", ty.vec3<f16>());
     auto* func = b.Function("foo", str);
     func->SetParams({arg});
@@ -1749,6 +1751,17 @@ TEST_F(SpirvWriterTest, Builtin_StorageBarrier) {
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST("OpControlBarrier %uint_2 %uint_2 %uint_72");
+}
+
+TEST_F(SpirvWriterTest, Builtin_TextureBarrier) {
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        b.Call(ty.void_(), core::Function::kTextureBarrier);
+        b.Return(func);
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST("OpControlBarrier %uint_2 %uint_2 %uint_2056");
 }
 
 TEST_F(SpirvWriterTest, Builtin_WorkgroupBarrier) {

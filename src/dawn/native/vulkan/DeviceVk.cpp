@@ -226,7 +226,7 @@ ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
 MaybeError Device::TickImpl() {
     RecycleCompletedCommands();
 
-    ExecutionSerial completedSerial = GetCompletedCommandSerial();
+    ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
 
     for (Ref<DescriptorSetAllocator>& allocator :
          mDescriptorAllocatorsPendingDeallocation.IterateUpTo(completedSerial)) {
@@ -265,7 +265,7 @@ uint32_t Device::GetGraphicsQueueFamily() const {
     return mQueueFamily;
 }
 
-VkQueue Device::GetQueue() const {
+VkQueue Device::GetVkQueue() const {
     return mQueue;
 }
 
@@ -369,7 +369,7 @@ MaybeError Device::SubmitPendingCommands() {
     for (VkSemaphore semaphore : mRecordingContext.waitSemaphores) {
         mDeleter->DeleteWhenUnused(semaphore);
     }
-    IncrementLastSubmittedCommandSerial();
+    GetQueue()->IncrementLastSubmittedCommandSerial();
     ExecutionSerial lastSubmittedSerial = GetLastSubmittedCommandSerial();
     mFencesInFlight.emplace(fence, lastSubmittedSerial);
 
@@ -519,11 +519,26 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES);
     }
 
+    if (HasFeature(Feature::DualSourceBlending)) {
+        usedKnobs.features.dualSrcBlend = VK_TRUE;
+    }
+
     if (mDeviceInfo.HasExt(DeviceExt::Robustness2)) {
         ASSERT(usedKnobs.HasExt(DeviceExt::Robustness2));
 
         usedKnobs.robustness2Features = mDeviceInfo.robustness2Features;
         featuresChain.Add(&usedKnobs.robustness2Features);
+    }
+
+    if (HasFeature(Feature::ChromiumExperimentalSubgroupUniformControlFlow)) {
+        ASSERT(
+            usedKnobs.HasExt(DeviceExt::ShaderSubgroupUniformControlFlow) &&
+            mDeviceInfo.shaderSubgroupUniformControlFlowFeatures.shaderSubgroupUniformControlFlow ==
+                VK_TRUE);
+
+        usedKnobs.shaderSubgroupUniformControlFlowFeatures =
+            mDeviceInfo.shaderSubgroupUniformControlFlowFeatures;
+        featuresChain.Add(&usedKnobs.shaderSubgroupUniformControlFlowFeatures);
     }
 
     // Find a universal queue family
@@ -637,7 +652,7 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
 
         mUnusedFences.push_back(fence);
 
-        ASSERT(fenceSerial > GetCompletedCommandSerial());
+        ASSERT(fenceSerial > GetQueue()->GetCompletedCommandSerial());
         mFencesInFlight.pop();
     }
     return fenceSerial;
@@ -729,10 +744,10 @@ ResultOrError<CommandPoolAndBuffer> Device::BeginVkCommandBuffer() {
 }
 
 void Device::RecycleCompletedCommands() {
-    for (auto& commands : mCommandsInFlight.IterateUpTo(GetCompletedCommandSerial())) {
+    for (auto& commands : mCommandsInFlight.IterateUpTo(GetQueue()->GetCompletedCommandSerial())) {
         mUnusedCommands.push_back(commands);
     }
-    mCommandsInFlight.ClearUpTo(GetCompletedCommandSerial());
+    mCommandsInFlight.ClearUpTo(GetQueue()->GetCompletedCommandSerial());
 }
 
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
@@ -1000,7 +1015,7 @@ MaybeError Device::WaitForIdleForDestruction() {
     while (!mFencesInFlight.empty()) {
         VkFence fence = mFencesInFlight.front().first;
         ExecutionSerial fenceSerial = mFencesInFlight.front().second;
-        ASSERT(fenceSerial > GetCompletedCommandSerial());
+        ASSERT(fenceSerial > GetQueue()->GetCompletedCommandSerial());
 
         VkResult result = VkResult::WrapUnsafe(VK_TIMEOUT);
         do {
@@ -1087,7 +1102,7 @@ void Device::DestroyImpl() {
     }
     mUnusedFences.clear();
 
-    ExecutionSerial completedSerial = GetCompletedCommandSerial();
+    ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
     for (Ref<DescriptorSetAllocator>& allocator :
          mDescriptorAllocatorsPendingDeallocation.IterateUpTo(completedSerial)) {
         allocator->FinishDeallocation(completedSerial);

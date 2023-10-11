@@ -22,10 +22,10 @@
 #include "src/tint/utils/result/result.h"
 
 // Forward declarations.
-namespace tint::ir {
+namespace tint::core::ir {
 class Module;
 class Texture;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 namespace tint::spirv::writer::raise {
 
@@ -33,27 +33,27 @@ namespace tint::spirv::writer::raise {
 /// SPIR-V backend intrinsic functions.
 /// @param module the module to transform
 /// @returns an error string on failure
-Result<SuccessType, std::string> BuiltinPolyfill(ir::Module* module);
+Result<SuccessType, std::string> BuiltinPolyfill(core::ir::Module* module);
 
 /// LiteralOperand is a type of constant value that is intended to be emitted as a literal in
 /// the SPIR-V instruction stream.
 /// TODO(jrprice): Move this to lang/spirv.
-class LiteralOperand final : public Castable<LiteralOperand, ir::Constant> {
+class LiteralOperand final : public Castable<LiteralOperand, core::ir::Constant> {
   public:
     /// Constructor
     /// @param value the operand value
-    explicit LiteralOperand(const constant::Value* value);
+    explicit LiteralOperand(const core::constant::Value* value);
     /// Destructor
     ~LiteralOperand() override;
 };
 
 /// SampledImage represents an OpTypeSampledImage in SPIR-V.
 /// TODO(jrprice): Move this to lang/spirv.
-class SampledImage final : public Castable<SampledImage, type::Type> {
+class SampledImage final : public Castable<SampledImage, core::type::Type> {
   public:
     /// Constructor
     /// @param image the image type
-    explicit SampledImage(const type::Type* image);
+    explicit SampledImage(const core::type::Type* image);
 
     /// @param other the other node to compare against
     /// @returns true if the this type is equal to @p other
@@ -64,13 +64,13 @@ class SampledImage final : public Castable<SampledImage, type::Type> {
 
     /// @param ctx the clone context
     /// @returns a clone of this type
-    SampledImage* Clone(type::CloneContext& ctx) const override;
+    SampledImage* Clone(core::type::CloneContext& ctx) const override;
 
     /// @returns the image type
-    const type::Type* Image() const { return image_; }
+    const core::type::Type* Image() const { return image_; }
 
   private:
-    const type::Type* image_;
+    const core::type::Type* image_;
 };
 
 }  // namespace tint::spirv::writer::raise

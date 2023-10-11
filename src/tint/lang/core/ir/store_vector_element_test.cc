@@ -18,11 +18,11 @@
 #include "src/tint/lang/core/ir/instruction.h"
 #include "src/tint/lang/core/ir/ir_helper_test.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using IR_StoreVectorElementTest = IRTestHelper;
 
@@ -35,13 +35,13 @@ TEST_F(IR_StoreVectorElementTest, Create) {
 
     ASSERT_TRUE(inst->Index()->Is<Constant>());
     auto index = inst->Index()->As<Constant>()->Value();
-    ASSERT_TRUE(index->Is<constant::Scalar<i32>>());
-    EXPECT_EQ(2_i, index->As<constant::Scalar<i32>>()->ValueAs<i32>());
+    ASSERT_TRUE(index->Is<core::constant::Scalar<i32>>());
+    EXPECT_EQ(2_i, index->As<core::constant::Scalar<i32>>()->ValueAs<i32>());
 
     ASSERT_TRUE(inst->Value()->Is<Constant>());
     auto value = inst->Value()->As<Constant>()->Value();
-    ASSERT_TRUE(value->Is<constant::Scalar<i32>>());
-    EXPECT_EQ(4_i, value->As<constant::Scalar<i32>>()->ValueAs<i32>());
+    ASSERT_TRUE(value->Is<core::constant::Scalar<i32>>());
+    EXPECT_EQ(4_i, value->As<core::constant::Scalar<i32>>()->ValueAs<i32>());
 }
 
 TEST_F(IR_StoreVectorElementTest, Usage) {
@@ -67,4 +67,4 @@ TEST_F(IR_StoreVectorElementTest, Result) {
 }
 
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

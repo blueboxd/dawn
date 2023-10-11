@@ -21,6 +21,7 @@
 
 #if TINT_BUILD_IR
 #include "src/tint/lang/msl/writer/printer/printer.h"               // nogncheck
+#include "src/tint/lang/msl/writer/raise/raise.h"                   // nogncheck
 #include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"  // nogncheck
 #endif                                                              // TINT_BUILD_IR
 
@@ -40,11 +41,19 @@ Result<Output, std::string> Generate(const Program* program, const Options& opti
             return std::string("IR converter: " + converted.Failure());
         }
 
-        // Generate the MSL code.
         auto ir = converted.Move();
+
+        // Raise the IR to the MSL dialect.
+        auto raised = raise::Raise(&ir);
+        if (!raised) {
+            return std::move(raised.Failure());
+        }
+
+        // Generate the MSL code.
         auto impl = std::make_unique<Printer>(&ir);
-        if (!impl->Generate()) {
-            return impl->Diagnostics().str();
+        auto result = impl->Generate();
+        if (!result) {
+            return result.Failure();
         }
         output.msl = impl->Result();
     } else  // NOLINT(readability/braces)

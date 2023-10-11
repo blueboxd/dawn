@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_ir)
+
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 #include "gmock/gmock.h"
@@ -19,7 +21,7 @@
 namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(SpirvWriterTest, ModuleHeader) {
     auto spirv = writer_.Generate();

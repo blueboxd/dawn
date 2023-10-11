@@ -61,7 +61,7 @@ TINT_END_DISABLE_WARNING(NEWLINE_EOF);
 /// familiar to Vulkan SPIR-V developers.  We will tend to use "image"
 /// and "sampler" instead of "handle".
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 
 /// The binary representation of a SPIR-V decoration enum followed by its
 /// operands, if any.
@@ -738,6 +738,14 @@ class ASTParser {
     /// @returns the SPIR-V binary.
     const std::vector<uint32_t>& spv_binary() { return spv_binary_; }
 
+    /// Enable a WGSL extension, if not already enabled.
+    /// @param extension the extension to enable
+    void Enable(core::Extension extension) {
+        if (enabled_extensions_.Add(extension)) {
+            builder_.Enable(extension);
+        }
+    }
+
   private:
     /// Converts a specific SPIR-V type to a Tint type. Integer case
     const Type* ConvertType(const spvtools::opt::analysis::Integer* int_ty);
@@ -925,8 +933,11 @@ class ASTParser {
     /// field will be 0. Sadly, in SPIR-V right now, there's only one workgroup
     /// size object in the module.
     WorkgroupSizeInfo workgroup_size_builtin_;
+
+    /// Set of WGSL extensions that have been enabled.
+    Hashset<core::Extension, 4> enabled_extensions_;
 };
 
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser
 
 #endif  // SRC_TINT_LANG_SPIRV_READER_AST_PARSER_AST_PARSER_H_

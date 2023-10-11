@@ -15,9 +15,11 @@
 #include "src/tint/lang/wgsl/resolver/resolver.h"
 
 #include "gmock/gmock.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::resolver {
 namespace {
@@ -178,7 +180,7 @@ TEST_P(ResolverExpressionKindTest, Test) {
                 ASSERT_NE(expr, nullptr);
                 auto* ty_expr = expr->As<sem::TypeExpression>();
                 ASSERT_NE(ty_expr, nullptr);
-                EXPECT_TRUE(ty_expr->Type()->Is<type::Vector>());
+                EXPECT_TRUE(ty_expr->Type()->Is<core::type::Vector>());
             };
             break;
         }
@@ -266,7 +268,7 @@ TEST_P(ResolverExpressionKindTest, Test) {
                 ASSERT_NE(expr, nullptr);
                 auto* ty_expr = expr->As<sem::TypeExpression>();
                 ASSERT_NE(ty_expr, nullptr);
-                EXPECT_TRUE(ty_expr->Type()->Is<type::I32>());
+                EXPECT_TRUE(ty_expr->Type()->Is<core::type::I32>());
             };
             break;
         }

@@ -22,8 +22,8 @@
 namespace tint::resolver {
 namespace {
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 class ResolverRootIdentifierTest : public ResolverTest {};
 
@@ -72,7 +72,7 @@ TEST_F(ResolverRootIdentifierTest, GlobalUniformVar) {
 }
 
 TEST_F(ResolverRootIdentifierTest, GlobalTextureVar) {
-    auto* a = GlobalVar("a", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()),
+    auto* a = GlobalVar("a", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()),
                         core::AddressSpace::kUndefined, Group(0_a), Binding(0_a));
     auto* expr = Expr(a);
     WrapInFunction(Call("textureDimensions", expr));

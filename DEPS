@@ -102,7 +102,7 @@ deps = {
   },
 
   'tools/clang': {
-    'url': '{chromium_git}/chromium/src/tools/clang@effd9257d456f2d42e9e22fa4f37a24d8cf0b5b5',
+    'url': '{chromium_git}/chromium/src/tools/clang@8f75392b4aa947fb55c7c206b36804229595e4da',
     'condition': 'dawn_standalone',
   },
   'tools/clang/dsymutil': {
@@ -125,7 +125,7 @@ deps = {
   },
   # This is a dependency of //testing
   'third_party/catapult': {
-    'url': '{chromium_git}/catapult.git@c1e70d412ce01fb194f73f7abfdac710aae87dae',
+    'url': '{chromium_git}/catapult.git@dd218dfd815774289f8a81015f7a3131f72afbde',
     'condition': 'dawn_standalone',
   },
   'third_party/google_benchmark/src': {
@@ -135,11 +135,11 @@ deps = {
 
   # Jinja2 and MarkupSafe for the code generator
   'third_party/jinja2': {
-    'url': '{chromium_git}/chromium/src/third_party/jinja2@ee69aa00ee8536f61db6a451f3858745cf587de6',
+    'url': '{chromium_git}/chromium/src/third_party/jinja2@515dd10de9bf63040045902a4a310d2ba25213a0',
     'condition': 'dawn_standalone',
   },
   'third_party/markupsafe': {
-    'url': '{chromium_git}/chromium/src/third_party/markupsafe@0944e71f4b2cb9a871bcbe353f95e889b64a611a',
+    'url': '{chromium_git}/chromium/src/third_party/markupsafe@006709ba3ed87660a17bd4548c45663628f5ed85',
     'condition': 'dawn_standalone',
   },
 
@@ -154,42 +154,51 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@d1e26fa224ef30e22cdf693cf0d6c49daf33e425',
+    'url': '{chromium_git}/angle/angle@9624db05ed7ef219d12b5210d06f37db99092e2d',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@729e92f8ae07d7b695bdcf346318dec4d11d899e',
+    'url': '{swiftshader_git}/SwiftShader@32f9332d1d7aacbdba7c1aa5df894bb1890bb2cc',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@04381109ae471509060a985c908fd53c4b981a31',
+    'url': '{chromium_git}/vulkan-deps@5857bae969d54323f987b6d1ebb4a7e809381eef',
     'condition': 'dawn_standalone',
   },
 
   'third_party/zlib': {
-    'url': '{chromium_git}/chromium/src/third_party/zlib@64bbf988543996eb8df9a86877b32917187eba8f',
+    'url': '{chromium_git}/chromium/src/third_party/zlib@526382e41c9c5275dc329db4328b54e4f344a204',
     'condition': 'dawn_standalone',
   },
 
   'third_party/abseil-cpp': {
-    'url': '{chromium_git}/chromium/src/third_party/abseil-cpp@bc3ab29356a081d0b5dd4ac55e30f4b45d8794cc',
+    'url': '{chromium_git}/chromium/src/third_party/abseil-cpp@4ef9b33175828ea46d091e7e5ec28259d39a8ba5',
     'condition': 'dawn_standalone',
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@4cfac01422927198ee3c8f6fff9e1c563f2a32ee',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@50c4c887f1ccfa1a4bfb158b7dbc93058659ed01',
   },
+
   'third_party/dxheaders': {
     # The non-Windows build of DXC depends on DirectX-Headers, and at a specific commit (not ToT)
     'url': '{chromium_git}/external/github.com/microsoft/DirectX-Headers@980971e835876dc0cde415e8f9bc646e64667bf7',
     'condition': 'host_os != "win"',
   },
 
+  'third_party/khronos/OpenGL-Registry': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/OpenGL-Registry@5bae8738b23d06968e7c3a41308568120943ae77',
+  },
+
+  'third_party/khronos/EGL-Registry': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/EGL-Registry@7dea2ed79187cd13f76183c4b9100159b9e3e071',
+  },
+
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@02f3426192fcb2c84f757d2d1887fd982a974dca',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@5dfa3b88f0863c3949f713804e0461c9cc34a030',
     'condition': 'build_with_chromium',
   },
 
@@ -248,7 +257,7 @@ deps = {
 
   # Misc dependencies inherited from Tint
   'third_party/protobuf': {
-    'url': '{chromium_git}/external/github.com/protocolbuffers/protobuf.git@fde7cf7358ec7cd69e8db9be4f1fa6a5c431386a',
+    'url': '{chromium_git}/external/github.com/protocolbuffers/protobuf.git@2b673bbb57e34fe1bd4570f726fc86b769a3a3d2',
     'condition': 'dawn_standalone',
   },
 }

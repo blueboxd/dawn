@@ -67,6 +67,8 @@
 #define {{API}}_NULLABLE
 #endif
 
+#define WGPU_BREAKING_CHANGE_COUNT_RENAME
+
 #include <stdint.h>
 #include <stddef.h>
 
@@ -178,6 +180,7 @@ extern "C" {
     {% endfor %}
 
 {% endfor %}
+
 #endif  // !defined({{API}}_SKIP_PROCS)
 
 #if !defined({{API}}_SKIP_DECLARATIONS)
@@ -204,6 +207,7 @@ extern "C" {
     {% endfor %}
 
 {% endfor %}
+
 #endif  // !defined({{API}}_SKIP_DECLARATIONS)
 
 #ifdef __cplusplus

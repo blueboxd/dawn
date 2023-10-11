@@ -24,7 +24,7 @@
 #include "src/tint/lang/spirv/reader/ast_parser/fail_stream.h"
 #include "src/tint/lang/wgsl/ast/pipeline_stage.h"
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 
 /// A converter from SPIR-V enums to Tint AST enums.
 class EnumConverter {
@@ -58,14 +58,14 @@ class EnumConverter {
     /// @param dim the SPIR-V Dim value
     /// @param arrayed true if the texture is arrayed
     /// @returns a Tint AST texture dimension
-    type::TextureDimension ToDim(spv::Dim dim, bool arrayed);
+    core::type::TextureDimension ToDim(spv::Dim dim, bool arrayed);
 
     /// Converts a possibly arrayed SPIR-V Dim to a Tint texture dimension.
     /// On failure, logs an error and returns kNone
     /// @param dim the SPIR-V Dim value
     /// @param arrayed true if the texture is arrayed
     /// @returns a Tint AST texture dimension
-    type::TextureDimension ToDim(SpvDim dim, bool arrayed) {
+    core::type::TextureDimension ToDim(SpvDim dim, bool arrayed) {
         return ToDim(static_cast<spv::Dim>(dim), arrayed);
     }
 
@@ -91,6 +91,6 @@ class EnumConverter {
     FailStream fail_stream_;
 };
 
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser
 
 #endif  // SRC_TINT_LANG_SPIRV_READER_AST_PARSER_ENUM_CONVERTER_H_

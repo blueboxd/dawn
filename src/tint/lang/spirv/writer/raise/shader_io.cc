@@ -24,8 +24,8 @@
 #include "src/tint/lang/core/type/array.h"
 #include "src/tint/lang/core/type/struct.h"
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::spirv::writer::raise {
 
@@ -36,23 +36,30 @@ namespace {
 /// output, and declare global variables for them. The wrapper entry point then loads from and
 /// stores to these variables.
 /// We also modify the type of the SampleMask builtin to be an array, as required by Vulkan.
-struct StateImpl : ir::transform::ShaderIOBackendState {
+struct StateImpl : core::ir::transform::ShaderIOBackendState {
     /// The global variable for input builtins.
-    ir::Var* builtin_input_var = nullptr;
+    core::ir::Var* builtin_input_var = nullptr;
     /// The global variable for input locations.
-    ir::Var* location_input_var = nullptr;
+    core::ir::Var* location_input_var = nullptr;
     /// The global variable for output builtins.
-    ir::Var* builtin_output_var = nullptr;
+    core::ir::Var* builtin_output_var = nullptr;
     /// The global variable for output locations.
-    ir::Var* location_output_var = nullptr;
+    core::ir::Var* location_output_var = nullptr;
     /// The member indices for inputs.
     Vector<uint32_t, 4> input_indices;
     /// The member indices for outputs.
     Vector<uint32_t, 4> output_indices;
 
+    /// The configuration options.
+    const ShaderIOConfig& config;
+
+    /// The frag_depth clamp arguments.
+    core::ir::Value* frag_depth_clamp_args = nullptr;
+
     /// Constructor
-    /// @copydoc ShaderIO::ShaderIOBackendState::ShaderIOBackendState
-    using ShaderIOBackendState::ShaderIOBackendState;
+    StateImpl(core::ir::Module* mod, core::ir::Function* f, const ShaderIOConfig& cfg)
+        : ShaderIOBackendState(mod, f), config(cfg) {}
+
     /// Destructor
     ~StateImpl() override {}
 
@@ -65,18 +72,18 @@ struct StateImpl : ir::transform::ShaderIOBackendState {
     /// @param addrspace the address to use for the global variables
     /// @param access the access mode to use for the global variables
     /// @param name_suffix the suffix to add to struct and variable names
-    void MakeStructs(ir::Var*& builtin_var,
-                     ir::Var*& location_var,
+    void MakeStructs(core::ir::Var*& builtin_var,
+                     core::ir::Var*& location_var,
                      Vector<uint32_t, 4>* indices,
-                     Vector<type::Manager::StructMemberDesc, 4>& entries,
+                     Vector<core::type::Manager::StructMemberDesc, 4>& entries,
                      core::AddressSpace addrspace,
                      core::Access access,
                      const char* name_suffix) {
         // Build separate lists of builtin and location entries and record their new indices.
         uint32_t next_builtin_idx = 0;
         uint32_t next_location_idx = 0;
-        Vector<type::Manager::StructMemberDesc, 4> builtin_members;
-        Vector<type::Manager::StructMemberDesc, 4> location_members;
+        Vector<core::type::Manager::StructMemberDesc, 4> builtin_members;
+        Vector<core::type::Manager::StructMemberDesc, 4> location_members;
         for (auto io : entries) {
             if (io.attributes.builtin) {
                 // SampleMask must be an array for Vulkan.
@@ -96,7 +103,7 @@ struct StateImpl : ir::transform::ShaderIOBackendState {
             auto name = ir->NameOf(func).Name() + iotype + name_suffix;
             auto* str = ty.Struct(ir->symbols.New(name + "Struct"), std::move(members));
             auto* var = b.Var(name, ty.ptr(addrspace, str, access));
-            str->SetStructFlag(type::kBlock);
+            str->SetStructFlag(core::type::kBlock);
             b.RootBlock()->Append(var);
             return var;
         };
@@ -109,24 +116,24 @@ struct StateImpl : ir::transform::ShaderIOBackendState {
     }
 
     /// @copydoc ShaderIO::BackendState::FinalizeInputs
-    Vector<ir::FunctionParam*, 4> FinalizeInputs() override {
+    Vector<core::ir::FunctionParam*, 4> FinalizeInputs() override {
         MakeStructs(builtin_input_var, location_input_var, &input_indices, inputs,
                     core::AddressSpace::kIn, core::Access::kRead, "Inputs");
         return tint::Empty;
     }
 
     /// @copydoc ShaderIO::BackendState::FinalizeOutputs
-    ir::Value* FinalizeOutputs() override {
+    core::ir::Value* FinalizeOutputs() override {
         MakeStructs(builtin_output_var, location_output_var, &output_indices, outputs,
                     core::AddressSpace::kOut, core::Access::kWrite, "Outputs");
         return nullptr;
     }
 
     /// @copydoc ShaderIO::BackendState::GetInput
-    ir::Value* GetInput(ir::Builder& builder, uint32_t idx) override {
+    core::ir::Value* GetInput(core::ir::Builder& builder, uint32_t idx) override {
         // Load the input from the global variable declared earlier.
         auto* ptr = ty.ptr(core::AddressSpace::kIn, inputs[idx].type, core::Access::kRead);
-        ir::Access* from = nullptr;
+        core::ir::Access* from = nullptr;
         if (inputs[idx].attributes.builtin) {
             if (inputs[idx].attributes.builtin.value() == core::BuiltinValue::kSampleMask) {
                 // SampleMask becomes an array for SPIR-V, so load from the first element.
@@ -141,10 +148,10 @@ struct StateImpl : ir::transform::ShaderIOBackendState {
     }
 
     /// @copydoc ShaderIO::BackendState::SetOutput
-    void SetOutput(ir::Builder& builder, uint32_t idx, ir::Value* value) override {
+    void SetOutput(core::ir::Builder& builder, uint32_t idx, core::ir::Value* value) override {
         // Store the output to the global variable declared earlier.
         auto* ptr = ty.ptr(core::AddressSpace::kOut, outputs[idx].type, core::Access::kWrite);
-        ir::Access* to = nullptr;
+        core::ir::Access* to = nullptr;
         if (outputs[idx].attributes.builtin) {
             if (outputs[idx].attributes.builtin.value() == core::BuiltinValue::kSampleMask) {
                 // SampleMask becomes an array for SPIR-V, so store to the first element.
@@ -152,22 +159,71 @@ struct StateImpl : ir::transform::ShaderIOBackendState {
             } else {
                 to = builder.Access(ptr, builtin_output_var, u32(output_indices[idx]));
             }
+
+            // Clamp frag_depth values if necessary.
+            if (outputs[idx].attributes.builtin.value() == core::BuiltinValue::kFragDepth) {
+                value = ClampFragDepth(builder, value);
+            }
         } else {
             to = builder.Access(ptr, location_output_var, u32(output_indices[idx]));
         }
         builder.Store(to, value);
     }
+
+    /// Clamp a frag_depth builtin value if necessary.
+    /// @param builder the builder to use for new instructions
+    /// @param frag_depth the incoming frag_depth value
+    /// @returns the clamped value
+    core::ir::Value* ClampFragDepth(core::ir::Builder& builder, core::ir::Value* frag_depth) {
+        if (!config.clamp_frag_depth) {
+            return frag_depth;
+        }
+
+        // Create the clamp args struct and variable.
+        if (!frag_depth_clamp_args) {
+            // Check that there are no push constants in the module already.
+            for (auto* inst : *b.RootBlock()) {
+                if (auto* var = inst->As<core::ir::Var>()) {
+                    auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
+                    if (ptr->AddressSpace() == core::AddressSpace::kPushConstant) {
+                        TINT_ICE() << "cannot clamp frag_depth with pre-existing push constants";
+                    }
+                }
+            }
+
+            // Declare the struct.
+            auto* str = ty.Struct(ir->symbols.Register("FragDepthClampArgs"),
+                                  {
+                                      {ir->symbols.Register("min"), ty.f32()},
+                                      {ir->symbols.Register("max"), ty.f32()},
+                                  });
+            str->SetStructFlag(core::type::kBlock);
+
+            // Declare the variable.
+            auto* var = b.Var("tint_frag_depth_clamp_args", ty.ptr(push_constant, str));
+            b.RootBlock()->Append(var);
+            frag_depth_clamp_args = var->Result();
+        }
+
+        // Clamp the value.
+        auto* args = builder.Load(frag_depth_clamp_args);
+        auto* frag_depth_min = builder.Access(ty.f32(), args, 0_u);
+        auto* frag_depth_max = builder.Access(ty.f32(), args, 1_u);
+        return builder
+            .Call(ty.f32(), core::Function::kClamp, frag_depth, frag_depth_min, frag_depth_max)
+            ->Result();
+    }
 };
 }  // namespace
 
-Result<SuccessType, std::string> ShaderIO(ir::Module* ir) {
+Result<SuccessType, std::string> ShaderIO(core::ir::Module* ir, const ShaderIOConfig& config) {
     auto result = ValidateAndDumpIfNeeded(*ir, "ShaderIO transform");
     if (!result) {
         return result;
     }
 
-    ir::transform::RunShaderIOBase(ir, [](ir::Module* mod, ir::Function* func) {
-        return std::make_unique<StateImpl>(mod, func);
+    core::ir::transform::RunShaderIOBase(ir, [&](core::ir::Module* mod, core::ir::Function* func) {
+        return std::make_unique<StateImpl>(mod, func, config);
     });
 
     return Success;

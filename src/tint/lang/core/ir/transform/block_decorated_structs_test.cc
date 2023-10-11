@@ -21,11 +21,11 @@
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/struct.h"
 
-namespace tint::ir::transform {
+namespace tint::core::ir::transform {
 namespace {
 
-using namespace tint::core::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;     // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using IR_BlockDecoratedStructsTest = TransformTest;
 
@@ -338,4 +338,4 @@ tint_symbol_5 = struct @align(4), @block {
 }
 
 }  // namespace
-}  // namespace tint::ir::transform
+}  // namespace tint::core::ir::transform

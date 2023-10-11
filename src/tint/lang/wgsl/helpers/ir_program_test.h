@@ -40,7 +40,7 @@ class IRProgramTestBase : public BASE, public ProgramBuilder {
 
     /// Build the module, cleaning up the program before returning.
     /// @returns the generated module
-    tint::Result<ir::Module, std::string> Build() {
+    tint::Result<core::ir::Module, std::string> Build() {
         Program program{resolver::Resolve(*this)};
         if (!program.IsValid()) {
             return program.Diagnostics().str();
@@ -48,7 +48,7 @@ class IRProgramTestBase : public BASE, public ProgramBuilder {
 
         auto result = wgsl::reader::ProgramToIR(&program);
         if (result) {
-            auto validated = ir::Validate(result.Get());
+            auto validated = core::ir::Validate(result.Get());
             if (!validated) {
                 return validated.Failure().str();
             }
@@ -59,7 +59,7 @@ class IRProgramTestBase : public BASE, public ProgramBuilder {
     /// Build the module from the given WGSL.
     /// @param wgsl the WGSL to convert to IR
     /// @returns the generated module
-    tint::Result<ir::Module, std::string> Build(std::string wgsl) {
+    tint::Result<core::ir::Module, std::string> Build(std::string wgsl) {
 #if TINT_BUILD_WGSL_READER
         Source::File file("test.wgsl", std::move(wgsl));
         auto program = wgsl::reader::Parse(&file);
@@ -69,21 +69,22 @@ class IRProgramTestBase : public BASE, public ProgramBuilder {
 
         auto result = wgsl::reader::ProgramToIR(&program);
         if (result) {
-            auto validated = ir::Validate(result.Get());
+            auto validated = core::ir::Validate(result.Get());
             if (!validated) {
                 return validated.Failure().str();
             }
         }
         return result;
 #else
+        (void)wgsl;
         return std::string("error: Tint not built with the WGSL reader");
 #endif
     }
 
     /// @param mod the module
     /// @returns the disassembly string of the module
-    std::string Disassemble(ir::Module& mod) {
-        ir::Disassembler d(mod);
+    std::string Disassemble(core::ir::Module& mod) {
+        core::ir::Disassembler d(mod);
         return d.Disassemble();
     }
 };

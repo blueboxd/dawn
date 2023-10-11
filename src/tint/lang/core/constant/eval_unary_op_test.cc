@@ -14,9 +14,9 @@
 
 #include "src/tint/lang/core/constant/eval_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
-namespace tint::constant::test {
+namespace tint::core::constant::test {
 namespace {
 
 struct Case {
@@ -175,4 +175,4 @@ INSTANTIATE_TEST_SUITE_P(Not,
                                           })));
 
 }  // namespace
-}  // namespace tint::constant::test
+}  // namespace tint::core::constant::test

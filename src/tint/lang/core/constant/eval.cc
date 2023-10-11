@@ -26,6 +26,7 @@
 #include "src/tint/lang/core/constant/scalar.h"
 #include "src/tint/lang/core/constant/splat.h"
 #include "src/tint/lang/core/constant/value.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/number.h"
 #include "src/tint/lang/core/type/abstract_float.h"
 #include "src/tint/lang/core/type/abstract_int.h"
@@ -46,10 +47,10 @@
 #include "src/tint/utils/rtti/switch.h"
 #include "src/tint/utils/text/string_stream.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
-namespace tint::constant {
-
+namespace tint::core::constant {
 namespace {
 
 /// Returns the first element of a parameter pack
@@ -64,8 +65,8 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_iu32(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const type::I32*) { return f(cs->template ValueAs<i32>()...); },
-        [&](const type::U32*) { return f(cs->template ValueAs<u32>()...); });
+        [&](const core::type::I32*) { return f(cs->template ValueAs<i32>()...); },
+        [&](const core::type::U32*) { return f(cs->template ValueAs<u32>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -74,9 +75,9 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_ia_iu32(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const type::AbstractInt*) { return f(cs->template ValueAs<AInt>()...); },
-        [&](const type::I32*) { return f(cs->template ValueAs<i32>()...); },
-        [&](const type::U32*) { return f(cs->template ValueAs<u32>()...); });
+        [&](const core::type::AbstractInt*) { return f(cs->template ValueAs<AInt>()...); },
+        [&](const core::type::I32*) { return f(cs->template ValueAs<i32>()...); },
+        [&](const core::type::U32*) { return f(cs->template ValueAs<u32>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -85,10 +86,10 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_ia_iu32_bool(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const type::AbstractInt*) { return f(cs->template ValueAs<AInt>()...); },
-        [&](const type::I32*) { return f(cs->template ValueAs<i32>()...); },
-        [&](const type::U32*) { return f(cs->template ValueAs<u32>()...); },
-        [&](const type::Bool*) { return f(cs->template ValueAs<bool>()...); });
+        [&](const core::type::AbstractInt*) { return f(cs->template ValueAs<AInt>()...); },
+        [&](const core::type::I32*) { return f(cs->template ValueAs<i32>()...); },
+        [&](const core::type::U32*) { return f(cs->template ValueAs<u32>()...); },
+        [&](const core::type::Bool*) { return f(cs->template ValueAs<bool>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -97,11 +98,11 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_fia_fi32_f16(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const type::AbstractInt*) { return f(cs->template ValueAs<AInt>()...); },
-        [&](const type::AbstractFloat*) { return f(cs->template ValueAs<AFloat>()...); },
-        [&](const type::F32*) { return f(cs->template ValueAs<f32>()...); },
-        [&](const type::I32*) { return f(cs->template ValueAs<i32>()...); },
-        [&](const type::F16*) { return f(cs->template ValueAs<f16>()...); });
+        [&](const core::type::AbstractInt*) { return f(cs->template ValueAs<AInt>()...); },
+        [&](const core::type::AbstractFloat*) { return f(cs->template ValueAs<AFloat>()...); },
+        [&](const core::type::F32*) { return f(cs->template ValueAs<f32>()...); },
+        [&](const core::type::I32*) { return f(cs->template ValueAs<i32>()...); },
+        [&](const core::type::F16*) { return f(cs->template ValueAs<f16>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -110,12 +111,12 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_fia_fiu32_f16(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const type::AbstractInt*) { return f(cs->template ValueAs<AInt>()...); },
-        [&](const type::AbstractFloat*) { return f(cs->template ValueAs<AFloat>()...); },
-        [&](const type::F32*) { return f(cs->template ValueAs<f32>()...); },
-        [&](const type::I32*) { return f(cs->template ValueAs<i32>()...); },
-        [&](const type::U32*) { return f(cs->template ValueAs<u32>()...); },
-        [&](const type::F16*) { return f(cs->template ValueAs<f16>()...); });
+        [&](const core::type::AbstractInt*) { return f(cs->template ValueAs<AInt>()...); },
+        [&](const core::type::AbstractFloat*) { return f(cs->template ValueAs<AFloat>()...); },
+        [&](const core::type::F32*) { return f(cs->template ValueAs<f32>()...); },
+        [&](const core::type::I32*) { return f(cs->template ValueAs<i32>()...); },
+        [&](const core::type::U32*) { return f(cs->template ValueAs<u32>()...); },
+        [&](const core::type::F16*) { return f(cs->template ValueAs<f16>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -124,13 +125,13 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_fia_fiu32_f16_bool(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const type::AbstractInt*) { return f(cs->template ValueAs<AInt>()...); },
-        [&](const type::AbstractFloat*) { return f(cs->template ValueAs<AFloat>()...); },
-        [&](const type::F32*) { return f(cs->template ValueAs<f32>()...); },
-        [&](const type::I32*) { return f(cs->template ValueAs<i32>()...); },
-        [&](const type::U32*) { return f(cs->template ValueAs<u32>()...); },
-        [&](const type::F16*) { return f(cs->template ValueAs<f16>()...); },
-        [&](const type::Bool*) { return f(cs->template ValueAs<bool>()...); });
+        [&](const core::type::AbstractInt*) { return f(cs->template ValueAs<AInt>()...); },
+        [&](const core::type::AbstractFloat*) { return f(cs->template ValueAs<AFloat>()...); },
+        [&](const core::type::F32*) { return f(cs->template ValueAs<f32>()...); },
+        [&](const core::type::I32*) { return f(cs->template ValueAs<i32>()...); },
+        [&](const core::type::U32*) { return f(cs->template ValueAs<u32>()...); },
+        [&](const core::type::F16*) { return f(cs->template ValueAs<f16>()...); },
+        [&](const core::type::Bool*) { return f(cs->template ValueAs<bool>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -139,9 +140,9 @@ template <typename F, typename... CONSTANTS>
 auto Dispatch_fa_f32_f16(F&& f, CONSTANTS&&... cs) {
     return Switch(
         First(cs...)->Type(),  //
-        [&](const type::AbstractFloat*) { return f(cs->template ValueAs<AFloat>()...); },
-        [&](const type::F32*) { return f(cs->template ValueAs<f32>()...); },
-        [&](const type::F16*) { return f(cs->template ValueAs<f16>()...); });
+        [&](const core::type::AbstractFloat*) { return f(cs->template ValueAs<AFloat>()...); },
+        [&](const core::type::F32*) { return f(cs->template ValueAs<f32>()...); },
+        [&](const core::type::F16*) { return f(cs->template ValueAs<f16>()...); });
 }
 
 /// Helper that calls `f` passing in the value of all `cs`.
@@ -152,23 +153,23 @@ auto Dispatch_bool(F&& f, CONSTANTS&&... cs) {
 }
 
 /// ZeroTypeDispatch is a helper for calling the function `f`, passing a single zero-value argument
-/// of the C++ type that corresponds to the type::Type `type`. For example, calling
+/// of the C++ type that corresponds to the core::type::Type `type`. For example, calling
 /// `ZeroTypeDispatch()` with a type of `type::I32*` will call the function f with a single argument
 /// of `i32(0)`.
 /// @returns the value returned by calling `f`.
 /// @note `type` must be a scalar or abstract numeric type. Other types will not call `f`, and will
 /// return the zero-initialized value of the return type for `f`.
 template <typename F>
-auto ZeroTypeDispatch(const type::Type* type, F&& f) {
+auto ZeroTypeDispatch(const core::type::Type* type, F&& f) {
     return Switch(
-        type,                                                      //
-        [&](const type::AbstractInt*) { return f(AInt(0)); },      //
-        [&](const type::AbstractFloat*) { return f(AFloat(0)); },  //
-        [&](const type::I32*) { return f(i32(0)); },               //
-        [&](const type::U32*) { return f(u32(0)); },               //
-        [&](const type::F32*) { return f(f32(0)); },               //
-        [&](const type::F16*) { return f(f16(0)); },               //
-        [&](const type::Bool*) { return f(static_cast<bool>(0)); });
+        type,                                                            //
+        [&](const core::type::AbstractInt*) { return f(AInt(0)); },      //
+        [&](const core::type::AbstractFloat*) { return f(AFloat(0)); },  //
+        [&](const core::type::I32*) { return f(i32(0)); },               //
+        [&](const core::type::U32*) { return f(u32(0)); },               //
+        [&](const core::type::F32*) { return f(f32(0)); },               //
+        [&](const core::type::F16*) { return f(f16(0)); },               //
+        [&](const core::type::Bool*) { return f(static_cast<bool>(0)); });
 }
 
 template <typename NumberT>
@@ -241,7 +242,7 @@ struct ConvertContext {
 /// @returns the converted scalar, or nullptr on error.
 template <typename T>
 const ScalarBase* ScalarConvert(const Scalar<T>* scalar,
-                                const type::Type* target_ty,
+                                const core::type::Type* target_ty,
                                 ConvertContext& ctx) {
     TINT_BEGIN_DISABLE_WARNING(UNREACHABLE_CODE);
     if (target_ty == scalar->type) {
@@ -256,7 +257,7 @@ const ScalarBase* ScalarConvert(const Scalar<T>* scalar,
         using FROM = T;
         if constexpr (std::is_same_v<TO, bool>) {
             // [x -> bool]
-            return ctx.mgr.Get<Scalar<TO>>(target_ty, !scalar->IsPositiveZero());
+            return ctx.mgr.Get<Scalar<TO>>(target_ty, !scalar->IsZero());
         } else if constexpr (std::is_same_v<FROM, bool>) {
             // [bool -> x]
             return ctx.mgr.Get<Scalar<TO>>(target_ty, TO(scalar->value ? 1 : 0));
@@ -318,19 +319,19 @@ const ScalarBase* ScalarConvert(const Scalar<T>* scalar,
 /// Converts the constant value to the target type.
 /// @returns the converted value, or nullptr on error.
 const Value* ConvertInternal(const Value* root_value,
-                             const type::Type* root_target_ty,
+                             const core::type::Type* root_target_ty,
                              ConvertContext& ctx) {
     struct ActionConvert {
         const Value* value = nullptr;
-        const type::Type* target_ty = nullptr;
+        const core::type::Type* target_ty = nullptr;
     };
     struct ActionBuildSplat {
         size_t count = 0;
-        const type::Type* type = nullptr;
+        const core::type::Type* type = nullptr;
     };
     struct ActionBuildComposite {
         size_t count = 0;
-        const type::Type* type = nullptr;
+        const core::type::Type* type = nullptr;
     };
     using Action = std::variant<ActionConvert, ActionBuildSplat, ActionBuildComposite>;
 
@@ -371,22 +372,22 @@ const Value* ConvertInternal(const Value* root_value,
             [&](const ScalarBase* scalar) {
                 auto* converted = Switch(
                     scalar,
-                    [&](const Scalar<tint::AFloat>* val) {
+                    [&](const Scalar<AFloat>* val) {
                         return ScalarConvert(val, convert->target_ty, ctx);
                     },
-                    [&](const Scalar<tint::AInt>* val) {
+                    [&](const Scalar<AInt>* val) {
                         return ScalarConvert(val, convert->target_ty, ctx);
                     },
-                    [&](const Scalar<tint::u32>* val) {
+                    [&](const Scalar<u32>* val) {
                         return ScalarConvert(val, convert->target_ty, ctx);
                     },
-                    [&](const Scalar<tint::i32>* val) {
+                    [&](const Scalar<i32>* val) {
                         return ScalarConvert(val, convert->target_ty, ctx);
                     },
-                    [&](const Scalar<tint::f32>* val) {
+                    [&](const Scalar<f32>* val) {
                         return ScalarConvert(val, convert->target_ty, ctx);
                     },
-                    [&](const Scalar<tint::f16>* val) {
+                    [&](const Scalar<f16>* val) {
                         return ScalarConvert(val, convert->target_ty, ctx);
                     },
                     [&](const Scalar<bool>* val) {
@@ -399,8 +400,8 @@ const Value* ConvertInternal(const Value* root_value,
                 return true;
             },
             [&](const Splat* splat) {
-                const type::Type* target_el_ty = nullptr;
-                if (auto* str = convert->target_ty->As<type::Struct>()) {
+                const core::type::Type* target_el_ty = nullptr;
+                if (auto* str = convert->target_ty->As<core::type::Struct>()) {
                     // Structure conversion.
                     auto members = str->Members();
                     target_el_ty = members[0]->Type();
@@ -430,7 +431,7 @@ const Value* ConvertInternal(const Value* root_value,
                 // Build the new composite from the converted element types.
                 pending.Push(ActionBuildComposite{el_count, convert->target_ty});
 
-                if (auto* str = convert->target_ty->As<type::Struct>()) {
+                if (auto* str = convert->target_ty->As<core::type::Struct>()) {
                     if (TINT_UNLIKELY(str->Members().Length() != el_count)) {
                         TINT_ICE()
                             << "const-eval conversion of structure has mismatched element counts";
@@ -461,23 +462,22 @@ const Value* ConvertInternal(const Value* root_value,
     return value_stack.Pop();
 }
 
-namespace detail {
-/// Implementation of TransformElements
+/// TransformElements constructs a new constant of type `composite_ty` by applying the
+/// transformation function `f` on each of the most deeply nested elements of 'cs'. Assumes that all
+/// input constants `cs` are of the same arity (all scalars or all vectors of the same size).
+/// If `f`'s last argument is a `size_t`, then the index of the most deeply nested element inside
+/// the most deeply nested aggregate type will be passed in.
 template <typename F, typename... CONSTANTS>
-Eval::Result TransformElements(Manager& mgr,
-                               const type::Type* composite_ty,
-                               F&& f,
-                               size_t index,
-                               CONSTANTS&&... cs) {
+tint::traits::EnableIf<tint::traits::IsType<size_t, tint::traits::LastParameterType<F>>,
+                       Eval::Result>
+TransformElements(Manager& mgr,
+                  const core::type::Type* composite_ty,
+                  const F& f,
+                  size_t index,
+                  CONSTANTS&&... cs) {
     auto [el_ty, n] = First(cs...)->Type()->Elements();
     if (!el_ty) {
-        constexpr bool kHasIndexParam =
-            tint::traits::IsType<size_t, tint::traits::LastParameterType<F>>;
-        if constexpr (kHasIndexParam) {
-            return f(cs..., index);
-        } else {
-            return f(cs...);
-        }
+        return f(cs..., index);
     }
 
     auto* composite_el_ty = composite_ty->Elements(composite_ty).type;
@@ -485,8 +485,7 @@ Eval::Result TransformElements(Manager& mgr,
     Vector<const Value*, 8> els;
     els.Reserve(n);
     for (uint32_t i = 0; i < n; i++) {
-        if (auto el = detail::TransformElements(mgr, composite_el_ty, std::forward<F>(f), index + i,
-                                                cs->Index(i)...)) {
+        if (auto el = TransformElements(mgr, composite_el_ty, f, index + i, cs->Index(i)...)) {
             els.Push(el.Get());
 
         } else {
@@ -495,31 +494,78 @@ Eval::Result TransformElements(Manager& mgr,
     }
     return mgr.Composite(composite_ty, std::move(els));
 }
-}  // namespace detail
 
-/// TransformElements constructs a new constant of type `composite_ty` by applying the
-/// transformation function `f` on each of the most deeply nested elements of 'cs'. Assumes that all
-/// input constants `cs` are of the same arity (all scalars or all vectors of the same size).
-/// If `f`'s last argument is a `size_t`, then the index of the most deeply nested element inside
-/// the most deeply nested aggregate type will be passed in.
-template <typename F, typename... CONSTANTS>
-Eval::Result TransformElements(Manager& mgr,
-                               const type::Type* composite_ty,
-                               F&& f,
-                               CONSTANTS&&... cs) {
-    return detail::TransformElements(mgr, composite_ty, f, 0, cs...);
+/// Signature of a unary transformation callback
+using UnaryTransform = std::function<Eval::Result(const Value*)>;
+
+/// TransformUnaryElements constructs a new constant of type `composite_ty` by applying the
+/// transformation function 'f' on each of the most deeply nested elements of `c0`.
+Eval::Result TransformUnaryElements(Manager& mgr,
+                                    const core::type::Type* composite_ty,
+                                    const UnaryTransform& f,
+                                    const Value* c0) {
+    auto [el_ty, n] = c0->Type()->Elements();
+    if (!el_ty) {
+        return f(c0);
+    }
+
+    auto* composite_el_ty = composite_ty->Elements(composite_ty).type;
+
+    Vector<const Value*, 8> els;
+    els.Reserve(n);
+    for (uint32_t i = 0; i < n; i++) {
+        if (auto el = TransformUnaryElements(mgr, composite_el_ty, f, c0->Index(i))) {
+            els.Push(el.Get());
+
+        } else {
+            return el.Failure();
+        }
+    }
+    return mgr.Composite(composite_ty, std::move(els));
 }
+
+/// Signature of a binary transformation callback.
+using BinaryTransform = std::function<Eval::Result(const Value*, const Value*)>;
 
 /// TransformBinaryElements constructs a new constant of type `composite_ty` by applying the
 /// transformation function 'f' on each of the most deeply nested elements of both `c0` and `c1`.
-/// Unlike TransformElements, this function handles the constants being of different arity, e.g.
-/// vector-scalar, scalar-vector.
-template <typename F>
 Eval::Result TransformBinaryElements(Manager& mgr,
-                                     const type::Type* composite_ty,
-                                     F&& f,
+                                     const core::type::Type* composite_ty,
+                                     const BinaryTransform& f,
                                      const Value* c0,
                                      const Value* c1) {
+    auto [el_ty, n] = c0->Type()->Elements();
+    if (!el_ty) {
+        return f(c0, c1);
+    }
+
+    TINT_ASSERT(n == c1->Type()->Elements().count);
+
+    auto* composite_el_ty = composite_ty->Elements(composite_ty).type;
+
+    Vector<const Value*, 8> els;
+    els.Reserve(n);
+    for (uint32_t i = 0; i < n; i++) {
+        if (auto el =
+                TransformBinaryElements(mgr, composite_el_ty, f, c0->Index(i), c1->Index(i))) {
+            els.Push(el.Get());
+
+        } else {
+            return el.Failure();
+        }
+    }
+    return mgr.Composite(composite_ty, std::move(els));
+}
+
+/// TransformBinaryDifferingArityElements constructs a new constant of type `composite_ty` by
+/// applying the transformation function 'f' on each of the most deeply nested elements of both `c0`
+/// and `c1`. Unlike TransformElements, this function handles the constants being of different
+/// arity, e.g. vector-scalar, scalar-vector.
+Eval::Result TransformBinaryDifferingArityElements(Manager& mgr,
+                                                   const core::type::Type* composite_ty,
+                                                   const BinaryTransform& f,
+                                                   const Value* c0,
+                                                   const Value* c1) {
     uint32_t n0 = c0->Type()->Elements(nullptr, 1).count;
     uint32_t n1 = c1->Type()->Elements(nullptr, 1).count;
     uint32_t max_n = std::max(n0, n1);
@@ -534,14 +580,44 @@ Eval::Result TransformBinaryElements(Manager& mgr,
     els.Reserve(max_n);
     for (uint32_t i = 0; i < max_n; i++) {
         auto nested_or_self = [&](auto* c, uint32_t num_elems) {
-            if (num_elems == 1) {
-                return c;
-            }
-            return c->Index(i);
+            return (num_elems == 1) ? c : c->Index(i);
         };
-        if (auto el = TransformBinaryElements(mgr, element_ty, std::forward<F>(f),
-                                              nested_or_self(c0, n0), nested_or_self(c1, n1))) {
+        if (auto el = TransformBinaryDifferingArityElements(
+                mgr, element_ty, f, nested_or_self(c0, n0), nested_or_self(c1, n1))) {
             els.Push(el.Get());
+        } else {
+            return el.Failure();
+        }
+    }
+    return mgr.Composite(composite_ty, std::move(els));
+}
+
+/// Signature of a ternary transformation callback
+using TernaryTransform = std::function<Eval::Result(const Value*, const Value*, const Value*)>;
+
+/// TransformTernaryElements constructs a new constant of type `composite_ty` by applying the
+/// transformation function 'f' on each of the most deeply nested elements of both `c0`, `c1`, and
+/// `c2`.
+Eval::Result TransformTernaryElements(Manager& mgr,
+                                      const core::type::Type* composite_ty,
+                                      const TernaryTransform& f,
+                                      const Value* c0,
+                                      const Value* c1,
+                                      const Value* c2) {
+    auto [el_ty, n] = c0->Type()->Elements();
+    if (!el_ty) {
+        return f(c0, c1, c2);
+    }
+
+    auto* composite_el_ty = composite_ty->Elements(composite_ty).type;
+
+    Vector<const Value*, 8> els;
+    els.Reserve(n);
+    for (uint32_t i = 0; i < n; i++) {
+        if (auto el = TransformTernaryElements(mgr, composite_el_ty, f, c0->Index(i), c1->Index(i),
+                                               c2->Index(i))) {
+            els.Push(el.Get());
+
         } else {
             return el.Failure();
         }
@@ -554,9 +630,9 @@ Eval::Eval(Manager& manager, diag::List& diagnostics, bool use_runtime_semantics
     : mgr(manager), diags(diagnostics), use_runtime_semantics_(use_runtime_semantics) {}
 
 template <typename T>
-Eval::Result Eval::CreateScalar(const Source& source, const type::Type* t, T v) {
+Eval::Result Eval::CreateScalar(const Source& source, const core::type::Type* t, T v) {
     static_assert(IsNumber<T> || std::is_same_v<T, bool>, "T must be a Number or bool");
-    TINT_ASSERT(t->Is<type::Scalar>());
+    TINT_ASSERT(t->Is<core::type::Scalar>());
 
     if constexpr (IsFloatingPoint<T>) {
         if (!std::isfinite(v.value)) {
@@ -571,18 +647,18 @@ Eval::Result Eval::CreateScalar(const Source& source, const type::Type* t, T v) 
     return mgr.Get<Scalar<T>>(t, v);
 }
 
-const Value* Eval::ZeroValue(const type::Type* type) {
+const Value* Eval::ZeroValue(const core::type::Type* type) {
     return Switch(
         type,  //
-        [&](const type::Vector* v) -> const Value* {
+        [&](const core::type::Vector* v) -> const Value* {
             auto* zero_el = ZeroValue(v->type());
             return mgr.Splat(type, zero_el, v->Width());
         },
-        [&](const type::Matrix* m) -> const Value* {
+        [&](const core::type::Matrix* m) -> const Value* {
             auto* zero_el = ZeroValue(m->ColumnType());
             return mgr.Splat(type, zero_el, m->columns());
         },
-        [&](const type::Array* a) -> const Value* {
+        [&](const core::type::Array* a) -> const Value* {
             if (auto n = a->ConstantCount()) {
                 if (auto* zero_el = ZeroValue(a->ElemType())) {
                     return mgr.Splat(type, zero_el, n.value());
@@ -590,8 +666,8 @@ const Value* Eval::ZeroValue(const type::Type* type) {
             }
             return nullptr;
         },
-        [&](const type::Struct* s) -> const Value* {
-            Hashmap<const type::Type*, const Value*, 8> zero_by_type;
+        [&](const core::type::Struct* s) -> const Value* {
+            Hashmap<const core::type::Type*, const Value*, 8> zero_by_type;
             Vector<const Value*, 4> zeros;
             zeros.Reserve(s->Members().Length());
             for (auto* member : s->Members()) {
@@ -1048,7 +1124,7 @@ tint::Result<NumberT> Eval::Sqrt(const Source& source, NumberT v) {
     return NumberT{std::sqrt(v)};
 }
 
-auto Eval::SqrtFunc(const Source& source, const type::Type* elem_ty) {
+auto Eval::SqrtFunc(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto v) -> Eval::Result {
         if (auto r = Sqrt(source, v)) {
             return CreateScalar(source, elem_ty, r.Get());
@@ -1070,7 +1146,7 @@ tint::Result<NumberT> Eval::Clamp(const Source& source, NumberT e, NumberT low, 
     return NumberT{std::min(std::max(e, low), high)};
 }
 
-auto Eval::ClampFunc(const Source& source, const type::Type* elem_ty) {
+auto Eval::ClampFunc(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto e, auto low, auto high) -> Eval::Result {
         if (auto r = Clamp(source, e, low, high)) {
             return CreateScalar(source, elem_ty, r.Get());
@@ -1079,7 +1155,7 @@ auto Eval::ClampFunc(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-auto Eval::AddFunc(const Source& source, const type::Type* elem_ty) {
+auto Eval::AddFunc(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a1, auto a2) -> Eval::Result {
         if (auto r = Add(source, a1, a2)) {
             return CreateScalar(source, elem_ty, r.Get());
@@ -1088,7 +1164,7 @@ auto Eval::AddFunc(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-auto Eval::SubFunc(const Source& source, const type::Type* elem_ty) {
+auto Eval::SubFunc(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a1, auto a2) -> Eval::Result {
         if (auto r = Sub(source, a1, a2)) {
             return CreateScalar(source, elem_ty, r.Get());
@@ -1097,7 +1173,7 @@ auto Eval::SubFunc(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-auto Eval::MulFunc(const Source& source, const type::Type* elem_ty) {
+auto Eval::MulFunc(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a1, auto a2) -> Eval::Result {
         if (auto r = Mul(source, a1, a2)) {
             return CreateScalar(source, elem_ty, r.Get());
@@ -1106,7 +1182,7 @@ auto Eval::MulFunc(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-auto Eval::DivFunc(const Source& source, const type::Type* elem_ty) {
+auto Eval::DivFunc(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a1, auto a2) -> Eval::Result {
         if (auto r = Div(source, a1, a2)) {
             return CreateScalar(source, elem_ty, r.Get());
@@ -1115,7 +1191,7 @@ auto Eval::DivFunc(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-auto Eval::ModFunc(const Source& source, const type::Type* elem_ty) {
+auto Eval::ModFunc(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a1, auto a2) -> Eval::Result {
         if (auto r = Mod(source, a1, a2)) {
             return CreateScalar(source, elem_ty, r.Get());
@@ -1124,7 +1200,7 @@ auto Eval::ModFunc(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-auto Eval::Dot2Func(const Source& source, const type::Type* elem_ty) {
+auto Eval::Dot2Func(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a1, auto a2, auto b1, auto b2) -> Eval::Result {
         if (auto r = Dot2(source, a1, a2, b1, b2)) {
             return CreateScalar(source, elem_ty, r.Get());
@@ -1133,7 +1209,7 @@ auto Eval::Dot2Func(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-auto Eval::Dot3Func(const Source& source, const type::Type* elem_ty) {
+auto Eval::Dot3Func(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a1, auto a2, auto a3, auto b1, auto b2, auto b3) -> Eval::Result {
         if (auto r = Dot3(source, a1, a2, a3, b1, b2, b3)) {
             return CreateScalar(source, elem_ty, r.Get());
@@ -1142,7 +1218,7 @@ auto Eval::Dot3Func(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-auto Eval::Dot4Func(const Source& source, const type::Type* elem_ty) {
+auto Eval::Dot4Func(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a1, auto a2, auto a3, auto a4, auto b1, auto b2, auto b3,
                auto b4) -> Eval::Result {
         if (auto r = Dot4(source, a1, a2, a3, a4, b1, b2, b3, b4)) {
@@ -1153,7 +1229,7 @@ auto Eval::Dot4Func(const Source& source, const type::Type* elem_ty) {
 }
 
 Eval::Result Eval::Dot(const Source& source, const Value* v1, const Value* v2) {
-    auto* vec_ty = v1->Type()->As<type::Vector>();
+    auto* vec_ty = v1->Type()->As<core::type::Vector>();
     TINT_ASSERT(vec_ty);
     auto* elem_ty = vec_ty->type();
     switch (vec_ty->Width()) {
@@ -1177,8 +1253,8 @@ Eval::Result Eval::Dot(const Source& source, const Value* v1, const Value* v2) {
     return Failure;
 }
 
-Eval::Result Eval::Length(const Source& source, const type::Type* ty, const Value* c0) {
-    auto* vec_ty = c0->Type()->As<type::Vector>();
+Eval::Result Eval::Length(const Source& source, const core::type::Type* ty, const Value* c0) {
+    auto* vec_ty = c0->Type()->As<core::type::Vector>();
     // Evaluates to the absolute value of e if T is scalar.
     if (vec_ty == nullptr) {
         auto create = [&](auto e) {
@@ -1197,26 +1273,26 @@ Eval::Result Eval::Length(const Source& source, const type::Type* ty, const Valu
 }
 
 Eval::Result Eval::Mul(const Source& source,
-                       const type::Type* ty,
+                       const core::type::Type* ty,
                        const Value* v1,
                        const Value* v2) {
     auto transform = [&](const Value* c0, const Value* c1) {
         return Dispatch_fia_fiu32_f16(MulFunc(source, c0->Type()), c0, c1);
     };
-    return TransformBinaryElements(mgr, ty, transform, v1, v2);
+    return TransformBinaryDifferingArityElements(mgr, ty, transform, v1, v2);
 }
 
 Eval::Result Eval::Sub(const Source& source,
-                       const type::Type* ty,
+                       const core::type::Type* ty,
                        const Value* v1,
                        const Value* v2) {
     auto transform = [&](const Value* c0, const Value* c1) {
         return Dispatch_fia_fiu32_f16(SubFunc(source, c0->Type()), c0, c1);
     };
-    return TransformBinaryElements(mgr, ty, transform, v1, v2);
+    return TransformBinaryDifferingArityElements(mgr, ty, transform, v1, v2);
 }
 
-auto Eval::Det2Func(const Source& source, const type::Type* elem_ty) {
+auto Eval::Det2Func(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a, auto b, auto c, auto d) -> Eval::Result {
         if (auto r = Det2(source, a, b, c, d)) {
             return CreateScalar(source, elem_ty, r.Get());
@@ -1225,7 +1301,7 @@ auto Eval::Det2Func(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-auto Eval::Det3Func(const Source& source, const type::Type* elem_ty) {
+auto Eval::Det3Func(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a, auto b, auto c, auto d, auto e, auto f, auto g, auto h,
                auto i) -> Eval::Result {
         if (auto r = Det3(source, a, b, c, d, e, f, g, h, i)) {
@@ -1235,7 +1311,7 @@ auto Eval::Det3Func(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-auto Eval::Det4Func(const Source& source, const type::Type* elem_ty) {
+auto Eval::Det4Func(const Source& source, const core::type::Type* elem_ty) {
     return [=](auto a, auto b, auto c, auto d, auto e, auto f, auto g, auto h, auto i, auto j,
                auto k, auto l, auto m, auto n, auto o, auto p) -> Eval::Result {
         if (auto r = Det4(source, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)) {
@@ -1245,7 +1321,7 @@ auto Eval::Det4Func(const Source& source, const type::Type* elem_ty) {
     };
 }
 
-Eval::Result Eval::ArrayOrStructCtor(const type::Type* ty, VectorRef<const Value*> args) {
+Eval::Result Eval::ArrayOrStructCtor(const core::type::Type* ty, VectorRef<const Value*> args) {
     if (args.IsEmpty()) {
         return ZeroValue(ty);
     }
@@ -1259,7 +1335,9 @@ Eval::Result Eval::ArrayOrStructCtor(const type::Type* ty, VectorRef<const Value
     return mgr.Composite(ty, std::move(args));
 }
 
-Eval::Result Eval::Conv(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::Conv(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto* el_ty = ty->Elements(ty).type;
     if (!el_ty) {
         return nullptr;
@@ -1272,26 +1350,32 @@ Eval::Result Eval::Conv(const type::Type* ty, VectorRef<const Value*> args, cons
     return Convert(ty, args[0], source);
 }
 
-Eval::Result Eval::Zero(const type::Type* ty, VectorRef<const Value*>, const Source&) {
+Eval::Result Eval::Zero(const core::type::Type* ty, VectorRef<const Value*>, const Source&) {
     return ZeroValue(ty);
 }
 
-Eval::Result Eval::Identity(const type::Type*, VectorRef<const Value*> args, const Source&) {
+Eval::Result Eval::Identity(const core::type::Type*, VectorRef<const Value*> args, const Source&) {
     return args[0];
 }
 
-Eval::Result Eval::VecSplat(const type::Type* ty, VectorRef<const Value*> args, const Source&) {
+Eval::Result Eval::VecSplat(const core::type::Type* ty,
+                            VectorRef<const Value*> args,
+                            const Source&) {
     if (auto* arg = args[0]) {
-        return mgr.Splat(ty, arg, static_cast<const type::Vector*>(ty)->Width());
+        return mgr.Splat(ty, arg, static_cast<const core::type::Vector*>(ty)->Width());
     }
     return nullptr;
 }
 
-Eval::Result Eval::VecInitS(const type::Type* ty, VectorRef<const Value*> args, const Source&) {
+Eval::Result Eval::VecInitS(const core::type::Type* ty,
+                            VectorRef<const Value*> args,
+                            const Source&) {
     return mgr.Composite(ty, args);
 }
 
-Eval::Result Eval::VecInitM(const type::Type* ty, VectorRef<const Value*> args, const Source&) {
+Eval::Result Eval::VecInitM(const core::type::Type* ty,
+                            VectorRef<const Value*> args,
+                            const Source&) {
     Vector<const Value*, 4> els;
     for (auto* arg : args) {
         auto* val = arg;
@@ -1299,7 +1383,7 @@ Eval::Result Eval::VecInitM(const type::Type* ty, VectorRef<const Value*> args, 
             return nullptr;
         }
         auto* arg_ty = arg->Type();
-        if (auto* arg_vec = arg_ty->As<type::Vector>()) {
+        if (auto* arg_vec = arg_ty->As<core::type::Vector>()) {
             // Extract out vector elements.
             for (uint32_t j = 0; j < arg_vec->Width(); j++) {
                 auto* el = val->Index(j);
@@ -1315,8 +1399,10 @@ Eval::Result Eval::VecInitM(const type::Type* ty, VectorRef<const Value*> args, 
     return mgr.Composite(ty, std::move(els));
 }
 
-Eval::Result Eval::MatInitS(const type::Type* ty, VectorRef<const Value*> args, const Source&) {
-    auto* m = static_cast<const type::Matrix*>(ty);
+Eval::Result Eval::MatInitS(const core::type::Type* ty,
+                            VectorRef<const Value*> args,
+                            const Source&) {
+    auto* m = static_cast<const core::type::Matrix*>(ty);
 
     Vector<const Value*, 4> els;
     for (uint32_t c = 0; c < m->columns(); c++) {
@@ -1330,12 +1416,14 @@ Eval::Result Eval::MatInitS(const type::Type* ty, VectorRef<const Value*> args, 
     return mgr.Composite(ty, std::move(els));
 }
 
-Eval::Result Eval::MatInitV(const type::Type* ty, VectorRef<const Value*> args, const Source&) {
+Eval::Result Eval::MatInitV(const core::type::Type* ty,
+                            VectorRef<const Value*> args,
+                            const Source&) {
     return mgr.Composite(ty, args);
 }
 
 Eval::Result Eval::Index(const Value* obj_val,
-                         const type::Type* obj_ty,
+                         const core::type::Type* obj_ty,
                          const Value* idx_val,
                          const Source& idx_source) {
     auto el = obj_ty->UnwrapRef()->Elements();
@@ -1357,7 +1445,9 @@ Eval::Result Eval::Index(const Value* obj_val,
     return obj_val ? obj_val->Index(static_cast<size_t>(idx)) : nullptr;
 }
 
-Eval::Result Eval::Swizzle(const type::Type* ty, const Value* object, VectorRef<uint32_t> indices) {
+Eval::Result Eval::Swizzle(const core::type::Type* ty,
+                           const Value* object,
+                           VectorRef<uint32_t> indices) {
     if (indices.Length() == 1) {
         return object->Index(static_cast<size_t>(indices[0]));
     }
@@ -1366,7 +1456,7 @@ Eval::Result Eval::Swizzle(const type::Type* ty, const Value* object, VectorRef<
     return mgr.Composite(ty, std::move(values));
 }
 
-Eval::Result Eval::Bitcast(const type::Type* ty, const Value* value, const Source& source) {
+Eval::Result Eval::Bitcast(const core::type::Type* ty, const Value* value, const Source& source) {
     // Target type
     auto dst_elements = ty->Elements(ty->DeepestElement(), 1u);
     auto dst_el_ty = dst_elements.type;
@@ -1383,7 +1473,8 @@ Eval::Result Eval::Bitcast(const type::Type* ty, const Value* value, const Sourc
     buffer.Reserve(total_bitwidth);
 
     // Ensure elements are of 32-bit or 16-bit numerical scalar type.
-    TINT_ASSERT((src_el_ty->IsAnyOf<type::F32, type::I32, type::U32, type::F16>()));
+    TINT_ASSERT(
+        (src_el_ty->IsAnyOf<core::type::F32, core::type::I32, core::type::U32, core::type::F16>()));
     // Pushes bits from source value into the buffer.
     auto push_src_element_bits = [&](const Value* element) {
         auto push_32_bits = [&](uint32_t v) {
@@ -1398,19 +1489,19 @@ Eval::Result Eval::Bitcast(const type::Type* ty, const Value* value, const Sourc
         };
         Switch(
             src_el_ty,
-            [&](const type::U32*) {  //
+            [&](const core::type::U32*) {  //
                 uint32_t r = element->ValueAs<u32>();
                 push_32_bits(r);
             },
-            [&](const type::I32*) {  //
+            [&](const core::type::I32*) {  //
                 uint32_t r = tint::Bitcast<u32>(element->ValueAs<i32>());
                 push_32_bits(r);
             },
-            [&](const type::F32*) {  //
+            [&](const core::type::F32*) {  //
                 uint32_t r = tint::Bitcast<u32>(element->ValueAs<f32>());
                 push_32_bits(r);
             },
-            [&](const type::F16*) {  //
+            [&](const core::type::F16*) {  //
                 uint16_t r = element->ValueAs<f16>().BitsRepresentation();
                 push_16_bits(r);
             });
@@ -1442,28 +1533,28 @@ Eval::Result Eval::Bitcast(const type::Type* ty, const Value* value, const Sourc
 
         return Switch(
             dst_el_ty,
-            [&](const type::U32*) {  //
+            [&](const core::type::U32*) {  //
                 auto r = CreateScalar(source, dst_el_ty, u32(v));
                 if (r) {
                     els.Push(r.Get());
                 }
                 return r;
             },
-            [&](const type::I32*) {  //
+            [&](const core::type::I32*) {  //
                 auto r = CreateScalar(source, dst_el_ty, tint::Bitcast<i32>(v));
                 if (r) {
                     els.Push(r.Get());
                 }
                 return r;
             },
-            [&](const type::F32*) {  //
+            [&](const core::type::F32*) {  //
                 auto r = CreateScalar(source, dst_el_ty, tint::Bitcast<f32>(v));
                 if (r) {
                     els.Push(r.Get());
                 }
                 return r;
             },
-            [&](const type::F16*) {  //
+            [&](const core::type::F16*) {  //
                 auto r = CreateScalar(source, dst_el_ty, f16::FromBits(static_cast<uint16_t>(v)));
                 if (r) {
                     els.Push(r.Get());
@@ -1485,21 +1576,21 @@ Eval::Result Eval::Bitcast(const type::Type* ty, const Value* value, const Sourc
     return mgr.Composite(ty, std::move(els));
 }
 
-Eval::Result Eval::OpComplement(const type::Type* ty,
-                                VectorRef<const Value*> args,
-                                const Source& source) {
+Eval::Result Eval::Complement(const core::type::Type* ty,
+                              VectorRef<const Value*> args,
+                              const Source& source) {
     auto transform = [&](const Value* c) {
         auto create = [&](auto i) {
             return CreateScalar(source, c->Type(), decltype(i)(~i.value));
         };
         return Dispatch_ia_iu32(create, c);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::OpUnaryMinus(const type::Type* ty,
-                                VectorRef<const Value*> args,
-                                const Source& source) {
+Eval::Result Eval::UnaryMinus(const core::type::Type* ty,
+                              VectorRef<const Value*> args,
+                              const Source& source) {
     auto transform = [&](const Value* c) {
         auto create = [&](auto i) {
             // For signed integrals, avoid C++ UB by not negating the
@@ -1519,44 +1610,46 @@ Eval::Result Eval::OpUnaryMinus(const type::Type* ty,
         };
         return Dispatch_fia_fi32_f16(create, c);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::OpNot(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::Not(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c) {
         auto create = [&](auto i) { return CreateScalar(source, c->Type(), decltype(i)(!i)); };
         return Dispatch_bool(create, c);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::OpPlus(const type::Type* ty,
-                          VectorRef<const Value*> args,
-                          const Source& source) {
+Eval::Result Eval::Plus(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         return Dispatch_fia_fiu32_f16(AddFunc(source, c0->Type()), c0, c1);
     };
 
-    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryDifferingArityElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpMinus(const type::Type* ty,
-                           VectorRef<const Value*> args,
-                           const Source& source) {
+Eval::Result Eval::Minus(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     return Sub(source, ty, args[0], args[1]);
 }
 
-Eval::Result Eval::OpMultiply(const type::Type* ty,
-                              VectorRef<const Value*> args,
-                              const Source& source) {
+Eval::Result Eval::Multiply(const core::type::Type* ty,
+                            VectorRef<const Value*> args,
+                            const Source& source) {
     return Mul(source, ty, args[0], args[1]);
 }
 
-Eval::Result Eval::OpMultiplyMatVec(const type::Type* ty,
-                                    VectorRef<const Value*> args,
-                                    const Source& source) {
-    auto* mat_ty = args[0]->Type()->As<type::Matrix>();
-    auto* vec_ty = args[1]->Type()->As<type::Vector>();
+Eval::Result Eval::MultiplyMatVec(const core::type::Type* ty,
+                                  VectorRef<const Value*> args,
+                                  const Source& source) {
+    auto* mat_ty = args[0]->Type()->As<core::type::Matrix>();
+    auto* vec_ty = args[1]->Type()->As<core::type::Vector>();
     auto* elem_ty = vec_ty->type();
 
     auto dot = [&](const Value* m, size_t row, const Value* v) {
@@ -1602,11 +1695,11 @@ Eval::Result Eval::OpMultiplyMatVec(const type::Type* ty,
     }
     return mgr.Composite(ty, result);
 }
-Eval::Result Eval::OpMultiplyVecMat(const type::Type* ty,
-                                    VectorRef<const Value*> args,
-                                    const Source& source) {
-    auto* vec_ty = args[0]->Type()->As<type::Vector>();
-    auto* mat_ty = args[1]->Type()->As<type::Matrix>();
+Eval::Result Eval::MultiplyVecMat(const core::type::Type* ty,
+                                  VectorRef<const Value*> args,
+                                  const Source& source) {
+    auto* vec_ty = args[0]->Type()->As<core::type::Vector>();
+    auto* mat_ty = args[1]->Type()->As<core::type::Matrix>();
     auto* elem_ty = vec_ty->type();
 
     auto dot = [&](const Value* v, const Value* m, size_t col) {
@@ -1653,13 +1746,13 @@ Eval::Result Eval::OpMultiplyVecMat(const type::Type* ty,
     return mgr.Composite(ty, result);
 }
 
-Eval::Result Eval::OpMultiplyMatMat(const type::Type* ty,
-                                    VectorRef<const Value*> args,
-                                    const Source& source) {
+Eval::Result Eval::MultiplyMatMat(const core::type::Type* ty,
+                                  VectorRef<const Value*> args,
+                                  const Source& source) {
     auto* mat1 = args[0];
     auto* mat2 = args[1];
-    auto* mat1_ty = mat1->Type()->As<type::Matrix>();
-    auto* mat2_ty = mat2->Type()->As<type::Matrix>();
+    auto* mat1_ty = mat1->Type()->As<core::type::Matrix>();
+    auto* mat2_ty = mat2->Type()->As<core::type::Matrix>();
     auto* elem_ty = mat1_ty->type();
 
     auto dot = [&](const Value* m1, size_t row, const Value* m2, size_t col) {
@@ -1711,35 +1804,35 @@ Eval::Result Eval::OpMultiplyMatMat(const type::Type* ty,
         }
 
         // Add column vector to matrix
-        auto* col_vec_ty = ty->As<type::Matrix>()->ColumnType();
+        auto* col_vec_ty = ty->As<core::type::Matrix>()->ColumnType();
         result_mat.Push(mgr.Composite(col_vec_ty, col_vec));
     }
     return mgr.Composite(ty, result_mat);
 }
 
-Eval::Result Eval::OpDivide(const type::Type* ty,
-                            VectorRef<const Value*> args,
-                            const Source& source) {
+Eval::Result Eval::Divide(const core::type::Type* ty,
+                          VectorRef<const Value*> args,
+                          const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         return Dispatch_fia_fiu32_f16(DivFunc(source, c0->Type()), c0, c1);
     };
 
-    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryDifferingArityElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpModulo(const type::Type* ty,
-                            VectorRef<const Value*> args,
-                            const Source& source) {
+Eval::Result Eval::Modulo(const core::type::Type* ty,
+                          VectorRef<const Value*> args,
+                          const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         return Dispatch_fia_fiu32_f16(ModFunc(source, c0->Type()), c0, c1);
     };
 
-    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryDifferingArityElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpEqual(const type::Type* ty,
-                           VectorRef<const Value*> args,
-                           const Source& source) {
+Eval::Result Eval::Equal(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto i, auto j) -> Eval::Result {
             return CreateScalar(source, ty->DeepestElement(), i == j);
@@ -1747,12 +1840,12 @@ Eval::Result Eval::OpEqual(const type::Type* ty,
         return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpNotEqual(const type::Type* ty,
-                              VectorRef<const Value*> args,
-                              const Source& source) {
+Eval::Result Eval::NotEqual(const core::type::Type* ty,
+                            VectorRef<const Value*> args,
+                            const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto i, auto j) -> Eval::Result {
             return CreateScalar(source, ty->DeepestElement(), i != j);
@@ -1760,12 +1853,12 @@ Eval::Result Eval::OpNotEqual(const type::Type* ty,
         return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpLessThan(const type::Type* ty,
-                              VectorRef<const Value*> args,
-                              const Source& source) {
+Eval::Result Eval::LessThan(const core::type::Type* ty,
+                            VectorRef<const Value*> args,
+                            const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto i, auto j) -> Eval::Result {
             return CreateScalar(source, ty->DeepestElement(), i < j);
@@ -1773,12 +1866,12 @@ Eval::Result Eval::OpLessThan(const type::Type* ty,
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpGreaterThan(const type::Type* ty,
-                                 VectorRef<const Value*> args,
-                                 const Source& source) {
+Eval::Result Eval::GreaterThan(const core::type::Type* ty,
+                               VectorRef<const Value*> args,
+                               const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto i, auto j) -> Eval::Result {
             return CreateScalar(source, ty->DeepestElement(), i > j);
@@ -1786,12 +1879,12 @@ Eval::Result Eval::OpGreaterThan(const type::Type* ty,
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpLessThanEqual(const type::Type* ty,
-                                   VectorRef<const Value*> args,
-                                   const Source& source) {
+Eval::Result Eval::LessThanEqual(const core::type::Type* ty,
+                                 VectorRef<const Value*> args,
+                                 const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto i, auto j) -> Eval::Result {
             return CreateScalar(source, ty->DeepestElement(), i <= j);
@@ -1799,12 +1892,12 @@ Eval::Result Eval::OpLessThanEqual(const type::Type* ty,
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpGreaterThanEqual(const type::Type* ty,
-                                      VectorRef<const Value*> args,
-                                      const Source& source) {
+Eval::Result Eval::GreaterThanEqual(const core::type::Type* ty,
+                                    VectorRef<const Value*> args,
+                                    const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto i, auto j) -> Eval::Result {
             return CreateScalar(source, ty->DeepestElement(), i >= j);
@@ -1812,28 +1905,30 @@ Eval::Result Eval::OpGreaterThanEqual(const type::Type* ty,
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpLogicalAnd(const type::Type* ty,
-                                VectorRef<const Value*> args,
-                                const Source& source) {
+Eval::Result Eval::LogicalAnd(const core::type::Type* ty,
+                              VectorRef<const Value*> args,
+                              const Source& source) {
     // Due to short-circuiting, this function is only called if lhs is true, so we only return the
     // value of the rhs.
     TINT_ASSERT(args[0]->ValueAs<bool>());
     return CreateScalar(source, ty, args[1]->ValueAs<bool>());
 }
 
-Eval::Result Eval::OpLogicalOr(const type::Type* ty,
-                               VectorRef<const Value*> args,
-                               const Source& source) {
+Eval::Result Eval::LogicalOr(const core::type::Type* ty,
+                             VectorRef<const Value*> args,
+                             const Source& source) {
     // Due to short-circuiting, this function is only called if lhs is false, so we only only return
     // the value of the rhs.
     TINT_ASSERT(!args[0]->ValueAs<bool>());
     return CreateScalar(source, ty, args[1]->ValueAs<bool>());
 }
 
-Eval::Result Eval::OpAnd(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::And(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto i, auto j) -> Eval::Result {
             using T = decltype(i);
@@ -1848,10 +1943,12 @@ Eval::Result Eval::OpAnd(const type::Type* ty, VectorRef<const Value*> args, con
         return Dispatch_ia_iu32_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpOr(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::Or(const core::type::Type* ty,
+                      VectorRef<const Value*> args,
+                      const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto i, auto j) -> Eval::Result {
             using T = decltype(i);
@@ -1866,10 +1963,12 @@ Eval::Result Eval::OpOr(const type::Type* ty, VectorRef<const Value*> args, cons
         return Dispatch_ia_iu32_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpXor(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::Xor(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto i, auto j) -> Eval::Result {
             return CreateScalar(source, ty->DeepestElement(), decltype(i){i ^ j});
@@ -1877,12 +1976,12 @@ Eval::Result Eval::OpXor(const type::Type* ty, VectorRef<const Value*> args, con
         return Dispatch_ia_iu32(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpShiftLeft(const type::Type* ty,
-                               VectorRef<const Value*> args,
-                               const Source& source) {
+Eval::Result Eval::ShiftLeft(const core::type::Type* ty,
+                             VectorRef<const Value*> args,
+                             const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto e1, auto e2) -> Eval::Result {
             using NumberT = decltype(e1);
@@ -1969,17 +2068,17 @@ Eval::Result Eval::OpShiftLeft(const type::Type* ty,
         return Dispatch_ia_iu32(create, c0, c1);
     };
 
-    if (TINT_UNLIKELY(!args[1]->Type()->DeepestElement()->Is<type::U32>())) {
+    if (TINT_UNLIKELY(!args[1]->Type()->DeepestElement()->Is<core::type::U32>())) {
         TINT_ICE() << "Element type of rhs of ShiftLeft must be a u32";
         return Failure;
     }
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::OpShiftRight(const type::Type* ty,
-                                VectorRef<const Value*> args,
-                                const Source& source) {
+Eval::Result Eval::ShiftRight(const core::type::Type* ty,
+                              VectorRef<const Value*> args,
+                              const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto e1, auto e2) -> Eval::Result {
             using NumberT = decltype(e1);
@@ -1989,7 +2088,7 @@ Eval::Result Eval::OpShiftRight(const type::Type* ty,
             UT e1u = static_cast<UT>(e1);
             UT e2u = static_cast<UT>(e2);
 
-            auto signed_shift_right = [&] {
+            [[maybe_unused]] auto signed_shift_right = [&] {
                 // In C++, right shift of a signed negative number is implementation-defined.
                 // Although most implementations sign-extend, we do it manually to ensure it works
                 // correctly on all implementations.
@@ -2036,15 +2135,17 @@ Eval::Result Eval::OpShiftRight(const type::Type* ty,
         return Dispatch_ia_iu32(create, c0, c1);
     };
 
-    if (TINT_UNLIKELY(!args[1]->Type()->DeepestElement()->Is<type::U32>())) {
+    if (TINT_UNLIKELY(!args[1]->Type()->DeepestElement()->Is<core::type::U32>())) {
         TINT_ICE() << "Element type of rhs of ShiftLeft must be a u32";
         return Failure;
     }
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::abs(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::abs(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto e) {
             using NumberT = decltype(e);
@@ -2064,10 +2165,12 @@ Eval::Result Eval::abs(const type::Type* ty, VectorRef<const Value*> args, const
         };
         return Dispatch_fia_fiu32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::acos(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::acos(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) -> Eval::Result {
             using NumberT = decltype(i);
@@ -2084,10 +2187,12 @@ Eval::Result Eval::acos(const type::Type* ty, VectorRef<const Value*> args, cons
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::acosh(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::acosh(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) -> Eval::Result {
             using NumberT = decltype(i);
@@ -2104,18 +2209,24 @@ Eval::Result Eval::acosh(const type::Type* ty, VectorRef<const Value*> args, con
         return Dispatch_fa_f32_f16(create, c0);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::all(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::all(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     return CreateScalar(source, ty, !args[0]->AnyZero());
 }
 
-Eval::Result Eval::any(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::any(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     return CreateScalar(source, ty, !args[0]->AllZero());
 }
 
-Eval::Result Eval::asin(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::asin(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) -> Eval::Result {
             using NumberT = decltype(i);
@@ -2132,10 +2243,12 @@ Eval::Result Eval::asin(const type::Type* ty, VectorRef<const Value*> args, cons
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::asinh(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::asinh(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) {
             return CreateScalar(source, c0->Type(), decltype(i)(std::asinh(i.value)));
@@ -2143,20 +2256,24 @@ Eval::Result Eval::asinh(const type::Type* ty, VectorRef<const Value*> args, con
         return Dispatch_fa_f32_f16(create, c0);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::atan(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::atan(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) {
             return CreateScalar(source, c0->Type(), decltype(i)(std::atan(i.value)));
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::atanh(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::atanh(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) -> Eval::Result {
             using NumberT = decltype(i);
@@ -2174,37 +2291,45 @@ Eval::Result Eval::atanh(const type::Type* ty, VectorRef<const Value*> args, con
         return Dispatch_fa_f32_f16(create, c0);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::atan2(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::atan2(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto i, auto j) {
             return CreateScalar(source, c0->Type(), decltype(i)(std::atan2(i.value, j.value)));
         };
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::ceil(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::ceil(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto e) {
             return CreateScalar(source, c0->Type(), decltype(e)(std::ceil(e)));
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::clamp(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::clamp(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1, const Value* c2) {
         return Dispatch_fia_fiu32_f16(ClampFunc(source, c0->Type()), c0, c1, c2);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1], args[2]);
+    return TransformTernaryElements(mgr, ty, transform, args[0], args[1], args[2]);
 }
 
-Eval::Result Eval::cos(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::cos(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) -> Eval::Result {
             using NumberT = decltype(i);
@@ -2212,10 +2337,12 @@ Eval::Result Eval::cos(const type::Type* ty, VectorRef<const Value*> args, const
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::cosh(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::cosh(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) -> Eval::Result {
             using NumberT = decltype(i);
@@ -2223,10 +2350,10 @@ Eval::Result Eval::cosh(const type::Type* ty, VectorRef<const Value*> args, cons
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::countLeadingZeros(const type::Type* ty,
+Eval::Result Eval::countLeadingZeros(const core::type::Type* ty,
                                      VectorRef<const Value*> args,
                                      const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -2238,10 +2365,10 @@ Eval::Result Eval::countLeadingZeros(const type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::countOneBits(const type::Type* ty,
+Eval::Result Eval::countOneBits(const core::type::Type* ty,
                                 VectorRef<const Value*> args,
                                 const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -2262,10 +2389,10 @@ Eval::Result Eval::countOneBits(const type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::countTrailingZeros(const type::Type* ty,
+Eval::Result Eval::countTrailingZeros(const core::type::Type* ty,
                                       VectorRef<const Value*> args,
                                       const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -2277,13 +2404,15 @@ Eval::Result Eval::countTrailingZeros(const type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::cross(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::cross(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto* u = args[0];
     auto* v = args[1];
-    auto* elem_ty = u->Type()->As<type::Vector>()->type();
+    auto* elem_ty = u->Type()->As<core::type::Vector>()->type();
 
     // cross product of a v3 is the determinant of the 3x3 matrix:
     //
@@ -2320,7 +2449,7 @@ Eval::Result Eval::cross(const type::Type* ty, VectorRef<const Value*> args, con
     return mgr.Composite(ty, Vector<const Value*, 3>{x.Get(), y.Get(), z.Get()});
 }
 
-Eval::Result Eval::degrees(const type::Type* ty,
+Eval::Result Eval::degrees(const core::type::Type* ty,
                            VectorRef<const Value*> args,
                            const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -2343,15 +2472,15 @@ Eval::Result Eval::degrees(const type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::determinant(const type::Type* ty,
+Eval::Result Eval::determinant(const core::type::Type* ty,
                                VectorRef<const Value*> args,
                                const Source& source) {
     auto calculate = [&]() -> Eval::Result {
         auto* m = args[0];
-        auto* mat_ty = m->Type()->As<type::Matrix>();
+        auto* mat_ty = m->Type()->As<core::type::Matrix>();
         auto me = [&](size_t r, size_t c) { return m->Index(c)->Index(r); };
         switch (mat_ty->rows()) {
             case 2:
@@ -2382,7 +2511,7 @@ Eval::Result Eval::determinant(const type::Type* ty,
     return r;
 }
 
-Eval::Result Eval::distance(const type::Type* ty,
+Eval::Result Eval::distance(const core::type::Type* ty,
                             VectorRef<const Value*> args,
                             const Source& source) {
     auto err = [&]() -> Eval::Result {
@@ -2390,7 +2519,7 @@ Eval::Result Eval::distance(const type::Type* ty,
         return tint::Failure;
     };
 
-    auto minus = OpMinus(args[0]->Type(), args, source);
+    auto minus = Minus(args[0]->Type(), args, source);
     if (!minus) {
         return err();
     }
@@ -2402,7 +2531,9 @@ Eval::Result Eval::distance(const type::Type* ty,
     return len;
 }
 
-Eval::Result Eval::dot(const type::Type*, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::dot(const core::type::Type*,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto r = Dot(source, args[0], args[1]);
     if (!r) {
         AddNote("when calculating dot", source);
@@ -2410,7 +2541,9 @@ Eval::Result Eval::dot(const type::Type*, VectorRef<const Value*> args, const So
     return r;
 }
 
-Eval::Result Eval::exp(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::exp(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto e0) -> Eval::Result {
             using NumberT = decltype(e0);
@@ -2427,10 +2560,12 @@ Eval::Result Eval::exp(const type::Type* ty, VectorRef<const Value*> args, const
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::exp2(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::exp2(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto e0) -> Eval::Result {
             using NumberT = decltype(e0);
@@ -2447,10 +2582,10 @@ Eval::Result Eval::exp2(const type::Type* ty, VectorRef<const Value*> args, cons
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::extractBits(const type::Type* ty,
+Eval::Result Eval::extractBits(const core::type::Type* ty,
                                VectorRef<const Value*> args,
                                const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -2507,10 +2642,10 @@ Eval::Result Eval::extractBits(const type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::faceForward(const type::Type* ty,
+Eval::Result Eval::faceForward(const core::type::Type* ty,
                                VectorRef<const Value*> args,
                                const Source& source) {
     // Returns e1 if dot(e2, e3) is negative, and -e1 otherwise.
@@ -2526,10 +2661,10 @@ Eval::Result Eval::faceForward(const type::Type* ty,
     if (Dispatch_fa_f32_f16(is_negative, r.Get())) {
         return e1;
     }
-    return OpUnaryMinus(ty, Vector{e1}, source);
+    return UnaryMinus(ty, Vector{e1}, source);
 }
 
-Eval::Result Eval::firstLeadingBit(const type::Type* ty,
+Eval::Result Eval::firstLeadingBit(const core::type::Type* ty,
                                    VectorRef<const Value*> args,
                                    const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -2570,10 +2705,10 @@ Eval::Result Eval::firstLeadingBit(const type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::firstTrailingBit(const type::Type* ty,
+Eval::Result Eval::firstTrailingBit(const core::type::Type* ty,
                                     VectorRef<const Value*> args,
                                     const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -2596,20 +2731,24 @@ Eval::Result Eval::firstTrailingBit(const type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::floor(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::floor(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto e) {
             return CreateScalar(source, c0->Type(), decltype(e)(std::floor(e)));
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::fma(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::fma(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c1, const Value* c2, const Value* c3) {
         auto create = [&](auto e1, auto e2, auto e3) -> Eval::Result {
             auto err_msg = [&] {
@@ -2630,10 +2769,12 @@ Eval::Result Eval::fma(const type::Type* ty, VectorRef<const Value*> args, const
         };
         return Dispatch_fa_f32_f16(create, c1, c2, c3);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1], args[2]);
+    return TransformTernaryElements(mgr, ty, transform, args[0], args[1], args[2]);
 }
 
-Eval::Result Eval::fract(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::fract(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c1) {
         auto create = [&](auto e) -> Eval::Result {
             using NumberT = decltype(e);
@@ -2642,10 +2783,12 @@ Eval::Result Eval::fract(const type::Type* ty, VectorRef<const Value*> args, con
         };
         return Dispatch_fa_f32_f16(create, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::frexp(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::frexp(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto* arg = args[0];
 
     struct FractExp {
@@ -2658,19 +2801,19 @@ Eval::Result Eval::frexp(const type::Type* ty, VectorRef<const Value*> args, con
         double fract = std::frexp(s->ValueAs<AFloat>(), &exp);
         return Switch(
             s->Type(),
-            [&](const type::F32*) {
+            [&](const core::type::F32*) {
                 return FractExp{
                     CreateScalar(source, mgr.types.f32(), f32(fract)),
                     CreateScalar(source, mgr.types.i32(), i32(exp)),
                 };
             },
-            [&](const type::F16*) {
+            [&](const core::type::F16*) {
                 return FractExp{
                     CreateScalar(source, mgr.types.f16(), f16(fract)),
                     CreateScalar(source, mgr.types.i32(), i32(exp)),
                 };
             },
-            [&](const type::AbstractFloat*) {
+            [&](const core::type::AbstractFloat*) {
                 return FractExp{
                     CreateScalar(source, mgr.types.AFloat(), AFloat(fract)),
                     CreateScalar(source, mgr.types.AInt(), AInt(exp)),
@@ -2683,7 +2826,7 @@ Eval::Result Eval::frexp(const type::Type* ty, VectorRef<const Value*> args, con
             });
     };
 
-    if (auto* vec = arg->Type()->As<type::Vector>()) {
+    if (auto* vec = arg->Type()->As<core::type::Vector>()) {
         Vector<const Value*, 4> fract_els;
         Vector<const Value*, 4> exp_els;
         for (uint32_t i = 0; i < vec->Width(); i++) {
@@ -2712,7 +2855,7 @@ Eval::Result Eval::frexp(const type::Type* ty, VectorRef<const Value*> args, con
     }
 }
 
-Eval::Result Eval::insertBits(const type::Type* ty,
+Eval::Result Eval::insertBits(const core::type::Type* ty,
                               VectorRef<const Value*> args,
                               const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
@@ -2766,10 +2909,10 @@ Eval::Result Eval::insertBits(const type::Type* ty,
         };
         return Dispatch_iu32(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::inverseSqrt(const type::Type* ty,
+Eval::Result Eval::inverseSqrt(const core::type::Type* ty,
                                VectorRef<const Value*> args,
                                const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -2804,10 +2947,12 @@ Eval::Result Eval::inverseSqrt(const type::Type* ty,
         return Dispatch_fa_f32_f16(create, c0);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::ldexp(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::ldexp(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c1, size_t index) {
         auto create = [&](auto e1) -> Eval::Result {
             using E1Type = decltype(e1);
@@ -2816,7 +2961,7 @@ Eval::Result Eval::ldexp(const type::Type* ty, VectorRef<const Value*> args, con
 
             E2Type e2;
             auto* c2 = args[1];
-            if (c2->Type()->Is<type::Vector>()) {
+            if (c2->Type()->Is<core::type::Vector>()) {
                 e2 = c2->Index(index)->ValueAs<E2Type>();
             } else {
                 e2 = c2->ValueAs<E2Type>();
@@ -2848,10 +2993,10 @@ Eval::Result Eval::ldexp(const type::Type* ty, VectorRef<const Value*> args, con
         return Dispatch_fa_f32_f16(create, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformElements(mgr, ty, transform, 0, args[0]);
 }
 
-Eval::Result Eval::length(const type::Type* ty,
+Eval::Result Eval::length(const core::type::Type* ty,
                           VectorRef<const Value*> args,
                           const Source& source) {
     auto r = Length(source, ty, args[0]);
@@ -2861,7 +3006,9 @@ Eval::Result Eval::length(const type::Type* ty,
     return r;
 }
 
-Eval::Result Eval::log(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::log(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto v) -> Eval::Result {
             using NumberT = decltype(v);
@@ -2877,10 +3024,12 @@ Eval::Result Eval::log(const type::Type* ty, VectorRef<const Value*> args, const
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::log2(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::log2(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto v) -> Eval::Result {
             using NumberT = decltype(v);
@@ -2896,37 +3045,43 @@ Eval::Result Eval::log2(const type::Type* ty, VectorRef<const Value*> args, cons
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::max(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::max(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto e0, auto e1) {
             return CreateScalar(source, c0->Type(), decltype(e0)(std::max(e0, e1)));
         };
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::min(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::min(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto e0, auto e1) {
             return CreateScalar(source, c0->Type(), decltype(e0)(std::min(e0, e1)));
         };
         return Dispatch_fia_fiu32_f16(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::mix(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::mix(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1, size_t index) {
         auto create = [&](auto e1, auto e2) -> Eval::Result {
             using NumberT = decltype(e1);
             // e3 is either a vector or a scalar
             NumberT e3;
             auto* c2 = args[2];
-            if (c2->Type()->Is<type::Vector>()) {
+            if (c2->Type()->Is<core::type::Vector>()) {
                 e3 = c2->Index(index)->ValueAs<NumberT>();
             } else {
                 e3 = c2->ValueAs<NumberT>();
@@ -2953,14 +3108,16 @@ Eval::Result Eval::mix(const type::Type* ty, VectorRef<const Value*> args, const
         };
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
-    auto r = TransformElements(mgr, ty, transform, args[0], args[1]);
+    auto r = TransformElements(mgr, ty, transform, 0, args[0], args[1]);
     if (!r) {
         AddNote("when calculating mix", source);
     }
     return r;
 }
 
-Eval::Result Eval::modf(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::modf(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform_fract = [&](const Value* c) {
         auto create = [&](auto e) {
             return CreateScalar(source, c->Type(), decltype(e)(e.value - std::trunc(e.value)));
@@ -2976,13 +3133,13 @@ Eval::Result Eval::modf(const type::Type* ty, VectorRef<const Value*> args, cons
 
     Vector<const Value*, 2> fields;
 
-    if (auto fract = TransformElements(mgr, args[0]->Type(), transform_fract, args[0])) {
+    if (auto fract = TransformUnaryElements(mgr, args[0]->Type(), transform_fract, args[0])) {
         fields.Push(fract.Get());
     } else {
         return tint::Failure;
     }
 
-    if (auto whole = TransformElements(mgr, args[0]->Type(), transform_whole, args[0])) {
+    if (auto whole = TransformUnaryElements(mgr, args[0]->Type(), transform_whole, args[0])) {
         fields.Push(whole.Get());
     } else {
         return tint::Failure;
@@ -2991,7 +3148,7 @@ Eval::Result Eval::modf(const type::Type* ty, VectorRef<const Value*> args, cons
     return mgr.Composite(ty, std::move(fields));
 }
 
-Eval::Result Eval::normalize(const type::Type* ty,
+Eval::Result Eval::normalize(const core::type::Type* ty,
                              VectorRef<const Value*> args,
                              const Source& source) {
     auto* len_ty = ty->DeepestElement();
@@ -3009,10 +3166,10 @@ Eval::Result Eval::normalize(const type::Type* ty,
             return tint::Failure;
         }
     }
-    return OpDivide(ty, Vector{args[0], v}, source);
+    return Divide(ty, Vector{args[0], v}, source);
 }
 
-Eval::Result Eval::pack2x16float(const type::Type* ty,
+Eval::Result Eval::pack2x16float(const core::type::Type* ty,
                                  VectorRef<const Value*> args,
                                  const Source& source) {
     auto convert = [&](f32 val) -> tint::Result<uint32_t> {
@@ -3044,7 +3201,7 @@ Eval::Result Eval::pack2x16float(const type::Type* ty,
     return CreateScalar(source, ty, ret);
 }
 
-Eval::Result Eval::pack2x16snorm(const type::Type* ty,
+Eval::Result Eval::pack2x16snorm(const core::type::Type* ty,
                                  VectorRef<const Value*> args,
                                  const Source& source) {
     auto calc = [&](f32 val) -> u32 {
@@ -3061,7 +3218,7 @@ Eval::Result Eval::pack2x16snorm(const type::Type* ty,
     return CreateScalar(source, ty, ret);
 }
 
-Eval::Result Eval::pack2x16unorm(const type::Type* ty,
+Eval::Result Eval::pack2x16unorm(const core::type::Type* ty,
                                  VectorRef<const Value*> args,
                                  const Source& source) {
     auto calc = [&](f32 val) -> u32 {
@@ -3077,7 +3234,7 @@ Eval::Result Eval::pack2x16unorm(const type::Type* ty,
     return CreateScalar(source, ty, ret);
 }
 
-Eval::Result Eval::pack4x8snorm(const type::Type* ty,
+Eval::Result Eval::pack4x8snorm(const core::type::Type* ty,
                                 VectorRef<const Value*> args,
                                 const Source& source) {
     auto calc = [&](f32 val) -> u32 {
@@ -3097,7 +3254,7 @@ Eval::Result Eval::pack4x8snorm(const type::Type* ty,
     return CreateScalar(source, ty, ret);
 }
 
-Eval::Result Eval::pack4x8unorm(const type::Type* ty,
+Eval::Result Eval::pack4x8unorm(const core::type::Type* ty,
                                 VectorRef<const Value*> args,
                                 const Source& source) {
     auto calc = [&](f32 val) -> u32 {
@@ -3116,7 +3273,9 @@ Eval::Result Eval::pack4x8unorm(const type::Type* ty,
     return CreateScalar(source, ty, ret);
 }
 
-Eval::Result Eval::pow(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::pow(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto e1, auto e2) -> Eval::Result {
             auto r = CheckedPow(e1, e2);
@@ -3132,10 +3291,10 @@ Eval::Result Eval::pow(const type::Type* ty, VectorRef<const Value*> args, const
         };
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::radians(const type::Type* ty,
+Eval::Result Eval::radians(const core::type::Type* ty,
                            VectorRef<const Value*> args,
                            const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -3158,10 +3317,10 @@ Eval::Result Eval::radians(const type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::reflect(const type::Type* ty,
+Eval::Result Eval::reflect(const core::type::Type* ty,
                            VectorRef<const Value*> args,
                            const Source& source) {
     auto calculate = [&]() -> Eval::Result {
@@ -3169,7 +3328,7 @@ Eval::Result Eval::reflect(const type::Type* ty,
         // e1 - 2 * dot(e2, e1) * e2.
         auto* e1 = args[0];
         auto* e2 = args[1];
-        auto* vec_ty = ty->As<type::Vector>();
+        auto* vec_ty = ty->As<core::type::Vector>();
         auto* el_ty = vec_ty->type();
 
         // dot(e2, e1)
@@ -3204,10 +3363,10 @@ Eval::Result Eval::reflect(const type::Type* ty,
     return r;
 }
 
-Eval::Result Eval::refract(const type::Type* ty,
+Eval::Result Eval::refract(const core::type::Type* ty,
                            VectorRef<const Value*> args,
                            const Source& source) {
-    auto* vec_ty = ty->As<type::Vector>();
+    auto* vec_ty = ty->As<core::type::Vector>();
     auto* el_ty = vec_ty->type();
 
     auto compute_k = [&](auto e3, auto dot_e2_e1) -> Eval::Result {
@@ -3302,7 +3461,7 @@ Eval::Result Eval::refract(const type::Type* ty,
     return r;
 }
 
-Eval::Result Eval::reverseBits(const type::Type* ty,
+Eval::Result Eval::reverseBits(const core::type::Type* ty,
                                VectorRef<const Value*> args,
                                const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -3326,10 +3485,12 @@ Eval::Result Eval::reverseBits(const type::Type* ty,
         };
         return Dispatch_iu32(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::round(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::round(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto e) {
             using NumberT = decltype(e);
@@ -3360,10 +3521,10 @@ Eval::Result Eval::round(const type::Type* ty, VectorRef<const Value*> args, con
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::saturate(const type::Type* ty,
+Eval::Result Eval::saturate(const core::type::Type* ty,
                             VectorRef<const Value*> args,
                             const Source& source) {
     auto transform = [&](const Value* c0) {
@@ -3374,10 +3535,10 @@ Eval::Result Eval::saturate(const type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::select_bool(const type::Type* ty,
+Eval::Result Eval::select_bool(const core::type::Type* ty,
                                VectorRef<const Value*> args,
                                const Source& source) {
     auto cond = args[2]->ValueAs<bool>();
@@ -3388,10 +3549,10 @@ Eval::Result Eval::select_bool(const type::Type* ty,
         return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::select_boolvec(const type::Type* ty,
+Eval::Result Eval::select_boolvec(const core::type::Type* ty,
                                   VectorRef<const Value*> args,
                                   const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1, size_t index) {
@@ -3403,10 +3564,12 @@ Eval::Result Eval::select_boolvec(const type::Type* ty,
         return Dispatch_fia_fiu32_f16_bool(create, c0, c1);
     };
 
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformElements(mgr, ty, transform, 0, args[0], args[1]);
 }
 
-Eval::Result Eval::sign(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::sign(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto e) -> Eval::Result {
             using NumberT = decltype(e);
@@ -3423,10 +3586,12 @@ Eval::Result Eval::sign(const type::Type* ty, VectorRef<const Value*> args, cons
         };
         return Dispatch_fia_fi32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::sin(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::sin(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) -> Eval::Result {
             using NumberT = decltype(i);
@@ -3434,10 +3599,12 @@ Eval::Result Eval::sin(const type::Type* ty, VectorRef<const Value*> args, const
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::sinh(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::sinh(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) -> Eval::Result {
             using NumberT = decltype(i);
@@ -3445,10 +3612,10 @@ Eval::Result Eval::sinh(const type::Type* ty, VectorRef<const Value*> args, cons
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::smoothstep(const type::Type* ty,
+Eval::Result Eval::smoothstep(const core::type::Type* ty,
                               VectorRef<const Value*> args,
                               const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1, const Value* c2) {
@@ -3495,10 +3662,12 @@ Eval::Result Eval::smoothstep(const type::Type* ty,
         };
         return Dispatch_fa_f32_f16(create, c0, c1, c2);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1], args[2]);
+    return TransformTernaryElements(mgr, ty, transform, args[0], args[1], args[2]);
 }
 
-Eval::Result Eval::step(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::step(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0, const Value* c1) {
         auto create = [&](auto edge, auto x) -> Eval::Result {
             using NumberT = decltype(edge);
@@ -3507,18 +3676,22 @@ Eval::Result Eval::step(const type::Type* ty, VectorRef<const Value*> args, cons
         };
         return Dispatch_fa_f32_f16(create, c0, c1);
     };
-    return TransformElements(mgr, ty, transform, args[0], args[1]);
+    return TransformBinaryElements(mgr, ty, transform, args[0], args[1]);
 }
 
-Eval::Result Eval::sqrt(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::sqrt(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         return Dispatch_fa_f32_f16(SqrtFunc(source, c0->Type()), c0);
     };
 
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::tan(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::tan(const core::type::Type* ty,
+                       VectorRef<const Value*> args,
+                       const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) -> Eval::Result {
             using NumberT = decltype(i);
@@ -3526,10 +3699,12 @@ Eval::Result Eval::tan(const type::Type* ty, VectorRef<const Value*> args, const
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::tanh(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::tanh(const core::type::Type* ty,
+                        VectorRef<const Value*> args,
+                        const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) -> Eval::Result {
             using NumberT = decltype(i);
@@ -3537,14 +3712,16 @@ Eval::Result Eval::tanh(const type::Type* ty, VectorRef<const Value*> args, cons
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::transpose(const type::Type* ty, VectorRef<const Value*> args, const Source&) {
+Eval::Result Eval::transpose(const core::type::Type* ty,
+                             VectorRef<const Value*> args,
+                             const Source&) {
     auto* m = args[0];
-    auto* mat_ty = m->Type()->As<type::Matrix>();
+    auto* mat_ty = m->Type()->As<core::type::Matrix>();
     auto me = [&](size_t r, size_t c) { return m->Index(c)->Index(r); };
-    auto* result_mat_ty = ty->As<type::Matrix>();
+    auto* result_mat_ty = ty->As<core::type::Matrix>();
 
     // Produce column vectors from each row
     Vector<const Value*, 4> result_mat;
@@ -3558,17 +3735,19 @@ Eval::Result Eval::transpose(const type::Type* ty, VectorRef<const Value*> args,
     return mgr.Composite(ty, result_mat);
 }
 
-Eval::Result Eval::trunc(const type::Type* ty, VectorRef<const Value*> args, const Source& source) {
+Eval::Result Eval::trunc(const core::type::Type* ty,
+                         VectorRef<const Value*> args,
+                         const Source& source) {
     auto transform = [&](const Value* c0) {
         auto create = [&](auto i) {
             return CreateScalar(source, c0->Type(), decltype(i)(std::trunc(i.value)));
         };
         return Dispatch_fa_f32_f16(create, c0);
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::unpack2x16float(const type::Type* ty,
+Eval::Result Eval::unpack2x16float(const core::type::Type* ty,
                                    VectorRef<const Value*> args,
                                    const Source& source) {
     auto* inner_ty = ty->DeepestElement();
@@ -3596,7 +3775,7 @@ Eval::Result Eval::unpack2x16float(const type::Type* ty,
     return mgr.Composite(ty, std::move(els));
 }
 
-Eval::Result Eval::unpack2x16snorm(const type::Type* ty,
+Eval::Result Eval::unpack2x16snorm(const core::type::Type* ty,
                                    VectorRef<const Value*> args,
                                    const Source& source) {
     auto* inner_ty = ty->DeepestElement();
@@ -3616,7 +3795,7 @@ Eval::Result Eval::unpack2x16snorm(const type::Type* ty,
     return mgr.Composite(ty, std::move(els));
 }
 
-Eval::Result Eval::unpack2x16unorm(const type::Type* ty,
+Eval::Result Eval::unpack2x16unorm(const core::type::Type* ty,
                                    VectorRef<const Value*> args,
                                    const Source& source) {
     auto* inner_ty = ty->DeepestElement();
@@ -3635,7 +3814,7 @@ Eval::Result Eval::unpack2x16unorm(const type::Type* ty,
     return mgr.Composite(ty, std::move(els));
 }
 
-Eval::Result Eval::unpack4x8snorm(const type::Type* ty,
+Eval::Result Eval::unpack4x8snorm(const core::type::Type* ty,
                                   VectorRef<const Value*> args,
                                   const Source& source) {
     auto* inner_ty = ty->DeepestElement();
@@ -3655,7 +3834,7 @@ Eval::Result Eval::unpack4x8snorm(const type::Type* ty,
     return mgr.Composite(ty, std::move(els));
 }
 
-Eval::Result Eval::unpack4x8unorm(const type::Type* ty,
+Eval::Result Eval::unpack4x8unorm(const core::type::Type* ty,
                                   VectorRef<const Value*> args,
                                   const Source& source) {
     auto* inner_ty = ty->DeepestElement();
@@ -3674,7 +3853,7 @@ Eval::Result Eval::unpack4x8unorm(const type::Type* ty,
     return mgr.Composite(ty, std::move(els));
 }
 
-Eval::Result Eval::quantizeToF16(const type::Type* ty,
+Eval::Result Eval::quantizeToF16(const core::type::Type* ty,
                                  VectorRef<const Value*> args,
                                  const Source& source) {
     auto transform = [&](const Value* c) -> Eval::Result {
@@ -3690,10 +3869,12 @@ Eval::Result Eval::quantizeToF16(const type::Type* ty,
         }
         return CreateScalar(source, c->Type(), conv.Get());
     };
-    return TransformElements(mgr, ty, transform, args[0]);
+    return TransformUnaryElements(mgr, ty, transform, args[0]);
 }
 
-Eval::Result Eval::Convert(const type::Type* target_ty, const Value* value, const Source& source) {
+Eval::Result Eval::Convert(const core::type::Type* target_ty,
+                           const Value* value,
+                           const Source& source) {
     if (value->Type() == target_ty) {
         return value;
     }
@@ -3718,4 +3899,4 @@ void Eval::AddNote(const std::string& msg, const Source& source) const {
     diags.add_note(diag::System::Constant, msg, source);
 }
 
-}  // namespace tint::constant
+}  // namespace tint::core::constant

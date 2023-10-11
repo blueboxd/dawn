@@ -19,7 +19,7 @@
 #include "src/tint/lang/wgsl/ast/call_statement.h"
 #include "src/tint/lang/wgsl/sem/call.h"
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 namespace {
 
 using ::testing::Eq;
@@ -87,7 +87,7 @@ TEST_F(SpirvASTParserTest, StorageBarrier) {
     %uint_72 = OpConstant %uint 72
      %helper = OpFunction %void None %1
           %4 = OpLabel
-               OpControlBarrier %uint_2 %uint_1 %uint_72
+               OpControlBarrier %uint_2 %uint_2 %uint_72
                OpReturn
                OpFunctionEnd
        %main = OpFunction %void None %1
@@ -107,6 +107,96 @@ TEST_F(SpirvASTParserTest, StorageBarrier) {
     auto* builtin = sem_call->Target()->As<sem::Builtin>();
     ASSERT_NE(builtin, nullptr);
     EXPECT_EQ(builtin->Type(), core::Function::kStorageBarrier);
+}
+
+TEST_F(SpirvASTParserTest, TextureBarrier) {
+    auto program = ParseAndBuild(R"(
+               OpName %helper "helper"
+       %void = OpTypeVoid
+          %1 = OpTypeFunction %void
+       %uint = OpTypeInt 32 0
+     %uint_2 = OpConstant %uint 2
+     %uint_1 = OpConstant %uint 1
+  %uint_2056 = OpConstant %uint 2056
+     %helper = OpFunction %void None %1
+          %4 = OpLabel
+               OpControlBarrier %uint_2 %uint_2 %uint_2056
+               OpReturn
+               OpFunctionEnd
+       %main = OpFunction %void None %1
+          %5 = OpLabel
+               OpReturn
+               OpFunctionEnd
+  )");
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    auto* helper = program.AST().Functions().Find(program.Symbols().Get("helper"));
+    ASSERT_NE(helper, nullptr);
+    ASSERT_GT(helper->body->statements.Length(), 0u);
+    auto* call = helper->body->statements[0]->As<ast::CallStatement>();
+    ASSERT_NE(call, nullptr);
+    EXPECT_EQ(call->expr->args.Length(), 0u);
+    auto* sem_call = program.Sem().Get<sem::Call>(call->expr);
+    ASSERT_NE(sem_call, nullptr);
+    auto* builtin = sem_call->Target()->As<sem::Builtin>();
+    ASSERT_NE(builtin, nullptr);
+    EXPECT_EQ(builtin->Type(), core::Function::kTextureBarrier);
+}
+
+TEST_F(SpirvASTParserTest, WorkgroupAndTextureAndStorageBarrier) {
+    // Check that we emit multiple adjacent barrier calls when the flags
+    // are combined.
+    auto program = ParseAndBuild(R"(
+               OpName %helper "helper"
+       %void = OpTypeVoid
+          %1 = OpTypeFunction %void
+       %uint = OpTypeInt 32 0
+     %uint_2 = OpConstant %uint 2
+   %uint_x948 = OpConstant %uint 0x948
+     %helper = OpFunction %void None %1
+          %4 = OpLabel
+               OpControlBarrier %uint_2 %uint_2 %uint_x948
+               OpReturn
+               OpFunctionEnd
+     %main = OpFunction %void None %1
+          %5 = OpLabel
+               OpReturn
+               OpFunctionEnd
+  )");
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    auto* helper = program.AST().Functions().Find(program.Symbols().Get("helper"));
+    ASSERT_NE(helper, nullptr);
+    ASSERT_GT(helper->body->statements.Length(), 2u);
+
+    {
+        auto* call = helper->body->statements[0]->As<ast::CallStatement>();
+        ASSERT_NE(call, nullptr);
+        EXPECT_EQ(call->expr->args.Length(), 0u);
+        auto* sem_call = program.Sem().Get<sem::Call>(call->expr);
+        ASSERT_NE(sem_call, nullptr);
+        auto* builtin = sem_call->Target()->As<sem::Builtin>();
+        ASSERT_NE(builtin, nullptr);
+        EXPECT_EQ(builtin->Type(), core::Function::kWorkgroupBarrier);
+    }
+    {
+        auto* call = helper->body->statements[1]->As<ast::CallStatement>();
+        ASSERT_NE(call, nullptr);
+        EXPECT_EQ(call->expr->args.Length(), 0u);
+        auto* sem_call = program.Sem().Get<sem::Call>(call->expr);
+        ASSERT_NE(sem_call, nullptr);
+        auto* builtin = sem_call->Target()->As<sem::Builtin>();
+        ASSERT_NE(builtin, nullptr);
+        EXPECT_EQ(builtin->Type(), core::Function::kStorageBarrier);
+    }
+    {
+        auto* call = helper->body->statements[2]->As<ast::CallStatement>();
+        ASSERT_NE(call, nullptr);
+        EXPECT_EQ(call->expr->args.Length(), 0u);
+        auto* sem_call = program.Sem().Get<sem::Call>(call->expr);
+        ASSERT_NE(sem_call, nullptr);
+        auto* builtin = sem_call->Target()->As<sem::Builtin>();
+        ASSERT_NE(builtin, nullptr);
+        EXPECT_EQ(builtin->Type(), core::Function::kTextureBarrier);
+    }
 }
 
 TEST_F(SpirvASTParserTest, ErrBarrierInvalidExecution) {
@@ -187,19 +277,38 @@ TEST_F(SpirvASTParserTest, ErrStorageBarrierInvalidMemory) {
        %void = OpTypeVoid
           %1 = OpTypeFunction %void
        %uint = OpTypeInt 32 0
+     %uint_1 = OpConstant %uint 1
      %uint_2 = OpConstant %uint 2
-     %uint_8 = OpConstant %uint 8
     %uint_72 = OpConstant %uint 72
        %main = OpFunction %void None %1
           %4 = OpLabel
-               OpControlBarrier %uint_2 %uint_8 %uint_72
+               OpControlBarrier %uint_2 %uint_1 %uint_72
                OpReturn
                OpFunctionEnd
   )");
     EXPECT_FALSE(program.IsValid());
     EXPECT_THAT(program.Diagnostics().str(),
-                HasSubstr("storageBarrier requires device memory scope"));
+                HasSubstr("storageBarrier requires workgroup memory scope"));
+}
+
+TEST_F(SpirvASTParserTest, ErrTextureBarrierInvalidMemory) {
+    auto program = ParseAndBuild(R"(
+       %void = OpTypeVoid
+          %1 = OpTypeFunction %void
+       %uint = OpTypeInt 32 0
+     %uint_1 = OpConstant %uint 1
+     %uint_2 = OpConstant %uint 2
+  %uint_2056 = OpConstant %uint 2056
+       %main = OpFunction %void None %1
+          %4 = OpLabel
+               OpControlBarrier %uint_2 %uint_1 %uint_2056
+               OpReturn
+               OpFunctionEnd
+  )");
+    EXPECT_FALSE(program.IsValid());
+    EXPECT_THAT(program.Diagnostics().str(),
+                HasSubstr("textureBarrier requires workgroup memory scope"));
 }
 
 }  // namespace
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser
