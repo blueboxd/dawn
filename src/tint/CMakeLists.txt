@@ -37,6 +37,7 @@ function(tint_core_compile_options TARGET)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SPV_READER=$<BOOL:${TINT_BUILD_SPV_READER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_WGSL_READER=$<BOOL:${TINT_BUILD_WGSL_READER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_GLSL_WRITER=$<BOOL:${TINT_BUILD_GLSL_WRITER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_GLSL_VALIDATOR=$<BOOL:${TINT_BUILD_GLSL_VALIDATOR}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_HLSL_WRITER=$<BOOL:${TINT_BUILD_HLSL_WRITER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_MSL_WRITER=$<BOOL:${TINT_BUILD_MSL_WRITER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SPV_WRITER=$<BOOL:${TINT_BUILD_SPV_WRITER}>)
@@ -78,6 +79,12 @@ function(tint_default_compile_options TARGET)
     -Weverything
   )
 
+  if(COMPILER_IS_GNU)
+    # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80635
+    # Despite the bug being closed, false-positives still seen in GCC-13.
+    target_compile_options(${TARGET} PRIVATE -Wno-maybe-uninitialized)
+  endif(COMPILER_IS_GNU)
+
   if(COMPILER_IS_LIKE_GNU)
     target_compile_options(${TARGET} PRIVATE
       -pedantic-errors
@@ -86,13 +93,9 @@ function(tint_default_compile_options TARGET)
 
     if(COMPILER_IS_CLANG)
       if(IS_DEBUG_BUILD)
-        target_compile_options(${TARGET} PRIVATE
-          -fstandalone-debug
-        )
+        target_compile_options(${TARGET} PRIVATE -fstandalone-debug)
       endif()
-      target_compile_options(${TARGET} PRIVATE
-        ${COMMON_CLANG_OPTIONS}
-      )
+      target_compile_options(${TARGET} PRIVATE ${COMMON_CLANG_OPTIONS})
     endif()
   endif(COMPILER_IS_LIKE_GNU)
 
@@ -175,13 +178,6 @@ endfunction()
 
 function(tint_bench_compile_options TARGET)
   tint_core_compile_options(${TARGET})
-  set_target_properties(${TARGET} PROPERTIES FOLDER "Benchmarks")
-  target_link_libraries(${TARGET} PRIVATE benchmark::benchmark)
-  if(TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER)
-    target_compile_definitions(${TARGET} PRIVATE
-      "TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER=\"${TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER}\""
-    )
-  endif()
 endfunction()
 
 function(tint_fuzz_compile_options TARGET)
@@ -210,7 +206,7 @@ function(tint_bench_cmd_compile_options TARGET)
   target_link_libraries(${TARGET} PRIVATE benchmark::benchmark)
 endfunction()
 
-function(tint_fuzzer_compile_options TARGET)
+function(tint_fuzz_cmd_compile_options TARGET)
   tint_fuzz_compile_options(${TARGET})
 
   if(NOT "${TINT_LIB_FUZZING_ENGINE_LINK_OPTIONS}" STREQUAL "")
@@ -225,6 +221,12 @@ function(tint_fuzzer_compile_options TARGET)
   endif()
 
   # Link the version of tint_api with -sanitize=fuzzer enabled
+  target_link_libraries(${TARGET} PRIVATE "tint_api_sanitize_fuzzer")
+endfunction()
+
+# TODO(bclayton): Remove this when fuzzers fully migrated to gen build
+function(tint_fuzzer_compile_options TARGET)
+  tint_fuzz_cmd_compile_options(${TARGET})
   target_link_libraries(${TARGET} PRIVATE "tint_api_sanitize_fuzzer")
 endfunction()
 
@@ -287,8 +289,11 @@ endif(TINT_BUILD_BENCHMARKS AND TINT_EXTERNAL_BENCHMARK_CORPUS_DIR)
 #               linking against google-test.
 # 'bench'     - Translates to a CMake object library, configured for compiling and
 #               linking against google-benchmark.
+# 'fuzz'      - Translates to a CMake object library, configured for compiling and
+#               linking against libfuzzer.
 # 'test_cmd'  - Translates to a CMake executable target linked against google-test.
 # 'bench_cmd' - Translates to a CMake executable target linked against google-benchmark.
+# 'fuzz_cmd'  - Translates to a CMake executable target linked against libfuzz.
 # See also: docs/tint/gen.md
 ################################################################################
 
@@ -314,6 +319,10 @@ function(tint_check_target_is_enabled IS_ENABLED KIND)
     endif()
   elseif((${KIND} STREQUAL bench) OR (${KIND} STREQUAL bench_cmd))
     if(TINT_BUILD_BENCHMARKS)
+      set(IS_ENABLED TRUE PARENT_SCOPE)
+    endif()
+  elseif((${KIND} STREQUAL fuzz) OR (${KIND} STREQUAL fuzz_cmd))
+    if(TINT_BUILD_FUZZERS)
       set(IS_ENABLED TRUE PARENT_SCOPE)
     endif()
   else()
@@ -357,12 +366,18 @@ function(tint_add_target TARGET KIND)
   elseif(${KIND} STREQUAL bench_cmd)
     add_executable(${TARGET})
     tint_bench_cmd_compile_options(${TARGET})
+  elseif(${KIND} STREQUAL fuzz_cmd)
+    add_executable(${TARGET})
+    tint_fuzz_cmd_compile_options(${TARGET})
   elseif(${KIND} STREQUAL test)
     add_library(${TARGET} OBJECT EXCLUDE_FROM_ALL)
     tint_test_compile_options(${TARGET})
   elseif(${KIND} STREQUAL bench)
     add_library(${TARGET} OBJECT EXCLUDE_FROM_ALL)
     tint_bench_compile_options(${TARGET})
+  elseif(${KIND} STREQUAL fuzz)
+    add_library(${TARGET} OBJECT EXCLUDE_FROM_ALL)
+    tint_fuzz_compile_options(${TARGET})
   else()
     message(FATAL_ERROR "unhandled target kind ${KIND}")
   endif()
@@ -456,6 +471,14 @@ function(tint_target_add_external_dependencies TARGET KIND)
       target_link_libraries(${TARGET} PRIVATE
         glslang-default-resource-limits
       )
+    elseif(${DEPENDENCY} STREQUAL "google-benchmark")
+      set_target_properties(${TARGET} PROPERTIES FOLDER "Benchmarks")
+      target_link_libraries(${TARGET} PRIVATE benchmark::benchmark)
+      if(TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER)
+        target_compile_definitions(${TARGET} PRIVATE
+          "TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER=\"${TINT_BENCHMARK_EXTERNAL_SHADERS_HEADER}\""
+        )
+      endif()
     elseif(${DEPENDENCY} STREQUAL "gtest")
       target_include_directories(${TARGET} PRIVATE ${gmock_SOURCE_DIR}/include)
       target_link_libraries(${TARGET} PRIVATE gmock)

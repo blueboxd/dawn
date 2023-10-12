@@ -349,13 +349,7 @@ class DependencyScanner {
                     expr,
                     [&](const ast::IdentifierExpression* e) {
                         AddDependency(e->identifier, e->identifier->symbol);
-                        if (auto* tmpl_ident = e->identifier->As<ast::TemplatedIdentifier>()) {
-                            for (auto* arg : tmpl_ident->arguments) {
-                                pending.Push(arg);
-                            }
-                        }
                     },
-                    [&](const ast::CallExpression* call) { TraverseExpression(call->target); },
                     [&](const ast::BitcastExpression* cast) { TraverseExpression(cast->type); });
                 return ast::TraverseAction::Descend;
             });
@@ -533,7 +527,8 @@ class DependencyScanner {
             auto builtin_info = GetBuiltinInfo(to);
             switch (builtin_info.type) {
                 case BuiltinType::kNone:
-                    graph_.resolved_identifiers.Add(from, UnresolvedIdentifier{to.Name()});
+                    graph_.resolved_identifiers.Add(
+                        from, ResolvedIdentifier::UnresolvedIdentifier{to.Name()});
                     break;
                 case BuiltinType::kFunction:
                     graph_.resolved_identifiers.Add(

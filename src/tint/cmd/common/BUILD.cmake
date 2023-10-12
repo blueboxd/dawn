@@ -44,9 +44,7 @@ tint_target_add_dependencies(tint_cmd_common lib
   tint_lang_wgsl_ast
   tint_lang_wgsl_inspector
   tint_lang_wgsl_program
-  tint_lang_wgsl_reader
   tint_lang_wgsl_sem
-  tint_lang_wgsl_writer
   tint_utils_containers
   tint_utils_diagnostic
   tint_utils_ice
@@ -73,6 +71,18 @@ if(TINT_BUILD_SPV_READER OR TINT_BUILD_SPV_WRITER)
     "spirv-tools"
   )
 endif(TINT_BUILD_SPV_READER OR TINT_BUILD_SPV_WRITER)
+
+if(TINT_BUILD_WGSL_READER)
+  tint_target_add_dependencies(tint_cmd_common lib
+    tint_lang_wgsl_reader
+  )
+endif(TINT_BUILD_WGSL_READER)
+
+if(TINT_BUILD_WGSL_WRITER)
+  tint_target_add_dependencies(tint_cmd_common lib
+    tint_lang_wgsl_writer
+  )
+endif(TINT_BUILD_WGSL_WRITER)
 
 ################################################################################
 # Target:    tint_cmd_common_test

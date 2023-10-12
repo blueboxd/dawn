@@ -25,7 +25,7 @@ import("../../../../../scripts/tint_overrides_with_defaults.gni")
 
 import("${tint_src_dir}/tint.gni")
 
-if (tint_build_unittests) {
+if (tint_build_unittests || tint_build_benchmarks) {
   import("//testing/test.gni")
 }
 
@@ -66,7 +66,6 @@ libtint_source_set("constant") {
 }
 if (tint_build_unittests) {
   tint_unittests_source_set("unittests") {
-    testonly = true
     sources = [
       "composite_test.cc",
       "eval_binary_op_test.cc",
@@ -98,7 +97,6 @@ if (tint_build_unittests) {
       "${tint_src_dir}/lang/wgsl/ast",
       "${tint_src_dir}/lang/wgsl/intrinsic",
       "${tint_src_dir}/lang/wgsl/program",
-      "${tint_src_dir}/lang/wgsl/reader",
       "${tint_src_dir}/lang/wgsl/resolver",
       "${tint_src_dir}/lang/wgsl/resolver:unittests",
       "${tint_src_dir}/lang/wgsl/sem",
@@ -116,5 +114,9 @@ if (tint_build_unittests) {
       "${tint_src_dir}/utils/text",
       "${tint_src_dir}/utils/traits",
     ]
+
+    if (tint_build_wgsl_reader) {
+      deps += [ "${tint_src_dir}/lang/wgsl/reader" ]
+    }
   }
 }

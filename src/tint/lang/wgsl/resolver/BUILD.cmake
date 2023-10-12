@@ -28,6 +28,8 @@
 tint_add_target(tint_lang_wgsl_resolver lib
   lang/wgsl/resolver/dependency_graph.cc
   lang/wgsl/resolver/dependency_graph.h
+  lang/wgsl/resolver/incomplete_type.cc
+  lang/wgsl/resolver/incomplete_type.h
   lang/wgsl/resolver/resolve.cc
   lang/wgsl/resolver/resolve.h
   lang/wgsl/resolver/resolver.cc
@@ -36,6 +38,8 @@ tint_add_target(tint_lang_wgsl_resolver lib
   lang/wgsl/resolver/sem_helper.h
   lang/wgsl/resolver/uniformity.cc
   lang/wgsl/resolver/uniformity.h
+  lang/wgsl/resolver/unresolved_identifier.cc
+  lang/wgsl/resolver/unresolved_identifier.h
   lang/wgsl/resolver/validator.cc
   lang/wgsl/resolver/validator.h
 )
@@ -121,7 +125,6 @@ tint_add_target(tint_lang_wgsl_resolver_test test
   lang/wgsl/resolver/struct_pipeline_stage_use_test.cc
   lang/wgsl/resolver/subgroups_extension_test.cc
   lang/wgsl/resolver/type_validation_test.cc
-  lang/wgsl/resolver/uniformity_test.cc
   lang/wgsl/resolver/unresolved_identifier_test.cc
   lang/wgsl/resolver/validation_test.cc
   lang/wgsl/resolver/validator_is_storeable_test.cc
@@ -144,7 +147,6 @@ tint_target_add_dependencies(tint_lang_wgsl_resolver_test test
   tint_lang_wgsl_ast_test
   tint_lang_wgsl_intrinsic
   tint_lang_wgsl_program
-  tint_lang_wgsl_reader
   tint_lang_wgsl_resolver
   tint_lang_wgsl_sem
   tint_lang_wgsl_sem_test
@@ -166,3 +168,12 @@ tint_target_add_dependencies(tint_lang_wgsl_resolver_test test
 tint_target_add_external_dependencies(tint_lang_wgsl_resolver_test test
   "gtest"
 )
+
+if(TINT_BUILD_WGSL_READER)
+  tint_target_add_sources(tint_lang_wgsl_resolver_test test
+    "lang/wgsl/resolver/uniformity_test.cc"
+  )
+  tint_target_add_dependencies(tint_lang_wgsl_resolver_test test
+    tint_lang_wgsl_reader
+  )
+endif(TINT_BUILD_WGSL_READER)

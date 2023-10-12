@@ -26,9 +26,11 @@ include(lang/wgsl/writer/ir_to_program/BUILD.cmake)
 include(lang/wgsl/writer/raise/BUILD.cmake)
 include(lang/wgsl/writer/syntax_tree_printer/BUILD.cmake)
 
+if(TINT_BUILD_WGSL_WRITER)
 ################################################################################
 # Target:    tint_lang_wgsl_writer
 # Kind:      lib
+# Condition: TINT_BUILD_WGSL_WRITER
 ################################################################################
 tint_add_target(tint_lang_wgsl_writer lib
   lang/wgsl/writer/options.cc
@@ -49,7 +51,6 @@ tint_target_add_dependencies(tint_lang_wgsl_writer lib
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
-  tint_lang_wgsl_writer_ast_printer
   tint_lang_wgsl_writer_ir_to_program
   tint_lang_wgsl_writer_raise
   tint_lang_wgsl_writer_syntax_tree_printer
@@ -69,16 +70,25 @@ tint_target_add_dependencies(tint_lang_wgsl_writer lib
   tint_utils_traits
 )
 
+if(TINT_BUILD_WGSL_WRITER)
+  tint_target_add_dependencies(tint_lang_wgsl_writer lib
+    tint_lang_wgsl_writer_ast_printer
+  )
+endif(TINT_BUILD_WGSL_WRITER)
+
+endif(TINT_BUILD_WGSL_WRITER)
+if(TINT_BUILD_WGSL_WRITER)
 ################################################################################
 # Target:    tint_lang_wgsl_writer_bench
 # Kind:      bench
+# Condition: TINT_BUILD_WGSL_WRITER
 ################################################################################
 tint_add_target(tint_lang_wgsl_writer_bench bench
   lang/wgsl/writer/writer_bench.cc
 )
 
 tint_target_add_dependencies(tint_lang_wgsl_writer_bench bench
-  tint_cmd_bench
+  tint_cmd_bench_bench
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_type
@@ -86,7 +96,6 @@ tint_target_add_dependencies(tint_lang_wgsl_writer_bench bench
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
-  tint_lang_wgsl_writer
   tint_utils_containers
   tint_utils_diagnostic
   tint_utils_ice
@@ -101,3 +110,15 @@ tint_target_add_dependencies(tint_lang_wgsl_writer_bench bench
   tint_utils_text
   tint_utils_traits
 )
+
+tint_target_add_external_dependencies(tint_lang_wgsl_writer_bench bench
+  "google-benchmark"
+)
+
+if(TINT_BUILD_WGSL_WRITER)
+  tint_target_add_dependencies(tint_lang_wgsl_writer_bench bench
+    tint_lang_wgsl_writer
+  )
+endif(TINT_BUILD_WGSL_WRITER)
+
+endif(TINT_BUILD_WGSL_WRITER)

@@ -25,7 +25,7 @@ import("../../../../scripts/tint_overrides_with_defaults.gni")
 
 import("${tint_src_dir}/tint.gni")
 
-executable("tint") {
+tint_executable("tint") {
   output_name = "tint"
   sources = [ "main.cc" ]
   deps = [
@@ -45,10 +45,7 @@ executable("tint") {
     "${tint_src_dir}/lang/wgsl/helpers",
     "${tint_src_dir}/lang/wgsl/inspector",
     "${tint_src_dir}/lang/wgsl/program",
-    "${tint_src_dir}/lang/wgsl/reader",
-    "${tint_src_dir}/lang/wgsl/reader/program_to_ir",
     "${tint_src_dir}/lang/wgsl/sem",
-    "${tint_src_dir}/lang/wgsl/writer",
     "${tint_src_dir}/utils/cli",
     "${tint_src_dir}/utils/command",
     "${tint_src_dir}/utils/containers",
@@ -67,10 +64,12 @@ executable("tint") {
     "${tint_src_dir}/utils/traits",
   ]
 
+  if (tint_build_glsl_validator) {
+    deps += [ "${tint_src_dir}/lang/glsl/validate" ]
+  }
+
   if (tint_build_glsl_writer) {
     deps += [
-      "${tint_glslang_dir}:glslang_default_resource_limits_sources",
-      "${tint_glslang_dir}:glslang_lib_sources",
       "${tint_src_dir}/lang/glsl/writer",
       "${tint_src_dir}/lang/glsl/writer/common",
     ]
@@ -106,6 +105,18 @@ executable("tint") {
     deps += [
       "${tint_src_dir}/lang/spirv/writer",
       "${tint_src_dir}/lang/spirv/writer/common",
+      "${tint_src_dir}/lang/spirv/writer/helpers",
     ]
+  }
+
+  if (tint_build_wgsl_reader) {
+    deps += [
+      "${tint_src_dir}/lang/wgsl/reader",
+      "${tint_src_dir}/lang/wgsl/reader/program_to_ir",
+    ]
+  }
+
+  if (tint_build_wgsl_writer) {
+    deps += [ "${tint_src_dir}/lang/wgsl/writer" ]
   }
 }

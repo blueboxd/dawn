@@ -40,6 +40,56 @@
 
 namespace dawn::native::d3d12 {
 
+namespace {
+
+void DumpDXCCompiledShader(Device* device,
+                           const dawn::native::d3d::CompiledShader& compiledShader,
+                           uint32_t compileFlags) {
+    std::ostringstream dumpedMsg;
+    // The HLSL may be empty if compilation failed.
+    if (!compiledShader.hlslSource.empty()) {
+        dumpedMsg << "/* Dumped generated HLSL */" << std::endl
+                  << compiledShader.hlslSource << std::endl;
+    }
+
+    // The blob may be empty if DXC compilation failed.
+    const Blob& shaderBlob = compiledShader.shaderBlob;
+    if (!shaderBlob.Empty()) {
+        dumpedMsg << "/* DXC compile flags */ " << std::endl
+                  << dawn::native::d3d::CompileFlagsToString(compileFlags) << std::endl;
+        dumpedMsg << "/* Dumped disassembled DXIL */" << std::endl;
+        DxcBuffer dxcBuffer;
+        dxcBuffer.Encoding = DXC_CP_UTF8;
+        dxcBuffer.Ptr = shaderBlob.Data();
+        dxcBuffer.Size = shaderBlob.Size();
+
+        ComPtr<IDxcResult> dxcResult;
+        device->GetDxcCompiler()->Disassemble(&dxcBuffer, IID_PPV_ARGS(&dxcResult));
+
+        ComPtr<IDxcBlobEncoding> disassembly;
+        if (dxcResult && dxcResult->HasOutput(DXC_OUT_DISASSEMBLY) &&
+            SUCCEEDED(
+                dxcResult->GetOutput(DXC_OUT_DISASSEMBLY, IID_PPV_ARGS(&disassembly), nullptr))) {
+            dumpedMsg << std::string_view(static_cast<const char*>(disassembly->GetBufferPointer()),
+                                          disassembly->GetBufferSize());
+        } else {
+            dumpedMsg << "DXC disassemble failed" << std::endl;
+            ComPtr<IDxcBlobEncoding> errors;
+            if (dxcResult && dxcResult->HasOutput(DXC_OUT_ERRORS) &&
+                SUCCEEDED(dxcResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr))) {
+                dumpedMsg << std::string_view(static_cast<const char*>(errors->GetBufferPointer()),
+                                              errors->GetBufferSize());
+            }
+        }
+    }
+
+    std::string logMessage = dumpedMsg.str();
+    if (!logMessage.empty()) {
+        device->EmitLog(WGPULoggingType_Info, logMessage.c_str());
+    }
+}
+}  // namespace
+
 // static
 ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     Device* device,
@@ -65,7 +115,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     SingleShaderStage stage,
     const PipelineLayout* layout,
     uint32_t compileFlags,
-    const std::bitset<kMaxInterStageShaderVariables>* usedInterstageVariables) {
+    const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>&
+        usedInterstageVariables) {
     Device* device = ToBackend(GetDevice());
     TRACE_EVENT0(device->GetPlatform(), General, "ShaderModuleD3D12::Compile");
     DAWN_ASSERT(!IsError());
@@ -81,7 +132,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.disableWorkgroupInit = device->IsToggleEnabled(Toggle::DisableWorkgroupInit);
     req.hlsl.dumpShaders = device->IsToggleEnabled(Toggle::DumpShaders);
 
-    if (usedInterstageVariables) {
+    if (usedInterstageVariables.has_value()) {
         req.hlsl.interstageLocations = *usedInterstageVariables;
     }
 
@@ -243,7 +294,11 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     }();
 
     if (device->IsToggleEnabled(Toggle::DumpShaders)) {
-        d3d::DumpCompiledShader(device, *compiledShader, compileFlags);
+        if (device->IsToggleEnabled(Toggle::UseDXC)) {
+            DumpDXCCompiledShader(device, *compiledShader, compileFlags);
+        } else {
+            d3d::DumpFXCCompiledShader(device, *compiledShader, compileFlags);
+        }
     }
 
     if (compileError.IsError()) {

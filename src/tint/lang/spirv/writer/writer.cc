@@ -18,10 +18,14 @@
 #include <utility>
 
 #include "src/tint/lang/spirv/writer/ast_printer/ast_printer.h"
+#include "src/tint/lang/spirv/writer/common/option_builder.h"
 #include "src/tint/lang/spirv/writer/printer/printer.h"
 #include "src/tint/lang/spirv/writer/raise/raise.h"
 #include "src/tint/lang/wgsl/reader/lower/lower.h"
+
+#if TINT_BUILD_WGSL_READER
 #include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
+#endif
 
 // Included by 'ast_printer.h', included again here for './tools/run gen' track the dependency.
 #include "spirv/unified1/spirv.h"
@@ -40,9 +44,17 @@ Result<Output> Generate(const Program& program, const Options& options) {
     bool zero_initialize_workgroup_memory =
         !options.disable_workgroup_init && options.use_zero_initialize_workgroup_memory_extension;
 
+    {
+        diag::List validation_diagnostics;
+        if (!ValidateBindingOptions(options, validation_diagnostics)) {
+            return Failure{validation_diagnostics};
+        }
+    }
+
     Output output;
 
     if (options.use_tint_ir) {
+#if TINT_BUILD_WGSL_READER
         // Convert the AST program to an IR module.
         auto converted = wgsl::reader::ProgramToIR(program);
         if (!converted) {
@@ -68,6 +80,9 @@ Result<Output> Generate(const Program& program, const Options& options) {
             return std::move(spirv.Failure());
         }
         output.spirv = std::move(spirv.Get());
+#else
+        return Failure{"use_tint_ir requires building with TINT_BUILD_WGSL_READER"};
+#endif
     } else {
         // Sanitize the program.
         auto sanitized_result = Sanitize(program, options);

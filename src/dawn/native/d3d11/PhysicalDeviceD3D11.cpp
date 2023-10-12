@@ -185,6 +185,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     limits->v1.maxSampledTexturesPerShaderStage = D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;
     limits->v1.maxSamplersPerShaderStage = D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT;
     limits->v1.maxColorAttachments = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
+    // This is maxColorAttachments times 16, the color format with the largest cost.
+    limits->v1.maxColorAttachmentBytesPerSample = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT * 16;
 
     limits->v1.maxDynamicUniformBuffersPerPipelineLayout =
         limits->v1.maxUniformBuffersPerShaderStage;
@@ -221,6 +223,12 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 
     // D3D11 has no documented limit on the buffer size.
     limits->v1.maxBufferSize = kAssumedMaxBufferSize;
+
+    // 1 for SV_Position and 1 for (SV_IsFrontFace OR SV_SampleIndex).
+    // See the discussions in https://github.com/gpuweb/gpuweb/issues/1962 for more details.
+    limits->v1.maxInterStageShaderVariables = D3D11_PS_INPUT_REGISTER_COUNT - 2;
+    limits->v1.maxInterStageShaderComponents =
+        limits->v1.maxInterStageShaderVariables * D3D11_PS_INPUT_REGISTER_COMPONENTS;
 
     return {};
 }

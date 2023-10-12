@@ -18,9 +18,11 @@
 #include <string>
 
 #include "dawn/common/GPUInfo.h"
+#include "dawn/native/Instance.h"
 #include "dawn/native/Limits.h"
 #include "dawn/native/vulkan/BackendVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
+#include "dawn/platform/DawnPlatform.h"
 
 namespace dawn::native::vulkan {
 
@@ -468,6 +470,12 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     limits->v1.maxInterStageShaderComponents =
         std::min(vkLimits.maxVertexOutputComponents, vkLimits.maxFragmentInputComponents);
 
+    // Reserve 4 components for the SPIR-V builtin `position`.
+    // See the discussions in https://github.com/gpuweb/gpuweb/issues/1962 for more details.
+    limits->v1.maxInterStageShaderComponents =
+        std::min(vkLimits.maxVertexOutputComponents, vkLimits.maxFragmentInputComponents) - 4;
+    limits->v1.maxInterStageShaderVariables = limits->v1.maxInterStageShaderComponents / 4;
+
     CHECK_AND_SET_V1_MAX_LIMIT(maxComputeSharedMemorySize, maxComputeWorkgroupStorageSize);
     CHECK_AND_SET_V1_MAX_LIMIT(maxComputeWorkGroupInvocations, maxComputeInvocationsPerWorkgroup);
     CHECK_AND_SET_V1_MAX_LIMIT(maxComputeWorkGroupSize[0], maxComputeWorkgroupSizeX);
@@ -514,10 +522,6 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
         }
     }
 
-    // Using base limits for:
-    // TODO(crbug.com/dawn/1448):
-    // - maxInterStageShaderVariables
-
     // Experimental limits for subgroups
     limits->experimentalSubgroupLimits.minSubgroupSize =
         mDeviceInfo.subgroupSizeControlProperties.minSubgroupSize;
@@ -544,6 +548,15 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // TODO(crbug.com/dawn/857): tighten this workaround when this issue is fixed in both
     // Vulkan SPEC and drivers.
     deviceToggles->Default(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
+
+#if DAWN_PLATFORM_IS(ANDROID)
+    // Default to the IR backend on Android.
+    deviceToggles->Default(Toggle::UseTintIR, true);
+#else
+    // All other platforms default to the value corresponding to the feature flag.
+    deviceToggles->Default(Toggle::UseTintIR, GetInstance()->GetPlatform()->IsFeatureEnabled(
+                                                  platform::Features::kWebGPUUseTintIR));
+#endif
 
     if (IsAndroidQualcomm()) {
         // dawn:1564, dawn:1897: Recording a compute pass after a render pass in the same command

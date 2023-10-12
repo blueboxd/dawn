@@ -18,6 +18,8 @@ package build
 type TargetConfig struct {
 	// Override for the output name of this target
 	OutputName string
+	// Conditionals for this target
+	Condition string
 	// Additional dependencies to add to this target
 	AdditionalDependencies struct {
 		// List of internal dependency patterns
@@ -41,6 +43,10 @@ type DirectoryConfig struct {
 	Bench *TargetConfig
 	// Configuration for the 'bench_cmd' target
 	BenchCmd *TargetConfig `json:"bench_cmd"`
+	// Configuration for the 'fuzz' target
+	Fuzz *TargetConfig
+	// Configuration for the 'fuzz_cmd' target
+	FuzzCmd *TargetConfig `json:"fuzz_cmd"`
 	// Configuration for the 'cmd' target
 	Cmd *TargetConfig
 }

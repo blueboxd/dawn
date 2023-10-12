@@ -260,7 +260,7 @@ Builder::Builder(const Program& program,
 Builder::~Builder() = default;
 
 bool Builder::Build() {
-    if (!tint::writer::CheckSupportedExtensions(
+    if (!tint::wgsl::CheckSupportedExtensions(
             "SPIR-V", builder_.AST(), builder_.Diagnostics(),
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
@@ -1223,20 +1223,24 @@ uint32_t Builder::GenerateConstructorExpression(const ast::Variable* var,
     return 0;
 }
 
-bool Builder::IsConstructorConst(const ast::Expression* expr) {
+bool Builder::IsConstructorConst(const ast::CallExpression* expr) {
     bool is_const = true;
     ast::TraverseExpressions(expr, [&](const ast::Expression* e) {
+        auto* val = builder_.Sem().GetVal(e);
+        if (!val) {
+            return ast::TraverseAction::Descend;
+        }
+
         if (e->Is<ast::LiteralExpression>()) {
             return ast::TraverseAction::Descend;
         }
-        if (auto* ce = e->As<ast::CallExpression>()) {
-            auto* sem = builder_.Sem().Get(ce);
-            if (sem->Is<sem::Materialize>()) {
+        if (e->Is<ast::CallExpression>()) {
+            if (val->Is<sem::Materialize>()) {
                 // Materialize can only occur on compile time expressions, so this sub-tree must be
                 // constant.
                 return ast::TraverseAction::Skip;
             }
-            auto* call = sem->As<sem::Call>();
+            auto* call = val->As<sem::Call>();
             if (call->Target()->Is<sem::ValueConstructor>()) {
                 return ast::TraverseAction::Descend;
             }
@@ -1949,16 +1953,12 @@ uint32_t Builder::GenerateMatrixAddOrSub(uint32_t lhs_id,
     }
 
     // Create the result matrix from the added/subtracted column vectors
-    TINT_BEGIN_DISABLE_WARNING(MAYBE_UNINITIALIZED);  // GCC false-positive
-
     auto result_mat_id = result_op();
     ops.insert(ops.begin(), result_mat_id);
     ops.insert(ops.begin(), Operand(GenerateTypeIfNeeded(type)));
     if (!push_function_inst(spv::Op::OpCompositeConstruct, ops)) {
         return 0;
     }
-
-    TINT_END_DISABLE_WARNING(MAYBE_UNINITIALIZED);  // GCC false-positive
 
     return std::get<uint32_t>(result_mat_id);
 }
@@ -2754,8 +2754,8 @@ bool Builder::GenerateTextureBuiltin(const sem::Call* call,
     auto append_coords_to_spirv_params = [&]() -> bool {
         if (auto* array_index = arg(Usage::kArrayIndex)) {
             // Array index needs to be appended to the coordinates.
-            auto* packed = tint::writer::AppendVector(&builder_, arg(Usage::kCoords)->Declaration(),
-                                                      array_index->Declaration());
+            auto* packed = tint::wgsl::AppendVector(&builder_, arg(Usage::kCoords)->Declaration(),
+                                                    array_index->Declaration());
             auto param = GenerateExpression(packed);
             if (param == 0) {
                 return false;

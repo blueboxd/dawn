@@ -25,7 +25,7 @@ import("../../../../../../scripts/tint_overrides_with_defaults.gni")
 
 import("${tint_src_dir}/tint.gni")
 
-if (tint_build_unittests) {
+if (tint_build_unittests || tint_build_benchmarks) {
   import("//testing/test.gni")
 }
 if (tint_build_spv_writer) {
@@ -39,6 +39,8 @@ if (tint_build_spv_writer) {
       "handle_matrix_arithmetic.h",
       "merge_return.cc",
       "merge_return.h",
+      "pass_matrix_by_pointer.cc",
+      "pass_matrix_by_pointer.h",
       "raise.cc",
       "raise.h",
       "shader_io.cc",
@@ -86,12 +88,12 @@ if (tint_build_spv_writer) {
 if (tint_build_unittests) {
   if (tint_build_spv_writer) {
     tint_unittests_source_set("unittests") {
-      testonly = true
       sources = [
         "builtin_polyfill_test.cc",
         "expand_implicit_splats_test.cc",
         "handle_matrix_arithmetic_test.cc",
         "merge_return_test.cc",
+        "pass_matrix_by_pointer_test.cc",
         "shader_io_test.cc",
         "var_for_dynamic_index_test.cc",
       ]

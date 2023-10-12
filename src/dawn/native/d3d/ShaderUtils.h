@@ -15,7 +15,9 @@
 #ifndef SRC_DAWN_NATIVE_D3D_SHADEUTILS_H_
 #define SRC_DAWN_NATIVE_D3D_SHADEUTILS_H_
 
+#include <bitset>
 #include <string>
+#include <vector>
 
 #include "dawn/native/Blob.h"
 #include "dawn/native/Serializable.h"
@@ -39,11 +41,15 @@ class Device;
 DAWN_SERIALIZABLE(struct, CompiledShader, COMPILED_SHADER_MEMBERS){};
 #undef COMPILED_SHADER_MEMBERS
 
+std::string CompileFlagsToString(uint32_t compileFlags);
+
 ResultOrError<CompiledShader> CompileShader(d3d::D3DCompilationRequest r);
 
-void DumpCompiledShader(Device* device,
-                        const CompiledShader& compiledShader,
-                        uint32_t compileFlags);
+InterStageShaderVariablesMask ToInterStageShaderVariablesMask(const std::vector<bool>& inputMask);
+
+void DumpFXCCompiledShader(Device* device,
+                           const CompiledShader& compiledShader,
+                           uint32_t compileFlags);
 
 }  // namespace dawn::native::d3d
 

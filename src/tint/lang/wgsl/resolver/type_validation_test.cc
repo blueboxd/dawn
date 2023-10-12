@@ -579,7 +579,20 @@ TEST_F(ResolverTypeValidationTest, RuntimeArrayInFunction_Fail) {
 56:78 note: while instantiating 'var' a)");
 }
 
-TEST_F(ResolverTypeValidationTest, Struct_Member_VectorNoType) {
+TEST_F(ResolverTypeValidationTest, PtrType_ArrayIncomplete) {
+    // fn f(l: ptr<function, array>) {}
+
+    Func("f",
+         Vector{
+             Param("l", ty.ptr(function, ty(Source{{12, 34}}, "array"))),
+         },
+         ty.void_(), Empty);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: expected '<' for 'array'");
+}
+
+TEST_F(ResolverTypeValidationTest, Struct_Member_VectorIncomplete) {
     // struct S {
     //   a: vec3;
     // };
@@ -592,7 +605,7 @@ TEST_F(ResolverTypeValidationTest, Struct_Member_VectorNoType) {
     EXPECT_EQ(r()->error(), "12:34 error: expected '<' for 'vec3'");
 }
 
-TEST_F(ResolverTypeValidationTest, Struct_Member_MatrixNoType) {
+TEST_F(ResolverTypeValidationTest, Struct_Member_MatrixIncomplete) {
     // struct S {
     //   a: mat3x3;
     // };
@@ -766,6 +779,21 @@ TEST_F(ResolverTypeValidationTest, RuntimeArrayAsParameter_Fail) {
     EXPECT_EQ(r()->error(),
               R"(12:34 error: runtime-sized arrays can only be used in the <storage> address space
 56:78 note: while instantiating parameter a)");
+}
+
+TEST_F(ResolverTypeValidationTest, PtrToPtr_Fail) {
+    // fn func(a : ptr<workgroup, ptr<workgroup, u32>>) {}
+    auto* param = Param("a", ty.ptr(workgroup, ty.ptr<workgroup, u32>(Source{{12, 34}})));
+
+    Func("func", Vector{param}, ty.void_(),
+         Vector{
+             Return(),
+         });
+
+    EXPECT_FALSE(r()->Resolve()) << r()->error();
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: ptr<workgroup, u32, read_write> cannot be used as the store type of a pointer)");
 }
 
 TEST_F(ResolverTypeValidationTest, PtrToRuntimeArrayAsPointerParameter_Fail) {

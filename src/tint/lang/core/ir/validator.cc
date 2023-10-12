@@ -271,6 +271,7 @@ class Validator {
     Disassembler dis_{mod_};
     Block* current_block_ = nullptr;
     Hashset<Function*, 4> all_functions_;
+    Hashset<Instruction*, 4> visited_instructions_;
     Vector<ControlInstruction*, 8> control_stack_;
 
     void DisassembleIfNeeded();
@@ -298,6 +299,15 @@ Result<SuccessType> Validator::Run() {
 
     for (auto* func : mod_.functions) {
         CheckFunction(func);
+    }
+
+    if (!diagnostics_.contains_errors()) {
+        // Check for orphaned instructions.
+        for (auto* inst : mod_.instructions.Objects()) {
+            if (inst->Alive() && !visited_instructions_.Contains(inst)) {
+                AddError("orphaned instruction: " + inst->FriendlyName());
+            }
+        }
     }
 
     if (diagnostics_.contains_errors()) {
@@ -448,6 +458,7 @@ void Validator::CheckBlock(Block* blk) {
 }
 
 void Validator::CheckInstruction(Instruction* inst) {
+    visited_instructions_.Add(inst);
     if (!inst->Alive()) {
         AddError(inst, InstError(inst, "destroyed instruction found in instruction list"));
         return;
@@ -893,11 +904,10 @@ Result<SuccessType> Validate(Module& mod) {
 Result<SuccessType> ValidateAndDumpIfNeeded([[maybe_unused]] Module& ir,
                                             [[maybe_unused]] const char* msg) {
 #if TINT_DUMP_IR_WHEN_VALIDATING
-    Disassembler disasm(ir);
     std::cout << "=========================================================" << std::endl;
     std::cout << "== IR dump before " << msg << ":" << std::endl;
     std::cout << "=========================================================" << std::endl;
-    std::cout << disasm.Disassemble();
+    std::cout << Disassemble(ir);
 #endif
 
 #ifndef NDEBUG

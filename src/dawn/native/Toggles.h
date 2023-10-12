@@ -67,6 +67,7 @@ enum class Toggle {
     FxcOptimizations,
     RecordDetailedTimingInTraceEvents,
     DisableTimestampQueryConversion,
+    TimestampQuantization,
     ClearBufferBeforeResolveQueries,
     VulkanUseZeroInitializeWorkgroupMemoryExtension,
     D3D12SplitBufferTextureCopyForRowsPerImagePaddings,
@@ -94,6 +95,7 @@ enum class Toggle {
     UseBlitForStencilTextureToBufferCopy,
     UseBlitForSnormTextureToBufferCopy,
     UseBlitForBGRA8UnormTextureToBufferCopy,
+    UseBlitForRGB9E5UfloatTextureCopy,
     D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha,
     D3D12PolyfillReflectVec2F32,
     VulkanClearGen12TextureWithCCSAmbiguateOnCreation,
@@ -105,6 +107,7 @@ enum class Toggle {
     D3D12CreateNotZeroedHeap,
     D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources,
     UseTintIR,
+    D3DDisableIEEEStrictness,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

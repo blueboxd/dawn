@@ -38,6 +38,10 @@ tint_add_target(tint_lang_core_ir_transform lib
   lang/core/ir/transform/block_decorated_structs.h
   lang/core/ir/transform/builtin_polyfill.cc
   lang/core/ir/transform/builtin_polyfill.h
+  lang/core/ir/transform/combine_access_instructions.cc
+  lang/core/ir/transform/combine_access_instructions.h
+  lang/core/ir/transform/conversion_polyfill.cc
+  lang/core/ir/transform/conversion_polyfill.h
   lang/core/ir/transform/demote_to_helper.cc
   lang/core/ir/transform/demote_to_helper.h
   lang/core/ir/transform/direct_variable_access.cc
@@ -90,6 +94,8 @@ tint_add_target(tint_lang_core_ir_transform_test test
   lang/core/ir/transform/binding_remapper_test.cc
   lang/core/ir/transform/block_decorated_structs_test.cc
   lang/core/ir/transform/builtin_polyfill_test.cc
+  lang/core/ir/transform/combine_access_instructions_test.cc
+  lang/core/ir/transform/conversion_polyfill_test.cc
   lang/core/ir/transform/demote_to_helper_test.cc
   lang/core/ir/transform/direct_variable_access_test.cc
   lang/core/ir/transform/helper_test.h
@@ -112,10 +118,7 @@ tint_target_add_dependencies(tint_lang_core_ir_transform_test test
   tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
-  tint_lang_wgsl_reader
-  tint_lang_wgsl_reader_program_to_ir
   tint_lang_wgsl_sem
-  tint_lang_wgsl_writer
   tint_lang_wgsl_writer_ir_to_program
   tint_utils_containers
   tint_utils_diagnostic
@@ -136,8 +139,21 @@ tint_target_add_external_dependencies(tint_lang_core_ir_transform_test test
   "gtest"
 )
 
+if(TINT_BUILD_WGSL_READER)
+  tint_target_add_dependencies(tint_lang_core_ir_transform_test test
+    tint_lang_wgsl_reader
+    tint_lang_wgsl_reader_program_to_ir
+  )
+endif(TINT_BUILD_WGSL_READER)
+
 if(TINT_BUILD_WGSL_READER AND TINT_BUILD_WGSL_WRITER)
   tint_target_add_sources(tint_lang_core_ir_transform_test test
     "lang/core/ir/transform/direct_variable_access_wgsl_test.cc"
   )
 endif(TINT_BUILD_WGSL_READER AND TINT_BUILD_WGSL_WRITER)
+
+if(TINT_BUILD_WGSL_WRITER)
+  tint_target_add_dependencies(tint_lang_core_ir_transform_test test
+    tint_lang_wgsl_writer
+  )
+endif(TINT_BUILD_WGSL_WRITER)

@@ -25,7 +25,7 @@ import("../../../../../../scripts/tint_overrides_with_defaults.gni")
 
 import("${tint_src_dir}/tint.gni")
 
-if (tint_build_unittests) {
+if (tint_build_unittests || tint_build_benchmarks) {
   import("//testing/test.gni")
 }
 if (tint_build_spv_writer) {
@@ -79,7 +79,6 @@ if (tint_build_spv_writer) {
 if (tint_build_unittests) {
   if (tint_build_spv_writer) {
     tint_unittests_source_set("unittests") {
-      testonly = true
       sources = [
         "accessor_expression_test.cc",
         "assign_test.cc",
@@ -113,7 +112,6 @@ if (tint_build_unittests) {
       deps = [
         "${tint_src_dir}:gmock_and_gtest",
         "${tint_src_dir}/api/common",
-        "${tint_src_dir}/api/options",
         "${tint_src_dir}/lang/core",
         "${tint_src_dir}/lang/core/constant",
         "${tint_src_dir}/lang/core/type",

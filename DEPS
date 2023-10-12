@@ -116,7 +116,7 @@ deps = {
 
   # Testing, GTest and GMock
   'testing': {
-    'url': '{chromium_git}/chromium/src/testing@48d3bd9693702764fdf9cf8f2d13dfe3fcb5bb3e',
+    'url': '{chromium_git}/chromium/src/testing@035a9b18047370df7403758b006e6c9696d6b84d',
     'condition': 'dawn_standalone',
   },
   'third_party/libFuzzer/src': {
@@ -158,17 +158,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@6717a65bdba0092086ace4257067bc88589be03c',
+    'url': '{chromium_git}/angle/angle@2608c622a3143ca33fe9adfbba8b92f4e64877f9',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@7f4d495c89c200c1945cce5995d348dd41dadb5a',
+    'url': '{swiftshader_git}/SwiftShader@400ac3a175a658d8157f8a363271ae7ab013c2ee',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@31d03ed141e43647fb23091cc577018f676f3492',
+    'url': '{chromium_git}/vulkan-deps@baab66a8258bb2152c0cef4e15183234682bc487',
     'condition': 'dawn_standalone',
   },
 
@@ -183,7 +183,7 @@ deps = {
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@fb1f3036b185e2d8f668f4dd753d50873081c094',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@d6e7e37e5f2b3914faec424740b6c4749874d1c4',
   },
 
   'third_party/dxheaders': {
@@ -202,7 +202,7 @@ deps = {
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@be1210e145e89e7a2943947d983f9592495e0f52',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@8bb48275486acc5ce8ec25dcd3eabaeba80ed832',
     'condition': 'build_with_chromium',
   },
 
@@ -216,7 +216,7 @@ deps = {
     'condition': 'dawn_node',
   },
   'third_party/gpuweb': {
-    'url': '{github_git}/gpuweb/gpuweb.git@b42b4b8b8d7da145ee8eef120747fbd390283f5f',
+    'url': '{github_git}/gpuweb/gpuweb.git@17f7771857dd6cf0377a99e6a63a723b80485e50',
     'condition': 'dawn_node',
   },
 

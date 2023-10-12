@@ -18,7 +18,6 @@
 #include "src/tint/cmd/common/generate_external_texture_bindings.h"
 #include "src/tint/cmd/common/helper.h"
 #include "src/tint/lang/core/ir/module.h"
-#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 
 #if TINT_BUILD_GLSL_WRITER
 #include "src/tint/lang/glsl/writer/writer.h"
@@ -37,10 +36,12 @@
 #endif  // TINT_BUILD_SPV_READER
 
 #if TINT_BUILD_SPV_WRITER
+#include "src/tint/lang/spirv/writer/helpers/generate_bindings.h"
 #include "src/tint/lang/spirv/writer/writer.h"
 #endif  // TINT_BUILD_SPV_WRITER
 
 #if TINT_BUILD_WGSL_READER
+#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 #include "src/tint/lang/wgsl/reader/reader.h"
 #endif  // TINT_BUILD_WGSL_READER
 
@@ -192,8 +193,7 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
 bool GenerateSpirv(const tint::Program& program) {
 #if TINT_BUILD_SPV_WRITER
     tint::spirv::writer::Options gen_options;
-    gen_options.external_texture_options.bindings_map =
-        tint::cmd::GenerateExternalTextureBindings(program);
+    gen_options.bindings = tint::spirv::writer::GenerateBindings(program);
     auto result = tint::spirv::writer::Generate(program, gen_options);
     if (!result) {
         tint::cmd::PrintWGSL(std::cerr, program);
@@ -231,12 +231,15 @@ bool GenerateWgsl(const tint::Program& program) {
 /// Generate MSL code for a program.
 /// @param program the program to generate
 /// @returns true on success
-bool GenerateMsl(const tint::Program& program) {
-#if TINT_BUILD_MSL_WRITER
+bool GenerateMsl([[maybe_unused]] const tint::Program& program) {
+#if !TINT_BUILD_MSL_WRITER
+    std::cerr << "MSL writer not enabled in tint build" << std::endl;
+    return false;
+#else
     // Remap resource numbers to a flat namespace.
     // TODO(crbug.com/tint/1501): Do this via Options::BindingMap.
     const tint::Program* input_program = &program;
-    auto flattened = tint::writer::FlattenBindings(program);
+    auto flattened = tint::wgsl::FlattenBindings(program);
     if (flattened) {
         input_program = &*flattened;
     }
@@ -257,11 +260,7 @@ bool GenerateMsl(const tint::Program& program) {
     }
 
     return true;
-#else
-    (void)program;
-    std::cerr << "MSL writer not enabled in tint build" << std::endl;
-    return false;
-#endif  // TINT_BUILD_MSL_WRITER
+#endif
 }
 
 /// Generate HLSL code for a program.
@@ -381,6 +380,7 @@ int main(int argc, const char** argv) {
     opts.filename = options.input_filename;
 
     auto info = tint::cmd::LoadProgramInfo(opts);
+#if TINT_BUILD_WGSL_READER
     {
         uint32_t loop_count = 1;
         if (options.loop == Looper::kIRGenerate) {
@@ -393,6 +393,7 @@ int main(int argc, const char** argv) {
             }
         }
     }
+#endif  // TINT_BUILD_WGSL_READER
 
     bool success = false;
     {

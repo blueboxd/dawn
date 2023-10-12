@@ -140,40 +140,6 @@ const AspectInfo& Format::GetAspectInfo(Aspect aspect) const {
     return aspectInfo[aspectIndex];
 }
 
-Extent3D Format::GetAspectSize(Aspect aspect, const Extent3D& textureSize) const {
-    switch (aspect) {
-        case Aspect::Color:
-        case Aspect::Depth:
-        case Aspect::Stencil:
-        case Aspect::CombinedDepthStencil:
-            return textureSize;
-        case Aspect::Plane0:
-            DAWN_ASSERT(IsMultiPlanar());
-            return textureSize;
-        case Aspect::Plane1: {
-            DAWN_ASSERT(IsMultiPlanar());
-            auto planeSize = textureSize;
-            switch (format) {
-                case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
-                    if (planeSize.width > 1) {
-                        planeSize.width >>= 1;
-                    }
-                    if (planeSize.height > 1) {
-                        planeSize.height >>= 1;
-                    }
-                    break;
-                default:
-                    DAWN_UNREACHABLE();
-            }
-            return planeSize;
-        }
-        case Aspect::None:
-            break;
-    }
-
-    DAWN_UNREACHABLE();
-}
-
 FormatIndex Format::GetIndex() const {
     return ComputeFormatIndex(format);
 }
@@ -582,11 +548,12 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
 
     // multi-planar formats
     const UnsupportedReason multiPlanarFormatUnsupportedReason = device->HasFeature(Feature::DawnMultiPlanarFormats) ?  Format::supported : RequiresFeature{wgpu::FeatureName::DawnMultiPlanarFormats};
+    auto multiPlanarCapabilities = device->HasFeature(Feature::MultiPlanarRenderTargets) ? Cap::Renderable : Cap::None;
     AddMultiAspectFormat(wgpu::TextureFormat::R8BG8Biplanar420Unorm, Aspect::Plane0 | Aspect::Plane1,
-        wgpu::TextureFormat::R8Unorm, wgpu::TextureFormat::RG8Unorm, Cap::None, multiPlanarFormatUnsupportedReason, ComponentCount(3));
+        wgpu::TextureFormat::R8Unorm, wgpu::TextureFormat::RG8Unorm, multiPlanarCapabilities, multiPlanarFormatUnsupportedReason, ComponentCount(3));
     const UnsupportedReason multiPlanarFormatP010UnsupportedReason = device->HasFeature(Feature::MultiPlanarFormatP010) ?  Format::supported : RequiresFeature{wgpu::FeatureName::MultiPlanarFormatP010};
     AddMultiAspectFormat(wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm, Aspect::Plane0 | Aspect::Plane1,
-        wgpu::TextureFormat::R16Unorm, wgpu::TextureFormat::RG16Unorm, Cap::None, multiPlanarFormatP010UnsupportedReason, ComponentCount(3));
+        wgpu::TextureFormat::R16Unorm, wgpu::TextureFormat::RG16Unorm, multiPlanarCapabilities, multiPlanarFormatP010UnsupportedReason, ComponentCount(3));
 
     // clang-format on
 

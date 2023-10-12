@@ -25,7 +25,7 @@ import("../../../../../scripts/tint_overrides_with_defaults.gni")
 
 import("${tint_src_dir}/tint.gni")
 
-if (tint_build_unittests) {
+if (tint_build_unittests || tint_build_benchmarks) {
   import("//testing/test.gni")
 }
 
@@ -33,6 +33,8 @@ libtint_source_set("resolver") {
   sources = [
     "dependency_graph.cc",
     "dependency_graph.h",
+    "incomplete_type.cc",
+    "incomplete_type.h",
     "resolve.cc",
     "resolve.h",
     "resolver.cc",
@@ -41,6 +43,8 @@ libtint_source_set("resolver") {
     "sem_helper.h",
     "uniformity.cc",
     "uniformity.h",
+    "unresolved_identifier.cc",
+    "unresolved_identifier.h",
     "validator.cc",
     "validator.h",
   ]
@@ -72,7 +76,6 @@ libtint_source_set("resolver") {
 }
 if (tint_build_unittests) {
   tint_unittests_source_set("unittests") {
-    testonly = true
     sources = [
       "address_space_layout_validation_test.cc",
       "address_space_validation_test.cc",
@@ -124,7 +127,6 @@ if (tint_build_unittests) {
       "struct_pipeline_stage_use_test.cc",
       "subgroups_extension_test.cc",
       "type_validation_test.cc",
-      "uniformity_test.cc",
       "unresolved_identifier_test.cc",
       "validation_test.cc",
       "validator_is_storeable_test.cc",
@@ -147,7 +149,6 @@ if (tint_build_unittests) {
       "${tint_src_dir}/lang/wgsl/ast/transform",
       "${tint_src_dir}/lang/wgsl/intrinsic",
       "${tint_src_dir}/lang/wgsl/program",
-      "${tint_src_dir}/lang/wgsl/reader",
       "${tint_src_dir}/lang/wgsl/resolver",
       "${tint_src_dir}/lang/wgsl/sem",
       "${tint_src_dir}/lang/wgsl/sem:unittests",
@@ -165,5 +166,10 @@ if (tint_build_unittests) {
       "${tint_src_dir}/utils/text",
       "${tint_src_dir}/utils/traits",
     ]
+
+    if (tint_build_wgsl_reader) {
+      sources += [ "uniformity_test.cc" ]
+      deps += [ "${tint_src_dir}/lang/wgsl/reader" ]
+    }
   }
 }

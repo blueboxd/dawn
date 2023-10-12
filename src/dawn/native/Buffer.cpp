@@ -125,10 +125,6 @@ MaybeError ValidateBufferDescriptor(DeviceBase* device, const BufferDescriptor* 
 
         DAWN_INVALID_IF(!device->HasFeature(Feature::HostMappedPointer), "%s requires %s.",
                         hostMappedDesc->sType, ToAPI(Feature::HostMappedPointer));
-        DAWN_INVALID_IF(
-            (descriptor->usage & kMappableBufferUsages) == 0,
-            "Buffer usage (%s) created from host-mapped pointer requires mappable buffer usage.",
-            descriptor->usage);
         DAWN_INVALID_IF(!IsAligned(descriptor->size, requiredAlignment),
                         "Buffer size (%u) wrapping host-mapped memory was not aligned to %u.",
                         descriptor->size, requiredAlignment);
@@ -209,7 +205,8 @@ BufferBase::BufferBase(DeviceBase* device, const BufferDescriptor* descriptor)
             device->IsToggleEnabled(Toggle::UseBlitForDepth32FloatTextureToBufferCopy) ||
             device->IsToggleEnabled(Toggle::UseBlitForStencilTextureToBufferCopy) ||
             device->IsToggleEnabled(Toggle::UseBlitForSnormTextureToBufferCopy) ||
-            device->IsToggleEnabled(Toggle::UseBlitForBGRA8UnormTextureToBufferCopy)) {
+            device->IsToggleEnabled(Toggle::UseBlitForBGRA8UnormTextureToBufferCopy) ||
+            device->IsToggleEnabled(Toggle::UseBlitForRGB9E5UfloatTextureCopy)) {
             mUsage |= kInternalStorageBuffer;
         }
     }
@@ -242,6 +239,13 @@ BufferBase::~BufferBase() {
 }
 
 void BufferBase::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the buffer is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the buffer.
+    // - It may be called when the last ref to the buffer is dropped and the buffer
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the buffer since there are no other live refs.
     if (mState == BufferState::Mapped || mState == BufferState::PendingMap) {
         UnmapInternal(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
     } else if (mState == BufferState::MappedAtCreation) {

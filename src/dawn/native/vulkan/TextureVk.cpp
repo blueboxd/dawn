@@ -190,7 +190,7 @@ VkImageMemoryBarrier BuildMemoryBarrier(const Texture* texture,
 }
 
 void FillVulkanCreateInfoSizesAndType(const Texture& texture, VkImageCreateInfo* info) {
-    const Extent3D& size = texture.GetSize();
+    const Extent3D& size = texture.GetBaseSize();
 
     info->mipLevels = texture.GetNumMipLevels();
     info->samples = VulkanSampleCount(texture.GetSampleCount());
@@ -746,7 +746,7 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
 
     DAWN_ASSERT(IsSampleCountSupported(device, createInfo));
 
-    if (GetArrayLayers() >= 6 && GetWidth() == GetHeight()) {
+    if (GetArrayLayers() >= 6 && GetBaseSize().width == GetBaseSize().height) {
         createInfo.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     }
 
@@ -794,7 +794,7 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
             format == wgpu::TextureFormat::RGBA32Float;
         textureIsBuggy &= GetNumMipLevels() > 1;
         textureIsBuggy &= GetDimension() == wgpu::TextureDimension::e2D;
-        textureIsBuggy &= IsPowerOfTwo(GetWidth()) && IsPowerOfTwo(GetHeight());
+        textureIsBuggy &= IsPowerOfTwo(GetBaseSize().width) && IsPowerOfTwo(GetBaseSize().height);
         if (textureIsBuggy) {
             DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
                                   GetAllSubresources(), TextureBase::ClearValue::Zero));
@@ -1020,6 +1020,13 @@ void Texture::SetLabelImpl() {
 }
 
 void Texture::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the texture is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the texture.
+    // - It may be called when the last ref to the texture is dropped and the texture
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the texture since there are no other live refs.
     Device* device = ToBackend(GetDevice());
 
     if (mOwnsHandle) {
@@ -1290,8 +1297,8 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                     range.aspects == Aspect::Plane1);
         const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(range.aspects).block;
 
-        Extent3D largestMipSize = GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel);
-        largestMipSize = GetFormat().GetAspectSize(range.aspects, largestMipSize);
+        Extent3D largestMipSize =
+            GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel, range.aspects);
 
         uint32_t bytesPerRow = Align((largestMipSize.width / blockInfo.width) * blockInfo.byteSize,
                                      device->GetOptimalBytesPerRowAlignment());
@@ -1307,8 +1314,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
         std::vector<VkBufferImageCopy> regions;
         for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
              ++level) {
-            Extent3D copySize = GetMipLevelSingleSubresourcePhysicalSize(level);
-            copySize = GetFormat().GetAspectSize(range.aspects, copySize);
+            Extent3D copySize = GetMipLevelSingleSubresourcePhysicalSize(level, range.aspects);
             imageRange.baseMipLevel = level;
             for (uint32_t layer = range.baseArrayLayer;
                  layer < range.baseArrayLayer + range.layerCount; ++layer) {

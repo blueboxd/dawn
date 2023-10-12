@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <algorithm>
+#include <atomic>
 #include <iterator>
 #include <new>
 #include <utility>
@@ -29,6 +30,20 @@
 #include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/memory/bitcast.h"
 
+#ifndef TINT_VECTOR_MUTATION_CHECKS_ENABLED
+#ifdef NDEBUG
+#define TINT_VECTOR_MUTATION_CHECKS_ENABLED 0
+#else
+#define TINT_VECTOR_MUTATION_CHECKS_ENABLED 1
+#endif
+#endif
+
+#if TINT_VECTOR_MUTATION_CHECKS_ENABLED
+#define TINT_VECTOR_MUTATION_CHECK_ASSERT(x) TINT_ASSERT(x)
+#else
+#define TINT_VECTOR_MUTATION_CHECK_ASSERT(x)
+#endif
+
 /// Forward declarations
 namespace tint {
 template <typename>
@@ -36,6 +51,228 @@ class VectorRef;
 }  // namespace tint
 
 namespace tint {
+
+/// VectorIterator is a forward iterator of Vector elements.
+template <typename T, bool FORWARD = true>
+class VectorIterator {
+  public:
+    /// The iterator trait
+    using iterator_category = std::random_access_iterator_tag;
+    /// The type of an element that this iterator points to
+    using value_type = T;
+    /// The type of the difference of two iterators
+    using difference_type = std::ptrdiff_t;
+    /// A pointer of the element type
+    using pointer = T*;
+    /// A reference of the element type
+    using reference = T&;
+
+    /// Constructor
+    VectorIterator() = default;
+
+    /// Destructor
+    ~VectorIterator() {
+#if TINT_VECTOR_MUTATION_CHECKS_ENABLED
+        if (iterator_count_) {
+            TINT_ASSERT(*iterator_count_ > 0);
+            (*iterator_count_)--;
+        }
+#endif
+    }
+
+#if TINT_VECTOR_MUTATION_CHECKS_ENABLED
+    /// Constructor
+    /// @param p the pointer to the vector element
+    /// @param it_cnt a pointer to an iterator count
+    VectorIterator(T* p, std::atomic<uint32_t>* it_cnt) : ptr_(p), iterator_count_(it_cnt) {
+        (*iterator_count_)++;
+    }
+
+    /// Copy constructor
+    /// @param other the VectorIterator to copy
+    VectorIterator(const VectorIterator& other)
+        : ptr_(other.ptr_), iterator_count_(other.iterator_count_) {
+        if (iterator_count_) {
+            (*iterator_count_)++;
+        }
+    }
+
+    /// Move constructor
+    /// @param other the VectorIterator to move
+    VectorIterator(VectorIterator&& other)
+        : ptr_(other.ptr_), iterator_count_(other.iterator_count_) {
+        other.ptr_ = nullptr;
+        other.iterator_count_ = nullptr;
+    }
+#else
+    /// Constructor
+    /// @param p the pointer to the vector element
+    explicit VectorIterator(T* p) : ptr_(p) {}
+
+    /// Copy constructor
+    /// @param other the VectorIterator to copy
+    VectorIterator(const VectorIterator& other) : ptr_(other.ptr_) {}
+
+    /// Move constructor
+    /// @param other the VectorIterator to move
+    VectorIterator(VectorIterator&& other) : ptr_(other.ptr_) { other.ptr_ = nullptr; }
+#endif
+
+    /// Assignment operator
+    /// @param other the VectorIterator to copy
+    /// @return this VectorIterator
+    VectorIterator& operator=(const VectorIterator& other) {
+        ptr_ = other.ptr_;
+#if TINT_VECTOR_MUTATION_CHECKS_ENABLED
+        if (iterator_count_ != other.iterator_count_) {
+            if (iterator_count_) {
+                (*iterator_count_)--;
+            }
+            iterator_count_ = other.iterator_count_;
+            if (iterator_count_) {
+                (*iterator_count_)++;
+            }
+        }
+#endif
+        return *this;
+    }
+
+    /// Move-assignment operator
+    /// @param other the VectorIterator to move
+    /// @return this VectorIterator
+    VectorIterator& operator=(VectorIterator&& other) {
+        ptr_ = other.ptr_;
+        other.ptr_ = nullptr;
+#if TINT_VECTOR_MUTATION_CHECKS_ENABLED
+        if (iterator_count_) {
+            (*iterator_count_)--;
+        }
+        iterator_count_ = other.iterator_count_;
+        other.iterator_count_ = nullptr;
+#endif
+        return *this;
+    }
+
+    /// @return the element this iterator currently points at
+    operator T*() const { return ptr_; }
+
+    /// @return the element this iterator currently points at
+    T& operator*() const { return *ptr_; }
+
+    /// @return the element this iterator currently points at
+    T* operator->() const { return ptr_; }
+
+    /// Equality operator
+    /// @param other the other VectorIterator
+    /// @return true if this iterator is equal to @p other
+    bool operator==(const VectorIterator& other) const { return ptr_ == other.ptr_; }
+
+    /// Inequality operator
+    /// @param other the other VectorIterator
+    /// @return true if this iterator is not equal to @p other
+    bool operator!=(const VectorIterator& other) const { return ptr_ != other.ptr_; }
+
+    /// Less-than operator
+    /// @param other the other iterator
+    /// @returns true if this iterator comes before @p other
+    bool operator<(const VectorIterator& other) const { return other - *this > 0; }
+
+    /// Greater-than operator
+    /// @param other the other iterator
+    /// @returns true if this iterator comes after @p other
+    bool operator>(const VectorIterator& other) const { return *this - other > 0; }
+
+    /// Index operator
+    /// @param i the number of elements from the element this iterator points to
+    /// @return the element
+    T& operator[](std::ptrdiff_t i) const { return *(*this + i); }
+
+    /// Increments the iterator (prefix)
+    /// @returns this VectorIterator
+    VectorIterator& operator++() {
+        this->ptr_ = FORWARD ? this->ptr_ + 1 : this->ptr_ - 1;
+        return *this;
+    }
+
+    /// Decrements the iterator (prefix)
+    /// @returns this VectorIterator
+    VectorIterator& operator--() {
+        this->ptr_ = FORWARD ? this->ptr_ - 1 : this->ptr_ + 1;
+        return *this;
+    }
+
+    /// Increments the iterator (postfix)
+    /// @returns a VectorIterator that points to the element before the increment
+    VectorIterator operator++(int) {
+        VectorIterator res = *this;
+        this->ptr_ = FORWARD ? this->ptr_ + 1 : this->ptr_ - 1;
+        return res;
+    }
+
+    /// Decrements the iterator (postfix)
+    /// @returns a VectorIterator that points to the element before the decrement
+    VectorIterator operator--(int) {
+        VectorIterator res = *this;
+        this->ptr_ = FORWARD ? this->ptr_ - 1 : this->ptr_ + 1;
+        return res;
+    }
+
+    /// Moves the iterator forward by @p n elements
+    /// @param n the number of elements
+    /// @returns this VectorIterator
+    VectorIterator operator+=(std::ptrdiff_t n) {
+        this->ptr_ = FORWARD ? this->ptr_ + n : this->ptr_ - n;
+        return *this;
+    }
+
+    /// Moves the iterator backwards by @p n elements
+    /// @param n the number of elements
+    /// @returns this VectorIterator
+    VectorIterator operator-=(std::ptrdiff_t n) {
+        this->ptr_ = FORWARD ? this->ptr_ - n : this->ptr_ + n;
+        return *this;
+    }
+
+    /// @param n the number of elements
+    /// @returns a new VectorIterator progressed by @p n elements
+    VectorIterator operator+(std::ptrdiff_t n) const {
+#if TINT_VECTOR_MUTATION_CHECKS_ENABLED
+        return VectorIterator{FORWARD ? ptr_ + n : ptr_ - n, iterator_count_};
+#else
+        return VectorIterator{FORWARD ? ptr_ + n : ptr_ - n};
+#endif
+    }
+
+    /// @param n the number of elements
+    /// @returns a new VectorIterator regressed by @p n elements
+    VectorIterator operator-(std::ptrdiff_t n) const {
+#if TINT_VECTOR_MUTATION_CHECKS_ENABLED
+        return VectorIterator{FORWARD ? ptr_ - n : ptr_ + n, iterator_count_};
+#else
+        return VectorIterator{FORWARD ? ptr_ - n : ptr_ + n};
+#endif
+    }
+
+    /// @param other the other iterator
+    /// @returns the number of elements between this iterator and @p other
+    std::ptrdiff_t operator-(const VectorIterator& other) const {
+        return FORWARD ? ptr_ - other.ptr_ : other.ptr_ - ptr_;
+    }
+
+  private:
+    T* ptr_ = nullptr;
+#if TINT_VECTOR_MUTATION_CHECKS_ENABLED
+    std::atomic<uint32_t>* iterator_count_ = nullptr;
+#endif
+};
+
+/// @param out the stream to write to
+/// @param it the VectorIterator
+/// @returns @p out so calls can be chained
+template <typename STREAM, typename T, bool FORWARD, typename = traits::EnableIfIsOStream<STREAM>>
+auto& operator<<(STREAM& out, const VectorIterator<T, FORWARD>& it) {
+    return out << *it;
+}
 
 /// Vector is a small-object-optimized, dynamically-sized vector of contigious elements of type T.
 ///
@@ -59,10 +296,14 @@ namespace tint {
 template <typename T, size_t N>
 class Vector {
   public:
-    /// Alias to `T*`.
-    using iterator = T*;
-    /// Alias to `const T*`.
-    using const_iterator = const T*;
+    /// Alias to the non-const forward iterator
+    using iterator = VectorIterator<T, /* forward */ true>;
+    /// Alias to the const forward iterator
+    using const_iterator = VectorIterator<const T, /* forward */ true>;
+    /// Alias to the non-const reverse  iterator
+    using reverse_iterator = VectorIterator<T, /* forward */ false>;
+    /// Alias to the const reverse iterator
+    using const_reverse_iterator = VectorIterator<const T, /* forward */ false>;
     /// Alias to `T`.
     using value_type = T;
     /// Value of `N`
@@ -211,18 +452,12 @@ class Vector {
     /// Index operator
     /// @param i the element index. Must be less than `len`.
     /// @returns a reference to the i'th element.
-    T& operator[](size_t i) {
-        TINT_ASSERT(i < Length());
-        return impl_.slice[i];
-    }
+    T& operator[](size_t i) { return impl_.slice[i]; }
 
     /// Index operator
     /// @param i the element index. Must be less than `len`.
     /// @returns a reference to the i'th element.
-    const T& operator[](size_t i) const {
-        TINT_ASSERT(i < Length());
-        return impl_.slice[i];
-    }
+    const T& operator[](size_t i) const { return impl_.slice[i]; }
 
     /// @return the number of elements in the vector
     size_t Length() const { return impl_.slice.len; }
@@ -234,6 +469,7 @@ class Vector {
     /// Reserves memory to hold at least `new_cap` elements
     /// @param new_cap the new vector capacity
     void Reserve(size_t new_cap) {
+        TINT_VECTOR_MUTATION_CHECK_ASSERT(iterator_count_ == 0);
         if (new_cap > impl_.slice.cap) {
             auto* old_data = impl_.slice.data;
             impl_.Allocate(new_cap);
@@ -282,17 +518,17 @@ class Vector {
 
     /// Clears all elements from the vector, keeping the capacity the same.
     void Clear() {
-        TINT_BEGIN_DISABLE_WARNING(MAYBE_UNINITIALIZED);
+        TINT_VECTOR_MUTATION_CHECK_ASSERT(iterator_count_ == 0);
         for (size_t i = 0; i < impl_.slice.len; i++) {
             impl_.slice.data[i].~T();
         }
         impl_.slice.len = 0;
-        TINT_END_DISABLE_WARNING(MAYBE_UNINITIALIZED);
     }
 
     /// Appends a new element to the vector.
     /// @param el the element to copy to the vector.
     void Push(const T& el) {
+        TINT_VECTOR_MUTATION_CHECK_ASSERT(iterator_count_ == 0);
         if (impl_.slice.len >= impl_.slice.cap) {
             Grow();
         }
@@ -302,6 +538,7 @@ class Vector {
     /// Appends a new element to the vector.
     /// @param el the element to move to the vector.
     void Push(T&& el) {
+        TINT_VECTOR_MUTATION_CHECK_ASSERT(iterator_count_ == 0);
         if (impl_.slice.len >= impl_.slice.cap) {
             Grow();
         }
@@ -312,6 +549,7 @@ class Vector {
     /// @param args the arguments to pass to the element constructor.
     template <typename... ARGS>
     void Emplace(ARGS&&... args) {
+        TINT_VECTOR_MUTATION_CHECK_ASSERT(iterator_count_ == 0);
         if (impl_.slice.len >= impl_.slice.cap) {
             Grow();
         }
@@ -321,6 +559,7 @@ class Vector {
     /// Removes and returns the last element from the vector.
     /// @returns the popped element
     T Pop() {
+        TINT_VECTOR_MUTATION_CHECK_ASSERT(iterator_count_ == 0);
         TINT_ASSERT(!IsEmpty());
         auto& el = impl_.slice.data[--impl_.slice.len];
         auto val = std::move(el);
@@ -333,6 +572,7 @@ class Vector {
     /// @param element the element to insert
     template <typename EL>
     void Insert(size_t before, EL&& element) {
+        TINT_VECTOR_MUTATION_CHECK_ASSERT(iterator_count_ == 0);
         TINT_ASSERT(before <= Length());
         size_t n = Length();
         Resize(Length() + 1);
@@ -350,6 +590,7 @@ class Vector {
     /// @param start the index of the first element to remove
     /// @param count the number of elements to remove
     void Erase(size_t start, size_t count = 1) {
+        TINT_VECTOR_MUTATION_CHECK_ASSERT(iterator_count_ == 0);
         TINT_ASSERT(start < Length());
         TINT_ASSERT((start + count) <= Length());
         // Shuffle
@@ -370,6 +611,7 @@ class Vector {
     /// should return `true` for elements that should be removed from the vector.
     template <typename PREDICATE>
     void EraseIf(PREDICATE&& predicate) {
+        TINT_VECTOR_MUTATION_CHECK_ASSERT(iterator_count_ == 0);
         // Shuffle
         size_t num_removed = 0;
         for (size_t i = 0; i < impl_.slice.len; i++) {
@@ -444,29 +686,65 @@ class Vector {
     /// @returns a reference to the last element in the vector
     const T& Back() const { return impl_.slice.Back(); }
 
-    /// @returns a pointer to the first element in the vector
-    T* begin() { return impl_.slice.begin(); }
+#if TINT_VECTOR_MUTATION_CHECKS_ENABLED
+    /// @returns a forward iterator to the first element of the vector
+    iterator begin() { return iterator{impl_.slice.begin(), &iterator_count_}; }
 
-    /// @returns a pointer to the first element in the vector
-    const T* begin() const { return impl_.slice.begin(); }
+    /// @returns a forward iterator to the first element of the vector
+    const const_iterator begin() const {
+        return const_iterator{impl_.slice.begin(), &iterator_count_};
+    }
 
-    /// @returns a pointer to one past the last element in the vector
-    T* end() { return impl_.slice.end(); }
+    /// @returns a forward iterator to one-pass the last element of the vector
+    iterator end() { return iterator{impl_.slice.end(), &iterator_count_}; }
 
-    /// @returns a pointer to one past the last element in the vector
-    const T* end() const { return impl_.slice.end(); }
+    /// @returns a forward iterator to one-pass the last element of the vector
+    const const_iterator end() const { return const_iterator{impl_.slice.end(), &iterator_count_}; }
 
-    /// @returns a reverse iterator starting with the last element in the vector
-    auto rbegin() { return impl_.slice.rbegin(); }
+    /// @returns a reverse iterator to the last element of the vector
+    reverse_iterator rbegin() { return reverse_iterator{impl_.slice.end(), &iterator_count_} + 1; }
 
-    /// @returns a reverse iterator starting with the last element in the vector
-    auto rbegin() const { return impl_.slice.rbegin(); }
+    /// @returns a reverse iterator to the last element of the vector
+    const const_reverse_iterator rbegin() const {
+        return const_reverse_iterator{impl_.slice.end(), &iterator_count_} + 1;
+    }
 
-    /// @returns the end for a reverse iterator
-    auto rend() { return impl_.slice.rend(); }
+    /// @returns a reverse iterator to one element before the first element of the vector
+    reverse_iterator rend() { return reverse_iterator{impl_.slice.begin(), &iterator_count_} + 1; }
 
-    /// @returns the end for a reverse iterator
-    auto rend() const { return impl_.slice.rend(); }
+    /// @returns a reverse iterator to one element before the first element of the vector
+    const const_reverse_iterator rend() const {
+        return const_reverse_iterator{impl_.slice.begin(), &iterator_count_} + 1;
+    }
+#else
+    /// @returns a forward iterator to the first element of the vector
+    iterator begin() { return iterator{impl_.slice.begin()}; }
+
+    /// @returns a forward iterator to the first element of the vector
+    const const_iterator begin() const { return const_iterator{impl_.slice.begin()}; }
+
+    /// @returns a forward iterator to one-pass the last element of the vector
+    iterator end() { return iterator{impl_.slice.end()}; }
+
+    /// @returns a forward iterator to one-pass the last element of the vector
+    const const_iterator end() const { return const_iterator{impl_.slice.end()}; }
+
+    /// @returns a reverse iterator to the last element of the vector
+    reverse_iterator rbegin() { return reverse_iterator{impl_.slice.end()} + 1; }
+
+    /// @returns a reverse iterator to the last element of the vector
+    const const_reverse_iterator rbegin() const {
+        return const_reverse_iterator{impl_.slice.end()} + 1;
+    }
+
+    /// @returns a reverse iterator to one element before the first element of the vector
+    reverse_iterator rend() { return reverse_iterator{impl_.slice.begin()} + 1; }
+
+    /// @returns a reverse iterator to one element before the first element of the vector
+    const const_reverse_iterator rend() const {
+        return const_reverse_iterator{impl_.slice.begin()} + 1;
+    }
+#endif
 
     /// @returns a hash code for this Vector
     size_t HashCode() const {
@@ -626,6 +904,9 @@ class Vector {
 
     /// Either a ImplWithSmallArray or ImplWithoutSmallArray based on N.
     std::conditional_t<HasSmallArray, ImplWithSmallArray, ImplWithoutSmallArray> impl_;
+
+    /// The current number of iterators referring to this vector
+    mutable std::atomic<uint32_t> iterator_count_ = 0;
 };
 
 namespace detail {

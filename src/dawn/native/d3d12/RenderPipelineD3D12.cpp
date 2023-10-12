@@ -316,9 +316,9 @@ MaybeError RenderPipeline::Initialize() {
     // Tint does matrix multiplication expecting row major matrices
     compileFlags |= D3DCOMPILE_PACK_MATRIX_ROW_MAJOR;
 
-    // FXC can miscompile code that depends on special float values (NaN, INF, etc) when IEEE
-    // strictness is not enabled. See crbug.com/tint/976.
-    compileFlags |= D3DCOMPILE_IEEE_STRICTNESS;
+    if (!device->IsToggleEnabled(Toggle::D3DDisableIEEEStrictness)) {
+        compileFlags |= D3DCOMPILE_IEEE_STRICTNESS;
+    }
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC descriptorD3D12 = {};
 
@@ -328,13 +328,14 @@ MaybeError RenderPipeline::Initialize() {
 
     PerStage<d3d::CompiledShader> compiledShader;
 
-    std::bitset<kMaxInterStageShaderVariables>* usedInterstageVariables = nullptr;
+    std::optional<dawn::native::d3d::InterStageShaderVariablesMask> usedInterstageVariables;
     dawn::native::EntryPointMetadata fragmentEntryPoint;
     if (GetStageMask() & wgpu::ShaderStage::Fragment) {
         // Now that only fragment shader can have interstage inputs.
         const ProgrammableStage& programmableStage = GetStage(SingleShaderStage::Fragment);
         fragmentEntryPoint = programmableStage.module->GetEntryPoint(programmableStage.entryPoint);
-        usedInterstageVariables = &fragmentEntryPoint.usedInterStageVariables;
+        usedInterstageVariables = dawn::native::d3d::ToInterStageShaderVariablesMask(
+            fragmentEntryPoint.usedInterStageVariables);
     }
 
     for (auto stage : IterateStages(GetStageMask())) {

@@ -47,7 +47,6 @@ cc_library(
     "//src/tint/lang/wgsl/ast",
     "//src/tint/lang/wgsl/program",
     "//src/tint/lang/wgsl/reader/lower",
-    "//src/tint/lang/wgsl/reader/program_to_ir",
     "//src/tint/lang/wgsl/sem",
     "//src/tint/utils/containers",
     "//src/tint/utils/diagnostic",
@@ -73,6 +72,11 @@ cc_library(
       "//src/tint/lang/spirv/writer/common",
       "//src/tint/lang/spirv/writer/printer",
       "//src/tint/lang/spirv/writer/raise",
+    ],
+    "//conditions:default": [],
+  }) + select({
+    ":tint_build_wgsl_reader": [
+      "//src/tint/lang/wgsl/reader/program_to_ir",
     ],
     "//conditions:default": [],
   }),
@@ -106,7 +110,6 @@ cc_library(
   ],
   deps = [
     "//src/tint/api/common",
-    "//src/tint/api/options",
     "//src/tint/lang/core",
     "//src/tint/lang/core/constant",
     "//src/tint/lang/core/intrinsic",
@@ -149,13 +152,13 @@ cc_library(
 )
 cc_library(
   name = "bench",
+  alwayslink = True,
   srcs = [
     "writer_bench.cc",
   ],
   deps = [
     "//src/tint/api/common",
-    "//src/tint/api/options",
-    "//src/tint/cmd/bench",
+    "//src/tint/cmd/bench:bench",
     "//src/tint/lang/core",
     "//src/tint/lang/core/constant",
     "//src/tint/lang/core/type",
@@ -176,6 +179,7 @@ cc_library(
     "//src/tint/utils/symbol",
     "//src/tint/utils/text",
     "//src/tint/utils/traits",
+    "@benchmark",
   ] + select({
     ":tint_build_spv_writer": [
       "//src/tint/lang/spirv/writer",
@@ -195,6 +199,11 @@ alias(
 alias(
   name = "tint_build_spv_writer",
   actual = "//src/tint:tint_build_spv_writer_true",
+)
+
+alias(
+  name = "tint_build_wgsl_reader",
+  actual = "//src/tint:tint_build_wgsl_reader_true",
 )
 
 selects.config_setting_group(

@@ -53,9 +53,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         return 0;  // Not supported
     }
 
-    program = tint::wgsl::ApplySubstituteOverrides(std::move(program));
-    if (!program.IsValid()) {
-        return 0;
+    if (auto transformed = tint::wgsl::ApplySubstituteOverrides(program)) {
+        program = std::move(*transformed);
+        if (!program.IsValid()) {
+            return 0;
+        }
     }
 
     tint::inspector::Inspector inspector(program);
@@ -116,7 +118,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 #if TINT_BUILD_MSL_WRITER
                 case Writer::kMSL: {
                     // Remap resource numbers to a flat namespace.
-                    if (auto flattened = tint::writer::FlattenBindings(program)) {
+                    if (auto flattened = tint::wgsl::FlattenBindings(program)) {
                         (void)tint::msl::writer::Generate(flattened.value(), {});
                     }
                     break;

@@ -232,6 +232,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"disable_timestamp_query_conversion",
       "Resolve timestamp queries into ticks instead of nanoseconds.", "https://crbug.com/dawn/1305",
       ToggleStage::Device}},
+    {Toggle::TimestampQuantization,
+     {"timestamp_quantization",
+      "Enable timestamp queries quantization to reduce the precision of timers that can be created "
+      "with timestamp queries.",
+      "https://crbug.com/dawn/1800", ToggleStage::Device}},
     {Toggle::ClearBufferBeforeResolveQueries,
      {"clear_buffer_before_resolve_queries",
       "clear destination buffer to zero before resolving queries. This toggle is enabled on Intel "
@@ -397,6 +402,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Use a blit instead of a copy command to copy bgra8unorm texture to a buffer."
       "Workaround for OpenGLES.",
       "https://crbug.com/dawn/1393", ToggleStage::Device}},
+    {Toggle::UseBlitForRGB9E5UfloatTextureCopy,
+     {"use_blit_for_rgb9e5ufloat_texture_copy",
+      "Use a blit instead of a copy command to copy rgb9e5ufloat texture to a texture or a buffer."
+      "Workaround for OpenGLES.",
+      "https://crbug.com/dawn/2079", ToggleStage::Device}},
     {Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha,
      {"d3d12_replace_add_with_minus_when_dst_factor_is_zero_and_src_factor_is_dst_alpha",
       "Replace the blending operation 'Add' with 'Minus' when dstBlendFactor is 'Zero' and "
@@ -453,6 +463,12 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
     {Toggle::UseTintIR,
      {"use_tint_ir", "Enable the use of the Tint IR for backend codegen.",
       "https://crbug.com/tint/1718", ToggleStage::Device}},
+    {Toggle::D3DDisableIEEEStrictness,
+     {"d3d_disable_ieee_strictness",
+      "Disable IEEE strictness when compiling shaders. It is otherwise enabled by default to "
+      "workaround issues where FXC can miscompile code that depends on special float values (NaN, "
+      "INF, etc).",
+      "https://crbug.com/tint/976", ToggleStage::Device}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
       "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "

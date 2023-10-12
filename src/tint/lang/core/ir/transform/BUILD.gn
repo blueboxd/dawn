@@ -25,7 +25,7 @@ import("../../../../../../scripts/tint_overrides_with_defaults.gni")
 
 import("${tint_src_dir}/tint.gni")
 
-if (tint_build_unittests) {
+if (tint_build_unittests || tint_build_benchmarks) {
   import("//testing/test.gni")
 }
 
@@ -43,6 +43,10 @@ libtint_source_set("transform") {
     "block_decorated_structs.h",
     "builtin_polyfill.cc",
     "builtin_polyfill.h",
+    "combine_access_instructions.cc",
+    "combine_access_instructions.h",
+    "conversion_polyfill.cc",
+    "conversion_polyfill.h",
     "demote_to_helper.cc",
     "demote_to_helper.h",
     "direct_variable_access.cc",
@@ -85,7 +89,6 @@ libtint_source_set("transform") {
 }
 if (tint_build_unittests) {
   tint_unittests_source_set("unittests") {
-    testonly = true
     sources = [
       "add_empty_entry_point_test.cc",
       "bgra8unorm_polyfill_test.cc",
@@ -93,6 +96,8 @@ if (tint_build_unittests) {
       "binding_remapper_test.cc",
       "block_decorated_structs_test.cc",
       "builtin_polyfill_test.cc",
+      "combine_access_instructions_test.cc",
+      "conversion_polyfill_test.cc",
       "demote_to_helper_test.cc",
       "direct_variable_access_test.cc",
       "helper_test.h",
@@ -115,10 +120,7 @@ if (tint_build_unittests) {
       "${tint_src_dir}/lang/wgsl",
       "${tint_src_dir}/lang/wgsl/ast",
       "${tint_src_dir}/lang/wgsl/program",
-      "${tint_src_dir}/lang/wgsl/reader",
-      "${tint_src_dir}/lang/wgsl/reader/program_to_ir",
       "${tint_src_dir}/lang/wgsl/sem",
-      "${tint_src_dir}/lang/wgsl/writer",
       "${tint_src_dir}/lang/wgsl/writer/ir_to_program",
       "${tint_src_dir}/utils/containers",
       "${tint_src_dir}/utils/diagnostic",
@@ -135,8 +137,19 @@ if (tint_build_unittests) {
       "${tint_src_dir}/utils/traits",
     ]
 
+    if (tint_build_wgsl_reader) {
+      deps += [
+        "${tint_src_dir}/lang/wgsl/reader",
+        "${tint_src_dir}/lang/wgsl/reader/program_to_ir",
+      ]
+    }
+
     if (tint_build_wgsl_reader && tint_build_wgsl_writer) {
       sources += [ "direct_variable_access_wgsl_test.cc" ]
+    }
+
+    if (tint_build_wgsl_writer) {
+      deps += [ "${tint_src_dir}/lang/wgsl/writer" ]
     }
   }
 }

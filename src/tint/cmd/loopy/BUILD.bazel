@@ -44,10 +44,7 @@ cc_binary(
     "//src/tint/lang/wgsl/helpers",
     "//src/tint/lang/wgsl/inspector",
     "//src/tint/lang/wgsl/program",
-    "//src/tint/lang/wgsl/reader",
-    "//src/tint/lang/wgsl/reader/program_to_ir",
     "//src/tint/lang/wgsl/sem",
-    "//src/tint/lang/wgsl/writer",
     "//src/tint/utils/containers",
     "//src/tint/utils/diagnostic",
     "//src/tint/utils/ice",
@@ -87,6 +84,18 @@ cc_binary(
     ":tint_build_spv_writer": [
       "//src/tint/lang/spirv/writer",
       "//src/tint/lang/spirv/writer/common",
+      "//src/tint/lang/spirv/writer/helpers",
+    ],
+    "//conditions:default": [],
+  }) + select({
+    ":tint_build_wgsl_reader": [
+      "//src/tint/lang/wgsl/reader",
+      "//src/tint/lang/wgsl/reader/program_to_ir",
+    ],
+    "//conditions:default": [],
+  }) + select({
+    ":tint_build_wgsl_writer": [
+      "//src/tint/lang/wgsl/writer",
     ],
     "//conditions:default": [],
   }),
@@ -117,5 +126,15 @@ alias(
 alias(
   name = "tint_build_spv_writer",
   actual = "//src/tint:tint_build_spv_writer_true",
+)
+
+alias(
+  name = "tint_build_wgsl_reader",
+  actual = "//src/tint:tint_build_wgsl_reader_true",
+)
+
+alias(
+  name = "tint_build_wgsl_writer",
+  actual = "//src/tint:tint_build_wgsl_writer_true",
 )
 

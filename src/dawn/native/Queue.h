@@ -17,6 +17,7 @@
 
 #include <memory>
 
+#include "dawn/common/MutexProtected.h"
 #include "dawn/common/SerialMap.h"
 #include "dawn/native/CallbackTaskManager.h"
 #include "dawn/native/Error.h"
@@ -57,9 +58,7 @@ class QueueBase : public ApiObjectBase, public ExecutionQueueBase {
 
     // Dawn API
     void APISubmit(uint32_t commandCount, CommandBufferBase* const* commands);
-    void APIOnSubmittedWorkDone(uint64_t signalValue,
-                                WGPUQueueWorkDoneCallback callback,
-                                void* userdata);
+    void APIOnSubmittedWorkDone(WGPUQueueWorkDoneCallback callback, void* userdata);
     Future APIOnSubmittedWorkDoneF(const QueueWorkDoneCallbackInfo& callbackInfo);
     void APIWriteBuffer(BufferBase* buffer, uint64_t bufferOffset, const void* data, size_t size);
     void APIWriteTexture(const ImageCopyTexture* destination,
@@ -128,8 +127,7 @@ class QueueBase : public ApiObjectBase, public ExecutionQueueBase {
                                         const Extent3D& writeSize);
 
     MaybeError ValidateSubmit(uint32_t commandCount, CommandBufferBase* const* commands) const;
-    MaybeError ValidateOnSubmittedWorkDone(uint64_t signalValue,
-                                           wgpu::QueueWorkDoneStatus* status) const;
+    MaybeError ValidateOnSubmittedWorkDone(wgpu::QueueWorkDoneStatus* status) const;
     MaybeError ValidateWriteTexture(const ImageCopyTexture* destination,
                                     size_t dataSize,
                                     const TextureDataLayout& dataLayout,
@@ -137,7 +135,7 @@ class QueueBase : public ApiObjectBase, public ExecutionQueueBase {
 
     MaybeError SubmitInternal(uint32_t commandCount, CommandBufferBase* const* commands);
 
-    SerialMap<ExecutionSerial, std::unique_ptr<TrackTaskCallback>> mTasksInFlight;
+    MutexProtected<SerialMap<ExecutionSerial, std::unique_ptr<TrackTaskCallback>>> mTasksInFlight;
 };
 
 }  // namespace dawn::native
