@@ -31,7 +31,7 @@ void GetMacOSVersion(int32_t* majorVersion, int32_t* minorVersion) {
       }
     } else {
       extern OSErr Gestalt(OSType selector, SInt32 *response) __attribute__((weak_import, weak));
-      ASSERT(majorVersion != nullptr);
+      DAWN_ASSERT(majorVersion != nullptr);
       ::Gestalt(gestaltSystemVersionMajor, reinterpret_cast<SInt32*>(&majorVersion));
       if (minorVersion != nullptr) {
         ::Gestalt(gestaltSystemVersionMinor, reinterpret_cast<SInt32*>(&minorVersion));
