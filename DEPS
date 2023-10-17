@@ -158,7 +158,7 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@2608c622a3143ca33fe9adfbba8b92f4e64877f9',
+    'url': '{chromium_git}/angle/angle@992a983ef6ab9e98756f619ac1c1bc64101bddc3',
     'condition': 'dawn_standalone',
   },
 
@@ -168,7 +168,7 @@ deps = {
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@baab66a8258bb2152c0cef4e15183234682bc487',
+    'url': '{chromium_git}/vulkan-deps@c40d4dc9fe9c925ba21e346c3e140397b12043e8',
     'condition': 'dawn_standalone',
   },
 
@@ -183,7 +183,7 @@ deps = {
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@d6e7e37e5f2b3914faec424740b6c4749874d1c4',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@93ad5b31316cfed379a8e83bb6cfbbc8bc886ff9',
   },
 
   'third_party/dxheaders': {
@@ -262,6 +262,13 @@ deps = {
   # Misc dependencies inherited from Tint
   'third_party/protobuf': {
     'url': '{chromium_git}/external/github.com/protocolbuffers/protobuf.git@2b673bbb57e34fe1bd4570f726fc86b769a3a3d2',
+    'condition': 'dawn_standalone',
+  },
+
+  # Dependencies for PartitionAlloc.
+  # Doc: https://docs.google.com/document/d/1wz45t0alQthsIU9P7_rQcfQyqnrBMXzrOjSzdQo-V-A
+  'third_party/partition_alloc': {
+    'url': '{chromium_git}/chromium/src/base/allocator/partition_allocator.git@6f90cb04abb81942abaab7b63d34c02882208172',
     'condition': 'dawn_standalone',
   },
 }

@@ -598,12 +598,12 @@ crbug.com/tint/1974 [ android arm ] webgpu:shader,execution,expression,call,buil
 ################################################################################
 # matCx3 and array_of_matCx3...use_struct=2 causes device lost on DXC
 ################################################################################
-crbug.com/tint/1975 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:array_of_matCx3:columns=2;use_struct=true [ Failure ]
-crbug.com/tint/1975 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:array_of_matCx3:columns=3;use_struct=true [ Failure ]
-crbug.com/tint/1975 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:array_of_matCx3:columns=4;use_struct=true [ Failure ]
-crbug.com/tint/1975 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:matCx3:columns=2;use_struct=true [ Failure ]
-crbug.com/tint/1975 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:matCx3:columns=3;use_struct=true [ Failure ]
-crbug.com/tint/1975 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:matCx3:columns=4;use_struct=true [ Failure ]
+crbug.com/tint/2059 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:array_of_matCx3:columns=2;use_struct=true [ Failure ]
+crbug.com/tint/2059 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:array_of_matCx3:columns=3;use_struct=true [ Failure ]
+crbug.com/tint/2059 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:array_of_matCx3:columns=4;use_struct=true [ Failure ]
+crbug.com/tint/2059 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:matCx3:columns=2;use_struct=true [ Failure ]
+crbug.com/tint/2059 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:matCx3:columns=3;use_struct=true [ Failure ]
+crbug.com/tint/2059 [ webgpu-dxc-enabled win10 ] webgpu:shader,execution,padding:matCx3:columns=4;use_struct=true [ Failure ]
 
 ################################################################################
 # maxInterStageShaderComponents limit tests fail with CreateGraphicsPipelines fail with <Unknown VkResult> on Android Qualcomm (Pixel 4)
@@ -789,26 +789,22 @@ crbug.com/tint/2035 [ ventura ] webgpu:shader,validation,expression,call,builtin
 crbug.com/tint/2035 [ ventura ] webgpu:shader,validation,expression,call,builtin,tan:values:stage="override";type="vec2%3Cf16%3E" [ Failure ]
 crbug.com/tint/2035 [ ventura ] webgpu:shader,validation,expression,call,builtin,tan:values:stage="override";type="vec3%3Cf16%3E" [ Failure ]
 crbug.com/tint/2035 [ ventura ] webgpu:shader,validation,expression,call,builtin,tan:values:stage="override";type="vec4%3Cf16%3E" [ Failure ]
+crbug.com/tint/0000 [ android-r dawn-backend-validation ] webgpu:shader,validation,expression,call,builtin,atan:values:stage="override";type="f32" [ RetryOnFailure ]
 
 ################################################################################
 # DXC failures
 ################################################################################
 crbug.com/tint/2057 [ intel-0x9bc5 webgpu-dxc-enabled win10 ] webgpu:shader,execution,flow_control,loop:nested_loops:preventValueOptimizations=false [ Failure ]
-
-################################################################################
-# untriaged DXC failures
-################################################################################
-crbug.com/tint/0000 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,expression,call,builtin,tanh:f32:* [ Failure ]
-crbug.com/tint/0000 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,robust_access:linear_memory:addressSpace="workgroup";access="read";containerType="vector";shadowingMode="function-scope";isAtomic=false [ Failure ]
-crbug.com/tint/0000 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,robust_access:linear_memory:addressSpace="workgroup";access="read";containerType="vector";shadowingMode="module-scope";isAtomic=false [ Failure ]
-crbug.com/tint/0000 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,robust_access:linear_memory:addressSpace="workgroup";access="read";containerType="vector";shadowingMode="none";isAtomic=false [ Failure ]
-crbug.com/tint/0000 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,zero_init:compute,zero_init:* [ Failure ]
-crbug.com/tint/0000 [ android-r dawn-backend-validation ] webgpu:shader,validation,expression,call,builtin,atan:values:stage="override";type="f32" [ RetryOnFailure ]
+crbug.com/dawn/2141 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,robust_access:linear_memory:addressSpace="workgroup";access="read";containerType="vector";shadowingMode="function-scope";isAtomic=false [ Failure ]
+crbug.com/dawn/2141 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,robust_access:linear_memory:addressSpace="workgroup";access="read";containerType="vector";shadowingMode="module-scope";isAtomic=false [ Failure ]
+crbug.com/dawn/2141 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,robust_access:linear_memory:addressSpace="workgroup";access="read";containerType="vector";shadowingMode="none";isAtomic=false [ Failure ]
+crbug.com/dawn/2142 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,expression,call,builtin,tanh:f32:* [ Failure ]
+crbug.com/dawn/2143 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,zero_init:compute,zero_init:* [ Failure ]
+crbug.com/dawn/2144 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,expression,binary,f16_addition:* [ RetryOnFailure ]
 
 ################################################################################
 # Manually added failures to facilitate roll. Please triage:
 ################################################################################
-crbug.com/dawn/0000 [ nvidia-0x2184 webgpu-dxc-enabled win10 ] webgpu:shader,execution,expression,binary,f16_addition:* [ RetryOnFailure ]
 crbug.com/dawn/0000 [ dawn-no-backend-validation intel-0x9bc5 target-cpu-32 webgpu-dxc-disabled win10 ] webgpu:shader,validation,expression,call,builtin,atan2:values:stage="override";type="f32" [ Failure ]
 crbug.com/dawn/0000 [ dawn-no-backend-validation intel-0x9bc5 target-cpu-64 webgpu-dxc-enabled win10 ] webgpu:shader,validation,expression,call,builtin,atan2:values:stage="override";type="f32" [ Failure ]
 crbug.com/tint/2030 webgpu:shader,validation,expression,call,builtin,log:values:stage="override";type="f32" [ RetryOnFailure ]

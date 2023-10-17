@@ -296,6 +296,13 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
       ":dawn_version_gen",
     ]
 
+    if (is_apple) {
+      sources += [
+        "IOSurfaceUtils.cpp",
+        "IOSurfaceUtils.h",
+      ]
+    }
+
     if (is_mac) {
       sources += [ "SystemUtils_mac.mm" ]
       frameworks = [
