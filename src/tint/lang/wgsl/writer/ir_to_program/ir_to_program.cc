@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program.h"
 
@@ -701,7 +714,7 @@ class State {
     }
 
     void Binary(core::ir::Binary* e) {
-        if (e->Kind() == core::ir::Binary::Kind::kEqual) {
+        if (e->Op() == core::ir::BinaryOp::kEqual) {
             auto* rhs = e->RHS()->As<core::ir::Constant>();
             if (rhs && rhs->Type()->Is<core::type::Bool>() &&
                 rhs->Value()->ValueAs<bool>() == false) {
@@ -713,53 +726,53 @@ class State {
         auto* lhs = Expr(e->LHS());
         auto* rhs = Expr(e->RHS());
         const ast::Expression* expr = nullptr;
-        switch (e->Kind()) {
-            case core::ir::Binary::Kind::kAdd:
+        switch (e->Op()) {
+            case core::ir::BinaryOp::kAdd:
                 expr = b.Add(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kSubtract:
+            case core::ir::BinaryOp::kSubtract:
                 expr = b.Sub(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kMultiply:
+            case core::ir::BinaryOp::kMultiply:
                 expr = b.Mul(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kDivide:
+            case core::ir::BinaryOp::kDivide:
                 expr = b.Div(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kModulo:
+            case core::ir::BinaryOp::kModulo:
                 expr = b.Mod(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kAnd:
+            case core::ir::BinaryOp::kAnd:
                 expr = b.And(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kOr:
+            case core::ir::BinaryOp::kOr:
                 expr = b.Or(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kXor:
+            case core::ir::BinaryOp::kXor:
                 expr = b.Xor(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kEqual:
+            case core::ir::BinaryOp::kEqual:
                 expr = b.Equal(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kNotEqual:
+            case core::ir::BinaryOp::kNotEqual:
                 expr = b.NotEqual(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kLessThan:
+            case core::ir::BinaryOp::kLessThan:
                 expr = b.LessThan(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kGreaterThan:
+            case core::ir::BinaryOp::kGreaterThan:
                 expr = b.GreaterThan(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kLessThanEqual:
+            case core::ir::BinaryOp::kLessThanEqual:
                 expr = b.LessThanEqual(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kGreaterThanEqual:
+            case core::ir::BinaryOp::kGreaterThanEqual:
                 expr = b.GreaterThanEqual(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kShiftLeft:
+            case core::ir::BinaryOp::kShiftLeft:
                 expr = b.Shl(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kShiftRight:
+            case core::ir::BinaryOp::kShiftRight:
                 expr = b.Shr(lhs, rhs);
                 break;
         }

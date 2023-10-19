@@ -1,16 +1,29 @@
-// Copyright 2021 The Dawn Authors
+// Copyright 2021 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // run-cts is a tool used to run the WebGPU CTS using the Dawn module for NodeJS
 package main
@@ -157,7 +170,7 @@ func run() error {
 	unrollConstEvalLoopsDefault := runtime.GOOS != "windows"
 
 	var bin, cts, node, npx, resultsPath, expectationsPath, logFilename, backend, adapterName, coverageFile string
-	var verbose, isolated, build, validate, dumpShaders, unrollConstEvalLoops, genCoverage bool
+	var verbose, isolated, build, validate, dumpShaders, unrollConstEvalLoops, genCoverage, compatibilityMode bool
 	var numRunners int
 	var flags dawnNodeFlags
 	flag.StringVar(&bin, "bin", defaultBinPath(), "path to the directory holding cts.js and dawn.node")
@@ -181,6 +194,7 @@ func run() error {
 	flag.BoolVar(&unrollConstEvalLoops, "unroll-const-eval-loops", unrollConstEvalLoopsDefault, "unroll loops in const-eval tests")
 	flag.BoolVar(&genCoverage, "coverage", false, "displays coverage data")
 	flag.StringVar(&coverageFile, "export-coverage", "", "write coverage data to the given path")
+	flag.BoolVar(&compatibilityMode, "compat", false, "run tests in compatibility mode")
 	flag.Parse()
 
 	// Create a thread-safe, color supporting stdout wrapper.
@@ -269,6 +283,7 @@ func run() error {
 		cts:                  cts,
 		tmpDir:               filepath.Join(os.TempDir(), "dawn-cts"),
 		unrollConstEvalLoops: unrollConstEvalLoops,
+		compatibilityMode:    compatibilityMode,
 		flags:                flags,
 		results:              testcaseStatuses{},
 		evalScript: func(main string) string {
@@ -468,6 +483,7 @@ type runner struct {
 	cts                  string
 	tmpDir               string
 	unrollConstEvalLoops bool
+	compatibilityMode    bool
 	flags                dawnNodeFlags
 	covEnv               *cov.Env
 	coverageFile         string
@@ -710,6 +726,9 @@ func (r *runner) runServer(ctx context.Context, id int, caseIndices <-chan int, 
 		}
 		if r.unrollConstEvalLoops {
 			args = append(args, "--unroll-const-eval-loops")
+		}
+		if r.compatibilityMode {
+			args = append(args, "--compat")
 		}
 		for _, f := range r.flags {
 			args = append(args, "--gpu-provider-flag", f)
@@ -1161,6 +1180,9 @@ func (r *runner) runTestcase(ctx context.Context, query string) result {
 	if r.unrollConstEvalLoops {
 		args = append(args, "--unroll-const-eval-loops")
 	}
+	if r.compatibilityMode {
+		args = append(args, "--compat")
+	}
 	for _, f := range r.flags {
 		args = append(args, "--gpu-provider-flag", f)
 	}
@@ -1481,24 +1503,26 @@ func SplitCTSQuery(testcase string) cov.Path {
 
 func PrintCommand(writer io.Writer, cmd *exec.Cmd) {
 	maybeQuote := func(s string) string {
-		if strings.ContainsAny(s, " ,()") {
-			return fmt.Sprintf("\"%v\"", s)
+		if strings.ContainsAny(s, ` ,()"`) {
+			s = strings.ReplaceAll(s, `"`, `\"`)
+			s = fmt.Sprintf("\"%v\"", s)
 		}
 		return s
 	}
 
-	fmt.Fprint(writer, "Running:\n")
-	fmt.Fprintf(writer, "  Cmd: %v ", maybeQuote(cmd.Path))
+	output := &strings.Builder{}
+	fmt.Fprintln(output, "Running:")
+	fmt.Fprintf(output, "  Cmd: %v ", maybeQuote(cmd.Path))
 	for i, arg := range cmd.Args[1:] {
 		if i > 0 {
-			fmt.Fprint(writer, " ")
+			fmt.Fprint(output, " ")
 		}
-		fmt.Fprint(writer, maybeQuote(arg))
+		fmt.Fprint(output, maybeQuote(arg))
 	}
-	fmt.Fprintln(writer)
-	fmt.Fprintf(writer, "  Dir: %v\n\n", cmd.Dir)
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "  Dir: %v\n\n", cmd.Dir)
 
-	fmt.Fprint(writer, "  For VS Code launch.json:\n")
+	fmt.Fprint(output, "  For VS Code launch.json:\n")
 	launchCmd := struct {
 		Program string   `json:"program"`
 		Args    []string `json:"args"`
@@ -1517,5 +1541,7 @@ func PrintCommand(writer io.Writer, cmd *exec.Cmd) {
 	// Remove object braces and add trailing comma
 	s = strings.TrimPrefix(s, "{\n")
 	s = strings.TrimSuffix(s, "\n}\n") + ",\n"
-	fmt.Fprintln(writer, s)
+	fmt.Fprintln(output, s)
+
+	fmt.Print(output.String())
 }

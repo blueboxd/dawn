@@ -1,16 +1,29 @@
 # Copyright 2022 The Dawn & Tint Authors
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 cmake_minimum_required(VERSION 3.10.2)
 
@@ -126,6 +139,7 @@ set(USE_WAYLAND OFF)
 set(USE_X11 OFF)
 set(USE_WINDOWS_UI OFF)
 set(BUILD_SAMPLES OFF)
+set(TARGET_MACOS OFF)
 if (WIN32)
     set(ENABLE_D3D11 ON)
     set(USE_WINDOWS_UI ON)
@@ -137,6 +151,9 @@ if (WIN32)
     endif()
 elseif(APPLE)
     set(ENABLE_METAL ON)
+    if(CMAKE_SYSTEM_NAME MATCHES "Darwin" OR CMAKE_SYSTEM_NAME MATCHES "MacOS")
+      set(TARGET_MACOS ON)
+    endif()
 elseif(ANDROID)
     set(ENABLE_VULKAN ON)
     set(ENABLE_OPENGLES ON)
@@ -178,6 +195,7 @@ option_if_not_defined(DAWN_USE_WAYLAND "Enable support for Wayland surface" ${US
 option_if_not_defined(DAWN_USE_X11 "Enable support for X11 surface" ${USE_X11})
 option_if_not_defined(DAWN_USE_GLFW "Enable compilation of the GLFW windowing utils" ${DAWN_SUPPORTS_GLFW_FOR_WINDOWING})
 option_if_not_defined(DAWN_USE_WINDOWS_UI "Enable support for Windows UI surface" ${USE_WINDOWS_UI})
+option_if_not_defined(DAWN_TARGET_MACOS "Manually link Apple core frameworks" ${TARGET_MACOS})
 
 option_if_not_defined(DAWN_BUILD_SAMPLES "Enables building Dawn's samples" ${BUILD_SAMPLES})
 option_if_not_defined(DAWN_BUILD_NODE_BINDINGS "Enables building Dawn's NodeJS bindings" OFF)
@@ -310,6 +328,7 @@ message(STATUS "Dawn build Null backend: ${DAWN_ENABLE_NULL}")
 message(STATUS "Dawn build with asserts in all configurations: ${DAWN_ALWAYS_ASSERT}")
 message(STATUS "Dawn build Wayland support: ${DAWN_USE_WAYLAND}")
 message(STATUS "Dawn build X11 support: ${DAWN_USE_X11}")
+message(STATUS "Dawn build GLFW support: ${DAWN_USE_GLFW}")
 message(STATUS "Dawn build Windows UI support: ${DAWN_USE_WINDOWS_UI}")
 
 message(STATUS "Dawn build samples: ${DAWN_BUILD_SAMPLES}")

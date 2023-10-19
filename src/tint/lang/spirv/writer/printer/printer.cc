@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/spirv/writer/printer/printer.h"
 
@@ -879,12 +892,12 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
 
     // Determine the opcode.
     spv::Op op = spv::Op::Max;
-    switch (binary->Kind()) {
-        case core::ir::Binary::Kind::kAdd: {
+    switch (binary->Op()) {
+        case core::ir::BinaryOp::kAdd: {
             op = ty->is_integer_scalar_or_vector() ? spv::Op::OpIAdd : spv::Op::OpFAdd;
             break;
         }
-        case core::ir::Binary::Kind::kDivide: {
+        case core::ir::BinaryOp::kDivide: {
             if (ty->is_signed_integer_scalar_or_vector()) {
                 op = spv::Op::OpSDiv;
             } else if (ty->is_unsigned_integer_scalar_or_vector()) {
@@ -894,7 +907,7 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             }
             break;
         }
-        case core::ir::Binary::Kind::kMultiply: {
+        case core::ir::BinaryOp::kMultiply: {
             if (ty->is_integer_scalar_or_vector()) {
                 op = spv::Op::OpIMul;
             } else if (ty->is_float_scalar_or_vector()) {
@@ -902,11 +915,11 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             }
             break;
         }
-        case core::ir::Binary::Kind::kSubtract: {
+        case core::ir::BinaryOp::kSubtract: {
             op = ty->is_integer_scalar_or_vector() ? spv::Op::OpISub : spv::Op::OpFSub;
             break;
         }
-        case core::ir::Binary::Kind::kModulo: {
+        case core::ir::BinaryOp::kModulo: {
             if (ty->is_signed_integer_scalar_or_vector()) {
                 op = spv::Op::OpSRem;
             } else if (ty->is_unsigned_integer_scalar_or_vector()) {
@@ -917,7 +930,7 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             break;
         }
 
-        case core::ir::Binary::Kind::kAnd: {
+        case core::ir::BinaryOp::kAnd: {
             if (ty->is_integer_scalar_or_vector()) {
                 op = spv::Op::OpBitwiseAnd;
             } else if (ty->is_bool_scalar_or_vector()) {
@@ -925,7 +938,7 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             }
             break;
         }
-        case core::ir::Binary::Kind::kOr: {
+        case core::ir::BinaryOp::kOr: {
             if (ty->is_integer_scalar_or_vector()) {
                 op = spv::Op::OpBitwiseOr;
             } else if (ty->is_bool_scalar_or_vector()) {
@@ -933,16 +946,16 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             }
             break;
         }
-        case core::ir::Binary::Kind::kXor: {
+        case core::ir::BinaryOp::kXor: {
             op = spv::Op::OpBitwiseXor;
             break;
         }
 
-        case core::ir::Binary::Kind::kShiftLeft: {
+        case core::ir::BinaryOp::kShiftLeft: {
             op = spv::Op::OpShiftLeftLogical;
             break;
         }
-        case core::ir::Binary::Kind::kShiftRight: {
+        case core::ir::BinaryOp::kShiftRight: {
             if (ty->is_signed_integer_scalar_or_vector()) {
                 op = spv::Op::OpShiftRightArithmetic;
             } else if (ty->is_unsigned_integer_scalar_or_vector()) {
@@ -951,7 +964,7 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             break;
         }
 
-        case core::ir::Binary::Kind::kEqual: {
+        case core::ir::BinaryOp::kEqual: {
             if (lhs_ty->is_bool_scalar_or_vector()) {
                 op = spv::Op::OpLogicalEqual;
             } else if (lhs_ty->is_float_scalar_or_vector()) {
@@ -961,7 +974,7 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             }
             break;
         }
-        case core::ir::Binary::Kind::kNotEqual: {
+        case core::ir::BinaryOp::kNotEqual: {
             if (lhs_ty->is_bool_scalar_or_vector()) {
                 op = spv::Op::OpLogicalNotEqual;
             } else if (lhs_ty->is_float_scalar_or_vector()) {
@@ -971,7 +984,7 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             }
             break;
         }
-        case core::ir::Binary::Kind::kGreaterThan: {
+        case core::ir::BinaryOp::kGreaterThan: {
             if (lhs_ty->is_float_scalar_or_vector()) {
                 op = spv::Op::OpFOrdGreaterThan;
             } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -981,7 +994,7 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             }
             break;
         }
-        case core::ir::Binary::Kind::kGreaterThanEqual: {
+        case core::ir::BinaryOp::kGreaterThanEqual: {
             if (lhs_ty->is_float_scalar_or_vector()) {
                 op = spv::Op::OpFOrdGreaterThanEqual;
             } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -991,7 +1004,7 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             }
             break;
         }
-        case core::ir::Binary::Kind::kLessThan: {
+        case core::ir::BinaryOp::kLessThan: {
             if (lhs_ty->is_float_scalar_or_vector()) {
                 op = spv::Op::OpFOrdLessThan;
             } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -1001,7 +1014,7 @@ void Printer::EmitBinary(core::ir::Binary* binary) {
             }
             break;
         }
-        case core::ir::Binary::Kind::kLessThanEqual: {
+        case core::ir::BinaryOp::kLessThanEqual: {
             if (lhs_ty->is_float_scalar_or_vector()) {
                 op = spv::Op::OpFOrdLessThanEqual;
             } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
