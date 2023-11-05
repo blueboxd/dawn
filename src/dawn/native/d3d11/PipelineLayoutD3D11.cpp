@@ -61,7 +61,7 @@ MaybeError PipelineLayout::Initialize(Device* device) {
                             mIndexInfo[group][bindingIndex] = shaderResourceViewIndex++;
                             break;
                         case wgpu::BufferBindingType::Undefined:
-                            UNREACHABLE();
+                            DAWN_UNREACHABLE();
                     }
                     break;
 
@@ -85,14 +85,14 @@ MaybeError PipelineLayout::Initialize(Device* device) {
                             mIndexInfo[group][bindingIndex] = shaderResourceViewIndex++;
                             break;
                         case wgpu::StorageTextureAccess::Undefined:
-                            UNREACHABLE();
+                            DAWN_UNREACHABLE();
                     }
                     break;
             }
         }
     }
     mUnusedUAVBindingCount = unorderedAccessViewIndex;
-    ASSERT(constantBufferIndex <= kReservedConstantBufferSlot);
+    DAWN_ASSERT(constantBufferIndex <= kReservedConstantBufferSlot);
 
     return {};
 }

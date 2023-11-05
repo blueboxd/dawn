@@ -18,7 +18,7 @@
 #include <tuple>
 #include <utility>
 
-#include "src/tint/lang/core/builtin.h"
+#include "src/tint/lang/core/builtin_type.h"
 #include "src/tint/lang/core/constant/splat.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/access.h"
@@ -63,6 +63,7 @@
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/sampler.h"
 #include "src/tint/lang/core/type/texture.h"
+#include "src/tint/lang/wgsl/ir/builtin_call.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/writer/ir_to_program/rename_conflicts.h"
@@ -100,20 +101,19 @@ class State {
         {
             auto result = RenameConflicts(&mod);
             if (!result) {
-                b.Diagnostics().add_error(diag::System::Transform, result.Failure());
+                b.Diagnostics().add(result.Failure().reason);
                 return Program(std::move(b));
             }
         }
 
         if (auto res = core::ir::Validate(mod); !res) {
             // IR module failed validation.
-            b.Diagnostics() = res.Failure();
+            b.Diagnostics() = res.Failure().reason;
             return Program{resolver::Resolve(b)};
         }
 
-        if (mod.root_block) {
-            RootBlock(mod.root_block);
-        }
+        RootBlock(mod.root_block);
+
         // TODO(crbug.com/tint/1902): Emit user-declared types
         for (auto* fn : mod.functions) {
             Fn(fn);
@@ -176,7 +176,7 @@ class State {
     Hashset<core::ir::Value*, 64> can_inline_;
 
     /// Set of enable directives emitted.
-    Hashset<core::Extension, 4> enables_;
+    Hashset<wgsl::Extension, 4> enables_;
 
     /// Map of struct to output program name.
     Hashmap<const core::type::Struct*, Symbol, 8> structs_;
@@ -201,6 +201,10 @@ class State {
             auto ty = Type(param->Type());
             auto name = NameFor(param);
             Bind(param, name, PtrKind::kPtr);
+
+            if (ParamRequiresFullPtrParameters(param->Type())) {
+                Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
+            }
             return b.Param(name, ty);
         });
 
@@ -571,18 +575,24 @@ class State {
         tint::Switch(
             call,  //
             [&](core::ir::UserCall* c) {
-                auto* expr = b.Call(NameFor(c->Func()), std::move(args));
+                for (auto* arg : call->Args()) {
+                    if (ArgRequiresFullPtrParameters(arg)) {
+                        Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
+                        break;
+                    }
+                }
+                auto* expr = b.Call(NameFor(c->Target()), std::move(args));
                 if (!call->HasResults() || call->Result()->Usages().IsEmpty()) {
                     Append(b.CallStmt(expr));
                     return;
                 }
                 Bind(c->Result(), expr, PtrKind::kPtr);
             },
-            [&](core::ir::CoreBuiltinCall* c) {
+            [&](wgsl::ir::BuiltinCall* c) {
                 if (!disabled_derivative_uniformity_ && RequiresDerivativeUniformity(c->Func())) {
                     // TODO(crbug.com/tint/1985): Be smarter about disabling derivative uniformity.
-                    b.DiagnosticDirective(core::DiagnosticSeverity::kOff,
-                                          core::CoreDiagnosticRule::kDerivativeUniformity);
+                    b.DiagnosticDirective(wgsl::DiagnosticSeverity::kOff,
+                                          wgsl::CoreDiagnosticRule::kDerivativeUniformity);
                     disabled_derivative_uniformity_ = true;
                 }
 
@@ -826,7 +836,7 @@ class State {
             [&](const core::type::U32*) { return b.Expr(c->ValueAs<u32>()); },
             [&](const core::type::F32*) { return b.Expr(c->ValueAs<f32>()); },
             [&](const core::type::F16*) {
-                Enable(core::Extension::kF16);
+                Enable(wgsl::Extension::kF16);
                 return b.Expr(c->ValueAs<f16>());
             },
             [&](const core::type::Bool*) { return b.Expr(c->ValueAs<bool>()); },
@@ -840,7 +850,7 @@ class State {
             });
     }
 
-    void Enable(core::Extension ext) {
+    void Enable(wgsl::Extension ext) {
         if (enables_.Add(ext)) {
             b.Enable(ext);
         }
@@ -866,7 +876,7 @@ class State {
             [&](const core::type::I32*) { return b.ty.i32(); },    //
             [&](const core::type::U32*) { return b.ty.u32(); },    //
             [&](const core::type::F16*) {
-                Enable(core::Extension::kF16);
+                Enable(wgsl::Extension::kF16);
                 return b.ty.f16();
             },
             [&](const core::type::F32*) { return b.ty.f32(); },  //
@@ -878,7 +888,7 @@ class State {
                 auto el = Type(v->type());
                 if (v->Packed()) {
                     TINT_ASSERT(v->Width() == 3u);
-                    return b.ty(core::Builtin::kPackedVec3, el);
+                    return b.ty(core::BuiltinType::kPackedVec3, el);
                 } else {
                     return b.ty.vec(el, v->Width());
                 }
@@ -954,7 +964,7 @@ class State {
                     ast_attrs.Push(b.Location(u32(*location)));
                 }
                 if (auto index = ir_attrs.index) {
-                    Enable(core::Extension::kChromiumInternalDualSourceBlending);
+                    Enable(wgsl::Extension::kChromiumInternalDualSourceBlending);
                     ast_attrs.Push(b.Index(u32(*index)));
                 }
                 if (auto builtin = ir_attrs.builtin) {
@@ -1141,24 +1151,62 @@ class State {
         return b.IndexAccessor(expr, Expr(index));
     }
 
-    bool RequiresDerivativeUniformity(core::Function fn) {
+    bool RequiresDerivativeUniformity(wgsl::BuiltinFn fn) {
         switch (fn) {
-            case core::Function::kDpdxCoarse:
-            case core::Function::kDpdyCoarse:
-            case core::Function::kFwidthCoarse:
-            case core::Function::kDpdxFine:
-            case core::Function::kDpdyFine:
-            case core::Function::kFwidthFine:
-            case core::Function::kDpdx:
-            case core::Function::kDpdy:
-            case core::Function::kFwidth:
-            case core::Function::kTextureSample:
-            case core::Function::kTextureSampleBias:
-            case core::Function::kTextureSampleCompare:
+            case wgsl::BuiltinFn::kDpdxCoarse:
+            case wgsl::BuiltinFn::kDpdyCoarse:
+            case wgsl::BuiltinFn::kFwidthCoarse:
+            case wgsl::BuiltinFn::kDpdxFine:
+            case wgsl::BuiltinFn::kDpdyFine:
+            case wgsl::BuiltinFn::kFwidthFine:
+            case wgsl::BuiltinFn::kDpdx:
+            case wgsl::BuiltinFn::kDpdy:
+            case wgsl::BuiltinFn::kFwidth:
+            case wgsl::BuiltinFn::kTextureSample:
+            case wgsl::BuiltinFn::kTextureSampleBias:
+            case wgsl::BuiltinFn::kTextureSampleCompare:
                 return true;
             default:
                 return false;
         }
+    }
+
+    /// @returns true if a parameter of the type @p ty requires the
+    /// kChromiumExperimentalFullPtrParameters extension to be enabled.
+    bool ParamRequiresFullPtrParameters(const core::type::Type* ty) {
+        if (auto* ptr = ty->As<core::type::Pointer>()) {
+            switch (ptr->AddressSpace()) {
+                case core::AddressSpace::kUniform:
+                case core::AddressSpace::kStorage:
+                case core::AddressSpace::kWorkgroup:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    /// @returns true if the argument @p arg requires the kChromiumExperimentalFullPtrParameters
+    /// extension to be enabled.
+    bool ArgRequiresFullPtrParameters(core::ir::Value* arg) {
+        if (!arg->Type()->Is<core::type::Pointer>()) {
+            return false;
+        }
+
+        auto res = arg->As<core::ir::InstructionResult>();
+        while (res) {
+            auto* inst = res->Source();
+            if (inst->Is<core::ir::Access>()) {
+                return true;  // Passing pointer into sub-object
+            }
+            if (auto* let = inst->As<core::ir::Let>()) {
+                res = let->Value()->As<core::ir::InstructionResult>();
+            } else {
+                break;
+            }
+        }
+        return false;
     }
 };
 

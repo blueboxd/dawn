@@ -56,6 +56,7 @@ tint_target_add_dependencies(tint_lang_spirv_reader_ast_parser lib
   tint_lang_core_constant
   tint_lang_core_type
   tint_lang_spirv_reader_common
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_ast_transform
   tint_lang_wgsl_program
@@ -75,6 +76,12 @@ tint_target_add_dependencies(tint_lang_spirv_reader_ast_parser lib
   tint_utils_text
   tint_utils_traits
 )
+
+if(TINT_BUILD_SPV_READER)
+  tint_target_add_dependencies(tint_lang_spirv_reader_ast_parser lib
+    tint_lang_spirv_reader_ast_lower
+  )
+endif(TINT_BUILD_SPV_READER)
 
 if(TINT_BUILD_SPV_READER OR TINT_BUILD_SPV_WRITER)
   tint_target_add_external_dependencies(tint_lang_spirv_reader_ast_parser lib
@@ -133,6 +140,7 @@ tint_target_add_dependencies(tint_lang_spirv_reader_ast_parser_test test
   tint_lang_core_constant
   tint_lang_core_type
   tint_lang_spirv_reader_common
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
   tint_lang_wgsl_sem

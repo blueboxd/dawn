@@ -25,7 +25,7 @@ import("../../../../../../scripts/tint_overrides_with_defaults.gni")
 
 import("${tint_src_dir}/tint.gni")
 
-if (tint_build_unittests) {
+if (tint_build_unittests || tint_build_benchmarks) {
   import("//testing/test.gni")
 }
 if (tint_build_msl_writer) {
@@ -40,6 +40,7 @@ if (tint_build_msl_writer) {
       "${tint_src_dir}/lang/core",
       "${tint_src_dir}/lang/core/constant",
       "${tint_src_dir}/lang/core/type",
+      "${tint_src_dir}/lang/wgsl",
       "${tint_src_dir}/lang/wgsl/ast",
       "${tint_src_dir}/lang/wgsl/ast/transform",
       "${tint_src_dir}/lang/wgsl/helpers",
@@ -62,14 +63,16 @@ if (tint_build_msl_writer) {
     ]
 
     if (tint_build_msl_writer) {
-      deps += [ "${tint_src_dir}/lang/msl/writer/common" ]
+      deps += [
+        "${tint_src_dir}/lang/msl/writer/ast_raise",
+        "${tint_src_dir}/lang/msl/writer/common",
+      ]
     }
   }
 }
 if (tint_build_unittests) {
   if (tint_build_msl_writer) {
     tint_unittests_source_set("unittests") {
-      testonly = true
       sources = [
         "array_accessor_test.cc",
         "assign_test.cc",
@@ -109,6 +112,7 @@ if (tint_build_unittests) {
         "${tint_src_dir}/lang/core",
         "${tint_src_dir}/lang/core/constant",
         "${tint_src_dir}/lang/core/type",
+        "${tint_src_dir}/lang/wgsl",
         "${tint_src_dir}/lang/wgsl/ast",
         "${tint_src_dir}/lang/wgsl/ast:unittests",
         "${tint_src_dir}/lang/wgsl/program",

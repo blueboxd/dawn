@@ -49,7 +49,7 @@ TEST_F(IR_BlockDecoratedStructsTest, NoRootBlock) {
 TEST_F(IR_BlockDecoratedStructsTest, Scalar_Uniform) {
     auto* buffer = b.Var(ty.ptr<uniform, i32>());
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* func = b.Function("foo", ty.i32());
 
@@ -83,7 +83,7 @@ tint_symbol_1 = struct @align(4), @block {
 TEST_F(IR_BlockDecoratedStructsTest, Scalar_Storage) {
     auto* buffer = b.Var(ty.ptr<storage, i32>());
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* func = b.Function("foo", ty.void_());
     func->Block()->Append(b.Store(buffer, 42_i));
@@ -114,7 +114,7 @@ tint_symbol_1 = struct @align(4), @block {
 
 TEST_F(IR_BlockDecoratedStructsTest, Scalar_PushConstant) {
     auto* buffer = b.Var(ty.ptr<push_constant, i32>());
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* func = b.Function("foo", ty.i32());
     b.Append(func->Block(), [&] {  //
@@ -147,7 +147,7 @@ tint_symbol_1 = struct @align(4), @block {
 TEST_F(IR_BlockDecoratedStructsTest, RuntimeArray) {
     auto* buffer = b.Var(ty.ptr<storage, array<i32>>());
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* func = b.Function("foo", ty.void_());
 
@@ -190,7 +190,7 @@ TEST_F(IR_BlockDecoratedStructsTest, RuntimeArray_InStruct) {
 
     auto* buffer = b.Var(ty.ptr(storage, structure, core::Access::kReadWrite));
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* i32_ptr = ty.ptr<storage, i32>();
 
@@ -205,18 +205,13 @@ TEST_F(IR_BlockDecoratedStructsTest, RuntimeArray_InStruct) {
     });
 
     auto* expect = R"(
-MyStruct = struct @align(4) {
-  i:i32 @offset(0)
-  arr:array<i32> @offset(4)
-}
-
-tint_symbol = struct @align(4), @block {
+MyStruct = struct @align(4), @block {
   i:i32 @offset(0)
   arr:array<i32> @offset(4)
 }
 
 %b1 = block {  # root
-  %1:ptr<storage, tint_symbol, read_write> = var @binding_point(0, 0)
+  %1:ptr<storage, MyStruct, read_write> = var @binding_point(0, 0)
 }
 
 %foo = func():void -> %b2 {
@@ -235,6 +230,51 @@ tint_symbol = struct @align(4), @block {
     EXPECT_EQ(expect, str());
 }
 
+TEST_F(IR_BlockDecoratedStructsTest, RuntimeArray_InStruct_ArrayLengthViaLets) {
+    auto* structure =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("i"), ty.i32()},
+                                                   {mod.symbols.New("arr"), ty.array<i32>()},
+                                               });
+
+    auto* buffer = b.Var(ty.ptr(storage, structure, core::Access::kReadWrite));
+    buffer->SetBindingPoint(0, 0);
+    mod.root_block->Append(buffer);
+
+    auto* func = b.Function("foo", ty.u32());
+    b.Append(func->Block(), [&] {
+        auto* let_root = b.Let("root", buffer->Result());
+        auto* let_arr = b.Let("arr", b.Access(ty.ptr(storage, ty.array<i32>()), let_root, 1_u));
+        auto* length = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, let_arr);
+        b.Return(func, length);
+    });
+
+    auto* expect = R"(
+MyStruct = struct @align(4), @block {
+  i:i32 @offset(0)
+  arr:array<i32> @offset(4)
+}
+
+%b1 = block {  # root
+  %1:ptr<storage, MyStruct, read_write> = var @binding_point(0, 0)
+}
+
+%foo = func():u32 -> %b2 {
+  %b2 = block {
+    %root:ptr<storage, MyStruct, read_write> = let %1
+    %4:ptr<storage, array<i32>, read_write> = access %root, 1u
+    %arr:ptr<storage, array<i32>, read_write> = let %4
+    %6:u32 = arrayLength %arr
+    ret %6
+  }
+}
+)";
+
+    Run(BlockDecoratedStructs);
+
+    EXPECT_EQ(expect, str());
+}
+
 TEST_F(IR_BlockDecoratedStructsTest, StructUsedElsewhere) {
     auto* structure = ty.Struct(mod.symbols.New("MyStruct"), {
                                                                  {mod.symbols.New("a"), ty.i32()},
@@ -243,13 +283,14 @@ TEST_F(IR_BlockDecoratedStructsTest, StructUsedElsewhere) {
 
     auto* buffer = b.Var(ty.ptr(storage, structure, core::Access::kReadWrite));
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* private_var = b.Var(ty.ptr<private_, read_write>(structure));
-    b.RootBlock()->Append(private_var);
+    mod.root_block->Append(private_var);
 
     auto* func = b.Function("foo", ty.void_());
-    func->Block()->Append(b.Store(buffer, private_var));
+    auto* load = func->Block()->Append(b.Load(private_var));
+    func->Block()->Append(b.Store(buffer, load));
     func->Block()->Append(b.Return(func));
 
     auto* expect = R"(
@@ -269,8 +310,9 @@ tint_symbol_1 = struct @align(4), @block {
 
 %foo = func():void -> %b2 {
   %b2 = block {
-    %4:ptr<storage, MyStruct, read_write> = access %1, 0u
-    store %4, %2
+    %4:MyStruct = load %2
+    %5:ptr<storage, MyStruct, read_write> = access %1, 0u
+    store %5, %4
     ret
   }
 }
@@ -288,7 +330,7 @@ TEST_F(IR_BlockDecoratedStructsTest, MultipleBuffers) {
     buffer_a->SetBindingPoint(0, 0);
     buffer_b->SetBindingPoint(0, 1);
     buffer_c->SetBindingPoint(0, 2);
-    auto* root = b.RootBlock();
+    auto* root = mod.root_block;
     root->Append(buffer_a);
     root->Append(buffer_b);
     root->Append(buffer_c);

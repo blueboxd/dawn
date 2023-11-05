@@ -307,6 +307,8 @@ func applyDirectoryConfigs(p *Project) error {
 			{cfg.TestCmd, targetTestCmd},
 			{cfg.Bench, targetBench},
 			{cfg.BenchCmd, targetBenchCmd},
+			{cfg.Fuzz, targetFuzz},
+			{cfg.FuzzCmd, targetFuzzCmd},
 			{cfg.Cmd, targetCmd},
 		} {
 			if tc.cfg == nil {
@@ -403,8 +405,9 @@ func buildDependencies(p *Project) error {
 						return fmt.Errorf(`%v:%v includes non-existent file '%v'`, file.Path(), include.Line, path)
 					}
 
-					if file.Target.Kind == targetLib && includeFile.Target.Kind != targetLib {
-						return fmt.Errorf(`%v:%v lib target must not include %v target`, file.Path(), include.Line, includeFile.Target.Kind)
+					if !isValidDependency(file.Target.Kind, includeFile.Target.Kind) {
+						return fmt.Errorf(`%v:%v %v target must not include %v target`,
+							file.Path(), include.Line, file.Target.Kind, includeFile.Target.Kind)
 					}
 
 					addInternalDependency(includeFile.Target)

@@ -26,15 +26,28 @@ struct Options {
     /// Set to `true` to disable software robustness that prevents out-of-bounds accesses.
     bool disable_robustness = false;
 
-    /// Set to `true` to generate a PointSize builtin and have it set to 1.0
-    /// from all vertex shaders in the module.
-    bool emit_vertex_point_size = true;
+    /// Set to `true` to skip robustness transform on textures.
+    bool disable_image_robustness = false;
+
+    /// Set to `true` to disable index clamping on the runtime-sized arrays in robustness transform.
+    bool disable_runtime_sized_array_index_clamping = false;
 
     /// Set to `true` to disable workgroup memory zero initialization
     bool disable_workgroup_init = false;
 
+    /// Set to `true` to initialize workgroup memory with OpConstantNull when
+    /// VK_KHR_zero_initialize_workgroup_memory is enabled.
+    bool use_zero_initialize_workgroup_memory_extension = false;
+
+    /// Set to `true` to generate a PointSize builtin and have it set to 1.0
+    /// from all vertex shaders in the module.
+    bool emit_vertex_point_size = true;
+
     /// Set to `true` to clamp frag depth
     bool clamp_frag_depth = false;
+
+    /// Set to `true` to generate SPIR-V via the Tint IR instead of from the AST.
+    bool use_tint_ir = false;
 
     /// Options used in the binding mappings for external textures
     ExternalTextureOptions external_texture_options = {};
@@ -42,29 +55,23 @@ struct Options {
     /// Options used in the bindings remapper
     BindingRemapperOptions binding_remapper_options = {};
 
-    /// Set to `true` to initialize workgroup memory with OpConstantNull when
-    /// VK_KHR_zero_initialize_workgroup_memory is enabled.
-    bool use_zero_initialize_workgroup_memory_extension = false;
-
-    /// Set to `true` to skip robustness transform on textures.
-    bool disable_image_robustness = false;
-
-    /// Set to `true` to disable index clamping on the runtime-sized arrays in robustness transform.
-    bool disable_runtime_sized_array_index_clamping = false;
-
-#if TINT_BUILD_IR
-    /// Set to `true` to generate SPIR-V via the Tint IR instead of from the AST.
-    bool use_tint_ir = false;
-#endif
+    /// Set to `true` to require `SPV_KHR_subgroup_uniform_control_flow` extension and
+    /// `SubgroupUniformControlFlowKHR` execution mode for compute stage entry points in generated
+    /// SPIRV module. Issue: dawn:464
+    bool experimental_require_subgroup_uniform_control_flow = false;
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(disable_robustness,
-                 emit_vertex_point_size,
-                 disable_workgroup_init,
-                 external_texture_options,
-                 use_zero_initialize_workgroup_memory_extension,
                  disable_image_robustness,
-                 disable_runtime_sized_array_index_clamping);
+                 disable_runtime_sized_array_index_clamping,
+                 disable_workgroup_init,
+                 use_zero_initialize_workgroup_memory_extension,
+                 emit_vertex_point_size,
+                 clamp_frag_depth,
+                 use_tint_ir,
+                 external_texture_options,
+                 binding_remapper_options,
+                 experimental_require_subgroup_uniform_control_flow);
 };
 
 }  // namespace tint::spirv::writer

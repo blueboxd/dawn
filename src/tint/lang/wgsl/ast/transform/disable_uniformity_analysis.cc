@@ -29,17 +29,17 @@ DisableUniformityAnalysis::DisableUniformityAnalysis() = default;
 
 DisableUniformityAnalysis::~DisableUniformityAnalysis() = default;
 
-Transform::ApplyResult DisableUniformityAnalysis::Apply(const Program* src,
+Transform::ApplyResult DisableUniformityAnalysis::Apply(const Program& src,
                                                         const DataMap&,
                                                         DataMap&) const {
-    if (src->Sem().Module()->Extensions().Contains(
-            core::Extension::kChromiumDisableUniformityAnalysis)) {
+    if (src.Sem().Module()->Extensions().Contains(
+            wgsl::Extension::kChromiumDisableUniformityAnalysis)) {
         return SkipTransform;
     }
 
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
-    b.Enable(core::Extension::kChromiumDisableUniformityAnalysis);
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
+    b.Enable(wgsl::Extension::kChromiumDisableUniformityAnalysis);
 
     ctx.Clone();
     return resolver::Resolve(b);

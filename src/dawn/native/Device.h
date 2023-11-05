@@ -59,6 +59,7 @@ class OwnedCompilationMessages;
 struct CallbackTask;
 struct InternalPipelineStore;
 struct ShaderModuleParseResult;
+struct TrackedFutureWaitInfo;
 
 using WGSLExtensionSet = std::unordered_set<std::string>;
 
@@ -157,6 +158,7 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     MaybeError ValidateObject(const ApiObjectBase* object) const;
 
+    InstanceBase* GetInstance() const;
     AdapterBase* GetAdapter() const;
     PhysicalDeviceBase* GetPhysicalDevice() const;
     virtual dawn::platform::Platform* GetPlatform() const;
@@ -216,7 +218,8 @@ class DeviceBase : public RefCountedWithExternalCount {
     Ref<AttachmentState> GetOrCreateAttachmentState(AttachmentState* blueprint);
     Ref<AttachmentState> GetOrCreateAttachmentState(
         const RenderBundleEncoderDescriptor* descriptor);
-    Ref<AttachmentState> GetOrCreateAttachmentState(const RenderPipelineDescriptor* descriptor);
+    Ref<AttachmentState> GetOrCreateAttachmentState(const RenderPipelineDescriptor* descriptor,
+                                                    const PipelineLayoutBase* layout);
     Ref<AttachmentState> GetOrCreateAttachmentState(const RenderPassDescriptor* descriptor);
 
     Ref<PipelineCacheBase> GetOrCreatePipelineCache(const CacheKey& key);
@@ -429,6 +432,10 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     virtual void AppendDebugLayerMessages(ErrorData* error) {}
 
+    [[nodiscard]] virtual bool WaitAnyImpl(size_t futureCount,
+                                           TrackedFutureWaitInfo* futures,
+                                           Nanoseconds timeout);
+
     // It is guaranteed that the wrapped mutex will outlive the Device (if the Device is deleted
     // before the AutoLockAndHoldRef).
     [[nodiscard]] Mutex::AutoLockAndHoldRef GetScopedLockSafeForDelete();
@@ -438,8 +445,8 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     // This method returns true if Feature::ImplicitDeviceSynchronization is turned on and the
     // device is locked by current thread. This method is only enabled when DAWN_ENABLE_ASSERTS is
-    // turned on. Thus it should only be wrapped inside ASSERT() macro. i.e.
-    // ASSERT(device.IsLockedByCurrentThread())
+    // turned on. Thus it should only be wrapped inside DAWN_ASSERT() macro. i.e.
+    // DAWN_ASSERT(device.IsLockedByCurrentThread())
     bool IsLockedByCurrentThreadIfNeeded() const;
 
     // TODO(dawn:XXX): remove this enum forwarding once no longer necessary.

@@ -21,5 +21,21 @@
 #                       Do not modify this file directly
 ################################################################################
 
+include(lang/spirv/intrinsic/BUILD.cmake)
+include(lang/spirv/ir/BUILD.cmake)
 include(lang/spirv/reader/BUILD.cmake)
+include(lang/spirv/type/BUILD.cmake)
 include(lang/spirv/writer/BUILD.cmake)
+
+################################################################################
+# Target:    tint_lang_spirv
+# Kind:      lib
+################################################################################
+tint_add_target(tint_lang_spirv lib
+  lang/spirv/builtin_fn.cc
+  lang/spirv/builtin_fn.h
+)
+
+tint_target_add_dependencies(tint_lang_spirv lib
+  tint_utils_traits
+)

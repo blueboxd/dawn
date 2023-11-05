@@ -22,6 +22,7 @@
 ################################################################################
 
 include(lang/glsl/writer/ast_printer/BUILD.cmake)
+include(lang/glsl/writer/ast_raise/BUILD.cmake)
 include(lang/glsl/writer/common/BUILD.cmake)
 
 if(TINT_BUILD_GLSL_WRITER)
@@ -43,6 +44,7 @@ tint_target_add_dependencies(tint_lang_glsl_writer lib
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_ast_transform
   tint_lang_wgsl_program
@@ -84,10 +86,11 @@ tint_add_target(tint_lang_glsl_writer_bench bench
 tint_target_add_dependencies(tint_lang_glsl_writer_bench bench
   tint_api_common
   tint_api_options
-  tint_cmd_bench
+  tint_cmd_bench_bench
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
@@ -104,6 +107,10 @@ tint_target_add_dependencies(tint_lang_glsl_writer_bench bench
   tint_utils_symbol
   tint_utils_text
   tint_utils_traits
+)
+
+tint_target_add_external_dependencies(tint_lang_glsl_writer_bench bench
+  "google-benchmark"
 )
 
 if(TINT_BUILD_GLSL_WRITER)

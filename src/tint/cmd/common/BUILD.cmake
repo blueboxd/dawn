@@ -37,8 +37,10 @@ tint_target_add_dependencies(tint_cmd_common lib
   tint_api_options
   tint_lang_core
   tint_lang_core_constant
+  tint_lang_core_ir
   tint_lang_core_type
   tint_lang_spirv_reader_common
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_inspector
   tint_lang_wgsl_program
@@ -87,6 +89,7 @@ tint_target_add_dependencies(tint_cmd_common_test test
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
   tint_lang_wgsl_resolver

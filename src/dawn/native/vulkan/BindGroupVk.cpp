@@ -101,9 +101,6 @@ BindGroup::BindGroup(Device* device,
                     continue;
                 }
                 writeImageInfo[numWrites].imageView = handle;
-
-                // The layout may be GENERAL here because of interactions between the Sampled
-                // and ReadOnlyStorage usages. See the logic in VulkanImageLayout.
                 writeImageInfo[numWrites].imageLayout = VulkanImageLayout(
                     ToBackend(view->GetTexture()), wgpu::TextureUsage::TextureBinding);
 
@@ -136,7 +133,7 @@ BindGroup::BindGroup(Device* device,
             }
 
             case BindingInfoType::ExternalTexture:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
 

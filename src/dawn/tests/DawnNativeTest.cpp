@@ -54,7 +54,7 @@ void DawnNativeTest::SetUp() {
     instanceToggles.enabledToggles = &allowUnsafeApisToggle;
 
     platform = CreateTestPlatform();
-    wgpu::DawnInstanceDescriptor dawnInstanceDesc;
+    dawn::native::DawnInstanceDescriptor dawnInstanceDesc;
     dawnInstanceDesc.platform = platform.get();
     dawnInstanceDesc.nextInChain = &instanceToggles;
 
@@ -83,6 +83,6 @@ WGPUDevice DawnNativeTest::CreateTestDevice() {
 
 // static
 void DawnNativeTest::OnDeviceError(WGPUErrorType type, const char* message, void* userdata) {
-    ASSERT(type != WGPUErrorType_NoError);
+    DAWN_ASSERT(type != WGPUErrorType_NoError);
     FAIL() << "Unexpected error: " << message;
 }

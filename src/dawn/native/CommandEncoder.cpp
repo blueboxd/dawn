@@ -121,7 +121,7 @@ MaybeError ValidateTextureDepthStencilToBufferCopyRestrictions(const ImageCopyTe
                 break;
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -277,7 +277,7 @@ MaybeError ValidateColorAttachmentRenderToSingleSampled(
     const DeviceBase* device,
     const RenderPassColorAttachment& colorAttachment,
     const DawnRenderPassColorAttachmentRenderToSingleSampled* msaaRenderToSingleSampledDesc) {
-    ASSERT(msaaRenderToSingleSampledDesc != nullptr);
+    DAWN_ASSERT(msaaRenderToSingleSampledDesc != nullptr);
 
     DAWN_INVALID_IF(
         !device->HasFeature(Feature::MSAARenderToSingleSampled),
@@ -365,7 +365,7 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
     if (colorAttachment.loadOp == wgpu::LoadOp::Clear) {
         DAWN_INVALID_IF(std::isnan(clearValue.r) || std::isnan(clearValue.g) ||
                             std::isnan(clearValue.b) || std::isnan(clearValue.a),
-                        "Color clear value (%s) contain a NaN.", &clearValue);
+                        "Color clear value (%s) contains a NaN.", &clearValue);
     }
 
     DAWN_TRY(
@@ -406,7 +406,7 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
         attachment->GetAspects() != format.aspects,
         "The depth stencil attachment %s must encompass all aspects of it's texture's format (%s).",
         attachment, format.format);
-    ASSERT(attachment->GetFormat().format == format.format);
+    DAWN_ASSERT(attachment->GetFormat().format == format.format);
 
     DAWN_INVALID_IF(!format.HasDepthOrStencil(),
                     "The depth stencil attachment %s format (%s) is not a depth stencil format.",
@@ -498,28 +498,47 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
     return {};
 }
 
-MaybeError ValidateTimestampLocationOnRenderPass(
-    wgpu::RenderPassTimestampLocation location,
-    const std::unordered_set<wgpu::RenderPassTimestampLocation>& writtenLocations) {
-    DAWN_TRY(ValidateRenderPassTimestampLocation(location));
+MaybeError ValidateRenderPassPLS(DeviceBase* device,
+                                 const RenderPassPixelLocalStorage* pls,
+                                 uint32_t* width,
+                                 uint32_t* height,
+                                 uint32_t* sampleCount,
+                                 uint32_t implicitSampleCount,
+                                 UsageValidationMode usageValidationMode) {
+    StackVector<StorageAttachmentInfoForValidation, 4> attachments;
+    for (size_t i = 0; i < pls->storageAttachmentCount; i++) {
+        const RenderPassStorageAttachment& attachment = pls->storageAttachments[i];
 
-    DAWN_INVALID_IF(writtenLocations.find(location) != writtenLocations.end(),
-                    "There are two same RenderPassTimestampLocation %u in a render pass.",
-                    location);
+        // Validate the attachment can be used as a storage attachment.
+        DAWN_TRY(device->ValidateObject(attachment.storage));
+        DAWN_TRY(ValidateCanUseAs(attachment.storage->GetTexture(),
+                                  wgpu::TextureUsage::StorageAttachment, usageValidationMode));
+        DAWN_TRY(ValidateAttachmentArrayLayersAndLevelCount(attachment.storage));
+        DAWN_TRY(ValidateOrSetColorAttachmentSampleCount(attachment.storage, implicitSampleCount,
+                                                         sampleCount));
+        DAWN_TRY(ValidateOrSetAttachmentSize(attachment.storage, width, height));
 
-    return {};
-}
+        // Validate the load/storeOp and the clearValue.
+        DAWN_TRY(ValidateLoadOp(attachment.loadOp));
+        DAWN_TRY(ValidateStoreOp(attachment.storeOp));
+        DAWN_INVALID_IF(attachment.loadOp == wgpu::LoadOp::Undefined,
+                        "storageAttachments[%i].loadOp must be set.", i);
+        DAWN_INVALID_IF(attachment.storeOp == wgpu::StoreOp::Undefined,
+                        "storageAttachments[%i].storeOp must be set.", i);
 
-MaybeError ValidateTimestampLocationOnComputePass(
-    wgpu::ComputePassTimestampLocation location,
-    const std::unordered_set<wgpu::ComputePassTimestampLocation>& writtenLocations) {
-    DAWN_TRY(ValidateComputePassTimestampLocation(location));
+        const dawn::native::Color& clearValue = attachment.clearValue;
+        if (attachment.loadOp == wgpu::LoadOp::Clear) {
+            DAWN_INVALID_IF(std::isnan(clearValue.r) || std::isnan(clearValue.g) ||
+                                std::isnan(clearValue.b) || std::isnan(clearValue.a),
+                            "storageAttachments[%i].clearValue (%s) contains a NaN.", i,
+                            &clearValue);
+        }
 
-    DAWN_INVALID_IF(writtenLocations.find(location) != writtenLocations.end(),
-                    "There are two same ComputePassTimestampLocation %u in a compute pass.",
-                    location);
+        attachments->push_back({attachment.offset, attachment.storage->GetFormat().format});
+    }
 
-    return {};
+    return ValidatePLSInfo(device, pls->totalPixelLocalStorageSize,
+                           {attachments->data(), attachments->size()});
 }
 
 MaybeError ValidateRenderPassDescriptor(DeviceBase* device,
@@ -539,7 +558,7 @@ MaybeError ValidateRenderPassDescriptor(DeviceBase* device,
         "Color attachment count (%u) exceeds the maximum number of color attachments (%u).",
         descriptor->colorAttachmentCount, maxColorAttachments);
 
-    bool isAllColorAttachmentNull = true;
+    bool anyColorAttachment = false;
     ColorAttachmentFormats colorAttachmentFormats;
     for (uint32_t i = 0; i < descriptor->colorAttachmentCount; ++i) {
         DAWN_TRY_CONTEXT(ValidateRenderPassColorAttachment(
@@ -547,7 +566,7 @@ MaybeError ValidateRenderPassDescriptor(DeviceBase* device,
                              implicitSampleCount, usageValidationMode),
                          "validating colorAttachments[%u].", i);
         if (descriptor->colorAttachments[i].view) {
-            isAllColorAttachmentNull = false;
+            anyColorAttachment = true;
             colorAttachmentFormats->push_back(&descriptor->colorAttachments[i].view->GetFormat());
         }
     }
@@ -559,10 +578,6 @@ MaybeError ValidateRenderPassDescriptor(DeviceBase* device,
                              device, descriptor->depthStencilAttachment, width, height, sampleCount,
                              usageValidationMode),
                          "validating depthStencilAttachment.");
-    } else {
-        DAWN_INVALID_IF(
-            isAllColorAttachmentNull,
-            "No color or depthStencil attachments specified. At least one is required.");
     }
 
     if (descriptor->occlusionQuerySet != nullptr) {
@@ -574,47 +589,29 @@ MaybeError ValidateRenderPassDescriptor(DeviceBase* device,
                         descriptor->occlusionQuerySet->GetQueryType(), wgpu::QueryType::Occlusion);
     }
 
-    if (descriptor->timestampWriteCount > 0) {
-        DAWN_ASSERT(descriptor->timestampWrites != nullptr);
-
-        // Record the query set and query index used on render passes for validating query
-        // index overwrite. The TrackQueryAvailability of
-        // RenderPassResourceUsageTracker is not used here because the timestampWrites are
-        // not validated and encoded one by one, but encoded together after passing the
-        // validation.
-        QueryAvailabilityMap usedQueries;
-        // TODO(https://crbug.com/dawn/1452):
-        // 1. Add an enum that's TimestampLocationMask and has bit values.
-        // 2. Add a function with a switch that converts from one to the other.
-        // 3. type alias the ityp::bitset for that to call it TimestampLocationSet.
-        // 4. Use it here.
-        std::unordered_set<wgpu::RenderPassTimestampLocation> writtenLocations;
-        for (uint32_t i = 0; i < descriptor->timestampWriteCount; ++i) {
-            QuerySetBase* querySet = descriptor->timestampWrites[i].querySet;
-            DAWN_ASSERT(querySet != nullptr);
-            uint32_t queryIndex = descriptor->timestampWrites[i].queryIndex;
-            DAWN_TRY_CONTEXT(ValidateTimestampQuery(device, querySet, queryIndex),
-                             "validating querySet and queryIndex of timestampWrites[%u].", i);
-            DAWN_TRY_CONTEXT(ValidateTimestampLocationOnRenderPass(
-                                 descriptor->timestampWrites[i].location, writtenLocations),
-                             "validating location of timestampWrites[%u].", i);
-            writtenLocations.insert(descriptor->timestampWrites[i].location);
-
-            auto checkIt = usedQueries.find(querySet);
-            DAWN_INVALID_IF(checkIt != usedQueries.end() && checkIt->second[queryIndex],
-                            "Query index %u of %s is written to twice in a render pass.",
-                            queryIndex, querySet);
-
-            // Gets the iterator for that querySet or create a new vector of bool set to
-            // false if the querySet wasn't registered.
-            auto addIt = usedQueries.emplace(querySet, querySet->GetQueryCount()).first;
-            addIt->second[queryIndex] = true;
-        }
+    if (descriptor->timestampWrites != nullptr) {
+        QuerySetBase* querySet = descriptor->timestampWrites->querySet;
+        DAWN_ASSERT(querySet != nullptr);
+        uint32_t beginningOfPassWriteIndex = descriptor->timestampWrites->beginningOfPassWriteIndex;
+        uint32_t endOfPassWriteIndex = descriptor->timestampWrites->endOfPassWriteIndex;
+        DAWN_TRY_CONTEXT(ValidatePassTimestampWrites(device, querySet, beginningOfPassWriteIndex,
+                                                     endOfPassWriteIndex),
+                         "validating timestampWrites.");
     }
 
-    DAWN_INVALID_IF(
-        descriptor->colorAttachmentCount == 0 && descriptor->depthStencilAttachment == nullptr,
-        "Render pass has no attachments.");
+    // Validation for any pixel local storage.
+    size_t storageAttachmentCount = 0;
+    const RenderPassPixelLocalStorage* pls = nullptr;
+    FindInChain(descriptor->nextInChain, &pls);
+    if (pls != nullptr) {
+        storageAttachmentCount = pls->storageAttachmentCount;
+        DAWN_TRY(ValidateRenderPassPLS(device, pls, width, height, sampleCount,
+                                       *implicitSampleCount, usageValidationMode));
+    }
+
+    DAWN_INVALID_IF(!anyColorAttachment && descriptor->depthStencilAttachment == nullptr &&
+                        storageAttachmentCount == 0,
+                    "Render pass has no attachments.");
 
     if (*implicitSampleCount > 1) {
         // TODO(dawn:1710): support multiple attachments.
@@ -623,14 +620,9 @@ MaybeError ValidateRenderPassDescriptor(DeviceBase* device,
             "colorAttachmentCount (%u) is not supported when the render pass has implicit sample "
             "count (%u). (Currently) colorAttachmentCount = 1 is supported.",
             descriptor->colorAttachmentCount, *implicitSampleCount);
-    }
-
-    const RenderPassPixelLocalStorage* pls = nullptr;
-    FindInChain(descriptor->nextInChain, &pls);
-    if (pls != nullptr) {
-        DAWN_TRY(ValidateHasPLSFeature(device));
-
-        // TODO(dawn:1704): Validate limits, formats, offsets don't collide and the total size.
+        // TODO(dawn:1704): Consider supporting MSAARenderToSingleSampled + PLS
+        DAWN_INVALID_IF(pls != nullptr,
+                        "For now PLS is invalid to use with MSAARenderToSingleSampled.");
     }
 
     return {};
@@ -642,39 +634,14 @@ MaybeError ValidateComputePassDescriptor(const DeviceBase* device,
         return {};
     }
 
-    if (descriptor->timestampWriteCount > 0) {
-        DAWN_ASSERT(descriptor->timestampWrites != nullptr);
-
-        // Record the query set and query index used on compute passes for validating query
-        // index overwrite.
-        QueryAvailabilityMap usedQueries;
-        // TODO(https://crbug.com/dawn/1452):
-        // 1. Add an enum that's TimestampLocationMask and has bit values.
-        // 2. Add a function with a switch that converts from one to the other.
-        // 3. type alias the ityp::bitset for that to call it TimestampLocationSet.
-        // 4. Use it here.
-        std::unordered_set<wgpu::ComputePassTimestampLocation> writtenLocations;
-        for (uint32_t i = 0; i < descriptor->timestampWriteCount; ++i) {
-            QuerySetBase* querySet = descriptor->timestampWrites[i].querySet;
-            DAWN_ASSERT(querySet != nullptr);
-            uint32_t queryIndex = descriptor->timestampWrites[i].queryIndex;
-            DAWN_TRY_CONTEXT(ValidateTimestampQuery(device, querySet, queryIndex),
-                             "validating querySet and queryIndex of timestampWrites[%u].", i);
-            DAWN_TRY_CONTEXT(ValidateTimestampLocationOnComputePass(
-                                 descriptor->timestampWrites[i].location, writtenLocations),
-                             "validating location of timestampWrites[%u].", i);
-            writtenLocations.insert(descriptor->timestampWrites[i].location);
-
-            auto checkIt = usedQueries.find(querySet);
-            DAWN_INVALID_IF(checkIt != usedQueries.end() && checkIt->second[queryIndex],
-                            "Query index %u of %s is written to twice in a compute pass.",
-                            queryIndex, querySet);
-
-            // Gets the iterator for that querySet or create a new vector of bool set to
-            // false if the querySet wasn't registered.
-            auto addIt = usedQueries.emplace(querySet, querySet->GetQueryCount()).first;
-            addIt->second[queryIndex] = true;
-        }
+    if (descriptor->timestampWrites != nullptr) {
+        QuerySetBase* querySet = descriptor->timestampWrites->querySet;
+        DAWN_ASSERT(querySet != nullptr);
+        uint32_t beginningOfPassWriteIndex = descriptor->timestampWrites->beginningOfPassWriteIndex;
+        uint32_t endOfPassWriteIndex = descriptor->timestampWrites->endOfPassWriteIndex;
+        DAWN_TRY_CONTEXT(ValidatePassTimestampWrites(device, querySet, beginningOfPassWriteIndex,
+                                                     endOfPassWriteIndex),
+                         "validating timestampWrites.");
     }
 
     return {};
@@ -775,14 +742,14 @@ MaybeError ApplyMSAARenderToSingleSampledLoadOp(DeviceBase* device,
                                                 const RenderPassDescriptor* renderPassDescriptor,
                                                 uint32_t implicitSampleCount) {
     // TODO(dawn:1710): support multiple attachments.
-    ASSERT(renderPassDescriptor->colorAttachmentCount == 1);
+    DAWN_ASSERT(renderPassDescriptor->colorAttachmentCount == 1);
     if (renderPassDescriptor->colorAttachments[0].loadOp != wgpu::LoadOp::Load) {
         return {};
     }
 
     // TODO(dawn:1710): support loading resolve texture on platforms that don't support reading
     // it in fragment shader such as vulkan.
-    ASSERT(device->IsResolveTextureBlitWithDrawSupported());
+    DAWN_ASSERT(device->IsResolveTextureBlitWithDrawSupported());
 
     // Read implicit resolve texture in fragment shader and copy to the implicit MSAA attachment.
     return BlitMSAARenderToSingleSampledColorWithDraw(device, renderPassEncoder,
@@ -954,7 +921,7 @@ ComputePassEncoder* CommandEncoder::APIBeginComputePass(const ComputePassDescrip
 
 Ref<ComputePassEncoder> CommandEncoder::BeginComputePass(const ComputePassDescriptor* descriptor) {
     DeviceBase* device = GetDevice();
-    ASSERT(device->IsLockedByCurrentThreadIfNeeded());
+    DAWN_ASSERT(device->IsLockedByCurrentThreadIfNeeded());
 
     bool success = mEncodingContext.TryEncode(
         this,
@@ -972,24 +939,23 @@ Ref<ComputePassEncoder> CommandEncoder::BeginComputePass(const ComputePassDescri
             // Record timestamp writes at the beginning and end of compute pass. The timestamp write
             // at the end also be needed in BeginComputePassCmd because it's required by compute
             // pass descriptor when beginning compute pass on Metal.
-            for (uint32_t i = 0; i < descriptor->timestampWriteCount; i++) {
-                QuerySetBase* querySet = descriptor->timestampWrites[i].querySet;
-                uint32_t queryIndex = descriptor->timestampWrites[i].queryIndex;
+            if (descriptor->timestampWrites != nullptr) {
+                QuerySetBase* querySet = descriptor->timestampWrites->querySet;
+                uint32_t beginningOfPassWriteIndex =
+                    descriptor->timestampWrites->beginningOfPassWriteIndex;
+                uint32_t endOfPassWriteIndex = descriptor->timestampWrites->endOfPassWriteIndex;
 
-                switch (descriptor->timestampWrites[i].location) {
-                    case wgpu::ComputePassTimestampLocation::Beginning:
-                        cmd->beginTimestamp.querySet = querySet;
-                        cmd->beginTimestamp.queryIndex = queryIndex;
-                        break;
-                    case wgpu::ComputePassTimestampLocation::End:
-                        cmd->endTimestamp.querySet = querySet;
-                        cmd->endTimestamp.queryIndex = queryIndex;
-                        break;
+                if (beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
+                    cmd->beginTimestamp.querySet = querySet;
+                    cmd->beginTimestamp.queryIndex = beginningOfPassWriteIndex;
+                    TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
                 }
-
-                TrackQueryAvailability(querySet, queryIndex);
+                if (endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
+                    cmd->endTimestamp.querySet = querySet;
+                    cmd->endTimestamp.queryIndex = endOfPassWriteIndex;
+                    TrackQueryAvailability(querySet, endOfPassWriteIndex);
+                }
             }
-
             return {};
         },
         "encoding %s.BeginComputePass(%s).", this, descriptor);
@@ -1019,7 +985,7 @@ RenderPassEncoder* CommandEncoder::APIBeginRenderPass(const RenderPassDescriptor
 
 Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescriptor* descriptor) {
     DeviceBase* device = GetDevice();
-    ASSERT(device->IsLockedByCurrentThreadIfNeeded());
+    DAWN_ASSERT(device->IsLockedByCurrentThreadIfNeeded());
 
     RenderPassResourceUsageTracker usageTracker;
 
@@ -1040,8 +1006,8 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
             DAWN_TRY(ValidateRenderPassDescriptor(device, descriptor, &width, &height, &sampleCount,
                                                   &implicitSampleCount, mUsageValidationMode));
 
-            ASSERT(width > 0 && height > 0 && sampleCount > 0 &&
-                   (implicitSampleCount == 0 || implicitSampleCount == sampleCount));
+            DAWN_ASSERT(width > 0 && height > 0 && sampleCount > 0 &&
+                        (implicitSampleCount == 0 || implicitSampleCount == sampleCount));
 
             mEncodingContext.WillBeginRenderPass();
             BeginRenderPassCmd* cmd =
@@ -1077,6 +1043,7 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
                     colorTarget = implicitMSAATargetRef.Get();
 
                     cmd->colorAttachments[index].view = std::move(implicitMSAATargetRef);
+                    cmd->colorAttachments[index].depthSlice = 0;
                     cmd->colorAttachments[index].loadOp = wgpu::LoadOp::Clear;
                     cmd->colorAttachments[index].storeOp = wgpu::StoreOp::Discard;
                 }
@@ -1149,9 +1116,9 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
                     // GPURenderPassDepthStencilAttachment.stencilClearValue will be converted to
                     // the type of the stencil aspect of view by taking the same number of LSBs as
                     // the number of bits in the stencil aspect of one texel block of view.
-                    ASSERT(view->GetFormat()
-                               .GetAspectInfo(dawn::native::Aspect::Stencil)
-                               .block.byteSize == 1u);
+                    DAWN_ASSERT(view->GetFormat()
+                                    .GetAspectInfo(dawn::native::Aspect::Stencil)
+                                    .block.byteSize == 1u);
                     cmd->depthStencilAttachment.clearStencil &= 0xFF;
                 }
 
@@ -1173,25 +1140,37 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
             // Record timestamp writes at the beginning and end of render pass. The timestamp write
             // at the end also be needed in BeginComputePassCmd because it's required by render pass
             // descriptor when beginning render pass on Metal.
-            for (uint32_t i = 0; i < descriptor->timestampWriteCount; i++) {
-                QuerySetBase* querySet = descriptor->timestampWrites[i].querySet;
-                uint32_t queryIndex = descriptor->timestampWrites[i].queryIndex;
+            if (descriptor->timestampWrites != nullptr) {
+                QuerySetBase* querySet = descriptor->timestampWrites->querySet;
+                uint32_t beginningOfPassWriteIndex =
+                    descriptor->timestampWrites->beginningOfPassWriteIndex;
+                uint32_t endOfPassWriteIndex = descriptor->timestampWrites->endOfPassWriteIndex;
 
-                switch (descriptor->timestampWrites[i].location) {
-                    case wgpu::RenderPassTimestampLocation::Beginning:
-                        cmd->beginTimestamp.querySet = querySet;
-                        cmd->beginTimestamp.queryIndex = queryIndex;
-                        break;
-                    case wgpu::RenderPassTimestampLocation::End:
-                        cmd->endTimestamp.querySet = querySet;
-                        cmd->endTimestamp.queryIndex = queryIndex;
-                        break;
+                if (beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
+                    cmd->beginTimestamp.querySet = querySet;
+                    cmd->beginTimestamp.queryIndex = beginningOfPassWriteIndex;
+                    TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
+                    // Track the query availability with true on render pass again for rewrite
+                    // validation and query reset on Vulkan
+                    usageTracker.TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
                 }
+                if (endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
+                    cmd->endTimestamp.querySet = querySet;
+                    cmd->endTimestamp.queryIndex = endOfPassWriteIndex;
+                    TrackQueryAvailability(querySet, endOfPassWriteIndex);
+                    // Track the query availability with true on render pass again for rewrite
+                    // validation and query reset on Vulkan
+                    usageTracker.TrackQueryAvailability(querySet, endOfPassWriteIndex);
+                }
+            }
 
-                TrackQueryAvailability(querySet, queryIndex);
-                // Track the query availability with true on render pass again for rewrite
-                // validation and query reset on Vulkan
-                usageTracker.TrackQueryAvailability(querySet, queryIndex);
+            const RenderPassPixelLocalStorage* pls = nullptr;
+            FindInChain(descriptor->nextInChain, &pls);
+            if (pls != nullptr) {
+                for (size_t i = 0; i < pls->storageAttachmentCount; i++) {
+                    usageTracker.TextureViewUsedAs(pls->storageAttachments[i].storage,
+                                                   wgpu::TextureUsage::StorageAttachment);
+                }
             }
 
             DAWN_TRY_ASSIGN(passEndCallback,
@@ -1344,7 +1323,7 @@ ResultOrError<std::function<void()>> CommandEncoder::ApplyRenderPassWorkarounds(
                 Ref<TextureBase> temporaryResolveTexture;
                 Ref<TextureViewBase> temporaryResolveView;
                 {
-                    ASSERT(device->IsLockedByCurrentThreadIfNeeded());
+                    DAWN_ASSERT(device->IsLockedByCurrentThreadIfNeeded());
 
                     DAWN_TRY_ASSIGN(temporaryResolveTexture, device->CreateTexture(&descriptor));
 
@@ -1722,7 +1701,8 @@ void CommandEncoder::APICopyTextureToTexture(const ImageCopyTexture* source,
             mTopLevelTextures.insert(destination->texture);
 
             Aspect aspect = ConvertAspect(source->texture->GetFormat(), source->aspect);
-            ASSERT(aspect == ConvertAspect(destination->texture->GetFormat(), destination->aspect));
+            DAWN_ASSERT(aspect ==
+                        ConvertAspect(destination->texture->GetFormat(), destination->aspect));
 
             TextureCopy src;
             src.texture = source->texture;
@@ -1986,7 +1966,7 @@ CommandBufferBase* CommandEncoder::APIFinish(const CommandBufferDescriptor* desc
         errorCommandBuffer->SetEncoderLabel(this->GetLabel());
         return errorCommandBuffer;
     }
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     return commandBuffer.Detach();
 }
 

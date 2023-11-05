@@ -125,7 +125,7 @@ BindGroup::BindGroup(Device* device,
                         break;
                     }
                     case wgpu::BufferBindingType::Undefined:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
 
                 break;
@@ -180,14 +180,14 @@ BindGroup::BindGroup(Device* device,
                         break;
                     }
                     case wgpu::StorageTextureAccess::Undefined:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
 
                 break;
             }
 
             case BindingInfoType::ExternalTexture: {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
 
             case BindingInfoType::Sampler: {
@@ -217,7 +217,7 @@ BindGroup::~BindGroup() = default;
 void BindGroup::DestroyImpl() {
     BindGroupBase::DestroyImpl();
     ToBackend(GetLayout())->DeallocateBindGroup(this, &mCPUViewAllocation);
-    ASSERT(!mCPUViewAllocation.IsValid());
+    DAWN_ASSERT(!mCPUViewAllocation.IsValid());
 }
 
 bool BindGroup::PopulateViews(MutexProtected<ShaderVisibleDescriptorAllocator>& viewAllocator) {
@@ -253,7 +253,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE BindGroup::GetBaseViewDescriptor() const {
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE BindGroup::GetBaseSamplerDescriptor() const {
-    ASSERT(mSamplerAllocationEntry != nullptr);
+    DAWN_ASSERT(mSamplerAllocationEntry != nullptr);
     return mSamplerAllocationEntry->GetBaseDescriptor();
 }
 

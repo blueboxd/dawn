@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// GEN_BUILD:CONDITION(tint_build_ir)
-
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 #include "src/tint/lang/core/fluent_types.h"
@@ -410,6 +408,7 @@ TEST_F(SpirvWriterTest, Divide_i32_vec4i) {
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST("%16 = OpConstantNull %v4int");
     EXPECT_INST(R"(
                ; Function foo
         %foo = OpFunction %v4int None %6
@@ -427,13 +426,13 @@ TEST_F(SpirvWriterTest, Divide_i32_vec4i) {
       %rhs_0 = OpFunctionParameter %v4int
          %14 = OpLabel
          %15 = OpIEqual %v4bool %rhs_0 %16
-         %20 = OpIEqual %v4bool %lhs_0 %21
-         %23 = OpIEqual %v4bool %rhs_0 %24
-         %26 = OpLogicalAnd %v4bool %20 %23
-         %27 = OpLogicalOr %v4bool %15 %26
-         %28 = OpSelect %v4int %27 %29 %rhs_0
-         %31 = OpSDiv %v4int %lhs_0 %28
-               OpReturnValue %31
+         %19 = OpIEqual %v4bool %lhs_0 %20
+         %22 = OpIEqual %v4bool %rhs_0 %23
+         %25 = OpLogicalAnd %v4bool %19 %22
+         %26 = OpLogicalOr %v4bool %15 %25
+         %27 = OpSelect %v4int %26 %28 %rhs_0
+         %30 = OpSDiv %v4int %lhs_0 %27
+               OpReturnValue %30
                OpFunctionEnd
 )");
 }
@@ -451,6 +450,7 @@ TEST_F(SpirvWriterTest, Divide_vec4i_i32) {
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST("%16 = OpConstantNull %v4int");
     EXPECT_INST(R"(
                ; Function foo
         %foo = OpFunction %v4int None %6
@@ -468,13 +468,13 @@ TEST_F(SpirvWriterTest, Divide_vec4i_i32) {
       %rhs_0 = OpFunctionParameter %v4int
          %14 = OpLabel
          %15 = OpIEqual %v4bool %rhs_0 %16
-         %20 = OpIEqual %v4bool %lhs_0 %21
-         %23 = OpIEqual %v4bool %rhs_0 %24
-         %26 = OpLogicalAnd %v4bool %20 %23
-         %27 = OpLogicalOr %v4bool %15 %26
-         %28 = OpSelect %v4int %27 %29 %rhs_0
-         %31 = OpSDiv %v4int %lhs_0 %28
-               OpReturnValue %31
+         %19 = OpIEqual %v4bool %lhs_0 %20
+         %22 = OpIEqual %v4bool %rhs_0 %23
+         %25 = OpLogicalAnd %v4bool %19 %22
+         %26 = OpLogicalOr %v4bool %15 %25
+         %27 = OpSelect %v4int %26 %28 %rhs_0
+         %30 = OpSDiv %v4int %lhs_0 %27
+               OpReturnValue %30
                OpFunctionEnd
 )");
 }
@@ -572,6 +572,7 @@ TEST_F(SpirvWriterTest, Modulo_i32_vec4i) {
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST("%16 = OpConstantNull %v4int");
     EXPECT_INST(R"(
                ; Function foo
         %foo = OpFunction %v4int None %6
@@ -589,15 +590,15 @@ TEST_F(SpirvWriterTest, Modulo_i32_vec4i) {
       %rhs_0 = OpFunctionParameter %v4int
          %14 = OpLabel
          %15 = OpIEqual %v4bool %rhs_0 %16
-         %20 = OpIEqual %v4bool %lhs_0 %21
-         %23 = OpIEqual %v4bool %rhs_0 %24
-         %26 = OpLogicalAnd %v4bool %20 %23
-         %27 = OpLogicalOr %v4bool %15 %26
-         %28 = OpSelect %v4int %27 %29 %rhs_0
-         %31 = OpSDiv %v4int %lhs_0 %28
-         %32 = OpIMul %v4int %31 %28
-         %33 = OpISub %v4int %lhs_0 %32
-               OpReturnValue %33
+         %19 = OpIEqual %v4bool %lhs_0 %20
+         %22 = OpIEqual %v4bool %rhs_0 %23
+         %25 = OpLogicalAnd %v4bool %19 %22
+         %26 = OpLogicalOr %v4bool %15 %25
+         %27 = OpSelect %v4int %26 %28 %rhs_0
+         %30 = OpSDiv %v4int %lhs_0 %27
+         %31 = OpIMul %v4int %30 %27
+         %32 = OpISub %v4int %lhs_0 %31
+               OpReturnValue %32
                OpFunctionEnd
 )");
 }
@@ -615,6 +616,7 @@ TEST_F(SpirvWriterTest, Modulo_vec4i_i32) {
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST("%16 = OpConstantNull %v4int");
     EXPECT_INST(R"(
                ; Function foo
         %foo = OpFunction %v4int None %6
@@ -632,15 +634,15 @@ TEST_F(SpirvWriterTest, Modulo_vec4i_i32) {
       %rhs_0 = OpFunctionParameter %v4int
          %14 = OpLabel
          %15 = OpIEqual %v4bool %rhs_0 %16
-         %20 = OpIEqual %v4bool %lhs_0 %21
-         %23 = OpIEqual %v4bool %rhs_0 %24
-         %26 = OpLogicalAnd %v4bool %20 %23
-         %27 = OpLogicalOr %v4bool %15 %26
-         %28 = OpSelect %v4int %27 %29 %rhs_0
-         %31 = OpSDiv %v4int %lhs_0 %28
-         %32 = OpIMul %v4int %31 %28
-         %33 = OpISub %v4int %lhs_0 %32
-               OpReturnValue %33
+         %19 = OpIEqual %v4bool %lhs_0 %20
+         %22 = OpIEqual %v4bool %rhs_0 %23
+         %25 = OpLogicalAnd %v4bool %19 %22
+         %26 = OpLogicalOr %v4bool %15 %25
+         %27 = OpSelect %v4int %26 %28 %rhs_0
+         %30 = OpSDiv %v4int %lhs_0 %27
+         %31 = OpIMul %v4int %30 %27
+         %32 = OpISub %v4int %lhs_0 %31
+               OpReturnValue %32
                OpFunctionEnd
 )");
 }

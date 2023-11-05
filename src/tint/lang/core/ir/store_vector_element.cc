@@ -14,6 +14,9 @@
 
 #include "src/tint/lang/core/ir/store_vector_element.h"
 
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
+
 TINT_INSTANTIATE_TYPEINFO(tint::core::ir::StoreVectorElement);
 
 namespace tint::core::ir {
@@ -27,5 +30,12 @@ StoreVectorElement::StoreVectorElement(ir::Value* to, ir::Value* index, ir::Valu
 }
 
 StoreVectorElement::~StoreVectorElement() = default;
+
+StoreVectorElement* StoreVectorElement::Clone(CloneContext& ctx) {
+    auto* to = ctx.Remap(To());
+    auto* idx = ctx.Remap(Index());
+    auto* val = ctx.Remap(Value());
+    return ctx.ir.instructions.Create<StoreVectorElement>(to, idx, val);
+}
 
 }  // namespace tint::core::ir

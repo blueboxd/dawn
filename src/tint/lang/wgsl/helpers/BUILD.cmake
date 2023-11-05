@@ -28,6 +28,8 @@
 tint_add_target(tint_lang_wgsl_helpers lib
   lang/wgsl/helpers/append_vector.cc
   lang/wgsl/helpers/append_vector.h
+  lang/wgsl/helpers/apply_substitute_overrides.cc
+  lang/wgsl/helpers/apply_substitute_overrides.h
   lang/wgsl/helpers/check_supported_extensions.cc
   lang/wgsl/helpers/check_supported_extensions.h
   lang/wgsl/helpers/flatten_bindings.cc
@@ -39,6 +41,7 @@ tint_target_add_dependencies(tint_lang_wgsl_helpers lib
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_ast_transform
   tint_lang_wgsl_inspector
@@ -75,12 +78,17 @@ tint_target_add_dependencies(tint_lang_wgsl_helpers_test test
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_intrinsic
+  tint_lang_core_ir
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_ast_test
   tint_lang_wgsl_helpers
+  tint_lang_wgsl_intrinsic
   tint_lang_wgsl_program
   tint_lang_wgsl_reader
+  tint_lang_wgsl_reader_lower
+  tint_lang_wgsl_reader_program_to_ir
   tint_lang_wgsl_resolver
   tint_lang_wgsl_sem
   tint_utils_containers
@@ -101,10 +109,3 @@ tint_target_add_dependencies(tint_lang_wgsl_helpers_test test
 tint_target_add_external_dependencies(tint_lang_wgsl_helpers_test test
   "gtest"
 )
-
-if(TINT_BUILD_IR)
-  tint_target_add_dependencies(tint_lang_wgsl_helpers_test test
-    tint_lang_core_ir
-    tint_lang_wgsl_reader_program_to_ir
-  )
-endif(TINT_BUILD_IR)

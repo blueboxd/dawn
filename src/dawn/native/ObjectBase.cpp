@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "absl/strings/str_format.h"
+#include "dawn/native/Adapter.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/ObjectType_autogen.h"
@@ -35,6 +36,10 @@ bool ErrorMonad::IsError() const {
 ObjectBase::ObjectBase(DeviceBase* device) : ErrorMonad(), mDevice(device) {}
 
 ObjectBase::ObjectBase(DeviceBase* device, ErrorTag) : ErrorMonad(kError), mDevice(device) {}
+
+InstanceBase* ObjectBase::GetInstance() const {
+    return mDevice->GetAdapter()->GetPhysicalDevice()->GetInstance();
+}
 
 DeviceBase* ObjectBase::GetDevice() const {
     return mDevice.Get();
@@ -65,7 +70,7 @@ void ApiObjectList::Destroy() {
     while (!objects.empty()) {
         auto* head = objects.head();
         bool removed = head->RemoveFromList();
-        ASSERT(removed);
+        DAWN_ASSERT(removed);
         head->value()->DestroyImpl();
     }
 }
@@ -86,7 +91,7 @@ ApiObjectBase::ApiObjectBase(DeviceBase* device, ErrorTag tag, const char* label
 ApiObjectBase::ApiObjectBase(DeviceBase* device, LabelNotImplementedTag tag) : ObjectBase(device) {}
 
 ApiObjectBase::~ApiObjectBase() {
-    ASSERT(!IsAlive());
+    DAWN_ASSERT(!IsAlive());
 }
 
 void ApiObjectBase::APISetLabel(const char* label) {
@@ -126,7 +131,7 @@ void ApiObjectBase::LockAndDeleteThis() {
 }
 
 ApiObjectList* ApiObjectBase::GetObjectTrackingList() {
-    ASSERT(GetDevice() != nullptr);
+    DAWN_ASSERT(GetDevice() != nullptr);
     return GetDevice()->GetObjectTrackingList(GetType());
 }
 
@@ -135,7 +140,7 @@ void ApiObjectBase::Destroy() {
         return;
     }
     ApiObjectList* list = GetObjectTrackingList();
-    ASSERT(list != nullptr);
+    DAWN_ASSERT(list != nullptr);
     if (list->Untrack(this)) {
         DestroyImpl();
     }

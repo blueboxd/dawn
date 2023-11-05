@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// GEN_BUILD:CONDITION(tint_build_ir)
-
 #include <string>
 
 #include "src/tint/cmd/bench/bench.h"
@@ -24,15 +22,14 @@ namespace {
 
 void RunBenchmark(benchmark::State& state, std::string input_name, Options options) {
     auto res = bench::LoadProgram(input_name);
-    if (auto err = std::get_if<bench::Error>(&res)) {
-        state.SkipWithError(err->msg.c_str());
+    if (!res) {
+        state.SkipWithError(res.Failure().reason.str());
         return;
     }
-    auto& program = std::get<bench::ProgramAndFile>(res).program;
     for (auto _ : state) {
-        auto res = Generate(&program, options);
-        if (!res) {
-            state.SkipWithError(res.Failure());
+        auto gen_res = Generate(res->program, options);
+        if (!gen_res) {
+            state.SkipWithError(gen_res.Failure().reason.str());
         }
     }
 }

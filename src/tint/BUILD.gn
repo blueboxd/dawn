@@ -89,12 +89,6 @@ config("tint_public_config") {
     defines += [ "TINT_BUILD_SYNTAX_TREE_WRITER=0" ]
   }
 
-  if (tint_build_ir) {
-    defines += [ "TINT_BUILD_IR=1" ]
-  } else {
-    defines += [ "TINT_BUILD_IR=0" ]
-  }
-
   include_dirs = [
     "${tint_root_dir}/",
     "${tint_root_dir}/include/",
@@ -115,6 +109,7 @@ source_set("thread") {
 
 source_set("metal") {
   frameworks = [
+    "CoreGraphics.framework",
     "Foundation.framework",
     "Metal.framework",
   ]
@@ -199,6 +194,13 @@ if (tint_build_unittests) {
   }
 }
 
+if (tint_build_benchmarks) {
+  group("google_benchmark") {
+    testonly = true
+    public_deps = [ "//third_party/google_benchmark" ]
+  }
+}
+
 group("abseil") {
   # When build_with_chromium=true we need to include "//third_party/abseil-cpp:absl" while
   # it's beneficial to be more specific with standalone Dawn, especially when it comes to
@@ -220,6 +222,6 @@ source_set("winsock") {
 if (tint_build_unittests) {
   group("tint_unittests") {
     testonly = true
-    public_deps = [ "${tint_src_dir}/cmd/test" ]
+    public_deps = [ "${tint_src_dir}/cmd/test:test_cmd" ]
   }
 }

@@ -25,7 +25,6 @@
 #include "dawn/native/Commands.h"
 #include "dawn/native/ExternalTexture.h"
 #include "dawn/native/RenderBundle.h"
-#include "dawn/native/VertexFormat.h"
 #include "dawn/native/opengl/BufferGL.h"
 #include "dawn/native/opengl/ComputePipelineGL.h"
 #include "dawn/native/opengl/DeviceGL.h"
@@ -50,7 +49,7 @@ GLenum IndexFormatType(wgpu::IndexFormat format) {
         case wgpu::IndexFormat::Undefined:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 bool Is1DOr2D(wgpu::TextureDimension dimension) {
@@ -97,8 +96,10 @@ GLenum VertexFormatType(wgpu::VertexFormat format) {
         case wgpu::VertexFormat::Sint32x3:
         case wgpu::VertexFormat::Sint32x4:
             return GL_INT;
+        case wgpu::VertexFormat::Unorm10_10_10_2:
+            return GL_UNSIGNED_INT_2_10_10_10_REV;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -112,6 +113,7 @@ GLboolean VertexFormatIsNormalized(wgpu::VertexFormat format) {
         case wgpu::VertexFormat::Unorm16x4:
         case wgpu::VertexFormat::Snorm16x2:
         case wgpu::VertexFormat::Snorm16x4:
+        case wgpu::VertexFormat::Unorm10_10_10_2:
             return GL_TRUE;
         default:
             return GL_FALSE;
@@ -284,7 +286,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                             target = GL_SHADER_STORAGE_BUFFER;
                             break;
                         case wgpu::BufferBindingType::Undefined:
-                            UNREACHABLE();
+                            DAWN_UNREACHABLE();
                     }
 
                     gl.BindBufferRange(target, index, buffer, offset, binding.size);
@@ -320,14 +322,14 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                         if (ToBackend(view->GetTexture())->GetGLFormat().format ==
                             GL_DEPTH_STENCIL) {
                             Aspect aspect = view->GetAspects();
-                            ASSERT(HasOneBit(aspect));
+                            DAWN_ASSERT(HasOneBit(aspect));
                             switch (aspect) {
                                 case Aspect::None:
                                 case Aspect::Color:
                                 case Aspect::CombinedDepthStencil:
                                 case Aspect::Plane0:
                                 case Aspect::Plane1:
-                                    UNREACHABLE();
+                                    DAWN_UNREACHABLE();
                                 case Aspect::Depth:
                                     gl.TexParameteri(target, GL_DEPTH_STENCIL_TEXTURE_MODE,
                                                      GL_DEPTH_COMPONENT);
@@ -365,7 +367,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                             access = GL_READ_ONLY;
                             break;
                         case wgpu::StorageTextureAccess::Undefined:
-                            UNREACHABLE();
+                            DAWN_UNREACHABLE();
                     }
 
                     // OpenGL ES only supports either binding a layer or the entire
@@ -376,7 +378,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                     } else if (texture->GetArrayLayers() == view->GetLayerCount()) {
                         isLayered = GL_TRUE;
                     } else {
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                     }
 
                     gl.BindImageTexture(imageIndex, handle, view->GetBaseMipLevel(), isLayered,
@@ -387,7 +389,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                 }
 
                 case BindingInfoType::ExternalTexture:
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
                     break;
             }
         }
@@ -470,7 +472,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
 
 void ResolveMultisampledRenderTargets(const OpenGLFunctions& gl,
                                       const BeginRenderPassCmd* renderPass) {
-    ASSERT(renderPass != nullptr);
+    DAWN_ASSERT(renderPass != nullptr);
 
     GLuint readFbo = 0;
     GLuint writeFbo = 0;
@@ -479,7 +481,7 @@ void ResolveMultisampledRenderTargets(const OpenGLFunctions& gl,
          IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         if (renderPass->colorAttachments[i].resolveTarget != nullptr) {
             if (readFbo == 0) {
-                ASSERT(writeFbo == 0);
+                DAWN_ASSERT(writeFbo == 0);
                 gl.GenFramebuffers(1, &readFbo);
                 gl.GenFramebuffers(1, &writeFbo);
             }
@@ -512,14 +514,14 @@ Extent3D ComputeTextureCopyExtent(const TextureCopy& textureCopy, const Extent3D
     const TextureBase* texture = textureCopy.texture.Get();
     Extent3D virtualSizeAtLevel =
         texture->GetMipLevelSingleSubresourceVirtualSize(textureCopy.mipLevel);
-    ASSERT(textureCopy.origin.x <= virtualSizeAtLevel.width);
-    ASSERT(textureCopy.origin.y <= virtualSizeAtLevel.height);
+    DAWN_ASSERT(textureCopy.origin.x <= virtualSizeAtLevel.width);
+    DAWN_ASSERT(textureCopy.origin.y <= virtualSizeAtLevel.height);
     if (copySize.width > virtualSizeAtLevel.width - textureCopy.origin.x) {
-        ASSERT(texture->GetFormat().isCompressed);
+        DAWN_ASSERT(texture->GetFormat().isCompressed);
         validTextureCopyExtent.width = virtualSizeAtLevel.width - textureCopy.origin.x;
     }
     if (copySize.height > virtualSizeAtLevel.height - textureCopy.origin.y) {
-        ASSERT(texture->GetFormat().isCompressed);
+        DAWN_ASSERT(texture->GetFormat().isCompressed);
         validTextureCopyExtent.height = virtualSizeAtLevel.height - textureCopy.origin.y;
     }
 
@@ -666,7 +668,7 @@ MaybeError CommandBuffer::Execute() {
                 GLenum target = texture->GetGLTarget();
 
                 if (formatInfo.isCompressed) {
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
                 }
 
                 buffer->EnsureDataInitializedAsDestination(copy);
@@ -710,7 +712,7 @@ MaybeError CommandBuffer::Execute() {
                     case Aspect::None:
                     case Aspect::Plane0:
                     case Aspect::Plane1:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
 
                 uint8_t* offset = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(dst.offset));
@@ -846,7 +848,7 @@ MaybeError CommandBuffer::Execute() {
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -924,12 +926,12 @@ MaybeError CommandBuffer::ExecuteComputePass() {
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
     // EndComputePass should have been called
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
@@ -982,14 +984,14 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
             } else if (format.aspects == Aspect::Stencil) {
                 glAttachment = GL_STENCIL_ATTACHMENT;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
 
             textureView->BindToFramebuffer(GL_DRAW_FRAMEBUFFER, glAttachment);
         }
     }
 
-    ASSERT(gl.CheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    DAWN_ASSERT(gl.CheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
     // Set defaults for dynamic state before executing clears and commands.
     PersistentPipelineState persistentPipelineState;
@@ -1162,7 +1164,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 bindGroupTracker.Apply(gl);
 
                 Buffer* indirectBuffer = ToBackend(draw->indirectBuffer.Get());
-                ASSERT(indirectBuffer != nullptr);
+                DAWN_ASSERT(indirectBuffer != nullptr);
 
                 gl.BindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer->GetHandle());
                 gl.DrawElementsIndirect(
@@ -1222,7 +1224,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
     };
@@ -1318,7 +1320,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
     }
 
     // EndRenderPass should have been called
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 void DoTexSubImage(const OpenGLFunctions& gl,

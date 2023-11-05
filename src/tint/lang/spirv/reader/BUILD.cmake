@@ -21,6 +21,7 @@
 #                       Do not modify this file directly
 ################################################################################
 
+include(lang/spirv/reader/ast_lower/BUILD.cmake)
 include(lang/spirv/reader/ast_parser/BUILD.cmake)
 include(lang/spirv/reader/common/BUILD.cmake)
 
@@ -40,6 +41,7 @@ tint_target_add_dependencies(tint_lang_spirv_reader lib
   tint_lang_core_constant
   tint_lang_core_type
   tint_lang_spirv_reader_common
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
   tint_lang_wgsl_sem

@@ -45,9 +45,10 @@ tint_target_add_dependencies(tint_lang_wgsl_resolver lib
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_intrinsic
-  tint_lang_core_intrinsic_data
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
+  tint_lang_wgsl_intrinsic
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
   tint_utils_containers
@@ -106,6 +107,7 @@ tint_add_target(tint_lang_wgsl_resolver_test test
   lang/wgsl/resolver/load_test.cc
   lang/wgsl/resolver/materialize_test.cc
   lang/wgsl/resolver/override_test.cc
+  lang/wgsl/resolver/pixel_local_extension_test.cc
   lang/wgsl/resolver/ptr_ref_test.cc
   lang/wgsl/resolver/ptr_ref_validation_test.cc
   lang/wgsl/resolver/resolver_behavior_test.cc
@@ -133,11 +135,14 @@ tint_target_add_dependencies(tint_lang_wgsl_resolver_test test
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_intrinsic
+  tint_lang_core_ir
   tint_lang_core_type
   tint_lang_core_type_test
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_ast_transform
   tint_lang_wgsl_ast_test
+  tint_lang_wgsl_intrinsic
   tint_lang_wgsl_program
   tint_lang_wgsl_reader
   tint_lang_wgsl_resolver

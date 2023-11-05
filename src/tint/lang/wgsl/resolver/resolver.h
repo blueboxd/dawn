@@ -27,6 +27,7 @@
 #include "src/tint/lang/core/constant/eval.h"
 #include "src/tint/lang/core/constant/value.h"
 #include "src/tint/lang/core/intrinsic/table.h"
+#include "src/tint/lang/wgsl/intrinsic/dialect.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/dependency_graph.h"
 #include "src/tint/lang/wgsl/resolver/sem_helper.h"
@@ -59,7 +60,7 @@ class WhileStatement;
 namespace tint::sem {
 class Array;
 class BlockStatement;
-class Builtin;
+class BuiltinFn;
 class CaseStatement;
 class ForLoopStatement;
 class IfStatement;
@@ -212,7 +213,7 @@ class Resolver {
     sem::Expression* Identifier(const ast::IdentifierExpression*);
     template <size_t N>
     sem::Call* BuiltinCall(const ast::CallExpression*,
-                           core::Function,
+                           wgsl::BuiltinFn,
                            Vector<const sem::ValueExpression*, N>& args);
     sem::ValueExpression* Literal(const ast::LiteralExpression*);
     sem::ValueExpression* MemberAccessor(const ast::MemberAccessorExpression*);
@@ -312,7 +313,7 @@ class Resolver {
     // / builtin, and records these on the current function by calling AddTextureSamplerPair().
     void CollectTextureSamplerPairs(sem::Function* func,
                                     VectorRef<const sem::ValueExpression*> args) const;
-    void CollectTextureSamplerPairs(const sem::Builtin* builtin,
+    void CollectTextureSamplerPairs(const sem::BuiltinFn* builtin,
                                     VectorRef<const sem::ValueExpression*> args) const;
 
     /// Resolves the WorkgroupSize for the given function, assigning it to
@@ -559,7 +560,7 @@ class Resolver {
     /// @returns the core::type::Type for the builtin type @p builtin_ty with the identifier @p
     /// ident
     /// @note: Will raise an ICE if @p symbol is not a builtin type.
-    core::type::Type* BuiltinType(core::Builtin builtin_ty, const ast::Identifier* ident);
+    core::type::Type* BuiltinType(core::BuiltinType builtin_ty, const ast::Identifier* ident);
 
     /// @returns the nesting depth of @ty as defined in
     /// https://gpuweb.github.io/gpuweb/wgsl/#composite-types
@@ -612,11 +613,11 @@ class Resolver {
     ProgramBuilder* const builder_;
     diag::List& diagnostics_;
     core::constant::Eval const_eval_;
-    std::unique_ptr<core::intrinsic::Table> const intrinsic_table_;
+    core::intrinsic::Table<wgsl::intrinsic::Dialect> intrinsic_table_;
     DependencyGraph dependencies_;
     SemHelper sem_;
     Validator validator_;
-    core::Extensions enabled_extensions_;
+    wgsl::Extensions enabled_extensions_;
     Vector<sem::Function*, 8> entry_points_;
     Hashmap<const core::type::Type*, const Source*, 8> atomic_composite_info_;
     tint::Bitset<0> marked_;
@@ -635,10 +636,9 @@ class Resolver {
     Hashset<const ast::Expression*, 8> skip_const_eval_;
     IdentifierResolveHint identifier_resolve_hint_;
     Hashmap<const core::type::Type*, size_t, 8> nest_depth_;
-    Hashmap<std::pair<core::intrinsic::Table::Overload, core::Function>, sem::Builtin*, 64>
-        builtins_;
-    Hashmap<core::intrinsic::Table::Overload, sem::ValueConstructor*, 16> constructors_;
-    Hashmap<core::intrinsic::Table::Overload, sem::ValueConversion*, 16> converters_;
+    Hashmap<std::pair<core::intrinsic::Overload, wgsl::BuiltinFn>, sem::BuiltinFn*, 64> builtins_;
+    Hashmap<core::intrinsic::Overload, sem::ValueConstructor*, 16> constructors_;
+    Hashmap<core::intrinsic::Overload, sem::ValueConversion*, 16> converters_;
 };
 
 }  // namespace tint::resolver

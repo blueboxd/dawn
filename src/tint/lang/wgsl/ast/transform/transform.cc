@@ -17,7 +17,7 @@
 #include <algorithm>
 #include <string>
 
-#include "src/tint/lang/core/builtin.h"
+#include "src/tint/lang/core/builtin_type.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
@@ -41,13 +41,13 @@ Output::Output(Program&& p) : program(std::move(p)) {}
 Transform::Transform() = default;
 Transform::~Transform() = default;
 
-Output Transform::Run(const Program* src, const DataMap& data /* = {} */) const {
+Output Transform::Run(const Program& src, const DataMap& data /* = {} */) const {
     Output output;
     if (auto program = Apply(src, data, output.data)) {
         output.program = std::move(program.value());
     } else {
         ProgramBuilder b;
-        program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+        program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
         ctx.Clone();
         output.program = resolver::Resolve(b);
     }
@@ -94,7 +94,7 @@ Type Transform::CreateASTTypeFor(program::CloneContext& ctx, const core::type::T
         auto el = CreateASTTypeFor(ctx, v->type());
         if (v->Packed()) {
             TINT_ASSERT(v->Width() == 3u);
-            return ctx.dst->ty(core::Builtin::kPackedVec3, el);
+            return ctx.dst->ty(core::BuiltinType::kPackedVec3, el);
         } else {
             return ctx.dst->ty.vec(el, v->Width());
         }

@@ -19,6 +19,7 @@
 
 #include "gtest/gtest.h"
 #include "src/tint/lang/core/ir/builder.h"
+#include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/type/matrix.h"
 
@@ -35,7 +36,7 @@ class IRToProgramRenameConflictsTest : public testing::Test {
         // Validate the input IR.
         {
             auto res = core::ir::Validate(mod);
-            EXPECT_TRUE(res) << res.Failure().str();
+            EXPECT_TRUE(res) << res.Failure().reason.str();
             if (!res) {
                 return;
             }
@@ -47,7 +48,7 @@ class IRToProgramRenameConflictsTest : public testing::Test {
 
         // Validate the output IR.
         auto res = core::ir::Validate(mod);
-        EXPECT_TRUE(res) << res.Failure().str();
+        EXPECT_TRUE(res) << res.Failure().reason.str();
     }
 
     /// @returns the transformed module as a disassembled string
@@ -66,7 +67,7 @@ class IRToProgramRenameConflictsTest : public testing::Test {
 };
 
 TEST_F(IRToProgramRenameConflictsTest, NoModify_SingleNamedRootBlockVar) {
-    b.Append(b.RootBlock(), [&] { b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "v"); });
+    b.Append(mod.root_block, [&] { b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "v"); });
 
     auto* src = R"(
 %b1 = block {  # root
@@ -84,7 +85,7 @@ TEST_F(IRToProgramRenameConflictsTest, NoModify_SingleNamedRootBlockVar) {
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_TwoRootBlockVarsWithSameName) {
-    b.Append(b.RootBlock(), [&] {
+    b.Append(mod.root_block, [&] {
         b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "v");
         b.ir.SetName(b.Var(ty.ptr<private_, u32>()), "v");
     });
@@ -113,7 +114,7 @@ TEST_F(IRToProgramRenameConflictsTest, Conflict_TwoRootBlockVarsWithSameName) {
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_RootBlockVarAndStructWithSameName) {
     auto* s = ty.Struct(b.ir.symbols.New("v"), {{b.ir.symbols.New("x"), ty.i32()}});
-    b.Append(b.RootBlock(), [&] { b.ir.SetName(b.Var(ty.ptr(function, s)), "v"); });
+    b.Append(mod.root_block, [&] { b.ir.SetName(b.Var(ty.ptr(function, s)), "v"); });
 
     auto* src = R"(
 v = struct @align(4) {
@@ -144,7 +145,7 @@ v = struct @align(4) {
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_RootBlockVarAndFnWithSameName) {
-    b.Append(b.RootBlock(), [&] { b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "v"); });
+    b.Append(mod.root_block, [&] { b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "v"); });
 
     auto* fn = b.Function("v", ty.void_());
     b.Append(fn->Block(), [&] { b.Return(fn); });
@@ -180,7 +181,7 @@ TEST_F(IRToProgramRenameConflictsTest, Conflict_RootBlockVarAndFnWithSameName) {
 }
 
 TEST_F(IRToProgramRenameConflictsTest, NoModify_RootBlockVar_ShadowedBy_FnVar) {
-    b.Append(b.RootBlock(), [&] {
+    b.Append(mod.root_block, [&] {
         auto* outer = b.Var(ty.ptr<private_, i32>());
         b.ir.SetName(outer, "v");
 
@@ -221,7 +222,7 @@ TEST_F(IRToProgramRenameConflictsTest, NoModify_RootBlockVar_ShadowedBy_FnVar) {
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_RootBlockVar_ShadowedBy_FnVar) {
-    b.Append(b.RootBlock(), [&] {
+    b.Append(mod.root_block, [&] {
         auto* outer = b.Var(ty.ptr<private_, i32>());
         b.ir.SetName(outer, "v");
 
@@ -921,7 +922,7 @@ TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinScalar_ShadowedBy_NamedIn
 }
 
 TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinAddressSpace_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "function");
     });
 
@@ -941,7 +942,7 @@ TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinAddressSpace_ShadowedBy_R
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinAddressSpace_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "private");
     });
 
@@ -966,7 +967,7 @@ TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinAddressSpace_ShadowedBy_R
 }
 
 TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinAccess_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "read");
     });
 
@@ -986,7 +987,7 @@ TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinAccess_ShadowedBy_RootBlo
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinAccess_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "read_write");
     });
 
@@ -1011,14 +1012,14 @@ TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinAccess_ShadowedBy_RootBlo
 }
 
 TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinFn_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         auto* v = b.Var(ty.ptr<private_, i32>());
         b.ir.SetName(v, "min");
     });
 
     auto* fn = b.Function("f", ty.i32());
     b.Append(fn->Block(), [&] {  //
-        auto* res = b.Call(ty.i32(), core::Function::kMax, 1_i, 2_i)->Result();
+        auto* res = b.Call(ty.i32(), core::BuiltinFn::kMax, 1_i, 2_i)->Result();
         b.Return(fn, res);
     });
 
@@ -1044,14 +1045,14 @@ TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinFn_ShadowedBy_RootBlockVa
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinFn_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         auto* v = b.Var(ty.ptr<private_, i32>());
         b.ir.SetName(v, "max");
     });
 
     auto* fn = b.Function("f", ty.i32());
     b.Append(fn->Block(), [&] {  //
-        auto* res = b.Call(ty.i32(), core::Function::kMax, 1_i, 2_i)->Result();
+        auto* res = b.Call(ty.i32(), core::BuiltinFn::kMax, 1_i, 2_i)->Result();
         b.Return(fn, res);
     });
 

@@ -15,21 +15,25 @@
 #ifndef SRC_TINT_LANG_CORE_IR_DISCARD_H_
 #define SRC_TINT_LANG_CORE_IR_DISCARD_H_
 
-#include "src/tint/lang/core/ir/call.h"
+#include <string>
 
+#include "src/tint/lang/core/ir/call.h"
 #include "src/tint/utils/rtti/castable.h"
 
 namespace tint::core::ir {
 
 /// A discard instruction in the IR.
-class Discard : public Castable<Discard, Call> {
+class Discard final : public Castable<Discard, Call> {
   public:
     /// Constructor
     Discard();
     ~Discard() override;
 
+    /// @copydoc Instruction::Clone()
+    Discard* Clone(CloneContext& ctx) override;
+
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "discard"; }
+    std::string FriendlyName() override { return "discard"; }
 };
 
 }  // namespace tint::core::ir

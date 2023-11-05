@@ -37,7 +37,7 @@ class ResolverDependencyGraphTestWithParam : public ResolverTestWithParam<T> {
         DependencyGraph graph;
         auto result = DependencyGraph::Build(this->AST(), this->Diagnostics(), graph);
         if (expected_error.empty()) {
-            EXPECT_TRUE(result) << this->Diagnostics().str();
+            EXPECT_TRUE(result) << this->Diagnostics();
         } else {
             EXPECT_FALSE(result);
             EXPECT_EQ(expected_error, this->Diagnostics().str());
@@ -1106,9 +1106,9 @@ TEST_F(ResolverDependencyGraphOrderedGlobalsTest, DirectiveFirst) {
     // a transform may produce such a AST tree that has some declarations before directive nodes.
     // DependencyGraph should deal with these cases.
     auto* var_1 = GlobalVar("SYMBOL1", ty.i32());
-    auto* enable = Enable(core::Extension::kF16);
+    auto* enable = Enable(wgsl::Extension::kF16);
     auto* var_2 = GlobalVar("SYMBOL2", ty.f32());
-    auto* diagnostic = DiagnosticDirective(core::DiagnosticSeverity::kWarning, "foo");
+    auto* diagnostic = DiagnosticDirective(wgsl::DiagnosticSeverity::kWarning, "foo");
 
     EXPECT_THAT(AST().GlobalDeclarations(), ElementsAre(var_1, enable, var_2, diagnostic));
     EXPECT_THAT(Build().ordered_globals, ElementsAre(enable, diagnostic, var_1, var_2));
@@ -1177,10 +1177,10 @@ INSTANTIATE_TEST_SUITE_P(Functions,
 ////////////////////////////////////////////////////////////////////////////////
 namespace resolve_to_builtin_func {
 
-using ResolverDependencyGraphResolveToBuiltinFunc =
-    ResolverDependencyGraphTestWithParam<std::tuple<SymbolUseKind, core::Function>>;
+using ResolverDependencyGraphResolveToBuiltinFn =
+    ResolverDependencyGraphTestWithParam<std::tuple<SymbolUseKind, wgsl::BuiltinFn>>;
 
-TEST_P(ResolverDependencyGraphResolveToBuiltinFunc, Resolve) {
+TEST_P(ResolverDependencyGraphResolveToBuiltinFn, Resolve) {
     const auto use = std::get<0>(GetParam());
     const auto builtin = std::get<1>(GetParam());
     const auto symbol = Symbols().New(tint::ToString(builtin));
@@ -1191,23 +1191,23 @@ TEST_P(ResolverDependencyGraphResolveToBuiltinFunc, Resolve) {
 
     auto resolved = Build().resolved_identifiers.Get(ident);
     ASSERT_TRUE(resolved);
-    EXPECT_EQ(resolved->BuiltinFunction(), builtin) << resolved->String();
+    EXPECT_EQ(resolved->BuiltinFn(), builtin) << resolved->String();
 }
 
 INSTANTIATE_TEST_SUITE_P(Types,
-                         ResolverDependencyGraphResolveToBuiltinFunc,
+                         ResolverDependencyGraphResolveToBuiltinFn,
                          testing::Combine(testing::ValuesIn(kTypeUseKinds),
-                                          testing::ValuesIn(core::kFunctions)));
+                                          testing::ValuesIn(wgsl::kBuiltinFns)));
 
 INSTANTIATE_TEST_SUITE_P(Values,
-                         ResolverDependencyGraphResolveToBuiltinFunc,
+                         ResolverDependencyGraphResolveToBuiltinFn,
                          testing::Combine(testing::ValuesIn(kValueUseKinds),
-                                          testing::ValuesIn(core::kFunctions)));
+                                          testing::ValuesIn(wgsl::kBuiltinFns)));
 
 INSTANTIATE_TEST_SUITE_P(Functions,
-                         ResolverDependencyGraphResolveToBuiltinFunc,
+                         ResolverDependencyGraphResolveToBuiltinFn,
                          testing::Combine(testing::ValuesIn(kFuncUseKinds),
-                                          testing::ValuesIn(core::kFunctions)));
+                                          testing::ValuesIn(wgsl::kBuiltinFns)));
 
 }  // namespace resolve_to_builtin_func
 
@@ -1230,23 +1230,23 @@ TEST_P(ResolverDependencyGraphResolveToBuiltinType, Resolve) {
 
     auto resolved = Build().resolved_identifiers.Get(ident);
     ASSERT_TRUE(resolved);
-    EXPECT_EQ(resolved->BuiltinType(), core::ParseBuiltin(name)) << resolved->String();
+    EXPECT_EQ(resolved->BuiltinType(), core::ParseBuiltinType(name)) << resolved->String();
 }
 
 INSTANTIATE_TEST_SUITE_P(Types,
                          ResolverDependencyGraphResolveToBuiltinType,
                          testing::Combine(testing::ValuesIn(kTypeUseKinds),
-                                          testing::ValuesIn(core::kBuiltinStrings)));
+                                          testing::ValuesIn(core::kBuiltinTypeStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Values,
                          ResolverDependencyGraphResolveToBuiltinType,
                          testing::Combine(testing::ValuesIn(kValueUseKinds),
-                                          testing::ValuesIn(core::kBuiltinStrings)));
+                                          testing::ValuesIn(core::kBuiltinTypeStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Functions,
                          ResolverDependencyGraphResolveToBuiltinType,
                          testing::Combine(testing::ValuesIn(kFuncUseKinds),
-                                          testing::ValuesIn(core::kBuiltinStrings)));
+                                          testing::ValuesIn(core::kBuiltinTypeStrings)));
 
 }  // namespace resolve_to_builtin_type
 
@@ -1595,12 +1595,12 @@ INSTANTIATE_TEST_SUITE_P(AddressSpace,
 INSTANTIATE_TEST_SUITE_P(BuiltinType,
                          ResolverDependencyGraphShadowKindTest,
                          testing::Combine(testing::ValuesIn(kAllUseKinds),
-                                          testing::ValuesIn(core::kBuiltinStrings)));
+                                          testing::ValuesIn(core::kBuiltinTypeStrings)));
 
-INSTANTIATE_TEST_SUITE_P(BuiltinFunction,
+INSTANTIATE_TEST_SUITE_P(BuiltinFn,
                          ResolverDependencyGraphShadowKindTest,
                          testing::Combine(testing::ValuesIn(kAllUseKinds),
-                                          testing::ValuesIn(core::kBuiltinStrings)));
+                                          testing::ValuesIn(core::kBuiltinTypeStrings)));
 
 INSTANTIATE_TEST_SUITE_P(InterpolationSampling,
                          ResolverDependencyGraphShadowKindTest,

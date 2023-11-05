@@ -15,6 +15,7 @@
 #include "dawn/native/webgpu_absl_format.h"
 
 #include <string>
+#include <vector>
 
 #include "dawn/native/AttachmentState.h"
 #include "dawn/native/BindingInfo.h"
@@ -23,11 +24,11 @@
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/PerStage.h"
 #include "dawn/native/ProgrammableEncoder.h"
+#include "dawn/native/RenderPipeline.h"
 #include "dawn/native/ShaderModule.h"
 #include "dawn/native/Subresource.h"
 #include "dawn/native/Surface.h"
 #include "dawn/native/Texture.h"
-#include "dawn/native/VertexFormat.h"
 
 namespace dawn::native {
 
@@ -231,6 +232,20 @@ absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConv
     if (value->GetDevice()->HasFeature(Feature::MSAARenderToSingleSampled)) {
         s->Append(absl::StrFormat(", msaaRenderToSingleSampled: %d",
                                   value->IsMSAARenderToSingleSampledEnabled()));
+    }
+
+    if (value->HasPixelLocalStorage()) {
+        const std::vector<wgpu::TextureFormat>& plsSlots = value->GetStorageAttachmentSlots();
+        s->Append(absl::StrFormat(", totalPixelLocalStorageSize: %d",
+                                  plsSlots.size() * kPLSSlotByteSize));
+        s->Append(", storageAttachments: [ ");
+        for (size_t i = 0; i < plsSlots.size(); i++) {
+            if (plsSlots[i] != wgpu::TextureFormat::Undefined) {
+                s->Append(absl::StrFormat("{format: %s, offset: %d}, ", plsSlots[i],
+                                          i * kPLSSlotByteSize));
+            }
+        }
+        s->Append("]");
     }
 
     s->Append(" }");
@@ -483,6 +498,24 @@ absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConv
             break;
         case TextureComponentType::Uint:
             s->Append("Uint");
+            break;
+    }
+    return {true};
+}
+
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    PixelLocalMemberType value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s) {
+    switch (value) {
+        case PixelLocalMemberType::I32:
+            s->Append("i32");
+            break;
+        case PixelLocalMemberType::U32:
+            s->Append("u32");
+            break;
+        case PixelLocalMemberType::F32:
+            s->Append("f32");
             break;
     }
     return {true};

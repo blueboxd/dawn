@@ -15,6 +15,7 @@
 #include "dawn/native/d3d12/ShaderModuleD3D12.h"
 
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "dawn/common/Assert.h"
@@ -67,7 +68,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     const std::bitset<kMaxInterStageShaderVariables>* usedInterstageVariables) {
     Device* device = ToBackend(GetDevice());
     TRACE_EVENT0(device->GetPlatform(), General, "ShaderModuleD3D12::Compile");
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
 
     ScopedTintICEHandler scopedICEHandler(device);
     const EntryPointMetadata& entryPoint = GetEntryPoint(programmableStage.entryPoint);
@@ -90,7 +91,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     if (device->IsToggleEnabled(Toggle::UseDXC)) {
         // If UseDXC toggle are not forced to be disable, DXC should have been validated to be
         // available.
-        ASSERT(ToBackend(device->GetPhysicalDevice())->GetBackend()->IsDXCAvailable());
+        DAWN_ASSERT(ToBackend(device->GetPhysicalDevice())->GetBackend()->IsDXCAvailable());
         // We can get the DXC version information since IsDXCAvailable() is true.
         d3d::DxcVersionInfo dxcVersionInfo =
             ToBackend(device->GetPhysicalDevice())->GetBackend()->GetDxcVersion();
@@ -120,10 +121,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     using tint::BindingPoint;
 
     tint::BindingRemapperOptions bindingRemapper;
-    // D3D12 registers like `t3` and `c3` have the same bindingOffset number in
-    // the remapping but should not be considered a collision because they have
-    // different types.
-    bindingRemapper.allow_collisions = true;
+    std::unordered_map<BindingPoint, tint::core::Access> accessControls;
 
     tint::ArrayLengthFromUniformOptions arrayLengthFromUniform;
     arrayLengthFromUniform.ubo_binding = {layout->GetDynamicStorageBufferLengthsRegisterSpace(),
@@ -158,8 +156,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
                       wgpu::BufferBindingType::Storage ||
                   bgl->GetBindingInfo(bindingIndex).buffer.type == kInternalStorageBufferBinding));
             if (forceStorageBufferAsUAV) {
-                bindingRemapper.access_controls.emplace(srcBindingPoint,
-                                                        tint::core::Access::kReadWrite);
+                accessControls.emplace(srcBindingPoint, tint::core::Access::kReadWrite);
             }
 
             // On D3D12 backend all storage buffers without Dynamic Buffer Offset will always be
@@ -228,6 +225,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.numWorkgroupsShaderRegister = layout->GetNumWorkgroupsShaderRegister();
     req.hlsl.numWorkgroupsRegisterSpace = layout->GetNumWorkgroupsRegisterSpace();
     req.hlsl.bindingRemapper = std::move(bindingRemapper);
+    req.hlsl.accessControls = std::move(accessControls);
     req.hlsl.externalTextureOptions = BuildExternalTextureTransformBindings(layout);
     req.hlsl.arrayLengthFromUniform = std::move(arrayLengthFromUniform);
     req.hlsl.substituteOverrideConfig = std::move(substituteOverrideConfig);

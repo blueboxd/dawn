@@ -14,6 +14,9 @@
 
 #include "src/tint/lang/core/ir/load_vector_element.h"
 
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
+
 TINT_INSTANTIATE_TYPEINFO(tint::core::ir::LoadVectorElement);
 
 namespace tint::core::ir {
@@ -27,5 +30,12 @@ LoadVectorElement::LoadVectorElement(InstructionResult* result, ir::Value* from,
 }
 
 LoadVectorElement::~LoadVectorElement() = default;
+
+LoadVectorElement* LoadVectorElement::Clone(CloneContext& ctx) {
+    auto* new_result = ctx.Clone(Result());
+    auto* from = ctx.Remap(From());
+    auto* index = ctx.Remap(Index());
+    return ctx.ir.instructions.Create<LoadVectorElement>(new_result, from, index);
+}
 
 }  // namespace tint::core::ir

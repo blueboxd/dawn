@@ -25,7 +25,7 @@
 #include "dawn/native/DawnNative.h"
 #include "dawn/webgpu_cpp.h"
 #include "src/dawn/node/binding/Errors.h"
-#include "src/dawn/node/interop/Napi.h"
+#include "src/dawn/node/interop/NodeAPI.h"
 #include "src/dawn/node/interop/WebGPU.h"
 
 namespace wgpu::binding {
@@ -197,6 +197,12 @@ class Converter {
 
     [[nodiscard]] bool Convert(wgpu::RenderPassDepthStencilAttachment& out,
                                const interop::GPURenderPassDepthStencilAttachment& in);
+
+    [[nodiscard]] bool Convert(wgpu::RenderPassTimestampWrites& out,
+                               const interop::GPURenderPassTimestampWrites& in);
+
+    [[nodiscard]] bool Convert(wgpu::ComputePassTimestampWrites& out,
+                               const interop::GPUComputePassTimestampWrites& in);
 
     [[nodiscard]] bool Convert(wgpu::LoadOp& out, const interop::GPULoadOp& in);
 

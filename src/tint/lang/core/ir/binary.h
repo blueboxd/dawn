@@ -15,13 +15,15 @@
 #ifndef SRC_TINT_LANG_CORE_IR_BINARY_H_
 #define SRC_TINT_LANG_CORE_IR_BINARY_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/operand_instruction.h"
 #include "src/tint/utils/rtti/castable.h"
 
 namespace tint::core::ir {
 
 /// A binary instruction in the IR.
-class Binary : public Castable<Binary, OperandInstruction<2, 1>> {
+class Binary final : public Castable<Binary, OperandInstruction<2, 1>> {
   public:
     /// The offset in Operands() for the LHS
     static constexpr size_t kLhsOperandOffset = 0;
@@ -60,6 +62,9 @@ class Binary : public Castable<Binary, OperandInstruction<2, 1>> {
     Binary(InstructionResult* result, enum Kind kind, Value* lhs, Value* rhs);
     ~Binary() override;
 
+    /// @copydoc Instruction::Clone()
+    Binary* Clone(CloneContext& ctx) override;
+
     /// @returns the kind of the binary instruction
     enum Kind Kind() { return kind_; }
 
@@ -70,7 +75,7 @@ class Binary : public Castable<Binary, OperandInstruction<2, 1>> {
     Value* RHS() { return operands_[kRhsOperandOffset]; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "binary"; }
+    std::string FriendlyName() override { return "binary"; }
 
   private:
     enum Kind kind_;

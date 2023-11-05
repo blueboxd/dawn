@@ -25,7 +25,7 @@ import("../../../../scripts/tint_overrides_with_defaults.gni")
 
 import("${tint_src_dir}/tint.gni")
 
-if (tint_build_unittests) {
+if (tint_build_unittests || tint_build_benchmarks) {
   import("//testing/test.gni")
 }
 
@@ -41,8 +41,10 @@ libtint_source_set("common") {
     "${tint_src_dir}/api/options",
     "${tint_src_dir}/lang/core",
     "${tint_src_dir}/lang/core/constant",
+    "${tint_src_dir}/lang/core/ir",
     "${tint_src_dir}/lang/core/type",
     "${tint_src_dir}/lang/spirv/reader/common",
+    "${tint_src_dir}/lang/wgsl",
     "${tint_src_dir}/lang/wgsl/ast",
     "${tint_src_dir}/lang/wgsl/inspector",
     "${tint_src_dir}/lang/wgsl/program",
@@ -77,7 +79,6 @@ libtint_source_set("common") {
 }
 if (tint_build_unittests) {
   tint_unittests_source_set("unittests") {
-    testonly = true
     sources = [ "generate_external_texture_bindings_test.cc" ]
     deps = [
       "${tint_src_dir}:gmock_and_gtest",
@@ -87,6 +88,7 @@ if (tint_build_unittests) {
       "${tint_src_dir}/lang/core",
       "${tint_src_dir}/lang/core/constant",
       "${tint_src_dir}/lang/core/type",
+      "${tint_src_dir}/lang/wgsl",
       "${tint_src_dir}/lang/wgsl/ast",
       "${tint_src_dir}/lang/wgsl/program",
       "${tint_src_dir}/lang/wgsl/resolver",

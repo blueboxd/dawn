@@ -1048,9 +1048,14 @@ struct TestWithParams : ResolverTestWithParam<TestParams> {};
 using ResolverFunctionParameterValidationTest = TestWithParams;
 TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceNoExtension) {
     auto& param = GetParam();
-    auto ptr_type = ty("ptr", Ident(Source{{12, 34}}, param.address_space), ty.i32());
+    Structure("S", Vector{Member("a", ty.i32())});
+    auto ptr_type = ty("ptr", Ident(Source{{12, 34}}, param.address_space), ty("S"));
     auto* arg = Param(Source{{12, 34}}, "p", ptr_type);
     Func("f", Vector{arg}, ty.void_(), tint::Empty);
+
+    if (param.address_space == core::AddressSpace::kPixelLocal) {
+        Enable(wgsl::Extension::kChromiumExperimentalPixelLocal);
+    }
 
     if (param.expectation == Expectation::kAlwaysPass) {
         ASSERT_TRUE(r()->Resolve()) << r()->error();
@@ -1060,7 +1065,7 @@ TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceNoExtension) {
         EXPECT_FALSE(r()->Resolve());
         if (param.expectation == Expectation::kInvalid) {
             std::string err = R"(12:34 error: unresolved address space '${addr_space}'
-12:34 note: Possible values: 'function', 'private', 'push_constant', 'storage', 'uniform', 'workgroup')";
+12:34 note: Possible values: 'function', 'pixel_local', 'private', 'push_constant', 'storage', 'uniform', 'workgroup')";
             err = tint::ReplaceAll(err, "${addr_space}", tint::ToString(param.address_space));
             EXPECT_EQ(r()->error(), err);
         } else {
@@ -1070,12 +1075,17 @@ TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceNoExtension) {
         }
     }
 }
-TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceWithExtension) {
+TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceWithFullPtrParameterExtension) {
     auto& param = GetParam();
-    auto ptr_type = ty("ptr", Ident(Source{{12, 34}}, param.address_space), ty.i32());
+    Structure("S", Vector{Member("a", ty.i32())});
+    auto ptr_type = ty("ptr", Ident(Source{{12, 34}}, param.address_space), ty("S"));
     auto* arg = Param(Source{{12, 34}}, "p", ptr_type);
-    Enable(core::Extension::kChromiumExperimentalFullPtrParameters);
+    Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
     Func("f", Vector{arg}, ty.void_(), tint::Empty);
+
+    if (param.address_space == core::AddressSpace::kPixelLocal) {
+        Enable(wgsl::Extension::kChromiumExperimentalPixelLocal);
+    }
 
     if (param.expectation == Expectation::kAlwaysPass ||
         param.expectation == Expectation::kPassWithFullPtrParameterExtension) {
@@ -1084,7 +1094,7 @@ TEST_P(ResolverFunctionParameterValidationTest, AddressSpaceWithExtension) {
         EXPECT_FALSE(r()->Resolve());
         if (param.expectation == Expectation::kInvalid) {
             std::string err = R"(12:34 error: unresolved address space '${addr_space}'
-12:34 note: Possible values: 'function', 'private', 'push_constant', 'storage', 'uniform', 'workgroup')";
+12:34 note: Possible values: 'function', 'pixel_local', 'private', 'push_constant', 'storage', 'uniform', 'workgroup')";
             err = tint::ReplaceAll(err, "${addr_space}", tint::ToString(param.address_space));
             EXPECT_EQ(r()->error(), err);
         } else {
@@ -1105,6 +1115,7 @@ INSTANTIATE_TEST_SUITE_P(
         TestParams{core::AddressSpace::kWorkgroup, Expectation::kPassWithFullPtrParameterExtension},
         TestParams{core::AddressSpace::kHandle, Expectation::kInvalid},
         TestParams{core::AddressSpace::kStorage, Expectation::kPassWithFullPtrParameterExtension},
+        TestParams{core::AddressSpace::kPixelLocal, Expectation::kAlwaysFail},
         TestParams{core::AddressSpace::kPrivate, Expectation::kAlwaysPass},
         TestParams{core::AddressSpace::kFunction, Expectation::kAlwaysPass}));
 

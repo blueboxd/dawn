@@ -35,7 +35,6 @@
 #include "src/tint/lang/core/ir/exit_switch.h"
 #include "src/tint/lang/core/ir/if.h"
 #include "src/tint/lang/core/ir/instruction_result.h"
-#include "src/tint/lang/core/ir/intrinsic_call.h"
 #include "src/tint/lang/core/ir/let.h"
 #include "src/tint/lang/core/ir/load.h"
 #include "src/tint/lang/core/ir/load_vector_element.h"
@@ -153,7 +152,7 @@ std::string Disassembler::Disassemble() {
         }
     }
 
-    if (mod_.root_block) {
+    if (!mod_.root_block->IsEmpty()) {
         EmitBlock(mod_.root_block, "root");
         EmitLine();
     }
@@ -414,6 +413,7 @@ void Disassembler::EmitValue(Value* val) {
         [&](ir::InstructionResult* rv) { out_ << "%" << IdOf(rv); },
         [&](ir::BlockParam* p) { out_ << "%" << IdOf(p) << ":" << p->Type()->FriendlyName(); },
         [&](ir::FunctionParam* p) { out_ << "%" << IdOf(p); },
+        [&](ir::Function* f) { out_ << "%" << IdOf(f); },
         [&](Default) {
             if (val == nullptr) {
                 out_ << "undef";
@@ -423,9 +423,9 @@ void Disassembler::EmitValue(Value* val) {
         });
 }
 
-void Disassembler::EmitInstructionName(std::string_view name, Instruction* inst) {
+void Disassembler::EmitInstructionName(Instruction* inst) {
     SourceMarker sm(this);
-    out_ << name;
+    out_ << inst->FriendlyName();
     sm.Store(inst);
 }
 
@@ -445,75 +445,25 @@ void Disassembler::EmitInstruction(Instruction* inst) {
         [&](Loop* l) { EmitLoop(l); },      //
         [&](Binary* b) { EmitBinary(b); },  //
         [&](Unary* u) { EmitUnary(u); },    //
-        [&](Bitcast* b) {
-            EmitValueWithType(b);
-            out_ << " = ";
-            EmitInstructionName("bitcast", b);
-            out_ << " ";
-            EmitOperandList(b);
-        },
-        [&](Discard* d) { EmitInstructionName("discard", d); },
-        [&](CoreBuiltinCall* b) {
-            EmitValueWithType(b);
-            out_ << " = ";
-            EmitInstructionName(core::str(b->Func()), b);
-            out_ << " ";
-            EmitOperandList(b);
-        },
-        [&](Construct* c) {
-            EmitValueWithType(c);
-            out_ << " = ";
-            EmitInstructionName("construct", c);
-            if (!c->Operands().IsEmpty()) {
-                out_ << " ";
-                EmitOperandList(c);
-            }
-        },
-        [&](Convert* c) {
-            EmitValueWithType(c);
-            out_ << " = ";
-            EmitInstructionName("convert", c);
-            out_ << " ";
-            EmitOperandList(c);
-        },
-        [&](IntrinsicCall* i) {
-            EmitValueWithType(i);
-            out_ << " = ";
-            EmitInstructionName(tint::ToString(i->Kind()), i);
-            out_ << " ";
-            EmitOperandList(i);
-        },
-        [&](Load* l) {
-            EmitValueWithType(l);
-            out_ << " = ";
-            EmitInstructionName("load", l);
-            out_ << " ";
-            EmitValue(l->From());
-        },
+        [&](Discard* d) { EmitInstructionName(d); },
         [&](Store* s) {
-            EmitInstructionName("store", s);
+            EmitInstructionName(s);
             out_ << " ";
-            EmitValue(s->To());
+            EmitOperand(s, Store::kToOperandOffset);
             out_ << ", ";
-            EmitValue(s->From());
-        },
-        [&](LoadVectorElement* l) {
-            EmitValueWithType(l);
-            out_ << " = ";
-            EmitInstructionName("load_vector_element", l);
-            out_ << " ";
-            EmitOperandList(l);
+            EmitOperand(s, Store::kFromOperandOffset);
         },
         [&](StoreVectorElement* s) {
-            EmitInstructionName("store_vector_element", s);
+            EmitInstructionName(s);
             out_ << " ";
             EmitOperandList(s);
         },
         [&](UserCall* uc) {
             EmitValueWithType(uc);
             out_ << " = ";
-            EmitInstructionName("call", uc);
-            out_ << " %" << IdOf(uc->Func());
+            EmitInstructionName(uc);
+            out_ << " ";
+            EmitOperand(uc, UserCall::kFunctionOperandOffset);
             if (!uc->Args().IsEmpty()) {
                 out_ << ", ";
             }
@@ -522,7 +472,7 @@ void Disassembler::EmitInstruction(Instruction* inst) {
         [&](Var* v) {
             EmitValueWithType(v);
             out_ << " = ";
-            EmitInstructionName("var", v);
+            EmitInstructionName(v);
             if (v->Initializer()) {
                 out_ << ", ";
                 EmitOperand(v, Var::kInitializerOperandOffset);
@@ -531,25 +481,31 @@ void Disassembler::EmitInstruction(Instruction* inst) {
                 out_ << " ";
                 EmitBindingPoint(v->BindingPoint().value());
             }
-        },
-        [&](Let* l) {
-            EmitValueWithType(l);
-            out_ << " = ";
-            EmitInstructionName("let", l);
-            out_ << " ";
-            EmitOperandList(l);
-        },
-        [&](Access* a) {
-            EmitValueWithType(a);
-            out_ << " = ";
-            EmitInstructionName("access", a);
-            out_ << " ";
-            EmitOperandList(a);
+            if (v->Attributes().invariant) {
+                out_ << " @invariant";
+            }
+            if (v->Attributes().location.has_value()) {
+                out_ << " @location(" << v->Attributes().location.value() << ")";
+            }
+            if (v->Attributes().index.has_value()) {
+                out_ << " @index(" << v->Attributes().index.value() << ")";
+            }
+            if (v->Attributes().interpolation.has_value()) {
+                auto& interp = v->Attributes().interpolation.value();
+                out_ << " @interpolate(" << interp.type;
+                if (interp.sampling != core::InterpolationSampling::kUndefined) {
+                    out_ << ", " << interp.sampling;
+                }
+                out_ << ")";
+            }
+            if (v->Attributes().builtin.has_value()) {
+                out_ << " @builtin(" << v->Attributes().builtin.value() << ")";
+            }
         },
         [&](Swizzle* s) {
             EmitValueWithType(s);
             out_ << " = ";
-            EmitInstructionName("swizzle", s);
+            EmitInstructionName(s);
             out_ << " ";
             EmitValue(s->Object());
             out_ << ", ";
@@ -571,7 +527,15 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             }
         },
         [&](Terminator* b) { EmitTerminator(b); },
-        [&](Default) { out_ << "Unknown instruction: " << inst->TypeInfo().name; });
+        [&](Default) {
+            EmitValueWithType(inst);
+            out_ << " = ";
+            EmitInstructionName(inst);
+            if (!inst->Operands().IsEmpty()) {
+                out_ << " ";
+                EmitOperandList(inst);
+            }
+        });
 
     {  // Add a comment if the result IDs don't match their names
         Vector<std::string, 4> names;

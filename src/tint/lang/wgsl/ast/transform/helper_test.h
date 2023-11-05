@@ -37,9 +37,9 @@ inline std::string str(const Program& program) {
     }
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
+    auto result = wgsl::writer::Generate(program, options);
     if (!result) {
-        return "WGSL writer failed:\n" + result.Failure();
+        return result.Failure().reason.str();
     }
 
     auto res = result->wgsl;
@@ -106,7 +106,7 @@ class TransformTestBase : public BASE {
         for (auto* transform_ptr : std::initializer_list<Transform*>{new TRANSFORMS()...}) {
             manager.append(std::unique_ptr<Transform>(transform_ptr));
         }
-        auto result = manager.Run(&program, data, outputs);
+        auto result = manager.Run(program, data, outputs);
         return {std::move(result), std::move(outputs)};
     }
 
@@ -116,21 +116,20 @@ class TransformTestBase : public BASE {
     template <typename TRANSFORM>
     bool ShouldRun(Program&& program, const DataMap& data = {}) {
         if (!program.IsValid()) {
-            ADD_FAILURE() << "ShouldRun() called with invalid program: "
-                          << program.Diagnostics().str();
+            ADD_FAILURE() << "ShouldRun() called with invalid program: " << program.Diagnostics();
             return false;
         }
 
         const Transform& t = TRANSFORM();
 
         DataMap outputs;
-        auto result = t.Apply(&program, data, outputs);
+        auto result = t.Apply(program, data, outputs);
         if (!result) {
             return false;
         }
         if (!result->IsValid()) {
             ADD_FAILURE() << "Apply() called by ShouldRun() returned errors: "
-                          << result->Diagnostics().str();
+                          << result->Diagnostics();
             return true;
         }
         return result.has_value();

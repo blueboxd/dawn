@@ -129,6 +129,7 @@ DXGI_FORMAT DXGITypelessTextureFormat(wgpu::TextureFormat format) {
         case wgpu::TextureFormat::BGRA8UnormSrgb:
             return DXGI_FORMAT_B8G8R8A8_TYPELESS;
 
+        case wgpu::TextureFormat::RGB10A2Uint:
         case wgpu::TextureFormat::RGB10A2Unorm:
             return DXGI_FORMAT_R10G10B10A2_TYPELESS;
 
@@ -237,7 +238,7 @@ DXGI_FORMAT DXGITypelessTextureFormat(wgpu::TextureFormat format) {
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
         case wgpu::TextureFormat::Undefined:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -272,6 +273,7 @@ DXGI_FORMAT DXGITypelessTextureFormat(wgpu::TextureFormat format) {
     X(wgpu::TextureFormat::RGBA8Sint, DXGI_FORMAT_R8G8B8A8_SINT)            \
     X(wgpu::TextureFormat::BGRA8Unorm, DXGI_FORMAT_B8G8R8A8_UNORM)          \
     X(wgpu::TextureFormat::BGRA8UnormSrgb, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) \
+    X(wgpu::TextureFormat::RGB10A2Uint, DXGI_FORMAT_R10G10B10A2_UINT)       \
     X(wgpu::TextureFormat::RGB10A2Unorm, DXGI_FORMAT_R10G10B10A2_UNORM)     \
     X(wgpu::TextureFormat::RG11B10Ufloat, DXGI_FORMAT_R11G11B10_FLOAT)      \
     X(wgpu::TextureFormat::RGB9E5Ufloat, DXGI_FORMAT_R9G9B9E5_SHAREDEXP)    \
@@ -382,7 +384,7 @@ DXGI_FORMAT DXGITextureFormat(wgpu::TextureFormat format) {
         case wgpu::TextureFormat::ASTC12x12UnormSrgb:
 
         case wgpu::TextureFormat::Undefined:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -463,8 +465,10 @@ DXGI_FORMAT DXGIVertexFormat(wgpu::VertexFormat format) {
             return DXGI_FORMAT_R32G32B32_SINT;
         case wgpu::VertexFormat::Sint32x4:
             return DXGI_FORMAT_R32G32B32A32_SINT;
+        case wgpu::VertexFormat::Unorm10_10_10_2:
+            return DXGI_FORMAT_R10G10B10A2_UNORM;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 

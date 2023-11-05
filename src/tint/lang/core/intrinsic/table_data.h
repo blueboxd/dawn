@@ -26,9 +26,6 @@
 #include "src/tint/utils/containers/slice.h"
 
 /// Forward declaration
-namespace tint::type {
-class Manager;
-}  // namespace tint::type
 namespace tint::core::intrinsic {
 struct TableData;
 }  // namespace tint::core::intrinsic
@@ -207,6 +204,9 @@ struct IntrinsicInfo {
     /// Index of the first overload for the function
     const OverloadIndex overloads;
 };
+
+/// A IntrinsicInfo with no overloads
+static constexpr IntrinsicInfo kNoOverloads{0, OverloadIndex(OverloadIndex::kInvalid)};
 
 /// Number is an 32 bit unsigned integer, which can be in one of three states:
 /// * Invalid - Number has not been assigned a value

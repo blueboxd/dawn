@@ -22,7 +22,6 @@
 #include "src/tint/api/common/override_id.h"
 
 #include "src/tint/lang/core/constant/manager.h"
-#include "src/tint/lang/core/extension.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/interpolation_sampling.h"
 #include "src/tint/lang/core/interpolation_type.h"
@@ -45,6 +44,7 @@
 #include "src/tint/lang/core/type/vector.h"
 #include "src/tint/lang/core/type/void.h"
 #include "src/tint/lang/wgsl/ast/builder.h"
+#include "src/tint/lang/wgsl/extension.h"
 #include "src/tint/lang/wgsl/program/program.h"
 #include "src/tint/lang/wgsl/sem/array_count.h"
 #include "src/tint/lang/wgsl/sem/struct.h"
@@ -90,7 +90,7 @@ class ProgramBuilder : public ast::Builder {
     /// function. See crbug.com/tint/460.
     /// @param program the immutable Program to wrap
     /// @return the ProgramBuilder that wraps `program`
-    static ProgramBuilder Wrap(const Program* program);
+    static ProgramBuilder Wrap(const Program& program);
 
     /// @returns a reference to the program's types
     core::type::Manager& Types() {

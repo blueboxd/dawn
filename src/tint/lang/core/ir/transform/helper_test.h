@@ -37,7 +37,7 @@ class TransformTestBase : public BASE {
     template <typename TRANSFORM, typename... ARGS>
     void Run(TRANSFORM&& transform_func, ARGS&&... args) {
         // Run the transform.
-        auto result = transform_func(&mod, args...);
+        auto result = transform_func(mod, args...);
         EXPECT_TRUE(result) << result.Failure();
         if (!result) {
             return;
@@ -45,7 +45,7 @@ class TransformTestBase : public BASE {
 
         // Validate the output IR.
         auto valid = ir::Validate(mod);
-        EXPECT_TRUE(valid) << valid.Failure().str();
+        EXPECT_TRUE(valid) << valid.Failure().reason.str();
     }
 
     /// @returns the transformed module as a disassembled string

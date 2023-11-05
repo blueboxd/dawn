@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// GEN_BUILD:CONDITION(tint_build_ir)
-
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -367,6 +365,105 @@ TEST_F(SpirvWriterTest, Switch_Phi_MultipleValue_1) {
          %10 = OpPhi %int %int_10 %5 %int_20 %8
          %13 = OpPhi %bool %true %5 %false %8
                OpReturnValue %13
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Switch_Phi_NestedIf) {
+    auto* func = b.Function("foo", ty.i32());
+    b.Append(func->Block(), [&] {
+        auto* s = b.Switch(42_i);
+        s->SetResults(b.InstructionResult(ty.i32()));
+        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
+                                        core::ir::Switch::CaseSelector{nullptr}});
+        b.Append(case_a, [&] {  //
+            auto* inner = b.If(true);
+            inner->SetResults(b.InstructionResult(ty.i32()));
+            b.Append(inner->True(), [&] {  //
+                b.ExitIf(inner, 10_i);
+            });
+            b.Append(inner->False(), [&] {  //
+                b.ExitIf(inner, 20_i);
+            });
+
+            b.ExitSwitch(s, inner->Result());
+        });
+
+        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        b.Append(case_b, [&] {  //
+            b.ExitSwitch(s, 20_i);
+        });
+
+        b.Return(func, s);
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST(R"(
+          %4 = OpLabel
+               OpSelectionMerge %8 None
+               OpSwitch %int_42 %5 1 %5 2 %7
+          %5 = OpLabel
+               OpSelectionMerge %9 None
+               OpBranchConditional %true %10 %11
+         %10 = OpLabel
+               OpBranch %9
+         %11 = OpLabel
+               OpBranch %9
+          %9 = OpLabel
+         %14 = OpPhi %int %int_10 %10 %int_20 %11
+               OpBranch %8
+          %7 = OpLabel
+               OpBranch %8
+          %8 = OpLabel
+         %17 = OpPhi %int %int_20 %7 %14 %9
+               OpReturnValue %17
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Switch_Phi_NestedSwitch) {
+    auto* func = b.Function("foo", ty.i32());
+    b.Append(func->Block(), [&] {
+        auto* outer = b.Switch(42_i);
+        outer->SetResults(b.InstructionResult(ty.i32()));
+        auto* case_a = b.Case(outer, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
+                                            core::ir::Switch::CaseSelector{nullptr}});
+        b.Append(case_a, [&] {  //
+            auto* inner = b.Switch(42_i);
+            auto* case_inner = b.Case(inner, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)},
+                                                    core::ir::Switch::CaseSelector{nullptr}});
+            b.Append(case_inner, [&] {  //
+                b.ExitSwitch(inner);
+            });
+
+            b.ExitSwitch(outer, 10_i);
+        });
+
+        auto* case_b = b.Case(outer, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        b.Append(case_b, [&] {  //
+            b.ExitSwitch(outer, 20_i);
+        });
+
+        b.Return(func, outer);
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST(R"(
+          %4 = OpLabel
+               OpSelectionMerge %8 None
+               OpSwitch %int_42 %5 1 %5 2 %7
+          %5 = OpLabel
+               OpSelectionMerge %10 None
+               OpSwitch %int_42 %9 2 %9
+          %9 = OpLabel
+               OpBranch %10
+         %10 = OpLabel
+               OpBranch %8
+          %7 = OpLabel
+               OpBranch %8
+          %8 = OpLabel
+         %11 = OpPhi %int %int_20 %7 %int_10 %10
+               OpReturnValue %11
                OpFunctionEnd
 )");
 }

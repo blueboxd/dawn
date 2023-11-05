@@ -14,15 +14,12 @@
 
 #include "dawn/native/vulkan/ShaderModuleVk.h"
 
-#include <spirv-tools/libspirv.hpp>
-
 #include <map>
 #include <string>
 #include <vector>
 
 #include "dawn/native/CacheRequest.h"
 #include "dawn/native/Serializable.h"
-#include "dawn/native/SpirvValidation.h"
 #include "dawn/native/TintUtils.h"
 #include "dawn/native/vulkan/BindGroupLayoutVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
@@ -34,6 +31,10 @@
 #include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
 #include "tint/tint.h"
+
+#ifdef DAWN_ENABLE_SPIRV_VALIDATION
+#include "dawn/native/SpirvValidation.h"
+#endif
 
 namespace dawn::native::vulkan {
 
@@ -91,7 +92,7 @@ class ShaderModule::ConcurrentTransformedShaderModuleCache {
     ModuleAndSpirv AddOrGet(const TransformedShaderModuleCacheKey& key,
                             VkShaderModule module,
                             CompiledSpirv compilation) {
-        ASSERT(module != VK_NULL_HANDLE);
+        DAWN_ASSERT(module != VK_NULL_HANDLE);
         std::lock_guard<std::mutex> lock(mMutex);
 
         auto iter = mTransformedShaderModuleCache.find(key);
@@ -100,7 +101,7 @@ class ShaderModule::ConcurrentTransformedShaderModuleCache {
             std::tie(iter, added) = mTransformedShaderModuleCache.emplace(
                 key, Entry{module, std::move(compilation.spirv),
                            std::move(compilation.remappedEntryPoint)});
-            ASSERT(added);
+            DAWN_ASSERT(added);
         } else {
             // No need to use FencedDeleter since this shader module was just created and does
             // not need to wait for queue operations to complete.
@@ -179,6 +180,8 @@ ShaderModule::~ShaderModule() = default;
     X(bool, clampFragDepth)                                                                      \
     X(bool, disableImageRobustness)                                                              \
     X(bool, disableRuntimeSizedArrayIndexClamping)                                               \
+    X(bool, experimentalRequireSubgroupUniformControlFlow)                                       \
+    X(bool, useTintIR)                                                                           \
     X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, platform)
 
 DAWN_MAKE_CACHE_REQUEST(SpirvCompilationRequest, SPIRV_COMPILATION_REQUEST_MEMBERS);
@@ -192,7 +195,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     TRACE_EVENT0(GetDevice()->GetPlatform(), General, "ShaderModuleVk::GetHandleAndSpirv");
 
     // If the shader was destroyed, we should never call this function.
-    ASSERT(IsAlive());
+    DAWN_ASSERT(IsAlive());
 
     ScopedTintICEHandler scopedICEHandler(GetDevice());
 
@@ -272,6 +275,12 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
         GetDevice()->IsToggleEnabled(Toggle::VulkanUseBufferRobustAccess2);
     req.platform = UnsafeUnkeyedValue(GetDevice()->GetPlatform());
     req.substituteOverrideConfig = std::move(substituteOverrideConfig);
+    req.useTintIR = GetDevice()->IsToggleEnabled(Toggle::UseTintIR);
+    // Set subgroup uniform control flow flag for subgroup experiment, if device has
+    // Chromium-experimental-subgroup-uniform-control-flow feature. (dawn:464)
+    if (GetDevice()->HasFeature(Feature::ChromiumExperimentalSubgroupUniformControlFlow)) {
+        req.experimentalRequireSubgroupUniformControlFlow = true;
+    }
 
     const CombinedLimits& limits = GetDevice()->GetLimits();
     req.limits = LimitsForCompilationRequest::Create(limits.v1);
@@ -317,13 +326,13 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
                 remappedEntryPoint = r.entryPointName;
             } else {
                 auto* data = transformOutputs.Get<tint::ast::transform::Renamer::Data>();
-                ASSERT(data != nullptr);
+                DAWN_ASSERT(data != nullptr);
 
                 auto it = data->remappings.find(r.entryPointName.data());
-                ASSERT(it != data->remappings.end());
+                DAWN_ASSERT(it != data->remappings.end());
                 remappedEntryPoint = it->second;
             }
-            ASSERT(remappedEntryPoint != "");
+            DAWN_ASSERT(remappedEntryPoint != "");
 
             // Validate workgroup size after program runs transforms.
             if (r.stage == SingleShaderStage::Compute) {
@@ -344,11 +353,14 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             options.disable_image_robustness = r.disableImageRobustness;
             options.disable_runtime_sized_array_index_clamping =
                 r.disableRuntimeSizedArrayIndexClamping;
+            options.experimental_require_subgroup_uniform_control_flow =
+                r.experimentalRequireSubgroupUniformControlFlow;
+            options.use_tint_ir = r.useTintIR;
 
             TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "tint::spirv::writer::Generate()");
-            auto tintResult = tint::spirv::writer::Generate(&program, options);
-            DAWN_INVALID_IF(!tintResult, "An error occured while generating SPIR-V: %s.",
-                            tintResult.Failure());
+            auto tintResult = tint::spirv::writer::Generate(program, options);
+            DAWN_INVALID_IF(!tintResult, "An error occurred while generating SPIR-V\n%s",
+                            tintResult.Failure().reason.str());
 
             CompiledSpirv result;
             result.spirv = std::move(tintResult.Get().spirv);

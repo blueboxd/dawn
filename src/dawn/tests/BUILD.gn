@@ -302,7 +302,6 @@ dawn_test("dawn_unittests") {
     "unittests/ITypBitsetTests.cpp",
     "unittests/ITypSpanTests.cpp",
     "unittests/ITypVectorTests.cpp",
-    "unittests/LimitsTests.cpp",
     "unittests/LinkedListTests.cpp",
     "unittests/MathTests.cpp",
     "unittests/MutexProtectedTests.cpp",
@@ -335,6 +334,7 @@ dawn_test("dawn_unittests") {
     "unittests/native/DestroyObjectTests.cpp",
     "unittests/native/DeviceAsyncTaskTests.cpp",
     "unittests/native/DeviceCreationTests.cpp",
+    "unittests/native/LimitsTests.cpp",
     "unittests/native/ObjectContentHasherTests.cpp",
     "unittests/native/StreamTests.cpp",
     "unittests/validation/BindGroupValidationTests.cpp",
@@ -445,8 +445,7 @@ source_set("test_infra_sources") {
 
   public_deps = [ ":gmock_and_gtest" ]
 
-  if (dawn_supports_glfw_for_windowing || dawn_enable_opengl) {
-    assert(dawn_supports_glfw_for_windowing)
+  if (dawn_supports_glfw_for_windowing) {
     public_deps += [ "${dawn_root}/src/dawn/glfw" ]
   }
 
@@ -503,6 +502,8 @@ source_set("end2end_tests_sources") {
     "end2end/AdapterCreationTests.cpp",
     "end2end/BasicTests.cpp",
     "end2end/BindGroupTests.cpp",
+    "end2end/BufferHostMappedPointerTests.cpp",
+    "end2end/BufferHostMappedPointerTests.h",
     "end2end/BufferTests.cpp",
     "end2end/BufferZeroInitTests.cpp",
     "end2end/ClipSpaceTests.cpp",
@@ -537,6 +538,7 @@ source_set("end2end_tests_sources") {
     "end2end/DualSourceBlendTests.cpp",
     "end2end/DynamicBufferOffsetTests.cpp",
     "end2end/EntryPointTests.cpp",
+    "end2end/EventTests.cpp",
     "end2end/ExperimentalDP4aTests.cpp",
     "end2end/ExternalTextureTests.cpp",
     "end2end/FirstIndexOffsetTests.cpp",
@@ -619,7 +621,10 @@ source_set("end2end_tests_sources") {
         "end2end/VideoViewsTests_mac.cpp",
       ]
     }
-    sources += [ "end2end/SharedTextureMemoryTests_apple.mm" ]
+    sources += [
+      "end2end/BufferHostMappedPointerTests_apple.mm",
+      "end2end/SharedTextureMemoryTests_apple.mm",
+    ]
 
     frameworks = [ "IOSurface.framework" ]
 
@@ -627,6 +632,13 @@ source_set("end2end_tests_sources") {
         []) {
       configs -= [ "//build/config/compiler:enable_arc" ]
     }
+  }
+
+  if (is_mac || is_ios || is_linux) {
+    sources += [ "end2end/BufferHostMappedPointerTests_posix.cpp" ]
+  }
+  if (is_win) {
+    sources += [ "end2end/BufferHostMappedPointerTests_win.cpp" ]
   }
 
   if (dawn_supports_glfw_for_windowing) {

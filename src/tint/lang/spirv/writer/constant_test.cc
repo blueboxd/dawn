@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// GEN_BUILD:CONDITION(tint_build_ir)
-
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
@@ -148,6 +146,12 @@ TEST_F(SpirvWriterTest, Constant_Array_Array_I32) {
           %7 = OpConstantComposite %_arr_int_uint_4 %int_1 %int_2 %int_3 %int_4
           %1 = OpConstantComposite %_arr__arr_int_uint_4_uint_4 %7 %7 %7 %7
 )");
+}
+
+TEST_F(SpirvWriterTest, Constant_Array_LargeAllZero) {
+    writer_.Constant(b.Zero(ty.array<i32, 65535>()));
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST("%1 = OpConstantNull %_arr_int_uint_65535");
 }
 
 TEST_F(SpirvWriterTest, Constant_Struct) {

@@ -25,7 +25,7 @@ import("../../../../../scripts/tint_overrides_with_defaults.gni")
 
 import("${tint_src_dir}/tint.gni")
 
-if (tint_build_unittests) {
+if (tint_build_unittests || tint_build_benchmarks) {
   import("//testing/test.gni")
 }
 
@@ -193,6 +193,7 @@ libtint_source_set("ast") {
     "${tint_src_dir}/lang/core",
     "${tint_src_dir}/lang/core/constant",
     "${tint_src_dir}/lang/core/type",
+    "${tint_src_dir}/lang/wgsl",
     "${tint_src_dir}/utils/containers",
     "${tint_src_dir}/utils/diagnostic",
     "${tint_src_dir}/utils/ice",
@@ -210,7 +211,6 @@ libtint_source_set("ast") {
 }
 if (tint_build_unittests) {
   tint_unittests_source_set("unittests") {
-    testonly = true
     sources = [
       "alias_test.cc",
       "assignment_statement_test.cc",
@@ -281,7 +281,9 @@ if (tint_build_unittests) {
       "${tint_src_dir}/api/common",
       "${tint_src_dir}/lang/core",
       "${tint_src_dir}/lang/core/constant",
+      "${tint_src_dir}/lang/core/ir",
       "${tint_src_dir}/lang/core/type",
+      "${tint_src_dir}/lang/wgsl",
       "${tint_src_dir}/lang/wgsl/ast",
       "${tint_src_dir}/lang/wgsl/ast/transform",
       "${tint_src_dir}/lang/wgsl/program",

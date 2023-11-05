@@ -19,6 +19,8 @@
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
+#include "src/tint/lang/spirv/builtin_fn.h"
+#include "src/tint/lang/spirv/ir/builtin_call.h"
 
 using namespace tint::core::number_suffixes;  // NOLINT
 
@@ -26,14 +28,14 @@ namespace tint::spirv::writer::raise {
 
 namespace {
 
-void Run(core::ir::Module* ir) {
-    core::ir::Builder b(*ir);
+void Run(core::ir::Module& ir) {
+    core::ir::Builder b{ir};
 
     // Find the instructions that use implicit splats and either modify them in place or record them
     // to be replaced in a second pass.
     Vector<core::ir::Binary*, 4> binary_worklist;
     Vector<core::ir::CoreBuiltinCall*, 4> builtin_worklist;
-    for (auto* inst : ir->instructions.Objects()) {
+    for (auto* inst : ir.instructions.Objects()) {
         if (!inst->Alive()) {
             continue;
         }
@@ -60,7 +62,7 @@ void Run(core::ir::Module* ir) {
         } else if (auto* builtin = inst->As<core::ir::CoreBuiltinCall>()) {
             // A mix builtin call that mixes vector and scalar operands needs to have the scalar
             // operand replaced with an explicit vector constructor.
-            if (builtin->Func() == core::Function::kMix) {
+            if (builtin->Func() == core::BuiltinFn::kMix) {
                 if (builtin->Result()->Type()->Is<core::type::Vector>()) {
                     if (builtin->Args()[2]->Type()->Is<core::type::Scalar>()) {
                         builtin_worklist.Push(builtin);
@@ -88,7 +90,8 @@ void Run(core::ir::Module* ir) {
         auto* result_ty = binary->Result()->Type();
         if (result_ty->is_float_vector() && binary->Kind() == core::ir::Binary::Kind::kMultiply) {
             // Use OpVectorTimesScalar for floating point multiply.
-            auto* vts = b.Call(result_ty, core::ir::IntrinsicCall::Kind::kSpirvVectorTimesScalar);
+            auto* vts =
+                b.Call<spirv::ir::BuiltinCall>(result_ty, spirv::BuiltinFn::kVectorTimesScalar);
             if (binary->LHS()->Type()->Is<core::type::Scalar>()) {
                 vts->AppendArg(binary->RHS());
                 vts->AppendArg(binary->LHS());
@@ -96,8 +99,8 @@ void Run(core::ir::Module* ir) {
                 vts->AppendArg(binary->LHS());
                 vts->AppendArg(binary->RHS());
             }
-            if (auto name = ir->NameOf(binary)) {
-                ir->SetName(vts->Result(), name);
+            if (auto name = ir.NameOf(binary)) {
+                ir.SetName(vts->Result(), name);
             }
             binary->Result()->ReplaceAllUsesWith(vts->Result());
             binary->ReplaceWith(vts);
@@ -115,7 +118,7 @@ void Run(core::ir::Module* ir) {
     // Replace scalar arguments to builtin calls that produce vectors.
     for (auto* builtin : builtin_worklist) {
         switch (builtin->Func()) {
-            case core::Function::kMix:
+            case core::BuiltinFn::kMix:
                 // Expand the scalar argument into an explicitly constructed vector.
                 expand_operand(builtin, core::ir::CoreBuiltinCall::kArgsOperandOffset + 2);
                 break;
@@ -128,10 +131,10 @@ void Run(core::ir::Module* ir) {
 
 }  // namespace
 
-Result<SuccessType, std::string> ExpandImplicitSplats(core::ir::Module* ir) {
-    auto result = ValidateAndDumpIfNeeded(*ir, "ExpandImplicitSplats transform");
+Result<SuccessType> ExpandImplicitSplats(core::ir::Module& ir) {
+    auto result = ValidateAndDumpIfNeeded(ir, "ExpandImplicitSplats transform");
     if (!result) {
-        return result;
+        return result.Failure();
     }
 
     Run(ir);

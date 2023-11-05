@@ -15,6 +15,8 @@
 #ifndef SRC_TINT_LANG_CORE_IR_EXIT_SWITCH_H_
 #define SRC_TINT_LANG_CORE_IR_EXIT_SWITCH_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/exit.h"
 #include "src/tint/utils/rtti/castable.h"
 
@@ -26,7 +28,7 @@ class Switch;
 namespace tint::core::ir {
 
 /// A exit switch instruction.
-class ExitSwitch : public Castable<ExitSwitch, Exit> {
+class ExitSwitch final : public Castable<ExitSwitch, Exit> {
   public:
     /// The base offset in Operands() for the args
     static constexpr size_t kArgsOperandOffset = 0;
@@ -37,6 +39,9 @@ class ExitSwitch : public Castable<ExitSwitch, Exit> {
     explicit ExitSwitch(ir::Switch* sw, VectorRef<Value*> args = tint::Empty);
     ~ExitSwitch() override;
 
+    /// @copydoc Instruction::Clone()
+    ExitSwitch* Clone(CloneContext& ctx) override;
+
     /// Re-associates the exit with the given switch instruction
     /// @param s the new switch to exit from
     void SetSwitch(ir::Switch* s);
@@ -45,7 +50,7 @@ class ExitSwitch : public Castable<ExitSwitch, Exit> {
     ir::Switch* Switch();
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "exit-switch"; }
+    std::string FriendlyName() override { return "exit_switch"; }
 };
 
 }  // namespace tint::core::ir

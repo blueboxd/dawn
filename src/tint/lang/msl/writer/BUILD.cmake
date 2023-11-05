@@ -22,6 +22,7 @@
 ################################################################################
 
 include(lang/msl/writer/ast_printer/BUILD.cmake)
+include(lang/msl/writer/ast_raise/BUILD.cmake)
 include(lang/msl/writer/common/BUILD.cmake)
 include(lang/msl/writer/printer/BUILD.cmake)
 include(lang/msl/writer/raise/BUILD.cmake)
@@ -44,10 +45,14 @@ tint_target_add_dependencies(tint_lang_msl_writer lib
   tint_api_options
   tint_lang_core
   tint_lang_core_constant
+  tint_lang_core_ir
   tint_lang_core_type
   tint_lang_msl_writer_raise
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
+  tint_lang_wgsl_reader_lower
+  tint_lang_wgsl_reader_program_to_ir
   tint_lang_wgsl_sem
   tint_utils_containers
   tint_utils_diagnostic
@@ -65,25 +70,13 @@ tint_target_add_dependencies(tint_lang_msl_writer lib
   tint_utils_traits
 )
 
-if(TINT_BUILD_IR)
-  tint_target_add_dependencies(tint_lang_msl_writer lib
-    tint_lang_core_ir
-    tint_lang_wgsl_reader_program_to_ir
-  )
-endif(TINT_BUILD_IR)
-
 if(TINT_BUILD_MSL_WRITER)
   tint_target_add_dependencies(tint_lang_msl_writer lib
     tint_lang_msl_writer_ast_printer
     tint_lang_msl_writer_common
-  )
-endif(TINT_BUILD_MSL_WRITER)
-
-if(TINT_BUILD_MSL_WRITER AND TINT_BUILD_IR)
-  tint_target_add_dependencies(tint_lang_msl_writer lib
     tint_lang_msl_writer_printer
   )
-endif(TINT_BUILD_MSL_WRITER AND TINT_BUILD_IR)
+endif(TINT_BUILD_MSL_WRITER)
 
 endif(TINT_BUILD_MSL_WRITER)
 if(TINT_BUILD_MSL_WRITER)
@@ -99,10 +92,11 @@ tint_add_target(tint_lang_msl_writer_bench bench
 tint_target_add_dependencies(tint_lang_msl_writer_bench bench
   tint_api_common
   tint_api_options
-  tint_cmd_bench
+  tint_cmd_bench_bench
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
@@ -119,6 +113,10 @@ tint_target_add_dependencies(tint_lang_msl_writer_bench bench
   tint_utils_symbol
   tint_utils_text
   tint_utils_traits
+)
+
+tint_target_add_external_dependencies(tint_lang_msl_writer_bench bench
+  "google-benchmark"
 )
 
 if(TINT_BUILD_MSL_WRITER)

@@ -75,7 +75,7 @@ MTLTextureType MetalTextureViewType(wgpu::TextureViewDimension dimension,
             return MTLTextureType3D;
 
         case wgpu::TextureViewDimension::Undefined:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -233,7 +233,7 @@ uint32_t GetIOSurfacePlane(wgpu::TextureAspect aspect) {
         case wgpu::TextureAspect::Plane1Only:
             return 1;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -306,6 +306,8 @@ MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat fo
             return MTLPixelFormatBGRA8Unorm;
         case wgpu::TextureFormat::BGRA8UnormSrgb:
             return MTLPixelFormatBGRA8Unorm_sRGB;
+        case wgpu::TextureFormat::RGB10A2Uint:
+            return MTLPixelFormatRGB10A2Uint;
         case wgpu::TextureFormat::RGB10A2Unorm:
             return MTLPixelFormatRGB10A2Unorm;
         case wgpu::TextureFormat::RG11B10Ufloat:
@@ -348,7 +350,7 @@ MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat fo
             if (@available(macOS 10.12, iOS 13.0, *)) {
                 return MTLPixelFormatDepth16Unorm;
             }
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
         case wgpu::TextureFormat::Stencil8:
             if (device->IsToggleEnabled(Toggle::MetalUseCombinedDepthStencilFormatForStencil8)) {
                 return MTLPixelFormatDepth32Float_Stencil8;
@@ -405,236 +407,236 @@ MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat fo
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatETC2_RGB8;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ETC2RGB8UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatETC2_RGB8_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ETC2RGB8A1Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatETC2_RGB8A1;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ETC2RGB8A1UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatETC2_RGB8A1_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ETC2RGBA8Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatEAC_RGBA8;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ETC2RGBA8UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatEAC_RGBA8_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::EACR11Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatEAC_R11Unorm;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::EACR11Snorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatEAC_R11Snorm;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::EACRG11Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatEAC_RG11Unorm;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::EACRG11Snorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatEAC_RG11Snorm;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
 
         case wgpu::TextureFormat::ASTC4x4Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_4x4_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC4x4UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_4x4_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC5x4Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_5x4_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC5x4UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_5x4_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC5x5Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_5x5_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC5x5UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_5x5_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC6x5Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_6x5_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC6x5UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_6x5_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC6x6Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_6x6_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC6x6UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_6x6_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC8x5Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_8x5_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC8x5UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_8x5_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC8x6Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_8x6_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC8x6UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_8x6_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC8x8Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_8x8_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC8x8UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_8x8_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC10x5Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_10x5_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC10x5UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_10x5_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC10x6Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_10x6_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC10x6UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_10x6_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC10x8Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_10x8_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC10x8UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_10x8_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC10x10Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_10x10_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC10x10UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_10x10_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC12x10Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_12x10_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC12x10UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_12x10_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC12x12Unorm:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_12x12_LDR;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
         case wgpu::TextureFormat::ASTC12x12UnormSrgb:
             if (@available(macOS 11.0, iOS 8.0, *)) {
                 return MTLPixelFormatASTC_12x12_sRGB;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
 
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
         case wgpu::TextureFormat::Undefined:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -708,7 +710,7 @@ NSRef<MTLTextureDescriptor> Texture::CreateMetalTextureDescriptor() const {
         case wgpu::TextureDimension::e1D:
             mtlDesc.arrayLength = 1;
             mtlDesc.depth = 1;
-            ASSERT(mtlDesc.sampleCount == 1);
+            DAWN_ASSERT(mtlDesc.sampleCount == 1);
             mtlDesc.textureType = MTLTextureType1D;
             break;
 
@@ -717,7 +719,7 @@ NSRef<MTLTextureDescriptor> Texture::CreateMetalTextureDescriptor() const {
             mtlDesc.arrayLength = GetArrayLayers();
             mtlDesc.depth = 1;
             if (mtlDesc.arrayLength > 1) {
-                ASSERT(mtlDesc.sampleCount == 1);
+                DAWN_ASSERT(mtlDesc.sampleCount == 1);
                 mtlDesc.textureType = MTLTextureType2DArray;
             } else if (mtlDesc.sampleCount > 1) {
                 mtlDesc.textureType = MTLTextureType2DMultisample;
@@ -729,7 +731,7 @@ NSRef<MTLTextureDescriptor> Texture::CreateMetalTextureDescriptor() const {
             mtlDesc.height = GetHeight();
             mtlDesc.depth = GetDepth();
             mtlDesc.arrayLength = 1;
-            ASSERT(mtlDesc.sampleCount == 1);
+            DAWN_ASSERT(mtlDesc.sampleCount == 1);
             mtlDesc.textureType = MTLTextureType3D;
             break;
     }
@@ -769,7 +771,7 @@ ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     DAWN_TRY(texture->InitializeFromIOSurface(&ioSurfaceImageDesc, descriptor,
                                               memory->GetIOSurface(), {}));
-    texture->mSharedTextureMemoryState = memory->GetState();
+    texture->mSharedTextureMemoryContents = memory->GetContents();
     return texture;
 }
 
@@ -850,10 +852,10 @@ MaybeError Texture::InitializeFromIOSurface(const ExternalImageDescriptor* descr
 void Texture::SynchronizeTextureBeforeUse(CommandRecordingContext* commandContext) {
     if (@available(macOS 10.14, iOS 12.0, *)) {
         SharedTextureMemoryBase::PendingFenceList fences;
-        SharedTextureMemoryState* memoryState = GetSharedTextureMemoryState();
-        if (memoryState != nullptr) {
-            memoryState->AcquirePendingFences(&fences);
-            memoryState->SetLastUsageSerial(GetDevice()->GetPendingCommandSerial());
+        SharedTextureMemoryContents* contents = GetSharedTextureMemoryContents();
+        if (contents != nullptr) {
+            contents->AcquirePendingFences(&fences);
+            contents->SetLastUsageSerial(GetDevice()->GetPendingCommandSerial());
         }
 
         if (!mWaitEvents.empty() || !fences->empty()) {
@@ -877,7 +879,7 @@ void Texture::SynchronizeTextureBeforeUse(CommandRecordingContext* commandContex
 }
 
 void Texture::IOSurfaceEndAccess(ExternalImageIOSurfaceEndAccessDescriptor* descriptor) {
-    ASSERT(descriptor);
+    DAWN_ASSERT(descriptor);
     ToBackend(GetDevice()->GetQueue())->ExportLastSignaledEvent(descriptor);
     descriptor->isInitialized = IsSubresourceContentInitialized(GetAllSubresources());
     // Destroy the texture as it should not longer be used after EndAccess.
@@ -911,8 +913,8 @@ NSPRef<id<MTLTexture>> Texture::CreateFormatView(wgpu::TextureFormat format) {
         return mMtlTexture;
     }
 
-    ASSERT(AllowFormatReinterpretationWithoutFlag(MetalPixelFormat(GetDevice(), GetFormat().format),
-                                                  MetalPixelFormat(GetDevice(), format)));
+    DAWN_ASSERT(AllowFormatReinterpretationWithoutFlag(
+        MetalPixelFormat(GetDevice(), GetFormat().format), MetalPixelFormat(GetDevice(), format)));
     return AcquireNSPRef(
         [mMtlTexture.Get() newTextureViewWithPixelFormat:MetalPixelFormat(GetDevice(), format)]);
 }
@@ -933,7 +935,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
     const double dClearColor = (clearValue == TextureBase::ClearValue::Zero) ? 0.0 : 1.0;
 
     if ((mMtlUsage & MTLTextureUsageRenderTarget) != 0) {
-        ASSERT(GetFormat().isRenderable);
+        DAWN_ASSERT(GetFormat().isRenderable);
 
         // End the blit encoder if it is open.
         commandContext->EndBlit();
@@ -967,7 +969,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
                             continue;
                         }
 
-                        ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
+                        DAWN_ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
                         switch (aspect) {
                             case Aspect::Depth:
                                 descriptor.depthAttachment.texture = GetMTLTexture();
@@ -987,7 +989,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
                                     static_cast<uint32_t>(clearColor);
                                 break;
                             default:
-                                UNREACHABLE();
+                                DAWN_UNREACHABLE();
                         }
                     }
 
@@ -997,7 +999,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
                 }
             }
         } else {
-            ASSERT(GetFormat().IsColor());
+            DAWN_ASSERT(GetFormat().IsColor());
             for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
                  ++level) {
                 // Create multiple render passes with each subresource as a color attachment to
@@ -1054,7 +1056,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
             }
         }
     } else {
-        ASSERT(!IsMultisampledTexture());
+        DAWN_ASSERT(!IsMultisampledTexture());
 
         // Encode a buffer to texture copy to clear each subresource.
         for (Aspect aspect : IterateEnumMask(range.aspects)) {
@@ -1117,8 +1119,8 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
 }
 
 MTLBlitOption Texture::ComputeMTLBlitOption(Aspect aspect) const {
-    ASSERT(HasOneBit(aspect));
-    ASSERT(GetFormat().aspects & aspect);
+    DAWN_ASSERT(HasOneBit(aspect));
+    DAWN_ASSERT(GetFormat().aspects & aspect);
     MTLPixelFormat format = MetalPixelFormat(GetDevice(), GetFormat().format);
 
     if (format == MTLPixelFormatDepth32Float_Stencil8) {
@@ -1130,7 +1132,7 @@ MTLBlitOption Texture::ComputeMTLBlitOption(Aspect aspect) const {
             case Aspect::Stencil:
                 return MTLBlitOptionStencilFromDepthStencil;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
     return MTLBlitOptionNone;
@@ -1196,9 +1198,9 @@ MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {
 
         // Multiplanar texture is validated to only have single layer, single mipLevel
         // and 2d textures (depth == 1)
-        ASSERT(texture->GetArrayLayers() == 1 &&
-               texture->GetDimension() == wgpu::TextureDimension::e2D &&
-               texture->GetNumMipLevels() == 1);
+        DAWN_ASSERT(texture->GetArrayLayers() == 1 &&
+                    texture->GetDimension() == wgpu::TextureDimension::e2D &&
+                    texture->GetNumMipLevels() == 1);
         mtlDesc.arrayLength = 1;
         mtlDesc.depth = 1;
 
@@ -1215,7 +1217,7 @@ MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {
 
         Aspect aspect = SelectFormatAspects(GetFormat(), descriptor->aspect);
         if (aspect == Aspect::Stencil && textureFormat != MTLPixelFormatStencil8) {
-            ASSERT(textureFormat == MTLPixelFormatDepth32Float_Stencil8);
+            DAWN_ASSERT(textureFormat == MTLPixelFormatDepth32Float_Stencil8);
             viewFormat = MTLPixelFormatX32_Stencil8;
         } else if (GetTexture()->GetFormat().HasDepth() && GetTexture()->GetFormat().HasStencil()) {
             // Depth-only views for depth/stencil textures in Metal simply use the original
@@ -1250,12 +1252,12 @@ void TextureView::SetLabelImpl() {
 }
 
 id<MTLTexture> TextureView::GetMTLTexture() const {
-    ASSERT(mMtlTextureView != nullptr);
+    DAWN_ASSERT(mMtlTextureView != nullptr);
     return mMtlTextureView.Get();
 }
 
 TextureView::AttachmentInfo TextureView::GetAttachmentInfo() const {
-    ASSERT(GetTexture()->GetInternalUsage() & wgpu::TextureUsage::RenderAttachment);
+    DAWN_ASSERT(GetTexture()->GetInternalUsage() & wgpu::TextureUsage::RenderAttachment);
     // Use our own view if the formats do not match.
     // If the formats do not match, format reinterpretation will be required.
     // Note: Depth/stencil formats don't support reinterpretation.
@@ -1265,7 +1267,7 @@ TextureView::AttachmentInfo TextureView::GetAttachmentInfo() const {
     bool useOwnView = GetFormat().format != GetTexture()->GetFormat().format &&
                       !GetTexture()->GetFormat().HasDepthOrStencil();
     if (useOwnView) {
-        ASSERT(mMtlTextureView.Get());
+        DAWN_ASSERT(mMtlTextureView.Get());
         return {mMtlTextureView, 0, 0};
     }
     AttachmentInfo info;

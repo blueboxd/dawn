@@ -20,7 +20,7 @@
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/api/options/external_texture.h"
-#include "src/tint/lang/core/function.h"
+#include "src/tint/lang/core/builtin_fn.h"
 #include "src/tint/lang/wgsl/ast/struct_member.h"
 #include "src/tint/lang/wgsl/ast/transform/transform.h"
 
@@ -69,7 +69,7 @@ class MultiplanarExternalTexture final : public Castable<MultiplanarExternalText
     ~MultiplanarExternalTexture() override;
 
     /// @copydoc Transform::Apply
-    ApplyResult Apply(const Program* program,
+    ApplyResult Apply(const Program& program,
                       const DataMap& inputs,
                       DataMap& outputs) const override;
 

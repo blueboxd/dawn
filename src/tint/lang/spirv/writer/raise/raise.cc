@@ -19,11 +19,17 @@
 #include "src/tint/lang/core/ir/transform/add_empty_entry_point.h"
 #include "src/tint/lang/core/ir/transform/bgra8unorm_polyfill.h"
 #include "src/tint/lang/core/ir/transform/binary_polyfill.h"
+#include "src/tint/lang/core/ir/transform/binding_remapper.h"
 #include "src/tint/lang/core/ir/transform/block_decorated_structs.h"
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
+#include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
 #include "src/tint/lang/core/ir/transform/demote_to_helper.h"
+#include "src/tint/lang/core/ir/transform/direct_variable_access.h"
 #include "src/tint/lang/core/ir/transform/multiplanar_external_texture.h"
+#include "src/tint/lang/core/ir/transform/preserve_padding.h"
+#include "src/tint/lang/core/ir/transform/robustness.h"
 #include "src/tint/lang/core/ir/transform/std140.h"
+#include "src/tint/lang/core/ir/transform/zero_init_workgroup_memory.h"
 #include "src/tint/lang/spirv/writer/raise/builtin_polyfill.h"
 #include "src/tint/lang/spirv/writer/raise/expand_implicit_splats.h"
 #include "src/tint/lang/spirv/writer/raise/handle_matrix_arithmetic.h"
@@ -33,7 +39,7 @@
 
 namespace tint::spirv::writer::raise {
 
-Result<SuccessType, std::string> Raise(core::ir::Module* module, const Options& options) {
+Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 #define RUN_TRANSFORM(name, ...)         \
     do {                                 \
         auto result = name(__VA_ARGS__); \
@@ -42,22 +48,54 @@ Result<SuccessType, std::string> Raise(core::ir::Module* module, const Options& 
         }                                \
     } while (false)
 
+    RUN_TRANSFORM(core::ir::transform::BindingRemapper, module,
+                  options.binding_remapper_options.binding_points);
+
     core::ir::transform::BinaryPolyfillConfig binary_polyfills;
     binary_polyfills.bitshift_modulo = true;
     binary_polyfills.int_div_mod = true;
     RUN_TRANSFORM(core::ir::transform::BinaryPolyfill, module, binary_polyfills);
 
     core::ir::transform::BuiltinPolyfillConfig core_polyfills;
+    core_polyfills.clamp_int = true;
     core_polyfills.count_leading_zeros = true;
     core_polyfills.count_trailing_zeros = true;
+    core_polyfills.extract_bits = core::ir::transform::BuiltinPolyfillLevel::kClampOrRangeCheck;
     core_polyfills.first_leading_bit = true;
     core_polyfills.first_trailing_bit = true;
+    core_polyfills.insert_bits = core::ir::transform::BuiltinPolyfillLevel::kClampOrRangeCheck;
     core_polyfills.saturate = true;
     core_polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
     RUN_TRANSFORM(core::ir::transform::BuiltinPolyfill, module, core_polyfills);
 
+    core::ir::transform::ConversionPolyfillConfig conversion_polyfills;
+    conversion_polyfills.ftoi = true;
+    RUN_TRANSFORM(core::ir::transform::ConversionPolyfill, module, conversion_polyfills);
+
+    if (!options.disable_robustness) {
+        core::ir::transform::RobustnessConfig config;
+        if (options.disable_image_robustness) {
+            config.clamp_texture = false;
+        }
+        config.disable_runtime_sized_array_index_clamping =
+            options.disable_runtime_sized_array_index_clamping;
+        RUN_TRANSFORM(core::ir::transform::Robustness, module, config);
+    }
+
     RUN_TRANSFORM(core::ir::transform::MultiplanarExternalTexture, module,
                   options.external_texture_options);
+
+    if (!options.disable_workgroup_init &&
+        !options.use_zero_initialize_workgroup_memory_extension) {
+        RUN_TRANSFORM(core::ir::transform::ZeroInitWorkgroupMemory, module);
+    }
+
+    RUN_TRANSFORM(core::ir::transform::PreservePadding, module);
+
+    core::ir::transform::DirectVariableAccessOptions dva_options;
+    dva_options.transform_function = true;
+    dva_options.transform_private = true;
+    RUN_TRANSFORM(core::ir::transform::DirectVariableAccess, module, dva_options);
 
     RUN_TRANSFORM(core::ir::transform::AddEmptyEntryPoint, module);
     RUN_TRANSFORM(core::ir::transform::Bgra8UnormPolyfill, module);
@@ -67,7 +105,8 @@ Result<SuccessType, std::string> Raise(core::ir::Module* module, const Options& 
     RUN_TRANSFORM(ExpandImplicitSplats, module);
     RUN_TRANSFORM(HandleMatrixArithmetic, module);
     RUN_TRANSFORM(MergeReturn, module);
-    RUN_TRANSFORM(ShaderIO, module, ShaderIOConfig{options.clamp_frag_depth});
+    RUN_TRANSFORM(ShaderIO, module,
+                  ShaderIOConfig{options.clamp_frag_depth, options.emit_vertex_point_size});
     RUN_TRANSFORM(core::ir::transform::Std140, module);
     RUN_TRANSFORM(VarForDynamicIndex, module);
 

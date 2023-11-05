@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// GEN_BUILD:CONDITION(tint_build_ir)
-
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 namespace tint::spirv::writer {
@@ -300,6 +298,77 @@ TEST_F(SpirvWriterTest, Function_Call_Void) {
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST("%result = OpFunctionCall %void %foo");
+}
+
+TEST_F(SpirvWriterTest, Function_ShaderIO_VertexPointSize) {
+    auto* func = b.Function("main", ty.vec4<f32>(), core::ir::Function::PipelineStage::kVertex);
+    func->SetReturnBuiltin(core::ir::Function::ReturnBuiltin::kPosition);
+    b.Append(func->Block(), [&] {  //
+        b.Return(func, b.Construct(ty.vec4<f32>(), 0.5_f));
+    });
+
+    Options options;
+    options.emit_vertex_point_size = true;
+    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    EXPECT_INST(
+        R"(OpEntryPoint Vertex %main "main" %main_position_Output %main___point_size_Output)");
+    EXPECT_INST(R"(
+               OpDecorate %main_position_Output BuiltIn Position
+               OpDecorate %main___point_size_Output BuiltIn PointSize
+)");
+    EXPECT_INST(R"(
+%_ptr_Output_v4float = OpTypePointer Output %v4float
+%main_position_Output = OpVariable %_ptr_Output_v4float Output
+%_ptr_Output_float = OpTypePointer Output %float
+%main___point_size_Output = OpVariable %_ptr_Output_float Output
+)");
+    EXPECT_INST(R"(
+       %main = OpFunction %void None %14
+         %15 = OpLabel
+         %16 = OpFunctionCall %v4float %main_inner
+               OpStore %main_position_Output %16
+               OpStore %main___point_size_Output %float_1
+               OpReturn
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Function_ShaderIO_DualSourceBlend) {
+    auto* outputs = ty.Struct(mod.symbols.New("Outputs"),
+                              {
+                                  {mod.symbols.Register("a"), ty.f32(), {0u, 0u, {}, {}, false}},
+                                  {mod.symbols.Register("b"), ty.f32(), {0u, 1u, {}, {}, false}},
+                              });
+
+    auto* func = b.Function("main", outputs, core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {  //
+        b.Return(func, b.Construct(outputs, 0.5_f, 0.6_f));
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST(
+        R"(OpEntryPoint Fragment %main "main" %main_loc0_idx0_Output %main_loc0_idx1_Output)");
+    EXPECT_INST(R"(
+               OpDecorate %main_loc0_idx0_Output Location 0
+               OpDecorate %main_loc0_idx0_Output Index 0
+               OpDecorate %main_loc0_idx1_Output Location 0
+               OpDecorate %main_loc0_idx1_Output Index 1
+    )");
+    EXPECT_INST(R"(
+%main_loc0_idx0_Output = OpVariable %_ptr_Output_float Output
+%main_loc0_idx1_Output = OpVariable %_ptr_Output_float Output
+    )");
+    EXPECT_INST(R"(
+       %main = OpFunction %void None %14
+         %15 = OpLabel
+         %16 = OpFunctionCall %Outputs %main_inner
+         %17 = OpCompositeExtract %float %16 0
+               OpStore %main_loc0_idx0_Output %17
+         %18 = OpCompositeExtract %float %16 1
+               OpStore %main_loc0_idx1_Output %18
+               OpReturn
+               OpFunctionEnd
+)");
 }
 
 }  // namespace

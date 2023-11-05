@@ -56,7 +56,7 @@ class StorageTextureValidationTests : public ValidationTest {
                 return "texture_storage_cube_array";  // Note: Doesn't exist in WGSL (yet)
             case wgpu::TextureViewDimension::Undefined:
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 return "";
         }
     }
@@ -94,7 +94,7 @@ class StorageTextureValidationTests : public ValidationTest {
                 }
                 break;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
         const char* shaderStageDeclaration = "";
         switch (shaderStage) {
@@ -108,7 +108,7 @@ class StorageTextureValidationTests : public ValidationTest {
                 shaderStageDeclaration = "@compute @workgroup_size(1)";
                 break;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         std::ostringstream ostream;
@@ -269,24 +269,24 @@ TEST_F(StorageTextureValidationTests, BindGroupLayoutWithStorageTextureBindingTy
 TEST_F(StorageTextureValidationTests, StorageTextureFormatInShaders) {
     // Not include RGBA8UnormSrgb, BGRA8UnormSrgb because they are neither related to any SPIR-V
     // Image Formats nor WGSL texture formats.
-    constexpr std::array<wgpu::TextureFormat, 33> kWGPUTextureFormatSupportedAsSPIRVImageFormats = {
-        wgpu::TextureFormat::R32Uint,      wgpu::TextureFormat::R32Sint,
-        wgpu::TextureFormat::R32Float,     wgpu::TextureFormat::RGBA8Unorm,
-        wgpu::TextureFormat::RGBA8Snorm,   wgpu::TextureFormat::RGBA8Uint,
-        wgpu::TextureFormat::RGBA8Sint,    wgpu::TextureFormat::RG32Uint,
-        wgpu::TextureFormat::RG32Sint,     wgpu::TextureFormat::RG32Float,
-        wgpu::TextureFormat::RGBA16Uint,   wgpu::TextureFormat::RGBA16Sint,
-        wgpu::TextureFormat::RGBA16Float,  wgpu::TextureFormat::RGBA32Uint,
-        wgpu::TextureFormat::RGBA32Sint,   wgpu::TextureFormat::RGBA32Float,
-        wgpu::TextureFormat::R8Unorm,      wgpu::TextureFormat::R8Snorm,
-        wgpu::TextureFormat::R8Uint,       wgpu::TextureFormat::R8Sint,
-        wgpu::TextureFormat::R16Uint,      wgpu::TextureFormat::R16Sint,
-        wgpu::TextureFormat::R16Float,     wgpu::TextureFormat::RG8Unorm,
-        wgpu::TextureFormat::RG8Snorm,     wgpu::TextureFormat::RG8Uint,
-        wgpu::TextureFormat::RG8Sint,      wgpu::TextureFormat::RG16Uint,
-        wgpu::TextureFormat::RG16Sint,     wgpu::TextureFormat::RG16Float,
-        wgpu::TextureFormat::RGB10A2Unorm, wgpu::TextureFormat::RG11B10Ufloat,
-        wgpu::TextureFormat::BGRA8Unorm};
+    constexpr std::array<wgpu::TextureFormat, 34> kWGPUTextureFormatSupportedAsSPIRVImageFormats = {
+        wgpu::TextureFormat::R32Uint,       wgpu::TextureFormat::R32Sint,
+        wgpu::TextureFormat::R32Float,      wgpu::TextureFormat::RGBA8Unorm,
+        wgpu::TextureFormat::RGBA8Snorm,    wgpu::TextureFormat::RGBA8Uint,
+        wgpu::TextureFormat::RGBA8Sint,     wgpu::TextureFormat::RG32Uint,
+        wgpu::TextureFormat::RG32Sint,      wgpu::TextureFormat::RG32Float,
+        wgpu::TextureFormat::RGBA16Uint,    wgpu::TextureFormat::RGBA16Sint,
+        wgpu::TextureFormat::RGBA16Float,   wgpu::TextureFormat::RGBA32Uint,
+        wgpu::TextureFormat::RGBA32Sint,    wgpu::TextureFormat::RGBA32Float,
+        wgpu::TextureFormat::R8Unorm,       wgpu::TextureFormat::R8Snorm,
+        wgpu::TextureFormat::R8Uint,        wgpu::TextureFormat::R8Sint,
+        wgpu::TextureFormat::R16Uint,       wgpu::TextureFormat::R16Sint,
+        wgpu::TextureFormat::R16Float,      wgpu::TextureFormat::RG8Unorm,
+        wgpu::TextureFormat::RG8Snorm,      wgpu::TextureFormat::RG8Uint,
+        wgpu::TextureFormat::RG8Sint,       wgpu::TextureFormat::RG16Uint,
+        wgpu::TextureFormat::RG16Sint,      wgpu::TextureFormat::RG16Float,
+        wgpu::TextureFormat::RGB10A2Uint,   wgpu::TextureFormat::RGB10A2Unorm,
+        wgpu::TextureFormat::RG11B10Ufloat, wgpu::TextureFormat::BGRA8Unorm};
 
     for (wgpu::StorageTextureAccess storageTextureBindingType : kSupportedStorageTextureAccess) {
         for (wgpu::TextureFormat format : kWGPUTextureFormatSupportedAsSPIRVImageFormats) {
@@ -837,7 +837,7 @@ TEST_F(StorageTextureValidationTests, StorageTextureAndSampledTextureInOneRender
                 ASSERT_DEVICE_ERROR(encoder.Finish());
                 break;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
     }
@@ -969,7 +969,7 @@ TEST_F(ReadWriteStorageTextureValidationTests, ReadWriteStorageTextureFormatInSh
                     }
                     break;
                 default:
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
             }
         }
     }
@@ -989,8 +989,9 @@ TEST_F(ReadWriteStorageTextureValidationTests, ReadWriteStorageTextureAccessWith
     }
 }
 
-// Test that storage texture access in shader must match the one in pipeline layout when we create
-// a pipeline with storage texture.
+// Test that storage texture access in shader must be compatible with the one in pipeline layout
+// when we create a pipeline with storage texture. Note that read-write storage texture access in
+// pipeline layout is compatible with write-only storage texture access in shader.
 TEST_F(ReadWriteStorageTextureValidationTests, StorageTextureAccessInPipeline) {
     constexpr std::array<wgpu::StorageTextureAccess, 3> kStorageTextureAccesses = {
         {wgpu::StorageTextureAccess::ReadOnly, wgpu::StorageTextureAccess::WriteOnly,
@@ -1010,7 +1011,9 @@ TEST_F(ReadWriteStorageTextureValidationTests, StorageTextureAccessInPipeline) {
             computePipelineDescriptor.compute.entryPoint = "main";
             computePipelineDescriptor.layout =
                 utils::MakePipelineLayout(device, {{bindGroupLayout}});
-            if (accessInShader == accessInBindGroupLayout) {
+            if (accessInShader == accessInBindGroupLayout ||
+                (accessInShader == wgpu::StorageTextureAccess::WriteOnly &&
+                 accessInBindGroupLayout == wgpu::StorageTextureAccess::ReadWrite)) {
                 device.CreateComputePipeline(&computePipelineDescriptor);
             } else {
                 ASSERT_DEVICE_ERROR(device.CreateComputePipeline(&computePipelineDescriptor));

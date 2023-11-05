@@ -15,6 +15,8 @@
 #ifndef SRC_TINT_LANG_CORE_IR_SWITCH_H_
 #define SRC_TINT_LANG_CORE_IR_SWITCH_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/control_instruction.h"
 
 // Forward declarations
@@ -41,7 +43,7 @@ namespace tint::core::ir {
 ///                            ▼
 ///                           out
 /// ```
-class Switch : public Castable<Switch, ControlInstruction> {
+class Switch final : public Castable<Switch, ControlInstruction> {
   public:
     /// The offset in Operands() for the condition
     static constexpr size_t kConditionOperandOffset = 0;
@@ -71,6 +73,9 @@ class Switch : public Castable<Switch, ControlInstruction> {
     explicit Switch(Value* cond);
     ~Switch() override;
 
+    /// @copydoc Instruction::Clone()
+    Switch* Clone(CloneContext& ctx) override;
+
     /// @copydoc ControlInstruction::ForeachBlock
     void ForeachBlock(const std::function<void(ir::Block*)>& cb) override;
 
@@ -81,7 +86,7 @@ class Switch : public Castable<Switch, ControlInstruction> {
     Value* Condition() { return operands_[kConditionOperandOffset]; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "switch"; }
+    std::string FriendlyName() override { return "switch"; }
 
   private:
     Vector<Case, 4> cases_;

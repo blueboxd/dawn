@@ -49,12 +49,14 @@ class TestHelperBase : public BASE, public ProgramBuilder {
         if (gen_) {
             return *gen_;
         }
-        [&] {
-            ASSERT_TRUE(IsValid()) << "Builder program is not valid\n" << Diagnostics().str();
-        }();
+        if (!IsValid()) {
+            ADD_FAILURE() << "ProgramBuilder is not valid: " << Diagnostics();
+        }
         program = std::make_unique<Program>(resolver::Resolve(*this));
-        [&] { ASSERT_TRUE(program->IsValid()) << program->Diagnostics().str(); }();
-        gen_ = std::make_unique<ASTPrinter>(program.get());
+        if (!program->IsValid()) {
+            ADD_FAILURE() << program->Diagnostics();
+        }
+        gen_ = std::make_unique<ASTPrinter>(*program);
         return *gen_;
     }
 
@@ -68,16 +70,20 @@ class TestHelperBase : public BASE, public ProgramBuilder {
         if (gen_) {
             return *gen_;
         }
-        [&] {
-            ASSERT_TRUE(IsValid()) << "Builder program is not valid\n" << Diagnostics().str();
-        }();
+        if (!IsValid()) {
+            ADD_FAILURE() << "ProgramBuilder is not valid: " << Diagnostics();
+        }
         program = std::make_unique<Program>(resolver::Resolve(*this));
-        [&] { ASSERT_TRUE(program->IsValid()) << program->Diagnostics().str(); }();
+        if (!program->IsValid()) {
+            ADD_FAILURE() << program->Diagnostics();
+        }
 
-        auto result = Sanitize(program.get(), options);
-        [&] { ASSERT_TRUE(result.program.IsValid()) << result.program.Diagnostics().str(); }();
+        auto result = Sanitize(*program, options);
+        if (!result.program.IsValid()) {
+            ADD_FAILURE() << result.program.Diagnostics();
+        }
         *program = std::move(result.program);
-        gen_ = std::make_unique<ASTPrinter>(program.get());
+        gen_ = std::make_unique<ASTPrinter>(*program);
         return *gen_;
     }
 

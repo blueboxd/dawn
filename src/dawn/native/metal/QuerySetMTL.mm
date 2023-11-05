@@ -43,7 +43,7 @@ ResultOrError<id<MTLCounterSampleBuffer>> CreateCounterSampleBuffer(Device* devi
             break;
         }
     }
-    ASSERT(descriptor.counterSet != nullptr);
+    DAWN_ASSERT(descriptor.counterSet != nullptr);
 
     descriptor.sampleCount = static_cast<NSUInteger>(std::max(count, uint32_t(1u)));
     descriptor.storageMode = MTLStorageModePrivate;
@@ -101,7 +101,7 @@ MaybeError QuerySet::Initialize() {
                     CreateCounterSampleBuffer(device, label.Get(), MTLCommonCounterSetStatistic,
                                               GetQueryCount()));
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
             break;
         case wgpu::QueryType::Timestamp:
@@ -113,11 +113,11 @@ MaybeError QuerySet::Initialize() {
                     CreateCounterSampleBuffer(device, label.Get(), MTLCommonCounterSetTimestamp,
                                               GetQueryCount()));
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
             break;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
     }
 

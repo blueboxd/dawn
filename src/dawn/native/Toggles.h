@@ -60,7 +60,6 @@ enum class Toggle {
     EmitHLSLDebugSymbols,
     DisallowSpirv,
     DumpShaders,
-    ForceWGSLStep,
     DisableWorkgroupInit,
     DisableSymbolRenaming,
     UseUserDefinedLabelsInBackend,
@@ -105,6 +104,7 @@ enum class Toggle {
     ResolveMultipleAttachmentInSeparatePasses,
     D3D12CreateNotZeroedHeap,
     D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources,
+    UseTintIR,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

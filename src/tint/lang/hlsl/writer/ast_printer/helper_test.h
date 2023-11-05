@@ -51,12 +51,14 @@ class TestHelperBase : public BODY, public ProgramBuilder {
         if (gen_) {
             return *gen_;
         }
-        [&] {
-            ASSERT_TRUE(IsValid()) << "Builder program is not valid\n" << Diagnostics().str();
-        }();
+        if (!IsValid()) {
+            ADD_FAILURE() << "ProgramBuilder is not valid: " << Diagnostics();
+        }
         program = std::make_unique<Program>(resolver::Resolve(*this));
-        [&] { ASSERT_TRUE(program->IsValid()) << program->Diagnostics().str(); }();
-        gen_ = std::make_unique<ASTPrinter>(program.get());
+        if (!program->IsValid()) {
+            ADD_FAILURE() << program->Diagnostics();
+        }
+        gen_ = std::make_unique<ASTPrinter>(*program);
         return *gen_;
     }
 
@@ -70,17 +72,18 @@ class TestHelperBase : public BODY, public ProgramBuilder {
         if (gen_) {
             return *gen_;
         }
-        [&] {
-            ASSERT_TRUE(IsValid()) << "Builder program is not valid\n" << Diagnostics().str();
-        }();
+        if (!IsValid()) {
+            ADD_FAILURE() << "ProgramBuilder is not valid: " << Diagnostics();
+        }
         program = std::make_unique<Program>(resolver::Resolve(*this));
-        [&] { ASSERT_TRUE(program->IsValid()) << program->Diagnostics().str(); }();
+        if (!program->IsValid()) {
+            ADD_FAILURE() << program->Diagnostics();
+        }
 
-        auto sanitized_result = Sanitize(program.get(), options);
-        [&] {
-            ASSERT_TRUE(sanitized_result.program.IsValid())
-                << sanitized_result.program.Diagnostics().str();
-        }();
+        auto sanitized_result = Sanitize(*program, options);
+        if (!sanitized_result.program.IsValid()) {
+            ADD_FAILURE() << sanitized_result.program.Diagnostics();
+        }
 
         ast::transform::Manager transform_manager;
         ast::transform::DataMap transform_data;
@@ -89,10 +92,12 @@ class TestHelperBase : public BODY, public ProgramBuilder {
             ast::transform::Renamer::Target::kHlslKeywords,
             /* preserve_unicode */ true);
         transform_manager.Add<tint::ast::transform::Renamer>();
-        auto result = transform_manager.Run(&sanitized_result.program, transform_data, outputs);
-        [&] { ASSERT_TRUE(result.IsValid()) << result.Diagnostics().str(); }();
+        auto result = transform_manager.Run(sanitized_result.program, transform_data, outputs);
+        if (!result.IsValid()) {
+            ADD_FAILURE() << result.Diagnostics();
+        }
         *program = std::move(result);
-        gen_ = std::make_unique<ASTPrinter>(program.get());
+        gen_ = std::make_unique<ASTPrinter>(*program);
         return *gen_;
     }
 

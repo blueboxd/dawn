@@ -41,7 +41,7 @@ PreservePadding::~PreservePadding() = default;
 struct PreservePadding::State {
     /// Constructor
     /// @param src the source Program
-    explicit State(const Program* src) : ctx{&b, src, /* auto_clone_symbols */ true} {}
+    explicit State(const Program& src) : ctx{&b, &src, /* auto_clone_symbols */ true} {}
 
     /// The main function for the transform.
     /// @returns the ApplyResult
@@ -71,7 +71,7 @@ struct PreservePadding::State {
                 [&](const Enable* enable) {
                     // Check if the full pointer parameters extension is already enabled.
                     if (enable->HasExtension(
-                            core::Extension::kChromiumExperimentalFullPtrParameters)) {
+                            wgsl::Extension::kChromiumExperimentalFullPtrParameters)) {
                         ext_enabled = true;
                     }
                 });
@@ -220,7 +220,7 @@ struct PreservePadding::State {
     /// Enable the full pointer parameters extension, if we have not already done so.
     void EnableExtension() {
         if (!ext_enabled) {
-            b.Enable(core::Extension::kChromiumExperimentalFullPtrParameters);
+            b.Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
             ext_enabled = true;
         }
     }
@@ -240,7 +240,7 @@ struct PreservePadding::State {
     Hashmap<const core::type::Type*, Symbol, 8> helpers;
 };
 
-Transform::ApplyResult PreservePadding::Apply(const Program* program,
+Transform::ApplyResult PreservePadding::Apply(const Program& program,
                                               const DataMap&,
                                               DataMap&) const {
     return State(program).Run();

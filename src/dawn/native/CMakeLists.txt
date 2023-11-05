@@ -26,9 +26,11 @@ if(BUILD_SHARED_LIBS)
     target_compile_definitions(dawn_native PRIVATE "DAWN_NATIVE_SHARED_LIBRARY")
 endif()
 
-target_sources(dawn_native PRIVATE
+target_sources(dawn_native
+  INTERFACE
     "${DAWN_INCLUDE_DIR}/dawn/native/DawnNative.h"
     "${DAWN_INCLUDE_DIR}/dawn/native/dawn_native_export.h"
+  PRIVATE
     ${DAWN_NATIVE_UTILS_GEN_SOURCES}
     "Adapter.h"
     "Adapter.cpp"
@@ -77,7 +79,7 @@ target_sources(dawn_native PRIVATE
     "CallbackTaskManager.cpp"
     "CallbackTaskManager.h"
     "ChainUtils.h"
-    "ChainUtilsImpl.h"
+    "ChainUtilsImpl.inl"
     "CommandAllocator.cpp"
     "CommandAllocator.h"
     "CommandBuffer.cpp"
@@ -116,6 +118,8 @@ target_sources(dawn_native PRIVATE
     "ErrorInjector.h"
     "ErrorScope.cpp"
     "ErrorScope.h"
+    "EventManager.cpp"
+    "EventManager.h"
     "Features.cpp"
     "Features.h"
     "ExternalTexture.cpp"
@@ -138,6 +142,8 @@ target_sources(dawn_native PRIVATE
     "IntegerTypes.h"
     "Limits.cpp"
     "Limits.h"
+    "SystemEvent.cpp"
+    "SystemEvent.h"
     "ObjectBase.cpp"
     "ObjectBase.h"
     "PassResourceUsage.cpp"
@@ -209,8 +215,6 @@ target_sources(dawn_native PRIVATE
     "Toggles.cpp"
     "Toggles.h"
     "UsageValidationMode.h"
-    "VertexFormat.cpp"
-    "VertexFormat.h"
     "VisitableMembers.h"
     "dawn_platform.h"
     "webgpu_absl_format.cpp"
@@ -266,8 +270,10 @@ if (WINDOWS_STORE)
 endif()
 
 if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
-    target_sources(dawn_native PRIVATE
+    target_sources(dawn_native
+      INTERFACE
         "${DAWN_INCLUDE_DIR}/dawn/native/D3DBackend.h"
+      PRIVATE
         "d3d/BackendD3D.cpp"
         "d3d/BackendD3D.h"
         "d3d/BlobD3D.cpp"
@@ -303,8 +309,10 @@ if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
 endif()
 
 if (DAWN_ENABLE_D3D11)
-    target_sources(dawn_native PRIVATE
+    target_sources(dawn_native
+      INTERFACE
         "${DAWN_INCLUDE_DIR}/dawn/native/D3D11Backend.h"
+      PRIVATE
         "d3d11/BackendD3D11.cpp"
         "d3d11/BackendD3D11.h"
         "d3d11/BindGroupD3D11.cpp"
@@ -358,8 +366,10 @@ if (DAWN_ENABLE_D3D11)
 endif()
 
 if (DAWN_ENABLE_D3D12)
-    target_sources(dawn_native PRIVATE
+    target_sources(dawn_native
+      INTERFACE
         "${DAWN_INCLUDE_DIR}/dawn/native/D3D12Backend.h"
+      PRIVATE
         "d3d12/BackendD3D12.cpp"
         "d3d12/BackendD3D12.h"
         "d3d12/BindGroupD3D12.cpp"
@@ -443,8 +453,10 @@ if (DAWN_ENABLE_D3D12)
 endif()
 
 if (DAWN_ENABLE_METAL)
-    target_sources(dawn_native PRIVATE
+    target_sources(dawn_native
+      INTERFACE
         "${DAWN_INCLUDE_DIR}/dawn/native/MetalBackend.h"
+      PRIVATE
         "Surface_metal.mm"
         "metal/BackendMTL.h"
         "metal/BackendMTL.mm"
@@ -496,8 +508,10 @@ if (DAWN_ENABLE_METAL)
 endif()
 
 if (DAWN_ENABLE_NULL)
-    target_sources(dawn_native PRIVATE
+    target_sources(dawn_native
+      INTERFACE
         "${DAWN_INCLUDE_DIR}/dawn/native/NullBackend.h"
+      PRIVATE
         "null/DeviceNull.cpp"
         "null/DeviceNull.h"
     )
@@ -522,8 +536,10 @@ if (DAWN_ENABLE_OPENGL)
         RESULT_VARIABLE "DAWN_NATIVE_OPENGL_AUTOGEN_SOURCES"
     )
 
-    target_sources(dawn_native PRIVATE
+    target_sources(dawn_native
+      INTERFACE
         "${DAWN_INCLUDE_DIR}/dawn/native/OpenGLBackend.h"
+      PRIVATE
         ${DAWN_NATIVE_OPENGL_AUTOGEN_SOURCES}
         "opengl/BackendGL.cpp"
         "opengl/BackendGL.h"
@@ -587,7 +603,9 @@ endif()
 
 if (DAWN_ENABLE_VULKAN)
     target_sources(dawn_native PRIVATE
+       INTERFACE
         "${DAWN_INCLUDE_DIR}/dawn/native/VulkanBackend.h"
+      PRIVATE
         "vulkan/BackendVk.cpp"
         "vulkan/BackendVk.h"
         "vulkan/BindGroupLayoutVk.cpp"
@@ -659,7 +677,7 @@ if (DAWN_ENABLE_VULKAN)
     )
 
     target_link_libraries(dawn_native PUBLIC Vulkan-Headers)
-    target_include_directories(dawn_native PRIVATE ${DAWN_VULKAN_TOOLS_DIR})
+    target_include_directories(dawn_native PRIVATE ${DAWN_VULKAN_UTILITY_LIBRARIES_DIR}/include)
 
     if (ANDROID)
         target_sources(dawn_native PRIVATE
@@ -719,3 +737,6 @@ if(BUILD_SHARED_LIBS)
     target_compile_definitions(webgpu_dawn PRIVATE "WGPU_SHARED_LIBRARY")
 endif()
 target_sources(webgpu_dawn PRIVATE ${WEBGPU_DAWN_NATIVE_PROC_GEN})
+
+install_if_enabled(dawn_native)
+install_if_enabled(webgpu_dawn)

@@ -24,6 +24,7 @@
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/constant.h"
 #include "src/tint/lang/core/texel_format.h"
+#include "src/tint/lang/spirv/ir/builtin_call.h"
 #include "src/tint/lang/spirv/writer/common/binary_writer.h"
 #include "src/tint/lang/spirv/writer/common/function.h"
 #include "src/tint/lang/spirv/writer/common/module.h"
@@ -49,7 +50,6 @@ class ExitLoop;
 class ExitSwitch;
 class Function;
 class If;
-class IntrinsicCall;
 class Let;
 class Load;
 class LoadVectorElement;
@@ -81,10 +81,10 @@ class Printer {
     /// @param module the Tint IR module to generate
     /// @param zero_init_workgroup_memory `true` to initialize all the variables in the Workgroup
     ///                                   storage class with OpConstantNull
-    Printer(core::ir::Module* module, bool zero_init_workgroup_memory);
+    Printer(core::ir::Module& module, bool zero_init_workgroup_memory);
 
-    /// @returns the generated SPIR-V binary on success, or an error string on failure
-    tint::Result<std::vector<uint32_t>, std::string> Generate();
+    /// @returns the generated SPIR-V binary on success, or failure
+    tint::Result<std::vector<uint32_t>> Generate();
 
     /// @returns the module that this writer has produced
     writer::Module& Module() { return module_; }
@@ -96,10 +96,8 @@ class Printer {
 
     /// Get the result ID of the type `ty`, emitting a type declaration instruction if necessary.
     /// @param ty the type to get the ID for
-    /// @param addrspace the optional address space that this type is being used for
     /// @returns the result ID of the type
-    uint32_t Type(const core::type::Type* ty,
-                  core::AddressSpace addrspace = core::AddressSpace::kUndefined);
+    uint32_t Type(const core::type::Type* ty);
 
   private:
     /// Convert a builtin to the corresponding SPIR-V enum value, taking into account the target
@@ -146,11 +144,8 @@ class Printer {
 
     /// Emit a struct type.
     /// @param id the result ID to use
-    /// @param addrspace the optional address space that this type is being used for
     /// @param str the struct type to emit
-    void EmitStructType(uint32_t id,
-                        const core::type::Struct* str,
-                        core::AddressSpace addrspace = core::AddressSpace::kUndefined);
+    void EmitStructType(uint32_t id, const core::type::Struct* str);
 
     /// Emit a texture type.
     /// @param id the result ID to use
@@ -200,6 +195,10 @@ class Printer {
 
     /// Emit a builtin function call instruction.
     /// @param call the builtin call instruction to emit
+    void EmitSpirvBuiltinCall(spirv::ir::BuiltinCall* call);
+
+    /// Emit a builtin function call instruction.
+    /// @param call the builtin call instruction to emit
     void EmitCoreBuiltinCall(core::ir::CoreBuiltinCall* call);
 
     /// Emit a construct instruction.
@@ -210,9 +209,13 @@ class Printer {
     /// @param convert the convert instruction to emit
     void EmitConvert(core::ir::Convert* convert);
 
-    /// Emit an intrinsic call instruction.
-    /// @param call the intrinsic call instruction to emit
-    void EmitIntrinsicCall(core::ir::IntrinsicCall* call);
+    /// Emit IO attributes.
+    /// @param id the ID of the variable to decorate
+    /// @param attrs the shader IO attrs
+    /// @param addrspace the address of the variable
+    void EmitIOAttributes(uint32_t id,
+                          const core::ir::IOAttributes& attrs,
+                          core::AddressSpace addrspace);
 
     /// Emit a load instruction.
     /// @param load the load instruction to emit
@@ -266,7 +269,17 @@ class Printer {
     /// @param inst the flow control instruction
     void EmitExitPhis(core::ir::ControlInstruction* inst);
 
-    core::ir::Module* ir_;
+    /// Get the ID of the label of the merge block for a control instruction.
+    /// @param ci the control instruction to get the merge label for
+    /// @returns the label ID
+    uint32_t GetMergeLabel(core::ir::ControlInstruction* ci);
+
+    /// Get the ID of the label of the block that will contain a terminator instruction.
+    /// @param t the terminator instruction to get the block label for
+    /// @returns the label ID
+    uint32_t GetTerminatorBlockLabel(core::ir::Terminator* t);
+
+    core::ir::Module& ir_;
     core::ir::Builder b_;
     writer::Module module_;
     BinaryWriter writer_;
@@ -316,6 +329,9 @@ class Printer {
 
     /// The map of blocks to the IDs of their label instructions.
     Hashmap<core::ir::Block*, uint32_t, 8> block_labels_;
+
+    /// The map of control instructions to the IDs of the label of their SPIR-V merge blocks.
+    Hashmap<core::ir::ControlInstruction*, uint32_t, 8> merge_block_labels_;
 
     /// The map of extended instruction set names to their result IDs.
     Hashmap<std::string_view, uint32_t, 2> imports_;

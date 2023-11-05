@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// GEN_BUILD:CONDITION(tint_build_ir)
-
 #ifndef SRC_TINT_LANG_SPIRV_WRITER_COMMON_HELPER_TEST_H_
 #define SRC_TINT_LANG_SPIRV_WRITER_COMMON_HELPER_TEST_H_
 
@@ -78,7 +76,7 @@ auto& operator<<(STREAM& out, TestElementType type) {
 template <typename BASE>
 class SpirvWriterTestHelperBase : public BASE {
   public:
-    SpirvWriterTestHelperBase() : writer_(&mod, false) {}
+    SpirvWriterTestHelperBase() : writer_(mod, false) {}
 
     /// The test module.
     core::ir::Module mod;
@@ -102,17 +100,18 @@ class SpirvWriterTestHelperBase : public BASE {
 
     /// Run the specified writer on the IR module and validate the result.
     /// @param writer the writer to use for SPIR-V generation
+    /// @param options the optional writer options to use when raising the IR
     /// @returns true if generation and validation succeeded
-    bool Generate(Printer& writer) {
-        auto raised = raise::Raise(&mod, {});
+    bool Generate(Printer& writer, Options options = {}) {
+        auto raised = raise::Raise(mod, options);
         if (!raised) {
-            err_ = raised.Failure();
+            err_ = raised.Failure().reason.str();
             return false;
         }
 
         auto spirv = writer.Generate();
         if (!spirv) {
-            err_ = spirv.Failure();
+            err_ = spirv.Failure().reason.str();
             return false;
         }
 
@@ -128,8 +127,9 @@ class SpirvWriterTestHelperBase : public BASE {
     }
 
     /// Run the writer on the IR module and validate the result.
+    /// @param options the optional writer options to use when raising the IR
     /// @returns true if generation and validation succeeded
-    bool Generate() { return Generate(writer_); }
+    bool Generate(Options options = {}) { return Generate(writer_, options); }
 
     /// Validate the generated SPIR-V using the SPIR-V Tools Validator.
     /// @param binary the SPIR-V binary module to validate

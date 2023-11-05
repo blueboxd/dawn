@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "dawn/common/Assert.h"
+#include "dawn/common/FutureUtils.h"
 #include "dawn/common/GPUInfo.h"
 #include "dawn/common/Log.h"
 #include "dawn/common/SystemUtils.h"
@@ -47,8 +48,6 @@
 #if defined(DAWN_USE_X11)
 #include "dawn/native/X11Functions.h"
 #endif  // defined(DAWN_USE_X11)
-
-#include <optional>
 
 namespace dawn::native {
 
@@ -96,6 +95,16 @@ dawn::platform::CachingInterface* GetCachingInterface(dawn::platform::Platform* 
 
 }  // anonymous namespace
 
+wgpu::Bool APIGetInstanceFeatures(InstanceFeatures* features) {
+    if (features->nextInChain != nullptr) {
+        return false;
+    }
+
+    features->timedWaitAnyEnable = true;
+    features->timedWaitAnyMaxCount = kTimedWaitAnyMaxCountDefault;
+    return true;
+}
+
 InstanceBase* APICreateInstance(const InstanceDescriptor* descriptor) {
     return InstanceBase::Create(descriptor).Detach();
 }
@@ -132,7 +141,10 @@ InstanceBase::~InstanceBase() = default;
 
 void InstanceBase::WillDropLastExternalRef() {
     // InstanceBase uses RefCountedWithExternalCount to break refcycles.
-    //
+
+    // Stop tracking events. See comment on ShutDown.
+    mEventManager.ShutDown();
+
     // InstanceBase holds backends which hold Refs to PhysicalDeviceBases discovered, which hold
     // Refs back to the InstanceBase.
     // In order to break this cycle and prevent leaks, when the application drops the last external
@@ -173,6 +185,8 @@ MaybeError InstanceBase::Initialize(const InstanceDescriptor* descriptor) {
     // Initialize the platform to the default for now.
     mDefaultPlatform = std::make_unique<dawn::platform::Platform>();
     SetPlatform(dawnDesc != nullptr ? dawnDesc->platform : mDefaultPlatform.get());
+
+    DAWN_TRY(mEventManager.Initialize(descriptor));
 
     return {};
 }
@@ -350,7 +364,7 @@ std::vector<Ref<AdapterBase>> InstanceBase::EnumerateAdapters(
         options->compatibilityMode ? FeatureLevel::Compatibility : FeatureLevel::Core;
     std::vector<Ref<AdapterBase>> adapters;
     for (const auto& physicalDevice : EnumeratePhysicalDevices(options)) {
-        ASSERT(physicalDevice->SupportsFeatureLevel(featureLevel));
+        DAWN_ASSERT(physicalDevice->SupportsFeatureLevel(featureLevel));
         adapters.push_back(
             CreateAdapter(physicalDevice, featureLevel, togglesDesc, options->powerPreference));
     }
@@ -374,8 +388,8 @@ BackendConnection* InstanceBase::GetBackendConnection(wgpu::BackendType backendT
 
     auto Register = [this](BackendConnection* connection, wgpu::BackendType expectedType) {
         if (connection != nullptr) {
-            ASSERT(connection->GetType() == expectedType);
-            ASSERT(connection->GetInstance() == this);
+            DAWN_ASSERT(connection->GetType() == expectedType);
+            DAWN_ASSERT(connection->GetInstance() == this);
             mBackends[connection->GetType()] = std::unique_ptr<BackendConnection>(connection);
         }
     };
@@ -434,7 +448,7 @@ BackendConnection* InstanceBase::GetBackendConnection(wgpu::BackendType backendT
 
 std::vector<Ref<PhysicalDeviceBase>> InstanceBase::EnumeratePhysicalDevices(
     const RequestAdapterOptions* options) {
-    ASSERT(options);
+    DAWN_ASSERT(options);
 
     BackendsBitset backendsToFind;
     if (options->backendType != wgpu::BackendType::Undefined) {
@@ -546,7 +560,7 @@ void InstanceBase::RemoveDevice(DeviceBase* device) {
     mDevicesList.erase(device);
 }
 
-bool InstanceBase::APIProcessEvents() {
+void InstanceBase::APIProcessEvents() {
     std::vector<Ref<DeviceBase>> devices;
     {
         std::lock_guard<std::mutex> lg(mDevicesListMutex);
@@ -555,14 +569,18 @@ bool InstanceBase::APIProcessEvents() {
         }
     }
 
-    bool hasMoreEvents = false;
     for (auto device : devices) {
-        hasMoreEvents = device->APITick() || hasMoreEvents;
+        device->APITick();
     }
 
     mCallbackTaskManager->Flush();
+    mEventManager.ProcessPollEvents();
+}
 
-    return hasMoreEvents || !mCallbackTaskManager->IsEmpty();
+wgpu::WaitStatus InstanceBase::APIWaitAny(size_t count,
+                                          FutureWaitInfo* futures,
+                                          uint64_t timeoutNS) {
+    return mEventManager.WaitAny(count, futures, Nanoseconds(timeoutNS));
 }
 
 const std::vector<std::string>& InstanceBase::GetRuntimeSearchPaths() const {
@@ -573,8 +591,12 @@ const Ref<CallbackTaskManager>& InstanceBase::GetCallbackTaskManager() const {
     return mCallbackTaskManager;
 }
 
+EventManager* InstanceBase::GetEventManager() {
+    return &mEventManager;
+}
+
 void InstanceBase::ConsumeError(std::unique_ptr<ErrorData> error) {
-    ASSERT(error != nullptr);
+    DAWN_ASSERT(error != nullptr);
     dawn::ErrorLog() << error->GetFormattedMessage();
 }
 
@@ -585,7 +607,7 @@ const X11Functions* InstanceBase::GetOrLoadX11Functions() {
     }
     return mX11Functions.get();
 #else
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 #endif  // defined(DAWN_USE_X11)
 }
 

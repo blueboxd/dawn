@@ -38,7 +38,6 @@
 #include "src/tint/lang/core/ir/function_param.h"
 #include "src/tint/lang/core/ir/if.h"
 #include "src/tint/lang/core/ir/instruction_result.h"
-#include "src/tint/lang/core/ir/intrinsic_call.h"
 #include "src/tint/lang/core/ir/let.h"
 #include "src/tint/lang/core/ir/load.h"
 #include "src/tint/lang/core/ir/load_vector_element.h"
@@ -104,11 +103,56 @@ class Builder {
     using DisableIfVectorLike = tint::traits::EnableIf<
         !tint::IsVectorLike<tint::traits::Decay<tint::traits::NthTypeOf<0, TYPES..., void>>>>;
 
-    /// If set, any created instruction will be auto-appended to the block.
-    ir::Block* current_block_ = nullptr;
+    /// A namespace for the various instruction insertion method
+    struct InsertionPoints {
+        /// Insertion point method that does no insertion
+        struct NoInsertion {
+            /// The insertion point function
+            void operator()(ir::Instruction*) {}
+        };
+        /// Insertion point method that inserts the instruction to the end of #block
+        struct AppendToBlock {
+            /// The block to insert new instructions to the end of
+            ir::Block* block = nullptr;
+            /// The insertion point function
+            /// @param i the instruction to insert
+            void operator()(ir::Instruction* i) { block->Append(i); }
+        };
+        /// Insertion point method that inserts the instruction to the front of #block
+        struct PrependToBlock {
+            /// The block to insert new instructions to the front of
+            ir::Block* block = nullptr;
+            /// The insertion point function
+            /// @param i the instruction to insert
+            void operator()(ir::Instruction* i) { block->Prepend(i); }
+        };
+        /// Insertion point method that inserts the instruction after #after
+        struct InsertAfter {
+            /// The instruction to insert new instructions after
+            ir::Instruction* after = nullptr;
+            /// The insertion point function
+            /// @param i the instruction to insert
+            void operator()(ir::Instruction* i) { i->InsertAfter(after); }
+        };
+        /// Insertion point method that inserts the instruction before #before
+        struct InsertBefore {
+            /// The instruction to insert new instructions before
+            ir::Instruction* before = nullptr;
+            /// The insertion point function
+            /// @param i the instruction to insert
+            void operator()(ir::Instruction* i) { i->InsertBefore(before); }
+        };
+    };
 
-    /// If set, any created instruction will be auto-inserted before this instruction.
-    ir::Instruction* current_insertion_point_ = nullptr;
+    /// A variant of different instruction insertion methods
+    using InsertionPoint = std::variant<InsertionPoints::NoInsertion,
+                                        InsertionPoints::AppendToBlock,
+                                        InsertionPoints::PrependToBlock,
+                                        InsertionPoints::InsertAfter,
+                                        InsertionPoints::InsertBefore>;
+
+    /// The insertion method used for new instructions.
+    InsertionPoint insertion_point_{InsertionPoints::NoInsertion{}};
 
   public:
     /// Constructor
@@ -116,7 +160,7 @@ class Builder {
     explicit Builder(Module& mod);
     /// Constructor
     /// @param mod the ir::Module to wrap with this builder
-    /// @param block the block to insert too
+    /// @param block the block to append to
     Builder(Module& mod, ir::Block* block);
     /// Destructor
     ~Builder();
@@ -131,8 +175,25 @@ class Builder {
     /// @param cb the function to call with the builder appending to block @p b
     template <typename FUNCTION>
     void Append(ir::Block* b, FUNCTION&& cb) {
-        TINT_SCOPED_ASSIGNMENT(current_block_, b);
-        TINT_SCOPED_ASSIGNMENT(current_insertion_point_, nullptr);
+        TINT_SCOPED_ASSIGNMENT(insertion_point_, InsertionPoints::AppendToBlock{b});
+        cb();
+    }
+
+    /// Calls @p cb with the builder prepending to block @p b
+    /// @param b the block to set as the block to prepend to
+    /// @param cb the function to call with the builder prepending to block @p b
+    template <typename FUNCTION>
+    void Prepend(ir::Block* b, FUNCTION&& cb) {
+        TINT_SCOPED_ASSIGNMENT(insertion_point_, InsertionPoints::PrependToBlock{b});
+        cb();
+    }
+
+    /// Calls @p cb with the builder inserting after @p ip
+    /// @param ip the insertion point for new instructions
+    /// @param cb the function to call with the builder inserting new instructions after @p ip
+    template <typename FUNCTION>
+    void InsertAfter(ir::Instruction* ip, FUNCTION&& cb) {
+        TINT_SCOPED_ASSIGNMENT(insertion_point_, InsertionPoints::InsertAfter{ip});
         cb();
     }
 
@@ -141,23 +202,18 @@ class Builder {
     /// @param cb the function to call with the builder inserting new instructions before @p ip
     template <typename FUNCTION>
     void InsertBefore(ir::Instruction* ip, FUNCTION&& cb) {
-        TINT_SCOPED_ASSIGNMENT(current_block_, nullptr);
-        TINT_SCOPED_ASSIGNMENT(current_insertion_point_, ip);
+        TINT_SCOPED_ASSIGNMENT(insertion_point_, InsertionPoints::InsertBefore{ip});
         cb();
     }
 
-    /// Appends and returns the instruction @p val to the current insertion point. If there is no
-    /// current insertion point set, then @p val is just returned.
-    /// @param val the instruction to append
+    /// Adds and returns the instruction @p instruction to the current insertion point. If there
+    /// is no current insertion point set, then @p instruction is just returned.
+    /// @param instruction the instruction to append
     /// @returns the instruction
     template <typename T>
-    T* Append(T* val) {
-        if (current_insertion_point_) {
-            val->InsertBefore(current_insertion_point_);
-        } else if (current_block_) {
-            current_block_->Append(val);
-        }
-        return val;
+    T* Append(T* instruction) {
+        std::visit([instruction](auto&& mode) { mode(instruction); }, insertion_point_);
+        return instruction;
     }
 
     /// @returns a new block
@@ -299,6 +355,11 @@ class Builder {
         return Constant(
             ir.constant_values.Composite(ty, Vector{ConstantValue(std::forward<ARGS>(values))...}));
     }
+
+    /// Creates a new zero-value ir::Constant
+    /// @param ty the constant type
+    /// @returns the new constant
+    ir::Constant* Zero(const core::type::Type* ty) { return Constant(ir.constant_values.Zero(ty)); }
 
     /// @param in the input value. One of: nullptr, ir::Value*, ir::Instruction* or a numeric value.
     /// @returns an ir::Value* from the given argument.
@@ -599,6 +660,15 @@ class Builder {
     ir::Discard* Discard();
 
     /// Creates a user function call instruction
+    /// @param func the function to call
+    /// @param args the call arguments
+    /// @returns the instruction
+    template <typename... ARGS>
+    ir::UserCall* Call(ir::Function* func, ARGS&&... args) {
+        return Call(func->ReturnType(), func, std::forward<ARGS>(args)...);
+    }
+
+    /// Creates a user function call instruction
     /// @param type the return type of the call
     /// @param func the function to call
     /// @param args the call arguments
@@ -615,22 +685,30 @@ class Builder {
     /// @param args the call arguments
     /// @returns the instruction
     template <typename... ARGS>
-    ir::CoreBuiltinCall* Call(const core::type::Type* type, core::Function func, ARGS&&... args) {
+    ir::CoreBuiltinCall* Call(const core::type::Type* type, core::BuiltinFn func, ARGS&&... args) {
         return Append(ir.instructions.Create<ir::CoreBuiltinCall>(
             InstructionResult(type), func, Values(std::forward<ARGS>(args)...)));
     }
 
-    /// Creates an intrinsic call instruction
+    /// Creates a core builtin call instruction
     /// @param type the return type of the call
-    /// @param kind the intrinsic function to call
+    /// @param func the builtin function to call
     /// @param args the call arguments
-    /// @returns the intrinsic call instruction
-    template <typename... ARGS>
-    ir::IntrinsicCall* Call(const core::type::Type* type,
-                            enum IntrinsicCall::Kind kind,
-                            ARGS&&... args) {
-        return Append(ir.instructions.Create<ir::IntrinsicCall>(
-            InstructionResult(type), kind, Values(std::forward<ARGS>(args)...)));
+    /// @returns the instruction
+    template <typename KLASS, typename FUNC, typename... ARGS>
+    tint::traits::EnableIf<tint::traits::IsTypeOrDerived<KLASS, ir::BuiltinCall>, KLASS*>
+    Call(const core::type::Type* type, FUNC func, ARGS&&... args) {
+        return Append(ir.instructions.Create<KLASS>(InstructionResult(type), func,
+                                                    Values(std::forward<ARGS>(args)...)));
+    }
+
+    /// Creates a value conversion instruction to the template type T
+    /// @param val the value to be converted
+    /// @returns the instruction
+    template <typename T, typename VAL>
+    ir::Convert* Convert(VAL&& val) {
+        auto* type = ir.Types().Get<T>();
+        return Convert(type, std::forward<VAL>(val));
     }
 
     /// Creates a value conversion instruction
@@ -641,6 +719,15 @@ class Builder {
     ir::Convert* Convert(const core::type::Type* to, VAL&& val) {
         return Append(ir.instructions.Create<ir::Convert>(InstructionResult(to),
                                                           Value(std::forward<VAL>(val))));
+    }
+
+    /// Creates a value constructor instruction to the template type T
+    /// @param args the arguments to the constructor
+    /// @returns the instruction
+    template <typename T, typename... ARGS>
+    ir::Construct* Construct(ARGS&&... args) {
+        auto* type = ir.Types().Get<T>();
+        return Construct(type, std::forward<ARGS>(args)...);
     }
 
     /// Creates a value constructor instruction
@@ -713,6 +800,48 @@ class Builder {
     /// @returns the instruction
     ir::Var* Var(std::string_view name, const core::type::Pointer* type);
 
+    /// Creates a new `var` declaration with a name and initializer value
+    /// @tparam SPACE the var's address space
+    /// @tparam ACCESS the var's access mode
+    /// @param name the var name
+    /// @param init the var initializer
+    /// @returns the instruction
+    template <core::AddressSpace SPACE = core::AddressSpace::kFunction,
+              core::Access ACCESS = core::Access::kReadWrite,
+              typename VALUE = void>
+    ir::Var* Var(std::string_view name, VALUE&& init) {
+        auto* val = Value(std::forward<VALUE>(init));
+        if (TINT_UNLIKELY(!val)) {
+            TINT_ASSERT(val);
+            return nullptr;
+        }
+        auto* var = Var(name, ir.Types().ptr(SPACE, val->Type(), ACCESS));
+        var->SetInitializer(val);
+        ir.SetName(var->Result(), name);
+        return var;
+    }
+
+    /// Creates a new `var` declaration
+    /// @tparam SPACE the var's address space
+    /// @tparam T the storage pointer's element type
+    /// @tparam ACCESS the var's access mode
+    /// @returns the instruction
+    template <core::AddressSpace SPACE, typename T, core::Access ACCESS = core::Access::kReadWrite>
+    ir::Var* Var() {
+        return Var(ir.Types().ptr<SPACE, T, ACCESS>());
+    }
+
+    /// Creates a new `var` declaration with a name
+    /// @tparam SPACE the var's address space
+    /// @tparam T the storage pointer's element type
+    /// @tparam ACCESS the var's access mode
+    /// @param name the var name
+    /// @returns the instruction
+    template <core::AddressSpace SPACE, typename T, core::Access ACCESS = core::Access::kReadWrite>
+    ir::Var* Var(std::string_view name) {
+        return Var(name, ir.Types().ptr<SPACE, T, ACCESS>());
+    }
+
     /// Creates a new `let` declaration
     /// @param name the let name
     /// @param value the let value
@@ -725,7 +854,6 @@ class Builder {
             return nullptr;
         }
         auto* let = Append(ir.instructions.Create<ir::Let>(InstructionResult(val->Type()), val));
-        ir.SetName(let, name);
         ir.SetName(let->Result(), name);
         return let;
     }
@@ -895,10 +1023,6 @@ class Builder {
     /// Creates an unreachable instruction
     /// @returns the instruction
     ir::Unreachable* Unreachable();
-
-    /// Retrieves the root block for the module, creating if necessary
-    /// @returns the root block
-    ir::Block* RootBlock();
 
     /// Creates a new runtime value
     /// @param type the return type

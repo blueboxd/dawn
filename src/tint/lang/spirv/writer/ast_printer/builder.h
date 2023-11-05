@@ -40,7 +40,7 @@
 #include "src/tint/lang/wgsl/ast/unary_op_expression.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
-#include "src/tint/lang/wgsl/sem/builtin.h"
+#include "src/tint/lang/wgsl/sem/builtin_fn.h"
 #include "src/tint/utils/containers/scope_stack.h"
 
 // Forward declarations
@@ -82,7 +82,12 @@ class Builder {
     /// @param program the program
     /// @param zero_initialize_workgroup_memory `true` to initialize all the
     /// variables in the Workgroup address space with OpConstantNull
-    explicit Builder(const Program* program, bool zero_initialize_workgroup_memory = false);
+    /// @param experimental_require_subgroup_uniform_control_flow `true` to require
+    /// `SPV_KHR_subgroup_uniform_control_flow` extension and `SubgroupUniformControlFlowKHR`
+    /// execution mode for compute stage entry points.
+    explicit Builder(const Program& program,
+                     bool zero_initialize_workgroup_memory = false,
+                     bool experimental_require_subgroup_uniform_control_flow = false);
     ~Builder();
 
     /// Generates the SPIR-V instructions for the given program
@@ -148,7 +153,7 @@ class Builder {
     /// not supported.
     /// @param ext the extension to generate
     /// @returns true on success.
-    bool GenerateExtension(core::Extension ext);
+    bool GenerateExtension(wgsl::Extension ext);
     /// Generates a label for the given id. Emits an error and returns false if
     /// we're currently outside a function.
     /// @param id the id to use for the label
@@ -291,7 +296,7 @@ class Builder {
     /// @param call the call expression
     /// @param builtin the builtin being called
     /// @returns the expression ID on success or 0 otherwise
-    uint32_t GenerateBuiltinCall(const sem::Call* call, const sem::Builtin* builtin);
+    uint32_t GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinFn* builtin);
     /// Handles generating a value constructor or value conversion expression
     /// @param call the call expression
     /// @param var the variable that is being initialized. May be null.
@@ -306,13 +311,13 @@ class Builder {
     /// parameters
     /// @returns true on success
     bool GenerateTextureBuiltin(const sem::Call* call,
-                                const sem::Builtin* builtin,
+                                const sem::BuiltinFn* builtin,
                                 Operand result_type,
                                 Operand result_id);
     /// Generates a control barrier statement.
     /// @param builtin the semantic information for the barrier builtin call
     /// @returns true on success
-    bool GenerateControlBarrierBuiltin(const sem::Builtin* builtin);
+    bool GenerateControlBarrierBuiltin(const sem::BuiltinFn* builtin);
     /// Generates an atomic builtin call.
     /// @param call the call expression
     /// @param builtin the semantic information for the atomic builtin call
@@ -320,7 +325,7 @@ class Builder {
     /// @param result_id result identifier operand of the texture instruction
     /// @returns true on success
     bool GenerateAtomicBuiltin(const sem::Call* call,
-                               const sem::Builtin* builtin,
+                               const sem::BuiltinFn* builtin,
                                Operand result_type,
                                Operand result_id);
     /// Generates a sampled image
@@ -537,6 +542,7 @@ class Builder {
     std::vector<uint32_t> merge_stack_;
     std::vector<uint32_t> continue_stack_;
     bool zero_initialize_workgroup_memory_ = false;
+    bool experimental_require_subgroup_uniform_control_flow_ = false;
 
     struct ContinuingInfo {
         ContinuingInfo(const ast::Statement* last_statement,

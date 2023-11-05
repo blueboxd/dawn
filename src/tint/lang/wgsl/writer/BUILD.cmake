@@ -23,6 +23,7 @@
 
 include(lang/wgsl/writer/ast_printer/BUILD.cmake)
 include(lang/wgsl/writer/ir_to_program/BUILD.cmake)
+include(lang/wgsl/writer/raise/BUILD.cmake)
 include(lang/wgsl/writer/syntax_tree_printer/BUILD.cmake)
 
 ################################################################################
@@ -39,13 +40,18 @@ tint_add_target(tint_lang_wgsl_writer lib
 )
 
 tint_target_add_dependencies(tint_lang_wgsl_writer lib
+  tint_api_common
   tint_lang_core
   tint_lang_core_constant
+  tint_lang_core_ir
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
   tint_lang_wgsl_writer_ast_printer
+  tint_lang_wgsl_writer_ir_to_program
+  tint_lang_wgsl_writer_raise
   tint_lang_wgsl_writer_syntax_tree_printer
   tint_utils_containers
   tint_utils_diagnostic
@@ -72,10 +78,11 @@ tint_add_target(tint_lang_wgsl_writer_bench bench
 )
 
 tint_target_add_dependencies(tint_lang_wgsl_writer_bench bench
-  tint_cmd_bench
+  tint_cmd_bench_bench
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_type
+  tint_lang_wgsl
   tint_lang_wgsl_ast
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
@@ -93,4 +100,8 @@ tint_target_add_dependencies(tint_lang_wgsl_writer_bench bench
   tint_utils_symbol
   tint_utils_text
   tint_utils_traits
+)
+
+tint_target_add_external_dependencies(tint_lang_wgsl_writer_bench bench
+  "google-benchmark"
 )

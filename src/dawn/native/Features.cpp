@@ -82,8 +82,7 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "https://bugs.chromium.org/p/dawn/issues/detail?id=1591", FeatureInfo::FeatureState::Stable}},
     {Feature::Float32Filterable,
      {"Allows textures with formats \"r32float\" \"rg32float\" and \"rgba32float\" to be filtered.",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=1664",
-      FeatureInfo::FeatureState::Experimental}},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1664", FeatureInfo::FeatureState::Stable}},
     {Feature::ChromiumExperimentalSubgroups,
      {"Experimental, allows using subgroup and supports the \"enable "
       "chromium_experimental_subgroups\" directive in WGSL. Only used to investigate the semantic "
@@ -237,12 +236,17 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Support for importing and exporting MTLSharedEvent used for GPU synchronization.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_fence.md",
       FeatureInfo::FeatureState::Experimental}},
+    {Feature::HostMappedPointer,
+     {"Support creation of buffers from host-mapped pointers.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "host_mapped_pointer.md",
+      FeatureInfo::FeatureState::Experimental}},
 };
 
 }  // anonymous namespace
 
 void FeaturesSet::EnableFeature(Feature feature) {
-    ASSERT(feature != Feature::InvalidEnum);
+    DAWN_ASSERT(feature != Feature::InvalidEnum);
     featuresBitSet.set(feature);
 }
 
@@ -251,7 +255,7 @@ void FeaturesSet::EnableFeature(wgpu::FeatureName feature) {
 }
 
 bool FeaturesSet::IsEnabled(Feature feature) const {
-    ASSERT(feature != Feature::InvalidEnum);
+    DAWN_ASSERT(feature != Feature::InvalidEnum);
     return featuresBitSet[feature];
 }
 
@@ -276,7 +280,7 @@ std::vector<const char*> FeaturesSet::GetEnabledFeatureNames() const {
 
     uint32_t index = 0;
     for (Feature feature : IterateBitSet(featuresBitSet)) {
-        ASSERT(feature != Feature::InvalidEnum);
+        DAWN_ASSERT(feature != Feature::InvalidEnum);
         enabledFeatureNames[index] = kFeatureNameAndInfoList[feature].name;
         ++index;
     }

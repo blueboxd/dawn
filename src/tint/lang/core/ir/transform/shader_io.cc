@@ -52,6 +52,10 @@ core::BuiltinValue FunctionParamBuiltin(enum FunctionParam::Builtin builtin) {
             return core::BuiltinValue::kSampleIndex;
         case FunctionParam::Builtin::kSampleMask:
             return core::BuiltinValue::kSampleMask;
+        case FunctionParam::Builtin::kSubgroupInvocationId:
+            return core::BuiltinValue::kSubgroupInvocationId;
+        case FunctionParam::Builtin::kSubgroupSize:
+            return core::BuiltinValue::kSubgroupSize;
     }
     return core::BuiltinValue::kUndefined;
 }
@@ -71,23 +75,19 @@ core::BuiltinValue ReturnBuiltin(enum Function::ReturnBuiltin builtin) {
 /// PIMPL state for the transform.
 struct State {
     /// The IR module.
-    Module* ir = nullptr;
+    Module& ir;
     /// The IR builder.
-    Builder b{*ir};
+    Builder b{ir};
     /// The type manager.
-    core::type::Manager& ty{ir->Types()};
+    core::type::Manager& ty{ir.Types()};
     /// The set of struct members that need to have their IO attributes stripped.
-    Hashset<const core::type::StructMember*, 8> members_to_strip;
+    Hashset<const core::type::StructMember*, 8> members_to_strip{};
 
     /// The entry point currently being processed.
     Function* func = nullptr;
 
     /// The backend state object for the current entry point.
-    std::unique_ptr<ShaderIOBackendState> backend;
-
-    /// Constructor
-    /// @param mod the module
-    explicit State(Module* mod) : ir(mod) {}
+    std::unique_ptr<ShaderIOBackendState> backend{};
 
     /// Process an entry point.
     /// @param f the original entry point function
@@ -100,15 +100,24 @@ struct State {
         // Process the parameters and return value to prepare for building a wrapper function.
         GatherInputs();
         GatherOutput();
+
+        // Add an output for the vertex point size if needed.
+        std::optional<uint32_t> vertex_point_size_index;
+        if (func->Stage() == Function::PipelineStage::kVertex && backend->NeedsVertexPointSize()) {
+            vertex_point_size_index =
+                backend->AddOutput(ir.symbols.New("vertex_point_size"), ty.f32(),
+                                   {{}, {}, {BuiltinValue::kPointSize}, {}, false});
+        }
+
         auto new_params = backend->FinalizeInputs();
         auto* new_ret_val = backend->FinalizeOutputs();
 
         // Rename the old function and remove its pipeline stage and workgroup size, as we will be
         // wrapping it with a new entry point.
-        auto name = ir->NameOf(func).Name();
+        auto name = ir.NameOf(func).Name();
         auto stage = func->Stage();
         auto wgsize = func->WorkgroupSize();
-        ir->SetName(func, name + "_inner");
+        ir.SetName(func, name + "_inner");
         func->SetStage(Function::PipelineStage::kUndefined);
         func->ClearWorkgroupSize();
 
@@ -124,6 +133,9 @@ struct State {
         auto inner_call_args = BuildInnerCallArgs(wrapper);
         auto* inner_result = wrapper.Call(func->ReturnType(), func, std::move(inner_call_args));
         SetOutputs(wrapper, inner_result->Result());
+        if (vertex_point_size_index) {
+            backend->SetOutput(wrapper, vertex_point_size_index.value(), b.Constant(1_f));
+        }
 
         // Return the new result.
         wrapper.Return(ep, new_ret_val);
@@ -135,8 +147,12 @@ struct State {
             if (auto* str = param->Type()->As<core::type::Struct>()) {
                 for (auto* member : str->Members()) {
                     auto name = str->Name().Name() + "_" + member->Name().Name();
-                    backend->AddInput(ir->symbols.Register(name), member->Type(),
-                                      member->Attributes());
+                    auto attributes = member->Attributes();
+                    if (attributes.interpolation &&
+                        func->Stage() != Function::PipelineStage::kFragment) {
+                        attributes.interpolation = {};
+                    }
+                    backend->AddInput(ir.symbols.Register(name), member->Type(), attributes);
                     members_to_strip.Add(member);
                 }
             } else {
@@ -144,7 +160,7 @@ struct State {
                 core::type::StructMemberAttributes attributes;
                 if (auto loc = param->Location()) {
                     attributes.location = loc->value;
-                    if (loc->interpolation) {
+                    if (loc->interpolation && func->Stage() == Function::PipelineStage::kFragment) {
                         attributes.interpolation = *loc->interpolation;
                     }
                     param->ClearLocation();
@@ -155,7 +171,7 @@ struct State {
                 attributes.invariant = param->Invariant();
                 param->SetInvariant(false);
 
-                auto name = ir->NameOf(param);
+                auto name = ir.NameOf(param);
                 backend->AddInput(name, param->Type(), std::move(attributes));
             }
         }
@@ -170,8 +186,11 @@ struct State {
         if (auto* str = func->ReturnType()->As<core::type::Struct>()) {
             for (auto* member : str->Members()) {
                 auto name = str->Name().Name() + "_" + member->Name().Name();
-                backend->AddOutput(ir->symbols.Register(name), member->Type(),
-                                   member->Attributes());
+                auto attributes = member->Attributes();
+                if (attributes.interpolation && func->Stage() != Function::PipelineStage::kVertex) {
+                    attributes.interpolation = {};
+                }
+                backend->AddOutput(ir.symbols.Register(name), member->Type(), attributes);
                 members_to_strip.Add(member);
             }
         } else {
@@ -179,6 +198,9 @@ struct State {
             core::type::StructMemberAttributes attributes;
             if (auto loc = func->ReturnLocation()) {
                 attributes.location = loc->value;
+                if (loc->interpolation && func->Stage() == Function::PipelineStage::kVertex) {
+                    attributes.interpolation = *loc->interpolation;
+                }
                 func->ClearReturnLocation();
             } else if (auto builtin = func->ReturnBuiltin()) {
                 attributes.builtin = ReturnBuiltin(*builtin);
@@ -187,7 +209,7 @@ struct State {
             attributes.invariant = func->ReturnInvariant();
             func->SetReturnInvariant(false);
 
-            backend->AddOutput(ir->symbols.New(), func->ReturnType(), std::move(attributes));
+            backend->AddOutput(ir.symbols.New(), func->ReturnType(), std::move(attributes));
         }
     }
 
@@ -239,9 +261,12 @@ struct State {
 
 }  // namespace
 
-void RunShaderIOBase(Module* module, std::function<MakeBackendStateFunc> make_backend_state) {
-    State state(module);
-    for (auto* func : module->functions) {
+void RunShaderIOBase(Module& module, std::function<MakeBackendStateFunc> make_backend_state) {
+    State state{module};
+
+    // Take a copy of the function list since the transform will add new functions to the module.
+    auto functions = module.functions;
+    for (auto* func : functions) {
         // Only process entry points.
         if (func->Stage() == Function::PipelineStage::kUndefined) {
             continue;

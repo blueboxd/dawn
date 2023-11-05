@@ -43,7 +43,7 @@ class Inspector {
   public:
     /// Constructor
     /// @param program Shader program to extract information from.
-    explicit Inspector(const Program* program);
+    explicit Inspector(const Program& program);
 
     /// Destructor
     ~Inspector();
@@ -65,11 +65,6 @@ class Inspector {
 
     /// @returns map of module-constant name to pipeline constant ID
     std::map<std::string, OverrideId> GetNamedOverrideIds();
-
-    /// @param entry_point name of the entry point to get information about.
-    /// @returns the total size of shared storage required by an entry point,
-    ///          including all uniform storage buffers.
-    uint32_t GetStorageSize(const std::string& entry_point);
 
     /// @param entry_point name of the entry point to get information about.
     /// @returns vector of all of the resource bindings.
@@ -136,11 +131,6 @@ class Inspector {
     std::vector<SamplerTexturePair> GetSamplerTextureUses(const std::string& entry_point,
                                                           const BindingPoint& placeholder);
 
-    /// @param entry_point name of the entry point to get information about.
-    /// @returns the total size in bytes of all Workgroup storage-class storage
-    /// referenced transitively by the entry point.
-    uint32_t GetWorkgroupStorageSize(const std::string& entry_point);
-
     /// @returns vector of all valid extension names used by the program. There
     /// will be no duplicated names in the returned vector even if an extension
     /// is enabled multiple times.
@@ -154,7 +144,7 @@ class Inspector {
     std::vector<std::pair<std::string, Source>> GetEnableDirectives();
 
   private:
-    const Program* program_;
+    const Program& program_;
     diag::List diagnostics_;
     std::unique_ptr<std::unordered_map<std::string, UniqueVector<SamplerTexturePair, 4>>>
         sampler_targets_;
@@ -227,6 +217,14 @@ class Inspector {
     std::tuple<InterpolationType, InterpolationSampling> CalculateInterpolationData(
         const core::type::Type* type,
         VectorRef<const ast::Attribute*> attributes) const;
+
+    /// @param func the root function of the callgraph to consider for the computation.
+    /// @returns the total size in bytes of all Workgroup storage-class storage accessed via func.
+    uint32_t ComputeWorkgroupStorageSize(const ast::Function* func) const;
+
+    /// @param func the root function of the callgraph to consider for the computation
+    /// @returns the list of member types for the `pixel_local` variable accessed via func, if any.
+    std::vector<PixelLocalMemberType> ComputePixelLocalMemberTypes(const ast::Function* func) const;
 
     /// For a N-uple of expressions, resolve to the appropriate global resources
     /// and call 'cb'.
