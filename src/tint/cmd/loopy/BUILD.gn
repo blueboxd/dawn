@@ -54,6 +54,7 @@ tint_executable("loopy") {
     "${tint_src_dir}/lang/spirv/reader/common",
     "${tint_src_dir}/lang/wgsl",
     "${tint_src_dir}/lang/wgsl/ast",
+    "${tint_src_dir}/lang/wgsl/common",
     "${tint_src_dir}/lang/wgsl/helpers",
     "${tint_src_dir}/lang/wgsl/inspector",
     "${tint_src_dir}/lang/wgsl/program",
@@ -88,6 +89,7 @@ tint_executable("loopy") {
     deps += [
       "${tint_src_dir}/lang/msl/writer",
       "${tint_src_dir}/lang/msl/writer/common",
+      "${tint_src_dir}/lang/msl/writer/helpers",
     ]
   }
 

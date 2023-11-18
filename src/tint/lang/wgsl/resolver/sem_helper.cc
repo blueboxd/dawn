@@ -129,32 +129,28 @@ std::string SemHelper::Describe(const sem::Expression* expr) const {
         [&](const UnresolvedIdentifier* ui) {
             auto name = ui->Identifier()->identifier->symbol.Name();
             return "unresolved identifier '" + name + "'";
-        },
-        [&](Default) -> std::string {
-            TINT_ICE() << "unhandled sem::Expression type: "
-                       << (expr ? expr->TypeInfo().name : "<null>");
-            return "<unknown>";
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void SemHelper::ErrorUnexpectedExprKind(
     const sem::Expression* expr,
     std::string_view wanted,
-    tint::Slice<char const* const> suggestions /* = Empty */) const {
+    tint::Slice<const std::string_view> suggestions /* = Empty */) const {
     if (auto* ui = expr->As<UnresolvedIdentifier>()) {
         auto* ident = ui->Identifier();
         auto name = ident->identifier->symbol.Name();
         AddError("unresolved " + std::string(wanted) + " '" + name + "'", ident->source);
         if (!suggestions.IsEmpty()) {
             // Filter out suggestions that have a leading underscore.
-            Vector<const char*, 8> filtered;
-            for (auto* str : suggestions) {
+            Vector<std::string_view, 8> filtered;
+            for (auto str : suggestions) {
                 if (str[0] != '_') {
                     filtered.Push(str);
                 }
             }
             StringStream msg;
-            tint::SuggestAlternatives(name, filtered.Slice().Reinterpret<char const* const>(), msg);
+            tint::SuggestAlternatives(name, filtered.Slice(), msg);
             AddNote(msg.str(), ident->source);
         }
         return;

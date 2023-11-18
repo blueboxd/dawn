@@ -148,6 +148,11 @@ struct Slice {
     constexpr Slice(T* d, size_t l, size_t c) : data(d), len(l), cap(c) {}
 
     /// Constructor
+    /// @param d pointer to the first element in the slice
+    /// @param l total number of elements in the slice
+    constexpr Slice(T* d, size_t l) : data(d), len(l), cap(l) {}
+
+    /// Constructor
     /// @param elements c-array of elements
     template <size_t N>
     constexpr Slice(T (&elements)[N])  // NOLINT
@@ -260,6 +265,18 @@ struct Slice {
 
     /// @returns the end for a reverse iterator
     auto rend() const { return std::reverse_iterator<const T*>(begin()); }
+
+    /// Equality operator.
+    /// @param other the other slice to compare against
+    /// @returns true if all fields of this slice are equal to the fields of @p other
+    bool operator==(const Slice& other) {
+        return data == other.data && len == other.len && cap == other.cap;
+    }
+
+    /// Inequality operator.
+    /// @param other the other slice to compare against
+    /// @returns false if any fields of this slice are not equal to the fields of @p other
+    bool operator!=(const Slice& other) { return !(*this == other); }
 };
 
 /// Deduction guide for Slice from c-array

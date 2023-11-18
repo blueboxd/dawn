@@ -123,7 +123,7 @@ constexpr size_t kMaxNestDepthOfCompositeType = 255;
 
 }  // namespace
 
-Resolver::Resolver(ProgramBuilder* builder)
+Resolver::Resolver(ProgramBuilder* builder, const wgsl::AllowedFeatures& allowed_features)
     : b(*builder),
       diagnostics_(builder->Diagnostics()),
       const_eval_(builder->constants, diagnostics_),
@@ -132,8 +132,10 @@ Resolver::Resolver(ProgramBuilder* builder)
       validator_(builder,
                  sem_,
                  enabled_extensions_,
+                 allowed_features_,
                  atomic_composite_info_,
-                 valid_type_storage_layouts_) {}
+                 valid_type_storage_layouts_),
+      allowed_features_(allowed_features) {}
 
 Resolver::~Resolver() = default;
 
@@ -155,6 +157,10 @@ bool Resolver::Resolve() {
 
     if (TINT_UNLIKELY(!result && !diagnostics_.contains_errors())) {
         AddICE("resolving failed, but no error was raised", {});
+        return false;
+    }
+
+    if (!validator_.Enables(b.AST().Enables())) {
         return false;
     }
 
@@ -189,14 +195,12 @@ bool Resolver::ResolveInternal() {
                     return DiagnosticControl(d->control);
                 },
                 [&](const ast::Enable* e) { return Enable(e); },
+                [&](const ast::Requires* r) { return Requires(r); },
                 [&](const ast::TypeDecl* td) { return TypeDecl(td); },
                 [&](const ast::Function* func) { return Function(func); },
                 [&](const ast::Variable* var) { return GlobalVariable(var); },
-                [&](const ast::ConstAssert* ca) { return ConstAssert(ca); },
-                [&](Default) {
-                    TINT_UNREACHABLE() << "unhandled global declaration: " << decl->TypeInfo().name;
-                    return false;
-                })) {
+                [&](const ast::ConstAssert* ca) { return ConstAssert(ca); },  //
+                TINT_ICE_ON_NO_MATCH)) {
             return false;
         }
     }
@@ -241,14 +245,8 @@ sem::Variable* Resolver::Variable(const ast::Variable* v, bool is_global) {
         [&](const ast::Var* var) { return Var(var, is_global); },
         [&](const ast::Let* let) { return Let(let); },
         [&](const ast::Override* override) { return Override(override); },
-        [&](const ast::Const* const_) { return Const(const_, is_global); },
-        [&](Default) {
-            StringStream err;
-            err << "Resolver::GlobalVariable() called with a unknown variable type: "
-                << v->TypeInfo().name;
-            AddICE(err.str(), v->source);
-            return nullptr;
-        });
+        [&](const ast::Const* const_) { return Const(const_, is_global); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 sem::Variable* Resolver::Let(const ast::Let* v) {
@@ -395,7 +393,7 @@ sem::Variable* Resolver::Override(const ast::Override* v) {
                 }
 
                 auto o = OverrideId{static_cast<decltype(OverrideId::value)>(value)};
-                sem->SetOverrideId(o);
+                sem->Attributes().override_id = o;
 
                 // Track the constant IDs that are specified in the shader.
                 override_ids_.Add(o, sem);
@@ -632,7 +630,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
                     if (!value) {
                         return kErrored;
                     }
-                    global->SetLocation(value.Get());
+                    global->Attributes().location = value.Get();
                     return kSuccess;
                 },
                 [&](const ast::IndexAttribute* attr) {
@@ -643,7 +641,18 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
                     if (!value) {
                         return kErrored;
                     }
-                    global->SetIndex(value.Get());
+                    global->Attributes().index = value.Get();
+                    return kSuccess;
+                },
+                [&](const ast::ColorAttribute* attr) {
+                    if (!has_io_address_space) {
+                        return kInvalid;
+                    }
+                    auto value = ColorAttribute(attr);
+                    if (!value) {
+                        return kErrored;
+                    }
+                    global->Attributes().color = value.Get();
                     return kSuccess;
                 },
                 [&](const ast::BuiltinAttribute* attr) {
@@ -681,7 +690,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
         }
 
         if (group && binding) {
-            global->SetBindingPoint(BindingPoint{group.value(), binding.value()});
+            global->Attributes().binding_point = BindingPoint{group.value(), binding.value()};
         }
 
     } else {
@@ -726,7 +735,15 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param,
                     if (TINT_UNLIKELY(!value)) {
                         return false;
                     }
-                    sem->SetLocation(value.Get());
+                    sem->Attributes().location = value.Get();
+                    return true;
+                },
+                [&](const ast::ColorAttribute* attr) {
+                    auto value = ColorAttribute(attr);
+                    if (TINT_UNLIKELY(!value)) {
+                        return false;
+                    }
+                    sem->Attributes().color = value.Get();
                     return true;
                 },
                 [&](const ast::BuiltinAttribute* attr) -> bool { return BuiltinAttribute(attr); },
@@ -772,7 +789,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param,
             }
         }
         if (group && binding) {
-            sem->SetBindingPoint(BindingPoint{group.value(), binding.value()});
+            sem->Attributes().binding_point = BindingPoint{group.value(), binding.value()};
         }
     } else {
         for (auto* attribute : param->attributes) {
@@ -868,8 +885,8 @@ bool Resolver::AllocateOverridableConstantIds() {
         auto* sem = sem_.Get(override);
 
         OverrideId id;
-        if (ast::HasAttribute<ast::IdAttribute>(override->attributes)) {
-            id = sem->OverrideId();
+        if (auto sem_id = sem->Attributes().override_id) {
+            id = *sem_id;
         } else {
             // No ID was specified, so allocate the next available ID.
             while (!ids_exhausted && override_ids_.Contains(next_id)) {
@@ -885,7 +902,7 @@ bool Resolver::AllocateOverridableConstantIds() {
             increment_next_id();
         }
 
-        const_cast<sem::GlobalVariable*>(sem)->SetOverrideId(id);
+        const_cast<sem::GlobalVariable*>(sem)->Attributes().override_id = id;
     }
     return true;
 }
@@ -1515,13 +1532,8 @@ sem::Expression* Resolver::Expression(const ast::Expression* root) {
                                                       current_statement_,
                                                       /* constant_value */ nullptr,
                                                       /* has_side_effects */ false);
-            },
-            [&](Default) {
-                StringStream err;
-                err << "unhandled expression type: " << expr->TypeInfo().name;
-                AddICE(err.str(), expr->source);
-                return nullptr;
-            });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
         if (!sem_expr) {
             return nullptr;
         }
@@ -2433,7 +2445,7 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         current_function_->AddDirectCall(call);
     }
 
-    if (!validator_.RequiredExtensionForBuiltinFn(call)) {
+    if (!validator_.RequiredFeaturesForBuiltinFn(call)) {
         return nullptr;
     }
 
@@ -3163,11 +3175,8 @@ sem::ValueExpression* Resolver::Literal(const ast::LiteralExpression* literal) {
             TINT_UNREACHABLE() << "Unhandled float literal suffix: " << f->suffix;
             return nullptr;
         },
-        [&](const ast::BoolLiteralExpression*) { return b.create<core::type::Bool>(); },
-        [&](Default) {
-            TINT_UNREACHABLE() << "Unhandled literal type: " << literal->TypeInfo().name;
-            return nullptr;
-        });
+        [&](const ast::BoolLiteralExpression*) { return b.create<core::type::Bool>(); },  //
+        TINT_ICE_ON_NO_MATCH);
 
     if (ty == nullptr) {
         return nullptr;
@@ -3723,6 +3732,29 @@ tint::Result<uint32_t> Resolver::LocationAttribute(const ast::LocationAttribute*
     return static_cast<uint32_t>(value);
 }
 
+tint::Result<uint32_t> Resolver::ColorAttribute(const ast::ColorAttribute* attr) {
+    ExprEvalStageConstraint constraint{core::EvaluationStage::kConstant, "@color value"};
+    TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
+
+    auto* materialized = Materialize(ValueExpression(attr->expr));
+    if (!materialized) {
+        return Failure{};
+    }
+
+    if (!materialized->Type()->IsAnyOf<core::type::I32, core::type::U32>()) {
+        AddError("@color must be an i32 or u32 value", attr->source);
+        return Failure{};
+    }
+
+    auto const_value = materialized->ConstantValue();
+    auto value = const_value->ValueAs<AInt>();
+    if (value < 0) {
+        AddError("@color value must be non-negative", attr->source);
+        return Failure{};
+    }
+
+    return static_cast<uint32_t>(value);
+}
 tint::Result<uint32_t> Resolver::IndexAttribute(const ast::IndexAttribute* attr) {
     ExprEvalStageConstraint constraint{core::EvaluationStage::kConstant, "@index value"};
     TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
@@ -3971,6 +4003,24 @@ bool Resolver::Enable(const ast::Enable* enable) {
     for (auto* ext : enable->extensions) {
         Mark(ext);
         enabled_extensions_.Add(ext->name);
+        if (!allowed_features_.extensions.count(ext->name)) {
+            StringStream ss;
+            ss << "extension '" << ext->name << "' is not allowed in the current environment";
+            AddError(ss.str(), ext->source);
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Resolver::Requires(const ast::Requires* req) {
+    for (auto feature : req->features) {
+        if (!allowed_features_.features.count(feature)) {
+            StringStream ss;
+            ss << "language feature '" << feature << "' is not allowed in the current environment";
+            AddError(ss.str(), req->source);
+            return false;
+        }
     }
     return true;
 }
@@ -4336,6 +4386,14 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                         return false;
                     }
                     attributes.index = value.Get();
+                    return true;
+                },
+                [&](const ast::ColorAttribute* attr) {
+                    auto value = ColorAttribute(attr);
+                    if (!value) {
+                        return false;
+                    }
+                    attributes.color = value.Get();
                     return true;
                 },
                 [&](const ast::BuiltinAttribute* attr) {

@@ -44,7 +44,7 @@ TEST_F(IR_UnaryTest, CreateComplement) {
     auto* inst = b.Complement(mod.Types().i32(), 4_i);
 
     ASSERT_TRUE(inst->Is<Unary>());
-    EXPECT_EQ(inst->Kind(), Unary::Kind::kComplement);
+    EXPECT_EQ(inst->Op(), UnaryOp::kComplement);
 
     ASSERT_TRUE(inst->Val()->Is<Constant>());
     auto lhs = inst->Val()->As<Constant>()->Value();
@@ -56,7 +56,7 @@ TEST_F(IR_UnaryTest, CreateNegation) {
     auto* inst = b.Negation(mod.Types().i32(), 4_i);
 
     ASSERT_TRUE(inst->Is<Unary>());
-    EXPECT_EQ(inst->Kind(), Unary::Kind::kNegation);
+    EXPECT_EQ(inst->Op(), UnaryOp::kNegation);
 
     ASSERT_TRUE(inst->Val()->Is<Constant>());
     auto lhs = inst->Val()->As<Constant>()->Value();
@@ -67,7 +67,7 @@ TEST_F(IR_UnaryTest, CreateNegation) {
 TEST_F(IR_UnaryTest, Usage) {
     auto* inst = b.Negation(mod.Types().i32(), 4_i);
 
-    EXPECT_EQ(inst->Kind(), Unary::Kind::kNegation);
+    EXPECT_EQ(inst->Op(), UnaryOp::kNegation);
 
     ASSERT_NE(inst->Val(), nullptr);
     EXPECT_THAT(inst->Val()->Usages(), testing::UnorderedElementsAre(Usage{inst, 0u}));
@@ -75,10 +75,9 @@ TEST_F(IR_UnaryTest, Usage) {
 
 TEST_F(IR_UnaryTest, Result) {
     auto* inst = b.Negation(mod.Types().i32(), 4_i);
-    EXPECT_TRUE(inst->HasResults());
-    EXPECT_FALSE(inst->HasMultiResults());
-    EXPECT_TRUE(inst->Result()->Is<InstructionResult>());
-    EXPECT_EQ(inst->Result()->Source(), inst);
+    EXPECT_EQ(inst->Results().Length(), 1u);
+    EXPECT_TRUE(inst->Result(0)->Is<InstructionResult>());
+    EXPECT_EQ(inst->Result(0)->Source(), inst);
 }
 
 TEST_F(IR_UnaryTest, Fail_NullType) {
@@ -96,10 +95,10 @@ TEST_F(IR_UnaryTest, Clone) {
     auto* new_inst = clone_ctx.Clone(inst);
 
     EXPECT_NE(inst, new_inst);
-    EXPECT_NE(nullptr, new_inst->Result());
-    EXPECT_NE(inst->Result(), new_inst->Result());
+    EXPECT_NE(nullptr, new_inst->Result(0));
+    EXPECT_NE(inst->Result(0), new_inst->Result(0));
 
-    EXPECT_EQ(Unary::Kind::kComplement, new_inst->Kind());
+    EXPECT_EQ(UnaryOp::kComplement, new_inst->Op());
 
     auto new_val = new_inst->Val()->As<Constant>()->Value();
     ASSERT_TRUE(new_val->Is<core::constant::Scalar<i32>>());

@@ -86,14 +86,14 @@ void QuerySet::EndQuery(ID3D11DeviceContext* d3d11DeviceContext, uint32_t query)
     d3d11DeviceContext->End(mPredicates[query].Get());
 }
 
-MaybeError QuerySet::Resolve(CommandRecordingContext* commandContext,
+MaybeError QuerySet::Resolve(const ScopedSwapStateCommandRecordingContext* commandContext,
                              uint32_t firstQuery,
                              uint32_t queryCount,
                              Buffer* destination,
                              uint64_t offset) {
     DAWN_TRY(destination->Clear(commandContext, 0, offset, queryCount * sizeof(uint64_t)));
     const auto& queryAvailability = GetQueryAvailability();
-    ID3D11DeviceContext* d3d11DeviceContext = commandContext->GetD3D11DeviceContext();
+    ID3D11DeviceContext* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
     for (uint32_t i = 0; i < queryCount; ++i) {
         uint32_t queryIndex = i + firstQuery;
         if (queryAvailability[queryIndex]) {

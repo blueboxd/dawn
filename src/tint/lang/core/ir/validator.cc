@@ -160,7 +160,7 @@ class Validator {
     std::string Name(Value* v);
 
     /// Checks the given operand is not null
-    /// @param inst the instruciton
+    /// @param inst the instruction
     /// @param operand the operand
     /// @param idx the operand index
     void CheckOperandNotNull(ir::Instruction* inst, ir::Value* operand, size_t idx);
@@ -209,15 +209,15 @@ class Validator {
 
     /// Validates the given access
     /// @param a the access to validate
-    void CheckAccess(ir::Access* a);
+    void CheckAccess(Access* a);
 
     /// Validates the given binary
     /// @param b the binary to validate
-    void CheckBinary(ir::Binary* b);
+    void CheckBinary(Binary* b);
 
     /// Validates the given unary
     /// @param u the unary to validate
-    void CheckUnary(ir::Unary* u);
+    void CheckUnary(Unary* u);
 
     /// Validates the given if
     /// @param if_ the if to validate
@@ -233,11 +233,11 @@ class Validator {
 
     /// Validates the given terminator
     /// @param b the terminator to validate
-    void CheckTerminator(ir::Terminator* b);
+    void CheckTerminator(Terminator* b);
 
     /// Validates the given exit
     /// @param e the exit to validate
-    void CheckExit(ir::Exit* e);
+    void CheckExit(Exit* e);
 
     /// Validates the given exit if
     /// @param e the exit if to validate
@@ -280,6 +280,7 @@ class Validator {
 
   private:
     Module& mod_;
+    std::shared_ptr<Source::File> disassembly_file;
     diag::List diagnostics_;
     Disassembler dis_{mod_};
     Block* current_block_ = nullptr;
@@ -295,10 +296,10 @@ Validator::Validator(Module& mod) : mod_(mod) {}
 Validator::~Validator() = default;
 
 void Validator::DisassembleIfNeeded() {
-    if (mod_.disassembly_file) {
+    if (disassembly_file) {
         return;
     }
-    mod_.disassembly_file = std::make_unique<Source::File>("", dis_.Disassemble());
+    disassembly_file = std::make_unique<Source::File>("", dis_.Disassemble());
 }
 
 Result<SuccessType> Validator::Run() {
@@ -326,7 +327,7 @@ Result<SuccessType> Validator::Run() {
     if (diagnostics_.contains_errors()) {
         DisassembleIfNeeded();
         diagnostics_.add_note(tint::diag::System::IR,
-                              "# Disassembly\n" + mod_.disassembly_file->content.data, {});
+                              "# Disassembly\n" + disassembly_file->content.data, {});
         return Failure{std::move(diagnostics_)};
     }
     return Success;
@@ -339,7 +340,6 @@ std::string Validator::InstError(Instruction* inst, std::string err) {
 void Validator::AddError(Instruction* inst, std::string err) {
     DisassembleIfNeeded();
     auto src = dis_.InstructionSource(inst);
-    src.file = mod_.disassembly_file.get();
     AddError(std::move(err), src);
 
     if (current_block_) {
@@ -350,7 +350,6 @@ void Validator::AddError(Instruction* inst, std::string err) {
 void Validator::AddError(Instruction* inst, size_t idx, std::string err) {
     DisassembleIfNeeded();
     auto src = dis_.OperandSource(Usage{inst, static_cast<uint32_t>(idx)});
-    src.file = mod_.disassembly_file.get();
     AddError(std::move(err), src);
 
     if (current_block_) {
@@ -361,7 +360,6 @@ void Validator::AddError(Instruction* inst, size_t idx, std::string err) {
 void Validator::AddResultError(Instruction* inst, size_t idx, std::string err) {
     DisassembleIfNeeded();
     auto src = dis_.ResultSource(Usage{inst, static_cast<uint32_t>(idx)});
-    src.file = mod_.disassembly_file.get();
     AddError(std::move(err), src);
 
     if (current_block_) {
@@ -372,52 +370,54 @@ void Validator::AddResultError(Instruction* inst, size_t idx, std::string err) {
 void Validator::AddError(Block* blk, std::string err) {
     DisassembleIfNeeded();
     auto src = dis_.BlockSource(blk);
-    src.file = mod_.disassembly_file.get();
     AddError(std::move(err), src);
 }
 
 void Validator::AddNote(Instruction* inst, std::string err) {
     DisassembleIfNeeded();
     auto src = dis_.InstructionSource(inst);
-    src.file = mod_.disassembly_file.get();
     AddNote(std::move(err), src);
 }
 
 void Validator::AddNote(Instruction* inst, size_t idx, std::string err) {
     DisassembleIfNeeded();
     auto src = dis_.OperandSource(Usage{inst, static_cast<uint32_t>(idx)});
-    src.file = mod_.disassembly_file.get();
     AddNote(std::move(err), src);
 }
 
 void Validator::AddNote(Block* blk, std::string err) {
     DisassembleIfNeeded();
     auto src = dis_.BlockSource(blk);
-    src.file = mod_.disassembly_file.get();
     AddNote(std::move(err), src);
 }
 
 void Validator::AddError(std::string err, Source src) {
-    diagnostics_.add_error(tint::diag::System::IR, std::move(err), src);
+    auto& diag = diagnostics_.add_error(tint::diag::System::IR, std::move(err), src);
+    if (src.range != Source::Range{{}}) {
+        diag.source.file = disassembly_file.get();
+        diag.owned_file = disassembly_file;
+    }
 }
 
 void Validator::AddNote(std::string note, Source src) {
-    diagnostics_.add_note(tint::diag::System::IR, std::move(note), src);
+    auto& diag = diagnostics_.add_note(tint::diag::System::IR, std::move(note), src);
+    if (src.range != Source::Range{{}}) {
+        diag.source.file = disassembly_file.get();
+        diag.owned_file = disassembly_file;
+    }
 }
 
 std::string Validator::Name(Value* v) {
     return mod_.NameOf(v).Name();
 }
 
-void Validator::CheckOperandNotNull(ir::Instruction* inst, ir::Value* operand, size_t idx) {
+void Validator::CheckOperandNotNull(Instruction* inst, ir::Value* operand, size_t idx) {
     if (operand == nullptr) {
         AddError(inst, idx, InstError(inst, "operand is undefined"));
     }
 }
 
-void Validator::CheckOperandsNotNull(ir::Instruction* inst,
-                                     size_t start_operand,
-                                     size_t end_operand) {
+void Validator::CheckOperandsNotNull(Instruction* inst, size_t start_operand, size_t end_operand) {
     auto operands = inst->Operands();
     for (size_t i = start_operand; i <= end_operand; i++) {
         CheckOperandNotNull(inst, operands[i], i);
@@ -451,7 +451,7 @@ void Validator::CheckFunction(Function* func) {
 void Validator::CheckBlock(Block* blk) {
     TINT_SCOPED_ASSIGNMENT(current_block_, blk);
 
-    if (!blk->HasTerminator()) {
+    if (!blk->Terminator()) {
         AddError(blk, "block: does not end in a terminator instruction");
     }
 
@@ -476,21 +476,19 @@ void Validator::CheckInstruction(Instruction* inst) {
         AddError(inst, InstError(inst, "destroyed instruction found in instruction list"));
         return;
     }
-    if (inst->HasResults()) {
-        auto results = inst->Results();
-        for (size_t i = 0; i < results.Length(); ++i) {
-            auto* res = results[i];
-            if (!res) {
-                AddResultError(inst, i, InstError(inst, "instruction result is undefined"));
-                continue;
-            }
+    auto results = inst->Results();
+    for (size_t i = 0; i < results.Length(); ++i) {
+        auto* res = results[i];
+        if (!res) {
+            AddResultError(inst, i, InstError(inst, "instruction result is undefined"));
+            continue;
+        }
 
-            if (res->Source() == nullptr) {
-                AddResultError(inst, i, InstError(inst, "instruction result source is undefined"));
-            } else if (res->Source() != inst) {
-                AddResultError(inst, i,
-                               InstError(inst, "instruction result source has wrong instruction"));
-            }
+        if (res->Source() == nullptr) {
+            AddResultError(inst, i, InstError(inst, "instruction result source is undefined"));
+        } else if (res->Source() != inst) {
+            AddResultError(inst, i,
+                           InstError(inst, "instruction result source has wrong instruction"));
         }
     }
 
@@ -536,8 +534,8 @@ void Validator::CheckInstruction(Instruction* inst) {
 }
 
 void Validator::CheckVar(Var* var) {
-    if (var->Result() && var->Initializer()) {
-        if (var->Initializer()->Type() != var->Result()->Type()->UnwrapPtr()) {
+    if (var->Result(0) && var->Initializer()) {
+        if (var->Initializer()->Type() != var->Result(0)->Type()->UnwrapPtr()) {
             AddError(var, InstError(var, "initializer has incorrect type"));
         }
     }
@@ -546,8 +544,8 @@ void Validator::CheckVar(Var* var) {
 void Validator::CheckLet(Let* let) {
     CheckOperandNotNull(let, let->Value(), Let::kValueOperandOffset);
 
-    if (let->Result() && let->Value()) {
-        if (let->Result()->Type() != let->Value()->Type()) {
+    if (let->Result(0) && let->Value()) {
+        if (let->Result(0)->Type() != let->Value()->Type()) {
             AddError(let, InstError(let, "result type does not match value type"));
         }
     }
@@ -574,7 +572,7 @@ void Validator::CheckBuiltinCall(BuiltinCall* call) {
     auto result = core::intrinsic::LookupFn(context, call->FriendlyName().c_str(), call->FuncId(),
                                             args, core::EvaluationStage::kRuntime, Source{});
     if (result) {
-        if (result->return_type != call->Result()->Type()) {
+        if (result->return_type != call->Result(0)->Type()) {
             AddError(call, InstError(call, "call result type does not match builtin return type"));
         }
     }
@@ -587,7 +585,7 @@ void Validator::CheckUserCall(UserCall* call) {
     }
 }
 
-void Validator::CheckAccess(ir::Access* a) {
+void Validator::CheckAccess(Access* a) {
     bool is_ptr = a->Object()->Type()->Is<core::type::Pointer>();
     auto* ty = a->Object()->Type()->UnwrapPtr();
 
@@ -645,8 +643,8 @@ void Validator::CheckAccess(ir::Access* a) {
         }
     }
 
-    auto* want_ty = a->Result()->Type()->UnwrapPtr();
-    bool want_ptr = a->Result()->Type()->Is<core::type::Pointer>();
+    auto* want_ty = a->Result(0)->Type()->UnwrapPtr();
+    bool want_ptr = a->Result(0)->Type()->Is<core::type::Pointer>();
     if (TINT_UNLIKELY(ty != want_ty || is_ptr != want_ptr)) {
         std::string want =
             want_ptr ? "ptr<" + want_ty->FriendlyName() + ">" : want_ty->FriendlyName();
@@ -656,15 +654,15 @@ void Validator::CheckAccess(ir::Access* a) {
     }
 }
 
-void Validator::CheckBinary(ir::Binary* b) {
+void Validator::CheckBinary(Binary* b) {
     CheckOperandsNotNull(b, Binary::kLhsOperandOffset, Binary::kRhsOperandOffset);
 }
 
-void Validator::CheckUnary(ir::Unary* u) {
+void Validator::CheckUnary(Unary* u) {
     CheckOperandNotNull(u, u->Val(), Unary::kValueOperandOffset);
 
-    if (u->Result() && u->Val()) {
-        if (u->Result()->Type() != u->Val()->Type()) {
+    if (u->Result(0) && u->Val()) {
+        if (u->Result(0)->Type() != u->Val()->Type()) {
             AddError(u, InstError(u, "result type must match value type"));
         }
     }
@@ -710,7 +708,7 @@ void Validator::CheckSwitch(Switch* s) {
     }
 }
 
-void Validator::CheckTerminator(ir::Terminator* b) {
+void Validator::CheckTerminator(Terminator* b) {
     // Note, transforms create `undef` terminator arguments (this is done in MergeReturn and
     // DemoteToHelper) so we can't add validation.
 
@@ -726,7 +724,7 @@ void Validator::CheckTerminator(ir::Terminator* b) {
         [&](Default) { AddError(b, InstError(b, "missing validation")); });
 }
 
-void Validator::CheckExit(ir::Exit* e) {
+void Validator::CheckExit(Exit* e) {
     if (e->ControlInstruction() == nullptr) {
         AddError(e, InstError(e, "has no parent control instruction"));
         return;
@@ -860,7 +858,7 @@ void Validator::CheckLoadVectorElement(LoadVectorElement* l) {
                          LoadVectorElement::kFromOperandOffset,
                          LoadVectorElement::kIndexOperandOffset);
 
-    if (auto* res = l->Result()) {
+    if (auto* res = l->Result(0)) {
         if (auto* el_ty = GetVectorPtrElementType(l, LoadVectorElement::kFromOperandOffset)) {
             if (res->Type() != el_ty) {
                 AddResultError(l, 0, "result type does not match vector pointer element type");

@@ -38,6 +38,8 @@ import (
 func DefaultAuthOptions() auth.Options {
 	def := chromeinfra.DefaultAuthOptions()
 	def.SecretsDir = fileutils.ExpandHome("~/.config/dawn-cts")
-	def.Scopes = append(def.Scopes, "https://www.googleapis.com/auth/gerritcodereview", auth.OAuthScopeEmail)
+	def.Scopes = append(def.Scopes,
+		"https://www.googleapis.com/auth/gerritcodereview",
+		auth.OAuthScopeEmail)
 	return def
 }

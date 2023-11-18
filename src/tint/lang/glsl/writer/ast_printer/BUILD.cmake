@@ -68,7 +68,6 @@ tint_target_add_dependencies(tint_lang_glsl_writer_ast_printer lib
   tint_utils_reflection
   tint_utils_result
   tint_utils_rtti
-  tint_utils_strconv
   tint_utils_symbol
   tint_utils_text
   tint_utils_traits
@@ -133,6 +132,7 @@ tint_target_add_dependencies(tint_lang_glsl_writer_ast_printer_test test
   tint_lang_wgsl_ast
   tint_lang_wgsl_ast_transform
   tint_lang_wgsl_ast_test
+  tint_lang_wgsl_common
   tint_lang_wgsl_program
   tint_lang_wgsl_resolver
   tint_lang_wgsl_sem

@@ -55,6 +55,7 @@ tint_target_add_dependencies(tint_cmd_loopy_cmd cmd
   tint_lang_spirv_reader_common
   tint_lang_wgsl
   tint_lang_wgsl_ast
+  tint_lang_wgsl_common
   tint_lang_wgsl_helpers
   tint_lang_wgsl_inspector
   tint_lang_wgsl_program
@@ -91,6 +92,7 @@ if(TINT_BUILD_MSL_WRITER)
   tint_target_add_dependencies(tint_cmd_loopy_cmd cmd
     tint_lang_msl_writer
     tint_lang_msl_writer_common
+    tint_lang_msl_writer_helpers
   )
 endif(TINT_BUILD_MSL_WRITER)
 

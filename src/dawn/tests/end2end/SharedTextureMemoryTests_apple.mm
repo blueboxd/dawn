@@ -56,7 +56,8 @@ class Backend : public SharedTextureMemoryTestBackend {
     std::vector<wgpu::FeatureName> RequiredFeatures() const override {
         return {wgpu::FeatureName::SharedTextureMemoryIOSurface,
                 wgpu::FeatureName::SharedFenceMTLSharedEvent,
-                wgpu::FeatureName::DawnMultiPlanarFormats};
+                wgpu::FeatureName::DawnMultiPlanarFormats,
+                wgpu::FeatureName::MultiPlanarFormatNv12a};
     }
 
     // Create one basic shared texture memory. It should support most operations.
@@ -85,12 +86,17 @@ class Backend : public SharedTextureMemoryTestBackend {
                  std::make_pair(kCVPixelFormatType_64RGBAHalf, 8),
                  std::make_pair(kCVPixelFormatType_TwoComponent16Half, 4),
                  std::make_pair(kCVPixelFormatType_OneComponent16Half, 2),
+                 std::make_pair(kCVPixelFormatType_TwoComponent16, 4),
+                 std::make_pair(kCVPixelFormatType_OneComponent16, 2),
                  std::make_pair(kCVPixelFormatType_ARGB2101010LEPacked, 4),
                  std::make_pair(kCVPixelFormatType_32RGBA, 4),
                  std::make_pair(kCVPixelFormatType_32BGRA, 4),
                  std::make_pair(kCVPixelFormatType_TwoComponent8, 2),
                  std::make_pair(kCVPixelFormatType_OneComponent8, 1),
+                 // Below bytes per element isn't correct.
                  std::make_pair(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, 4),
+                 std::make_pair(kCVPixelFormatType_420YpCbCr8VideoRange_8A_TriPlanar, 4),
+                 // TODO(dawn:551): Add R10X6BG10X6Biplanar420Unorm support.
              }) {
             for (uint32_t size : {4, 64}) {
                 auto dict = AcquireCFRef(CFDictionaryCreateMutable(

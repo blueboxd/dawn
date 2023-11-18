@@ -38,6 +38,7 @@
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
 #include "dawn/native/vulkan/PhysicalDeviceVk.h"
+#include "dawn/native/vulkan/QueueVk.h"
 #include "dawn/native/vulkan/TextureVk.h"
 #include "dawn/native/vulkan/VulkanError.h"
 
@@ -554,9 +555,10 @@ MaybeError SwapChain::PresentImpl() {
         // TODO(dawn:269): ditto same as present below: eagerly transition the blit texture to
         // CopySrc.
         mBlitTexture->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopySrc,
+                                         wgpu::ShaderStage::None,
                                          mBlitTexture->GetAllSubresources());
         mTexture->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst,
-                                     mTexture->GetAllSubresources());
+                                     wgpu::ShaderStage::None, mTexture->GetAllSubresources());
 
         VkImageBlit region;
         region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -587,7 +589,7 @@ MaybeError SwapChain::PresentImpl() {
     // TODO(crbug.com/dawn/269): Remove the need for this by eagerly transitioning the
     // presentable texture to present at the end of submits that use them and ideally even
     // folding that in the free layout transition at the end of render passes.
-    mTexture->TransitionUsageNow(recordingContext, kPresentTextureUsage,
+    mTexture->TransitionUsageNow(recordingContext, kPresentTextureUsage, wgpu::ShaderStage::None,
                                  mTexture->GetAllSubresources());
 
     // Use a semaphore to make sure all rendering has finished before presenting.
@@ -610,8 +612,8 @@ MaybeError SwapChain::PresentImpl() {
     mTexture->APIDestroy();
     mTexture = nullptr;
 
-    VkResult result =
-        VkResult::WrapUnsafe(device->fn.QueuePresentKHR(device->GetVkQueue(), &presentInfo));
+    VkResult result = VkResult::WrapUnsafe(
+        device->fn.QueuePresentKHR(ToBackend(device->GetQueue())->GetVkQueue(), &presentInfo));
 
     switch (result) {
         case VK_SUCCESS:

@@ -456,6 +456,7 @@ Maybe<Void> Parser::enable_directive() {
 //  : require identifier (COMMA identifier)* COMMA? SEMICOLON
 Maybe<Void> Parser::requires_directive() {
     return sync(Token::Type::kSemicolon, [&]() -> Maybe<Void> {
+        MultiTokenSource decl_source(this);
         if (!match(Token::Type::kRequires)) {
             return Failure::kNoMatch;
         }
@@ -473,34 +474,43 @@ Maybe<Void> Parser::requires_directive() {
             return add_error(t.source(), "requires directives don't take parenthesis");
         }
 
+        wgsl::LanguageFeatures features;
         while (continue_parsing()) {
-            auto& t2 = peek();
-
-            // Match the require name.
+            auto& t2 = next();
             if (handle_error(t2)) {
                 // The token might itself be an error.
                 return Failure::kErrored;
             }
 
+            // Match the require name.
             if (t2.IsIdentifier()) {
-                // TODO(dsinclair): When there are actual values for a requires directive they
-                // should be checked here.
-
-                // Any identifer is a valid feature name, so we correctly handle new feature
-                // names getting added in the future, they just all get flagged as not supported.
-                return add_error(t2.source(), "feature '" + t2.to_str() + "' is not supported");
-            }
-            if (t2.Is(Token::Type::kSemicolon)) {
-                break;
-            }
-            if (!match(Token::Type::kComma)) {
+                auto feature = wgsl::ParseLanguageFeature(t2.to_str_view());
+                if (feature == LanguageFeature::kUndefined) {
+                    // Any identifier is a valid feature name, so we correctly handle new feature
+                    // names getting added in the future, they just all get flagged as not
+                    // supported.
+                    return add_error(t2.source(), "feature '" + t2.to_str() + "' is not supported");
+                }
+                features.Add(feature);
+            } else {
                 return add_error(t2.source(), "invalid feature name for requires");
             }
+
+            if (!match(Token::Type::kComma)) {
+                break;
+            }
+            if (peek_is(Token::Type::kSemicolon)) {
+                break;
+            }
         }
-        // TODO(dsinclair): When there are actual values for a requires directive then the
-        // `while` will need to keep track if any were seen, and this needs to become
-        // conditional.
-        return add_error(t.source(), "missing feature names in requires directive");
+
+        if (!expect("requires directive", Token::Type::kSemicolon)) {
+            return Failure::kErrored;
+        }
+
+        builder_.AST().AddRequires(
+            create<ast::Requires>(decl_source.Source(), std::move(features)));
+        return kSuccess;
     });
 }
 
@@ -897,14 +907,15 @@ Maybe<ast::Type> Parser::type_specifier() {
     return builder_.ty(builder_.Ident(source.Source(), ident.to_str(), std::move(args.value)));
 }
 
-template <typename ENUM, size_t N>
+template <typename ENUM>
 Expect<ENUM> Parser::expect_enum(std::string_view name,
                                  ENUM (*parse)(std::string_view str),
-                                 const char* const (&strings)[N],
+                                 Slice<const std::string_view> strings,
                                  std::string_view use) {
     auto& t = peek();
+    auto ident = t.to_str();
     if (t.IsIdentifier()) {
-        auto val = parse(t.to_str());
+        auto val = parse(ident);
         if (val != ENUM::kUndefined) {
             synchronized_ = true;
             next();
@@ -926,7 +937,20 @@ Expect<ENUM> Parser::expect_enum(std::string_view name,
     }
     err << "\n";
 
-    tint::SuggestAlternatives(t.to_str(), strings, err);
+    if (strings == wgsl::kExtensionStrings && !HasPrefix(ident, "chromium")) {
+        // Filter out 'chromium' prefixed extensions. We don't want to advertise experimental
+        // extensions to end users (unless it looks like they've actually mis-typed a chromium
+        // extension name)
+        Vector<std::string_view, 8> filtered;
+        for (auto str : strings) {
+            if (!HasPrefix(str, "chromium")) {
+                filtered.Push(str);
+            }
+        }
+        tint::SuggestAlternatives(ident, filtered.Slice(), err);
+    } else {
+        tint::SuggestAlternatives(ident, strings, err);
+    }
 
     synchronized_ = false;
     return add_error(t.source(), err.str());
@@ -3064,6 +3088,8 @@ Maybe<const ast::Attribute*> Parser::attribute() {
             return create<ast::BindingAttribute>(t.source(), args[0]);
         case core::Attribute::kBuiltin:
             return create<ast::BuiltinAttribute>(t.source(), args[0]);
+        case core::Attribute::kColor:
+            return create<ast::ColorAttribute>(t.source(), args[0]);
         case core::Attribute::kCompute:
             return create<ast::StageAttribute>(t.source(), ast::PipelineStage::kCompute);
         case core::Attribute::kFragment:

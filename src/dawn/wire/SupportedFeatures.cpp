@@ -58,8 +58,6 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_Depth32FloatStencil8:
         case WGPUFeatureName_TimestampQuery:
         case WGPUFeatureName_ChromiumExperimentalTimestampQueryInsidePasses:
-        case WGPUFeatureName_PipelineStatisticsQuery:
-        case WGPUFeatureName_ChromiumExperimentalPipelineStatisticsQuery:
         case WGPUFeatureName_TextureCompressionBC:
         case WGPUFeatureName_TextureCompressionETC2:
         case WGPUFeatureName_TextureCompressionASTC:
@@ -69,6 +67,7 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_DawnMultiPlanarFormats:
         case WGPUFeatureName_MultiPlanarFormatExtendedUsages:
         case WGPUFeatureName_MultiPlanarFormatP010:
+        case WGPUFeatureName_MultiPlanarFormatNv12a:
         case WGPUFeatureName_MultiPlanarRenderTargets:
         case WGPUFeatureName_ChromiumExperimentalDp4a:
         case WGPUFeatureName_ShaderF16:
@@ -85,6 +84,7 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_PixelLocalStorageCoherent:
         case WGPUFeatureName_PixelLocalStorageNonCoherent:
         case WGPUFeatureName_Norm16TextureFormats:
+        case WGPUFeatureName_FramebufferFetch:
             return true;
     }
 

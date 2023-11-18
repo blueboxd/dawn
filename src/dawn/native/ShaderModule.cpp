@@ -334,9 +334,12 @@ ResultOrError<PixelLocalMemberType> FromTintPixelLocalMemberType(
 }
 
 ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
+                                       const tint::wgsl::AllowedFeatures& allowedFeatures,
                                        OwnedCompilationMessages* outMessages) {
 #if TINT_BUILD_WGSL_READER
-    tint::Program program = tint::wgsl::reader::Parse(file);
+    tint::wgsl::reader::Options options;
+    options.allowed_features = allowedFeatures;
+    tint::Program program = tint::wgsl::reader::Parse(file, options);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
     }
@@ -352,12 +355,14 @@ ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
 
 #if TINT_BUILD_SPV_READER
 ResultOrError<tint::Program> ParseSPIRV(const std::vector<uint32_t>& spirv,
+                                        const tint::wgsl::AllowedFeatures& allowedFeatures,
                                         OwnedCompilationMessages* outMessages,
                                         const DawnShaderModuleSPIRVOptionsDescriptor* optionsDesc) {
     tint::spirv::reader::Options options;
     if (optionsDesc) {
         options.allow_non_uniform_derivatives = optionsDesc->allowNonUniformDerivatives;
     }
+    options.allowed_features = allowedFeatures;
     tint::Program program = tint::spirv::reader::Read(spirv, options);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
@@ -620,9 +625,11 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
     metadata->usedInterStageVariables.resize(maxInterStageShaderVariables);
     metadata->interStageVariables.resize(maxInterStageShaderVariables);
 
+    // Vertex shader specific reflection.
     if (metadata->stage == SingleShaderStage::Vertex) {
+        // Vertex input reflection.
         for (const auto& inputVar : entryPoint.input_variables) {
-            uint32_t unsanitizedLocation = inputVar.location_attribute;
+            uint32_t unsanitizedLocation = inputVar.attributes.location.value();
             if (DelayedInvalidIf(unsanitizedLocation >= maxVertexAttributes,
                                  "Vertex input variable \"%s\" has a location (%u) that "
                                  "exceeds the maximum (%u)",
@@ -636,9 +643,11 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
             metadata->usedVertexInputs.set(location);
         }
 
+        // Vertex ouput (inter-stage variables) reflection.
         uint32_t totalInterStageShaderComponents = 0;
         for (const auto& outputVar : entryPoint.output_variables) {
             EntryPointMetadata::InterStageVariableInfo variable;
+            variable.name = outputVar.variable_name;
             DAWN_TRY_ASSIGN(variable.baseType,
                             TintComponentTypeToInterStageComponentType(outputVar.component_type));
             DAWN_TRY_ASSIGN(variable.componentCount, TintCompositionTypeToInterStageComponentCount(
@@ -650,7 +659,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
                                 outputVar.interpolation_sampling));
             totalInterStageShaderComponents += variable.componentCount;
 
-            uint32_t location = outputVar.location_attribute;
+            uint32_t location = outputVar.attributes.location.value();
             if (DelayedInvalidIf(location >= maxInterStageShaderVariables,
                                  "Vertex output variable \"%s\" has a location (%u) that "
                                  "is greater than or equal to (%u).",
@@ -662,6 +671,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
             metadata->interStageVariables[location] = variable;
         }
 
+        // Other vertex metadata.
         metadata->totalInterStageShaderComponents = totalInterStageShaderComponents;
         DelayedInvalidIf(totalInterStageShaderComponents > maxInterStageShaderComponents,
                          "Total vertex output components count (%u) exceeds the maximum (%u).",
@@ -671,10 +681,21 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
         metadata->usesInstanceIndex = entryPoint.instance_index_used;
     }
 
+    // Fragment shader specific reflection.
     if (metadata->stage == SingleShaderStage::Fragment) {
         uint32_t totalInterStageShaderComponents = 0;
+
+        // Fragment input (inter-stage variables) reflection.
         for (const auto& inputVar : entryPoint.input_variables) {
+            // Skip over @color framebuffer fetch, it is handled below.
+            if (!inputVar.attributes.location.has_value()) {
+                DAWN_ASSERT(inputVar.attributes.color.has_value());
+                continue;
+            }
+
+            uint32_t location = inputVar.attributes.location.value();
             EntryPointMetadata::InterStageVariableInfo variable;
+            variable.name = inputVar.variable_name;
             DAWN_TRY_ASSIGN(variable.baseType,
                             TintComponentTypeToInterStageComponentType(inputVar.component_type));
             DAWN_TRY_ASSIGN(variable.componentCount, TintCompositionTypeToInterStageComponentCount(
@@ -686,7 +707,6 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
                                 inputVar.interpolation_sampling));
             totalInterStageShaderComponents += variable.componentCount;
 
-            uint32_t location = inputVar.location_attribute;
             if (DelayedInvalidIf(location >= maxInterStageShaderVariables,
                                  "Fragment input variable \"%s\" has a location (%u) that "
                                  "is greater than or equal to (%u).",
@@ -698,6 +718,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
             metadata->interStageVariables[location] = variable;
         }
 
+        // Other fragment metadata
         if (entryPoint.front_facing_used) {
             totalInterStageShaderComponents += 1;
         }
@@ -715,16 +736,17 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
                          "Total fragment input components count (%u) exceeds the maximum (%u).",
                          totalInterStageShaderComponents, maxInterStageShaderComponents);
 
+        // Fragment output reflection.
         uint32_t maxColorAttachments = limits.v1.maxColorAttachments;
         for (const auto& outputVar : entryPoint.output_variables) {
-            EntryPointMetadata::FragmentOutputVariableInfo variable;
+            EntryPointMetadata::FragmentRenderAttachmentInfo variable;
             DAWN_TRY_ASSIGN(variable.baseType,
                             TintComponentTypeToTextureComponentType(outputVar.component_type));
             DAWN_TRY_ASSIGN(variable.componentCount, TintCompositionTypeToInterStageComponentCount(
                                                          outputVar.composition_type));
             DAWN_ASSERT(variable.componentCount <= 4);
 
-            uint32_t unsanitizedAttachment = outputVar.location_attribute;
+            uint32_t unsanitizedAttachment = outputVar.attributes.location.value();
             if (DelayedInvalidIf(unsanitizedAttachment >= maxColorAttachments,
                                  "Fragment output variable \"%s\" has a location (%u) that "
                                  "exceeds the maximum (%u).",
@@ -734,9 +756,40 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
 
             ColorAttachmentIndex attachment(static_cast<uint8_t>(unsanitizedAttachment));
             metadata->fragmentOutputVariables[attachment] = variable;
-            metadata->fragmentOutputsWritten.set(attachment);
+            metadata->fragmentOutputMask.set(attachment);
         }
 
+        // Fragment input reflection.
+        for (const auto& inputVar : entryPoint.input_variables) {
+            if (!inputVar.attributes.color.has_value()) {
+                continue;
+            }
+
+            // Tint should disallow using @color(N) without the respective enable, which is gated
+            // on the extension.
+            DAWN_ASSERT(device->HasFeature(Feature::FramebufferFetch));
+
+            EntryPointMetadata::FragmentRenderAttachmentInfo variable;
+            DAWN_TRY_ASSIGN(variable.baseType,
+                            TintComponentTypeToTextureComponentType(inputVar.component_type));
+            DAWN_TRY_ASSIGN(variable.componentCount, TintCompositionTypeToInterStageComponentCount(
+                                                         inputVar.composition_type));
+            DAWN_ASSERT(variable.componentCount <= 4);
+
+            uint32_t unsanitizedAttachment = inputVar.attributes.color.value();
+            if (DelayedInvalidIf(unsanitizedAttachment >= maxColorAttachments,
+                                 "Fragment input variable \"%s\" has a location (%u) that "
+                                 "exceeds the maximum (%u).",
+                                 inputVar.name, unsanitizedAttachment, maxColorAttachments)) {
+                continue;
+            }
+
+            ColorAttachmentIndex attachment(static_cast<uint8_t>(unsanitizedAttachment));
+            metadata->fragmentInputVariables[attachment] = variable;
+            metadata->fragmentInputMask.set(attachment);
+        }
+
+        // Fragment PLS reflection.
         if (!entryPoint.pixel_local_members.empty()) {
             metadata->usesPixelLocal = true;
             metadata->pixelLocalBlockSize =
@@ -751,6 +804,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
         }
     }
 
+    // Generic resource binding reflection.
     for (const tint::inspector::ResourceBinding& resource :
          inspector->GetResourceBindings(entryPoint.name)) {
         ShaderBindingInfo info;
@@ -832,6 +886,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
                         resource.binding, resource.bind_group);
     }
 
+    // Reflection of combined sampler and texture uses.
     auto samplerTextureUses = inspector->GetSamplerTextureUses(entryPoint.name);
     metadata->samplerTexturePairs.reserve(samplerTextureUses.Length());
     std::transform(samplerTextureUses.begin(), samplerTextureUses.end(),
@@ -849,34 +904,6 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
     return std::move(metadata);
 }
 
-MaybeError ValidateWGSLProgramExtension(const DeviceBase* device,
-                                        const WGSLExtensionSet* enabledExtensions,
-                                        OwnedCompilationMessages* outMessages) {
-    const WGSLExtensionSet& extensionAllowList = device->GetWGSLExtensionAllowList();
-
-    bool hasDisallowedExtension = false;
-    tint::diag::List messages;
-
-    for (const std::string& extension : *enabledExtensions) {
-        if (extensionAllowList.count(extension)) {
-            continue;
-        }
-        hasDisallowedExtension = true;
-        messages.add_error(tint::diag::System::Program,
-                           "Extension " + extension + " is not allowed on the Device.");
-    }
-
-    if (hasDisallowedExtension) {
-        if (outMessages != nullptr) {
-            DAWN_TRY(outMessages->AddMessages(messages));
-        }
-        return DAWN_MAKE_ERROR(InternalErrorType::Validation,
-                               "Shader module uses extension(s) not enabled for its device.");
-    }
-
-    return {};
-}
-
 MaybeError ReflectShaderUsingTint(const DeviceBase* device,
                                   const tint::Program* program,
                                   OwnedCompilationMessages* compilationMessages,
@@ -885,13 +912,6 @@ MaybeError ReflectShaderUsingTint(const DeviceBase* device,
     DAWN_ASSERT(program->IsValid());
 
     tint::inspector::Inspector inspector(*program);
-
-    DAWN_ASSERT(enabledWGSLExtensions->empty());
-    auto usedExtensionNames = inspector.GetUsedExtensionNames();
-    for (std::string name : usedExtensionNames) {
-        enabledWGSLExtensions->insert(name);
-    }
-    DAWN_TRY(ValidateWGSLProgramExtension(device, enabledWGSLExtensions, compilationMessages));
 
     std::vector<tint::inspector::EntryPoint> entryPoints = inspector.GetEntryPoints();
     DAWN_INVALID_IF(inspector.has_error(), "Tint Reflection failure: Inspector: %s\n",
@@ -1020,7 +1040,8 @@ MaybeError ValidateAndParseShaderModule(DeviceBase* device,
             DAWN_TRY(ValidateSpirv(device, spirv.data(), spirv.size(), dumpSpirv));
 #endif  // DAWN_ENABLE_SPIRV_VALIDATION
             tint::Program program;
-            DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages, spirvOptions));
+            DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, device->GetWGSLAllowedFeatures(),
+                                                outMessages, spirvOptions));
             parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
 
             return {};
@@ -1044,7 +1065,8 @@ MaybeError ValidateAndParseShaderModule(DeviceBase* device,
     }
 
     tint::Program program;
-    DAWN_TRY_ASSIGN(program, ParseWGSL(&tintSource->file, outMessages));
+    DAWN_TRY_ASSIGN(program,
+                    ParseWGSL(&tintSource->file, device->GetWGSLAllowedFeatures(), outMessages));
     parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
     parseResult->tintSource = std::move(tintSource);
 

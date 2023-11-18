@@ -59,16 +59,9 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Support Adaptable Scalable Texture Compressed (ASTC) "
       "texture formats",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=955", FeatureInfo::FeatureState::Stable}},
-    {Feature::PipelineStatisticsQuery,
-     {"Support Pipeline Statistics Query", "https://bugs.chromium.org/p/dawn/issues/detail?id=434",
-      FeatureInfo::FeatureState::Experimental}},
-    {Feature::ChromiumExperimentalPipelineStatisticsQuery,
-     {"Support experimental Pipeline Statistics Query",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=434",
-      FeatureInfo::FeatureState::Experimental}},
     {Feature::TimestampQuery,
      {"Support Timestamp Query", "https://bugs.chromium.org/p/dawn/issues/detail?id=434",
-      FeatureInfo::FeatureState::Experimental}},
+      FeatureInfo::FeatureState::Stable}},
     {Feature::ChromiumExperimentalTimestampQueryInsidePasses,
      {"Support experimental Timestamp Query inside render/compute pass",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=434",
@@ -133,6 +126,11 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
     {Feature::MultiPlanarFormatP010,
      {"Import and use the P010 multi-planar texture format with per plane views",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=551", FeatureInfo::FeatureState::Stable}},
+    {Feature::MultiPlanarFormatNv12a,
+     {"Import and use the NV12A multi-planar texture format with per plane views",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "multi_planar_format_nv12a.md",
+      FeatureInfo::FeatureState::Experimental}},
     {Feature::MultiPlanarRenderTargets,
      {"Import and use multi-planar texture formats as render attachments",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=1337", FeatureInfo::FeatureState::Stable}},
@@ -259,6 +257,11 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Support creation of buffers from host-mapped pointers.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
       "host_mapped_pointer.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::FramebufferFetch,
+     {"Support loading the current framebuffer value in fragment shaders.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "framebuffer_fetch.md",
       FeatureInfo::FeatureState::Experimental}},
 };
 

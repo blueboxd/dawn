@@ -268,17 +268,22 @@ class Builder {
         return Append(ir.instructions.Create<ir::Switch>(cond_val));
     }
 
-    /// Creates a case for the switch @p s with the given selectors
+    /// Creates a default case for the switch @p s
     /// @param s the switch to create the case into
-    /// @param selectors the case selectors for the case statement
     /// @returns the start block for the case instruction
-    ir::Block* Case(ir::Switch* s, VectorRef<Switch::CaseSelector> selectors);
+    ir::Block* DefaultCase(ir::Switch* s);
 
     /// Creates a case for the switch @p s with the given selectors
     /// @param s the switch to create the case into
-    /// @param selectors the case selectors for the case statement
+    /// @param values the case selector values for the case statement
     /// @returns the start block for the case instruction
-    ir::Block* Case(ir::Switch* s, std::initializer_list<Switch::CaseSelector> selectors);
+    ir::Block* Case(ir::Switch* s, VectorRef<ir::Constant*> values);
+
+    /// Creates a case for the switch @p s with the given selectors
+    /// @param s the switch to create the case into
+    /// @param values the case selector values for the case statement
+    /// @returns the start block for the case instruction
+    ir::Block* Case(ir::Switch* s, std::initializer_list<ir::Constant*> values);
 
     /// Creates a new ir::Constant
     /// @param val the constant value
@@ -396,8 +401,9 @@ class Builder {
                 return in;  /// Pass-through
             } else if constexpr (is_instruction) {
                 /// Extract the first result from the instruction
-                TINT_ASSERT(in->HasResults() && !in->HasMultiResults());
-                return in->Result();
+                auto results = in->Results();
+                TINT_ASSERT(results.Length() == 1);
+                return results[0];
             }
         } else if constexpr (is_numeric) {
             /// Creates a value from the given number
@@ -606,15 +612,15 @@ class Builder {
         return Binary(BinaryOp::kModulo, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
-    /// Creates an op for `kind val`
-    /// @param kind the kind of operation
+    /// Creates an op for `op val`
+    /// @param op the unary operator
     /// @param type the result type of the binary expression
     /// @param val the value of the operation
     /// @returns the operation
     template <typename VAL>
-    ir::Unary* Unary(enum Unary::Kind kind, const core::type::Type* type, VAL&& val) {
+    ir::Unary* Unary(UnaryOp op, const core::type::Type* type, VAL&& val) {
         auto* value = Value(std::forward<VAL>(val));
-        return Append(ir.instructions.Create<ir::Unary>(InstructionResult(type), kind, value));
+        return Append(ir.instructions.Create<ir::Unary>(InstructionResult(type), op, value));
     }
 
     /// Creates a Complement operation
@@ -623,7 +629,7 @@ class Builder {
     /// @returns the operation
     template <typename VAL>
     ir::Unary* Complement(const core::type::Type* type, VAL&& val) {
-        return Unary(ir::Unary::Kind::kComplement, type, std::forward<VAL>(val));
+        return Unary(ir::UnaryOp::kComplement, type, std::forward<VAL>(val));
     }
 
     /// Creates a Negation operation
@@ -632,7 +638,7 @@ class Builder {
     /// @returns the operation
     template <typename VAL>
     ir::Unary* Negation(const core::type::Type* type, VAL&& val) {
-        return Unary(ir::Unary::Kind::kNegation, type, std::forward<VAL>(val));
+        return Unary(ir::UnaryOp::kNegation, type, std::forward<VAL>(val));
     }
 
     /// Creates a Not operation
@@ -820,7 +826,7 @@ class Builder {
         }
         auto* var = Var(name, ir.Types().ptr(SPACE, val->Type(), ACCESS));
         var->SetInitializer(val);
-        ir.SetName(var->Result(), name);
+        ir.SetName(var->Result(0), name);
         return var;
     }
 
@@ -857,7 +863,7 @@ class Builder {
             return nullptr;
         }
         auto* let = Append(ir.instructions.Create<ir::Let>(InstructionResult(val->Type()), val));
-        ir.SetName(let->Result(), name);
+        ir.SetName(let->Result(0), name);
         return let;
     }
 

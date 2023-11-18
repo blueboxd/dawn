@@ -79,7 +79,6 @@
 #include "src/tint/lang/wgsl/ir/builtin_call.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
-#include "src/tint/lang/wgsl/writer/ir_to_program/rename_conflicts.h"
 #include "src/tint/utils/containers/hashmap.h"
 #include "src/tint/utils/containers/predicates.h"
 #include "src/tint/utils/containers/reverse.h"
@@ -88,11 +87,6 @@
 #include "src/tint/utils/macros/scoped_assignment.h"
 #include "src/tint/utils/math/math.h"
 #include "src/tint/utils/rtti/switch.h"
-
-// Helper for calling TINT_UNIMPLEMENTED() from a Switch(object_ptr) default case.
-#define UNHANDLED_CASE(object_ptr)                         \
-    TINT_UNIMPLEMENTED() << "unhandled case in Switch(): " \
-                         << (object_ptr ? object_ptr->TypeInfo().name : "<null>")
 
 // Helper for incrementing nesting_depth_ and then decrementing nesting_depth_ at the end
 // of the scope that holds the call.
@@ -110,15 +104,6 @@ class State {
     explicit State(core::ir::Module& m) : mod(m) {}
 
     Program Run() {
-        // Run transforms need to sanitize for WGSL.
-        {
-            auto result = RenameConflicts(&mod);
-            if (!result) {
-                b.Diagnostics().add(result.Failure().reason);
-                return Program(std::move(b));
-            }
-        }
-
         if (auto res = core::ir::Validate(mod); !res) {
             // IR module failed validation.
             b.Diagnostics() = res.Failure().reason;
@@ -202,7 +187,7 @@ class State {
             tint::Switch(
                 inst,                                   //
                 [&](core::ir::Var* var) { Var(var); },  //
-                [&](Default) { UNHANDLED_CASE(inst); });
+                TINT_ICE_ON_NO_MATCH);
         }
     }
     const ast::Function* Fn(core::ir::Function* fn) {
@@ -288,7 +273,7 @@ class State {
             if (inst->Results().Length() == 1) {
                 // Instruction has a single result value.
                 // Check to see if the result of this instruction is a candidate for inlining.
-                auto* result = inst->Result();
+                auto* result = inst->Result(0);
                 // Only values with a single usage can be inlined.
                 // Named values are not inlined, as we want to emit the name for a let.
                 if (result->Usages().Count() == 1 && !mod.NameOf(result).IsValid()) {
@@ -341,7 +326,7 @@ class State {
             [&](core::ir::Unary* i) { Unary(i); },                            //
             [&](core::ir::Unreachable*) {},                                   //
             [&](core::ir::Var* i) { Var(i); },                                //
-            [&](Default) { UNHANDLED_CASE(inst); });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     void If(core::ir::If* if_) {
@@ -403,7 +388,7 @@ class State {
             for (auto* inst : *l->Body()) {
                 if (body_stmts.IsEmpty()) {
                     if (auto* if_ = inst->As<core::ir::If>()) {
-                        if (!if_->HasResults() &&                                //
+                        if (if_->Results().IsEmpty() &&                          //
                             if_->True()->Length() == 1 &&                        //
                             if_->False()->Length() == 1 &&                       //
                             tint::Is<core::ir::ExitIf>(if_->True()->Front()) &&  //
@@ -481,8 +466,8 @@ class State {
 
                 const ast::BlockStatement* body = nullptr;
                 {
-                    TINT_SCOPED_ASSIGNMENT(current_switch_case_, c.Block());
-                    body = Block(c.Block());
+                    TINT_SCOPED_ASSIGNMENT(current_switch_case_, c.block);
+                    body = Block(c.block);
                 }
 
                 auto selectors = tint::Transform(c.selectors,  //
@@ -595,7 +580,7 @@ class State {
                     }
                 }
                 auto* expr = b.Call(NameFor(c->Target()), std::move(args));
-                if (!call->HasResults() || call->Result()->Usages().IsEmpty()) {
+                if (call->Results().IsEmpty() || call->Result()->Usages().IsEmpty()) {
                     Append(b.CallStmt(expr));
                     return;
                 }
@@ -610,9 +595,6 @@ class State {
                 }
 
                 switch (c->Func()) {
-                    case wgsl::BuiltinFn::kTextureBarrier:
-                        Enable(wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
-                        break;
                     case wgsl::BuiltinFn::kSubgroupBallot:
                     case wgsl::BuiltinFn::kSubgroupBroadcast:
                         Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
@@ -622,7 +604,7 @@ class State {
                 }
 
                 auto* expr = b.Call(c->Func(), std::move(args));
-                if (!call->HasResults() || call->Result()->Type()->Is<core::type::Void>()) {
+                if (call->Results().IsEmpty() || call->Result()->Type()->Is<core::type::Void>()) {
                     Append(b.CallStmt(expr));
                     return;
                 }
@@ -641,7 +623,7 @@ class State {
                 Bind(c->Result(), b.Bitcast(ty, args[0]), PtrKind::kPtr);
             },
             [&](core::ir::Discard*) { Append(b.Discard()); },  //
-            [&](Default) { UNHANDLED_CASE(call); });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     void Load(core::ir::Load* l) { Bind(l->Result(), Expr(l->From())); }
@@ -653,11 +635,11 @@ class State {
 
     void Unary(core::ir::Unary* u) {
         const ast::Expression* expr = nullptr;
-        switch (u->Kind()) {
-            case core::ir::Unary::Kind::kComplement:
+        switch (u->Op()) {
+            case core::ir::UnaryOp::kComplement:
                 expr = b.Complement(Expr(u->Val()));
                 break;
-            case core::ir::Unary::Kind::kNegation:
+            case core::ir::UnaryOp::kNegation:
                 expr = b.Negation(Expr(u->Val()));
                 break;
         }
@@ -692,8 +674,8 @@ class State {
                     } else {
                         TINT_ICE() << "invalid index for struct type: " << index->TypeInfo().name;
                     }
-                },
-                [&](Default) { UNHANDLED_CASE(obj_ty); });
+                },  //
+                TINT_ICE_ON_NO_MATCH);
         }
         Bind(a->Result(), expr);
     }
@@ -868,11 +850,8 @@ class State {
             [&](const core::type::Array*) { return composite(/* can_splat */ false); },
             [&](const core::type::Vector*) { return composite(/* can_splat */ true); },
             [&](const core::type::Matrix*) { return composite(/* can_splat */ false); },
-            [&](const core::type::Struct*) { return composite(/* can_splat */ false); },
-            [&](Default) {
-                UNHANDLED_CASE(c->Type());
-                return b.Expr("<error>");
-            });
+            [&](const core::type::Struct*) { return composite(/* can_splat */ false); },  //
+            TINT_ICE_ON_NO_MATCH);
     }
 
     void Enable(wgsl::Extension ext) {
@@ -950,9 +929,6 @@ class State {
                 return b.ty.sampled_texture(t->dim(), el);
             },
             [&](const core::type::StorageTexture* t) {
-                if (t->access() == core::Access::kRead || t->access() == core::Access::kReadWrite) {
-                    Enable(wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
-                }
                 return b.ty.storage_texture(t->dim(), t->texel_format(), t->access());
             },
             [&](const core::type::Sampler* s) { return b.ty.sampler(s->kind()); },
@@ -969,11 +945,8 @@ class State {
             [&](const core::type::Reference*) {
                 TINT_ICE() << "reference types should never appear in the IR";
                 return b.ty.i32();
-            },
-            [&](Default) {
-                UNHANDLED_CASE(ty);
-                return b.ty.i32();
-            });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
     }
 
     ast::Type Struct(const core::type::Struct* s) {
@@ -1099,7 +1072,7 @@ class State {
     bool AsShortCircuit(core::ir::If* i,
                         const StatementList& true_stmts,
                         const StatementList& false_stmts) {
-        if (!i->HasResults()) {
+        if (i->Results().IsEmpty()) {
             return false;
         }
         auto* result = i->Result();

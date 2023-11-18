@@ -343,13 +343,16 @@ MaybeError BufferBase::MapAtCreation() {
     }
 
     DeviceBase* device = GetDevice();
-    if (device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
+    if (device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse) &&
+        !device->IsToggleEnabled(Toggle::DisableLazyClearForMappedAtCreationBuffer)) {
         memset(ptr, uint8_t(0u), size);
-        SetIsDataInitialized();
         device->IncrementLazyClearCountForTesting();
     } else if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
         memset(ptr, uint8_t(1u), size);
     }
+    // Mark the buffer as initialized since we don't want to later clear it using the GPU since that
+    // would overwrite what the client wrote using the CPU.
+    SetIsDataInitialized();
 
     return {};
 }
@@ -485,6 +488,14 @@ void BufferBase::APIMapAsync(wgpu::MapMode mode,
     TRACE_EVENT1(GetDevice()->GetPlatform(), General, "Buffer::APIMapAsync", "serial",
                  uint64_t(mLastUsageSerial));
     GetDevice()->GetQueue()->TrackTask(std::move(request), mLastUsageSerial);
+}
+
+Future BufferBase::APIMapAsyncF(wgpu::MapMode mode,
+                                size_t offset,
+                                size_t size,
+                                const BufferMapCallbackInfo& callbackInfo) {
+    // TODO(dawn:1987) Implement this.
+    DAWN_CHECK(false);
 }
 
 void* BufferBase::APIGetMappedRange(size_t offset, size_t size) {

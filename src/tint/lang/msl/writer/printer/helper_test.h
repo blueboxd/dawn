@@ -39,10 +39,12 @@
 
 namespace tint::msl::writer {
 
+/// Metal header declaration
 constexpr auto kMetalHeader = R"(#include <metal_stdlib>
 using namespace metal;
 )";
 
+/// Metal array declaration
 constexpr auto kMetalArray = R"(template<typename T, size_t N>
 struct tint_array {
   const constant T& operator[](size_t i) const constant { return elements[i]; }
@@ -61,8 +63,6 @@ struct tint_array {
 template <typename BASE>
 class MslPrinterTestHelperBase : public BASE {
   public:
-    MslPrinterTestHelperBase() : writer_(mod) {}
-
     /// The test module.
     core::ir::Module mod;
     /// The test builder.
@@ -71,9 +71,6 @@ class MslPrinterTestHelperBase : public BASE {
     core::type::Manager& ty{mod.Types()};
 
   protected:
-    /// The MSL writer.
-    Printer writer_;
-
     /// Validation errors
     std::string err_;
 
@@ -83,18 +80,17 @@ class MslPrinterTestHelperBase : public BASE {
     /// Run the writer on the IR module and validate the result.
     /// @returns true if generation and validation succeeded
     bool Generate() {
-        auto raised = raise::Raise(mod);
-        if (!raised) {
+        if (auto raised = raise::Raise(mod); !raised) {
             err_ = raised.Failure().reason.str();
             return false;
         }
 
-        auto result = writer_.Generate();
+        auto result = Print(mod);
         if (!result) {
             err_ = result.Failure().reason.str();
             return false;
         }
-        output_ = writer_.Result();
+        output_ = result.Get();
 
         return true;
     }
@@ -105,8 +101,10 @@ class MslPrinterTestHelperBase : public BASE {
     std::string MetalArray() const { return kMetalArray; }
 };
 
+/// Printer tests
 using MslPrinterTest = MslPrinterTestHelperBase<testing::Test>;
 
+/// Printer param tests
 template <typename T>
 using MslPrinterTestWithParam = MslPrinterTestHelperBase<testing::TestWithParam<T>>;
 

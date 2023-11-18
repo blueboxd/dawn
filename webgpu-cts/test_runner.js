@@ -27,6 +27,7 @@
 
 import { globalTestConfig } from '../third_party/webgpu-cts/src/common/framework/test_config.js';
 import { dataCache } from '../third_party/webgpu-cts/src/common/framework/data_cache.js';
+import { getResourcePath } from '../third_party/webgpu-cts/src/common/framework/resources.js';
 import { DefaultTestFileLoader } from '../third_party/webgpu-cts/src/common/internal/file_loader.js';
 import { prettyPrintLog } from '../third_party/webgpu-cts/src/common/internal/logging/log_message.js';
 import { Logger } from '../third_party/webgpu-cts/src/common/internal/logging/logger.js';
@@ -119,7 +120,13 @@ async function runCtsTestViaSocket(event) {
 
 dataCache.setStore({
   load: async (path) => {
-    return await (await fetch(`/third_party/webgpu-cts/cache/data/${path}`)).text();
+    const fullPath = getResourcePath(`cache/${path}`);
+    const response = await fetch(fullPath);
+    if (!response.ok) {
+      sendMessageTestLogString(`failed to load cache file: ${fullPath}`)
+      return Promise.reject(response.statusText);
+    }
+    return new Uint8Array(await response.arrayBuffer());
   }
 });
 
@@ -272,14 +279,21 @@ function sendMessageTestLog(logs) {
     });
 }
 
+function sendMessageTestLogString(msg) {
+  socket.send(JSON.stringify({
+    'type': 'TEST_LOG',
+    'log': msg + "\n"
+  }));
+}
+
 function sendMessageTestFinished() {
   socket.send('{"type":"TEST_FINISHED"}');
 }
 
 function sendMessageInfraFailure(message) {
   socket.send(JSON.stringify({
-      'type': 'INFRA_FAILURE',
-      'message': message,
+    'type': 'INFRA_FAILURE',
+    'message': message,
   }));
 }
 

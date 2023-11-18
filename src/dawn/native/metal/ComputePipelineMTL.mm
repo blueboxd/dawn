@@ -31,9 +31,11 @@
 #include "dawn/native/Adapter.h"
 #include "dawn/native/CreatePipelineAsyncTask.h"
 #include "dawn/native/Instance.h"
+#include "dawn/native/metal/BackendMTL.h"
 #include "dawn/native/metal/DeviceMTL.h"
 #include "dawn/native/metal/ShaderModuleMTL.h"
 #include "dawn/native/metal/UtilsMetal.h"
+#include "dawn/platform/metrics/HistogramMacros.h"
 
 namespace dawn::native::metal {
 
@@ -68,6 +70,7 @@ MaybeError ComputePipeline::Initialize() {
     descriptor.computeFunction = computeData.function.Get();
     descriptor.label = label.Get();
 
+    platform::metrics::DawnHistogramTimer timer(GetDevice()->GetPlatform());
     mMtlComputePipelineState.Acquire([mtlDevice
         newComputePipelineStateWithDescriptor:descriptor
                                       options:MTLPipelineOptionNone
@@ -78,6 +81,7 @@ MaybeError ComputePipeline::Initialize() {
                                    std::string([error.localizedDescription UTF8String]));
     }
     DAWN_ASSERT(mMtlComputePipelineState != nil);
+    timer.RecordMicroseconds("Metal.newComputePipelineStateWithDescriptor.CacheMiss");
 
     // Copy over the local workgroup size as it is passed to dispatch explicitly in Metal
     mLocalWorkgroupSize = computeData.localWorkgroupSize;
@@ -116,7 +120,7 @@ void ComputePipeline::InitializeAsync(Ref<ComputePipelineBase> computePipeline,
                                                          userdata);
     // Workaround a crash where the validation layers on AMD crash with partition alloc.
     // See crbug.com/dawn/1200.
-    if (physicalDevice->GetInstance()->IsBackendValidationEnabled() &&
+    if (IsMetalValidationEnabled(physicalDevice) &&
         gpu_info::IsAMD(physicalDevice->GetVendorId())) {
         asyncTask->Run();
         return;

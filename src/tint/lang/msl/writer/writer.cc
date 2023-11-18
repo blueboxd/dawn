@@ -31,6 +31,7 @@
 #include <utility>
 
 #include "src/tint/lang/msl/writer/ast_printer/ast_printer.h"
+#include "src/tint/lang/msl/writer/common/option_helpers.h"
 #include "src/tint/lang/msl/writer/printer/printer.h"
 #include "src/tint/lang/msl/writer/raise/raise.h"
 
@@ -44,6 +45,13 @@ namespace tint::msl::writer {
 Result<Output> Generate(const Program& program, const Options& options) {
     if (!program.IsValid()) {
         return Failure{program.Diagnostics()};
+    }
+
+    {
+        auto res = ValidateBindingOptions(options);
+        if (!res) {
+            return res.Failure();
+        }
     }
 
     Output output;
@@ -69,12 +77,11 @@ Result<Output> Generate(const Program& program, const Options& options) {
         }
 
         // Generate the MSL code.
-        auto impl = std::make_unique<Printer>(ir);
-        auto result = impl->Generate();
+        auto result = Print(ir);
         if (!result) {
             return result.Failure();
         }
-        output.msl = impl->Result();
+        output.msl = result.Get();
 #else
         return Failure{"use_tint_ir requires building with TINT_BUILD_WGSL_READER"};
 #endif

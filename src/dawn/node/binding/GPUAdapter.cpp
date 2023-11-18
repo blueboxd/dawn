@@ -46,6 +46,7 @@
     X(maxTextureDimension3D)                     \
     X(maxTextureArrayLayers)                     \
     X(maxBindGroups)                             \
+    X(maxBindGroupsPlusVertexBuffers)            \
     X(maxBindingsPerBindGroup)                   \
     X(maxDynamicUniformBuffersPerPipelineLayout) \
     X(maxDynamicStorageBuffersPerPipelineLayout) \
@@ -63,6 +64,7 @@
     X(maxVertexAttributes)                       \
     X(maxVertexBufferArrayStride)                \
     X(maxInterStageShaderComponents)             \
+    X(maxInterStageShaderVariables)              \
     X(maxColorAttachments)                       \
     X(maxColorAttachmentBytesPerSample)          \
     X(maxComputeWorkgroupStorageSize)            \

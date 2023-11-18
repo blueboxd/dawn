@@ -254,11 +254,8 @@ DAWN_INSTANTIATE_TEST(RenderPassTest_RegressionDawn1071,
 // test for dawn:1389 where Intel Metal devices fail to do that correctly, requiring a workaround.
 class RenderPassTest_RegressionDawn1389 : public RenderPassTest {};
 TEST_P(RenderPassTest_RegressionDawn1389, ClearMultisubresourceAfterWriteDepth16Unorm) {
-    // TODO(crbug.com/dawn/1492): Support copying to Depth16Unorm on GL.
-    DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
-
     // TODO(dawn:1705): fix this test for Intel D3D11.
-    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntel());
+    DAWN_SUPPRESS_TEST_IF((IsD3D11() || IsANGLED3D11()) && IsIntel());
 
     // TODO(crbug.com/dawn/1989): Failed on Intel Gen12 GPUs because of Windows Vulkan driver issue,
     // when copying to a D16_UNORM depth texture and clearing one subresource, other subresources

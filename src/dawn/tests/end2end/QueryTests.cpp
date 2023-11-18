@@ -391,6 +391,9 @@ TEST_P(OcclusionQueryTests, RewriteNoDrawToZero) {
     // TODO(dawn:1870): D3D11_QUERY_OCCLUSION_PREDICATE doesn't work on Intel Gen12.
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntelGen12());
 
+    // TODO(dawn:2247): Failing on ANGLE/D3D11
+    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
+
     constexpr uint32_t kQueryCount = 1;
 
     wgpu::QuerySet querySet = CreateOcclusionQuerySet(kQueryCount);
@@ -474,6 +477,9 @@ TEST_P(OcclusionQueryTests, RewriteNoDrawToZeroSeparateSubmit) {
 TEST_P(OcclusionQueryTests, RewriteToZeroWithDraw) {
     // TODO(dawn:1870): D3D11_QUERY_OCCLUSION_PREDICATE doesn't work on Intel Gen12.
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntelGen12());
+
+    // TODO(dawn:2247): Failing on ANGLE/D3D11
+    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
 
     constexpr uint32_t kQueryCount = 1;
 
@@ -592,51 +598,6 @@ TEST_P(OcclusionQueryTests, ResolveToBufferWithOffset) {
         EXPECT_BUFFER(destination, kMinDestinationOffset, sizeof(uint64_t),
                       new OcclusionExpectation(OcclusionExpectation::Result::NonZero));
     }
-}
-
-class PipelineStatisticsQueryTests : public QueryTests {
-  protected:
-    void SetUp() override {
-        DawnTest::SetUp();
-
-        // Skip all tests if pipeline statistics feature is not supported
-        DAWN_TEST_UNSUPPORTED_IF(
-            !SupportsFeatures({wgpu::FeatureName::ChromiumExperimentalPipelineStatisticsQuery}));
-    }
-
-    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
-        std::vector<wgpu::FeatureName> requiredFeatures = {};
-        if (SupportsFeatures({wgpu::FeatureName::ChromiumExperimentalPipelineStatisticsQuery})) {
-            requiredFeatures.push_back(
-                wgpu::FeatureName::ChromiumExperimentalPipelineStatisticsQuery);
-        }
-
-        return requiredFeatures;
-    }
-
-    wgpu::QuerySet CreateQuerySetForPipelineStatistics(
-        uint32_t queryCount,
-        std::vector<wgpu::PipelineStatisticName> pipelineStatistics = {}) {
-        wgpu::QuerySetDescriptor descriptor;
-        descriptor.count = queryCount;
-        descriptor.type = wgpu::QueryType::PipelineStatistics;
-
-        if (pipelineStatistics.size() > 0) {
-            descriptor.pipelineStatistics = pipelineStatistics.data();
-            descriptor.pipelineStatisticCount = pipelineStatistics.size();
-        }
-        return device.CreateQuerySet(&descriptor);
-    }
-};
-
-// Test creating query set with the type of PipelineStatistics
-TEST_P(PipelineStatisticsQueryTests, QuerySetCreation) {
-    // Zero-sized query set is allowed.
-    CreateQuerySetForPipelineStatistics(0, {wgpu::PipelineStatisticName::ClipperInvocations,
-                                            wgpu::PipelineStatisticName::VertexShaderInvocations});
-
-    CreateQuerySetForPipelineStatistics(1, {wgpu::PipelineStatisticName::ClipperInvocations,
-                                            wgpu::PipelineStatisticName::VertexShaderInvocations});
 }
 
 class TimestampExpectation : public detail::Expectation {
@@ -1336,11 +1297,6 @@ DAWN_INSTANTIATE_TEST(OcclusionQueryTests,
                       D3D12Backend(),
                       MetalBackend(),
                       MetalBackend({"metal_fill_empty_occlusion_queries_with_zero"}),
-                      VulkanBackend());
-DAWN_INSTANTIATE_TEST(PipelineStatisticsQueryTests,
-                      D3D11Backend(),
-                      D3D12Backend(),
-                      MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());

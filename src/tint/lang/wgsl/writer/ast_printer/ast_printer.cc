@@ -40,6 +40,7 @@
 #include "src/tint/lang/wgsl/ast/break_statement.h"
 #include "src/tint/lang/wgsl/ast/call_expression.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
+#include "src/tint/lang/wgsl/ast/color_attribute.h"
 #include "src/tint/lang/wgsl/ast/compound_assignment_statement.h"
 #include "src/tint/lang/wgsl/ast/const.h"
 #include "src/tint/lang/wgsl/ast/continue_statement.h"
@@ -102,6 +103,10 @@ bool ASTPrinter::Generate() {
         EmitEnable(enable);
         has_directives = true;
     }
+    for (auto req : program_.AST().Requires()) {
+        EmitRequires(req);
+        has_directives = true;
+    }
     for (auto diagnostic : program_.AST().DiagnosticDirectives()) {
         auto out = Line();
         EmitDiagnosticControl(out, diagnostic->control);
@@ -113,7 +118,7 @@ bool ASTPrinter::Generate() {
     }
     // Generate global declarations in the order they appear in the module.
     for (auto* decl : program_.AST().GlobalDeclarations()) {
-        if (decl->IsAnyOf<ast::DiagnosticDirective, ast::Enable>()) {
+        if (decl->IsAnyOf<ast::DiagnosticDirective, ast::Enable, ast::Requires>()) {
             continue;
         }
         Switch(
@@ -121,8 +126,8 @@ bool ASTPrinter::Generate() {
             [&](const ast::TypeDecl* td) { return EmitTypeDecl(td); },
             [&](const ast::Function* func) { return EmitFunction(func); },
             [&](const ast::Variable* var) { return EmitVariable(Line(), var); },
-            [&](const ast::ConstAssert* ca) { return EmitConstAssert(ca); },
-            [&](Default) { TINT_UNREACHABLE(); });
+            [&](const ast::ConstAssert* ca) { return EmitConstAssert(ca); },  //
+            TINT_ICE_ON_NO_MATCH);
         if (decl != program_.AST().GlobalDeclarations().Back()) {
             Line();
         }
@@ -148,6 +153,20 @@ void ASTPrinter::EmitEnable(const ast::Enable* enable) {
     out << ";";
 }
 
+void ASTPrinter::EmitRequires(const ast::Requires* req) {
+    auto out = Line();
+    out << "requires ";
+    bool first = true;
+    for (auto feature : req->features) {
+        if (!first) {
+            out << ", ";
+        }
+        out << feature;
+        first = false;
+    }
+    out << ";";
+}
+
 void ASTPrinter::EmitTypeDecl(const ast::TypeDecl* ty) {
     Switch(
         ty,  //
@@ -157,11 +176,8 @@ void ASTPrinter::EmitTypeDecl(const ast::TypeDecl* ty) {
             EmitExpression(out, alias->type);
             out << ";";
         },
-        [&](const ast::Struct* str) { EmitStructType(str); },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   "unknown declared type: " + std::string(ty->TypeInfo().name));
-        });
+        [&](const ast::Struct* str) { EmitStructType(str); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitExpression(StringStream& out, const ast::Expression* expr) {
@@ -175,8 +191,8 @@ void ASTPrinter::EmitExpression(StringStream& out, const ast::Expression* expr) 
         [&](const ast::LiteralExpression* l) { EmitLiteral(out, l); },
         [&](const ast::MemberAccessorExpression* m) { EmitMemberAccessor(out, m); },
         [&](const ast::PhonyExpression*) { out << "_"; },
-        [&](const ast::UnaryOpExpression* u) { EmitUnaryOp(out, u); },
-        [&](Default) { diagnostics_.add_error(diag::System::Writer, "unknown expression type"); });
+        [&](const ast::UnaryOpExpression* u) { EmitUnaryOp(out, u); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitIndexAccessor(StringStream& out, const ast::IndexAccessorExpression* expr) {
@@ -253,8 +269,8 @@ void ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* li
                     << l->suffix;
             }
         },
-        [&](const ast::IntLiteralExpression* l) { out << l->value << l->suffix; },
-        [&](Default) { diagnostics_.add_error(diag::System::Writer, "unknown literal type"); });
+        [&](const ast::IntLiteralExpression* l) { out << l->value << l->suffix; },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitIdentifier(StringStream& out, const ast::IdentifierExpression* expr) {
@@ -434,8 +450,8 @@ void ASTPrinter::EmitVariable(StringStream& out, const ast::Variable* v) {
             }
         },
         [&](const ast::Let*) { out << "let"; }, [&](const ast::Override*) { out << "override"; },
-        [&](const ast::Const*) { out << "const"; },
-        [&](Default) { TINT_ICE() << "unhandled variable type " << v->TypeInfo().name; });
+        [&](const ast::Const*) { out << "const"; },  //
+        TINT_ICE_ON_NO_MATCH);
 
     out << " " << v->name->symbol.Name();
 
@@ -490,6 +506,11 @@ void ASTPrinter::EmitAttributes(StringStream& out, VectorRef<const ast::Attribut
                 EmitExpression(out, location->expr);
                 out << ")";
             },
+            [&](const ast::ColorAttribute* color) {
+                out << "color(";
+                EmitExpression(out, color->expr);
+                out << ")";
+            },
             [&](const ast::IndexAttribute* index) {
                 out << "index(";
                 EmitExpression(out, index->expr);
@@ -537,10 +558,8 @@ void ASTPrinter::EmitAttributes(StringStream& out, VectorRef<const ast::Attribut
             [&](const ast::StrideAttribute* stride) { out << "stride(" << stride->stride << ")"; },
             [&](const ast::InternalAttribute* internal) {
                 out << "internal(" << internal->InternalName() << ")";
-            },
-            [&](Default) {
-                TINT_ICE() << "Unsupported attribute '" << attr->TypeInfo().name << "'";
-            });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
     }
 }
 
@@ -679,11 +698,8 @@ void ASTPrinter::EmitStatement(const ast::Statement* stmt) {
         [&](const ast::ReturnStatement* r) { EmitReturn(r); },
         [&](const ast::ConstAssert* c) { EmitConstAssert(c); },
         [&](const ast::SwitchStatement* s) { EmitSwitch(s); },
-        [&](const ast::VariableDeclStatement* v) { EmitVariable(Line(), v->variable); },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   "unknown statement type: " + std::string(stmt->TypeInfo().name));
-        });
+        [&](const ast::VariableDeclStatement* v) { EmitVariable(Line(), v->variable); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitStatements(VectorRef<const ast::Statement*> stmts) {

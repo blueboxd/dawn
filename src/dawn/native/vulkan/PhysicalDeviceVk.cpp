@@ -161,6 +161,11 @@ MaybeError PhysicalDevice::InitializeImpl() {
         return DAWN_INTERNAL_ERROR("Vulkan 1.1 or Vulkan 1.0 with KHR_Maintenance1 required.");
     }
 
+    // Needed for separate depth/stencilReadOnly
+    if (!mDeviceInfo.HasExt(DeviceExt::Maintenance2)) {
+        return DAWN_INTERNAL_ERROR("Vulkan 1.1 or Vulkan 1.0 with KHR_Maintenance2 required.");
+    }
+
     // Needed for security
     if (!mDeviceInfo.features.robustBufferAccess) {
         return DAWN_INTERNAL_ERROR("Vulkan robustBufferAccess feature required.");
@@ -209,11 +214,6 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 
     if (mDeviceInfo.features.textureCompressionASTC_LDR == VK_TRUE) {
         EnableFeature(Feature::TextureCompressionASTC);
-    }
-
-    if (mDeviceInfo.features.pipelineStatisticsQuery == VK_TRUE) {
-        EnableFeature(Feature::PipelineStatisticsQuery);
-        EnableFeature(Feature::ChromiumExperimentalPipelineStatisticsQuery);
     }
 
     // TODO(dawn:1559) Resolving timestamp queries after a render pass is failing on Qualcomm-based
@@ -693,7 +693,7 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* ada
     return Device::Create(adapter, descriptor, deviceToggles);
 }
 
-MaybeError PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
+FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     wgpu::FeatureName feature,
     const TogglesState& toggles) const {
     return {};

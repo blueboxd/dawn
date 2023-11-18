@@ -2206,7 +2206,7 @@ TEST_F(IRToProgramTest, Switch_Default) {
         v->SetInitializer(b.Constant(42_i));
 
         auto s = b.Switch(b.Load(v));
-        b.Append(b.Case(s, {core::ir::Switch::CaseSelector{}}), [&] {
+        b.Append(b.DefaultCase(s), [&] {
             b.Call(ty.void_(), fn_a);
             b.ExitSwitch(s);
         });
@@ -2246,20 +2246,15 @@ TEST_F(IRToProgramTest, Switch_3_Cases) {
         v->SetInitializer(b.Constant(42_i));
 
         auto s = b.Switch(b.Load(v));
-        b.Append(b.Case(s, {core::ir::Switch::CaseSelector{b.Constant(0_i)}}), [&] {
+        b.Append(b.Case(s, {b.Constant(0_i)}), [&] {
             b.Call(ty.void_(), fn_a);
             b.ExitSwitch(s);
         });
-        b.Append(b.Case(s,
-                        {
-                            core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                            core::ir::Switch::CaseSelector{},
-                        }),
-                 [&] {
-                     b.Call(ty.void_(), fn_b);
-                     b.ExitSwitch(s);
-                 });
-        b.Append(b.Case(s, {core::ir::Switch::CaseSelector{b.Constant(2_i)}}), [&] {
+        b.Append(b.Case(s, {b.Constant(1_i), nullptr}), [&] {
+            b.Call(ty.void_(), fn_b);
+            b.ExitSwitch(s);
+        });
+        b.Append(b.Case(s, {b.Constant(2_i)}), [&] {
             b.Call(ty.void_(), fn_c);
             b.ExitSwitch(s);
         });
@@ -2305,16 +2300,9 @@ TEST_F(IRToProgramTest, Switch_3_Cases_AllReturn) {
         v->SetInitializer(b.Constant(42_i));
 
         auto s = b.Switch(b.Load(v));
-        b.Append(b.Case(s, {core::ir::Switch::CaseSelector{b.Constant(0_i)}}),
-                 [&] { b.Return(fn); });
-        b.Append(b.Case(s,
-                        {
-                            core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                            core::ir::Switch::CaseSelector{},
-                        }),
-                 [&] { b.Return(fn); });
-        b.Append(b.Case(s, {core::ir::Switch::CaseSelector{b.Constant(2_i)}}),
-                 [&] { b.Return(fn); });
+        b.Append(b.Case(s, {b.Constant(0_i)}), [&] { b.Return(fn); });
+        b.Append(b.Case(s, {b.Constant(1_i), nullptr}), [&] { b.Return(fn); });
+        b.Append(b.Case(s, {b.Constant(2_i)}), [&] { b.Return(fn); });
 
         b.Call(ty.void_(), fn_a);
         b.Return(fn);
@@ -2361,29 +2349,18 @@ TEST_F(IRToProgramTest, Switch_Nested) {
         v2->SetInitializer(b.Constant(24_i));
 
         auto s1 = b.Switch(b.Load(v1));
-        b.Append(b.Case(s1, {core::ir::Switch::CaseSelector{b.Constant(0_i)}}), [&] {
+        b.Append(b.Case(s1, {b.Constant(0_i)}), [&] {
             b.Call(ty.void_(), fn_a);
             b.ExitSwitch(s1);
         });
-        b.Append(b.Case(s1,
-                        {
-                            core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                            core::ir::Switch::CaseSelector{},
-                        }),
-                 [&] {
-                     auto s2 = b.Switch(b.Load(v2));
-                     b.Append(b.Case(s2, {core::ir::Switch::CaseSelector{b.Constant(0_i)}}),
-                              [&] { b.ExitSwitch(s2); });
-                     b.Append(b.Case(s2,
-                                     {
-                                         core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                                         core::ir::Switch::CaseSelector{},
-                                     }),
-                              [&] { b.Return(fn); });
+        b.Append(b.Case(s1, {b.Constant(1_i), nullptr}), [&] {
+            auto s2 = b.Switch(b.Load(v2));
+            b.Append(b.Case(s2, {b.Constant(0_i)}), [&] { b.ExitSwitch(s2); });
+            b.Append(b.Case(s2, {b.Constant(1_i), nullptr}), [&] { b.Return(fn); });
 
-                     b.ExitSwitch(s1);
-                 });
-        b.Append(b.Case(s1, {core::ir::Switch::CaseSelector{b.Constant(2_i)}}), [&] {
+            b.ExitSwitch(s1);
+        });
+        b.Append(b.Case(s1, {b.Constant(2_i)}), [&] {
             b.Call(ty.void_(), fn_c);
             b.ExitSwitch(s1);
         });
@@ -3208,55 +3185,6 @@ fn y() {
   let l = &(v[1i]);
   x(l);
 }
-)");
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// chromium_experimental_read_write_storage_texture
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(IRToProgramTest, Enable_ChromiumExperimentalReadWriteStorageTexture_TextureBarrier) {
-    auto* fn = b.Function("f", ty.void_());
-    b.Append(fn->Block(), [&] {
-        b.Append(mod.instructions.Create<wgsl::ir::BuiltinCall>(
-            b.InstructionResult(ty.void_()), wgsl::BuiltinFn::kTextureBarrier, Empty));
-        b.Return(fn);
-    });
-
-    EXPECT_WGSL(R"(
-enable chromium_experimental_read_write_storage_texture;
-
-fn f() {
-  textureBarrier();
-}
-)");
-}
-
-TEST_F(IRToProgramTest, Enable_ChromiumExperimentalReadWriteStorageTexture_ReadOnlyStorageTexture) {
-    auto* T = b.Var("T", ty.ptr<handle>(ty.Get<core::type::StorageTexture>(
-                             core::type::TextureDimension::k2d, core::TexelFormat::kR32Float,
-                             core::Access::kRead, ty.f32())));
-    T->SetBindingPoint(0, 0);
-    b.ir.root_block->Append(T);
-
-    EXPECT_WGSL(R"(
-enable chromium_experimental_read_write_storage_texture;
-
-@group(0) @binding(0) var T : texture_storage_2d<r32float, read>;
-)");
-}
-
-TEST_F(IRToProgramTest,
-       Enable_ChromiumExperimentalReadWriteStorageTexture_ReadWriteOnlyStorageTexture) {
-    auto* T = b.Var("T", ty.ptr<handle>(ty.Get<core::type::StorageTexture>(
-                             core::type::TextureDimension::k2d, core::TexelFormat::kR32Float,
-                             core::Access::kReadWrite, ty.f32())));
-    T->SetBindingPoint(0, 0);
-    b.ir.root_block->Append(T);
-
-    EXPECT_WGSL(R"(
-enable chromium_experimental_read_write_storage_texture;
-
-@group(0) @binding(0) var T : texture_storage_2d<r32float, read_write>;
 )");
 }
 

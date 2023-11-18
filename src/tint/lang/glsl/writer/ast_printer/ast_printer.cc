@@ -51,6 +51,7 @@
 #include "src/tint/lang/glsl/writer/ast_raise/texture_1d_to_2d.h"
 #include "src/tint/lang/glsl/writer/ast_raise/texture_builtins_from_uniform.h"
 #include "src/tint/lang/glsl/writer/common/options.h"
+#include "src/tint/lang/glsl/writer/common/printer_support.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
 #include "src/tint/lang/wgsl/ast/id_attribute.h"
 #include "src/tint/lang/wgsl/ast/internal_attribute.h"
@@ -97,7 +98,6 @@
 #include "src/tint/utils/macros/defer.h"
 #include "src/tint/utils/macros/scoped_assignment.h"
 #include "src/tint/utils/rtti/switch.h"
-#include "src/tint/utils/strconv/float_to_string.h"
 #include "src/tint/utils/text/string.h"
 #include "src/tint/utils/text/string_stream.h"
 
@@ -127,37 +127,6 @@ bool RequiresOESSampleVariables(tint::core::BuiltinValue builtin) {
             return true;
         default:
             return false;
-    }
-}
-
-void PrintI32(StringStream& out, int32_t value) {
-    // GLSL parses `-2147483648` as a unary minus and `2147483648` as separate tokens, and the
-    // latter doesn't fit into an (32-bit) `int`. Emit `(-2147483647 - 1)` instead, which ensures
-    // the expression type is `int`.
-    if (auto int_min = std::numeric_limits<int32_t>::min(); value == int_min) {
-        out << "(" << int_min + 1 << " - 1)";
-    } else {
-        out << value;
-    }
-}
-
-void PrintF32(StringStream& out, float value) {
-    if (std::isinf(value)) {
-        out << "0.0f " << (value >= 0 ? "/* inf */" : "/* -inf */");
-    } else if (std::isnan(value)) {
-        out << "0.0f /* nan */";
-    } else {
-        out << tint::writer::FloatToString(value) << "f";
-    }
-}
-
-void PrintF16(StringStream& out, float value) {
-    if (std::isinf(value)) {
-        out << "0.0hf " << (value >= 0 ? "/* inf */" : "/* -inf */");
-    } else if (std::isnan(value)) {
-        out << "0.0hf /* nan */";
-    } else {
-        out << tint::writer::FloatToString(value) << "hf";
     }
 }
 
@@ -349,10 +318,11 @@ bool ASTPrinter::Generate() {
             [&](const ast::Enable* enable) {
                 // Record the required extension for generating extension directive later
                 RecordExtension(enable);
-            },
-            [&](Default) {
-                TINT_ICE() << "unhandled module-scope declaration: " << decl->TypeInfo().name;
-            });
+            },  //
+            [&](const ast::Requires*) {
+                // Do nothing for requiring language features in GLSL.
+            },  //
+            TINT_ICE_ON_NO_MATCH);
     }
 
     TextBuffer extensions;
@@ -837,9 +807,7 @@ void ASTPrinter::EmitCall(StringStream& out, const ast::CallExpression* expr) {
         [&](const sem::BuiltinFn* builtin) { EmitBuiltinCall(out, call, builtin); },
         [&](const sem::ValueConversion* conv) { EmitValueConversion(out, call, conv); },
         [&](const sem::ValueConstructor* ctor) { EmitValueConstructor(out, call, ctor); },
-        [&](Default) {
-            TINT_ICE() << "unhandled call target: " << call->Target()->TypeInfo().name;
-        });
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitFunctionCall(StringStream& out,
@@ -1826,11 +1794,8 @@ void ASTPrinter::EmitExpression(StringStream& out, const ast::Expression* expr) 
         [&](const ast::IdentifierExpression* i) { EmitIdentifier(out, i); },
         [&](const ast::LiteralExpression* l) { EmitLiteral(out, l); },
         [&](const ast::MemberAccessorExpression* m) { EmitMemberAccessor(out, m); },
-        [&](const ast::UnaryOpExpression* u) { EmitUnaryOp(out, u); },
-        [&](Default) {  //
-            diagnostics_.add_error(diag::System::Writer, "unknown expression type: " +
-                                                             std::string(expr->TypeInfo().name));
-        });
+        [&](const ast::UnaryOpExpression* u) { EmitUnaryOp(out, u); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitIdentifier(StringStream& out, const ast::IdentifierExpression* expr) {
@@ -1953,10 +1918,8 @@ void ASTPrinter::EmitGlobalVariable(const ast::Variable* global) {
         },
         [&](const ast::Const*) {
             // Constants are embedded at their use
-        },
-        [&](Default) {
-            TINT_ICE() << "unhandled global variable type " << global->TypeInfo().name;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitUniformVariable(const ast::Var* var, const sem::Variable* sem) {
@@ -1966,7 +1929,7 @@ void ASTPrinter::EmitUniformVariable(const ast::Var* var, const sem::Variable* s
         TINT_ICE() << "storage variable must be of struct type";
         return;
     }
-    auto bp = *sem->As<sem::GlobalVariable>()->BindingPoint();
+    auto bp = *sem->As<sem::GlobalVariable>()->Attributes().binding_point;
     {
         auto out = Line();
         out << "layout(binding = " << bp.binding << ", std140";
@@ -1985,7 +1948,7 @@ void ASTPrinter::EmitStorageVariable(const ast::Var* var, const sem::Variable* s
         TINT_ICE() << "storage variable must be of struct type";
         return;
     }
-    auto bp = *sem->As<sem::GlobalVariable>()->BindingPoint();
+    auto bp = *sem->As<sem::GlobalVariable>()->Attributes().binding_point;
     Line() << "layout(binding = " << bp.binding << ", std430) buffer "
            << UniqueIdentifier(StructName(str) + "_ssbo") << " {";
     EmitStructMembers(current_buffer_, str);
@@ -2117,7 +2080,7 @@ void ASTPrinter::EmitIOVariable(const sem::GlobalVariable* var) {
     }
 
     auto out = Line();
-    EmitAttributes(out, var, decl->attributes);
+    EmitAttributes(out, var);
     EmitInterpolationQualifiers(out, decl->attributes);
 
     auto name = decl->name->symbol.Name();
@@ -2167,23 +2130,17 @@ void ASTPrinter::EmitInterpolationQualifiers(StringStream& out,
     }
 }
 
-void ASTPrinter::EmitAttributes(StringStream& out,
-                                const sem::GlobalVariable* var,
-                                VectorRef<const ast::Attribute*> attributes) {
-    if (attributes.IsEmpty()) {
-        return;
-    }
+void ASTPrinter::EmitAttributes(StringStream& out, const sem::GlobalVariable* var) {
+    auto& attrs = var->Attributes();
 
     bool first = true;
-    for (auto* attr : attributes) {
-        if (attr->As<ast::LocationAttribute>()) {
-            out << (first ? "layout(" : ", ");
-            out << "location = " << std::to_string(var->Location().value());
-            first = false;
-        }
-        if (attr->As<ast::IndexAttribute>()) {
-            out << ", index = " << std::to_string(var->Index().value());
-        }
+    if (attrs.location.has_value()) {
+        out << (first ? "layout(" : ", ");
+        out << "location = " << std::to_string(attrs.location.value());
+        first = false;
+    }
+    if (attrs.index.has_value()) {
+        out << ", index = " << std::to_string(attrs.index.value());
     }
     if (!first) {
         out << ") ";
@@ -2338,11 +2295,8 @@ void ASTPrinter::EmitConstant(StringStream& out, const core::constant::Value* co
                 }
                 EmitConstant(out, constant->Index(i));
             }
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   "unhandled constant type: " + constant->Type()->FriendlyName());
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* lit) {
@@ -2369,8 +2323,8 @@ void ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* li
                 }
             }
             diagnostics_.add_error(diag::System::Writer, "unknown integer literal suffix type");
-        },
-        [&](Default) { diagnostics_.add_error(diag::System::Writer, "unknown literal type"); });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitZeroValue(StringStream& out, const core::type::Type* type) {
@@ -2602,8 +2556,8 @@ void ASTPrinter::EmitMemberAccessor(StringStream& out, const ast::MemberAccessor
         },
         [&](const sem::StructMemberAccess* member_access) {
             out << member_access->Member()->Name().Name();
-        },
-        [&](Default) { TINT_ICE() << "unknown member access type: " << sem->TypeInfo().name; });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitReturn(const ast::ReturnStatement* stmt) {
@@ -2644,18 +2598,13 @@ void ASTPrinter::EmitStatement(const ast::Statement* stmt) {
                 [&](const ast::Let* let) { EmitLet(let); },
                 [&](const ast::Const*) {
                     // Constants are embedded at their use
-                },
-                [&](Default) {  //
-                    TINT_ICE() << "unknown variable type: " << v->variable->TypeInfo().name;
-                });
+                },  //
+                TINT_ICE_ON_NO_MATCH);
         },
         [&](const ast::ConstAssert*) {
             // Not emitted
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   "unknown statement type: " + std::string(stmt->TypeInfo().name));
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitSwitch(const ast::SwitchStatement* stmt) {

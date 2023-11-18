@@ -44,6 +44,7 @@
 #include "dawn/common/IOKitRef.h"
 #endif
 
+#include <string>
 #include <vector>
 
 namespace dawn::native::metal {
@@ -239,14 +240,33 @@ bool IsGPUCounterSupported(id<MTLDevice> device,
     return true;
 }
 
+bool CheckMetalValidationEnabled(InstanceBase* instance) {
+    if (instance->IsBackendValidationEnabled()) {
+        return true;
+    }
+
+    // Sometime validation layer can be enabled eternally via xcode or command line.
+    if (GetEnvironmentVar("METAL_DEVICE_WRAPPER_TYPE").first == "1" ||
+        GetEnvironmentVar("MTL_DEBUG_LAYER").first == "1") {
+        return true;
+    }
+
+    return false;
+}
+
 }  // anonymous namespace
 
 // The Metal backend's PhysicalDevice.
+// TODO(dawn:2155): move this PhysicalDevice class to PhysicalDeviceMTL.mm
 
 class PhysicalDevice : public PhysicalDeviceBase {
   public:
-    PhysicalDevice(InstanceBase* instance, NSPRef<id<MTLDevice>> device)
-        : PhysicalDeviceBase(instance, wgpu::BackendType::Metal), mDevice(std::move(device)) {
+    PhysicalDevice(InstanceBase* instance,
+                   NSPRef<id<MTLDevice>> device,
+                   bool metalValidationEnabled)
+        : PhysicalDeviceBase(instance, wgpu::BackendType::Metal),
+          mDevice(std::move(device)),
+          mMetalValidationEnabled(metalValidationEnabled) {
         mName = std::string([[*mDevice name] UTF8String]);
 
         PCIIDs ids;
@@ -273,6 +293,8 @@ class PhysicalDevice : public PhysicalDeviceBase {
         NSString* osVersion = [[NSProcessInfo processInfo] operatingSystemVersionString];
         mDriverDescription = "Metal driver on " + std::string(systemName) + [osVersion UTF8String];
     }
+
+    bool IsMetalValidationEnabled() const { return mMetalValidationEnabled; }
 
     // PhysicalDeviceBase Implementation
     bool SupportsExternalImages() const override {
@@ -467,14 +489,13 @@ class PhysicalDevice : public PhysicalDeviceBase {
                 // Intentionally leak counterSets to workaround an issue where the driver
                 // over-releases the handle if it is accessed more than once. It becomes a zombie.
                 // For more information, see crbug.com/1443658.
-                // Appears to occur on non-Apple prior to MacOS 11, and continuing on Intel Gen 7
-                // and Intel Gen 11 after that OS version.
+                // Appears to occur on non-Apple prior to MacOS 11, and continuing on Intel Gen 7,
+                // Intel Gen 8, and Intel Gen 11 after that OS version.
                 uint32_t vendorId = GetVendorId();
                 uint32_t deviceId = GetDeviceId();
-                if (gpu_info::IsIntelGen7(vendorId, deviceId)) {
-                    return true;
-                }
-                if (gpu_info::IsIntelGen11(vendorId, deviceId)) {
+                if (gpu_info::IsIntelGen7(vendorId, deviceId) ||
+                    gpu_info::IsIntelGen8(vendorId, deviceId) ||
+                    gpu_info::IsIntelGen11(vendorId, deviceId)) {
                     return true;
                 }
 #if DAWN_PLATFORM_IS(MACOS)
@@ -486,14 +507,6 @@ class PhysicalDevice : public PhysicalDeviceBase {
             };
             if (ShouldLeakCounterSets()) {
                 [[*mDevice counterSets] retain];
-            }
-            if (IsGPUCounterSupported(
-                    *mDevice, MTLCommonCounterSetStatistic,
-                    {MTLCommonCounterVertexInvocations, MTLCommonCounterClipperInvocations,
-                     MTLCommonCounterClipperPrimitivesOut, MTLCommonCounterFragmentInvocations,
-                     MTLCommonCounterComputeKernelInvocations})) {
-                EnableFeature(Feature::PipelineStatisticsQuery);
-                EnableFeature(Feature::ChromiumExperimentalPipelineStatisticsQuery);
             }
 
             if (IsGPUCounterSupported(*mDevice, MTLCommonCounterSetTimestamp,
@@ -543,11 +556,24 @@ class PhysicalDevice : public PhysicalDeviceBase {
             EnableFeature(Feature::MultiPlanarFormatExtendedUsages);
         }
 
+        if (@available(macOS 10.15, iOS 13.0, *)) {
+            EnableFeature(Feature::MultiPlanarFormatNv12a);
+        }
+
         if (@available(macOS 11.0, iOS 10.0, *)) {
-            // Memoryless storage mode for Metal textures is available only
-            // from the Apple2 family of GPUs on.
+            // Memoryless storage mode and programmable blending are available only from the Apple2
+            // family of GPUs on.
             if ([*mDevice supportsFamily:MTLGPUFamilyApple2]) {
+                EnableFeature(Feature::FramebufferFetch);
                 EnableFeature(Feature::TransientAttachments);
+            }
+        }
+
+        if (@available(macOS 11.0, iOS 10.0, *)) {
+            // Image block functionality is available starting from the Apple4 family.
+            if ([*mDevice supportsFamily:MTLGPUFamilyApple4]) {
+                EnableFeature(Feature::PixelLocalStorageCoherent);
+                EnableFeature(Feature::PixelLocalStorageNonCoherent);
             }
         }
 
@@ -766,10 +792,11 @@ class PhysicalDevice : public PhysicalDeviceBase {
 
         DAWN_ASSERT(maxBuffersPerStage >= baseMaxBuffersPerStage);
         {
+            // Allocate all remaining buffers to maxStorageBuffersPerShaderStage.
+            // TODO(crbug.com/2158): We can have more of all types of buffers when
+            // using Metal argument buffers.
             uint32_t additional = maxBuffersPerStage - baseMaxBuffersPerStage;
-            limits->v1.maxStorageBuffersPerShaderStage += additional / 3;
-            limits->v1.maxUniformBuffersPerShaderStage += additional / 3;
-            limits->v1.maxVertexBuffers += (additional - 2 * (additional / 3));
+            limits->v1.maxStorageBuffersPerShaderStage += additional;
         }
 
         uint32_t baseMaxTexturesPerStage = limits->v1.maxSampledTexturesPerShaderStage +
@@ -842,13 +869,19 @@ class PhysicalDevice : public PhysicalDeviceBase {
         return {};
     }
 
-    MaybeError ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
-                                                       const TogglesState& toggles) const override {
+    FeatureValidationResult ValidateFeatureSupportedWithTogglesImpl(
+        wgpu::FeatureName feature,
+        const TogglesState& toggles) const override {
         return {};
     }
 
     NSPRef<id<MTLDevice>> mDevice;
+    const bool mMetalValidationEnabled;
 };
+
+bool IsMetalValidationEnabled(PhysicalDeviceBase* physicalDevice) {
+    return ToBackend(physicalDevice)->IsMetalValidationEnabled();
+}
 
 // Implementation of the Metal backend's BackendConnection
 
@@ -869,23 +902,25 @@ std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
         // Devices already discovered.
         return std::vector<Ref<PhysicalDeviceBase>>{mPhysicalDevices};
     }
+
+    bool metalValidationEnabled = CheckMetalValidationEnabled(GetInstance());
     @autoreleasepool {
 #if DAWN_PLATFORM_IS(MACOS)
-    if(@available(macos 10.11,*)) {
-      for (id<MTLDevice> device in MTLCopyAllDevices()) {
-          Ref<PhysicalDevice> physicalDevice =
-              AcquireRef(new PhysicalDevice(GetInstance(), AcquireNSPRef(device)));
-          if (!GetInstance()->ConsumedErrorAndWarnOnce(physicalDevice->Initialize())) {
-              mPhysicalDevices.push_back(std::move(physicalDevice));
-          }
-      }
-    }
+        if (@available(macos 10.11, *)) {
+            for (id<MTLDevice> device in MTLCopyAllDevices()) {
+                Ref<PhysicalDevice> physicalDevice = AcquireRef(new PhysicalDevice(
+                    GetInstance(), AcquireNSPRef(device), metalValidationEnabled));
+                if (!GetInstance()->ConsumedErrorAndWarnOnce(physicalDevice->Initialize())) {
+                    mPhysicalDevices.push_back(std::move(physicalDevice));
+                }
+            }
+        }
 #endif
 
         // iOS only has a single device so MTLCopyAllDevices doesn't exist there.
 #if DAWN_PLATFORM_IS(IOS)
-        Ref<PhysicalDevice> physicalDevice = AcquireRef(
-            new PhysicalDevice(GetInstance(), AcquireNSPRef(MTLCreateSystemDefaultDevice())));
+        Ref<PhysicalDevice> physicalDevice = AcquireRef(new PhysicalDevice(
+            GetInstance(), AcquireNSPRef(MTLCreateSystemDefaultDevice()), metalValidationEnabled));
         if (!GetInstance()->ConsumedErrorAndWarnOnce(physicalDevice->Initialize())) {
             mPhysicalDevices.push_back(std::move(physicalDevice));
         }

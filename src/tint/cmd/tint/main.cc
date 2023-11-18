@@ -82,12 +82,13 @@
 #endif  // TINT_BUILD_WGSL_WRITER
 
 #if TINT_BUILD_MSL_WRITER
-#include "src/tint/lang/msl/validate/val.h"
+#include "src/tint/lang/msl/validate/validate.h"
+#include "src/tint/lang/msl/writer/helpers/generate_bindings.h"
 #include "src/tint/lang/msl/writer/writer.h"
 #endif  // TINT_BUILD_MSL_WRITER
 
 #if TINT_BUILD_HLSL_WRITER
-#include "src/tint/lang/hlsl/validate/val.h"
+#include "src/tint/lang/hlsl/validate/validate.h"
 #include "src/tint/lang/hlsl/writer/writer.h"
 #endif  // TINT_BUILD_HLSL_WRITER
 
@@ -321,14 +322,6 @@ violations that may be produced)",
             opts->spirv_reader_options.allow_non_uniform_derivatives = true;
         }
     });
-    auto& allow_chromium_extensions = options.Add<BoolOption>(
-        "allow-chromium-extensions",
-        "When using SPIR-V input, allow the use of Chromium-specific extensions", Default{false});
-    TINT_DEFER({
-        if (allow_chromium_extensions.value.value_or(false)) {
-            opts->spirv_reader_options.allow_chromium_extensions = true;
-        }
-    });
 #endif
 
     auto& disable_wg_init = options.Add<BoolOption>(
@@ -381,6 +374,22 @@ where MEMBER_INDEX is the pixel-local structure member
 index and ATTACHMENT_INDEX is the index of the emitted
 attachment.
 )");
+
+    auto& pixel_local_attachment_formats =
+        options.Add<StringOption>("pixel_local_attachment_formats",
+                                  R"(Pixel local storage attachment formats, comma-separated
+Each binding is of the form MEMBER_INDEX=ATTACHMENT_FORMAT,
+where MEMBER_INDEX is the pixel-local structure member
+index and ATTACHMENT_FORMAT is the format of the emitted
+attachment, which can only be one of the below value:
+R32Sint, R32Uint, R32Float.
+)");
+
+    auto& pixel_local_group_index = options.Add<ValueOption<uint32_t>>(
+        "pixel_local_group_index",
+        R"(The bind group index of the pixel local attachments (default 0).
+)",
+        Default{0});
 
     auto& skip_hash = options.Add<StringOption>(
         "skip-hash", R"(Skips validation if the hash of the output is equal to any
@@ -485,6 +494,43 @@ Options:
             }
             opts->pixel_local_options.attachments.emplace(member_index.Get(),
                                                           attachment_index.Get());
+        }
+    }
+
+    if (pixel_local_group_index.value.has_value()) {
+        opts->pixel_local_options.pixel_local_group_index = *pixel_local_group_index.value;
+    }
+
+    if (pixel_local_attachment_formats.value.has_value()) {
+        auto binding_formats = tint::Split(*pixel_local_attachment_formats.value, ",");
+        for (auto& binding_format : binding_formats) {
+            auto values = tint::Split(binding_format, "=");
+            if (values.Length() != 2) {
+                std::cerr << "Invalid binding format " << pixel_local_attachment_formats.name
+                          << ": " << binding_format << std::endl;
+                return false;
+            }
+            auto member_index = tint::ParseUint32(values[0]);
+            if (!member_index) {
+                std::cerr << "Invalid member index for " << pixel_local_attachment_formats.name
+                          << ": " << values[0] << std::endl;
+                return false;
+            }
+            auto format = values[1];
+            tint::PixelLocalOptions::TexelFormat texel_format =
+                tint::PixelLocalOptions::TexelFormat::kUndefined;
+            if (format == "R32Sint") {
+                texel_format = tint::PixelLocalOptions::TexelFormat::kR32Sint;
+            } else if (format == "R32Uint") {
+                texel_format = tint::PixelLocalOptions::TexelFormat::kR32Uint;
+            } else if (format == "R32Float") {
+                texel_format = tint::PixelLocalOptions::TexelFormat::kR32Float;
+            } else {
+                std::cerr << "Invalid texel format for " << pixel_local_attachments.name << ": "
+                          << format << std::endl;
+                return false;
+            }
+            opts->pixel_local_options.attachment_formats.emplace(member_index.Get(), texel_format);
         }
     }
 
@@ -668,8 +714,10 @@ bool GenerateWgsl([[maybe_unused]] const tint::Program& program,
 #if TINT_BUILD_WGSL_READER
     if (options.validate && options.skip_hash.count(hash) == 0) {
         // Attempt to re-parse the output program with Tint's WGSL reader.
+        tint::wgsl::reader::Options parser_options;
+        parser_options.allowed_features = tint::wgsl::AllowedFeatures::Everything();
         auto source = std::make_unique<tint::Source::File>(options.input_filename, result->wgsl);
-        auto reparsed_program = tint::wgsl::reader::Parse(source.get());
+        auto reparsed_program = tint::wgsl::reader::Parse(source.get(), parser_options);
         if (!reparsed_program.IsValid()) {
             auto diag_printer = tint::diag::Printer::create(stderr, true);
             tint::diag::Formatter diag_formatter;
@@ -710,8 +758,7 @@ bool GenerateMsl([[maybe_unused]] const tint::Program& program,
     gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
     gen_options.pixel_local_options = options.pixel_local_options;
-    gen_options.external_texture_options.bindings_map =
-        tint::cmd::GenerateExternalTextureBindings(*input_program);
+    gen_options.bindings = tint::msl::writer::GenerateBindings(*input_program);
     gen_options.array_length_from_uniform.ubo_binding = tint::BindingPoint{0, 30};
     gen_options.array_length_from_uniform.bindpoint_to_size_index.emplace(tint::BindingPoint{0, 0},
                                                                           0);
@@ -740,7 +787,8 @@ bool GenerateMsl([[maybe_unused]] const tint::Program& program,
         if (enable->HasExtension(tint::wgsl::Extension::kChromiumExperimentalSubgroups)) {
             msl_version = std::max(msl_version, tint::msl::validate::MslVersion::kMsl_2_1);
         }
-        if (enable->HasExtension(tint::wgsl::Extension::kChromiumExperimentalPixelLocal)) {
+        if (enable->HasExtension(tint::wgsl::Extension::kChromiumExperimentalPixelLocal) ||
+            enable->HasExtension(tint::wgsl::Extension::kChromiumExperimentalFramebufferFetch)) {
             msl_version = std::max(msl_version, tint::msl::validate::MslVersion::kMsl_2_3);
         }
     }
@@ -748,7 +796,7 @@ bool GenerateMsl([[maybe_unused]] const tint::Program& program,
     if (options.validate && options.skip_hash.count(hash) == 0) {
         tint::msl::validate::Result res;
 #ifdef __APPLE__
-        res = tint::msl::validate::UsingMetalAPI(result->msl, msl_version);
+        res = tint::msl::validate::ValidateUsingMetal(result->msl, msl_version);
 #else
 #ifdef _WIN32
         const char* default_xcrun_exe = "metal.exe";
@@ -758,7 +806,7 @@ bool GenerateMsl([[maybe_unused]] const tint::Program& program,
         auto xcrun = tint::Command::LookPath(
             options.xcrun_path.empty() ? default_xcrun_exe : std::string(options.xcrun_path));
         if (xcrun.Found()) {
-            res = tint::msl::validate::Msl(xcrun.Path(), result->msl, msl_version);
+            res = tint::msl::validate::Validate(xcrun.Path(), result->msl, msl_version);
         } else {
             res.output = "xcrun executable not found. Cannot validate.";
             res.failed = true;
@@ -787,6 +835,7 @@ bool GenerateHlsl(const tint::Program& program, const Options& options) {
     gen_options.external_texture_options.bindings_map =
         tint::cmd::GenerateExternalTextureBindings(program);
     gen_options.root_constant_binding_point = options.hlsl_root_constant_binding_point;
+    gen_options.pixel_local_options = options.pixel_local_options;
     auto result = tint::hlsl::writer::Generate(program, gen_options);
     if (!result) {
         tint::cmd::PrintWGSL(std::cerr, program);
@@ -826,7 +875,7 @@ bool GenerateHlsl(const tint::Program& program, const Options& options) {
                     }
                 }
 
-                dxc_res = tint::hlsl::validate::UsingDXC(
+                dxc_res = tint::hlsl::validate::ValidateUsingDXC(
                     dxc.Path(), result->hlsl, result->entry_points, dxc_require_16bit_types);
             } else if (must_validate_dxc) {
                 // DXC was explicitly requested. Error if it could not be found.
@@ -846,8 +895,8 @@ bool GenerateHlsl(const tint::Program& program, const Options& options) {
 #ifdef _WIN32
             if (fxc.Found()) {
                 fxc_found = true;
-                fxc_res =
-                    tint::hlsl::validate::UsingFXC(fxc.Path(), result->hlsl, result->entry_points);
+                fxc_res = tint::hlsl::validate::ValidateUsingFXC(fxc.Path(), result->hlsl,
+                                                                 result->entry_points);
             } else if (must_validate_fxc) {
                 // FXC was explicitly requested. Error if it could not be found.
                 fxc_res.failed = true;

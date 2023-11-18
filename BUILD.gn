@@ -25,6 +25,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import("build/config/rust.gni")
 import("scripts/dawn_overrides_with_defaults.gni")
 import("scripts/tint_overrides_with_defaults.gni")
 
@@ -61,6 +62,9 @@ group("cmds") {
     "src/dawn/samples",
     "src/tint:cmds",
   ]
+  if (target_cpu == "x64" && (is_win || is_linux || is_mac)) {
+    deps += [ "third_party/gn/dxc:dxc" ]
+  }
 }
 
 group("all") {
@@ -72,6 +76,13 @@ group("all") {
     ":libs",
     ":tests",
   ]
+}
+
+if (enable_rust) {
+  group("rust_build_tests") {
+    testonly = true
+    deps = [ "//build/rust/tests" ]
+  }
 }
 
 # This target is built when no specific target is specified on the command line.

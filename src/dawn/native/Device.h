@@ -368,7 +368,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     ApiObjectList* GetObjectTrackingList(ObjectType type);
 
     std::vector<const char*> GetTogglesUsed() const;
-    WGSLExtensionSet GetWGSLExtensionAllowList() const;
+    const tint::wgsl::AllowedFeatures& GetWGSLAllowedFeatures() const;
     bool IsToggleEnabled(Toggle toggle) const;
     bool IsValidationEnabled() const;
     bool IsRobustnessEnabled() const;
@@ -463,7 +463,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     // DAWN_ASSERT(device.IsLockedByCurrentThread())
     bool IsLockedByCurrentThreadIfNeeded() const;
 
-    // TODO(dawn:XXX): remove this enum forwarding once no longer necessary.
+    // TODO(dawn:1413): remove this enum forwarding once no longer necessary.
     using SubmitMode = ExecutionQueueBase::SubmitMode;
 
     // TODO(dawn:1413): Remove this proxy methods in favor of using the ExecutionQueue directly.
@@ -613,7 +613,7 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     CombinedLimits mLimits;
     FeaturesSet mEnabledFeatures;
-    WGSLExtensionSet mWGSLExtensionAllowList;
+    tint::wgsl::AllowedFeatures mWGSLAllowedFeatures;
 
     std::unique_ptr<InternalPipelineStore> mInternalPipelineStore;
 

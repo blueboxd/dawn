@@ -57,14 +57,6 @@ if (NOT TARGET SPIRV-Headers)
     add_subdirectory(${DAWN_SPIRV_HEADERS_DIR} "${CMAKE_CURRENT_BINARY_DIR}/spirv-headers")
 endif()
 
-# Needs to come before SPIR-V Tools
-if ((${TINT_BUILD_SPIRV_TOOLS_FUZZER} OR ${TINT_BUILD_AST_FUZZER}) AND
-        (NOT TARGET protobuf::libprotobuf OR NOT TARGET protobuf::protoc))
-    set(protobuf_BUILD_TESTS OFF CACHE BOOL "Controls whether protobuf tests are built" FORCE)
-    set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "Controls whether a protobuf static runtime is built" FORCE)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/protobuf)
-endif()
-
 if (NOT TARGET SPIRV-Tools)
     set(SPIRV_SKIP_TESTS ON CACHE BOOL "" FORCE)
     set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "" FORCE)
@@ -82,7 +74,7 @@ if (NOT TARGET SPIRV-Tools)
     add_subdirectory(${DAWN_SPIRV_TOOLS_DIR} "${CMAKE_CURRENT_BINARY_DIR}/spirv-tools" EXCLUDE_FROM_ALL)
 endif()
 
-if(NOT TARGET glslang AND ${TINT_BUILD_GLSL_WRITER} AND ${TINT_BUILD_CMD_TOOLS})
+if(NOT TARGET glslang AND (${TINT_BUILD_GLSL_WRITER} OR ${TINT_BUILD_GLSL_VALIDATOR}) AND ${TINT_BUILD_CMD_TOOLS})
     set(SKIP_GLSLANG_INSTALL ON CACHE BOOL "" FORCE)
     add_subdirectory("${DAWN_THIRD_PARTY_DIR}/vulkan-deps/glslang/src" "${CMAKE_CURRENT_BINARY_DIR}/glslang" EXCLUDE_FROM_ALL)
 endif()

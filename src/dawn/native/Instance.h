@@ -36,6 +36,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "dawn/common/MutexProtected.h"
 #include "dawn/common/Ref.h"
 #include "dawn/common/ityp_array.h"
 #include "dawn/common/ityp_bitset.h"
@@ -75,6 +76,8 @@ class InstanceBase final : public RefCountedWithExternalCount {
     void APIRequestAdapter(const RequestAdapterOptions* options,
                            WGPURequestAdapterCallback callback,
                            void* userdata);
+    Future APIRequestAdapterF(const RequestAdapterOptions* options,
+                              const RequestAdapterCallbackInfo& callbackInfo);
 
     // Discovers and returns a vector of adapters.
     // All systems adapters that can be found are returned if no options are passed.
@@ -121,6 +124,9 @@ class InstanceBase final : public RefCountedWithExternalCount {
     // name of an feature supported in Dawn.
     const FeatureInfo* GetFeatureInfo(wgpu::FeatureName feature);
 
+    // TODO(dawn:2166): Move this method to PhysicalDevice to better detect that the backend
+    // validation is actually enabled or not when a physical device is created. Sometimes it is
+    // enabled externally via command line or environment variables.
     bool IsBackendValidationEnabled() const;
     void SetBackendValidationLevel(BackendValidationLevel level);
     BackendValidationLevel GetBackendValidationLevel() const;
@@ -161,6 +167,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     explicit InstanceBase(const TogglesState& instanceToggles);
     ~InstanceBase() override;
 
+    void DeleteThis() override;
     void WillDropLastExternalRef() override;
 
     InstanceBase(const InstanceBase& other) = delete;
@@ -212,8 +219,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     Ref<CallbackTaskManager> mCallbackTaskManager;
     EventManager mEventManager;
 
-    std::set<DeviceBase*> mDevicesList;
-    mutable std::mutex mDevicesListMutex;
+    MutexProtected<std::set<DeviceBase*>> mDevicesList;
 };
 
 }  // namespace dawn::native

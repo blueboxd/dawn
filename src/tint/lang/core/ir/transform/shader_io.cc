@@ -119,7 +119,14 @@ struct State {
         if (func->Stage() == Function::PipelineStage::kVertex && backend->NeedsVertexPointSize()) {
             vertex_point_size_index =
                 backend->AddOutput(ir.symbols.New("vertex_point_size"), ty.f32(),
-                                   {{}, {}, {BuiltinValue::kPointSize}, {}, false});
+                                   core::type::StructMemberAttributes{
+                                       /* location */ std::nullopt,
+                                       /* index */ std::nullopt,
+                                       /* color */ std::nullopt,
+                                       /* builtin */ core::BuiltinValue::kPointSize,
+                                       /* interpolation */ std::nullopt,
+                                       /* invariant */ false,
+                                   });
         }
 
         auto new_params = backend->FinalizeInputs();
@@ -145,7 +152,7 @@ struct State {
         // Call the original function, passing it the inputs and capturing its return value.
         auto inner_call_args = BuildInnerCallArgs(wrapper);
         auto* inner_result = wrapper.Call(func->ReturnType(), func, std::move(inner_call_args));
-        SetOutputs(wrapper, inner_result->Result());
+        SetOutputs(wrapper, inner_result->Result(0));
         if (vertex_point_size_index) {
             backend->SetOutput(wrapper, vertex_point_size_index.value(), b.Constant(1_f));
         }
@@ -238,7 +245,7 @@ struct State {
                 for (uint32_t i = 0; i < str->Members().Length(); i++) {
                     construct_args.Push(backend->GetInput(builder, input_idx++));
                 }
-                args.Push(builder.Construct(param->Type(), construct_args)->Result());
+                args.Push(builder.Construct(param->Type(), construct_args)->Result(0));
             } else {
                 args.Push(backend->GetInput(builder, input_idx++));
             }
@@ -254,7 +261,7 @@ struct State {
         if (auto* str = inner_result->Type()->As<core::type::Struct>()) {
             for (auto* member : str->Members()) {
                 Value* from =
-                    builder.Access(member->Type(), inner_result, u32(member->Index()))->Result();
+                    builder.Access(member->Type(), inner_result, u32(member->Index()))->Result(0);
                 backend->SetOutput(builder, member->Index(), from);
             }
         } else if (!inner_result->Type()->Is<core::type::Void>()) {

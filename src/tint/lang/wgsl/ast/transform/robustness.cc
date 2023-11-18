@@ -274,12 +274,8 @@ struct Robustness::State {
                 b.Diagnostics().add_error(diag::System::Transform,
                                           core::type::Array::kErrExpectedConstantCount);
                 return nullptr;
-            },
-            [&](Default) -> const Expression* {
-                TINT_ICE() << "unhandled object type in robustness of array index: "
-                           << obj_type->UnwrapRef()->FriendlyName();
-                return nullptr;
-            });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// Transform the program to insert additional predicate parameters to all user functions that
@@ -703,11 +699,11 @@ struct Robustness::State {
         if (globalVariable == nullptr) {
             return false;
         }
-        if (!globalVariable->BindingPoint().has_value()) {
+        auto binding_point = globalVariable->Attributes().binding_point;
+        if (!binding_point.has_value()) {
             return false;
         }
-        BindingPoint bindingPoint = *globalVariable->BindingPoint();
-        return cfg.bindings_ignored.find(bindingPoint) != cfg.bindings_ignored.cend();
+        return cfg.bindings_ignored.find(*binding_point) != cfg.bindings_ignored.cend();
     }
 
     /// @returns true if expr is an IndexAccessorExpression whose object is a runtime-sized array.

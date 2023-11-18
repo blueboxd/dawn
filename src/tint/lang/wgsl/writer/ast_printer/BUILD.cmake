@@ -102,6 +102,7 @@ tint_add_target(tint_lang_wgsl_writer_ast_printer_test test
   lang/wgsl/writer/ast_printer/literal_test.cc
   lang/wgsl/writer/ast_printer/loop_test.cc
   lang/wgsl/writer/ast_printer/member_accessor_test.cc
+  lang/wgsl/writer/ast_printer/requires_test.cc
   lang/wgsl/writer/ast_printer/return_test.cc
   lang/wgsl/writer/ast_printer/switch_test.cc
   lang/wgsl/writer/ast_printer/type_test.cc
@@ -117,6 +118,7 @@ tint_target_add_dependencies(tint_lang_wgsl_writer_ast_printer_test test
   tint_lang_core_type
   tint_lang_wgsl
   tint_lang_wgsl_ast
+  tint_lang_wgsl_common
   tint_lang_wgsl_program
   tint_lang_wgsl_resolver
   tint_lang_wgsl_sem
@@ -142,6 +144,54 @@ tint_target_add_external_dependencies(tint_lang_wgsl_writer_ast_printer_test tes
 
 if(TINT_BUILD_WGSL_WRITER)
   tint_target_add_dependencies(tint_lang_wgsl_writer_ast_printer_test test
+    tint_lang_wgsl_writer_ast_printer
+  )
+endif(TINT_BUILD_WGSL_WRITER)
+
+endif(TINT_BUILD_WGSL_WRITER)
+if(TINT_BUILD_WGSL_WRITER)
+################################################################################
+# Target:    tint_lang_wgsl_writer_ast_printer_fuzz
+# Kind:      fuzz
+# Condition: TINT_BUILD_WGSL_WRITER
+################################################################################
+tint_add_target(tint_lang_wgsl_writer_ast_printer_fuzz fuzz
+)
+
+tint_target_add_dependencies(tint_lang_wgsl_writer_ast_printer_fuzz fuzz
+  tint_lang_core
+  tint_lang_core_constant
+  tint_lang_core_type
+  tint_lang_wgsl
+  tint_lang_wgsl_ast
+  tint_lang_wgsl_program
+  tint_lang_wgsl_sem
+  tint_utils_containers
+  tint_utils_diagnostic
+  tint_utils_generator
+  tint_utils_ice
+  tint_utils_id
+  tint_utils_macros
+  tint_utils_math
+  tint_utils_memory
+  tint_utils_result
+  tint_utils_rtti
+  tint_utils_symbol
+  tint_utils_text
+  tint_utils_traits
+)
+
+if(TINT_BUILD_WGSL_READER)
+  tint_target_add_sources(tint_lang_wgsl_writer_ast_printer_fuzz fuzz
+    "lang/wgsl/writer/ast_printer/ast_printer_fuzz.cc"
+  )
+  tint_target_add_dependencies(tint_lang_wgsl_writer_ast_printer_fuzz fuzz
+    tint_cmd_fuzz_wgsl_fuzz
+  )
+endif(TINT_BUILD_WGSL_READER)
+
+if(TINT_BUILD_WGSL_WRITER)
+  tint_target_add_dependencies(tint_lang_wgsl_writer_ast_printer_fuzz fuzz
     tint_lang_wgsl_writer_ast_printer
   )
 endif(TINT_BUILD_WGSL_WRITER)

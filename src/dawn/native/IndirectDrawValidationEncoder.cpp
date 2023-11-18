@@ -107,7 +107,7 @@ static const char sRenderValidationShaderSource[] = R"(
 
             fn numIndirectParamsPerDrawCallOutput() -> u32 {
                 var numParams = numIndirectParamsPerDrawCallInput();
-                // 2 extra parameter for duplicated first/baseVexter and firstInstance
+                // 2 extra parameter for duplicated first/baseVertex and firstInstance
                 if (bool(batch.flags & kDuplicateBaseVertexInstance)) {
                     numParams = numParams + 2u;
                 }
@@ -378,9 +378,9 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
         requiredBatchDataBufferSize = std::max(requiredBatchDataBufferSize, pass.batchDataSize);
     }
     DAWN_TRY(batchDataBuffer.EnsureCapacity(requiredBatchDataBufferSize));
-    usageTracker->BufferUsedAs(batchDataBuffer.GetBuffer(), wgpu::BufferUsage::Storage);
 
     DAWN_TRY(outputParamsBuffer.EnsureCapacity(outputParamsSize));
+    // We swap the indirect buffer used so we need to explicitly add the usage.
     usageTracker->BufferUsedAs(outputParamsBuffer.GetBuffer(), wgpu::BufferUsage::Indirect);
 
     // Now we allocate and populate host-side batch data to be copied to the GPU.
@@ -408,6 +408,10 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
                     outputParamsOffset += kDrawIndexedIndirectSize;
                 } else {
                     outputParamsOffset += kDrawIndirectSize;
+                }
+                if (pass.flags & kDuplicateBaseVertexInstance) {
+                    // Add the extra offset for the duplicated base vertex and instance.
+                    outputParamsOffset += 2 * sizeof(uint32_t);
                 }
             }
         }

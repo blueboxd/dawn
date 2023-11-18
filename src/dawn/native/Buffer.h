@@ -57,6 +57,13 @@ static constexpr wgpu::BufferUsage kReadOnlyBufferUsages =
 static constexpr wgpu::BufferUsage kMappableBufferUsages =
     wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite;
 
+static constexpr wgpu::BufferUsage kShaderBufferUsages =
+    wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage | kInternalStorageBuffer |
+    kReadOnlyStorageBuffer;
+
+static constexpr wgpu::BufferUsage kReadOnlyShaderBufferUsages =
+    kShaderBufferUsages & kReadOnlyBufferUsages;
+
 class BufferBase : public ApiObjectBase {
   public:
     enum class BufferState {
@@ -101,6 +108,10 @@ class BufferBase : public ApiObjectBase {
                      size_t size,
                      WGPUBufferMapCallback callback,
                      void* userdata);
+    Future APIMapAsyncF(wgpu::MapMode mode,
+                        size_t offset,
+                        size_t size,
+                        const BufferMapCallbackInfo& callbackInfo);
     void* APIGetMappedRange(size_t offset, size_t size);
     const void* APIGetConstMappedRange(size_t offset, size_t size);
     void APIUnmap();

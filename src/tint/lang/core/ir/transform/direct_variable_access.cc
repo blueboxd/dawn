@@ -53,7 +53,7 @@ struct RootModuleScopeVar {
     Var* var = nullptr;
 
     /// @return a hash value for this object
-    uint64_t HashCode() const { return Hash(var); }
+    size_t HashCode() const { return Hash(var); }
 
     /// Inequality operator
     bool operator!=(const RootModuleScopeVar& other) const { return var != other.var; }
@@ -66,7 +66,7 @@ struct RootPtrParameter {
     const type::Pointer* type = nullptr;
 
     /// @return a hash value for this object
-    uint64_t HashCode() const { return Hash(type); }
+    size_t HashCode() const { return Hash(type); }
 
     /// Inequality operator
     bool operator!=(const RootPtrParameter& other) const { return type != other.type; }
@@ -81,7 +81,7 @@ struct MemberAccess {
     const type::StructMember* member;
 
     /// @return a hash member for this object
-    uint64_t HashCode() const { return Hash(member); }
+    size_t HashCode() const { return Hash(member); }
 
     /// Inequality operator
     bool operator!=(const MemberAccess& other) const { return member != other.member; }
@@ -91,7 +91,7 @@ struct MemberAccess {
 /// The ordered list of indices is passed by parameter.
 struct IndexAccess {
     /// @return a hash value for this object
-    uint64_t HashCode() const { return 42; }
+    size_t HashCode() const { return 42; }
 
     /// Inequality operator
     bool operator!=(const IndexAccess&) const { return false; }
@@ -166,7 +166,7 @@ struct AccessShape {
     }
 
     /// @return a hash value for this object
-    uint64_t HashCode() const { return Hash(root, ops); }
+    size_t HashCode() const { return Hash(root, ops); }
 
     /// Inequality operator
     bool operator!=(const AccessShape& other) const {
@@ -330,7 +330,7 @@ struct State {
                         if (size_t array_len = chain.indices.Length(); array_len > 0) {
                             auto* array = ty.array(ty.u32(), static_cast<uint32_t>(array_len));
                             auto* indices = b.Construct(array, std::move(chain.indices));
-                            new_args.Push(indices->Result());
+                            new_args.Push(indices->Result(0));
                         }
                         // Record the parameter shape for the variant's signature.
                         signature.Add(i, chain.shape);
@@ -436,7 +436,7 @@ struct State {
                                 // Array or matrix access.
                                 // Convert index to u32 if it isn't already.
                                 if (!idx->Type()->Is<type::U32>()) {
-                                    idx = b.Convert(ty.u32(), idx)->Result();
+                                    idx = b.Convert(ty.u32(), idx)->Result(0);
                                 }
 
                                 ops.Push(IndexAccess{});
@@ -455,7 +455,7 @@ struct State {
                                 chain.indices.Push(idx);
                             }
 
-                            TINT_ASSERT(obj_ty == access->Result()->Type()->UnwrapPtr());
+                            TINT_ASSERT(obj_ty == access->Result(0)->Type()->UnwrapPtr());
                             return access->Object();
                         },
                         [&](Var* var) {
@@ -466,29 +466,21 @@ struct State {
                             } else {
                                 // Root pointer is a function-scope 'var'
                                 chain.shape.root =
-                                    RootPtrParameter{var->Result()->Type()->As<type::Pointer>()};
+                                    RootPtrParameter{var->Result(0)->Type()->As<type::Pointer>()};
                             }
-                            chain.root_ptr = var->Result();
+                            chain.root_ptr = var->Result(0);
                             return nullptr;
                         },
-                        [&](Let* let) { return let->Value(); },
-                        [&](Default) {
-                            TINT_ICE() << "unhandled instruction type: "
-                                       << (inst ? inst->TypeInfo().name : "<null>");
-                            return nullptr;
-                        });
+                        [&](Let* let) { return let->Value(); },  //
+                        TINT_ICE_ON_NO_MATCH);
                 },
                 [&](FunctionParam* param) {
                     // Root pointer is a parameter of the caller
                     chain.shape.root = RootPtrParameter{param->Type()->As<type::Pointer>()};
                     chain.root_ptr = param;
                     return nullptr;
-                },
-                [&](Default) {
-                    TINT_ICE() << "unhandled value type: "
-                               << (value ? value->TypeInfo().name : "<null>");
-                    return nullptr;
-                });
+                },  //
+                TINT_ICE_ON_NO_MATCH);
         }
 
         // Reverse the chain's ops and indices. See above for why.
@@ -532,7 +524,7 @@ struct State {
                     root_ptr = root_ptr_param;
                 } else if (auto* global = std::get_if<RootModuleScopeVar>(&shape->root)) {
                     // Root pointer is a module-scope var
-                    root_ptr = global->var->Result();
+                    root_ptr = global->var->Result(0);
                 } else {
                     TINT_ICE() << "unhandled AccessShape root variant";
                 }
@@ -563,12 +555,12 @@ struct State {
                         return b.Constant(u32(m->member->Index()));
                     }
                     auto* access = b.Access(ty.u32(), indices_param, u32(index_index++));
-                    return access->Result();
+                    return access->Result(0);
                 });
                 auto* access = b.Access(old_param->Type(), root_ptr, std::move(chain));
 
                 // Replace the now removed parameter value with the access instruction
-                old_param->ReplaceAllUsesWith(access->Result());
+                old_param->ReplaceAllUsesWith(access->Result(0));
                 old_param->Destroy();
             }
 

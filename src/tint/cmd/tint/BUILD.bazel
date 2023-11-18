@@ -55,6 +55,7 @@ cc_binary(
     "//src/tint/lang/wgsl",
     "//src/tint/lang/wgsl/ast",
     "//src/tint/lang/wgsl/ast/transform",
+    "//src/tint/lang/wgsl/common",
     "//src/tint/lang/wgsl/helpers",
     "//src/tint/lang/wgsl/inspector",
     "//src/tint/lang/wgsl/program",
@@ -97,6 +98,7 @@ cc_binary(
       "//src/tint/lang/msl/validate",
       "//src/tint/lang/msl/writer",
       "//src/tint/lang/msl/writer/common",
+      "//src/tint/lang/msl/writer/helpers",
     ],
     "//conditions:default": [],
   }) + select({

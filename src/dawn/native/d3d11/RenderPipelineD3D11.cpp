@@ -248,32 +248,33 @@ MaybeError RenderPipeline::Initialize() {
 
 RenderPipeline::~RenderPipeline() = default;
 
-void RenderPipeline::ApplyNow(CommandRecordingContext* commandContext,
+void RenderPipeline::ApplyNow(const ScopedSwapStateCommandRecordingContext* commandContext,
                               const std::array<float, 4>& blendColor,
                               uint32_t stencilReference) {
-    ID3D11DeviceContext1* d3dDeviceContext1 = commandContext->GetD3D11DeviceContext1();
-    d3dDeviceContext1->IASetPrimitiveTopology(mD3DPrimitiveTopology);
+    auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
+    d3d11DeviceContext->IASetPrimitiveTopology(mD3DPrimitiveTopology);
     // TODO(dawn:1753): deduplicate these objects in the backend eventually, and to avoid redundant
     // state setting.
-    d3dDeviceContext1->IASetInputLayout(mInputLayout.Get());
-    d3dDeviceContext1->RSSetState(mRasterizerState.Get());
-    d3dDeviceContext1->VSSetShader(mVertexShader.Get(), nullptr, 0);
-    d3dDeviceContext1->PSSetShader(mPixelShader.Get(), nullptr, 0);
+    d3d11DeviceContext->IASetInputLayout(mInputLayout.Get());
+    d3d11DeviceContext->RSSetState(mRasterizerState.Get());
+    d3d11DeviceContext->VSSetShader(mVertexShader.Get(), nullptr, 0);
+    d3d11DeviceContext->PSSetShader(mPixelShader.Get(), nullptr, 0);
 
     ApplyBlendState(commandContext, blendColor);
     ApplyDepthStencilState(commandContext, stencilReference);
 }
 
-void RenderPipeline::ApplyBlendState(CommandRecordingContext* commandContext,
+void RenderPipeline::ApplyBlendState(const ScopedSwapStateCommandRecordingContext* commandContext,
                                      const std::array<float, 4>& blendColor) {
-    ID3D11DeviceContext1* d3dDeviceContext1 = commandContext->GetD3D11DeviceContext1();
-    d3dDeviceContext1->OMSetBlendState(mBlendState.Get(), blendColor.data(), GetSampleMask());
+    auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
+    d3d11DeviceContext->OMSetBlendState(mBlendState.Get(), blendColor.data(), GetSampleMask());
 }
 
-void RenderPipeline::ApplyDepthStencilState(CommandRecordingContext* commandContext,
-                                            uint32_t stencilReference) {
-    ID3D11DeviceContext1* d3dDeviceContext1 = commandContext->GetD3D11DeviceContext1();
-    d3dDeviceContext1->OMSetDepthStencilState(mDepthStencilState.Get(), stencilReference);
+void RenderPipeline::ApplyDepthStencilState(
+    const ScopedSwapStateCommandRecordingContext* commandContext,
+    uint32_t stencilReference) {
+    auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
+    d3d11DeviceContext->OMSetDepthStencilState(mDepthStencilState.Get(), stencilReference);
 }
 
 void RenderPipeline::SetLabelImpl() {

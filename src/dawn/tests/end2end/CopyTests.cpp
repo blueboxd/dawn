@@ -66,7 +66,24 @@ class CopyTests {
         uint32_t rowsPerImage;
     };
 
-    static std::vector<uint8_t> GetExpectedTextureData(const utils::TextureDataCopyLayout& layout) {
+    static std::vector<uint8_t> GetExpectedTextureData(wgpu::TextureFormat format,
+                                                       const utils::TextureDataCopyLayout& layout) {
+        switch (format) {
+            case wgpu::TextureFormat::R16Float:
+            case wgpu::TextureFormat::RG16Float:
+            case wgpu::TextureFormat::RGBA16Float:
+                return GetExpectedTextureData16Float(layout);
+            case wgpu::TextureFormat::RGB9E5Ufloat:
+                return GetExpectedTextureDataRGB9E5Ufloat(layout);
+            case wgpu::TextureFormat::RG11B10Ufloat:
+                return GetExpectedTextureDataRG11B10Ufloat(layout);
+            default:
+                return GetExpectedTextureDataGeneral(layout);
+        }
+    }
+
+    static std::vector<uint8_t> GetExpectedTextureDataGeneral(
+        const utils::TextureDataCopyLayout& layout) {
         uint32_t bytesPerTexelBlock = layout.bytesPerRow / layout.texelBlocksPerRow;
         std::vector<uint8_t> textureData(layout.byteLength);
         for (uint32_t layer = 0; layer < layout.mipSize.depthOrArrayLayers; ++layer) {
@@ -90,16 +107,49 @@ class CopyTests {
         return textureData;
     }
 
+    // Special function to generate test data for *16Float to workaround nonunique encoding
+    // issue.
+    static std::vector<uint8_t> GetExpectedTextureData16Float(
+        const utils::TextureDataCopyLayout& layout) {
+        // These are some known 16 bit float values that always unpack and pack to the same bytes.
+        // Pick test data from these values to provide some level of test coverage for *16Float.
+        constexpr uint8_t goodBytes[] = {
+            0x30, 0x00, 0x49, 0x00, 0x56, 0x40, 0x20, 0x00, 0x37, 0x4C, 0x42, 0x00, 0x3F, 0x6C,
+        };
+        constexpr uint32_t formatByteSize = 2;
+        constexpr uint32_t numGoodValues = sizeof(goodBytes) / sizeof(uint8_t) / formatByteSize;
+
+        uint32_t bytesPerTexelBlock = layout.bytesPerRow / layout.texelBlocksPerRow;
+        std::vector<uint8_t> textureData(layout.byteLength);
+        for (uint32_t layer = 0; layer < layout.mipSize.depthOrArrayLayers; ++layer) {
+            const uint32_t byteOffsetPerSlice = layout.bytesPerImage * layer;
+            for (uint32_t y = 0; y < layout.mipSize.height; ++y) {
+                for (uint32_t x = 0; x < layout.mipSize.width * bytesPerTexelBlock; ++x) {
+                    uint32_t i = x + y * layout.bytesPerRow;
+
+                    uint32_t pixelId = (x + 1 + (layer + 1) * y);
+                    uint8_t v = goodBytes[pixelId % numGoodValues + pixelId % formatByteSize];
+
+                    textureData[byteOffsetPerSlice + i] = v;
+                }
+            }
+        }
+        return textureData;
+    }
+
     // Special function to generate test data for RGB9E5Ufloat to workaround nonunique encoding
     // issue.
     static std::vector<uint8_t> GetExpectedTextureDataRGB9E5Ufloat(
         const utils::TextureDataCopyLayout& layout) {
-        // These are some known RGB9E5Ufloat values that always unpack and pack to the same bytes.
-        // Pick test data from these values to provide some level of test coverage for RGB9E5Ufloat.
+        // These are some known 4-byte RGB9E5Ufloat values that always unpack and pack to the same
+        // bytes. Pick test data from these values to provide some level of test coverage for
+        // RGB9E5Ufloat.
         constexpr uint8_t goodBytes[] = {
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
             0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C,
             0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28};
+        constexpr uint32_t formatByteSize = 4;
+        constexpr uint32_t numGoodValues = sizeof(goodBytes) / sizeof(uint8_t) / formatByteSize;
         uint32_t bytesPerTexelBlock = layout.bytesPerRow / layout.texelBlocksPerRow;
         std::vector<uint8_t> textureData(layout.byteLength);
         for (uint32_t layer = 0; layer < layout.mipSize.depthOrArrayLayers; ++layer) {
@@ -108,7 +158,7 @@ class CopyTests {
                 for (uint32_t x = 0; x < layout.mipSize.width; ++x) {
                     uint32_t o =
                         x * bytesPerTexelBlock + y * layout.bytesPerRow + byteOffsetPerSlice;
-                    uint32_t idx = 4 * ((x + 1 + (layer + 1) * y) % (sizeof(goodBytes) / 4));
+                    uint32_t idx = formatByteSize * ((x + 1 + (layer + 1) * y) % numGoodValues);
                     textureData[o + 0] = goodBytes[idx + 0];
                     textureData[o + 1] = goodBytes[idx + 1];
                     textureData[o + 2] = goodBytes[idx + 2];
@@ -119,24 +169,35 @@ class CopyTests {
         return textureData;
     }
 
-    // TODO(crbug.com/dawn/818): remove this function when all the tests in this file support
-    // testing arbitrary formats.
-    static std::vector<utils::RGBA8> GetExpectedTextureDataRGBA8(
+    // Special function to generate test data for RG11B10Ufloat to workaround nonunique encoding
+    // issue.
+    static std::vector<uint8_t> GetExpectedTextureDataRG11B10Ufloat(
         const utils::TextureDataCopyLayout& layout) {
-        std::vector<utils::RGBA8> textureData(layout.texelBlockCount);
+        // These are some known 4-byte RG11B10Ufloat values that always unpack and pack to the same
+        // bytes. Pick test data from these values to provide some level of test coverage for
+        // RG11B10Ufloat.
+        constexpr uint8_t goodBytes[] = {
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+            0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C,
+            0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28};
+        constexpr uint32_t formatByteSize = 4;
+        constexpr uint32_t numGoodValues = sizeof(goodBytes) / sizeof(uint8_t) / formatByteSize;
+        uint32_t bytesPerTexelBlock = layout.bytesPerRow / layout.texelBlocksPerRow;
+        std::vector<uint8_t> textureData(layout.byteLength);
         for (uint32_t layer = 0; layer < layout.mipSize.depthOrArrayLayers; ++layer) {
-            const uint32_t texelIndexOffsetPerSlice = layout.texelBlocksPerImage * layer;
+            const uint32_t byteOffsetPerSlice = layout.bytesPerImage * layer;
             for (uint32_t y = 0; y < layout.mipSize.height; ++y) {
                 for (uint32_t x = 0; x < layout.mipSize.width; ++x) {
-                    uint32_t i = x + y * layout.texelBlocksPerRow;
-                    textureData[texelIndexOffsetPerSlice + i] =
-                        utils::RGBA8(static_cast<uint8_t>((x + layer * x) % 256),
-                                     static_cast<uint8_t>((y + layer * y) % 256),
-                                     static_cast<uint8_t>(x / 256), static_cast<uint8_t>(y / 256));
+                    uint32_t o =
+                        x * bytesPerTexelBlock + y * layout.bytesPerRow + byteOffsetPerSlice;
+                    uint32_t idx = formatByteSize * ((x + 1 + (layer + 1) * y) % numGoodValues);
+                    textureData[o + 0] = goodBytes[idx + 0];
+                    textureData[o + 1] = goodBytes[idx + 1];
+                    textureData[o + 2] = goodBytes[idx + 2];
+                    textureData[o + 3] = goodBytes[idx + 3];
                 }
             }
         }
-
         return textureData;
     }
 
@@ -220,14 +281,6 @@ class CopyTests_T2B : public CopyTests, public DawnTestWithParams<CopyTextureFor
                                GetParam().mTextureFormat == wgpu::TextureFormat::RG11B10Ufloat) &&
                               IsMacOS() && IsIntel() && IsMetal());
 
-        // TODO(dawn:1914): Many 16 float formats tests failing for Vulkan backend on Android
-        // Pixel 4.
-        DAWN_SUPPRESS_TEST_IF((GetParam().mTextureFormat == wgpu::TextureFormat::R16Float ||
-                               GetParam().mTextureFormat == wgpu::TextureFormat::RG16Float ||
-                               GetParam().mTextureFormat == wgpu::TextureFormat::RGBA16Float ||
-                               GetParam().mTextureFormat == wgpu::TextureFormat::RG11B10Ufloat) &&
-                              IsAndroid() && IsVulkan());
-
         // TODO(dawn:1935): Many 16 float formats tests failing for D3D11 and OpenGLES backends on
         // Intel Gen12.
         DAWN_SUPPRESS_TEST_IF((GetParam().mTextureFormat == wgpu::TextureFormat::R16Float ||
@@ -266,10 +319,8 @@ class CopyTests_T2B : public CopyTests, public DawnTestWithParams<CopyTextureFor
             utils::GetTextureDataCopyLayoutForTextureAtLevel(
                 textureSpec.format, textureSpec.textureSize, textureSpec.copyLevel, dimension);
 
-        std::vector<uint8_t> textureArrayData =
-            (textureSpec.format == wgpu::TextureFormat::RGB9E5Ufloat)
-                ? GetExpectedTextureDataRGB9E5Ufloat(copyLayout)
-                : GetExpectedTextureData(copyLayout);
+        const std::vector<uint8_t> textureArrayData =
+            GetExpectedTextureData(textureSpec.format, copyLayout);
         {
             wgpu::ImageCopyTexture imageCopyTexture =
                 utils::CreateImageCopyTexture(texture, textureSpec.copyLevel, {0, 0, 0});
@@ -489,9 +540,7 @@ class CopyTests_T2TBase : public CopyTests, public Parent {
 
         // Initialize the source texture
         const std::vector<uint8_t> srcTextureCopyData =
-            (format == wgpu::TextureFormat::RGB9E5Ufloat)
-                ? GetExpectedTextureDataRGB9E5Ufloat(srcDataCopyLayout)
-                : GetExpectedTextureData(srcDataCopyLayout);
+            GetExpectedTextureData(format, srcDataCopyLayout);
         {
             wgpu::ImageCopyTexture imageCopyTexture = utils::CreateImageCopyTexture(
                 srcTexture, srcSpec.copyLevel, {0, 0, srcSpec.copyOrigin.z});
@@ -904,11 +953,6 @@ TEST_P(CopyTests_T2B, TextureMipAligned) {
 // Test that copying mips when one dimension is 256-byte aligned and another dimension reach one
 // works
 TEST_P(CopyTests_T2B, TextureMipDimensionReachOne) {
-    // TODO(dawn:1873): GL textureLoad result is incorrect.
-    DAWN_SUPPRESS_TEST_IF((IsSnorm(GetParam().mTextureFormat) ||
-                           GetParam().mTextureFormat == wgpu::TextureFormat::RGB9E5Ufloat) &&
-                          (IsOpenGL() || IsOpenGLES()));
-
     constexpr uint32_t mipLevelCount = 4;
     constexpr uint32_t kWidth = 256 << mipLevelCount;
     constexpr uint32_t kHeight = 2;
@@ -1465,11 +1509,6 @@ TEST_P(CopyTests_T2B, Texture3DCopyHeightIsOneCopyWidthIsSmall) {
 
 // Test that copying texture 3D array mips with 256-byte aligned sizes works
 TEST_P(CopyTests_T2B, Texture3DMipAligned) {
-    // TODO(dawn:1872): GL textureLoad incorrectly for 3D texture with mipLevel > 0 and depth > 0
-    DAWN_SUPPRESS_TEST_IF((IsSnorm(GetParam().mTextureFormat) ||
-                           GetParam().mTextureFormat == wgpu::TextureFormat::RGB9E5Ufloat) &&
-                          (IsOpenGL() || IsOpenGLES()));
-
     constexpr uint32_t kWidth = 256;
     constexpr uint32_t kHeight = 128;
     constexpr uint32_t kDepth = 64u;
@@ -1489,11 +1528,6 @@ TEST_P(CopyTests_T2B, Texture3DMipAligned) {
 
 // Test that copying texture 3D array mips with 256-byte unaligned sizes works
 TEST_P(CopyTests_T2B, Texture3DMipUnaligned) {
-    // TODO(dawn:1872): GL textureLoad incorrectly for 3D texture with mipLevel > 0 and depth > 0
-    DAWN_SUPPRESS_TEST_IF((IsSnorm(GetParam().mTextureFormat) ||
-                           GetParam().mTextureFormat == wgpu::TextureFormat::RGB9E5Ufloat) &&
-                          (IsOpenGL() || IsOpenGLES()));
-
     constexpr uint32_t kWidth = 261;
     constexpr uint32_t kHeight = 123;
     constexpr uint32_t kDepth = 69u;
@@ -2462,10 +2496,6 @@ TEST_P(CopyTests_T2T, Texture3DFull) {
 
 // Test that copying from one mip level to another mip level within the same 3D texture works.
 TEST_P(CopyTests_T2T, Texture3DSameTextureDifferentMipLevels) {
-    // TODO(dawn:1872): GL textureLoad incorrectly for 3D texture with mipLevel > 0 and depth > 0
-    DAWN_SUPPRESS_TEST_IF((GetParam().mTextureFormat == wgpu::TextureFormat::RGB9E5Ufloat) &&
-                          (IsOpenGL() || IsOpenGLES()));
-
     constexpr uint32_t kWidth = 256;
     constexpr uint32_t kHeight = 128;
     constexpr uint32_t kDepth = 6u;
@@ -2502,9 +2532,6 @@ TEST_P(CopyTests_T2T, Texture3DTo2DArrayFull) {
 TEST_P(CopyTests_T2T, Texture3DAnd2DArraySubRegion) {
     // TODO(crbug.com/dawn/1426): Remove this suppression.
     DAWN_SUPPRESS_TEST_IF(IsANGLE() && IsWindows() && IsIntel());
-    // TODO(dawn:1872): GL textureLoad incorrectly for 3D texture with mipLevel > 0 and depth > 0
-    DAWN_SUPPRESS_TEST_IF((GetParam().mTextureFormat == wgpu::TextureFormat::RGB9E5Ufloat) &&
-                          (IsOpenGL() || IsOpenGLES()));
 
     constexpr uint32_t kWidth = 8;
     constexpr uint32_t kHeight = 4;
@@ -2615,10 +2642,6 @@ TEST_P(CopyTests_T2T, Texture2DArrayTo3DSubRegion) {
 
 // Test that copying texture 3D array mips in one texture-to-texture-copy works
 TEST_P(CopyTests_T2T, Texture3DMipAligned) {
-    // TODO(dawn:1872): GL textureLoad incorrectly for 3D texture with mipLevel > 0 and depth > 0
-    DAWN_SUPPRESS_TEST_IF((GetParam().mTextureFormat == wgpu::TextureFormat::RGB9E5Ufloat) &&
-                          (IsOpenGL() || IsOpenGLES()));
-
     constexpr uint32_t kWidth = 256;
     constexpr uint32_t kHeight = 128;
     constexpr uint32_t kDepth = 64u;
@@ -2638,10 +2661,6 @@ TEST_P(CopyTests_T2T, Texture3DMipAligned) {
 
 // Test that copying texture 3D array mips in one texture-to-texture-copy works
 TEST_P(CopyTests_T2T, Texture3DMipUnaligned) {
-    // TODO(dawn:1872): GL textureLoad incorrectly for 3D texture with mipLevel > 0 and depth > 0
-    DAWN_SUPPRESS_TEST_IF((GetParam().mTextureFormat == wgpu::TextureFormat::RGB9E5Ufloat) &&
-                          (IsOpenGL() || IsOpenGLES()));
-
     constexpr uint32_t kWidth = 261;
     constexpr uint32_t kHeight = 123;
     constexpr uint32_t kDepth = 69u;
@@ -2797,11 +2816,6 @@ class CopyToDepthStencilTextureAfterDestroyingBigBufferTests
     : public DawnTestWithParams<CopyToDepthStencilTextureAfterDestroyingBigBufferTestsParams> {};
 
 TEST_P(CopyToDepthStencilTextureAfterDestroyingBigBufferTests, DoTest) {
-    // TODO(crbug.com/dawn/1492): Support CopyBufferToTexture() with Depth16Unorm on OpenGL /
-    // OpenGL ES backends.
-    DAWN_SUPPRESS_TEST_IF(GetParam().mTextureFormat == wgpu::TextureFormat::Depth16Unorm &&
-                          (IsOpenGL() || IsOpenGLES()));
-
     // Copies to stencil textures are unsupported on the OpenGL backend.
     DAWN_TEST_UNSUPPORTED_IF(GetParam().mTextureFormat == wgpu::TextureFormat::Stencil8 &&
                              (IsOpenGL() || IsOpenGLES()));

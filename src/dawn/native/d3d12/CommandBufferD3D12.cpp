@@ -69,8 +69,6 @@ D3D12_QUERY_TYPE D3D12QueryType(wgpu::QueryType type) {
     switch (type) {
         case wgpu::QueryType::Occlusion:
             return D3D12_QUERY_TYPE_BINARY_OCCLUSION;
-        case wgpu::QueryType::PipelineStatistics:
-            return D3D12_QUERY_TYPE_PIPELINE_STATISTICS;
         case wgpu::QueryType::Timestamp:
             return D3D12_QUERY_TYPE_TIMESTAMP;
     }
@@ -356,10 +354,10 @@ MaybeError TransitionAndClearForSyncScope(CommandRecordingContext* commandContex
 
         D3D12_RESOURCE_BARRIER barrier;
         if (buffer->TrackUsageAndGetResourceBarrier(commandContext, &barrier,
-                                                    usages.bufferUsages[i])) {
+                                                    usages.bufferSyncInfos[i].usage)) {
             barriers.push_back(barrier);
         }
-        bufferUsages |= usages.bufferUsages[i];
+        bufferUsages |= usages.bufferSyncInfos[i].usage;
     }
 
     wgpu::TextureUsage textureUsages = wgpu::TextureUsage::None;
@@ -370,18 +368,18 @@ MaybeError TransitionAndClearForSyncScope(CommandRecordingContext* commandContex
         // Clear subresources that are not render attachments. Render attachments will be
         // cleared in RecordBeginRenderPass by setting the loadop to clear when the texture
         // subresource has not been initialized before the render pass.
-        DAWN_TRY(usages.textureUsages[i].Iterate(
-            [&](const SubresourceRange& range, wgpu::TextureUsage usage) -> MaybeError {
-                if (usage & ~wgpu::TextureUsage::RenderAttachment) {
+        DAWN_TRY(usages.textureSyncInfos[i].Iterate(
+            [&](const SubresourceRange& range, const TextureSyncInfo& syncInfo) -> MaybeError {
+                if (syncInfo.usage & ~wgpu::TextureUsage::RenderAttachment) {
                     DAWN_TRY(texture->EnsureSubresourceContentInitialized(commandContext, range));
                 }
-                textureUsages |= usage;
+                textureUsages |= syncInfo.usage;
                 return {};
             }));
 
         ToBackend(usages.textures[i])
             ->TrackUsageAndGetResourceBarrierForPass(commandContext, &barriers,
-                                                     usages.textureUsages[i]);
+                                                     usages.textureSyncInfos[i]);
     }
 
     if (barriers.size()) {

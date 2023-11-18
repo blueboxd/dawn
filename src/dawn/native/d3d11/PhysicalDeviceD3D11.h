@@ -39,7 +39,9 @@ class Backend;
 
 class PhysicalDevice : public d3d::PhysicalDevice {
   public:
-    PhysicalDevice(Backend* backend, ComPtr<IDXGIAdapter3> hardwareAdapter);
+    PhysicalDevice(Backend* backend,
+                   ComPtr<IDXGIAdapter3> hardwareAdapter,
+                   ComPtr<ID3D11Device> d3d11Device);
     ~PhysicalDevice() override;
 
     // PhysicalDeviceBase Implementation
@@ -51,6 +53,7 @@ class PhysicalDevice : public d3d::PhysicalDevice {
     ResultOrError<ComPtr<ID3D11Device>> CreateD3D11Device();
 
     uint32_t GetUAVSlotCount() const { return mUAVSlotCount; }
+    bool IsSharedD3D11Device() const { return mIsSharedD3D11Device; }
 
   private:
     using Base = d3d::PhysicalDevice;
@@ -68,9 +71,12 @@ class PhysicalDevice : public d3d::PhysicalDevice {
     void InitializeSupportedFeaturesImpl() override;
     MaybeError InitializeSupportedLimitsImpl(CombinedLimits* limits) override;
 
-    MaybeError ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
-                                                       const TogglesState& toggles) const override;
-    ComPtr<ID3D11Device> mD3d11Device;
+    FeatureValidationResult ValidateFeatureSupportedWithTogglesImpl(
+        wgpu::FeatureName feature,
+        const TogglesState& toggles) const override;
+
+    const bool mIsSharedD3D11Device;
+    ComPtr<ID3D11Device> mD3D11Device;
     D3D_FEATURE_LEVEL mFeatureLevel;
     DeviceInfo mDeviceInfo = {};
     uint32_t mUAVSlotCount;
