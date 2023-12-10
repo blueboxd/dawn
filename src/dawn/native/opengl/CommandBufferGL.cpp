@@ -180,7 +180,7 @@ class VertexStateBufferBindingTracker {
         }
 
         mIndexBufferDirty = true;
-        mDirtyVertexBuffers |= pipeline->GetVertexBufferSlotsUsed();
+        mDirtyVertexBuffers |= pipeline->GetVertexBuffersUsed();
 
         mLastPipeline = pipeline;
     }
@@ -192,7 +192,7 @@ class VertexStateBufferBindingTracker {
         }
 
         for (VertexBufferSlot slot :
-             IterateBitSet(mDirtyVertexBuffers & mLastPipeline->GetVertexBufferSlotsUsed())) {
+             IterateBitSet(mDirtyVertexBuffers & mLastPipeline->GetVertexBuffersUsed())) {
             for (VertexAttributeLocation location :
                  IterateBitSet(ToBackend(mLastPipeline)->GetAttributesUsingVertexBuffer(slot))) {
                 const VertexAttributeInfo& attribute = mLastPipeline->GetAttribute(location);
@@ -226,9 +226,9 @@ class VertexStateBufferBindingTracker {
     bool mIndexBufferDirty = false;
     Buffer* mIndexBuffer = nullptr;
 
-    ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> mDirtyVertexBuffers;
-    ityp::array<VertexBufferSlot, Buffer*, kMaxVertexBuffers> mVertexBuffers;
-    ityp::array<VertexBufferSlot, uint64_t, kMaxVertexBuffers> mVertexBufferOffsets;
+    VertexBufferMask mDirtyVertexBuffers;
+    PerVertexBuffer<Buffer*> mVertexBuffers;
+    PerVertexBuffer<uint64_t> mVertexBufferOffsets;
 
     RenderPipelineBase* mLastPipeline = nullptr;
 };
@@ -492,8 +492,7 @@ void ResolveMultisampledRenderTargets(const OpenGLFunctions& gl,
     GLuint readFbo = 0;
     GLuint writeFbo = 0;
 
-    for (ColorAttachmentIndex i :
-         IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+    for (auto i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         if (renderPass->colorAttachments[i].resolveTarget != nullptr) {
             if (readFbo == 0) {
                 DAWN_ASSERT(writeFbo == 0);
@@ -636,10 +635,6 @@ MaybeError CommandBuffer::Execute() {
                 auto& src = copy->source;
                 auto& dst = copy->destination;
                 Buffer* buffer = ToBackend(src.buffer.Get());
-
-                DAWN_INVALID_IF(
-                    dst.aspect == Aspect::Stencil,
-                    "Copies to stencil textures are unsupported on the OpenGL backend.");
 
                 buffer->EnsureDataInitialized();
                 SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copy->copySize);
@@ -991,21 +986,20 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
 
         // Mapping from attachmentSlot to GL framebuffer attachment points. Defaults to zero
         // (GL_NONE).
-        ityp::array<ColorAttachmentIndex, GLenum, kMaxColorAttachments> drawBuffers = {};
+        PerColorAttachment<GLenum> drawBuffers = {};
 
         // Construct GL framebuffer
 
-        ColorAttachmentIndex attachmentCount(uint8_t(0));
-        for (ColorAttachmentIndex i :
-             IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+        ColorAttachmentIndex attachmentCount{};
+        for (auto i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
             TextureView* textureView = ToBackend(renderPass->colorAttachments[i].view.Get());
             GLenum glAttachment = GL_COLOR_ATTACHMENT0 + static_cast<uint8_t>(i);
 
             // Attach color buffers.
-            textureView->BindToFramebuffer(GL_DRAW_FRAMEBUFFER, glAttachment);
+            textureView->BindToFramebuffer(GL_DRAW_FRAMEBUFFER, glAttachment,
+                                           renderPass->colorAttachments[i].depthSlice);
             drawBuffers[i] = glAttachment;
-            attachmentCount = i;
-            attachmentCount++;
+            attachmentCount = ityp::PlusOne(i);
         }
         gl.DrawBuffers(static_cast<uint8_t>(attachmentCount), drawBuffers.data());
 
@@ -1041,8 +1035,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
 
     // Clear framebuffer attachments as needed
     {
-        for (ColorAttachmentIndex index :
-             IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+        for (auto index : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
             uint8_t i = static_cast<uint8_t>(index);
             auto* attachmentInfo = &renderPass->colorAttachments[index];
 
@@ -1273,7 +1266,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
             case Command::EndRenderPass: {
                 mCommands.NextCommand<EndRenderPassCmd>();
 
-                for (ColorAttachmentIndex i :
+                for (auto i :
                      IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
                     TextureView* textureView =
                         ToBackend(renderPass->colorAttachments[i].view.Get());

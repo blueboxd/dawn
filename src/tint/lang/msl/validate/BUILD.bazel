@@ -41,7 +41,7 @@ cc_library(
   srcs = [
     "validate.cc",
   ] + select({
-    ":is_mac": [
+    ":tint_build_is_mac": [
       "validate_metal.mm",
     ],
     "//conditions:default": [],
@@ -55,6 +55,7 @@ cc_library(
     "//src/tint/lang/core/type",
     "//src/tint/lang/wgsl",
     "//src/tint/lang/wgsl/ast",
+    "//src/tint/lang/wgsl/features",
     "//src/tint/lang/wgsl/program",
     "//src/tint/lang/wgsl/sem",
     "//src/tint/utils/command",
@@ -72,7 +73,7 @@ cc_library(
     "//src/tint/utils/text",
     "//src/tint/utils/traits",
   ] + select({
-    ":is_mac": [
+    ":tint_build_is_mac": [
       
     ],
     "//conditions:default": [],
@@ -82,8 +83,8 @@ cc_library(
 )
 
 alias(
-  name = "is_mac",
-  actual = "//src/tint:is_mac_true",
+  name = "tint_build_is_mac",
+  actual = "//src/tint:tint_build_is_mac_true",
 )
 
 alias(

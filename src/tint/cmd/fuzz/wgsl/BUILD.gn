@@ -40,8 +40,8 @@ import("${tint_src_dir}/tint.gni")
 if (tint_build_wgsl_reader) {
   tint_fuzz_source_set("fuzz") {
     sources = [
-      "wgsl_fuzz.cc",
-      "wgsl_fuzz.h",
+      "fuzz.cc",
+      "fuzz.h",
     ]
     deps = [
       "${tint_src_dir}:thread",
@@ -53,8 +53,10 @@ if (tint_build_wgsl_reader) {
       "${tint_src_dir}/lang/wgsl",
       "${tint_src_dir}/lang/wgsl/ast",
       "${tint_src_dir}/lang/wgsl/common",
+      "${tint_src_dir}/lang/wgsl/features",
       "${tint_src_dir}/lang/wgsl/program",
       "${tint_src_dir}/lang/wgsl/sem",
+      "${tint_src_dir}/utils/bytes",
       "${tint_src_dir}/utils/containers",
       "${tint_src_dir}/utils/diagnostic",
       "${tint_src_dir}/utils/ice",
@@ -80,6 +82,7 @@ if (tint_build_wgsl_reader) {
     output_name = "tint_wgsl_fuzzer"
     sources = [ "main_fuzz.cc" ]
     deps = [
+      "${tint_src_dir}/cmd/fuzz/ir:fuzz",
       "${tint_src_dir}/lang/core",
       "${tint_src_dir}/lang/core/constant",
       "${tint_src_dir}/lang/core/type",
@@ -89,6 +92,7 @@ if (tint_build_wgsl_reader) {
       "${tint_src_dir}/lang/wgsl/program",
       "${tint_src_dir}/lang/wgsl/program:fuzz",
       "${tint_src_dir}/lang/wgsl/sem",
+      "${tint_src_dir}/utils/bytes",
       "${tint_src_dir}/utils/cli",
       "${tint_src_dir}/utils/containers",
       "${tint_src_dir}/utils/diagnostic",
@@ -97,6 +101,7 @@ if (tint_build_wgsl_reader) {
       "${tint_src_dir}/utils/macros",
       "${tint_src_dir}/utils/math",
       "${tint_src_dir}/utils/memory",
+      "${tint_src_dir}/utils/reflection",
       "${tint_src_dir}/utils/result",
       "${tint_src_dir}/utils/rtti",
       "${tint_src_dir}/utils/strconv",
@@ -104,6 +109,10 @@ if (tint_build_wgsl_reader) {
       "${tint_src_dir}/utils/text",
       "${tint_src_dir}/utils/traits",
     ]
+
+    if (tint_build_spv_writer) {
+      deps += [ "${tint_src_dir}/lang/spirv/writer:fuzz" ]
+    }
 
     if (tint_build_wgsl_reader) {
       deps += [

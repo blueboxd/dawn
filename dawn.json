@@ -213,6 +213,16 @@
             {"name": "isolation key", "type": "char", "annotation": "const*", "length": "strlen", "default": "\"\""}
         ]
     },
+    "dawn WGSL blocklist": {
+        "tags": ["dawn", "native"],
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["instance descriptor"],
+        "members": [
+            {"name": "blocklisted feature count", "type": "size_t", "default": 0},
+            {"name": "blocklisted features", "type": "char", "annotation": "const*const*", "length": "blocklisted feature count"}
+        ]
+    },
     "address mode": {
         "category": "enum",
         "values": [
@@ -999,6 +1009,15 @@
             {"name": "compute", "type": "programmable stage descriptor"}
         ]
     },
+    "dawn compute pipeline full subgroups": {
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["compute pipeline descriptor"],
+        "tags": ["dawn"],
+        "members": [
+            {"name": "requires full subgroups", "type": "bool", "default": "false"}
+        ]
+    },
     "alpha mode": {
         "category": "enum",
         "tags": ["dawn"],
@@ -1417,6 +1436,7 @@
         "category": "structure",
         "chained": "out",
         "chain roots": ["supported limits"],
+        "tags": ["dawn"],
         "members": [
             {"name": "min subgroup size", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max subgroup size", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"}
@@ -1589,6 +1609,11 @@
                     {"name": "texture", "type": "texture"},
                     {"name": "descriptor", "type": "shared texture memory end access state", "annotation": "*"}
                 ]
+            },
+            {
+                "name": "is device lost",
+                "returns": "bool",
+                "args": []
             }
         ]
     },
@@ -1639,18 +1664,26 @@
             {"name": "handle", "type": "void *"}
         ]
     },
+    "shared texture memory dma buf plane": {
+        "category": "structure",
+        "tags": ["dawn", "native"],
+        "members": [
+            {"name": "fd", "type": "int"},
+            {"name": "offset", "type": "uint64_t"},
+            {"name": "stride", "type": "uint32_t"}
+        ]
+    },
     "shared texture memory dma buf descriptor": {
         "category": "structure",
         "chained": "in",
         "chain roots": ["shared texture memory descriptor"],
         "tags": ["dawn", "native"],
         "members": [
-            {"name": "memory FD", "type": "int"},
-            {"name": "allocation size", "type": "uint64_t"},
+            {"name": "size", "type": "extent 3D"},
+            {"name": "drm format", "type": "uint32_t"},
             {"name": "drm modifier", "type": "uint64_t"},
             {"name": "plane count", "type": "size_t"},
-            {"name": "plane offsets", "type": "uint64_t", "annotation": "const*", "length": "plane count"},
-            {"name": "plane strides", "type": "uint32_t", "annotation": "const*", "length": "plane count"}
+            {"name": "planes", "type": "shared texture memory dma buf plane", "annotation": "const*", "length": "plane count"}
         ]
     },
     "shared texture memory opaque FD descriptor": {
@@ -1659,8 +1692,11 @@
         "chain roots": ["shared texture memory descriptor"],
         "tags": ["dawn", "native"],
         "members": [
+            {"name": "vk image create info", "type": "void const *"},
             {"name": "memory FD", "type": "int"},
-            {"name": "allocation size", "type": "uint64_t"}
+            {"name": "memory type index", "type": "uint32_t"},
+            {"name": "allocation size", "type": "uint64_t"},
+            {"name": "dedicated allocation", "type": "bool"}
         ]
     },
     "shared texture memory zircon handle descriptor": {
@@ -1899,7 +1935,6 @@
             {"value": 1002, "name": "dawn internal usages", "tags": ["dawn"]},
             {"value": 1003, "name": "dawn multi planar formats", "tags": ["dawn"]},
             {"value": 1004, "name": "dawn native", "tags": ["dawn", "native"]},
-            {"value": 1005, "name": "chromium experimental dp4a", "tags": ["dawn"]},
             {"value": 1006, "name": "chromium experimental timestamp query inside passes", "tags": ["dawn"]},
             {"value": 1007, "name": "implicit device synchronization", "tags": ["dawn", "native"]},
             {"value": 1008, "name": "surface capabilities", "tags": ["dawn", "native"]},
@@ -1910,7 +1945,6 @@
             {"value": 1013, "name": "ANGLE texture sharing", "tags": ["dawn", "native"]},
             {"value": 1014, "name": "chromium experimental subgroups", "tags": ["dawn"]},
             {"value": 1015, "name": "chromium experimental subgroup uniform control flow", "tags": ["dawn"]},
-            {"value": 1016, "name": "chromium experimental read write storage texture", "tags": ["dawn"]},
             {"value": 1017, "name": "pixel local storage coherent", "tags": ["dawn"]},
             {"value": 1018, "name": "pixel local storage non coherent", "tags": ["dawn"]},
             {"value": 1019, "name": "norm16 texture formats", "tags": ["dawn"]},
@@ -1920,6 +1954,8 @@
             {"value": 1023, "name": "multi planar render targets", "tags": ["dawn"]},
             {"value": 1024, "name": "multi planar format nv12a", "tags": ["dawn"]},
             {"value": 1025, "name": "framebuffer fetch", "tags": ["dawn"]},
+            {"value": 1026, "name": "buffer map extended usages", "tags": ["dawn"]},
+            {"value": 1027, "name": "adapter properties memory heaps", "tags": ["dawn"]},
 
             {"value": 1100, "name": "shared texture memory vk dedicated allocation", "tags": ["dawn", "native"]},
             {"value": 1101, "name": "shared texture memory a hardware buffer", "tags": ["dawn", "native"]},
@@ -2030,11 +2066,26 @@
                     {"name": "options", "type": "request adapter options", "annotation": "const*", "optional": true, "no_default": true},
                     {"name": "callback info", "type": "request adapter callback info"}
                 ]
+            },
+            {
+                "name": "has WGSL language feature",
+                "returns": "bool",
+                "args": [
+                    {"name": "feature", "type": "WGSL feature name"}
+                ]
+            },
+            {
+                "name": "enumerate WGSL language features",
+                "returns": "size_t",
+                "args": [
+                    {"name": "features", "type": "WGSL feature name", "annotation": "*"}
+                ]
             }
         ]
     },
     "callback mode": {
         "category": "enum",
+        "emscripten_no_enum_table": true,
         "values": [
             {"name": "wait any only", "value": 0},
             {"name": "allow process events", "value": 1},
@@ -2088,6 +2139,17 @@
         "returns": "bool",
         "args": [
             {"name": "features", "type": "instance features", "annotation": "*"}
+        ]
+    },
+    "dawn wire WGSL control": {
+        "category": "structure",
+        "tags": ["dawn"],
+        "chained": "in",
+        "chain roots": ["instance descriptor"],
+        "members": [
+            {"name": "enable experimental", "type": "bool", "default": "false"},
+            {"name": "enable unsafe", "type": "bool", "default": "false"},
+            {"name": "enable testing", "type": "bool", "default": "false"}
         ]
     },
     "vertex attribute": {
@@ -2228,7 +2290,7 @@
         "extensible": "in",
         "members": [
             {"name": "module", "type": "shader module"},
-            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen"},
+            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
             {"name": "constant count", "type": "size_t", "default": 0},
             {"name": "constants", "type": "constant entry", "annotation": "const*", "length": "constant count"}
         ]
@@ -2545,7 +2607,7 @@
         "extensible": "in",
         "members": [
             {"name": "view", "type": "texture view", "optional": true},
-            {"name": "depth slice", "type": "uint32_t", "default": "0", "tags": ["dawn"]},
+            {"name": "depth slice", "type": "uint32_t", "default": "WGPU_DEPTH_SLICE_UNDEFINED"},
             {"name": "resolve target", "type": "texture view", "optional": true},
             {"name": "load op", "type": "load op"},
             {"name": "store op", "type": "store op"},
@@ -2832,7 +2894,7 @@
         "extensible": "in",
         "members": [
             {"name": "module", "type": "shader module"},
-            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen"},
+            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
             {"name": "constant count", "type": "size_t", "default": 0},
             {"name": "constants", "type": "constant entry", "annotation": "const*", "length": "constant count"},
             {"name": "buffer count", "type": "size_t", "default": 0},
@@ -2912,7 +2974,7 @@
         "extensible": "in",
         "members": [
             {"name": "module", "type": "shader module"},
-            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen"},
+            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
             {"name": "constant count", "type": "size_t", "default": 0},
             {"name": "constants", "type": "constant entry", "annotation": "const*", "length": "constant count"},
             {"name": "target count", "type": "size_t"},
@@ -3186,7 +3248,7 @@
         "tags": ["native"],
         "members": [
             {"name": "display", "type": "void", "annotation": "*"},
-            {"name": "window", "type": "uint32_t"}
+            {"name": "window", "type": "uint64_t"}
         ]
     },
     "surface descriptor from wayland surface": {
@@ -3287,6 +3349,10 @@
             {"value": 1016, "name": "pipeline layout pixel local storage", "tags": ["dawn"]},
             {"value": 1017, "name": "buffer host mapped pointer", "tags": ["dawn"]},
             {"value": 1018, "name": "dawn experimental subgroup limits", "tags": ["dawn"]},
+            {"value": 1019, "name": "adapter properties memory heaps", "tags": ["dawn"]},
+            {"value": 1020, "name": "dawn compute pipeline full subgroups", "tags": ["dawn"]},
+            {"value": 1021, "name": "dawn wire WGSL control", "tags": ["dawn"]},
+            {"value": 1022, "name": "dawn WGSL blocklist", "tags": ["dawn", "native"]},
 
             {"value": 1100, "name": "shared texture memory vk image descriptor", "tags": ["dawn", "native"]},
             {"value": 1101, "name": "shared texture memory vk dedicated allocation descriptor", "tags": ["dawn", "native"]},
@@ -3640,10 +3706,25 @@
             {"value": 31, "name": "unorm 10_10_10_2", "jsrepr": "'unorm10-10-10-2'"}
         ]
     },
+    "WGSL feature name": {
+        "category": "enum",
+        "values": [
+            {"value": 0, "name": "undefined", "valid": false, "jsrepr": "undefined"},
+            {"value": 1, "name": "readonly and readwrite storage textures"},
+            {"value": 2, "name": "packed 4x8 integer dot product"},
+            {"value": 3, "name": "unrestricted pointer parameters"},
+            {"value": 4, "name": "pointer composite access"},
+            {"value": 1000, "name": "chromium testing unimplemented", "tags": ["dawn"]},
+            {"value": 1001, "name": "chromium testing unsafe experimental", "tags": ["dawn"]},
+            {"value": 1002, "name": "chromium testing experimental", "tags": ["dawn"]},
+            {"value": 1003, "name": "chromium testing shipped with killswitch", "tags": ["dawn"]},
+            {"value": 1004, "name": "chromium testing shipped", "tags": ["dawn"]}
+        ]
+    },
     "whole size" : {
         "category": "constant",
         "type": "uint64_t",
-        "value":  "(0xffffffffffffffffULL)"
+        "value":  "UINT64_MAX"
     },
     "whole map size" : {
         "category": "constant",
@@ -3653,32 +3734,37 @@
     "copy stride undefined" : {
         "category": "constant",
         "type": "uint32_t",
-        "value":  "(0xffffffffUL)"
+        "value":  "UINT32_MAX"
     },
     "limit u32 undefined" : {
         "category": "constant",
         "type": "uint32_t",
-        "value":  "(0xffffffffUL)"
+        "value":  "UINT32_MAX"
     },
     "limit u64 undefined" : {
         "category": "constant",
         "type": "uint64_t",
-        "value":  "(0xffffffffffffffffULL)"
+        "value":  "UINT64_MAX"
     },
     "array layer count undefined" : {
         "category": "constant",
         "type": "uint32_t",
-        "value":  "(0xffffffffUL)"
+        "value":  "UINT32_MAX"
     },
     "mip level count undefined" : {
         "category": "constant",
         "type": "uint32_t",
-        "value":  "(0xffffffffUL)"
+        "value":  "UINT32_MAX"
+    },
+    "depth slice undefined" : {
+        "category": "constant",
+        "type": "uint32_t",
+        "value":  "UINT32_MAX"
     },
     "query set index undefined" : {
         "category": "constant",
         "type": "uint32_t",
-        "value":  "(0xffffffffUL)"
+        "value":  "UINT32_MAX"
     },
     "ObjectType": {
       "_comment": "Only used for the wire",
@@ -3748,6 +3834,36 @@
         "tags": ["dawn"],
         "members": [
             {"name": "power preference", "type": "power preference", "default": "undefined"}
+        ]
+    },
+    "heap property": {
+        "category": "bitmask",
+        "tags": ["dawn"],
+        "values": [
+            {"value": 0, "name": "undefined", "valid": false},
+            {"value": 1, "name": "device local"},
+            {"value": 2, "name": "host visible"},
+            {"value": 4, "name": "host coherent"},
+            {"value": 8, "name": "host uncached"},
+            {"value": 16, "name": "host cached"}
+        ]
+    },
+    "memory heap info": {
+        "category": "structure",
+        "tags": ["dawn"],
+        "members": [
+            {"name": "properties", "type": "heap property"},
+            {"name": "size", "type": "uint64_t"}
+        ]
+    },
+    "adapter properties memory heaps": {
+        "category": "structure",
+        "chained": "out",
+        "chain roots": ["adapter properties"],
+        "tags": ["dawn"],
+        "members": [
+            {"name": "heap count", "type": "size_t"},
+            {"name": "heap info", "type": "memory heap info", "annotation": "const*", "length": "heap count"}
         ]
     },
     "dawn buffer descriptor error info from wire client": {

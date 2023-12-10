@@ -51,6 +51,7 @@ tint_target_add_dependencies(tint_lang_msl_validate lib
   tint_lang_core_type
   tint_lang_wgsl
   tint_lang_wgsl_ast
+  tint_lang_wgsl_features
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
   tint_utils_command
@@ -69,13 +70,13 @@ tint_target_add_dependencies(tint_lang_msl_validate lib
   tint_utils_traits
 )
 
-if(IS_MAC)
+if(TINT_BUILD_IS_MAC)
   tint_target_add_sources(tint_lang_msl_validate lib
     "lang/msl/validate/validate_metal.mm"
   )
   tint_target_add_external_dependencies(tint_lang_msl_validate lib
     "metal"
   )
-endif(IS_MAC)
+endif(TINT_BUILD_IS_MAC)
 
 endif(TINT_BUILD_MSL_WRITER)

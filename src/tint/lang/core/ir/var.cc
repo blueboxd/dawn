@@ -37,6 +37,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Var);
 
 namespace tint::core::ir {
 
+Var::Var() = default;
+
 Var::Var(InstructionResult* result) {
     if (result && result->Type()) {
         TINT_ASSERT(result->Type()->Is<core::type::Pointer>());
@@ -50,7 +52,7 @@ Var::Var(InstructionResult* result) {
 Var::~Var() = default;
 
 Var* Var::Clone(CloneContext& ctx) {
-    auto* new_result = ctx.Clone(Result());
+    auto* new_result = ctx.Clone(Result(0));
     auto* new_var = ctx.ir.instructions.Create<Var>(new_result);
 
     new_var->binding_point_ = binding_point_;
@@ -68,7 +70,7 @@ void Var::SetInitializer(Value* initializer) {
 }
 
 void Var::DestroyIfOnlyAssigned() {
-    auto* result = Result();
+    auto* result = Result(0);
     if (result->Usages().All([](const Usage& u) { return u.instruction->Is<ir::Store>(); })) {
         while (!result->Usages().IsEmpty()) {
             auto& usage = *result->Usages().begin();

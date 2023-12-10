@@ -76,6 +76,7 @@ class Device final : public d3d::Device {
     MaybeError TickImpl() override;
 
     ID3D12Device* GetD3D12Device() const;
+    ID3D12Fence* GetD3D12Fence() const;
     ComPtr<ID3D12CommandQueue> GetCommandQueue() const;
     ID3D12SharingContract* GetSharingContract() const;
 
@@ -155,7 +156,7 @@ class Device final : public d3d::Device {
     ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> CreateExternalImageDXGIImplImpl(
         const ExternalImageDescriptor* descriptor) override;
 
-    Ref<TextureBase> CreateD3DExternalTexture(const TextureDescriptor* descriptor,
+    Ref<TextureBase> CreateD3DExternalTexture(const Unpacked<TextureDescriptor>& descriptor,
                                               ComPtr<IUnknown> d3dTexture,
                                               std::vector<Ref<d3d::Fence>> waitFences,
                                               bool isSwapChainTexture,
@@ -214,7 +215,8 @@ class Device final : public d3d::Device {
         Surface* surface,
         SwapChainBase* previousSwapChain,
         const SwapChainDescriptor* descriptor) override;
-    ResultOrError<Ref<TextureBase>> CreateTextureImpl(const TextureDescriptor* descriptor) override;
+    ResultOrError<Ref<TextureBase>> CreateTextureImpl(
+        const Unpacked<TextureDescriptor>& descriptor) override;
     ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
         TextureBase* texture,
         const TextureViewDescriptor* descriptor) override;

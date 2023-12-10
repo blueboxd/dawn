@@ -46,8 +46,7 @@ class RenderPipeline final : public RenderPipelineBase, public PipelineGL {
                                                    const RenderPipelineDescriptor* descriptor);
 
     GLenum GetGLPrimitiveTopology() const;
-    ityp::bitset<VertexAttributeLocation, kMaxVertexAttributes> GetAttributesUsingVertexBuffer(
-        VertexBufferSlot slot) const;
+    VertexAttributeMask GetAttributesUsingVertexBuffer(VertexBufferSlot slot) const;
 
     void ApplyNow(PersistentPipelineState& persistentPipelineState);
 
@@ -64,10 +63,7 @@ class RenderPipeline final : public RenderPipelineBase, public PipelineGL {
     GLuint mVertexArrayObject;
     GLenum mGlPrimitiveTopology;
 
-    ityp::array<VertexBufferSlot,
-                ityp::bitset<VertexAttributeLocation, kMaxVertexAttributes>,
-                kMaxVertexBuffers>
-        mAttributesUsingVertexBuffer;
+    PerVertexBuffer<VertexAttributeMask> mAttributesUsingVertexBuffer;
 };
 
 }  // namespace dawn::native::opengl

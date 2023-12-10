@@ -37,6 +37,10 @@
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/platform/DawnPlatform.h"
 
+#if DAWN_PLATFORM_IS(ANDROID)
+#include "dawn/native/AHBFunctions.h"
+#endif  // DAWN_PLATFORM_IS(ANDROID)
+
 namespace dawn::native::vulkan {
 
 namespace {
@@ -203,6 +207,8 @@ MaybeError PhysicalDevice::InitializeImpl() {
 }
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
+    EnableFeature(Feature::AdapterPropertiesMemoryHeaps);
+
     // Initialize supported extensions
     if (mDeviceInfo.features.textureCompressionBC == VK_TRUE) {
         EnableFeature(Feature::TextureCompressionBC);
@@ -216,10 +222,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::TextureCompressionASTC);
     }
 
-    // TODO(dawn:1559) Resolving timestamp queries after a render pass is failing on Qualcomm-based
-    // Android devices.
-    if (mDeviceInfo.properties.limits.timestampComputeAndGraphics == VK_TRUE &&
-        !IsAndroidQualcomm()) {
+    if (mDeviceInfo.properties.limits.timestampComputeAndGraphics == VK_TRUE) {
         EnableFeature(Feature::TimestampQuery);
         EnableFeature(Feature::ChromiumExperimentalTimestampQueryInsidePasses);
     }
@@ -243,15 +246,6 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         mDeviceInfo._16BitStorageFeatures.storageInputOutput16 == VK_TRUE &&
         mDeviceInfo._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess == VK_TRUE) {
         EnableFeature(Feature::ShaderF16);
-    }
-
-    if (mDeviceInfo.HasExt(DeviceExt::ShaderIntegerDotProduct) &&
-        mDeviceInfo.shaderIntegerDotProductFeatures.shaderIntegerDotProduct == VK_TRUE &&
-        mDeviceInfo.shaderIntegerDotProductProperties
-                .integerDotProduct4x8BitPackedSignedAccelerated == VK_TRUE &&
-        mDeviceInfo.shaderIntegerDotProductProperties
-                .integerDotProduct4x8BitPackedUnsignedAccelerated == VK_TRUE) {
-        EnableFeature(Feature::ChromiumExperimentalDp4a);
     }
 
     // unclippedDepth=true translates to depthClamp=true, which implicitly disables clipping.
@@ -367,6 +361,35 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         // Linux nearly always exposes 4096.
         // https://vulkan.gpuinfo.org/displayextensionproperty.php?platform=linux&extensionname=VK_EXT_external_memory_host&extensionproperty=minImportedHostPointerAlignment
         EnableFeature(Feature::HostMappedPointer);
+    }
+
+    if (mDeviceInfo.HasExt(DeviceExt::ExternalMemoryDmaBuf) &&
+        mDeviceInfo.HasExt(DeviceExt::ImageDrmFormatModifier)) {
+        EnableFeature(Feature::SharedTextureMemoryDmaBuf);
+    }
+    if (mDeviceInfo.HasExt(DeviceExt::ExternalMemoryFD)) {
+        EnableFeature(Feature::SharedTextureMemoryOpaqueFD);
+    }
+
+#if DAWN_PLATFORM_IS(ANDROID)
+    if (mDeviceInfo.HasExt(DeviceExt::ExternalMemoryAndroidHardwareBuffer)) {
+        if (GetInstance()->GetOrLoadAHBFunctions()->IsValid()) {
+            EnableFeature(Feature::SharedTextureMemoryAHardwareBuffer);
+        }
+    }
+#endif  // DAWN_PLATFORM_IS(ANDROID)
+
+    if (CheckSemaphoreSupport(DeviceExt::ExternalSemaphoreZirconHandle,
+                              VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_ZIRCON_EVENT_BIT_FUCHSIA)) {
+        EnableFeature(Feature::SharedFenceVkSemaphoreZirconHandle);
+    }
+    if (CheckSemaphoreSupport(DeviceExt::ExternalSemaphoreFD,
+                              VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT_KHR)) {
+        EnableFeature(Feature::SharedFenceVkSemaphoreSyncFD);
+    }
+    if (CheckSemaphoreSupport(DeviceExt::ExternalSemaphoreFD,
+                              VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHR)) {
+        EnableFeature(Feature::SharedFenceVkSemaphoreOpaqueFD);
     }
 }
 
@@ -652,9 +675,11 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // The environment can only request to use VK_KHR_zero_initialize_workgroup_memory when the
     // extension is available. Override the decision if it is not applicable or
     // zeroInitializeWorkgroupMemoryFeatures.shaderZeroInitializeWorkgroupMemory == VK_FALSE.
+    // Never use the extension on Mali devices due to a known bug (see crbug.com/tint/2101).
     if (!GetDeviceInfo().HasExt(DeviceExt::ZeroInitializeWorkgroupMemory) ||
         GetDeviceInfo().zeroInitializeWorkgroupMemoryFeatures.shaderZeroInitializeWorkgroupMemory ==
-            VK_FALSE) {
+            VK_FALSE ||
+        IsAndroidARM()) {
         deviceToggles->ForceSet(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, false);
     }
     // By default try to initialize workgroup memory with OpConstantNull according to the Vulkan
@@ -685,6 +710,13 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // By default try to disable index clamping on the runtime-sized arrays on storage buffers in
     // Tint robustness transform according to the Vulkan extension VK_EXT_robustness2.
     deviceToggles->Default(Toggle::VulkanUseBufferRobustAccess2, true);
+
+    // Enable the polyfill versions of dot4I8Packed() and dot4U8Packed() when the SPIR-V capability
+    // `DotProductInput4x8BitPackedKHR` is not supported.
+    if (!GetDeviceInfo().HasExt(DeviceExt::ShaderIntegerDotProduct) ||
+        GetDeviceInfo().shaderIntegerDotProductFeatures.shaderIntegerDotProduct == VK_FALSE) {
+        deviceToggles->ForceSet(Toggle::PolyFillPacked4x8DotProduct, true);
+    }
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,
@@ -750,8 +782,61 @@ uint32_t PhysicalDevice::FindDefaultComputeSubgroupSize() const {
     }
 }
 
+bool PhysicalDevice::CheckSemaphoreSupport(DeviceExt deviceExt,
+                                           VkExternalSemaphoreHandleTypeFlagBits handleType) const {
+    if (!mDeviceInfo.HasExt(deviceExt)) {
+        return false;
+    }
+
+    constexpr VkFlags kRequiredSemaphoreFlags = VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT_KHR |
+                                                VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT_KHR;
+
+    VkPhysicalDeviceExternalSemaphoreInfoKHR semaphoreInfo;
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO_KHR;
+    semaphoreInfo.pNext = nullptr;
+
+    VkExternalSemaphorePropertiesKHR semaphoreProperties;
+    semaphoreProperties.sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES_KHR;
+    semaphoreProperties.pNext = nullptr;
+
+    semaphoreInfo.handleType = handleType;
+    mVulkanInstance->GetFunctions().GetPhysicalDeviceExternalSemaphoreProperties(
+        mVkPhysicalDevice, &semaphoreInfo, &semaphoreProperties);
+
+    return IsSubset(kRequiredSemaphoreFlags, semaphoreProperties.externalSemaphoreFeatures);
+}
+
 uint32_t PhysicalDevice::GetDefaultComputeSubgroupSize() const {
     return mDefaultComputeSubgroupSize;
+}
+
+void PhysicalDevice::PopulateMemoryHeapInfo(
+    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
+    size_t count = mDeviceInfo.memoryHeaps.size();
+    auto* heapInfo = new MemoryHeapInfo[count];
+    memoryHeapProperties->heapCount = count;
+    memoryHeapProperties->heapInfo = heapInfo;
+
+    for (size_t i = 0; i < count; ++i) {
+        heapInfo[i].size = mDeviceInfo.memoryHeaps[i].size;
+        heapInfo[i].properties = {};
+        if (mDeviceInfo.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+            heapInfo[i].properties |= wgpu::HeapProperty::DeviceLocal;
+        }
+    }
+    for (const auto& memoryType : mDeviceInfo.memoryTypes) {
+        if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostVisible;
+        }
+        if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
+            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCoherent;
+        }
+        if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
+            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCached;
+        } else {
+            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostUncached;
+        }
+    }
 }
 
 }  // namespace dawn::native::vulkan

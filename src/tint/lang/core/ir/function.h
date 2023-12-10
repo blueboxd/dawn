@@ -36,6 +36,7 @@
 #include "src/tint/lang/core/ir/location.h"
 #include "src/tint/lang/core/ir/value.h"
 #include "src/tint/lang/core/type/type.h"
+#include "src/tint/utils/containers/const_propagating_ptr.h"
 #include "src/tint/utils/ice/ice.h"
 
 // Forward declarations
@@ -72,6 +73,9 @@ class Function : public Castable<Function, Value> {
     };
 
     /// Constructor
+    Function();
+
+    /// Constructor
     /// @param rt the function return type
     /// @param stage the function stage
     /// @param wg_size the workgroup_size
@@ -101,6 +105,9 @@ class Function : public Castable<Function, Value> {
 
     /// @returns the workgroup size information
     std::optional<std::array<uint32_t, 3>> WorkgroupSize() const { return workgroup_size_; }
+
+    /// @param type the return type for the function
+    void SetReturnType(const core::type::Type* type) { return_.type = type; }
 
     /// @returns the return type for the function
     const core::type::Type* ReturnType() const { return return_.type; }
@@ -164,7 +171,7 @@ class Function : public Castable<Function, Value> {
     void Destroy() override;
 
   private:
-    PipelineStage pipeline_stage_;
+    PipelineStage pipeline_stage_ = PipelineStage::kUndefined;
     std::optional<std::array<uint32_t, 3>> workgroup_size_;
 
     struct {
@@ -175,7 +182,7 @@ class Function : public Castable<Function, Value> {
     } return_;
 
     Vector<FunctionParam*, 1> params_;
-    ir::Block* block_ = nullptr;
+    ConstPropagatingPtr<ir::Block> block_;
 };
 
 /// @param value the enum value

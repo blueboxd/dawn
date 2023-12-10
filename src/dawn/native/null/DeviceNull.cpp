@@ -77,6 +77,9 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
+    // Set the subgroups limit, as DeviceNull should support subgroups feature.
+    limits->experimentalSubgroupLimits.minSubgroupSize = 4;
+    limits->experimentalSubgroupLimits.maxSubgroupSize = 128;
     return {};
 }
 
@@ -88,6 +91,17 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* ada
                                                                 const DeviceDescriptor* descriptor,
                                                                 const TogglesState& deviceToggles) {
     return Device::Create(adapter, descriptor, deviceToggles);
+}
+
+void PhysicalDevice::PopulateMemoryHeapInfo(
+    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
+    auto* heapInfo = new MemoryHeapInfo[1];
+    memoryHeapProperties->heapCount = 1;
+    memoryHeapProperties->heapInfo = heapInfo;
+
+    heapInfo[0].size = 1024 * 1024 * 1024;
+    heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                             wgpu::HeapProperty::HostCached;
 }
 
 FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
@@ -207,7 +221,8 @@ ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
     const SwapChainDescriptor* descriptor) {
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
-ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
+ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
+    const Unpacked<TextureDescriptor>& descriptor) {
     return AcquireRef(new Texture(this, descriptor));
 }
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
@@ -421,6 +436,10 @@ bool Queue::HasPendingCommands() const {
     return false;
 }
 
+ResultOrError<bool> Queue::WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) {
+    return true;
+}
+
 MaybeError Queue::WaitForIdleForDestruction() {
     ToBackend(GetDevice())->ForgetPendingOperations();
     return {};
@@ -450,12 +469,17 @@ MaybeError ComputePipeline::Initialize() {
                     RunTransforms(&transformManager, computeStage.module->GetTintProgram(),
                                   transformInputs, nullptr, nullptr));
 
-    // Do the workgroup size validation as it is actually backend agnostic.
+    // Do the workgroup size validation, although different backend will have different
+    // fullSubgroups parameter.
     const CombinedLimits& limits = GetDevice()->GetLimits();
     Extent3D _;
     DAWN_TRY_ASSIGN(
-        _, ValidateComputeStageWorkgroupSize(transformedProgram, computeStage.entryPoint.c_str(),
-                                             LimitsForCompilationRequest::Create(limits.v1)));
+        _, ValidateComputeStageWorkgroupSize(
+               transformedProgram, computeStage.entryPoint.c_str(),
+               LimitsForCompilationRequest::Create(limits.v1), /* maxSubgroupSizeForFullSubgroups */
+               IsFullSubgroupsRequired()
+                   ? std::make_optional(limits.experimentalSubgroupLimits.maxSubgroupSize)
+                   : std::nullopt));
 
     return {};
 }
@@ -499,7 +523,7 @@ MaybeError SwapChain::PresentImpl() {
 
 ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureImpl() {
     TextureDescriptor textureDesc = GetSwapChainBaseTextureDescriptor(this);
-    mTexture = AcquireRef(new Texture(GetDevice(), &textureDesc));
+    mTexture = AcquireRef(new Texture(GetDevice(), Unpack(&textureDesc)));
     return mTexture;
 }
 
@@ -533,7 +557,7 @@ bool Device::IsResolveTextureBlitWithDrawSupported() const {
     return true;
 }
 
-Texture::Texture(DeviceBase* device, const TextureDescriptor* descriptor)
+Texture::Texture(DeviceBase* device, const Unpacked<TextureDescriptor>& descriptor)
     : TextureBase(device, descriptor) {}
 
 }  // namespace dawn::native::null

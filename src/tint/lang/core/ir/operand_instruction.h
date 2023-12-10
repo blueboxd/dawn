@@ -65,9 +65,9 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
         }
     }
 
-    /// Sets the operands to @p operands
-    /// @param operands the new operands for the instruction
-    void SetOperands(VectorRef<ir::Value*> operands) {
+    /// Replaces the operands of the instruction
+    /// @param operands the new operands of the instruction
+    void SetOperands(VectorRef<ir::Value*> operands) override {
         ClearOperands();
         operands_ = std::move(operands);
         for (size_t i = 0; i < operands_.Length(); i++) {
@@ -88,8 +88,36 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
         operands_.Clear();
     }
 
+    /// Replaces the results of the instruction
+    /// @param results the new results of the instruction
+    void SetResults(VectorRef<ir::InstructionResult*> results) override {
+        ClearResults();
+        results_ = std::move(results);
+        for (auto* result : results_) {
+            if (result) {
+                result->SetInstruction(this);
+            }
+        }
+    }
+
+    /// Sets the results of the instruction
+    /// @param values the new result values
+    template <typename... ARGS,
+              typename = std::enable_if_t<!tint::IsVectorLike<
+                  tint::traits::Decay<tint::traits::NthTypeOf<0, ARGS..., void>>>>>
+    void SetResults(ARGS&&... values) {
+        SetResults(Vector{std::forward<ARGS>(values)...});
+    }
+
     /// Removes all results from the instruction.
-    void ClearResults() { results_.Clear(); }
+    void ClearResults() {
+        for (auto* result : results_) {
+            if (result && result->Instruction() == this) {
+                result->SetInstruction(nullptr);
+            }
+        }
+        results_.Clear();
+    }
 
     /// @returns the operands of the instruction
     VectorRef<ir::Value*> Operands() override { return operands_; }
@@ -106,14 +134,14 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
     /// @param idx the index of the result
     /// @returns the result with index @p idx, or `nullptr` if there are no results or the index is
     /// out of bounds.
-    InstructionResult* Result(size_t idx = 0) {
+    InstructionResult* Result(size_t idx) {
         return idx < results_.Length() ? results_[idx] : nullptr;
     }
 
     /// @param idx the index of the result
     /// @returns the result with index @p idx, or `nullptr` if there are no results or the index is
     /// out of bounds.
-    const InstructionResult* Result(size_t idx = 0) const {
+    const InstructionResult* Result(size_t idx) const {
         return idx < results_.Length() ? results_[idx] : nullptr;
     }
 
@@ -145,7 +173,7 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
     /// @param value the value to append
     void AddResult(InstructionResult* value) {
         if (value) {
-            value->SetSource(this);
+            value->SetInstruction(this);
         }
         results_.Push(value);
     }

@@ -77,6 +77,10 @@ class PhysicalDevice : public PhysicalDeviceBase {
                                                     const TogglesState& deviceToggles) override;
 
     uint32_t FindDefaultComputeSubgroupSize() const;
+    bool CheckSemaphoreSupport(DeviceExt deviceExt,
+                               VkExternalSemaphoreHandleTypeFlagBits handleType) const;
+
+    void PopulateMemoryHeapInfo(AdapterPropertiesMemoryHeaps* memoryHeapProperties) const override;
 
     VkPhysicalDevice mVkPhysicalDevice;
     Ref<VulkanInstance> mVulkanInstance;

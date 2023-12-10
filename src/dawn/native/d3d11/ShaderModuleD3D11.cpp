@@ -77,8 +77,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     SingleShaderStage stage,
     const PipelineLayout* layout,
     uint32_t compileFlags,
-    const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>&
-        usedInterstageVariables) {
+    const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>& usedInterstageVariables,
+    const std::optional<tint::PixelLocalOptions>& pixelLocalOptions) {
     Device* device = ToBackend(GetDevice());
     TRACE_EVENT0(device->GetPlatform(), General, "ShaderModuleD3D11::Compile");
     DAWN_ASSERT(!IsError());
@@ -201,10 +201,17 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
             req.hlsl.tintOptions.interstage_locations = *usedInterstageVariables;
         }
         req.hlsl.tintOptions.truncate_interstage_variables = true;
+    } else if (stage == SingleShaderStage::Fragment) {
+        if (pixelLocalOptions.has_value()) {
+            req.hlsl.tintOptions.pixel_local_options = *pixelLocalOptions;
+        }
     }
 
     // TODO(dawn:1705): do we need to support it?
     req.hlsl.tintOptions.polyfill_reflect_vec2_f32 = false;
+
+    // D3D11 doesn't support shader model 6+ features
+    req.hlsl.tintOptions.polyfill_dot_4x8_packed = true;
 
     CacheResult<d3d::CompiledShader> compiledShader;
     MaybeError compileError = [&]() -> MaybeError {

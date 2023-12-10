@@ -163,7 +163,8 @@ class Device final : public DeviceBase {
         Surface* surface,
         SwapChainBase* previousSwapChain,
         const SwapChainDescriptor* descriptor) override;
-    ResultOrError<Ref<TextureBase>> CreateTextureImpl(const TextureDescriptor* descriptor) override;
+    ResultOrError<Ref<TextureBase>> CreateTextureImpl(
+        const Unpacked<TextureDescriptor>& descriptor) override;
     ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
         TextureBase* texture,
         const TextureViewDescriptor* descriptor) override;
@@ -208,6 +209,8 @@ class PhysicalDevice : public PhysicalDeviceBase {
     ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(AdapterBase* adapter,
                                                     const DeviceDescriptor* descriptor,
                                                     const TogglesState& deviceToggles) override;
+
+    void PopulateMemoryHeapInfo(AdapterPropertiesMemoryHeaps* memoryHeapProperties) const override;
 };
 
 // Helper class so |BindGroup| can allocate memory for its binding data,
@@ -284,6 +287,7 @@ class Queue final : public QueueBase {
     ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
     void ForceEventualFlushOfCommands() override;
     bool HasPendingCommands() const override;
+    ResultOrError<bool> WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) override;
     MaybeError WaitForIdleForDestruction() override;
 };
 
@@ -330,7 +334,7 @@ class SwapChain final : public SwapChainBase {
 
 class Texture : public TextureBase {
   public:
-    Texture(DeviceBase* device, const TextureDescriptor* descriptor);
+    Texture(DeviceBase* device, const Unpacked<TextureDescriptor>& descriptor);
 };
 
 }  // namespace dawn::native::null

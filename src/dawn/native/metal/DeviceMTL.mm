@@ -34,6 +34,7 @@
 #include "dawn/native/ChainUtils_autogen.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/ErrorData.h"
+#include "dawn/native/EventManager.h"
 #include "dawn/native/metal/BindGroupLayoutMTL.h"
 #include "dawn/native/metal/BindGroupMTL.h"
 #include "dawn/native/metal/BufferMTL.h"
@@ -228,7 +229,8 @@ ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
     const SwapChainDescriptor* descriptor) {
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
-ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
+ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
+    const Unpacked<TextureDescriptor>& descriptor) {
     return Texture::Create(this, descriptor);
 }
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
@@ -361,8 +363,12 @@ Ref<Texture> Device::CreateTextureWrappingIOSurface(
     const ExternalImageDescriptor* descriptor,
     IOSurfaceRef ioSurface,
     std::vector<MTLSharedEventAndSignalValue> waitEvents) {
-    const TextureDescriptor* textureDescriptor = FromAPI(descriptor->cTextureDescriptor);
+    Unpacked<TextureDescriptor> textureDescriptor;
     if (ConsumedError(ValidateIsAlive())) {
+        return nullptr;
+    }
+    if (ConsumedError(ValidateAndUnpack(FromAPI(descriptor->cTextureDescriptor)),
+                      &textureDescriptor)) {
         return nullptr;
     }
     if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor,
@@ -382,9 +388,9 @@ Ref<Texture> Device::CreateTextureWrappingIOSurface(
     }
 
     Ref<Texture> result;
-    if (ConsumedError(
-            Texture::CreateFromIOSurface(this, descriptor, ioSurface, std::move(waitEvents)),
-            &result)) {
+    if (ConsumedError(Texture::CreateFromIOSurface(this, descriptor, textureDescriptor, ioSurface,
+                                                   std::move(waitEvents)),
+                      &result)) {
         return nullptr;
     }
     return result;
@@ -401,8 +407,6 @@ void Device::DestroyImpl() {
     //   other threads using the device since there are no other live refs.
     mMtlDevice = nullptr;
     mMockBlitMtlBuffer = nullptr;
-
-    GetQueue()->Destroy();
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {

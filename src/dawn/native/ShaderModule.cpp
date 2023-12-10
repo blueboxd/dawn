@@ -40,8 +40,11 @@
 #include "dawn/native/Pipeline.h"
 #include "dawn/native/PipelineLayout.h"
 #include "dawn/native/RenderPipeline.h"
-#include "dawn/native/SpirvValidation.h"
 #include "dawn/native/TintUtils.h"
+
+#ifdef DAWN_ENABLE_SPIRV_VALIDATION
+#include "dawn/native/SpirvValidation.h"
+#endif
 
 #include "tint/tint.h"
 
@@ -564,7 +567,7 @@ MaybeError ValidateCompatibilityWithBindGroupLayout(DeviceBase* device,
                              device, layout, entryPoint.stage, bindingId, bindingInfo),
                          "validating that the entry-point's declaration for @group(%u) "
                          "@binding(%u) matches %s",
-                         static_cast<uint32_t>(group), static_cast<uint32_t>(bindingId), layout);
+                         group, bindingId, layout);
     }
 
     return {};
@@ -933,7 +936,8 @@ MaybeError ReflectShaderUsingTint(const DeviceBase* device,
 ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
     const tint::Program& program,
     const char* entryPointName,
-    const LimitsForCompilationRequest& limits) {
+    const LimitsForCompilationRequest& limits,
+    std::optional<uint32_t> maxSubgroupSizeForFullSubgroups) {
     tint::inspector::Inspector inspector(program);
     // At this point the entry point must exist and must have workgroup size values.
     tint::inspector::EntryPoint entryPoint = inspector.GetEntryPoint(entryPointName);
@@ -967,6 +971,14 @@ ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
                     "the maximum allowed (%u bytes).",
                     workgroupStorageSize, limits.maxComputeWorkgroupStorageSize);
 
+    // Validate workgroup_size.x is a multiple of maxSubgroupSizeForFullSubgroups if
+    // it holds a value.
+    DAWN_INVALID_IF(maxSubgroupSizeForFullSubgroups &&
+                        (workgroup_size.x % *maxSubgroupSizeForFullSubgroups != 0),
+                    "the X dimension of the workgroup size (%d) must be a multiple of "
+                    "maxSubgroupSize (%d) if full subgroups required in compute pipeline",
+                    workgroup_size.x, *maxSubgroupSizeForFullSubgroups);
+
     return Extent3D{workgroup_size.x, workgroup_size.y, workgroup_size.z};
 }
 
@@ -992,26 +1004,26 @@ class TintSource {
     tint::Source::File file;
 };
 
-// A WGSL (or SPIR-V, if enabled) subdescriptor is required, and a Dawn-specific SPIR-V options
-// descriptor is allowed when using SPIR-V.
-#if TINT_BUILD_SPV_READER
-using ShaderModuleDescriptorBranches =
-    BranchList<Branch<ShaderModuleWGSLDescriptor>,
-               Branch<ShaderModuleSPIRVDescriptor, DawnShaderModuleSPIRVOptionsDescriptor>>;
-#else
-using ShaderModuleDescriptorBranches = BranchList<Branch<ShaderModuleWGSLDescriptor>>;
-#endif
-
 MaybeError ValidateAndParseShaderModule(DeviceBase* device,
                                         const ShaderModuleDescriptor* descriptor,
                                         ShaderModuleParseResult* parseResult,
                                         OwnedCompilationMessages* outMessages) {
     DAWN_ASSERT(parseResult != nullptr);
 
-    UnpackedShaderModuleDescriptorChain unpacked;
-    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+    Unpacked<ShaderModuleDescriptor> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
     wgpu::SType moduleType;
-    DAWN_TRY_ASSIGN(moduleType, (ValidateBranches<ShaderModuleDescriptorBranches>(unpacked)));
+    // A WGSL (or SPIR-V, if enabled) subdescriptor is required, and a Dawn-specific SPIR-V options
+// descriptor is allowed when using SPIR-V.
+#if TINT_BUILD_SPV_READER
+    DAWN_TRY_ASSIGN(
+        moduleType,
+        (unpacked.ValidateBranches<
+            Branch<ShaderModuleWGSLDescriptor>,
+            Branch<ShaderModuleSPIRVDescriptor, DawnShaderModuleSPIRVOptionsDescriptor>>()));
+#else
+    DAWN_TRY_ASSIGN(moduleType, (unpacked.ValidateBranches<Branch<ShaderModuleWGSLDescriptor>>()));
+#endif
     DAWN_ASSERT(moduleType != wgpu::SType::Invalid);
 
     ScopedTintICEHandler scopedICEHandler(device);
@@ -1028,9 +1040,8 @@ MaybeError ValidateAndParseShaderModule(DeviceBase* device,
         case wgpu::SType::ShaderModuleSPIRVDescriptor: {
             DAWN_INVALID_IF(device->IsToggleEnabled(Toggle::DisallowSpirv),
                             "SPIR-V is disallowed.");
-            const auto* spirvDesc = std::get<const ShaderModuleSPIRVDescriptor*>(unpacked);
-            const auto* spirvOptions =
-                std::get<const DawnShaderModuleSPIRVOptionsDescriptor*>(unpacked);
+            const auto* spirvDesc = unpacked.Get<ShaderModuleSPIRVDescriptor>();
+            const auto* spirvOptions = unpacked.Get<DawnShaderModuleSPIRVOptionsDescriptor>();
 
             // TODO(dawn:2033): Avoid unnecessary copies of the SPIR-V code.
             std::vector<uint32_t> spirv(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
@@ -1048,7 +1059,7 @@ MaybeError ValidateAndParseShaderModule(DeviceBase* device,
         }
 #endif  // TINT_BUILD_SPV_READER
         case wgpu::SType::ShaderModuleWGSLDescriptor: {
-            wgslDesc = std::get<const ShaderModuleWGSLDescriptor*>(unpacked);
+            wgslDesc = unpacked.Get<ShaderModuleWGSLDescriptor>();
             break;
         }
         default:
@@ -1108,15 +1119,15 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
     for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
         DAWN_TRY_CONTEXT(ValidateCompatibilityWithBindGroupLayout(
                              device, group, entryPoint, layout->GetBindGroupLayout(group)),
-                         "validating the entry-point's compatibility for group %u with %s",
-                         static_cast<uint32_t>(group), layout->GetBindGroupLayout(group));
+                         "validating the entry-point's compatibility for group %u with %s", group,
+                         layout->GetBindGroupLayout(group));
     }
 
     for (BindGroupIndex group : IterateBitSet(~layout->GetBindGroupLayoutsMask())) {
         DAWN_INVALID_IF(entryPoint.bindings[group].size() > 0,
                         "The entry-point uses bindings in group %u but %s doesn't have a "
                         "BindGroupLayout for this index",
-                        static_cast<uint32_t>(group), layout);
+                        group, layout);
     }
 
     // Validate that filtering samplers are not used with unfilterable textures.
@@ -1155,9 +1166,8 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
             textureInfo.texture.sampleType == wgpu::TextureSampleType::UnfilterableFloat,
             "Texture binding (group:%u, binding:%u) is %s but used statically with a sampler "
             "(group:%u, binding:%u) that's %s",
-            static_cast<uint32_t>(pair.texture.group), static_cast<uint32_t>(pair.texture.binding),
-            wgpu::TextureSampleType::UnfilterableFloat, static_cast<uint32_t>(pair.sampler.group),
-            static_cast<uint32_t>(pair.sampler.binding), wgpu::SamplerBindingType::Filtering);
+            pair.texture.group, pair.texture.binding, wgpu::TextureSampleType::UnfilterableFloat,
+            pair.sampler.group, pair.sampler.binding, wgpu::SamplerBindingType::Filtering);
     }
 
     // Validate compatibility of the pixel local storage.
@@ -1264,6 +1274,19 @@ bool ShaderModuleBase::HasEntryPoint(const std::string& entryPoint) const {
     return mEntryPoints.count(entryPoint) > 0;
 }
 
+ShaderModuleEntryPoint ShaderModuleBase::ReifyEntryPointName(const char* entryPointName,
+                                                             SingleShaderStage stage) const {
+    ShaderModuleEntryPoint entryPoint;
+    if (entryPointName) {
+        entryPoint.defaulted = false;
+        entryPoint.name = entryPointName;
+    } else {
+        entryPoint.defaulted = true;
+        entryPoint.name = mDefaultEntryPointNames[stage];
+    }
+    return entryPoint;
+}
+
 const EntryPointMetadata& ShaderModuleBase::GetEntryPoint(const std::string& entryPoint) const {
     DAWN_ASSERT(HasEntryPoint(entryPoint));
     return *mEntryPoints.at(entryPoint);
@@ -1340,6 +1363,18 @@ MaybeError ShaderModuleBase::InitializeBase(ShaderModuleParseResult* parseResult
 
     DAWN_TRY(ReflectShaderUsingTint(GetDevice(), mTintProgram.get(), compilationMessages,
                                     &mEntryPoints, &mEnabledWGSLExtensions));
+
+    for (auto stage : IterateStages(kAllStages)) {
+        mEntryPointCounts[stage] = 0;
+    }
+    for (auto& [name, metadata] : mEntryPoints) {
+        SingleShaderStage stage = metadata->stage;
+        if (mEntryPointCounts[stage] == 0) {
+            mDefaultEntryPointNames[stage] = name;
+        }
+        mEntryPointCounts[stage]++;
+    }
+
     return {};
 }
 

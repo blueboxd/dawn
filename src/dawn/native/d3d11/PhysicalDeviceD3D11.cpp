@@ -27,6 +27,7 @@
 
 #include "dawn/native/d3d11/PhysicalDeviceD3D11.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 
@@ -36,6 +37,7 @@
 #include "dawn/native/d3d11/BackendD3D11.h"
 #include "dawn/native/d3d11/DeviceD3D11.h"
 #include "dawn/native/d3d11/PlatformFunctionsD3D11.h"
+#include "dawn/native/d3d11/UtilsD3D11.h"
 
 namespace dawn::native::d3d11 {
 namespace {
@@ -72,11 +74,6 @@ MaybeError InitializeDebugLayerFilters(ComPtr<ID3D11Device> d3d11Device) {
 
     return CheckHRESULT(infoQueue->PushStorageFilter(&filter),
                         "D3D11 InfoQueue pushing storage filter");
-}
-
-bool IsDebugLayerEnabled(const ComPtr<ID3D11Device>& d3d11Device) {
-    ComPtr<ID3D11Debug> d3d11Debug;
-    return SUCCEEDED(d3d11Device.As(&d3d11Debug));
 }
 
 }  // namespace
@@ -171,7 +168,7 @@ MaybeError PhysicalDevice::InitializeImpl() {
     }
 
     mFeatureLevel = mD3D11Device->GetFeatureLevel();
-    DAWN_TRY_ASSIGN(mDeviceInfo, GatherDeviceInfo(mD3D11Device));
+    DAWN_TRY_ASSIGN(mDeviceInfo, GatherDeviceInfo(GetHardwareAdapter(), mD3D11Device));
 
     // Base::InitializeImpl() cannot distinguish between discrete and integrated GPUs, so we need to
     // overwrite it.
@@ -191,16 +188,27 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::MSAARenderToSingleSampled);
     EnableFeature(Feature::DualSourceBlending);
     EnableFeature(Feature::Norm16TextureFormats);
+    EnableFeature(Feature::AdapterPropertiesMemoryHeaps);
 
     // To import multi planar textures, we need to at least tier 2 support.
     if (mDeviceInfo.supportsSharedResourceCapabilityTier2) {
         EnableFeature(Feature::DawnMultiPlanarFormats);
         EnableFeature(Feature::MultiPlanarFormatP010);
     }
+    if (mDeviceInfo.supportsROV) {
+        EnableFeature(Feature::PixelLocalStorageCoherent);
+    }
 
     EnableFeature(Feature::SharedTextureMemoryDXGISharedHandle);
     EnableFeature(Feature::SharedTextureMemoryD3D11Texture2D);
     EnableFeature(Feature::SharedFenceDXGISharedHandle);
+
+    UINT formatSupport = 0;
+    HRESULT hr = mD3D11Device->CheckFormatSupport(DXGI_FORMAT_B8G8R8A8_UNORM, &formatSupport);
+    DAWN_ASSERT(SUCCEEDED(hr));
+    if (formatSupport & D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW) {
+        EnableFeature(Feature::BGRA8UnormStorage);
+    }
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -316,6 +324,35 @@ MaybeError PhysicalDevice::ResetInternalDeviceForTestingImpl() {
     DAWN_TRY(Initialize());
 
     return {};
+}
+
+void PhysicalDevice::PopulateMemoryHeapInfo(
+    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
+    // https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html describes
+    // the properties of D3D12 Default/Upload/Readback heaps. The assumption is that these are
+    // roughly how D3D11 allocates memory has well.
+    if (mDeviceInfo.isUMA) {
+        auto* heapInfo = new MemoryHeapInfo[1];
+        memoryHeapProperties->heapCount = 1;
+        memoryHeapProperties->heapInfo = heapInfo;
+
+        heapInfo[0].size =
+            std::max(mDeviceInfo.dedicatedVideoMemory, mDeviceInfo.sharedSystemMemory);
+        heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                                 wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+    } else {
+        auto* heapInfo = new MemoryHeapInfo[2];
+        memoryHeapProperties->heapCount = 2;
+        memoryHeapProperties->heapInfo = heapInfo;
+
+        heapInfo[0].size = mDeviceInfo.dedicatedVideoMemory;
+        heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
+
+        heapInfo[1].size = mDeviceInfo.sharedSystemMemory;
+        heapInfo[1].properties = wgpu::HeapProperty::HostVisible |
+                                 wgpu::HeapProperty::HostCoherent |
+                                 wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+    }
 }
 
 }  // namespace dawn::native::d3d11

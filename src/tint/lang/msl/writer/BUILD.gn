@@ -56,9 +56,9 @@ if (tint_build_msl_writer) {
       "${tint_src_dir}/lang/core/constant",
       "${tint_src_dir}/lang/core/ir",
       "${tint_src_dir}/lang/core/type",
-      "${tint_src_dir}/lang/msl/writer/raise",
       "${tint_src_dir}/lang/wgsl",
       "${tint_src_dir}/lang/wgsl/ast",
+      "${tint_src_dir}/lang/wgsl/features",
       "${tint_src_dir}/lang/wgsl/program",
       "${tint_src_dir}/lang/wgsl/reader/lower",
       "${tint_src_dir}/lang/wgsl/sem",
@@ -83,6 +83,7 @@ if (tint_build_msl_writer) {
         "${tint_src_dir}/lang/msl/writer/ast_printer",
         "${tint_src_dir}/lang/msl/writer/common",
         "${tint_src_dir}/lang/msl/writer/printer",
+        "${tint_src_dir}/lang/msl/writer/raise",
       ]
     }
 
@@ -105,6 +106,7 @@ if (tint_build_benchmarks) {
         "${tint_src_dir}/lang/core/type",
         "${tint_src_dir}/lang/wgsl",
         "${tint_src_dir}/lang/wgsl/ast",
+        "${tint_src_dir}/lang/wgsl/features",
         "${tint_src_dir}/lang/wgsl/program",
         "${tint_src_dir}/lang/wgsl/sem",
         "${tint_src_dir}/utils/containers",

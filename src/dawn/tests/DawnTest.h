@@ -319,6 +319,8 @@ class DawnTestBase {
     void ResolveDeferredExpectationsNow();
 
   protected:
+    wgpu::Instance instance;
+    wgpu::Adapter adapter;
     wgpu::Device device;
     wgpu::Queue queue;
 
@@ -606,8 +608,6 @@ class DawnTestBase {
   private:
     AdapterTestParam mParam;
     std::unique_ptr<utils::WireHelper> mWireHelper;
-    wgpu::Instance mInstance;
-    wgpu::Adapter mAdapter;
 
     // Helps generate unique userdata values passed to deviceLostUserdata.
     std::atomic<uintptr_t> mNextUniqueUserdata = 0;
@@ -631,12 +631,14 @@ class DawnTestBase {
                                                   uint32_t dataSize,
                                                   uint32_t bytesPerRow);
 
-    std::ostringstream& ExpectSampledFloatDataImpl(wgpu::TextureView textureView,
-                                                   const char* wgslTextureType,
+    std::ostringstream& ExpectSampledFloatDataImpl(wgpu::Texture texture,
                                                    uint32_t width,
                                                    uint32_t height,
                                                    uint32_t componentCount,
+                                                   uint32_t arrayLayer,
+                                                   uint32_t mipLevel,
                                                    uint32_t sampleCount,
+                                                   wgpu::TextureAspect aspect,
                                                    detail::Expectation* expectation);
 
     // MapRead buffers used to get data for the expectations
@@ -843,6 +845,7 @@ extern template class ExpectEq<uint8_t>;
 extern template class ExpectEq<int16_t>;
 extern template class ExpectEq<uint32_t>;
 extern template class ExpectEq<uint64_t>;
+extern template class ExpectEq<int32_t>;
 extern template class ExpectEq<utils::RGBA8>;
 extern template class ExpectEq<float>;
 extern template class ExpectEq<float, uint16_t>;

@@ -31,6 +31,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "dawn/common/Enumerator.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ObjectBase.h"
@@ -47,33 +48,46 @@ bool IsDoubleValueRepresentableAsF16(double value) {
 }  // namespace
 
 namespace dawn::native {
-MaybeError ValidateProgrammableStage(DeviceBase* device,
-                                     const ShaderModuleBase* module,
-                                     const std::string& entryPoint,
-                                     uint32_t constantCount,
-                                     const ConstantEntry* constants,
-                                     const PipelineLayoutBase* layout,
-                                     SingleShaderStage stage) {
+ResultOrError<ShaderModuleEntryPoint> ValidateProgrammableStage(DeviceBase* device,
+                                                                const ShaderModuleBase* module,
+                                                                const char* entryPointName,
+                                                                uint32_t constantCount,
+                                                                const ConstantEntry* constants,
+                                                                const PipelineLayoutBase* layout,
+                                                                SingleShaderStage stage) {
     DAWN_TRY(device->ValidateObject(module));
 
-    DAWN_INVALID_IF(!module->HasEntryPoint(entryPoint),
-                    "Entry point \"%s\" doesn't exist in the shader module %s.", entryPoint,
-                    module);
+    if (entryPointName) {
+        DAWN_INVALID_IF(!module->HasEntryPoint(entryPointName),
+                        "Entry point \"%s\" doesn't exist in the shader module %s.", entryPointName,
+                        module);
+    } else {
+        size_t entryPointCount = module->GetEntryPointCount(stage);
+        if (entryPointCount == 0) {
+            return DAWN_VALIDATION_ERROR(
+                "Compatible entry point for stage (%s) doesn't exist in the shader module %s.",
+                stage, module);
+        } else if (entryPointCount > 1) {
+            return DAWN_VALIDATION_ERROR(
+                "Multiple entry points for stage (%s) exist in the shader module %s.", stage,
+                module);
+        }
+    }
 
-    const EntryPointMetadata& metadata = module->GetEntryPoint(entryPoint);
+    ShaderModuleEntryPoint entryPoint = module->ReifyEntryPointName(entryPointName, stage);
+    const EntryPointMetadata& metadata = module->GetEntryPoint(entryPoint.name);
 
     if (!metadata.infringedLimitErrors.empty()) {
         std::ostringstream limitList;
         for (const std::string& limit : metadata.infringedLimitErrors) {
             limitList << " - " << limit << "\n";
         }
-        return DAWN_VALIDATION_ERROR("Entry point \"%s\" infringes limits:\n%s", entryPoint,
-                                     limitList.str());
+        return DAWN_VALIDATION_ERROR("%s infringes limits:\n%s", &entryPoint, limitList.str());
     }
 
     DAWN_INVALID_IF(metadata.stage != stage,
                     "The stage (%s) of the entry point \"%s\" isn't the expected one (%s).",
-                    metadata.stage, entryPoint, stage);
+                    metadata.stage, entryPoint.name, stage);
 
     if (layout != nullptr) {
         DAWN_TRY(ValidateCompatibilityWithPipelineLayout(device, metadata, layout));
@@ -163,7 +177,7 @@ MaybeError ValidateProgrammableStage(DeviceBase* device,
             uninitializedConstantsArray);
     }
 
-    return {};
+    return entryPoint;
 }
 
 WGPUCreatePipelineAsyncStatus CreatePipelineAsyncStatusFromErrorType(InternalErrorType error) {
@@ -217,12 +231,11 @@ PipelineBase::PipelineBase(DeviceBase* device,
         if (isFirstStage) {
             mMinBufferSizes = std::move(stageMinBufferSizes);
         } else {
-            for (BindGroupIndex group(0); group < mMinBufferSizes.size(); ++group) {
-                DAWN_ASSERT(stageMinBufferSizes[group].size() == mMinBufferSizes[group].size());
+            for (auto [group, minBufferSize] : Enumerate(mMinBufferSizes)) {
+                DAWN_ASSERT(stageMinBufferSizes[group].size() == minBufferSize.size());
 
                 for (size_t i = 0; i < stageMinBufferSizes[group].size(); ++i) {
-                    mMinBufferSizes[group][i] =
-                        std::max(mMinBufferSizes[group][i], stageMinBufferSizes[group][i]);
+                    minBufferSize[i] = std::max(minBufferSize[i], stageMinBufferSizes[group][i]);
                 }
             }
         }
@@ -272,11 +285,11 @@ MaybeError PipelineBase::ValidateGetBindGroupLayout(BindGroupIndex groupIndex) {
     DAWN_TRY(GetDevice()->ValidateObject(mLayout.Get()));
     DAWN_INVALID_IF(groupIndex >= kMaxBindGroupsTyped,
                     "Bind group layout index (%u) exceeds the maximum number of bind groups (%u).",
-                    static_cast<uint32_t>(groupIndex), kMaxBindGroups);
+                    groupIndex, kMaxBindGroups);
     DAWN_INVALID_IF(
         !mLayout->GetBindGroupLayoutsMask()[groupIndex],
         "Bind group layout index (%u) doesn't correspond to a bind group for this pipeline.",
-        static_cast<uint32_t>(groupIndex));
+        groupIndex);
     return {};
 }
 

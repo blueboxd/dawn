@@ -272,8 +272,7 @@ MaybeError RecordBeginRenderPass(CommandRecordingContext* recordingContext,
     {
         RenderPassCacheQuery query;
 
-        for (ColorAttachmentIndex i :
-             IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+        for (auto i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
             const auto& attachmentInfo = renderPass->colorAttachments[i];
             bool hasResolveTarget = attachmentInfo.resolveTarget != nullptr;
 
@@ -304,15 +303,21 @@ MaybeError RecordBeginRenderPass(CommandRecordingContext* recordingContext,
         // Fill in the attachment info that will be chained in the framebuffer create info.
         std::array<VkImageView, kMaxColorAttachments * 2 + 1> attachments;
 
-        for (ColorAttachmentIndex i :
-             IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+        for (auto i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
             auto& attachmentInfo = renderPass->colorAttachments[i];
             TextureView* view = ToBackend(attachmentInfo.view.Get());
             if (view == nullptr) {
                 continue;
             }
 
-            attachments[attachmentCount] = view->GetHandle();
+            if (view->GetDimension() == wgpu::TextureViewDimension::e3D) {
+                VkImageView handleFor2DViewOn3D;
+                DAWN_TRY_ASSIGN(handleFor2DViewOn3D,
+                                view->GetOrCreate2DViewOn3D(attachmentInfo.depthSlice));
+                attachments[attachmentCount] = handleFor2DViewOn3D;
+            } else {
+                attachments[attachmentCount] = view->GetHandle();
+            }
 
             switch (view->GetFormat().GetAspectInfo(Aspect::Color).baseType) {
                 case TextureComponentType::Float: {
@@ -355,8 +360,7 @@ MaybeError RecordBeginRenderPass(CommandRecordingContext* recordingContext,
             attachmentCount++;
         }
 
-        for (ColorAttachmentIndex i :
-             IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+        for (auto i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
             if (renderPass->colorAttachments[i].resolveTarget != nullptr) {
                 TextureView* view = ToBackend(renderPass->colorAttachments[i].resolveTarget.Get());
 
@@ -441,7 +445,8 @@ void RecordWriteTimestampCmd(CommandRecordingContext* recordingContext,
                              Device* device,
                              QuerySetBase* querySet,
                              uint32_t queryIndex,
-                             bool isRenderPass) {
+                             bool isRenderPass,
+                             VkPipelineStageFlagBits pipelineStage) {
     VkCommandBuffer commands = recordingContext->commandBuffer;
 
     // The queries must be reset between uses, and the reset command cannot be called in render
@@ -450,8 +455,8 @@ void RecordWriteTimestampCmd(CommandRecordingContext* recordingContext,
         device->fn.CmdResetQueryPool(commands, ToBackend(querySet)->GetHandle(), queryIndex, 1);
     }
 
-    device->fn.CmdWriteTimestamp(commands, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                                 ToBackend(querySet)->GetHandle(), queryIndex);
+    device->fn.CmdWriteTimestamp(commands, pipelineStage, ToBackend(querySet)->GetHandle(),
+                                 queryIndex);
 }
 
 void RecordResolveQuerySetCmd(VkCommandBuffer commands,
@@ -869,7 +874,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
                 WriteTimestampCmd* cmd = mCommands.NextCommand<WriteTimestampCmd>();
 
                 RecordWriteTimestampCmd(recordingContext, device, cmd->querySet.Get(),
-                                        cmd->queryIndex, false);
+                                        cmd->queryIndex, false, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
                 break;
             }
 
@@ -974,7 +979,8 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* recordingCo
         wgpu::kQuerySetIndexUndefined) {
         RecordWriteTimestampCmd(recordingContext, device,
                                 computePassCmd->timestampWrites.querySet.Get(),
-                                computePassCmd->timestampWrites.beginningOfPassWriteIndex, false);
+                                computePassCmd->timestampWrites.beginningOfPassWriteIndex, false,
+                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
     }
 
     VkCommandBuffer commands = recordingContext->commandBuffer;
@@ -991,9 +997,10 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* recordingCo
                 // Write timestamp at the end of compute pass if it's set.
                 if (computePassCmd->timestampWrites.endOfPassWriteIndex !=
                     wgpu::kQuerySetIndexUndefined) {
-                    RecordWriteTimestampCmd(
-                        recordingContext, device, computePassCmd->timestampWrites.querySet.Get(),
-                        computePassCmd->timestampWrites.endOfPassWriteIndex, false);
+                    RecordWriteTimestampCmd(recordingContext, device,
+                                            computePassCmd->timestampWrites.querySet.Get(),
+                                            computePassCmd->timestampWrites.endOfPassWriteIndex,
+                                            false, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
                 }
                 return {};
             }
@@ -1102,7 +1109,7 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* recordingCo
                 WriteTimestampCmd* cmd = mCommands.NextCommand<WriteTimestampCmd>();
 
                 RecordWriteTimestampCmd(recordingContext, device, cmd->querySet.Get(),
-                                        cmd->queryIndex, false);
+                                        cmd->queryIndex, false, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
                 break;
             }
 
@@ -1120,14 +1127,17 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
     Device* device = ToBackend(GetDevice());
     VkCommandBuffer commands = recordingContext->commandBuffer;
 
-    DAWN_TRY(RecordBeginRenderPass(recordingContext, device, renderPassCmd));
-
     // Write timestamp at the beginning of render pass if it's set.
+    // We've observed that this must be called before the render pass or the timestamps produced
+    // are nonsensical on multiple Android devices.
     if (renderPassCmd->timestampWrites.beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
         RecordWriteTimestampCmd(recordingContext, device,
                                 renderPassCmd->timestampWrites.querySet.Get(),
-                                renderPassCmd->timestampWrites.beginningOfPassWriteIndex, true);
+                                renderPassCmd->timestampWrites.beginningOfPassWriteIndex, true,
+                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
     }
+
+    DAWN_TRY(RecordBeginRenderPass(recordingContext, device, renderPassCmd));
 
     // Set the default value for the dynamic state
     {
@@ -1333,15 +1343,19 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
             case Command::EndRenderPass: {
                 mCommands.NextCommand<EndRenderPassCmd>();
 
+                device->fn.CmdEndRenderPass(commands);
+
                 // Write timestamp at the end of render pass if it's set.
+                // We've observed that this must be called after the render pass ends or the
+                // timestamps produced are nonsensical on multiple Android devices.
                 if (renderPassCmd->timestampWrites.endOfPassWriteIndex !=
                     wgpu::kQuerySetIndexUndefined) {
-                    RecordWriteTimestampCmd(
-                        recordingContext, device, renderPassCmd->timestampWrites.querySet.Get(),
-                        renderPassCmd->timestampWrites.endOfPassWriteIndex, true);
+                    RecordWriteTimestampCmd(recordingContext, device,
+                                            renderPassCmd->timestampWrites.querySet.Get(),
+                                            renderPassCmd->timestampWrites.endOfPassWriteIndex,
+                                            true, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
                 }
 
-                device->fn.CmdEndRenderPass(commands);
                 return {};
             }
 
@@ -1435,7 +1449,7 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
                 WriteTimestampCmd* cmd = mCommands.NextCommand<WriteTimestampCmd>();
 
                 RecordWriteTimestampCmd(recordingContext, device, cmd->querySet.Get(),
-                                        cmd->queryIndex, true);
+                                        cmd->queryIndex, true, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
                 break;
             }
 

@@ -128,7 +128,7 @@ D3D12_RESOURCE_DIMENSION D3D12TextureDimension(wgpu::TextureDimension dimension)
 }  // namespace
 
 MaybeError ValidateTextureCanBeWrapped(ID3D12Resource* d3d12Resource,
-                                       const TextureDescriptor* dawnDescriptor) {
+                                       const Unpacked<TextureDescriptor>& dawnDescriptor) {
     const D3D12_RESOURCE_DESC d3dDescriptor = d3d12Resource->GetDesc();
     DAWN_INVALID_IF(
         (dawnDescriptor->size.width != d3dDescriptor.Width) ||
@@ -176,7 +176,8 @@ MaybeError ValidateVideoTextureCanBeShared(Device* device, DXGI_FORMAT textureFo
 }
 
 // static
-ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescriptor* descriptor) {
+ResultOrError<Ref<Texture>> Texture::Create(Device* device,
+                                            const Unpacked<TextureDescriptor>& descriptor) {
     Ref<Texture> dawnTexture = AcquireRef(new Texture(device, descriptor));
 
     DAWN_INVALID_IF(dawnTexture->GetFormat().IsMultiPlanar(),
@@ -187,12 +188,13 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescrip
 }
 
 // static
-ResultOrError<Ref<Texture>> Texture::CreateExternalImage(Device* device,
-                                                         const TextureDescriptor* descriptor,
-                                                         ComPtr<IUnknown> d3dTexture,
-                                                         std::vector<Ref<d3d::Fence>> waitFences,
-                                                         bool isSwapChainTexture,
-                                                         bool isInitialized) {
+ResultOrError<Ref<Texture>> Texture::CreateExternalImage(
+    Device* device,
+    const Unpacked<TextureDescriptor>& descriptor,
+    ComPtr<IUnknown> d3dTexture,
+    std::vector<Ref<d3d::Fence>> waitFences,
+    bool isSwapChainTexture,
+    bool isInitialized) {
     Ref<Texture> dawnTexture = AcquireRef(new Texture(device, descriptor));
     DAWN_TRY(dawnTexture->InitializeAsExternalTexture(std::move(d3dTexture), std::move(waitFences),
                                                       isSwapChainTexture));
@@ -211,7 +213,7 @@ ResultOrError<Ref<Texture>> Texture::CreateExternalImage(Device* device,
 
 // static
 ResultOrError<Ref<Texture>> Texture::Create(Device* device,
-                                            const TextureDescriptor* descriptor,
+                                            const Unpacked<TextureDescriptor>& descriptor,
                                             ComPtr<ID3D12Resource> d3d12Texture) {
     Ref<Texture> dawnTexture = AcquireRef(new Texture(device, descriptor));
     DAWN_TRY(dawnTexture->InitializeAsSwapChainTexture(std::move(d3d12Texture)));
@@ -221,7 +223,7 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device,
 // static
 ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
     SharedTextureMemory* memory,
-    const TextureDescriptor* descriptor) {
+    const Unpacked<TextureDescriptor>& descriptor) {
     Device* device = ToBackend(memory->GetDevice());
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     DAWN_TRY(texture->InitializeAsExternalTexture(memory->GetD3DResource(), {}, false));
@@ -346,7 +348,7 @@ MaybeError Texture::InitializeAsSwapChainTexture(ComPtr<ID3D12Resource> d3d12Tex
     return {};
 }
 
-Texture::Texture(Device* device, const TextureDescriptor* descriptor)
+Texture::Texture(Device* device, const Unpacked<TextureDescriptor>& descriptor)
     : Base(device, descriptor), mSubresourceStateAndDecay(InitialSubresourceStateAndDecay()) {}
 
 Texture::~Texture() = default;
@@ -822,14 +824,15 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
                     device->GetRenderTargetViewAllocator()->AllocateTransientCPUDescriptors());
                 const D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap.GetBaseDescriptor();
 
-                uint32_t baseSlice = layer;
-                uint32_t sliceCount = 1;
-                if (GetDimension() == wgpu::TextureDimension::e3D) {
-                    baseSlice = 0;
-                    sliceCount = std::max(GetDepth(Aspect::Color) >> level, 1u);
-                }
+                // For the subresources of 3d textures, range.baseArrayLayer must be 0 and
+                // range.layerCount must be 1, the sliceCount is the depthOrArrayLayers of the
+                // subresource virtual size, which must be 1 for 2d textures. When clearing RTV, we
+                // can use the 'layer' as baseSlice and the 'depthOrArrayLayers' as sliceCount to
+                // create RTV without checking the dimension.
                 D3D12_RENDER_TARGET_VIEW_DESC rtvDesc =
-                    GetRTVDescriptor(GetFormat(), level, baseSlice, sliceCount);
+                    GetRTVDescriptor(GetFormat(), level, layer,
+                                     GetMipLevelSingleSubresourceVirtualSize(level, Aspect::Color)
+                                         .depthOrArrayLayers);
                 device->GetD3D12Device()->CreateRenderTargetView(GetD3D12Resource(), &rtvDesc,
                                                                  rtvHandle);
                 commandList->ClearRenderTargetView(rtvHandle, clearColorRGBA, 0, nullptr);
@@ -1097,9 +1100,15 @@ const D3D12_SHADER_RESOURCE_VIEW_DESC& TextureView::GetSRVDescriptor() const {
     return mSrvDesc;
 }
 
-D3D12_RENDER_TARGET_VIEW_DESC TextureView::GetRTVDescriptor() const {
+D3D12_RENDER_TARGET_VIEW_DESC TextureView::GetRTVDescriptor(uint32_t depthSlice) const {
+    DAWN_ASSERT(depthSlice < GetSingleSubresourceVirtualSize().depthOrArrayLayers);
+    // We have validated that the depthSlice in render pass's colorAttachments must be undefined for
+    // 2d RTVs, which value is set to 0. For 3d RTVs, the baseArrayLayer must be 0. So here we can
+    // simply use baseArrayLayer + depthSlice to specify the slice in RTVs without checking the
+    // view's dimension.
     return ToBackend(GetTexture())
-        ->GetRTVDescriptor(GetFormat(), GetBaseMipLevel(), GetBaseArrayLayer(), GetLayerCount());
+        ->GetRTVDescriptor(GetFormat(), GetBaseMipLevel(), GetBaseArrayLayer() + depthSlice,
+                           GetLayerCount());
 }
 
 D3D12_DEPTH_STENCIL_VIEW_DESC TextureView::GetDSVDescriptor(bool depthReadOnly,

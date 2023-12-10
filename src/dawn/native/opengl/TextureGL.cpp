@@ -43,7 +43,7 @@ namespace dawn::native::opengl {
 
 namespace {
 
-GLenum TargetForTexture(const TextureDescriptor* descriptor) {
+GLenum TargetForTexture(const Unpacked<TextureDescriptor>& descriptor) {
     switch (descriptor->dimension) {
         case wgpu::TextureDimension::e1D:
         case wgpu::TextureDimension::e2D:
@@ -141,6 +141,8 @@ bool RequiresCreatingNewTextureView(const TextureBase* texture,
         return true;
     }
 
+    // TODO(dawn:2131): remove once compatibility texture binding view dimension is fully
+    // implemented.
     switch (textureViewDescriptor->dimension) {
         case wgpu::TextureViewDimension::Cube:
         case wgpu::TextureViewDimension::CubeArray:
@@ -185,7 +187,8 @@ void AllocateTexture(const OpenGLFunctions& gl,
 // Texture
 
 // static
-ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescriptor* descriptor) {
+ResultOrError<Ref<Texture>> Texture::Create(Device* device,
+                                            const Unpacked<TextureDescriptor>& descriptor) {
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
         DAWN_TRY(
@@ -194,7 +197,7 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescrip
     return std::move(texture);
 }
 
-Texture::Texture(Device* device, const TextureDescriptor* descriptor)
+Texture::Texture(Device* device, const Unpacked<TextureDescriptor>& descriptor)
     : Texture(device, descriptor, 0) {
     const OpenGLFunctions& gl = device->GetGL();
 
@@ -221,7 +224,7 @@ uint32_t Texture::GetGenID() const {
     return mGenID;
 }
 
-Texture::Texture(Device* device, const TextureDescriptor* descriptor, GLuint handle)
+Texture::Texture(Device* device, const Unpacked<TextureDescriptor>& descriptor, GLuint handle)
     : TextureBase(device, descriptor), mHandle(handle) {
     mTarget = TargetForTexture(descriptor);
 }
@@ -615,7 +618,10 @@ GLenum TextureView::GetGLTarget() const {
     return mTarget;
 }
 
-void TextureView::BindToFramebuffer(GLenum target, GLenum attachment) {
+void TextureView::BindToFramebuffer(GLenum target, GLenum attachment, GLuint depthSlice) {
+    DAWN_ASSERT(depthSlice <
+                static_cast<GLuint>(GetSingleSubresourceVirtualSize().depthOrArrayLayers));
+
     const OpenGLFunctions& gl = ToBackend(GetDevice())->GetGL();
 
     // Use the base texture where possible to minimize the amount of copying required on GLES.
@@ -636,7 +642,11 @@ void TextureView::BindToFramebuffer(GLenum target, GLenum attachment) {
         handle = ToBackend(GetTexture())->GetHandle();
         textarget = ToBackend(GetTexture())->GetGLTarget();
         mipLevel = GetBaseMipLevel();
-        arrayLayer = GetBaseArrayLayer();
+        // We have validated that the depthSlice in render pass's colorAttachments must be undefined
+        // for 2d RTVs, which value is set to 0. For 3d RTVs, the baseArrayLayer must be 0. So here
+        // we can simply use baseArrayLayer + depthSlice to specify the slice in RTVs without
+        // checking the view's dimension.
+        arrayLayer = GetBaseArrayLayer() + depthSlice;
     }
 
     DAWN_ASSERT(handle != 0);

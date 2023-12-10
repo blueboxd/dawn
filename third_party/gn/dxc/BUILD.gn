@@ -548,9 +548,17 @@ config("common_config") {
     "$dawn_dxc_dir/include",
     "$dawn_dxc_dir/tools/clang/include",
     "$dawn_dxc_dir/tools/clang/tools",
-    "$dawn_dxc_dir/include/llvm/llvm_assert",
     "${target_gen_dir}/include",  # Generated files
   ]
+
+  if (is_win) {
+    include_dirs += [
+      # $dawn_dxc_dir/lib/Support/assert.cpp depends on a "assert.h" include for the windows path,
+      # but the other architectures include <assert.h>. The system include would be shadowed if this
+      # include directory is added.
+      "$dawn_dxc_dir/include/llvm/llvm_assert",
+    ]
+  }
 
   defines = []
   if (is_debug && dawn_dxc_disable_asserts_debug) {
@@ -576,6 +584,7 @@ static_library("Support") {
   public_deps = [
     ":AsmParsers-def",
     ":AsmPrinters-def",
+    ":DataTypes-header",
     ":Disassemblers-def",
     ":Targets-def",
     ":abi-breaking-header",
@@ -688,10 +697,7 @@ static_library("Support") {
 
 # Common code for both llvm-tblgen and clang-tblgen
 source_set("TableGen") {
-  public_deps = [
-    ":DataTypes-header",
-    ":Support",
-  ]
+  public_deps = [ ":Support" ]
 
   sources = [
     "$dawn_dxc_dir/lib/TableGen/Error.cpp",
@@ -1145,7 +1151,6 @@ static_library("dxclib") {
     configs += [ "//build/config/compiler:no_chromium_code" ]
   }
   public_deps = [
-    ":DataTypes-header",
     ":HLSLOptions-inc",
     ":Intrinsics-td",
     ":SharedLibAffix-h",
@@ -2341,9 +2346,11 @@ executable("dxc") {
 
   data_deps = [ ":dxcompiler" ]
 
-  # Set rpath to executable_path to be able to find dxcompiler.so on MacOS
+  # Set rpath to be able to find the dxcompiler shared library
   if (is_mac) {
     ldflags = [ "-Wl,-rpath,@executable_path" ]
+  } else if (is_linux) {
+    ldflags = [ "-Wl,-rpath=\$ORIGIN" ]
   }
 
   if (is_win) {

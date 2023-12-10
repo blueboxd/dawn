@@ -34,6 +34,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Binary);
 
 namespace tint::core::ir {
 
+Binary::Binary() = default;
+
 Binary::Binary(InstructionResult* result, BinaryOp op, Value* lhs, Value* rhs) : op_(op) {
     AddOperand(Binary::kLhsOperandOffset, lhs);
     AddOperand(Binary::kRhsOperandOffset, rhs);
@@ -43,7 +45,7 @@ Binary::Binary(InstructionResult* result, BinaryOp op, Value* lhs, Value* rhs) :
 Binary::~Binary() = default;
 
 Binary* Binary::Clone(CloneContext& ctx) {
-    auto* new_result = ctx.Clone(Result());
+    auto* new_result = ctx.Clone(Result(0));
     auto* lhs = ctx.Remap(LHS());
     auto* rhs = ctx.Remap(RHS());
     return ctx.ir.instructions.Create<Binary>(new_result, op_, lhs, rhs);

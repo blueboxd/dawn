@@ -70,6 +70,38 @@ TEST_F(CompatValidationTest, CanNotCreateCubeArrayTextureView) {
     cubeTexture.Destroy();
 }
 
+TEST_F(CompatValidationTest, CanNotSpecifyAlternateCompatibleViewFormatRGBA8Unorm) {
+    constexpr wgpu::TextureFormat viewFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
+
+    wgpu::TextureDescriptor descriptor;
+    descriptor.size = {1, 1, 1};
+    descriptor.dimension = wgpu::TextureDimension::e2D;
+    descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    descriptor.usage = wgpu::TextureUsage::TextureBinding;
+    descriptor.viewFormatCount = 1;
+    descriptor.viewFormats = &viewFormat;
+    wgpu::Texture texture;
+    ASSERT_DEVICE_ERROR(texture = device.CreateTexture(&descriptor),
+                        testing::HasSubstr("must match format"));
+    texture.Destroy();
+}
+
+TEST_F(CompatValidationTest, CanNotSpecifyAlternateCompatibleViewFormatRGBA8UnormSrgb) {
+    constexpr wgpu::TextureFormat viewFormat = wgpu::TextureFormat::RGBA8Unorm;
+
+    wgpu::TextureDescriptor descriptor;
+    descriptor.size = {1, 1, 1};
+    descriptor.dimension = wgpu::TextureDimension::e2D;
+    descriptor.format = wgpu::TextureFormat::RGBA8UnormSrgb;
+    descriptor.usage = wgpu::TextureUsage::TextureBinding;
+    descriptor.viewFormatCount = 1;
+    descriptor.viewFormats = &viewFormat;
+    wgpu::Texture texture;
+    ASSERT_DEVICE_ERROR(texture = device.CreateTexture(&descriptor),
+                        testing::HasSubstr("must match format"));
+    texture.Destroy();
+}
+
 TEST_F(CompatValidationTest, CanNotCreatePipelineWithDifferentPerTargetBlendStateOrWriteMask) {
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         @vertex fn vs() -> @builtin(position) vec4f {
@@ -953,18 +985,38 @@ class CompatTextureViewDimensionValidationTests : public CompatValidationTest {
         texture.Destroy();
     }
 
-    void TestCreateTextureWithViewDimension(
+    void TestCreateTextureWithViewDimensionImpl(
         const uint32_t depth,
         const wgpu::TextureDimension dimension,
         const wgpu::TextureViewDimension textureBindingViewDimension,
-        bool success) {
+        bool success,
+        const char* expectedSubstr) {
         if (success) {
             CreateTextureWithViewDimension(depth, dimension, textureBindingViewDimension);
         } else {
             ASSERT_DEVICE_ERROR(
                 CreateTextureWithViewDimension(depth, dimension, textureBindingViewDimension);
-                testing::HasSubstr("is not compatible with the dimension"));
+                testing::HasSubstr(expectedSubstr));
         }
+    }
+
+    void TestCreateTextureIsCompatibleWithViewDimension(
+        const uint32_t depth,
+        const wgpu::TextureDimension dimension,
+        const wgpu::TextureViewDimension textureBindingViewDimension,
+        bool success) {
+        TestCreateTextureWithViewDimensionImpl(depth, dimension, textureBindingViewDimension,
+                                               success, "is not compatible with the dimension");
+    }
+
+    void TestCreateTextureLayersIsCompatibleWithViewDimension(
+        const uint32_t depth,
+        const wgpu::TextureDimension dimension,
+        const wgpu::TextureViewDimension textureBindingViewDimension,
+        bool success) {
+        TestCreateTextureWithViewDimensionImpl(depth, dimension, textureBindingViewDimension,
+                                               success,
+                                               "is only compatible with depthOrArrayLayers ==");
     }
 
     wgpu::Texture CreateTextureWithViewDimension(
@@ -1004,25 +1056,45 @@ const wgpu::TextureViewDimension kViewDimensions[] = {
 // Test creating 1d textures with each view dimension.
 TEST_F(CompatTextureViewDimensionValidationTests, E1D) {
     for (auto viewDimension : kViewDimensions) {
-        TestCreateTextureWithViewDimension(1, wgpu::TextureDimension::e1D, viewDimension,
-                                           viewDimension == wgpu::TextureViewDimension::e1D);
+        TestCreateTextureIsCompatibleWithViewDimension(
+            1, wgpu::TextureDimension::e1D, viewDimension,
+            viewDimension == wgpu::TextureViewDimension::e1D);
     }
 }
 
 // Test creating 2d textures with each view dimension.
 TEST_F(CompatTextureViewDimensionValidationTests, E2D) {
     for (auto viewDimension : kViewDimensions) {
-        TestCreateTextureWithViewDimension(6, wgpu::TextureDimension::e2D, viewDimension,
-                                           viewDimension != wgpu::TextureViewDimension::e1D &&
-                                               viewDimension != wgpu::TextureViewDimension::e3D);
+        TestCreateTextureIsCompatibleWithViewDimension(
+            viewDimension == wgpu::TextureViewDimension::e2D ? 1 : 6, wgpu::TextureDimension::e2D,
+            viewDimension,
+            viewDimension != wgpu::TextureViewDimension::e1D &&
+                viewDimension != wgpu::TextureViewDimension::e3D);
     }
 }
 
 // Test creating 1d textures with each view dimension.
 TEST_F(CompatTextureViewDimensionValidationTests, E3D) {
     for (auto viewDimension : kViewDimensions) {
-        TestCreateTextureWithViewDimension(1, wgpu::TextureDimension::e3D, viewDimension,
-                                           viewDimension == wgpu::TextureViewDimension::e3D);
+        TestCreateTextureIsCompatibleWithViewDimension(
+            1, wgpu::TextureDimension::e3D, viewDimension,
+            viewDimension == wgpu::TextureViewDimension::e3D);
+    }
+}
+
+// Test creating a 2d texture with a 2d view and depthOrArrayLayers > 1 fails
+TEST_F(CompatTextureViewDimensionValidationTests, E2DViewMoreThan1Layer) {
+    TestCreateTextureLayersIsCompatibleWithViewDimension(2, wgpu::TextureDimension::e2D,
+                                                         wgpu::TextureViewDimension::e2D, false);
+}
+
+// Test creating a 2d texture with a cube view with depthOrArrayLayers != 6 fails
+TEST_F(CompatTextureViewDimensionValidationTests, CubeViewMoreWhereLayersIsNot6) {
+    uint32_t layers[] = {1, 5, 6, 7, 12};
+    for (auto numLayers : layers) {
+        TestCreateTextureLayersIsCompatibleWithViewDimension(numLayers, wgpu::TextureDimension::e2D,
+                                                             wgpu::TextureViewDimension::Cube,
+                                                             numLayers == 6);
     }
 }
 

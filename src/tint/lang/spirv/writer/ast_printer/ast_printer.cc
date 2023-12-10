@@ -145,6 +145,7 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.quantize_to_vec_f16 = true;  // crbug.com/tint/1741
         polyfills.workgroup_uniform_load = true;
+        polyfills.dot_4x8_packed = options.polyfill_dot_4x8_packed;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<ast::transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }

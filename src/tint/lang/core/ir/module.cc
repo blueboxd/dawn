@@ -67,4 +67,8 @@ void Module::SetName(Value* value, Symbol name) {
     value_to_name_.Replace(value, name);
 }
 
+void Module::ClearName(Value* value) {
+    value_to_name_.Remove(value);
+}
+
 }  // namespace tint::core::ir

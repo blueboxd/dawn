@@ -37,6 +37,7 @@
 #include "dawn/common/ContentLessObjectCache.h"
 #include "dawn/common/Mutex.h"
 #include "dawn/native/CacheKey.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/ComputePipeline.h"
 #include "dawn/native/Error.h"
@@ -74,8 +75,6 @@ struct InternalPipelineStore;
 struct ShaderModuleParseResult;
 struct TrackedFutureWaitInfo;
 
-using WGSLExtensionSet = std::unordered_set<std::string>;
-
 class DeviceBase : public RefCountedWithExternalCount {
   public:
     DeviceBase(AdapterBase* adapter,
@@ -105,20 +104,6 @@ class DeviceBase : public RefCountedWithExternalCount {
         }
         return false;
     }
-
-    template <typename T>
-    [[nodiscard]] bool ConsumedError(
-        ResultOrError<T> resultOrError,
-        T* result,
-        InternalErrorType additionalAllowedErrors = InternalErrorType::None) {
-        if (DAWN_UNLIKELY(resultOrError.IsError())) {
-            ConsumeError(resultOrError.AcquireError(), additionalAllowedErrors);
-            return true;
-        }
-        *result = resultOrError.AcquireSuccess();
-        return false;
-    }
-
     template <typename... Args>
     [[nodiscard]] bool ConsumedError(MaybeError maybeError,
                                      InternalErrorType additionalAllowedErrors,
@@ -134,7 +119,6 @@ class DeviceBase : public RefCountedWithExternalCount {
         }
         return false;
     }
-
     template <typename... Args>
     [[nodiscard]] bool ConsumedError(MaybeError maybeError,
                                      const char* formatStr,
@@ -142,6 +126,18 @@ class DeviceBase : public RefCountedWithExternalCount {
         return ConsumedError(std::move(maybeError), InternalErrorType::None, formatStr, args...);
     }
 
+    template <typename T>
+    [[nodiscard]] bool ConsumedError(
+        ResultOrError<T> resultOrError,
+        T* result,
+        InternalErrorType additionalAllowedErrors = InternalErrorType::None) {
+        if (DAWN_UNLIKELY(resultOrError.IsError())) {
+            ConsumeError(resultOrError.AcquireError(), additionalAllowedErrors);
+            return true;
+        }
+        *result = resultOrError.AcquireSuccess();
+        return false;
+    }
     template <typename T, typename... Args>
     [[nodiscard]] bool ConsumedError(ResultOrError<T> resultOrError,
                                      T* result,
@@ -159,7 +155,6 @@ class DeviceBase : public RefCountedWithExternalCount {
         *result = resultOrError.AcquireSuccess();
         return false;
     }
-
     template <typename T, typename... Args>
     [[nodiscard]] bool ConsumedError(ResultOrError<T> resultOrError,
                                      T* result,
@@ -266,7 +261,7 @@ class DeviceBase : public RefCountedWithExternalCount {
         OwnedCompilationMessages* compilationMessages = nullptr);
     ResultOrError<Ref<SwapChainBase>> CreateSwapChain(Surface* surface,
                                                       const SwapChainDescriptor* descriptor);
-    ResultOrError<Ref<TextureBase>> CreateTexture(const TextureDescriptor* descriptor);
+    ResultOrError<Ref<TextureBase>> CreateTexture(const TextureDescriptor* rawDescriptor);
     ResultOrError<Ref<TextureViewBase>> CreateTextureView(TextureBase* texture,
                                                           const TextureViewDescriptor* descriptor);
 
@@ -301,6 +296,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     TextureBase* APICreateTexture(const TextureDescriptor* descriptor);
 
     wgpu::TextureUsage APIGetSupportedSurfaceUsage(Surface* surface);
+    size_t APIQueryMemoryHeapInfo(MemoryHeapInfo* info);
 
     InternalPipelineStore* GetInternalPipelineStore();
 
@@ -446,10 +442,6 @@ class DeviceBase : public RefCountedWithExternalCount {
     virtual void AppendDebugLayerMessages(ErrorData* error) {}
     virtual void AppendDeviceLostMessage(ErrorData* error) {}
 
-    [[nodiscard]] virtual bool WaitAnyImpl(size_t futureCount,
-                                           TrackedFutureWaitInfo* futures,
-                                           Nanoseconds timeout);
-
     // It is guaranteed that the wrapped mutex will outlive the Device (if the Device is deleted
     // before the AutoLockAndHoldRef).
     [[nodiscard]] Mutex::AutoLockAndHoldRef GetScopedLockSafeForDelete();
@@ -506,7 +498,7 @@ class DeviceBase : public RefCountedWithExternalCount {
         SwapChainBase* previousSwapChain,
         const SwapChainDescriptor* descriptor) = 0;
     virtual ResultOrError<Ref<TextureBase>> CreateTextureImpl(
-        const TextureDescriptor* descriptor) = 0;
+        const Unpacked<TextureDescriptor>& descriptor) = 0;
     virtual ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
         TextureBase* texture,
         const TextureViewDescriptor* descriptor) = 0;

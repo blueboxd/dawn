@@ -44,12 +44,6 @@ Converter::~Converter() {
     for (auto& free : free_) {
         free();
     }
-    assert(exception == nullptr);
-}
-
-Napi::Error Converter::AcquireException() {
-    assert(exception != nullptr);
-    return std::move(exception);
 }
 
 bool Converter::HasFeature(wgpu::FeatureName feature) {
@@ -772,7 +766,7 @@ bool Converter::Convert(wgpu::ProgrammableStageDescriptor& out,
 
     // Replace nulls in the entryPoint name with another character that's disallowed in WGSL
     // identifiers. This is so that using "main\0" doesn't match an entryPoint named "main".
-    out.entryPoint = ConvertStringReplacingNull(in.entryPoint);
+    out.entryPoint = in.entryPoint ? ConvertStringReplacingNull(in.entryPoint.value()) : nullptr;
 
     return Convert(out.constants, out.constantCount, in.constants);
 }
@@ -918,7 +912,7 @@ bool Converter::Convert(wgpu::FragmentState& out, const interop::GPUFragmentStat
 
     // Replace nulls in the entryPoint name with another character that's disallowed in WGSL
     // identifiers. This is so that using "main\0" doesn't match an entryPoint named "main".
-    out.entryPoint = ConvertStringReplacingNull(in.entryPoint);
+    out.entryPoint = in.entryPoint ? ConvertStringReplacingNull(in.entryPoint.value()) : nullptr;
 
     return Convert(out.targets, out.targetCount, in.targets) &&  //
            Convert(out.module, in.module) &&                     //
@@ -1067,7 +1061,7 @@ bool Converter::Convert(wgpu::VertexState& out, const interop::GPUVertexState& i
 
     // Replace nulls in the entryPoint name with another character that's disallowed in WGSL
     // identifiers. This is so that using "main\0" doesn't match an entryPoint named "main".
-    out.entryPoint = ConvertStringReplacingNull(in.entryPoint);
+    out.entryPoint = in.entryPoint ? ConvertStringReplacingNull(in.entryPoint.value()) : nullptr;
 
     wgpu::VertexBufferLayout* outBuffers = nullptr;
     if (!Convert(out.module, in.module) ||                    //
@@ -1492,8 +1486,6 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
 #undef CASE
 
         case wgpu::FeatureName::ANGLETextureSharing:
-        case wgpu::FeatureName::ChromiumExperimentalDp4a:
-        case wgpu::FeatureName::ChromiumExperimentalReadWriteStorageTexture:
         case wgpu::FeatureName::D3D11MultithreadProtected:
         case wgpu::FeatureName::DawnInternalUsages:
         case wgpu::FeatureName::DawnMultiPlanarFormats:
@@ -1526,12 +1518,58 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::TransientAttachments:
         case wgpu::FeatureName::HostMappedPointer:
         case wgpu::FeatureName::MultiPlanarRenderTargets:
+        case wgpu::FeatureName::FramebufferFetch:
+        case wgpu::FeatureName::BufferMapExtendedUsages:
+        case wgpu::FeatureName::AdapterPropertiesMemoryHeaps:
         case wgpu::FeatureName::Undefined:
             return false;
     }
     return false;
 }
 
+bool Converter::Convert(wgpu::WGSLFeatureName& out, interop::WGSLFeatureName in) {
+    switch (in) {
+        case interop::WGSLFeatureName::kReadonlyAndReadwriteStorageTextures:
+            out = wgpu::WGSLFeatureName::ReadonlyAndReadwriteStorageTextures;
+            return true;
+        case interop::WGSLFeatureName::kPacked4X8IntegerDotProduct:
+            out = wgpu::WGSLFeatureName::Packed4x8IntegerDotProduct;
+            return true;
+        case interop::WGSLFeatureName::kUnrestrictedPointerParameters:
+            out = wgpu::WGSLFeatureName::UnrestrictedPointerParameters;
+            return true;
+        case interop::WGSLFeatureName::kPointerCompositeAccess:
+            out = wgpu::WGSLFeatureName::PointerCompositeAccess;
+            return true;
+    }
+    return false;
+}
+
+bool Converter::Convert(interop::WGSLFeatureName& out, wgpu::WGSLFeatureName in) {
+    switch (in) {
+        case wgpu::WGSLFeatureName::ReadonlyAndReadwriteStorageTextures:
+            out = interop::WGSLFeatureName::kReadonlyAndReadwriteStorageTextures;
+            return true;
+        case wgpu::WGSLFeatureName::Packed4x8IntegerDotProduct:
+            out = interop::WGSLFeatureName::kPacked4X8IntegerDotProduct;
+            return true;
+        case wgpu::WGSLFeatureName::UnrestrictedPointerParameters:
+            out = interop::WGSLFeatureName::kUnrestrictedPointerParameters;
+            return true;
+        case wgpu::WGSLFeatureName::PointerCompositeAccess:
+            out = interop::WGSLFeatureName::kPointerCompositeAccess;
+            return true;
+
+        case wgpu::WGSLFeatureName::Undefined:
+        case wgpu::WGSLFeatureName::ChromiumTestingUnimplemented:
+        case wgpu::WGSLFeatureName::ChromiumTestingUnsafeExperimental:
+        case wgpu::WGSLFeatureName::ChromiumTestingExperimental:
+        case wgpu::WGSLFeatureName::ChromiumTestingShippedWithKillswitch:
+        case wgpu::WGSLFeatureName::ChromiumTestingShipped:
+            return false;
+    }
+    return false;
+}
 bool Converter::Convert(interop::GPUQueryType& out, wgpu::QueryType in) {
     switch (in) {
         case wgpu::QueryType::Occlusion:
@@ -1649,13 +1687,7 @@ bool Converter::Throw(std::string&& message) {
 }
 
 bool Converter::Throw(Napi::Error&& error) {
-    if (retainException) {
-        assert(exception == nullptr);
-        exception = std::move(error);
-    } else {
-        error.ThrowAsJavaScriptException();
-    }
-
+    error.ThrowAsJavaScriptException();
     return false;
 }
 

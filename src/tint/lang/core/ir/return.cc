@@ -37,6 +37,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Return);
 
 namespace tint::core::ir {
 
+Return::Return() = default;
+
 Return::Return(Function* func) {
     AddOperand(Return::kFunctionOperandOffset, func);
 }

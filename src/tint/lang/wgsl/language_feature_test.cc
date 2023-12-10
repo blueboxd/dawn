@@ -34,7 +34,7 @@
 //                       Do not modify this file directly
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "src/tint/lang/wgsl/language_feature.h"
+#include "src/tint/lang/wgsl/features/language_feature.h"
 
 #include <gtest/gtest.h>
 
@@ -57,14 +57,39 @@ inline std::ostream& operator<<(std::ostream& out, Case c) {
 }
 
 static constexpr Case kValidCases[] = {
+    {"chromium_testing_experimental", LanguageFeature::kChromiumTestingExperimental},
+    {"chromium_testing_shipped", LanguageFeature::kChromiumTestingShipped},
+    {"chromium_testing_shipped_with_killswitch",
+     LanguageFeature::kChromiumTestingShippedWithKillswitch},
+    {"chromium_testing_unimplemented", LanguageFeature::kChromiumTestingUnimplemented},
+    {"chromium_testing_unsafe_experimental", LanguageFeature::kChromiumTestingUnsafeExperimental},
+    {"packed_4x8_integer_dot_product", LanguageFeature::kPacked4X8IntegerDotProduct},
     {"readonly_and_readwrite_storage_textures",
      LanguageFeature::kReadonlyAndReadwriteStorageTextures},
 };
 
 static constexpr Case kInvalidCases[] = {
-    {"eadonly_and_readwrite_stccrage_textures", LanguageFeature::kUndefined},
-    {"rladonly_a3readrite_storage_textures", LanguageFeature::kUndefined},
-    {"readonly_and_readwriVe_storage_textures", LanguageFeature::kUndefined},
+    {"chccomium_esting_experimental", LanguageFeature::kUndefined},
+    {"cr3mium_testlg_experimentl", LanguageFeature::kUndefined},
+    {"cVromium_testing_experimental", LanguageFeature::kUndefined},
+    {"1hromium_testing_shipped", LanguageFeature::kUndefined},
+    {"chromium_testing_hJpqqed", LanguageFeature::kUndefined},
+    {"cllromium_te77ting_shipped", LanguageFeature::kUndefined},
+    {"chromippm_testing_sHHipped_with_kqqlswitch", LanguageFeature::kUndefined},
+    {"chromicm_esting_shippvd_with_kilsitch", LanguageFeature::kUndefined},
+    {"chrbmium_testing_shGpped_wih_killswitch", LanguageFeature::kUndefined},
+    {"chromium_testing_iinimplemevted", LanguageFeature::kUndefined},
+    {"chromiumWWtesting_unimp8emented", LanguageFeature::kUndefined},
+    {"chxxoium_tMsting_unimplemented", LanguageFeature::kUndefined},
+    {"chXggmium_testing_unsafe_expermental", LanguageFeature::kUndefined},
+    {"Xhomiuu_testng_unsafe_experimental", LanguageFeature::kUndefined},
+    {"chromium_3esting_unsafe_experimental", LanguageFeature::kUndefined},
+    {"packed_4x8_integer_Eot_product", LanguageFeature::kUndefined},
+    {"paked_4x8_integePP_dTTt_product", LanguageFeature::kUndefined},
+    {"packed_4x8_integxxrdot_pddoduct", LanguageFeature::kUndefined},
+    {"readon44y_and_readwrite_storage_textures", LanguageFeature::kUndefined},
+    {"readonly_and_readwrite_storageVVSSextures", LanguageFeature::kUndefined},
+    {"rRadonly_an_rea22write_storRge_textures", LanguageFeature::kUndefined},
 };
 
 using LanguageFeatureParseTest = testing::TestWithParam<Case>;
@@ -83,7 +108,7 @@ using LanguageFeaturePrintTest = testing::TestWithParam<Case>;
 TEST_P(LanguageFeaturePrintTest, Print) {
     LanguageFeature value = GetParam().value;
     const char* expect = GetParam().string;
-    EXPECT_EQ(expect, tint::ToString(value));
+    EXPECT_EQ(expect, ToString(value));
 }
 
 INSTANTIATE_TEST_SUITE_P(ValidCases, LanguageFeaturePrintTest, testing::ValuesIn(kValidCases));

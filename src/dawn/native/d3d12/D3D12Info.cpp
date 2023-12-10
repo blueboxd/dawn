@@ -50,6 +50,7 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
                           "ID3D12Device::CheckFeatureSupport"));
 
     info.isUMA = arch.UMA;
+    info.isCacheCoherentUMA = arch.CacheCoherentUMA;
 
     D3D12_FEATURE_DATA_D3D12_OPTIONS featureOptions = {};
     DAWN_TRY(CheckHRESULT(physicalDevice.GetDevice()->CheckFeatureSupport(
@@ -168,7 +169,7 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
     info.supportsShaderF16 =
         driverShaderModel >= D3D_SHADER_MODEL_6_2 && featureOptions4.Native16BitShaderOpsSupported;
 
-    info.supportsDP4a = driverShaderModel >= D3D_SHADER_MODEL_6_4;
+    info.supportsPacked4x8IntegerDotProduct = driverShaderModel >= D3D_SHADER_MODEL_6_4;
 
     // Device support wave intrinsics if shader model >= SM6.0 and capabilities flag WaveOps is set.
     // https://github.com/Microsoft/DirectXShaderCompiler/wiki/Wave-Intrinsics
@@ -184,6 +185,12 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
             info.waveLaneCountMax = featureOptions1.WaveLaneCountMax;
         }
     }
+
+    DXGI_ADAPTER_DESC adapterDesc;
+    DAWN_TRY(CheckHRESULT(physicalDevice.GetHardwareAdapter()->GetDesc(&adapterDesc),
+                          "IDXGIAdapter3::GetDesc"));
+    info.dedicatedVideoMemory = adapterDesc.DedicatedVideoMemory;
+    info.sharedSystemMemory = adapterDesc.SharedSystemMemory;
 
     return std::move(info);
 }

@@ -1,0 +1,288 @@
+// Copyright 2023 The Dawn & Tint Authors
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+syntax = "proto3";
+
+package tint.core.ir.binary.pb;
+
+message Module {
+    repeated Type types = 1;
+    repeated Value values = 2;
+    repeated ConstantValue constant_values = 3;
+    repeated Function functions = 4;
+    repeated Block blocks = 5;
+    uint32 root_block = 6;  // Module.blocks
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Types
+////////////////////////////////////////////////////////////////////////////////
+message Type {
+    oneof kind {
+        TypeBasic basic = 1;
+        TypeVector vector = 2;
+        TypeMatrix matrix = 3;
+        TypeArray array = 4;
+        TypePointer pointer = 5;
+        uint32 atomic = 6;  // Module.types
+        // TODO: textures, samplers
+    }
+}
+
+// Non-compound types
+enum TypeBasic {
+    void = 0;
+    bool = 1;
+    i32 = 2;
+    u32 = 3;
+    f32 = 4;
+    f16 = 5;
+}
+
+message TypeVector {
+    uint32 width = 1;
+    uint32 element_type = 2;  // Module.types
+}
+
+message TypeMatrix {
+    uint32 num_columns = 1;
+    uint32 num_rows = 2;
+    uint32 element_type = 3;  // Module.types
+}
+
+message TypeArray {
+    uint32 element = 1;  // Module.types
+    uint32 stride = 2;
+    uint32 count = 3;
+}
+
+message TypePointer {
+    AddressSpace address_space = 1;
+    uint32 store_type = 2;  // Module.types
+    AccessControl access = 3;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Values
+////////////////////////////////////////////////////////////////////////////////
+message Value {
+    oneof kind {
+        uint32 function = 1;  // Module.functions
+        InstructionResult instruction_result = 2;
+        FunctionParameter function_parameter = 3;
+        uint32 constant = 4;  // Module.constant_values
+    }
+}
+
+message InstructionResult {
+    uint32 type = 1;  // Module.types
+    optional string name = 2;
+}
+
+message FunctionParameter {
+    uint32 type = 1;  // Module.types
+    optional string name = 2;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// ConstantValues
+////////////////////////////////////////////////////////////////////////////////
+message ConstantValue {
+    oneof kind {
+        ConstantValueScalar scalar = 1;
+        ConstantValueComposite composite = 2;
+        ConstantValueSplat splat = 3;
+    }
+}
+
+message ConstantValueScalar {
+    oneof kind {
+        bool bool = 1;
+        int32 i32 = 2;
+        uint32 u32 = 3;
+        float f32 = 4;
+        float f16 = 5;
+    }
+}
+
+message ConstantValueComposite {
+    uint32 type = 1;               // Module.types
+    repeated uint32 elements = 2;  // Module.constant_values
+}
+
+message ConstantValueSplat {
+    uint32 type = 1;      // Module.types
+    uint32 elements = 2;  // Module.constant_values
+    uint32 count = 3;     // splat count
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Functions
+////////////////////////////////////////////////////////////////////////////////
+message Function {
+    uint32 return_type = 1;  // Module.types
+    uint32 block = 2;        // Module.blocks
+    optional string name = 3;
+    optional PipelineStage pipeline_stage = 4;
+    optional WorkgroupSize workgroup_size = 5;
+    repeated uint32 parameters = 6;  // Module.values
+}
+
+enum PipelineStage {
+    Compute = 0;
+    Fragment = 1;
+    Vertex = 2;
+}
+
+message WorkgroupSize {
+    uint32 x = 1;
+    uint32 y = 2;
+    uint32 z = 3;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Blocks
+////////////////////////////////////////////////////////////////////////////////
+message Block {
+    repeated uint32 parameters = 1;  // Module.values
+    repeated Instruction instructions = 2;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Instructions
+////////////////////////////////////////////////////////////////////////////////
+message Instruction {
+    repeated uint32 operands = 1;  // Module.values
+    repeated uint32 results = 2;   // Module.values
+    oneof kind {
+        InstructionReturn return = 3;
+        InstructionUnary unary = 4;
+        InstructionBinary binary = 5;
+        InstructionBuiltin builtin = 6;
+        InstructionConstructor constructor = 7;
+        InstructionDiscard discard = 8;
+        InstructionLet let = 9;
+        InstructionVar var = 10;
+        InstructionConstruct construct = 11;
+        InstructionAccess access = 12;
+        InstructionUserCall user_call = 13;
+        InstructionLoad load = 14;
+        InstructionStore store = 15;
+        InstructionLoadVectorElement load_vector_element = 16;
+        InstructionStoreVectorElement store_vector_element = 17;
+        InstructionSwizzle swizzle = 18;
+    }
+}
+
+message InstructionReturn {}
+
+message InstructionUnary {
+    UnaryOp op = 1;
+}
+
+message InstructionBinary {
+    BinaryOp op = 1;
+}
+
+message InstructionBuiltin {}
+
+message InstructionConstructor {}
+
+message InstructionDiscard {}
+
+message InstructionLet {}
+
+message InstructionVar {
+    optional BindingPoint binding_point = 1;
+}
+
+message InstructionConstruct {}
+
+message InstructionAccess {}
+
+message InstructionUserCall {}
+
+message InstructionLoad {}
+
+message InstructionStore {}
+
+message InstructionLoadVectorElement {}
+
+message InstructionStoreVectorElement {}
+
+message InstructionSwizzle {
+    repeated uint32 indices = 1;
+}
+
+message BindingPoint {
+    uint32 group = 1;
+    uint32 binding = 2;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Enums
+////////////////////////////////////////////////////////////////////////////////
+enum AddressSpace {
+    function = 0;
+    handle = 1;
+    pixel_local = 2;
+    private = 3;
+    push_constant = 4;
+    storage = 5;
+    uniform = 6;
+    workgroup = 7;
+}
+
+enum AccessControl {
+    read = 0;
+    write = 1;
+    read_write = 2;
+}
+
+enum UnaryOp {
+    complement = 0;
+    negation = 1;
+}
+
+enum BinaryOp {
+    add_ = 0;
+    subtract = 1;
+    multiply = 2;
+    divide = 3;
+    modulo = 4;
+    and = 5;
+    or_ = 6;
+    xor_ = 7;
+    equal = 8;
+    not_equal = 9;
+    less_than = 10;
+    greater_than = 11;
+    less_than_equal = 12;
+    greater_than_equal = 13;
+    shift_left = 14;
+    shift_right = 15;
+}

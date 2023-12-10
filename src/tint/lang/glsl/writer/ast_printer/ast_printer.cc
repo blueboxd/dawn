@@ -189,6 +189,7 @@ SanitizedResult Sanitize(const Program& in,
         polyfills.saturate = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
+        polyfills.dot_4x8_packed = true;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<ast::transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }
@@ -264,10 +265,8 @@ bool ASTPrinter::Generate() {
             "GLSL", builder_.AST(), diagnostics_,
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
-                wgsl::Extension::kChromiumExperimentalDp4A,
                 wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
-                wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
                 wgsl::Extension::kF16,
             })) {

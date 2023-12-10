@@ -36,6 +36,7 @@
 #include "dawn/native/ResourceMemoryAllocation.h"
 #include "dawn/native/Texture.h"
 #include "dawn/native/vulkan/ExternalHandle.h"
+#include "dawn/native/vulkan/SharedTextureMemoryVk.h"
 #include "dawn/native/vulkan/external_memory/MemoryService.h"
 #include "dawn/native/vulkan/external_semaphore/SemaphoreService.h"
 
@@ -46,6 +47,7 @@ class Device;
 class Texture;
 
 VkFormat VulkanImageFormat(const Device* device, wgpu::TextureFormat format);
+ResultOrError<wgpu::TextureFormat> FormatFromVkFormat(const Device* device, VkFormat vkFormat);
 VkImageUsageFlags VulkanImageUsage(wgpu::TextureUsage usage, const Format& format);
 VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage);
 VkImageLayout VulkanImageLayoutForDepthStencilAttachment(const Format& format,
@@ -54,7 +56,7 @@ VkImageLayout VulkanImageLayoutForDepthStencilAttachment(const Format& format,
 VkSampleCountFlagBits VulkanSampleCount(uint32_t sampleCount);
 
 MaybeError ValidateVulkanImageCanBeWrapped(const DeviceBase* device,
-                                           const TextureDescriptor* descriptor);
+                                           const Unpacked<TextureDescriptor>& descriptor);
 
 bool IsSampleCountSupported(const dawn::native::vulkan::Device* device,
                             const VkImageCreateInfo& imageCreateInfo);
@@ -63,7 +65,7 @@ class Texture final : public TextureBase {
   public:
     // Used to create a regular texture from a descriptor.
     static ResultOrError<Ref<Texture>> Create(Device* device,
-                                              const TextureDescriptor* descriptor,
+                                              const Unpacked<TextureDescriptor>& descriptor,
                                               VkImageUsageFlags extraUsages = 0);
 
     // Creates a texture and initializes it with a VkImage that references an external memory
@@ -72,12 +74,17 @@ class Texture final : public TextureBase {
     static ResultOrError<Texture*> CreateFromExternal(
         Device* device,
         const ExternalImageDescriptorVk* descriptor,
-        const TextureDescriptor* textureDescriptor,
+        const Unpacked<TextureDescriptor>& textureDescriptor,
         external_memory::Service* externalMemoryService);
+
+    // Create a texture from contents of a SharedTextureMemory.
+    static ResultOrError<Ref<Texture>> CreateFromSharedTextureMemory(
+        SharedTextureMemory* memory,
+        const Unpacked<TextureDescriptor>& textureDescriptor);
 
     // Creates a texture that wraps a swapchain-allocated VkImage.
     static Ref<Texture> CreateForSwapChain(Device* device,
-                                           const TextureDescriptor* descriptor,
+                                           const Unpacked<TextureDescriptor>& descriptor,
                                            VkImage nativeImage);
 
     VkImage GetHandle() const;
@@ -118,6 +125,12 @@ class Texture final : public TextureBase {
                                      VkImageLayout* releasedOldLayout,
                                      VkImageLayout* releasedNewLayout);
 
+    void SetPendingAcquire(VkImageLayout pendingAcquireOldLayout,
+                           VkImageLayout pendingAcquireNewLayout);
+    MaybeError EndAccess(ExternalSemaphoreHandle* handle,
+                         VkImageLayout* releasedOldLayout,
+                         VkImageLayout* releasedNewLayout);
+
     void SetLabelHelper(const char* prefix);
 
     // Dawn API
@@ -125,7 +138,7 @@ class Texture final : public TextureBase {
 
   private:
     ~Texture() override;
-    Texture(Device* device, const TextureDescriptor* descriptor);
+    Texture(Device* device, const Unpacked<TextureDescriptor>& descriptor);
 
     MaybeError InitializeAsInternalTexture(VkImageUsageFlags extraUsages);
     MaybeError InitializeFromExternal(const ExternalImageDescriptorVk* descriptor,
@@ -167,6 +180,11 @@ class Texture final : public TextureBase {
     bool mOwnsHandle = false;
     ResourceMemoryAllocation mMemoryAllocation;
     VkDeviceMemory mExternalAllocation = VK_NULL_HANDLE;
+    struct SharedTextureMemoryObjects {
+        Ref<RefCountedVkHandle<VkImage>> vkImage;
+        Ref<RefCountedVkHandle<VkDeviceMemory>> vkDeviceMemory;
+    };
+    SharedTextureMemoryObjects mSharedTextureMemoryObjects;
 
     // The states of an external texture:
     //   InternalOnly: Not initialized as an external texture yet.
@@ -218,17 +236,24 @@ class TextureView final : public TextureViewBase {
     VkImageView GetHandle() const;
     VkImageView GetHandleForBGRA8UnormStorage() const;
 
+    ResultOrError<VkImageView> GetOrCreate2DViewOn3D(uint32_t depthSlice = 0u);
+
   private:
     ~TextureView() override;
     void DestroyImpl() override;
     using TextureViewBase::TextureViewBase;
     MaybeError Initialize(const TextureViewDescriptor* descriptor);
 
+    VkImageViewCreateInfo GetCreateInfo(wgpu::TextureFormat format,
+                                        wgpu::TextureViewDimension dimension,
+                                        uint32_t depthSlice = 0u) const;
+
     // Dawn API
     void SetLabelImpl() override;
 
     VkImageView mHandle = VK_NULL_HANDLE;
     VkImageView mHandleForBGRA8UnormStorage = VK_NULL_HANDLE;
+    std::vector<VkImageView> mHandlesFor2DViewOn3D;
 };
 
 }  // namespace dawn::native::vulkan

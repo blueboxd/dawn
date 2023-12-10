@@ -373,7 +373,8 @@ MaybeError RenderPipeline::Initialize() {
         ShaderModule::ModuleAndSpirv moduleAndSpirv;
         DAWN_TRY_ASSIGN(moduleAndSpirv,
                         ToBackend(programmableStage.module)
-                            ->GetHandleAndSpirv(stage, programmableStage, layout, clampFragDepth));
+                            ->GetHandleAndSpirv(stage, programmableStage, layout, clampFragDepth,
+                                                /* fullSubgroups */ {}));
         // Record cache key for each shader since it will become inaccessible later on.
         StreamIn(&mCacheKey, stream::Iterable(moduleAndSpirv.spirv, moduleAndSpirv.wordCount));
 
@@ -472,8 +473,7 @@ MaybeError RenderPipeline::Initialize() {
     VkPipelineColorBlendStateCreateInfo colorBlend;
     // colorBlend may hold pointers to elements in colorBlendAttachments, so it must have a
     // definition scope as same as colorBlend
-    ityp::array<ColorAttachmentIndex, VkPipelineColorBlendAttachmentState, kMaxColorAttachments>
-        colorBlendAttachments;
+    PerColorAttachment<VkPipelineColorBlendAttachmentState> colorBlendAttachments;
     if (GetStageMask() & wgpu::ShaderStage::Fragment) {
         // Initialize the "blend state info" that will be chained in the "create info" from the
         // data pre-computed in the ColorState
@@ -490,9 +490,9 @@ MaybeError RenderPipeline::Initialize() {
 
         const auto& fragmentOutputMask =
             GetStage(SingleShaderStage::Fragment).metadata->fragmentOutputMask;
-        ColorAttachmentIndex highestColorAttachmentIndexPlusOne =
+        auto highestColorAttachmentIndexPlusOne =
             GetHighestBitIndexPlusOne(GetColorAttachmentsMask());
-        for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
+        for (auto i : IterateBitSet(GetColorAttachmentsMask())) {
             const ColorTargetState* target = GetColorTargetState(i);
             colorBlendAttachments[i] = ComputeColorDesc(target, fragmentOutputMask[i]);
         }
@@ -533,7 +533,7 @@ MaybeError RenderPipeline::Initialize() {
     {
         RenderPassCacheQuery query;
 
-        for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
+        for (auto i : IterateBitSet(GetColorAttachmentsMask())) {
             query.SetColor(i, GetColorAttachmentFormat(i), wgpu::LoadOp::Load, wgpu::StoreOp::Store,
                            false);
         }
@@ -610,7 +610,7 @@ VkPipelineVertexInputStateCreateInfo RenderPipeline::ComputeVertexInputDesc(
     PipelineVertexInputStateCreateInfoTemporaryAllocations* tempAllocations) {
     // Fill in the "binding info" that will be chained in the create info
     uint32_t bindingCount = 0;
-    for (VertexBufferSlot slot : IterateBitSet(GetVertexBufferSlotsUsed())) {
+    for (VertexBufferSlot slot : IterateBitSet(GetVertexBuffersUsed())) {
         const VertexBufferInfo& bindingInfo = GetVertexBuffer(slot);
 
         VkVertexInputBindingDescription* bindingDesc = &tempAllocations->bindings[bindingCount];

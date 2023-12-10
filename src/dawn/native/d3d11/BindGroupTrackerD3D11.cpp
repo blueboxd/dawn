@@ -130,12 +130,15 @@ void ResetAllRenderSlots(const ScopedSwapStateCommandRecordingContext* commandCo
 
 }  // namespace
 
-BindGroupTracker::BindGroupTracker(const ScopedSwapStateCommandRecordingContext* commandContext,
-                                   bool isRenderPass)
+BindGroupTracker::BindGroupTracker(
+    const ScopedSwapStateCommandRecordingContext* commandContext,
+    bool isRenderPass,
+    std::vector<ComPtr<ID3D11UnorderedAccessView>> pixelLocalStorageUAVs)
     : mCommandContext(commandContext),
       mIsRenderPass(isRenderPass),
       mVisibleStages(isRenderPass ? wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment
-                                  : wgpu::ShaderStage::Compute) {
+                                  : wgpu::ShaderStage::Compute),
+      mPixelLocalStorageUAVs(std::move(pixelLocalStorageUAVs)) {
     mLastAppliedPipelineLayout = mCommandContext->GetDevice()->GetEmptyPipelineLayout();
 }
 
@@ -158,9 +161,9 @@ MaybeError BindGroupTracker::Apply() {
     if (mIsRenderPass) {
         // As D3d11 requires to bind all UAVs slots at the same time for pixel shaders, we record
         // all UAV slot assignments in the bind groups, and then bind them all together.
-        const BindGroupLayoutMask uavBindGroups =
+        const BindGroupMask uavBindGroups =
             ToBackend(mPipelineLayout)->GetUAVBindGroupLayoutsMask();
-        std::vector<ComPtr<ID3D11UnorderedAccessView>> d3d11UAVs;
+        std::vector<ComPtr<ID3D11UnorderedAccessView>> uavsInBindGroup;
         for (BindGroupIndex index : IterateBitSet(uavBindGroups)) {
             BindGroupBase* group = mBindGroups[index];
             const ityp::vector<BindingIndex, uint64_t>& dynamicOffsets = mDynamicOffsets[index];
@@ -189,7 +192,8 @@ MaybeError BindGroupTracker::Apply() {
                                                               ->CreateD3D11UnorderedAccessView1(
                                                                   offset, binding.size));
                                 ToBackend(binding.buffer)->MarkMutated();
-                                d3d11UAVs.insert(d3d11UAVs.begin(), std::move(d3d11UAV));
+                                uavsInBindGroup.insert(uavsInBindGroup.begin(),
+                                                       std::move(d3d11UAV));
                                 break;
                             }
                             case wgpu::BufferBindingType::Uniform:
@@ -210,7 +214,8 @@ MaybeError BindGroupTracker::Apply() {
                                     ToBackend(group->GetBindingAsTextureView(bindingIndex));
                                 DAWN_TRY_ASSIGN(d3d11UAV,
                                                 view->GetOrCreateD3D11UnorderedAccessView());
-                                d3d11UAVs.insert(d3d11UAVs.begin(), std::move(d3d11UAV));
+                                uavsInBindGroup.insert(uavsInBindGroup.begin(),
+                                                       std::move(d3d11UAV));
                                 break;
                             }
                             case wgpu::StorageTextureAccess::ReadOnly:
@@ -229,19 +234,24 @@ MaybeError BindGroupTracker::Apply() {
                 }
             }
         }
+
         uint32_t uavSlotCount = ToBackend(mPipelineLayout->GetDevice())->GetUAVSlotCount();
         std::vector<ID3D11UnorderedAccessView*> views;
-        for (auto& uav : d3d11UAVs) {
+        views.reserve(uavsInBindGroup.size() + mPixelLocalStorageUAVs.size());
+        for (auto& uav : uavsInBindGroup) {
             views.push_back(uav.Get());
         }
+        for (auto& uav : mPixelLocalStorageUAVs) {
+            views.push_back(uav.Get());
+        }
+        DAWN_ASSERT(uavSlotCount >= views.size());
         mCommandContext->GetD3D11DeviceContext4()->OMSetRenderTargetsAndUnorderedAccessViews(
             D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL, nullptr, nullptr,
-            uavSlotCount - d3d11UAVs.size(), d3d11UAVs.size(), views.data(), nullptr);
-        d3d11UAVs.clear();
+            uavSlotCount - views.size(), views.size(), views.data(), nullptr);
     } else {
-        BindGroupLayoutMask inheritedGroups =
+        BindGroupMask inheritedGroups =
             mPipelineLayout->InheritedGroupsMask(mLastAppliedPipelineLayout);
-        BindGroupLayoutMask previousGroups = mLastAppliedPipelineLayout->GetBindGroupLayoutsMask();
+        BindGroupMask previousGroups = mLastAppliedPipelineLayout->GetBindGroupLayoutsMask();
 
         // To avoid UAV / SRV conflicts with bindings in previously bind groups, we unset the bind
         // groups that aren't reused by the current pipeline.
@@ -251,7 +261,7 @@ MaybeError BindGroupTracker::Apply() {
         //
         // Note: WebGPU API guarantees that resources are not used both as UAV and SRV in the same
         // render pass. So we don't need to do this inside render passes.
-        BindGroupLayoutMask groupsToUnset = previousGroups & (~inheritedGroups | mDirtyBindGroups);
+        BindGroupMask groupsToUnset = previousGroups & (~inheritedGroups | mDirtyBindGroups);
         for (BindGroupIndex index : IterateBitSet(groupsToUnset)) {
             UnApplyBindGroup(index);
         }

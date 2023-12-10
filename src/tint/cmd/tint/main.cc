@@ -27,15 +27,13 @@
 
 #include <charconv>
 #include <cstdio>
-#include <fstream>
 #include <iostream>
-#include <limits>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "src/tint/lang/wgsl/sem/variable.h"
 
 #if TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 #include "spirv-tools/libspirv.hpp"
@@ -63,17 +61,13 @@
 #include "src/tint/utils/text/string.h"
 #include "src/tint/utils/text/string_stream.h"
 
-#if TINT_BUILD_SPV_READER
-#include "src/tint/lang/spirv/reader/reader.h"
-#endif  // TINT_BUILD_SPV_READER
-
 #if TINT_BUILD_WGSL_READER
 #include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 #include "src/tint/lang/wgsl/reader/reader.h"
 #endif  // TINT_BUILD_WGSL_READER
 
 #if TINT_BUILD_SPV_WRITER
-#include "src/tint/lang/spirv/writer/helpers/generate_bindings.h"
+#include "src/tint/lang/spirv/writer/helpers/ast_generate_bindings.h"
 #include "src/tint/lang/spirv/writer/writer.h"
 #endif  // TINT_BUILD_SPV_WRITER
 
@@ -134,10 +128,10 @@ namespace {
 
 /// Prints the given hash value in a format string that the end-to-end test runner can parse.
 [[maybe_unused]] void PrintHash(uint32_t hash) {
-    std::cout << "<<HASH: 0x" << std::hex << hash << ">>" << std::endl;
+    std::cout << "<<HASH: 0x" << std::hex << hash << ">>\n";
 }
 
-enum class Format {
+enum class Format : uint8_t {
     kUnknown,
     kNone,
     kSpirv,
@@ -424,7 +418,7 @@ Options:
 
     auto result = options.Parse(arguments);
     if (!result) {
-        std::cerr << result.Failure() << std::endl;
+        std::cerr << result.Failure() << "\n";
         show_usage();
         return false;
     }
@@ -440,7 +434,7 @@ Options:
                 std::cerr << "override values must be of the form IDENTIFIER=VALUE";
                 return false;
             }
-            auto value = tint::ParseNumber<double>(parts[1]);
+            auto value = tint::strconv::ParseNumber<double>(parts[1]);
             if (!value) {
                 std::cerr << "invalid override value: " << parts[1];
                 return false;
@@ -453,19 +447,19 @@ Options:
         auto binding_points = tint::Split(*hlsl_rc_bp.value, ",");
         if (binding_points.Length() != 2) {
             std::cerr << "Invalid binding point for " << hlsl_rc_bp.name << ": "
-                      << *hlsl_rc_bp.value << std::endl;
+                      << *hlsl_rc_bp.value << "\n";
             return false;
         }
-        auto group = tint::ParseUint32(binding_points[0]);
+        auto group = tint::strconv::ParseUint32(binding_points[0]);
         if (!group) {
             std::cerr << "Invalid group for " << hlsl_rc_bp.name << ": " << binding_points[0]
-                      << std::endl;
+                      << "\n";
             return false;
         }
-        auto binding = tint::ParseUint32(binding_points[1]);
+        auto binding = tint::strconv::ParseUint32(binding_points[1]);
         if (!binding) {
             std::cerr << "Invalid binding for " << hlsl_rc_bp.name << ": " << binding_points[1]
-                      << std::endl;
+                      << "\n";
             return false;
         }
         opts->hlsl_root_constant_binding_point = tint::BindingPoint{group.Get(), binding.Get()};
@@ -477,19 +471,19 @@ Options:
             auto values = tint::Split(binding, "=");
             if (values.Length() != 2) {
                 std::cerr << "Invalid binding " << pixel_local_attachments.name << ": " << binding
-                          << std::endl;
+                          << "\n";
                 return false;
             }
-            auto member_index = tint::ParseUint32(values[0]);
+            auto member_index = tint::strconv::ParseUint32(values[0]);
             if (!member_index) {
                 std::cerr << "Invalid member index for " << pixel_local_attachments.name << ": "
-                          << values[0] << std::endl;
+                          << values[0] << "\n";
                 return false;
             }
-            auto attachment_index = tint::ParseUint32(values[1]);
+            auto attachment_index = tint::strconv::ParseUint32(values[1]);
             if (!attachment_index) {
                 std::cerr << "Invalid attachment index for " << pixel_local_attachments.name << ": "
-                          << values[1] << std::endl;
+                          << values[1] << "\n";
                 return false;
             }
             opts->pixel_local_options.attachments.emplace(member_index.Get(),
@@ -510,7 +504,7 @@ Options:
                           << ": " << binding_format << std::endl;
                 return false;
             }
-            auto member_index = tint::ParseUint32(values[0]);
+            auto member_index = tint::strconv::ParseUint32(values[0]);
             if (!member_index) {
                 std::cerr << "Invalid member index for " << pixel_local_attachment_formats.name
                           << ": " << values[0] << std::endl;
@@ -537,7 +531,7 @@ Options:
     auto files = result.Get();
     if (files.Length() > 1) {
         std::cerr << "More than one input file specified: "
-                  << tint::Join(Transform(files, tint::Quote), ", ") << std::endl;
+                  << tint::Join(Transform(files, tint::Quote), ", ") << "\n";
         return false;
     }
     if (files.Length() == 1) {
@@ -567,7 +561,7 @@ template <typename ContainerT>
         file = fopen(output_file.c_str(), mode.c_str());
 #endif
         if (!file) {
-            std::cerr << "Could not open file " << output_file << " for writing" << std::endl;
+            std::cerr << "Could not open file " << output_file << " for writing\n";
             return false;
         }
     }
@@ -576,9 +570,9 @@ template <typename ContainerT>
         fwrite(buffer.data(), sizeof(typename ContainerT::value_type), buffer.size(), file);
     if (buffer.size() != written) {
         if (use_stdout) {
-            std::cerr << "Could not write all output to standard output" << std::endl;
+            std::cerr << "Could not write all output to standard output\n";
         } else {
-            std::cerr << "Could not write to file " << output_file << std::endl;
+            std::cerr << "Could not write to file " << output_file << "\n";
             fclose(file);
         }
         return false;
@@ -624,7 +618,7 @@ std::string Disassemble(const std::vector<uint32_t>& data) {
     if (!tools.Disassemble(
             data, &result,
             SPV_BINARY_TO_TEXT_OPTION_INDENT | SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES)) {
-        std::cerr << spv_errors << std::endl;
+        std::cerr << spv_errors << "\n";
     }
     return result;
 }
@@ -641,12 +635,23 @@ bool GenerateSpirv(const tint::Program& program, const Options& options) {
     gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
     gen_options.bindings = tint::spirv::writer::GenerateBindings(program);
-    gen_options.use_tint_ir = options.use_ir;
 
-    auto result = tint::spirv::writer::Generate(program, gen_options);
+    tint::Result<tint::spirv::writer::Output> result;
+    if (options.use_ir) {
+        // Convert the AST program to an IR module.
+        auto ir = tint::wgsl::reader::ProgramToLoweredIR(program);
+        if (!ir) {
+            std::cerr << "Failed to generate IR: " << ir << "\n";
+            return false;
+        }
+        result = tint::spirv::writer::Generate(ir.Get(), gen_options);
+    } else {
+        result = tint::spirv::writer::Generate(program, gen_options);
+    }
+
     if (!result) {
         tint::cmd::PrintWGSL(std::cerr, program);
-        std::cerr << "Failed to generate: " << result.Failure() << std::endl;
+        std::cerr << "Failed to generate: " << result.Failure() << "\n";
         return false;
     }
 
@@ -670,7 +675,7 @@ bool GenerateSpirv(const tint::Program& program, const Options& options) {
         spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_1);
         tools.SetMessageConsumer(
             [](spv_message_level_t, const char*, const spv_position_t& pos, const char* msg) {
-                std::cerr << (pos.line + 1) << ":" << (pos.column + 1) << ": " << msg << std::endl;
+                std::cerr << (pos.line + 1) << ":" << (pos.column + 1) << ": " << msg << "\n";
             });
         if (!tools.Validate(result.Get().spirv.data(), result.Get().spirv.size(),
                             spvtools::ValidatorOptions())) {
@@ -698,7 +703,7 @@ bool GenerateWgsl([[maybe_unused]] const tint::Program& program,
     tint::wgsl::writer::Options gen_options;
     auto result = tint::wgsl::writer::Generate(program, gen_options);
     if (!result) {
-        std::cerr << "Failed to generate: " << result.Failure() << std::endl;
+        std::cerr << "Failed to generate: " << result.Failure() << "\n";
         return false;
     }
 
@@ -754,20 +759,41 @@ bool GenerateMsl([[maybe_unused]] const tint::Program& program,
 
     // TODO(jrprice): Provide a way for the user to set non-default options.
     tint::msl::writer::Options gen_options;
-    gen_options.use_tint_ir = options.use_ir;
     gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
     gen_options.pixel_local_options = options.pixel_local_options;
     gen_options.bindings = tint::msl::writer::GenerateBindings(*input_program);
     gen_options.array_length_from_uniform.ubo_binding = tint::BindingPoint{0, 30};
-    gen_options.array_length_from_uniform.bindpoint_to_size_index.emplace(tint::BindingPoint{0, 0},
-                                                                          0);
-    gen_options.array_length_from_uniform.bindpoint_to_size_index.emplace(tint::BindingPoint{0, 1},
-                                                                          1);
-    auto result = tint::msl::writer::Generate(*input_program, gen_options);
+
+    // Add array_length_from_uniform entries for all storage buffers with runtime sized arrays.
+    std::unordered_set<tint::BindingPoint> storage_bindings;
+    for (auto* var : program.AST().GlobalVariables()) {
+        auto* sem_var = program.Sem().Get<tint::sem::GlobalVariable>(var);
+        if (!sem_var->Type()->UnwrapRef()->HasFixedFootprint()) {
+            auto bp = sem_var->Attributes().binding_point.value();
+            if (storage_bindings.insert(bp).second) {
+                gen_options.array_length_from_uniform.bindpoint_to_size_index.emplace(
+                    bp, static_cast<uint32_t>(storage_bindings.size() - 1));
+            }
+        }
+    }
+
+    tint::Result<tint::msl::writer::Output> result;
+    if (options.use_ir) {
+        // Convert the AST program to an IR module.
+        auto ir = tint::wgsl::reader::ProgramToLoweredIR(program);
+        if (!ir) {
+            std::cerr << "Failed to generate IR: " << ir << "\n";
+            return false;
+        }
+        result = tint::msl::writer::Generate(ir.Get(), gen_options);
+    } else {
+        result = tint::msl::writer::Generate(*input_program, gen_options);
+    }
+
     if (!result) {
         tint::cmd::PrintWGSL(std::cerr, program);
-        std::cerr << "Failed to generate: " << result.Failure() << std::endl;
+        std::cerr << "Failed to generate: " << result.Failure() << "\n";
         return false;
     }
 
@@ -813,7 +839,7 @@ bool GenerateMsl([[maybe_unused]] const tint::Program& program,
         }
 #endif  // __APPLE__
         if (res.failed) {
-            std::cerr << res.output << std::endl;
+            std::cerr << res.output << "\n";
             return false;
         }
     }
@@ -941,7 +967,7 @@ bool GenerateHlsl(const tint::Program& program, const Options& options) {
 #else
     (void)program;
     (void)options;
-    std::cerr << "HLSL writer not enabled in tint build" << std::endl;
+    std::cerr << "HLSL writer not enabled in tint build\n";
     return false;
 #endif  // TINT_BUILD_HLSL_WRITER
 }
@@ -968,7 +994,7 @@ bool GenerateGlsl([[maybe_unused]] const tint::Program& program,
         auto result = tint::glsl::writer::Generate(prg, gen_options, entry_point_name);
         if (!result) {
             tint::cmd::PrintWGSL(std::cerr, prg);
-            std::cerr << "Failed to generate: " << result.Failure() << std::endl;
+            std::cerr << "Failed to generate: " << result.Failure() << "\n";
             return false;
         }
 
@@ -1073,17 +1099,18 @@ int main(int argc, const char** argv) {
                  const auto& name = override.key;
                  const auto& value = override.value;
                  if (name.empty()) {
-                     std::cerr << "empty override name" << std::endl;
+                     std::cerr << "empty override name\n";
                      return false;
                  }
-                 if (auto num = tint::ParseNumber<decltype(tint::OverrideId::value)>(name)) {
+                 if (auto num =
+                         tint::strconv::ParseNumber<decltype(tint::OverrideId::value)>(name)) {
                      tint::OverrideId id{num.Get()};
                      values.emplace(id, value);
                  } else {
                      auto override_names = inspector.GetNamedOverrideIds();
                      auto it = override_names.find(name);
                      if (it == override_names.end()) {
-                         std::cerr << "unknown override '" << name << "'" << std::endl;
+                         std::cerr << "unknown override '" << name << "'\n";
                          return false;
                      }
                      values.emplace(it->second, value);
@@ -1100,7 +1127,7 @@ int main(int argc, const char** argv) {
     auto transform_names = [&] {
         tint::StringStream names;
         for (auto& t : transforms) {
-            names << "   " << t.name << std::endl;
+            names << "   " << t.name << "\n";
         }
         return names.str();
     };
@@ -1137,22 +1164,22 @@ int main(int argc, const char** argv) {
         gen_options.use_syntax_tree_writer = true;
         auto result = tint::wgsl::writer::Generate(info.program, gen_options);
         if (!result) {
-            std::cerr << "Failed to dump AST: " << result.Failure() << std::endl;
+            std::cerr << "Failed to dump AST: " << result.Failure() << "\n";
         } else {
-            std::cout << result->wgsl << std::endl;
+            std::cout << result->wgsl << "\n";
         }
     }
 #endif  // TINT_BUILD_SYNTAX_TREE_WRITER
 
 #if TINT_BUILD_WGSL_READER
     if (options.dump_ir) {
-        auto result = tint::wgsl::reader::ProgramToIR(info.program);
+        auto result = tint::wgsl::reader::ProgramToLoweredIR(info.program);
         if (!result) {
-            std::cerr << "Failed to build IR from program: " << result.Failure() << std::endl;
+            std::cerr << "Failed to build IR from program: " << result.Failure() << "\n";
         } else {
             auto mod = result.Move();
             if (options.dump_ir) {
-                std::cout << tint::core::ir::Disassemble(mod) << std::endl;
+                std::cout << tint::core::ir::Disassemble(mod) << "\n";
             }
         }
     }
@@ -1213,8 +1240,8 @@ int main(int argc, const char** argv) {
             }
         }
 
-        std::cerr << "Unknown transform: " << name << std::endl;
-        std::cerr << "Available transforms: " << std::endl << transform_names() << std::endl;
+        std::cerr << "Unknown transform: " << name << "\n";
+        std::cerr << "Available transforms: \n" << transform_names() << "\n";
         return false;
     };
 
@@ -1243,7 +1270,7 @@ int main(int argc, const char** argv) {
     auto program = transform_manager.Run(info.program, std::move(transform_inputs), outputs);
     if (!program.IsValid()) {
         tint::cmd::PrintWGSL(std::cerr, program);
-        std::cerr << program.Diagnostics() << std::endl;
+        std::cerr << program.Diagnostics() << "\n";
         return 1;
     }
 
@@ -1268,7 +1295,7 @@ int main(int argc, const char** argv) {
         case Format::kNone:
             break;
         default:
-            std::cerr << "Unknown output format specified" << std::endl;
+            std::cerr << "Unknown output format specified\n";
             return 1;
     }
     if (!success) {

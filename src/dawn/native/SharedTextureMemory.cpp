@@ -29,7 +29,7 @@
 
 #include <utility>
 
-#include "dawn/native/ChainUtils_autogen.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/SharedFence.h"
 #include "dawn/native/dawn_platform.h"
@@ -45,14 +45,15 @@ class ErrorSharedTextureMemory : public SharedTextureMemoryBase {
 
     Ref<SharedTextureMemoryContents> CreateContents() override { DAWN_UNREACHABLE(); }
     ResultOrError<Ref<TextureBase>> CreateTextureImpl(
-        const TextureDescriptor* descriptor) override {
+        const Unpacked<TextureDescriptor>& descriptor) override {
         DAWN_UNREACHABLE();
     }
     MaybeError BeginAccessImpl(TextureBase* texture,
                                const BeginAccessDescriptor* descriptor) override {
         DAWN_UNREACHABLE();
     }
-    ResultOrError<FenceAndSignalValue> EndAccessImpl(TextureBase* texture) override {
+    ResultOrError<FenceAndSignalValue> EndAccessImpl(TextureBase* texture,
+                                                     EndAccessState* state) override {
         DAWN_UNREACHABLE();
     }
 };
@@ -78,17 +79,31 @@ SharedTextureMemoryBase::SharedTextureMemoryBase(DeviceBase* device,
       },
       mContents(new SharedTextureMemoryContents(GetWeakRef(this))) {}
 
+// static
+void SharedTextureMemoryBase::ReifyProperties(DeviceBase* device,
+                                              SharedTextureMemoryProperties* properties) {
+    // `properties->usage` contains all usages supported by the underlying
+    // texture. Strip out any not supported for `format`.
+    const Format& internalFormat = device->GetValidInternalFormat(properties->format);
+    if (!internalFormat.supportsStorageUsage || internalFormat.IsMultiPlanar()) {
+        properties->usage = properties->usage & ~wgpu::TextureUsage::StorageBinding;
+    }
+    if (!internalFormat.isRenderable || (internalFormat.IsMultiPlanar() &&
+                                         !device->HasFeature(Feature::MultiPlanarRenderTargets))) {
+        properties->usage = properties->usage & ~wgpu::TextureUsage::RenderAttachment;
+    }
+    if (internalFormat.IsMultiPlanar() &&
+        !device->HasFeature(Feature::MultiPlanarFormatExtendedUsages)) {
+        properties->usage = properties->usage & ~wgpu::TextureUsage::CopyDst;
+    }
+}
+
 SharedTextureMemoryBase::SharedTextureMemoryBase(DeviceBase* device,
                                                  const char* label,
                                                  const SharedTextureMemoryProperties& properties)
     : ApiObjectBase(device, label), mProperties(properties) {
-    const Format& internalFormat = device->GetValidInternalFormat(properties.format);
-    if (!internalFormat.supportsStorageUsage) {
-        DAWN_ASSERT(!(mProperties.usage & wgpu::TextureUsage::StorageBinding));
-    }
-    if (!internalFormat.isRenderable) {
-        DAWN_ASSERT(!(mProperties.usage & wgpu::TextureUsage::RenderAttachment));
-    }
+    // Reify properties to ensure we don't expose capabilities not supported by the device.
+    ReifyProperties(device, &mProperties);
     GetObjectTrackingList()->Track(this);
 }
 
@@ -108,7 +123,8 @@ void SharedTextureMemoryBase::APIGetProperties(SharedTextureMemoryProperties* pr
     properties->size = mProperties.size;
     properties->format = mProperties.format;
 
-    if (GetDevice()->ConsumedError(ValidateSTypes(properties->nextInChain, {}),
+    Unpacked<SharedTextureMemoryProperties> unpacked;
+    if (GetDevice()->ConsumedError(ValidateAndUnpack(properties), &unpacked,
                                    "calling %s.GetProperties", this)) {
         return;
     }
@@ -140,9 +156,12 @@ Ref<SharedTextureMemoryContents> SharedTextureMemoryBase::CreateContents() {
 }
 
 ResultOrError<Ref<TextureBase>> SharedTextureMemoryBase::CreateTexture(
-    const TextureDescriptor* descriptor) {
+    const TextureDescriptor* rawDescriptor) {
     DAWN_TRY(GetDevice()->ValidateIsAlive());
     DAWN_TRY(GetDevice()->ValidateObject(this));
+
+    Unpacked<TextureDescriptor> descriptor;
+    DAWN_TRY_ASSIGN(descriptor, ValidateAndUnpack(rawDescriptor));
 
     // Validate that there is one 2D, single-sampled subresource
     DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D,
@@ -168,8 +187,8 @@ ResultOrError<Ref<TextureBase>> SharedTextureMemoryBase::CreateTexture(
                     "SharedTextureMemory format (%s) doesn't match descriptor format (%s).",
                     mProperties.format, descriptor->format);
 
-    // Validate the rest of the texture descriptor, and require its usage to be a subset of the
-    // shared texture memory's usage.
+    // Validate the texture descriptor, and require its usage to be a subset of the shared texture
+    // memory's usage.
     DAWN_TRY(ValidateTextureDescriptor(GetDevice(), descriptor, AllowMultiPlanarTextureFormat::Yes,
                                        mProperties.usage));
 
@@ -213,6 +232,10 @@ bool SharedTextureMemoryBase::APIBeginAccess(TextureBase* texture,
         }(),
         "calling %s.BeginAccess(%s).", this, texture));
     return didBegin;
+}
+
+bool SharedTextureMemoryBase::APIIsDeviceLost() {
+    return GetDevice()->IsLost();
 }
 
 MaybeError SharedTextureMemoryBase::BeginAccess(TextureBase* texture,
@@ -308,7 +331,7 @@ ResultOrError<FenceAndSignalValue> SharedTextureMemoryBase::EndAccessInternal(
     EndAccessState* state) {
     DAWN_TRY(GetDevice()->ValidateObject(texture));
     DAWN_TRY(ValidateTextureCreatedFromSelf(texture));
-    return EndAccessImpl(texture);
+    return EndAccessImpl(texture, state);
 }
 
 // SharedTextureMemoryContents

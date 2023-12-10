@@ -217,6 +217,10 @@ ID3D12Device* Device::GetD3D12Device() const {
     return mD3d12Device.Get();
 }
 
+ID3D12Fence* Device::GetD3D12Fence() const {
+    return mFence.Get();
+}
+
 ComPtr<ID3D12CommandQueue> Device::GetCommandQueue() const {
     return mCommandQueue;
 }
@@ -453,7 +457,8 @@ ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
     const SwapChainDescriptor* descriptor) {
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
-ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
+ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
+    const Unpacked<TextureDescriptor>& descriptor) {
     return Texture::Create(this, descriptor);
 }
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
@@ -474,13 +479,12 @@ void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPip
 
 ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImpl(
     const SharedTextureMemoryDescriptor* descriptor) {
-    UnpackedSharedTextureMemoryDescriptorChain unpacked;
-    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+    Unpacked<SharedTextureMemoryDescriptor> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
 
     wgpu::SType type;
     DAWN_TRY_ASSIGN(
-        type, (ValidateBranches<BranchList<Branch<SharedTextureMemoryDXGISharedHandleDescriptor>>>(
-                  unpacked)));
+        type, (unpacked.ValidateBranches<Branch<SharedTextureMemoryDXGISharedHandleDescriptor>>()));
 
     switch (type) {
         case wgpu::SType::SharedTextureMemoryDXGISharedHandleDescriptor:
@@ -489,7 +493,7 @@ ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImp
                             wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle);
             return SharedTextureMemory::Create(
                 this, descriptor->label,
-                std::get<const SharedTextureMemoryDXGISharedHandleDescriptor*>(unpacked));
+                unpacked.Get<SharedTextureMemoryDXGISharedHandleDescriptor>());
         default:
             DAWN_UNREACHABLE();
     }
@@ -497,21 +501,19 @@ ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImp
 
 ResultOrError<Ref<SharedFenceBase>> Device::ImportSharedFenceImpl(
     const SharedFenceDescriptor* descriptor) {
-    UnpackedSharedFenceDescriptorChain unpacked;
-    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+    Unpacked<SharedFenceDescriptor> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
 
     wgpu::SType type;
-    DAWN_TRY_ASSIGN(
-        type,
-        (ValidateBranches<BranchList<Branch<SharedFenceDXGISharedHandleDescriptor>>>(unpacked)));
+    DAWN_TRY_ASSIGN(type,
+                    (unpacked.ValidateBranches<Branch<SharedFenceDXGISharedHandleDescriptor>>()));
 
     switch (type) {
         case wgpu::SType::SharedFenceDXGISharedHandleDescriptor:
             DAWN_INVALID_IF(!HasFeature(Feature::SharedFenceDXGISharedHandle), "%s is not enabled.",
                             wgpu::FeatureName::SharedFenceDXGISharedHandle);
-            return SharedFence::Create(
-                this, descriptor->label,
-                std::get<const SharedFenceDXGISharedHandleDescriptor*>(unpacked));
+            return SharedFence::Create(this, descriptor->label,
+                                       unpacked.Get<SharedFenceDXGISharedHandleDescriptor>());
         default:
             DAWN_UNREACHABLE();
     }
@@ -620,15 +622,15 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
                                                              IID_PPV_ARGS(&d3d12Resource)),
                           "D3D12 opening shared handle"));
 
-    const TextureDescriptor* textureDescriptor =
-        FromAPI(sharedHandleDescriptor->cTextureDescriptor);
-
+    Unpacked<TextureDescriptor> textureDescriptor;
+    DAWN_TRY_ASSIGN(textureDescriptor,
+                    ValidateAndUnpack(FromAPI(sharedHandleDescriptor->cTextureDescriptor)));
     DAWN_TRY(
         ValidateTextureDescriptor(this, textureDescriptor, AllowMultiPlanarTextureFormat::Yes));
 
     DAWN_TRY_CONTEXT(d3d::ValidateTextureDescriptorCanBeWrapped(textureDescriptor),
                      "validating that a D3D12 external image can be wrapped with %s",
-                     textureDescriptor);
+                     *textureDescriptor);
 
     DAWN_TRY(ValidateTextureCanBeWrapped(d3d12Resource.Get(), textureDescriptor));
 
@@ -644,7 +646,7 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
                                                         textureDescriptor);
 }
 
-Ref<TextureBase> Device::CreateD3DExternalTexture(const TextureDescriptor* descriptor,
+Ref<TextureBase> Device::CreateD3DExternalTexture(const Unpacked<TextureDescriptor>& descriptor,
                                                   ComPtr<IUnknown> d3dTexture,
                                                   std::vector<Ref<d3d::Fence>> waitFences,
                                                   bool isSwapChainTexture,

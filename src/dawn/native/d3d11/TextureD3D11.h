@@ -53,29 +53,33 @@ class ScopedCommandRecordingContext;
 class SharedTextureMemory;
 
 MaybeError ValidateTextureCanBeWrapped(ID3D11Resource* d3d11Resource,
-                                       const TextureDescriptor* descriptor);
+                                       const Unpacked<TextureDescriptor>& descriptor);
 MaybeError ValidateVideoTextureCanBeShared(Device* device, DXGI_FORMAT textureFormat);
 
 class Texture final : public d3d::Texture {
   public:
-    static ResultOrError<Ref<Texture>> Create(Device* device, const TextureDescriptor* descriptor);
     static ResultOrError<Ref<Texture>> Create(Device* device,
-                                              const TextureDescriptor* descriptor,
+                                              const Unpacked<TextureDescriptor>& descriptor);
+    static ResultOrError<Ref<Texture>> Create(Device* device,
+                                              const Unpacked<TextureDescriptor>& descriptor,
                                               ComPtr<ID3D11Resource> d3d11Texture);
-    static ResultOrError<Ref<Texture>> CreateExternalImage(Device* device,
-                                                           const TextureDescriptor* descriptor,
-                                                           ComPtr<IUnknown> d3dTexture,
-                                                           std::vector<Ref<d3d::Fence>> waitFences,
-                                                           bool isSwapChainTexture,
-                                                           bool isInitialized);
+    static ResultOrError<Ref<Texture>> CreateExternalImage(
+        Device* device,
+        const Unpacked<TextureDescriptor>& descriptor,
+        ComPtr<IUnknown> d3dTexture,
+        std::vector<Ref<d3d::Fence>> waitFences,
+        bool isSwapChainTexture,
+        bool isInitialized);
     static ResultOrError<Ref<Texture>> CreateFromSharedTextureMemory(
         SharedTextureMemory* memory,
-        const TextureDescriptor* descriptor);
+        const Unpacked<TextureDescriptor>& descriptor);
     ID3D11Resource* GetD3D11Resource() const;
 
     ResultOrError<ComPtr<ID3D11RenderTargetView>> CreateD3D11RenderTargetView(
         const Format& format,
-        const SubresourceRange& singleLevelRange) const;
+        uint32_t mipLevel,
+        uint32_t baseSlice,
+        uint32_t sliceCount) const;
     ResultOrError<ComPtr<ID3D11DepthStencilView>> CreateD3D11DepthStencilView(
         const SubresourceRange& singleLevelRange,
         bool depthReadOnly,
@@ -123,10 +127,10 @@ class Texture final : public d3d::Texture {
     };
 
     static ResultOrError<Ref<Texture>> CreateInternal(Device* device,
-                                                      const TextureDescriptor* descriptor,
+                                                      const Unpacked<TextureDescriptor>& descriptor,
                                                       Kind kind);
 
-    Texture(Device* device, const TextureDescriptor* descriptor, Kind kind);
+    Texture(Device* device, const Unpacked<TextureDescriptor>& descriptor, Kind kind);
     ~Texture() override;
 
     template <typename T>
@@ -198,7 +202,8 @@ class TextureView final : public TextureViewBase {
     static Ref<TextureView> Create(TextureBase* texture, const TextureViewDescriptor* descriptor);
 
     ResultOrError<ID3D11ShaderResourceView*> GetOrCreateD3D11ShaderResourceView();
-    ResultOrError<ID3D11RenderTargetView*> GetOrCreateD3D11RenderTargetView();
+    ResultOrError<ID3D11RenderTargetView*> GetOrCreateD3D11RenderTargetView(
+        uint32_t depthSlice = 0u);
     ResultOrError<ID3D11DepthStencilView*> GetOrCreateD3D11DepthStencilView(bool depthReadOnly,
                                                                             bool stencilReadOnly);
     ResultOrError<ID3D11UnorderedAccessView*> GetOrCreateD3D11UnorderedAccessView();
@@ -207,10 +212,11 @@ class TextureView final : public TextureViewBase {
     using TextureViewBase::TextureViewBase;
 
     ~TextureView() override;
+    void DestroyImpl() override;
 
     ComPtr<ID3D11ShaderResourceView> mD3d11SharedResourceView;
 
-    ComPtr<ID3D11RenderTargetView> mD3d11RenderTargetView;
+    std::vector<ComPtr<ID3D11RenderTargetView>> mD3d11RenderTargetViews;
 
     bool mD3d11DepthStencilViewDepthReadOnly = false;
     bool mD3d11DepthStencilViewStencilReadOnly = false;

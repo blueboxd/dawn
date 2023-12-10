@@ -520,16 +520,17 @@ void DeviceBase::Destroy() {
     // implementations of DestroyImpl checks that we are disconnected before doing work.
     mState = State::Disconnected;
 
-    // Note: mQueue is not released here since the application may still get it after calling
-    // Destroy() via APIGetQueue.
     mDynamicUploader = nullptr;
     mEmptyBindGroupLayout = nullptr;
     mEmptyPipelineLayout = nullptr;
     mInternalPipelineStore = nullptr;
     mExternalTexturePlaceholderView = nullptr;
 
+    // Note: mQueue is not released here since the application may still get it after calling
+    // Destroy() via APIGetQueue.
     if (mQueue != nullptr) {
         mQueue->AssumeCommandsComplete();
+        mQueue->Destroy();
     }
 
     // Now that the GPU timeline is empty, destroy the backend device.
@@ -1241,7 +1242,7 @@ ShaderModuleBase* DeviceBase::APICreateErrorShaderModule(const ShaderModuleDescr
         ShaderModuleBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     std::unique_ptr<OwnedCompilationMessages> compilationMessages(
         std::make_unique<OwnedCompilationMessages>());
-    compilationMessages->AddMessage(errorMessage, wgpu::CompilationMessageType::Error);
+    compilationMessages->AddUnanchoredMessage(errorMessage, wgpu::CompilationMessageType::Error);
     result->InjectCompilationMessages(std::move(compilationMessages));
 
     std::unique_ptr<ErrorData> errorData =
@@ -1451,9 +1452,6 @@ bool DeviceBase::HasFeature(Feature feature) const {
 void DeviceBase::SetWGSLExtensionAllowList() {
     // Set the WGSL extensions and language features allow list based on device's enabled features
     // and other properties.
-    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalDp4a)) {
-        mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kChromiumExperimentalDp4A);
-    }
     if (mEnabledFeatures.IsEnabled(Feature::ShaderF16)) {
         mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kF16);
     }
@@ -1461,17 +1459,9 @@ void DeviceBase::SetWGSLExtensionAllowList() {
         mWGSLAllowedFeatures.extensions.insert(
             tint::wgsl::Extension::kChromiumExperimentalSubgroups);
     }
-    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalReadWriteStorageTexture)) {
-        mWGSLAllowedFeatures.extensions.insert(
-            tint::wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
-    }
     if (IsToggleEnabled(Toggle::AllowUnsafeAPIs)) {
         mWGSLAllowedFeatures.extensions.insert(
             tint::wgsl::Extension::kChromiumDisableUniformityAnalysis);
-
-        // Allow language features that are still under development.
-        mWGSLAllowedFeatures.features.insert(
-            tint::wgsl::LanguageFeature::kReadonlyAndReadwriteStorageTextures);
     }
     if (mEnabledFeatures.IsEnabled(Feature::DualSourceBlending)) {
         mWGSLAllowedFeatures.extensions.insert(
@@ -1485,6 +1475,13 @@ void DeviceBase::SetWGSLExtensionAllowList() {
     if (mEnabledFeatures.IsEnabled(Feature::FramebufferFetch)) {
         mWGSLAllowedFeatures.extensions.insert(
             tint::wgsl::Extension::kChromiumExperimentalFramebufferFetch);
+    }
+
+    // Language features are enabled instance-wide.
+    // mAdapter is not set for mock test devices.
+    // TODO(crbug.com/dawn/1702): using a mock adapter and instance could avoid the null checking.
+    if (mAdapter != nullptr) {
+        mWGSLAllowedFeatures.features = GetInstance()->GetAllowedWGSLLanguageFeatures();
     }
 }
 
@@ -1544,37 +1541,26 @@ void DeviceBase::EmitLog(WGPULoggingType loggingType, const char* message) {
 
 bool DeviceBase::APIGetLimits(SupportedLimits* limits) const {
     DAWN_ASSERT(limits != nullptr);
-    // TODO(dawn:1955): Revisit after deciding how to improve the validation for ChainedStructOut.
-    MaybeError result =
-        ValidateSTypes(limits->nextInChain, {{wgpu::SType::DawnExperimentalSubgroupLimits}});
-    if (GetPhysicalDevice()->GetInstance()->ConsumedError(std::move(result))) {
+    InstanceBase* instance = GetPhysicalDevice()->GetInstance();
+
+    Unpacked<SupportedLimits> unpacked;
+    if (instance->ConsumedError(ValidateAndUnpack(limits), &unpacked)) {
         return false;
     }
 
     limits->limits = mLimits.v1;
 
-    for (auto* chain = limits->nextInChain; chain; chain = chain->nextInChain) {
-        wgpu::ChainedStructOut originalChain = *chain;
-        switch (chain->sType) {
-            case (wgpu::SType::DawnExperimentalSubgroupLimits): {
-                DawnExperimentalSubgroupLimits* subgroupLimits =
-                    reinterpret_cast<DawnExperimentalSubgroupLimits*>(chain);
-                if (!mToggles.IsEnabled(Toggle::AllowUnsafeAPIs)) {
-                    // If AllowUnsafeAPIs is not enabled, return the default-initialized
-                    // DawnExperimentalSubgroupLimits object, where minSubgroupSize and
-                    // maxSubgroupSize are WGPU_LIMIT_U32_UNDEFINED.
-                    *subgroupLimits = DawnExperimentalSubgroupLimits{};
-                } else {
-                    *subgroupLimits = mLimits.experimentalSubgroupLimits;
-                }
-                break;
-            }
-            default:
-                DAWN_UNREACHABLE();
+    if (auto* subgroupLimits = unpacked.Get<DawnExperimentalSubgroupLimits>()) {
+        if (!mToggles.IsEnabled(Toggle::AllowUnsafeAPIs)) {
+            // If AllowUnsafeAPIs is not enabled, return the default-initialized
+            // DawnExperimentalSubgroupLimits object, where minSubgroupSize and
+            // maxSubgroupSize are WGPU_LIMIT_U32_UNDEFINED.
+            *subgroupLimits = DawnExperimentalSubgroupLimits{};
+        } else {
+            *subgroupLimits = mLimits.experimentalSubgroupLimits;
         }
-        // Recover the original chain
-        *chain = originalChain;
     }
+
     return true;
 }
 
@@ -1609,7 +1595,10 @@ void DeviceBase::APIValidateTextureDescriptor(const TextureDescriptor* desc) {
     } else {
         allowMultiPlanar = AllowMultiPlanarTextureFormat::No;
     }
-    DAWN_UNUSED(ConsumedError(ValidateTextureDescriptor(this, desc, allowMultiPlanar)));
+    Unpacked<TextureDescriptor> unpacked;
+    if (!ConsumedError(ValidateAndUnpack(desc), &unpacked)) {
+        DAWN_UNUSED(ConsumedError(ValidateTextureDescriptor(this, unpacked, allowMultiPlanar)));
+    }
 }
 
 QueueBase* DeviceBase::GetQueue() const {
@@ -1887,8 +1876,9 @@ ResultOrError<Ref<SwapChainBase>> DeviceBase::CreateSwapChain(
     return newSwapChain;
 }
 
-ResultOrError<Ref<TextureBase>> DeviceBase::CreateTexture(const TextureDescriptor* descriptor) {
+ResultOrError<Ref<TextureBase>> DeviceBase::CreateTexture(const TextureDescriptor* rawDescriptor) {
     DAWN_TRY(ValidateIsAlive());
+    Unpacked<TextureDescriptor> descriptor;
     if (IsValidationEnabled()) {
         AllowMultiPlanarTextureFormat allowMultiPlanar;
         if (HasFeature(Feature::MultiPlanarFormatExtendedUsages)) {
@@ -1896,8 +1886,12 @@ ResultOrError<Ref<TextureBase>> DeviceBase::CreateTexture(const TextureDescripto
         } else {
             allowMultiPlanar = AllowMultiPlanarTextureFormat::No;
         }
+        DAWN_TRY_ASSIGN_CONTEXT(descriptor, ValidateAndUnpack(rawDescriptor), "validating %s.",
+                                rawDescriptor);
         DAWN_TRY_CONTEXT(ValidateTextureDescriptor(this, descriptor, allowMultiPlanar),
-                         "validating %s.", descriptor);
+                         "validating %s.", rawDescriptor);
+    } else {
+        descriptor = Unpack(rawDescriptor);
     }
     return CreateTextureImpl(descriptor);
 }
@@ -2126,13 +2120,6 @@ uint64_t DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil() const {
     // For depth-stencil texture, buffer offset must be a multiple of 4, which is required
     // by WebGPU and Vulkan SPEC.
     return 4u;
-}
-
-bool DeviceBase::WaitAnyImpl(size_t futureCount,
-                             TrackedFutureWaitInfo* futures,
-                             Nanoseconds timeout) {
-    // Default for backends which don't actually need to do anything special in this case.
-    return WaitAnySystemEvent(futureCount, futures, timeout);
 }
 
 MaybeError DeviceBase::CopyFromStagingToBuffer(BufferBase* source,

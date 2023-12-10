@@ -52,8 +52,6 @@ libtint_source_set("wgsl") {
     "diagnostic_severity.h",
     "extension.cc",
     "extension.h",
-    "language_feature.cc",
-    "language_feature.h",
   ]
   deps = [
     "${tint_src_dir}/utils/containers",
@@ -73,6 +71,7 @@ if (tint_build_unittests) {
       "diagnostic_rule_test.cc",
       "diagnostic_severity_test.cc",
       "extension_test.cc",
+      "language_feature_status_test.cc",
       "language_feature_test.cc",
       "wgsl_test.cc",
     ]
@@ -86,6 +85,7 @@ if (tint_build_unittests) {
       "${tint_src_dir}/lang/wgsl",
       "${tint_src_dir}/lang/wgsl/ast",
       "${tint_src_dir}/lang/wgsl/common",
+      "${tint_src_dir}/lang/wgsl/features",
       "${tint_src_dir}/lang/wgsl/helpers:unittests",
       "${tint_src_dir}/lang/wgsl/program",
       "${tint_src_dir}/lang/wgsl/reader/lower",
@@ -150,6 +150,7 @@ tint_fuzz_source_set("fuzz") {
   sources = []
   deps = [
     "${tint_src_dir}/api/common",
+    "${tint_src_dir}/cmd/fuzz/ir:fuzz",
     "${tint_src_dir}/lang/core",
     "${tint_src_dir}/lang/core/constant",
     "${tint_src_dir}/lang/core/ir",
@@ -157,13 +158,14 @@ tint_fuzz_source_set("fuzz") {
     "${tint_src_dir}/lang/wgsl",
     "${tint_src_dir}/lang/wgsl/ast",
     "${tint_src_dir}/lang/wgsl/common",
-    "${tint_src_dir}/lang/wgsl/helpers",
+    "${tint_src_dir}/lang/wgsl/features",
     "${tint_src_dir}/lang/wgsl/program",
     "${tint_src_dir}/lang/wgsl/reader/lower",
     "${tint_src_dir}/lang/wgsl/resolver",
     "${tint_src_dir}/lang/wgsl/sem",
     "${tint_src_dir}/lang/wgsl/writer/ir_to_program",
     "${tint_src_dir}/lang/wgsl/writer/raise",
+    "${tint_src_dir}/utils/bytes",
     "${tint_src_dir}/utils/containers",
     "${tint_src_dir}/utils/diagnostic",
     "${tint_src_dir}/utils/ice",
@@ -181,7 +183,6 @@ tint_fuzz_source_set("fuzz") {
 
   if (tint_build_wgsl_reader) {
     deps += [
-      "${tint_src_dir}/cmd/fuzz/wgsl:fuzz",
       "${tint_src_dir}/lang/wgsl/reader/parser",
       "${tint_src_dir}/lang/wgsl/reader/program_to_ir",
     ]

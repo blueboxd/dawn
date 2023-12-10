@@ -62,7 +62,6 @@ class RenderPipeline final : public RenderPipelineBase {
     uint32_t GetMtlVertexBufferIndex(VertexBufferSlot slot) const;
 
     wgpu::ShaderStage GetStagesRequiringStorageBufferLength() const;
-    static constexpr wgpu::TextureFormat kImplicitPLSSlotFormat = wgpu::TextureFormat::R32Uint;
 
     MaybeError Initialize() override;
 
@@ -76,7 +75,7 @@ class RenderPipeline final : public RenderPipelineBase {
     MTLCullMode mMtlCullMode;
     NSPRef<id<MTLRenderPipelineState>> mMtlRenderPipelineState;
     NSPRef<id<MTLDepthStencilState>> mMtlDepthStencilState;
-    ityp::array<VertexBufferSlot, uint32_t, kMaxVertexBuffers> mMtlVertexBufferIndices;
+    PerVertexBuffer<uint32_t> mMtlVertexBufferIndices;
 
     wgpu::ShaderStage mStagesRequiringStorageBufferLength = wgpu::ShaderStage::None;
 };

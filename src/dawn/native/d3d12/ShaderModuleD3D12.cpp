@@ -128,8 +128,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     SingleShaderStage stage,
     const PipelineLayout* layout,
     uint32_t compileFlags,
-    const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>&
-        usedInterstageVariables) {
+    const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>& usedInterstageVariables,
+    std::optional<uint32_t> maxSubgroupSizeForFullSubgroups) {
     Device* device = ToBackend(GetDevice());
     TRACE_EVENT0(device->GetPlatform(), General, "ShaderModuleD3D12::Compile");
     DAWN_ASSERT(!IsError());
@@ -142,6 +142,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.shaderModel = device->GetDeviceInfo().shaderModel;
     req.hlsl.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
     req.hlsl.dumpShaders = device->IsToggleEnabled(Toggle::DumpShaders);
+    req.hlsl.maxSubgroupSizeForFullSubgroups = maxSubgroupSizeForFullSubgroups;
 
     req.bytecode.hasShaderF16Feature = device->HasFeature(Feature::ShaderF16);
     req.bytecode.compileFlags = compileFlags;
@@ -314,6 +315,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
 
     req.hlsl.tintOptions.polyfill_reflect_vec2_f32 =
         device->IsToggleEnabled(Toggle::D3D12PolyfillReflectVec2F32);
+    req.hlsl.tintOptions.polyfill_dot_4x8_packed =
+        device->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
 
     const CombinedLimits& limits = device->GetLimits();
     req.hlsl.limits = LimitsForCompilationRequest::Create(limits.v1);

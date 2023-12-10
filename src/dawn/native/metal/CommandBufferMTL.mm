@@ -179,8 +179,7 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
     NSRef<MTLRenderPassDescriptor> descriptorRef = [MTLRenderPassDescriptor renderPassDescriptor];
     MTLRenderPassDescriptor* descriptor = descriptorRef.Get();
 
-    for (ColorAttachmentIndex attachment :
-         IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+    for (auto attachment : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         uint8_t i = static_cast<uint8_t>(attachment);
         auto& attachmentInfo = renderPass->colorAttachments[attachment];
 
@@ -205,6 +204,8 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
         descriptor.colorAttachments[i].texture = colorAttachment.texture.Get();
         descriptor.colorAttachments[i].level = colorAttachment.baseMipLevel;
         descriptor.colorAttachments[i].slice = colorAttachment.baseArrayLayer;
+        // We'd validated that depthSlice must be undefined and set to 0 for 2d texture views.
+        descriptor.colorAttachments[i].depthPlane = attachmentInfo.depthSlice;
 
         bool hasResolveTarget = attachmentInfo.resolveTarget != nullptr;
         if (hasResolveTarget) {
@@ -352,7 +353,7 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
                     DAWN_UNREACHABLE();
                 }
                 texDesc.pixelFormat =
-                    MetalPixelFormat(device, RenderPipeline::kImplicitPLSSlotFormat);
+                    MetalPixelFormat(device, RenderPipelineBase::kImplicitPLSSlotFormat);
 
                 NSPRef<id<MTLTexture>> implicitAttachment =
                     AcquireNSPRef([device->GetMTLDevice() newTextureWithDescriptor:texDesc]);
@@ -684,14 +685,13 @@ class VertexBufferTracker {
         // When a new pipeline is bound we must set all the vertex buffers again because
         // they might have been offset by the pipeline layout, and they might be packed
         // differently from the previous pipeline.
-        mDirtyVertexBuffers |= pipeline->GetVertexBufferSlotsUsed();
+        mDirtyVertexBuffers |= pipeline->GetVertexBuffersUsed();
     }
 
     void Apply(id<MTLRenderCommandEncoder> encoder,
                RenderPipeline* pipeline,
                bool enableVertexPulling) {
-        const auto& vertexBuffersToApply =
-            mDirtyVertexBuffers & pipeline->GetVertexBufferSlotsUsed();
+        const auto& vertexBuffersToApply = mDirtyVertexBuffers & pipeline->GetVertexBuffersUsed();
 
         for (VertexBufferSlot slot : IterateBitSet(vertexBuffersToApply)) {
             uint32_t metalIndex = pipeline->GetMtlVertexBufferIndex(slot);
@@ -713,10 +713,10 @@ class VertexBufferTracker {
 
   private:
     // All the indices in these arrays are Dawn vertex buffer indices
-    ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> mDirtyVertexBuffers;
-    ityp::array<VertexBufferSlot, id<MTLBuffer>, kMaxVertexBuffers> mVertexBuffers;
-    ityp::array<VertexBufferSlot, NSUInteger, kMaxVertexBuffers> mVertexBufferOffsets;
-    ityp::array<VertexBufferSlot, uint32_t, kMaxVertexBuffers> mVertexBufferBindingSizes;
+    VertexBufferMask mDirtyVertexBuffers;
+    PerVertexBuffer<id<MTLBuffer>> mVertexBuffers;
+    PerVertexBuffer<NSUInteger> mVertexBufferOffsets;
+    PerVertexBuffer<uint32_t> mVertexBufferBindingSizes;
 
     StorageBufferLengthTracker* mLengthTracker;
 };

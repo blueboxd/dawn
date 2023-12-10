@@ -353,7 +353,7 @@ MaybeError RenderPipeline::Initialize() {
         uint32_t mtlVertexBufferIndex =
             ToBackend(GetLayout())->GetBufferBindingCount(SingleShaderStage::Vertex);
 
-        for (VertexBufferSlot slot : IterateBitSet(GetVertexBufferSlotsUsed())) {
+        for (VertexBufferSlot slot : IterateBitSet(GetVertexBuffersUsed())) {
             mMtlVertexBufferIndices[slot] = mtlVertexBufferIndex;
             mtlVertexBufferIndex++;
         }
@@ -402,7 +402,7 @@ MaybeError RenderPipeline::Initialize() {
         }
 
         const auto& fragmentOutputMask = fragmentStage.metadata->fragmentOutputMask;
-        for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
+        for (auto i : IterateBitSet(GetColorAttachmentsMask())) {
             descriptorMTL.colorAttachments[static_cast<uint8_t>(i)].pixelFormat =
                 MetalPixelFormat(GetDevice(), GetColorAttachmentFormat(i));
             const ColorTargetState* descriptor = GetColorTargetState(i);
@@ -511,7 +511,7 @@ wgpu::ShaderStage RenderPipeline::GetStagesRequiringStorageBufferLength() const 
 NSRef<MTLVertexDescriptor> RenderPipeline::MakeVertexDesc() const {
     MTLVertexDescriptor* mtlVertexDescriptor = [MTLVertexDescriptor new];
 
-    for (VertexBufferSlot slot : IterateBitSet(GetVertexBufferSlotsUsed())) {
+    for (VertexBufferSlot slot : IterateBitSet(GetVertexBuffersUsed())) {
         const VertexBufferInfo& info = GetVertexBuffer(slot);
 
         MTLVertexBufferLayoutDescriptor* layoutDesc = [MTLVertexBufferLayoutDescriptor new];

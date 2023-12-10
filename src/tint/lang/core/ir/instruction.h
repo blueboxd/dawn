@@ -32,6 +32,7 @@
 
 #include "src/tint/lang/core/ir/instruction_result.h"
 #include "src/tint/lang/core/ir/value.h"
+#include "src/tint/utils/containers/const_propagating_ptr.h"
 #include "src/tint/utils/containers/enum_set.h"
 #include "src/tint/utils/rtti/castable.h"
 
@@ -59,6 +60,14 @@ class Instruction : public Castable<Instruction> {
 
     /// @returns the operands of the instruction
     virtual VectorRef<const ir::Value*> Operands() const = 0;
+
+    /// Replaces the operands of the instruction
+    /// @param operands the new operands of the instruction
+    virtual void SetOperands(VectorRef<ir::Value*> operands) = 0;
+
+    /// Replaces the results of the instruction
+    /// @param results the new results of the instruction
+    virtual void SetResults(VectorRef<ir::InstructionResult*> results) = 0;
 
     /// @returns the result values for this instruction
     virtual VectorRef<InstructionResult*> Results() = 0;
@@ -117,7 +126,7 @@ class Instruction : public Castable<Instruction> {
     /// @param idx the index of the operand
     /// @returns the operand with index @p idx, or `nullptr` if there are no operands or the index
     /// is out of bounds.
-    const Value* Operand(size_t idx = 0) const {
+    const Value* Operand(size_t idx) const {
         auto res = Operands();
         return idx < res.Length() ? res[idx] : nullptr;
     }
@@ -125,7 +134,7 @@ class Instruction : public Castable<Instruction> {
     /// @param idx the index of the result
     /// @returns the result with index @p idx, or `nullptr` if there are no results or the index is
     /// out of bounds.
-    Value* Result(size_t idx) {
+    InstructionResult* Result(size_t idx) {
         auto res = Results();
         return idx < res.Length() ? res[idx] : nullptr;
     }
@@ -133,15 +142,15 @@ class Instruction : public Castable<Instruction> {
     /// @param idx the index of the result
     /// @returns the result with index @p idx, or `nullptr` if there are no results or the index is
     /// out of bounds.
-    const Value* Result(size_t idx = 0) const {
+    const InstructionResult* Result(size_t idx) const {
         auto res = Results();
         return idx < res.Length() ? res[idx] : nullptr;
     }
 
     /// Pointer to the next instruction in the list
-    Instruction* next = nullptr;
+    ConstPropagatingPtr<Instruction> next;
     /// Pointer to the previous instruction in the list
-    Instruction* prev = nullptr;
+    ConstPropagatingPtr<Instruction> prev;
 
   protected:
     /// Flags applied to an Instruction
@@ -156,7 +165,7 @@ class Instruction : public Castable<Instruction> {
     Instruction();
 
     /// The block that owns this instruction
-    ir::Block* block_ = nullptr;
+    ConstPropagatingPtr<ir::Block> block_;
 
     /// Bitset of instruction flags
     tint::EnumSet<Flag> flags_;

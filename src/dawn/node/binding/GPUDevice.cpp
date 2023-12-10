@@ -252,6 +252,17 @@ interop::Interface<interop::GPUTexture> GPUDevice::createTexture(
         !conv(desc.viewFormats, desc.viewFormatCount, descriptor.viewFormats)) {
         return {};
     }
+
+    wgpu::TextureBindingViewDimensionDescriptor texture_binding_view_dimension_desc{};
+    wgpu::TextureViewDimension texture_binding_view_dimension;
+    if (descriptor.textureBindingViewDimension.has_value() &&
+        conv(texture_binding_view_dimension, descriptor.textureBindingViewDimension)) {
+        texture_binding_view_dimension_desc.textureBindingViewDimension =
+            texture_binding_view_dimension;
+        desc.nextInChain =
+            reinterpret_cast<wgpu::ChainedStruct*>(&texture_binding_view_dimension_desc);
+    }
+
     return interop::GPUTexture::Create<GPUTexture>(env, device_, desc,
                                                    device_.CreateTexture(&desc));
 }
@@ -377,13 +388,11 @@ GPUDevice::createComputePipelineAsync(Napi::Env env,
                                       interop::GPUComputePipelineDescriptor descriptor) {
     using Promise = interop::Promise<interop::Interface<interop::GPUComputePipeline>>;
 
-    Converter conv(env, device_, true);
+    Converter conv(env, device_);
 
     wgpu::ComputePipelineDescriptor desc{};
     if (!conv(desc, descriptor)) {
-        Promise promise(env, PROMISE_INFO);
-        promise.Reject(conv.AcquireException());
-        return promise;
+        return {env, interop::kUnusedPromise};
     }
 
     struct Context {
@@ -422,13 +431,11 @@ GPUDevice::createRenderPipelineAsync(Napi::Env env,
                                      interop::GPURenderPipelineDescriptor descriptor) {
     using Promise = interop::Promise<interop::Interface<interop::GPURenderPipeline>>;
 
-    Converter conv(env, device_, true);
+    Converter conv(env, device_);
 
     wgpu::RenderPipelineDescriptor desc{};
     if (!conv(desc, descriptor)) {
-        Promise promise(env, PROMISE_INFO);
-        promise.Reject(conv.AcquireException());
-        return promise;
+        return {env, interop::kUnusedPromise};
     }
 
     struct Context {

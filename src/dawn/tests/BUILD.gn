@@ -174,6 +174,16 @@ template("dawn_test") {
 
     configs += [ "${dawn_root}/src/dawn/common:internal_config" ]
 
+    if (dawn_tests_use_angle && defined(dawn_angle_dir)) {
+      if (!defined(data_deps)) {
+        data_deps = []
+      }
+      data_deps += [
+        "${dawn_angle_dir}:libEGL",
+        "${dawn_angle_dir}:libGLESv2",
+      ]
+    }
+
     # Running Dawn tests within Chromium in Windows may require DXC, copy DXC
     # binary from Windows SDK.
     if (build_with_chromium && is_win &&
@@ -308,6 +318,7 @@ dawn_test("dawn_unittests") {
     "unittests/ContentLessObjectCacheTests.cpp",
     "unittests/EnumClassBitmasksTests.cpp",
     "unittests/EnumMaskIteratorTests.cpp",
+    "unittests/EnumeratorTests.cpp",
     "unittests/ErrorTests.cpp",
     "unittests/FeatureTests.cpp",
     "unittests/GPUInfoTests.cpp",
@@ -325,6 +336,7 @@ dawn_test("dawn_unittests") {
     "unittests/PerStageTests.cpp",
     "unittests/PerThreadProcTests.cpp",
     "unittests/PlacementAllocatedTests.cpp",
+    "unittests/RangeTests.cpp",
     "unittests/RefBaseTests.cpp",
     "unittests/RefCountedTests.cpp",
     "unittests/ResultTests.cpp",
@@ -397,6 +409,7 @@ dawn_test("dawn_unittests") {
     "unittests/validation/ValidationTest.h",
     "unittests/validation/VertexBufferValidationTests.cpp",
     "unittests/validation/VertexStateValidationTests.cpp",
+    "unittests/validation/WGSLFeatureValidationTests.cpp",
     "unittests/validation/WritableBufferBindingAliasingValidationTests.cpp",
     "unittests/validation/WritableTextureBindingAliasingValidationTests.cpp",
     "unittests/validation/WriteBufferTests.cpp",
@@ -556,7 +569,7 @@ source_set("end2end_tests_sources") {
     "end2end/DynamicBufferOffsetTests.cpp",
     "end2end/EntryPointTests.cpp",
     "end2end/EventTests.cpp",
-    "end2end/ExperimentalDP4aTests.cpp",
+    "end2end/ExperimentalSubgroupsTests.cpp",
     "end2end/ExternalTextureTests.cpp",
     "end2end/FirstIndexOffsetTests.cpp",
     "end2end/FragDepthTests.cpp",
@@ -566,12 +579,14 @@ source_set("end2end_tests_sources") {
     "end2end/IndexFormatTests.cpp",
     "end2end/MaxLimitTests.cpp",
     "end2end/MemoryAllocationStressTests.cpp",
+    "end2end/MemoryHeapPropertiesTests.cpp",
     "end2end/MultisampledRenderingTests.cpp",
     "end2end/MultisampledSamplingTests.cpp",
     "end2end/MultithreadTests.cpp",
     "end2end/NonzeroBufferCreationTests.cpp",
     "end2end/NonzeroTextureCreationTests.cpp",
     "end2end/OpArrayLengthTests.cpp",
+    "end2end/Packed4x8IntegerDotProductTests.cpp",
     "end2end/PipelineCachingTests.cpp",
     "end2end/PipelineLayoutTests.cpp",
     "end2end/PixelLocalStorageTests.cpp",
@@ -592,8 +607,6 @@ source_set("end2end_tests_sources") {
     "end2end/ShaderF16Tests.cpp",
     "end2end/ShaderTests.cpp",
     "end2end/ShaderValidationTests.cpp",
-    "end2end/SharedTextureMemoryTests.cpp",
-    "end2end/SharedTextureMemoryTests.h",
     "end2end/StorageTextureTests.cpp",
     "end2end/SubresourceRenderAttachmentTests.cpp",
     "end2end/Texture3DTests.cpp",
@@ -628,10 +641,6 @@ source_set("end2end_tests_sources") {
     sources += [ "end2end/D3D12CachingTests.cpp" ]
   }
 
-  if (is_win) {
-    sources += [ "end2end/SharedTextureMemoryTests_win.cpp" ]
-  }
-
   if (is_mac || is_ios) {
     if (dawn_enable_metal) {
       sources += [
@@ -639,10 +648,7 @@ source_set("end2end_tests_sources") {
         "end2end/VideoViewsTests_mac.cpp",
       ]
     }
-    sources += [
-      "end2end/BufferHostMappedPointerTests_apple.mm",
-      "end2end/SharedTextureMemoryTests_apple.mm",
-    ]
+    sources += [ "end2end/BufferHostMappedPointerTests_apple.mm" ]
 
     frameworks = [ "IOSurface.framework" ]
 
@@ -697,8 +703,19 @@ source_set("white_box_tests_sources") {
     "${dawn_root}/src/dawn/wire",
   ]
 
-  sources = []
+  sources = [
+    "white_box/SharedTextureMemoryTests.cpp",
+    "white_box/SharedTextureMemoryTests.h",
+  ]
   libs = []
+
+  if (is_mac || is_ios) {
+    sources += [ "white_box/SharedTextureMemoryTests_apple.mm" ]
+  }
+
+  if (is_win) {
+    sources += [ "white_box/SharedTextureMemoryTests_win.cpp" ]
+  }
 
   if (dawn_enable_vulkan) {
     deps += [ "${dawn_vulkan_headers_dir}:vulkan_headers" ]
@@ -712,6 +729,15 @@ source_set("white_box_tests_sources") {
         "white_box/VulkanImageWrappingTests_OpaqueFD.cpp",
         "white_box/VulkanImageWrappingTests_OpaqueFD.h",
       ]
+
+      sources += [
+        "white_box/SharedTextureMemoryTests_dmabuf.cpp",
+        "white_box/SharedTextureMemoryTests_opaquefd.cpp",
+      ]
+    }
+
+    if (is_android) {
+      sources += [ "white_box/SharedTextureMemoryTests_android.cpp" ]
     }
 
     if (dawn_enable_error_injection) {

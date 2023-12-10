@@ -547,6 +547,13 @@ class PhysicalDevice : public PhysicalDeviceBase {
             EnableFeature(Feature::Depth32FloatStencil8);
         }
 
+// TODO(dawn:2249): Enable on iOS. Some XCode or SDK versions seem to not match the docs.
+#if DAWN_PLATFORM_IS(MACOS)
+        if (@available(macOS 10.12, iOS 16.0, *)) {
+            EnableFeature(Feature::AdapterPropertiesMemoryHeaps);
+        }
+#endif
+
         // Uses newTextureWithDescriptor::iosurface::plane which is available
         // on ios 11.0+ and macOS 11.0+
         if (@available(macOS 10.11, iOS 11.0, *)) {
@@ -584,7 +591,6 @@ class PhysicalDevice : public PhysicalDeviceBase {
         EnableFeature(Feature::SurfaceCapabilities);
         EnableFeature(Feature::MSAARenderToSingleSampled);
         EnableFeature(Feature::DualSourceBlending);
-        EnableFeature(Feature::ChromiumExperimentalDp4a);
 
         // SIMD-scoped permute operations is supported by GPU family Metal3, Apple6, Apple7, Apple8,
         // and Mac2.
@@ -609,6 +615,16 @@ class PhysicalDevice : public PhysicalDeviceBase {
         EnableFeature(Feature::Norm16TextureFormats);
 
         EnableFeature(Feature::HostMappedPointer);
+
+#if DAWN_PLATFORM_IS(IOS)
+        EnableFeature(Feature::BufferMapExtendedUsages);
+#else
+        if (@available(macOS 10.15, iOS 13.0, *)) {
+            if ([*mDevice hasUnifiedMemory]) {
+                EnableFeature(Feature::BufferMapExtendedUsages);
+            }
+        }
+#endif
     }
 
     void InitializeVendorArchitectureImpl() override {
@@ -873,6 +889,52 @@ class PhysicalDevice : public PhysicalDeviceBase {
         wgpu::FeatureName feature,
         const TogglesState& toggles) const override {
         return {};
+    }
+
+    void PopulateMemoryHeapInfo(AdapterPropertiesMemoryHeaps* memoryHeapProperties) const override {
+        if ([*mDevice hasUnifiedMemory]) {
+            auto* heapInfo = new MemoryHeapInfo[1];
+            memoryHeapProperties->heapCount = 1;
+            memoryHeapProperties->heapInfo = heapInfo;
+
+            heapInfo[0].properties =
+                wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                wgpu::HeapProperty::HostCoherent | wgpu::HeapProperty::HostCached;
+// TODO(dawn:2249): Enable on iOS. Some XCode or SDK versions seem to not match the docs.
+#if DAWN_PLATFORM_IS(MACOS)
+            if (@available(macOS 10.12, iOS 16.0, *)) {
+                heapInfo[0].size = [*mDevice recommendedMaxWorkingSetSize];
+            } else
+#endif
+            {
+                // Since AdapterPropertiesMemoryHeaps is already gated on the
+                // availability and #ifdef above, we should never reach this case, however
+                // excluding the conditional causes build errors.
+                DAWN_UNREACHABLE();
+            }
+        } else {
+#if DAWN_PLATFORM_IS(MACOS)
+            auto* heapInfo = new MemoryHeapInfo[2];
+            memoryHeapProperties->heapCount = 2;
+            memoryHeapProperties->heapInfo = heapInfo;
+
+            heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
+            heapInfo[0].size = [*mDevice recommendedMaxWorkingSetSize];
+
+            mach_msg_type_number_t hostBasicInfoMsg = HOST_BASIC_INFO_COUNT;
+            host_basic_info_data_t hostInfo{};
+            DAWN_CHECK(host_info(mach_host_self(), HOST_BASIC_INFO,
+                                 reinterpret_cast<host_info_t>(&hostInfo),
+                                 &hostBasicInfoMsg) == KERN_SUCCESS);
+
+            heapInfo[1].properties = wgpu::HeapProperty::HostVisible |
+                                     wgpu::HeapProperty::HostCoherent |
+                                     wgpu::HeapProperty::HostCached;
+            heapInfo[1].size = hostInfo.max_mem;
+#else
+            DAWN_UNREACHABLE();
+#endif
+        }
     }
 
     NSPRef<id<MTLDevice>> mDevice;
