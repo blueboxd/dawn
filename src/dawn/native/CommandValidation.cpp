@@ -1,16 +1,29 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/CommandValidation.h"
 
@@ -337,13 +350,15 @@ MaybeError ValidateImageCopyTexture(DeviceBase const* device,
                     textureCopy.mipLevel, texture->GetNumMipLevels(), texture);
 
     DAWN_TRY(ValidateTextureAspect(textureCopy.aspect));
-    DAWN_INVALID_IF(SelectFormatAspects(texture->GetFormat(), textureCopy.aspect) == Aspect::None,
+
+    const auto aspect = SelectFormatAspects(texture->GetFormat(), textureCopy.aspect);
+    DAWN_INVALID_IF(aspect == Aspect::None,
                     "%s format (%s) does not have the selected aspect (%s).", texture,
                     texture->GetFormat().format, textureCopy.aspect);
 
     if (texture->GetSampleCount() > 1 || texture->GetFormat().HasDepthOrStencil()) {
         Extent3D subresourceSize =
-            texture->GetMipLevelSingleSubresourcePhysicalSize(textureCopy.mipLevel);
+            texture->GetMipLevelSingleSubresourcePhysicalSize(textureCopy.mipLevel, aspect);
         DAWN_ASSERT(texture->GetDimension() == wgpu::TextureDimension::e2D);
         DAWN_INVALID_IF(
             textureCopy.origin.x != 0 || textureCopy.origin.y != 0 ||
@@ -363,9 +378,14 @@ MaybeError ValidateTextureCopyRange(DeviceBase const* device,
                                     const ImageCopyTexture& textureCopy,
                                     const Extent3D& copySize) {
     const TextureBase* texture = textureCopy.texture;
+    const Format& format = textureCopy.texture->GetFormat();
+    const Aspect aspect = ConvertAspect(format, textureCopy.aspect);
+
+    DAWN_ASSERT(!format.IsMultiPlanar() || HasOneBit(aspect));
 
     // Validation for the copy being in-bounds:
-    Extent3D mipSize = texture->GetMipLevelSingleSubresourcePhysicalSize(textureCopy.mipLevel);
+    Extent3D mipSize =
+        texture->GetMipLevelSingleSubresourcePhysicalSize(textureCopy.mipLevel, aspect);
     // For 1D/2D textures, include the array layer as depth so it can be checked with other
     // dimensions.
     if (texture->GetDimension() != wgpu::TextureDimension::e3D) {
@@ -386,7 +406,6 @@ MaybeError ValidateTextureCopyRange(DeviceBase const* device,
         &textureCopy.origin, &copySize, texture, textureCopy.mipLevel, &mipSize);
 
     // Validation for the texel block alignments:
-    const Format& format = textureCopy.texture->GetFormat();
     if (format.isCompressed) {
         const TexelBlockInfo& blockInfo = format.GetAspectInfo(textureCopy.aspect).block;
         DAWN_INVALID_IF(
@@ -487,7 +506,7 @@ MaybeError ValidateTextureToTextureCopyCommonRestrictions(const ImageCopyTexture
     if (src.texture == dst.texture) {
         switch (src.texture->GetDimension()) {
             case wgpu::TextureDimension::e1D:
-                DAWN_ASSERT(src.mipLevel == 0 && src.origin.z == 0 && dst.origin.z == 0);
+                DAWN_ASSERT(src.mipLevel == 0);
                 return DAWN_VALIDATION_ERROR("Copy is from %s to itself.", src.texture);
 
             case wgpu::TextureDimension::e2D:

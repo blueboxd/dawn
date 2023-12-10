@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/d3d12/CommandBufferD3D12.h"
 
@@ -56,8 +69,6 @@ D3D12_QUERY_TYPE D3D12QueryType(wgpu::QueryType type) {
     switch (type) {
         case wgpu::QueryType::Occlusion:
             return D3D12_QUERY_TYPE_BINARY_OCCLUSION;
-        case wgpu::QueryType::PipelineStatistics:
-            return D3D12_QUERY_TYPE_PIPELINE_STATISTICS;
         case wgpu::QueryType::Timestamp:
             return D3D12_QUERY_TYPE_TIMESTAMP;
     }
@@ -69,8 +80,8 @@ bool CanUseCopyResource(const TextureCopy& src, const TextureCopy& dst, const Ex
     DAWN_ASSERT(src.texture->GetFormat().CopyCompatibleWith(dst.texture->GetFormat()));
     DAWN_ASSERT(src.aspect == dst.aspect);
 
-    const Extent3D& srcSize = src.texture->GetSize();
-    const Extent3D& dstSize = dst.texture->GetSize();
+    const Extent3D& srcSize = src.texture->GetSize(src.aspect);
+    const Extent3D& dstSize = dst.texture->GetSize(dst.aspect);
 
     // https://docs.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12graphicscommandlist-copyresource
     // In order to use D3D12's copy resource, the textures must be the same dimensions, and
@@ -839,7 +850,8 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                     GetSubresourcesAffectedByCopy(copy->destination, copy->copySize);
 
                 if (IsCompleteSubresourceCopiedTo(texture, copy->copySize,
-                                                  copy->destination.mipLevel)) {
+                                                  copy->destination.mipLevel,
+                                                  copy->destination.aspect)) {
                     texture->SetIsSubresourceContentInitialized(true, subresources);
                 } else {
                     DAWN_TRY(
@@ -913,7 +925,8 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
 
                 DAWN_TRY(source->EnsureSubresourceContentInitialized(commandContext, srcRange));
                 if (IsCompleteSubresourceCopiedTo(destination, copy->copySize,
-                                                  copy->destination.mipLevel)) {
+                                                  copy->destination.mipLevel,
+                                                  copy->destination.aspect)) {
                     destination->SetIsSubresourceContentInitialized(true, dstRange);
                 } else {
                     DAWN_TRY(
@@ -1168,9 +1181,9 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
     ID3D12GraphicsCommandList* commandList = commandContext->GetCommandList();
 
     // Write timestamp at the beginning of compute pass if it's set.
-    if (computePass->beginTimestamp.querySet.Get() != nullptr) {
-        RecordWriteTimestampCmd(commandList, computePass->beginTimestamp.querySet.Get(),
-                                computePass->beginTimestamp.queryIndex);
+    if (computePass->timestampWrites.beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
+        RecordWriteTimestampCmd(commandList, computePass->timestampWrites.querySet.Get(),
+                                computePass->timestampWrites.beginningOfPassWriteIndex);
     }
 
     Command type;
@@ -1216,9 +1229,11 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
                 mCommands.NextCommand<EndComputePassCmd>();
 
                 // Write timestamp at the end of compute pass if it's set.
-                if (computePass->endTimestamp.querySet.Get() != nullptr) {
-                    RecordWriteTimestampCmd(commandList, computePass->endTimestamp.querySet.Get(),
-                                            computePass->endTimestamp.queryIndex);
+                if (computePass->timestampWrites.endOfPassWriteIndex !=
+                    wgpu::kQuerySetIndexUndefined) {
+                    RecordWriteTimestampCmd(commandList,
+                                            computePass->timestampWrites.querySet.Get(),
+                                            computePass->timestampWrites.endOfPassWriteIndex);
                 }
                 return {};
             }
@@ -1492,9 +1507,9 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
     ID3D12GraphicsCommandList* commandList = commandContext->GetCommandList();
 
     // Write timestamp at the beginning of render pass if it's set.
-    if (renderPass->beginTimestamp.querySet.Get() != nullptr) {
-        RecordWriteTimestampCmd(commandList, renderPass->beginTimestamp.querySet.Get(),
-                                renderPass->beginTimestamp.queryIndex);
+    if (renderPass->timestampWrites.beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
+        RecordWriteTimestampCmd(commandList, renderPass->timestampWrites.querySet.Get(),
+                                renderPass->timestampWrites.beginningOfPassWriteIndex);
     }
 
     // Set up default dynamic state
@@ -1671,9 +1686,10 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
                 mCommands.NextCommand<EndRenderPassCmd>();
 
                 // Write timestamp at the end of render pass if it's set.
-                if (renderPass->endTimestamp.querySet.Get() != nullptr) {
-                    RecordWriteTimestampCmd(commandList, renderPass->endTimestamp.querySet.Get(),
-                                            renderPass->endTimestamp.queryIndex);
+                if (renderPass->timestampWrites.endOfPassWriteIndex !=
+                    wgpu::kQuerySetIndexUndefined) {
+                    RecordWriteTimestampCmd(commandList, renderPass->timestampWrites.querySet.Get(),
+                                            renderPass->timestampWrites.endOfPassWriteIndex);
                 }
 
                 if (useRenderPass) {

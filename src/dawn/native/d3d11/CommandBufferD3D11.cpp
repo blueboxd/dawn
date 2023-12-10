@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/d3d11/CommandBufferD3D11.h"
 
@@ -61,7 +74,7 @@ class VertexBufferTracker {
         mD3D11Buffers = {};
         mStrides = {};
         mOffsets = {};
-        mCommandContext->GetD3D11DeviceContext()->IASetVertexBuffers(
+        mCommandContext->GetD3D11DeviceContext4()->IASetVertexBuffers(
             0, kMaxVertexBuffers, mD3D11Buffers.data(), mStrides.data(), mOffsets.data());
     }
 
@@ -82,7 +95,7 @@ class VertexBufferTracker {
             }
         }
 
-        mCommandContext->GetD3D11DeviceContext()->IASetVertexBuffers(
+        mCommandContext->GetD3D11DeviceContext4()->IASetVertexBuffers(
             0, kMaxVertexBuffers, mD3D11Buffers.data(), mStrides.data(), mOffsets.data());
     }
 
@@ -397,8 +410,8 @@ MaybeError CommandBuffer::ExecuteComputePass(CommandRecordingContext* commandCon
                 DAWN_TRY(bindGroupTracker.Apply());
 
                 DAWN_TRY(RecordNumWorkgroupsForDispatch(lastPipeline, commandContext, dispatch));
-                commandContext->GetD3D11DeviceContext()->Dispatch(dispatch->x, dispatch->y,
-                                                                  dispatch->z);
+                commandContext->GetD3D11DeviceContext4()->Dispatch(dispatch->x, dispatch->y,
+                                                                   dispatch->z);
 
                 break;
             }
@@ -417,7 +430,7 @@ MaybeError CommandBuffer::ExecuteComputePass(CommandRecordingContext* commandCon
                                           0));
                 }
 
-                commandContext->GetD3D11DeviceContext()->DispatchIndirect(
+                commandContext->GetD3D11DeviceContext4()->DispatchIndirect(
                     indirectBuffer->GetD3D11NonConstantBuffer(), dispatch->indirectOffset);
 
                 break;
@@ -467,7 +480,7 @@ MaybeError CommandBuffer::ExecuteComputePass(CommandRecordingContext* commandCon
 
 MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                                             CommandRecordingContext* commandContext) {
-    ID3D11DeviceContext1* d3d11DeviceContext1 = commandContext->GetD3D11DeviceContext1();
+    auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
 
     // Hold ID3D11RenderTargetView ComPtr to make attachments alive.
     ityp::array<ColorAttachmentIndex, ID3D11RenderTargetView*, kMaxColorAttachments>
@@ -482,8 +495,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
         if (renderPass->colorAttachments[i].loadOp == wgpu::LoadOp::Clear) {
             std::array<float, 4> clearColor =
                 ConvertToFloatColor(renderPass->colorAttachments[i].clearColor);
-            d3d11DeviceContext1->ClearRenderTargetView(d3d11RenderTargetViews[i],
-                                                       clearColor.data());
+            d3d11DeviceContext->ClearRenderTargetView(d3d11RenderTargetViews[i], clearColor.data());
         }
         attachmentCount = i;
         attachmentCount++;
@@ -510,13 +522,13 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
             clearFlags |= D3D11_CLEAR_STENCIL;
         }
 
-        d3d11DeviceContext1->ClearDepthStencilView(d3d11DepthStencilView, clearFlags,
-                                                   attachmentInfo->clearDepth,
-                                                   attachmentInfo->clearStencil);
+        d3d11DeviceContext->ClearDepthStencilView(d3d11DepthStencilView, clearFlags,
+                                                  attachmentInfo->clearDepth,
+                                                  attachmentInfo->clearStencil);
     }
 
-    d3d11DeviceContext1->OMSetRenderTargets(static_cast<uint8_t>(attachmentCount),
-                                            d3d11RenderTargetViews.data(), d3d11DepthStencilView);
+    d3d11DeviceContext->OMSetRenderTargets(static_cast<uint8_t>(attachmentCount),
+                                           d3d11RenderTargetViews.data(), d3d11DepthStencilView);
 
     // Set viewport
     D3D11_VIEWPORT defautViewport;
@@ -526,7 +538,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
     defautViewport.Height = renderPass->height;
     defautViewport.MinDepth = 0.0f;
     defautViewport.MaxDepth = 1.0f;
-    d3d11DeviceContext1->RSSetViewports(1, &defautViewport);
+    d3d11DeviceContext->RSSetViewports(1, &defautViewport);
 
     // Set scissor
     D3D11_RECT scissor;
@@ -534,7 +546,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
     scissor.top = 0;
     scissor.right = renderPass->width;
     scissor.bottom = renderPass->height;
-    d3d11DeviceContext1->RSSetScissorRects(1, &scissor);
+    d3d11DeviceContext->RSSetScissorRects(1, &scissor);
 
     RenderPipeline* lastPipeline = nullptr;
     BindGroupTracker bindGroupTracker(commandContext, /*isRenderPass=*/true);
@@ -551,7 +563,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 vertexBufferTracker.Apply(lastPipeline);
                 DAWN_TRY(RecordFirstIndexOffset(lastPipeline, commandContext, draw->firstVertex,
                                                 draw->firstInstance));
-                commandContext->GetD3D11DeviceContext()->DrawInstanced(
+                commandContext->GetD3D11DeviceContext4()->DrawInstanced(
                     draw->vertexCount, draw->instanceCount, draw->firstVertex, draw->firstInstance);
 
                 break;
@@ -564,7 +576,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 vertexBufferTracker.Apply(lastPipeline);
                 DAWN_TRY(RecordFirstIndexOffset(lastPipeline, commandContext, draw->baseVertex,
                                                 draw->firstInstance));
-                commandContext->GetD3D11DeviceContext()->DrawIndexedInstanced(
+                commandContext->GetD3D11DeviceContext4()->DrawIndexedInstanced(
                     draw->indexCount, draw->instanceCount, draw->firstIndex, draw->baseVertex,
                     draw->firstInstance);
 
@@ -591,7 +603,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                                           0));
                 }
 
-                commandContext->GetD3D11DeviceContext()->DrawInstancedIndirect(
+                commandContext->GetD3D11DeviceContext4()->DrawInstancedIndirect(
                     indirectBuffer->GetD3D11NonConstantBuffer(), draw->indirectOffset);
 
                 break;
@@ -617,7 +629,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                                           0));
                 }
 
-                commandContext->GetD3D11DeviceContext()->DrawIndexedInstancedIndirect(
+                commandContext->GetD3D11DeviceContext4()->DrawIndexedInstancedIndirect(
                     indirectBuffer->GetD3D11NonConstantBuffer(), draw->indirectOffset);
 
                 break;
@@ -652,7 +664,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 UINT indexBufferBaseOffset = cmd->offset;
                 DXGI_FORMAT indexBufferFormat = DXGIIndexFormat(cmd->format);
 
-                commandContext->GetD3D11DeviceContext()->IASetIndexBuffer(
+                commandContext->GetD3D11DeviceContext4()->IASetIndexBuffer(
                     ToBackend(cmd->buffer)->GetD3D11NonConstantBuffer(), indexBufferFormat,
                     indexBufferBaseOffset);
 
@@ -686,7 +698,6 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
         switch (type) {
             case Command::EndRenderPass: {
                 mCommands.NextCommand<EndRenderPassCmd>();
-                ID3D11DeviceContext* d3d11DeviceContext = commandContext->GetD3D11DeviceContext();
                 d3d11DeviceContext->OMSetRenderTargets(0, nullptr, nullptr);
 
                 if (renderPass->attachmentState->GetSampleCount() <= 1) {
@@ -740,7 +751,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 viewport.Height = cmd->height;
                 viewport.MinDepth = cmd->minDepth;
                 viewport.MaxDepth = cmd->maxDepth;
-                commandContext->GetD3D11DeviceContext()->RSSetViewports(1, &viewport);
+                commandContext->GetD3D11DeviceContext4()->RSSetViewports(1, &viewport);
                 break;
             }
 
@@ -750,7 +761,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 D3D11_RECT scissorRect = {static_cast<LONG>(cmd->x), static_cast<LONG>(cmd->y),
                                           static_cast<LONG>(cmd->x + cmd->width),
                                           static_cast<LONG>(cmd->y + cmd->height)};
-                commandContext->GetD3D11DeviceContext()->RSSetScissorRects(1, &scissorRect);
+                commandContext->GetD3D11DeviceContext4()->RSSetScissorRects(1, &scissorRect);
                 break;
             }
 
@@ -779,14 +790,14 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
             case Command::BeginOcclusionQuery: {
                 BeginOcclusionQueryCmd* cmd = mCommands.NextCommand<BeginOcclusionQueryCmd>();
                 QuerySet* querySet = ToBackend(cmd->querySet.Get());
-                querySet->BeginQuery(commandContext->GetD3D11DeviceContext(), cmd->queryIndex);
+                querySet->BeginQuery(commandContext->GetD3D11DeviceContext4(), cmd->queryIndex);
                 break;
             }
 
             case Command::EndOcclusionQuery: {
                 EndOcclusionQueryCmd* cmd = mCommands.NextCommand<EndOcclusionQueryCmd>();
                 QuerySet* querySet = ToBackend(cmd->querySet.Get());
-                querySet->EndQuery(commandContext->GetD3D11DeviceContext(), cmd->queryIndex);
+                querySet->EndQuery(commandContext->GetD3D11DeviceContext4(), cmd->queryIndex);
                 break;
             }
 

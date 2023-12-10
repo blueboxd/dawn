@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
@@ -367,6 +380,74 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_DualSourceBlend) {
          %18 = OpCompositeExtract %float %16 1
                OpStore %main_loc0_idx1_Output %18
                OpReturn
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Function_PassMatrixByPointer) {
+    auto* mat_ty = ty.mat3x3<f32>();
+    auto* arr = mod.root_block->Append(b.Var("var", ty.ptr(private_, ty.array(mat_ty, 4))));
+
+    auto* target = b.Function("target", mat_ty);
+    auto* value_a = b.FunctionParam("value_a", mat_ty);
+    auto* scalar = b.FunctionParam("scalar", ty.f32());
+    auto* value_b = b.FunctionParam("value_b", mat_ty);
+    target->SetParams({value_a, scalar, value_b});
+    b.Append(target->Block(), [&] {
+        auto* scale = b.Multiply(mat_ty, value_a, scalar);
+        auto* sum = b.Add(mat_ty, scale, value_b);
+        b.Return(target, sum);
+    });
+
+    auto* caller = b.Function("caller", mat_ty);
+    b.Append(caller->Block(), [&] {
+        auto* mat_ptr = ty.ptr(private_, mat_ty);
+        auto* ma = b.Load(b.Access(mat_ptr, arr, 0_u));
+        auto* mb = b.Load(b.Access(mat_ptr, arr, 1_u));
+        auto* result = b.Call(mat_ty, target, ma, b.Constant(2_f), mb);
+        b.Return(caller, result);
+    });
+
+    Options options;
+    options.pass_matrix_by_pointer = true;
+    ASSERT_TRUE(Generate(options)) << Error() << output_;
+
+    EXPECT_INST(R"(
+               ; Function target
+     %target = OpFunction %mat3v3float None %15
+         %12 = OpFunctionParameter %_ptr_Function_mat3v3float
+     %scalar = OpFunctionParameter %float
+         %14 = OpFunctionParameter %_ptr_Function_mat3v3float
+         %16 = OpLabel
+         %17 = OpLoad %mat3v3float %14
+         %18 = OpLoad %mat3v3float %12
+         %19 = OpMatrixTimesScalar %mat3v3float %18 %scalar
+         %20 = OpCompositeExtract %v3float %19 0
+         %21 = OpCompositeExtract %v3float %17 0
+         %22 = OpFAdd %v3float %20 %21
+         %23 = OpCompositeExtract %v3float %19 1
+         %24 = OpCompositeExtract %v3float %17 1
+         %25 = OpFAdd %v3float %23 %24
+         %26 = OpCompositeExtract %v3float %19 2
+         %27 = OpCompositeExtract %v3float %17 2
+         %28 = OpFAdd %v3float %26 %27
+         %29 = OpCompositeConstruct %mat3v3float %22 %25 %28
+               OpReturnValue %29
+               OpFunctionEnd
+
+               ; Function caller
+     %caller = OpFunction %mat3v3float None %31
+         %32 = OpLabel
+         %40 = OpVariable %_ptr_Function_mat3v3float Function
+         %41 = OpVariable %_ptr_Function_mat3v3float Function
+         %33 = OpAccessChain %_ptr_Private_mat3v3float %var %uint_0
+         %36 = OpLoad %mat3v3float %33
+         %37 = OpAccessChain %_ptr_Private_mat3v3float %var %uint_1
+         %39 = OpLoad %mat3v3float %37
+               OpStore %40 %36
+               OpStore %41 %39
+         %42 = OpFunctionCall %mat3v3float %target %40 %float_2 %41
+               OpReturnValue %42
                OpFunctionEnd
 )");
 }

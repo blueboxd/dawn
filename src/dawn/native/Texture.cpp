@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/Texture.h"
 
@@ -210,11 +223,12 @@ MaybeError ValidateTextureViewDimensionCompatibility(const DeviceBase* device,
         case wgpu::TextureViewDimension::Cube:
         case wgpu::TextureViewDimension::CubeArray:
             DAWN_INVALID_IF(
-                texture->GetSize().width != texture->GetSize().height,
+                texture->GetSize(descriptor->aspect).width !=
+                    texture->GetSize(descriptor->aspect).height,
                 "A %s texture view is not compatible with %s because the texture's width "
                 "(%u) and height (%u) are not equal.",
-                descriptor->dimension, texture, texture->GetSize().width,
-                texture->GetSize().height);
+                descriptor->dimension, texture, texture->GetSize(descriptor->aspect).width,
+                texture->GetSize(descriptor->aspect).height);
             DAWN_INVALID_IF(descriptor->dimension == wgpu::TextureViewDimension::CubeArray &&
                                 device->IsCompatibilityMode(),
                             "A %s texture view for %s is not supported in compatibility mode",
@@ -370,6 +384,9 @@ MaybeError ValidateTextureUsage(const DeviceBase* device,
         if (device->HasFeature(Feature::MultiPlanarFormatExtendedUsages)) {
             validMultiPlanarUsages |= wgpu::TextureUsage::CopyDst;
         }
+        if (device->HasFeature(Feature::MultiPlanarRenderTargets)) {
+            validMultiPlanarUsages |= wgpu::TextureUsage::RenderAttachment;
+        }
         DAWN_INVALID_IF(format->IsMultiPlanar() && !IsSubset(usage, validMultiPlanarUsages),
                         "The texture usage (%s) is incompatible with the multi-planar format (%s).",
                         usage, format->format);
@@ -412,6 +429,11 @@ bool CopySrcNeedsInternalTextureBindingUsage(const DeviceBase* device, const For
         device->IsToggleEnabled(Toggle::UseBlitForBGRA8UnormTextureToBufferCopy)) {
         return true;
     }
+    // RGB9E5Ufloat
+    if (format.format == wgpu::TextureFormat::RGB9E5Ufloat &&
+        device->IsToggleEnabled(Toggle::UseBlitForRGB9E5UfloatTextureCopy)) {
+        return true;
+    }
     // Depth
     if (format.HasDepth() &&
         (device->IsToggleEnabled(Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource) ||
@@ -450,14 +472,20 @@ MaybeError ValidateTextureDescriptor(
     const Format* format;
     DAWN_TRY_ASSIGN(format, device->GetInternalFormat(descriptor->format));
 
-    switch (allowMultiPlanar) {
-        case AllowMultiPlanarTextureFormat::Yes:
-            break;
-        case AllowMultiPlanarTextureFormat::No:
-            DAWN_INVALID_IF(format->IsMultiPlanar(),
-                            "Creation of multiplanar texture format %s is not allowed.",
-                            descriptor->format);
-            break;
+    if (format->IsMultiPlanar()) {
+        switch (allowMultiPlanar) {
+            case AllowMultiPlanarTextureFormat::Yes:
+                DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D ||
+                                    descriptor->mipLevelCount != 1 ||
+                                    descriptor->size.depthOrArrayLayers != 1,
+                                "Multiplanar texture must be non-mipmapped & 2D in order to be "
+                                "created directly.");
+                break;
+            case AllowMultiPlanarTextureFormat::No:
+                return DAWN_VALIDATION_ERROR(
+                    "Creation of multiplanar texture format %s is not allowed.",
+                    descriptor->format);
+        }
     }
 
     for (uint32_t i = 0; i < descriptor->viewFormatCount; ++i) {
@@ -513,7 +541,8 @@ MaybeError ValidateTextureViewDescriptor(const DeviceBase* device,
     const Format* viewFormat;
     DAWN_TRY_ASSIGN(viewFormat, device->GetInternalFormat(descriptor->format));
 
-    DAWN_INVALID_IF(SelectFormatAspects(format, descriptor->aspect) == Aspect::None,
+    const auto aspect = SelectFormatAspects(format, descriptor->aspect);
+    DAWN_INVALID_IF(aspect == Aspect::None,
                     "Texture format (%s) does not have the texture view's selected aspect (%s).",
                     format.format, descriptor->aspect);
 
@@ -635,7 +664,7 @@ TextureBase::TextureBase(DeviceBase* device, const TextureDescriptor* descriptor
     : ApiObjectBase(device, descriptor->label),
       mDimension(descriptor->dimension),
       mFormat(device->GetValidInternalFormat(descriptor->format)),
-      mSize(descriptor->size),
+      mBaseSize(descriptor->size),
       mMipLevelCount(descriptor->mipLevelCount),
       mSampleCount(descriptor->sampleCount),
       mUsage(descriptor->usage),
@@ -696,13 +725,23 @@ TextureBase::TextureBase(DeviceBase* device,
     : ApiObjectBase(device, tag, descriptor->label),
       mDimension(descriptor->dimension),
       mFormat(kUnusedFormat),
-      mSize(descriptor->size),
+      mBaseSize(descriptor->size),
       mMipLevelCount(descriptor->mipLevelCount),
       mSampleCount(descriptor->sampleCount),
       mUsage(descriptor->usage),
       mFormatEnumForReflection(descriptor->format) {}
 
 void TextureBase::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the texture is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the texture.
+    // - Losing the last reference to a swap chain will also call APIDestroy on its
+    //   current texture. This is protected by acquiring the global device lock on
+    //   the last release. That lock can be removed when APIDestroy is made thread-safe.
+    // - It may be called when the last ref to the texture is dropped and the texture
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the texture since there are no other live refs.
     mState.destroyed = true;
 
     // Destroy all of the views associated with the texture as well.
@@ -731,29 +770,74 @@ const FormatSet& TextureBase::GetViewFormats() const {
     DAWN_ASSERT(!IsError());
     return mViewFormats;
 }
-const Extent3D& TextureBase::GetSize() const {
+
+const Extent3D& TextureBase::GetBaseSize() const {
     DAWN_ASSERT(!IsError());
-    return mSize;
+    return mBaseSize;
 }
-uint32_t TextureBase::GetWidth() const {
+
+Extent3D TextureBase::GetSize(Aspect aspect) const {
     DAWN_ASSERT(!IsError());
-    return mSize.width;
+    switch (aspect) {
+        case Aspect::Color:
+        case Aspect::Depth:
+        case Aspect::Stencil:
+        case Aspect::CombinedDepthStencil:
+            return mBaseSize;
+        case Aspect::Plane0:
+            DAWN_ASSERT(GetFormat().IsMultiPlanar());
+            return mBaseSize;
+        case Aspect::Plane1: {
+            DAWN_ASSERT(GetFormat().IsMultiPlanar());
+            auto planeSize = mBaseSize;
+            switch (GetFormat().format) {
+                case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
+                case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
+                    if (planeSize.width > 1) {
+                        planeSize.width >>= 1;
+                    }
+                    if (planeSize.height > 1) {
+                        planeSize.height >>= 1;
+                    }
+                    break;
+                default:
+                    DAWN_UNREACHABLE();
+            }
+            return planeSize;
+        }
+        case Aspect::None:
+            break;
+    }
+
+    if (aspect == (Aspect::Depth | Aspect::Stencil)) {
+        return mBaseSize;
+    }
+
+    DAWN_UNREACHABLE();
 }
-uint32_t TextureBase::GetHeight() const {
+Extent3D TextureBase::GetSize(wgpu::TextureAspect textureAspect) const {
+    const auto aspect = SelectFormatAspects(GetFormat(), textureAspect);
+    return GetSize(aspect);
+}
+uint32_t TextureBase::GetWidth(Aspect aspect) const {
     DAWN_ASSERT(!IsError());
-    return mSize.height;
+    return GetSize(aspect).width;
 }
-uint32_t TextureBase::GetDepth() const {
+uint32_t TextureBase::GetHeight(Aspect aspect) const {
+    DAWN_ASSERT(!IsError());
+    return GetSize(aspect).height;
+}
+uint32_t TextureBase::GetDepth(Aspect aspect) const {
     DAWN_ASSERT(!IsError());
     DAWN_ASSERT(mDimension == wgpu::TextureDimension::e3D);
-    return mSize.depthOrArrayLayers;
+    return GetSize(aspect).depthOrArrayLayers;
 }
 uint32_t TextureBase::GetArrayLayers() const {
     DAWN_ASSERT(!IsError());
     if (mDimension == wgpu::TextureDimension::e3D) {
         return 1;
     }
-    return mSize.depthOrArrayLayers;
+    return mBaseSize.depthOrArrayLayers;
 }
 uint32_t TextureBase::GetNumMipLevels() const {
     DAWN_ASSERT(!IsError());
@@ -863,8 +947,10 @@ bool TextureBase::IsMultisampledTexture() const {
     return mSampleCount > 1;
 }
 
-bool TextureBase::CoverFullSubresource(uint32_t mipLevel, const Extent3D& size) const {
-    Extent3D levelSize = GetMipLevelSingleSubresourcePhysicalSize(mipLevel);
+bool TextureBase::CoversFullSubresource(uint32_t mipLevel,
+                                        Aspect aspect,
+                                        const Extent3D& size) const {
+    Extent3D levelSize = GetMipLevelSingleSubresourcePhysicalSize(mipLevel, aspect);
     switch (GetDimension()) {
         case wgpu::TextureDimension::e1D:
             return size.width == levelSize.width;
@@ -876,23 +962,25 @@ bool TextureBase::CoverFullSubresource(uint32_t mipLevel, const Extent3D& size) 
     DAWN_UNREACHABLE();
 }
 
-Extent3D TextureBase::GetMipLevelSingleSubresourceVirtualSize(uint32_t level) const {
-    Extent3D extent = {std::max(mSize.width >> level, 1u), 1u, 1u};
+Extent3D TextureBase::GetMipLevelSingleSubresourceVirtualSize(uint32_t level, Aspect aspect) const {
+    Extent3D aspectSize = GetSize(aspect);
+    Extent3D extent = {std::max(aspectSize.width >> level, 1u), 1u, 1u};
     if (mDimension == wgpu::TextureDimension::e1D) {
         return extent;
     }
 
-    extent.height = std::max(mSize.height >> level, 1u);
+    extent.height = std::max(aspectSize.height >> level, 1u);
     if (mDimension == wgpu::TextureDimension::e2D) {
         return extent;
     }
 
-    extent.depthOrArrayLayers = std::max(mSize.depthOrArrayLayers >> level, 1u);
+    extent.depthOrArrayLayers = std::max(aspectSize.depthOrArrayLayers >> level, 1u);
     return extent;
 }
 
-Extent3D TextureBase::GetMipLevelSingleSubresourcePhysicalSize(uint32_t level) const {
-    Extent3D extent = GetMipLevelSingleSubresourceVirtualSize(level);
+Extent3D TextureBase::GetMipLevelSingleSubresourcePhysicalSize(uint32_t level,
+                                                               Aspect aspect) const {
+    Extent3D extent = GetMipLevelSingleSubresourceVirtualSize(level, aspect);
 
     // Compressed Textures will have paddings if their width or height is not a multiple of
     // 4 at non-zero mipmap levels.
@@ -910,9 +998,10 @@ Extent3D TextureBase::GetMipLevelSingleSubresourcePhysicalSize(uint32_t level) c
 }
 
 Extent3D TextureBase::ClampToMipLevelVirtualSize(uint32_t level,
+                                                 Aspect aspect,
                                                  const Origin3D& origin,
                                                  const Extent3D& extent) const {
-    const Extent3D virtualSizeAtLevel = GetMipLevelSingleSubresourceVirtualSize(level);
+    const Extent3D virtualSizeAtLevel = GetMipLevelSingleSubresourceVirtualSize(level, aspect);
     DAWN_ASSERT(origin.x <= virtualSizeAtLevel.width);
     DAWN_ASSERT(origin.y <= virtualSizeAtLevel.height);
     uint32_t clampedCopyExtentWidth = (extent.width > virtualSizeAtLevel.width - origin.x)
@@ -924,10 +1013,10 @@ Extent3D TextureBase::ClampToMipLevelVirtualSize(uint32_t level,
     return {clampedCopyExtentWidth, clampedCopyExtentHeight, extent.depthOrArrayLayers};
 }
 
-Extent3D TextureBase::GetMipLevelSubresourceVirtualSize(uint32_t level) const {
-    Extent3D extent = GetMipLevelSingleSubresourceVirtualSize(level);
+Extent3D TextureBase::GetMipLevelSubresourceVirtualSize(uint32_t level, Aspect aspect) const {
+    Extent3D extent = GetMipLevelSingleSubresourceVirtualSize(level, aspect);
     if (mDimension == wgpu::TextureDimension::e2D) {
-        extent.depthOrArrayLayers = mSize.depthOrArrayLayers;
+        extent.depthOrArrayLayers = mBaseSize.depthOrArrayLayers;
     }
     return extent;
 }
@@ -965,14 +1054,14 @@ void TextureBase::APIDestroy() {
 }
 
 uint32_t TextureBase::APIGetWidth() const {
-    return mSize.width;
+    return mBaseSize.width;
 }
 
 uint32_t TextureBase::APIGetHeight() const {
-    return mSize.height;
+    return mBaseSize.height;
 }
 uint32_t TextureBase::APIGetDepthOrArrayLayers() const {
-    return mSize.depthOrArrayLayers;
+    return mBaseSize.depthOrArrayLayers;
 }
 
 uint32_t TextureBase::APIGetMipLevelCount() const {
@@ -1092,9 +1181,20 @@ const SubresourceRange& TextureViewBase::GetSubresourceRange() const {
     return mRange;
 }
 
-ApiObjectList* TextureViewBase::GetObjectTrackingList() {
+Extent3D TextureViewBase::GetSingleSubresourceVirtualSize() const {
     DAWN_ASSERT(!IsError());
-    return mTexture->GetViewTrackingList();
+    return GetTexture()->GetMipLevelSingleSubresourceVirtualSize(GetBaseMipLevel(), GetAspects());
+}
+
+ApiObjectList* TextureViewBase::GetObjectTrackingList() {
+    if (mTexture != nullptr) {
+        return mTexture->GetViewTrackingList();
+    }
+    // Return the base device list for error objects so that
+    // the list is never null. Error texture views are never tracked,
+    // so liveness checks will always return false.
+    DAWN_ASSERT(IsError());
+    return ApiObjectBase::GetObjectTrackingList();
 }
 
 }  // namespace dawn::native

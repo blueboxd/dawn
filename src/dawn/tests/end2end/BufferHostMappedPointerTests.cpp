@@ -1,18 +1,33 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/tests/end2end/BufferHostMappedPointerTests.h"
+
+#include "dawn/utils/WGPUHelpers.h"
 
 namespace dawn {
 
@@ -64,7 +79,7 @@ TEST_P(BufferHostMappedPointerNoFeatureTests, Creation) {
     hostMappedDesc.userdata = nullptr;
 
     wgpu::BufferDescriptor bufferDesc;
-    bufferDesc.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapWrite;
+    bufferDesc.usage = wgpu::BufferUsage::CopySrc;
     bufferDesc.size = 1024;
     bufferDesc.nextInChain = &hostMappedDesc;
 
@@ -88,22 +103,22 @@ TEST_P(BufferHostMappedPointerTests, Alignment) {
 
     // Invalid: half required alignment
     ASSERT_DEVICE_ERROR(GetParam().mBackend->CreateHostMappedBuffer(
-        device, wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapWrite, mRequiredAlignment / 2u));
+        device, wgpu::BufferUsage::CopySrc, mRequiredAlignment / 2u));
 
-    GetParam().mBackend->CreateHostMappedBuffer(
-        device, wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapWrite, mRequiredAlignment);
+    GetParam().mBackend->CreateHostMappedBuffer(device, wgpu::BufferUsage::CopySrc,
+                                                mRequiredAlignment);
 
     // Invalid: just below required alignment
     ASSERT_DEVICE_ERROR(GetParam().mBackend->CreateHostMappedBuffer(
-        device, wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapWrite, mRequiredAlignment - 1));
+        device, wgpu::BufferUsage::CopySrc, mRequiredAlignment - 1));
 
     // Invalid: just over required alignment
     ASSERT_DEVICE_ERROR(GetParam().mBackend->CreateHostMappedBuffer(
-        device, wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapWrite, mRequiredAlignment + 1));
+        device, wgpu::BufferUsage::CopySrc, mRequiredAlignment + 1));
 
     // Valid: multiple of required alignment
-    GetParam().mBackend->CreateHostMappedBuffer(
-        device, wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapWrite, 2 * mRequiredAlignment);
+    GetParam().mBackend->CreateHostMappedBuffer(device, wgpu::BufferUsage::CopySrc,
+                                                2 * mRequiredAlignment);
 }
 
 // Test creating a buffer with data initially in the host-mapped memory.
@@ -119,7 +134,7 @@ TEST_P(BufferHostMappedPointerTests, InitialDataAndCopySrc) {
 
     // Create the buffer and pre-fill it with data.
     auto [buffer, ptr] = GetParam().mBackend->CreateHostMappedBuffer(
-        device, wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapWrite, bufferSize,
+        device, wgpu::BufferUsage::CopySrc, bufferSize,
         [&](void* initialPtr) { memcpy(initialPtr, expected.data(), bufferSize); });
 
     // Check the buffer contents.
@@ -149,8 +164,8 @@ TEST_P(BufferHostMappedPointerTests, CopyDst) {
     }
 
     // Create the buffer.
-    auto [buffer, ptr] = GetParam().mBackend->CreateHostMappedBuffer(
-        device, wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead, bufferSize);
+    auto [buffer, ptr] =
+        GetParam().mBackend->CreateHostMappedBuffer(device, wgpu::BufferUsage::CopyDst, bufferSize);
 
     // Create another GPU buffer to use as the source.
     wgpu::BufferDescriptor bufferDesc;
@@ -174,6 +189,65 @@ TEST_P(BufferHostMappedPointerTests, CopyDst) {
 
     // Expect the changes to be reflected in the host pointer.
     EXPECT_EQ(memcmp(ptr, expected.data(), bufferSize), 0);
+}
+
+// Create a host-mapped buffer with Storage usage. Test that writes on the host
+// are visible on the GPU, and writes on the GPU are visible on the host.
+TEST_P(BufferHostMappedPointerTests, Storage) {
+    // Set up expected data.
+    uint32_t bufferSize = mRequiredAlignment;
+    std::vector<uint32_t> contents(bufferSize / sizeof(uint32_t));
+    for (size_t i = 0; i < contents.size(); ++i) {
+        contents[i] = i;
+    }
+
+    // Create the buffer, but don't prefill it with data.
+    auto [buffer, ptr] =
+        GetParam().mBackend->CreateHostMappedBuffer(device, wgpu::BufferUsage::Storage, bufferSize);
+
+    // Copy contents into the buffer after creation. We'll check that this
+    // write is visible to the GPU.
+    memcpy(ptr, contents.data(), bufferSize);
+
+    // Test storage read/write by checking the contents in a shader.
+    // When the contents are as expected, increment the value. We'll read back on the CPU
+    // to verify the writes are visible.
+    wgpu::ComputePipelineDescriptor pipelineDesc = {};
+    pipelineDesc.compute.module = utils::CreateShaderModule(device, R"(
+        struct Buf {
+            values : array<u32>,
+        };
+        @group(0) @binding(0) var<storage, read_write> buf : Buf;
+
+        @workgroup_size(64)
+        @compute fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+            if (buf.values[gid.x] == gid.x) {
+                buf.values[gid.x] = gid.x + 1u;
+            }
+        }
+    )");
+    pipelineDesc.compute.entryPoint = "main";
+    wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&pipelineDesc);
+    wgpu::BindGroup bindGroup = utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0),
+                                                     {
+                                                         {0, buffer},
+                                                     });
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
+    pass.SetPipeline(pipeline);
+    pass.SetBindGroup(0, bindGroup);
+    pass.DispatchWorkgroups(contents.size() / 64);
+    pass.End();
+    wgpu::CommandBuffer commandBuffer = encoder.Finish();
+    device.GetQueue().Submit(1, &commandBuffer);
+
+    // Wait for the GPU to complete.
+    WaitForAllOperations();
+    for (uint32_t& v : contents) {
+        v += 1;
+    }
+    // Expect the changes to be reflected in the host pointer.
+    EXPECT_EQ(memcmp(ptr, contents.data(), bufferSize), 0);
 }
 
 // Test interaction with other buffer mapping APIs.

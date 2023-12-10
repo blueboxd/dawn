@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/transform/std140.h"
 
@@ -41,50 +54,6 @@ TEST_F(IR_Std140Test, NoRootBlock) {
   }
 }
 )";
-
-    Run(Std140);
-
-    EXPECT_EQ(expect, str());
-}
-
-TEST_F(IR_Std140Test, NoModify_Mat2x3) {
-    auto* mat = ty.mat2x3<f32>();
-    auto* structure = ty.Struct(mod.symbols.New("MyStruct"), {
-                                                                 {mod.symbols.New("a"), mat},
-                                                             });
-    structure->SetStructFlag(core::type::kBlock);
-
-    auto* buffer = b.Var("buffer", ty.ptr(uniform, structure));
-    buffer->SetBindingPoint(0, 0);
-    mod.root_block->Append(buffer);
-
-    auto* func = b.Function("foo", mat);
-    b.Append(func->Block(), [&] {
-        auto* access = b.Access(ty.ptr(uniform, mat), buffer, 0_u);
-        auto* load = b.Load(access);
-        b.Return(func, load);
-    });
-
-    auto* src = R"(
-MyStruct = struct @align(16), @block {
-  a:mat2x3<f32> @offset(0)
-}
-
-%b1 = block {  # root
-  %buffer:ptr<uniform, MyStruct, read_write> = var @binding_point(0, 0)
-}
-
-%foo = func():mat2x3<f32> -> %b2 {
-  %b2 = block {
-    %3:ptr<uniform, mat2x3<f32>, read_write> = access %buffer, 0u
-    %4:mat2x3<f32> = load %3
-    ret %4
-  }
-}
-)";
-    EXPECT_EQ(src, str());
-
-    auto* expect = src;
 
     Run(Std140);
 
@@ -1431,6 +1400,80 @@ MyStruct_std140 = struct @align(128), @block {
     %17:i32 = load %16
     %b:i32 = let %17
     ret
+  }
+}
+)";
+
+    Run(Std140);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_Std140Test, Mat4x3_LoadMatrix) {
+    auto* mat = ty.mat4x3<f32>();
+    auto* structure = ty.Struct(mod.symbols.New("MyStruct"), {
+                                                                 {mod.symbols.New("a"), mat},
+                                                             });
+    structure->SetStructFlag(core::type::kBlock);
+
+    auto* buffer = b.Var("buffer", ty.ptr(uniform, structure));
+    buffer->SetBindingPoint(0, 0);
+    mod.root_block->Append(buffer);
+
+    auto* func = b.Function("foo", mat);
+    b.Append(func->Block(), [&] {
+        auto* access = b.Access(ty.ptr(uniform, mat), buffer, 0_u);
+        auto* load = b.Load(access);
+        b.Return(func, load);
+    });
+
+    auto* src = R"(
+MyStruct = struct @align(16), @block {
+  a:mat4x3<f32> @offset(0)
+}
+
+%b1 = block {  # root
+  %buffer:ptr<uniform, MyStruct, read_write> = var @binding_point(0, 0)
+}
+
+%foo = func():mat4x3<f32> -> %b2 {
+  %b2 = block {
+    %3:ptr<uniform, mat4x3<f32>, read_write> = access %buffer, 0u
+    %4:mat4x3<f32> = load %3
+    ret %4
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+MyStruct = struct @align(16), @block {
+  a:mat4x3<f32> @offset(0)
+}
+
+MyStruct_std140 = struct @align(16), @block {
+  a_col0:vec3<f32> @offset(0)
+  a_col1:vec3<f32> @offset(16)
+  a_col2:vec3<f32> @offset(32)
+  a_col3:vec3<f32> @offset(48)
+}
+
+%b1 = block {  # root
+  %buffer:ptr<uniform, MyStruct_std140, read_write> = var @binding_point(0, 0)
+}
+
+%foo = func():mat4x3<f32> -> %b2 {
+  %b2 = block {
+    %3:ptr<uniform, vec3<f32>, read_write> = access %buffer, 0u
+    %4:vec3<f32> = load %3
+    %5:ptr<uniform, vec3<f32>, read_write> = access %buffer, 1u
+    %6:vec3<f32> = load %5
+    %7:ptr<uniform, vec3<f32>, read_write> = access %buffer, 2u
+    %8:vec3<f32> = load %7
+    %9:ptr<uniform, vec3<f32>, read_write> = access %buffer, 3u
+    %10:vec3<f32> = load %9
+    %11:mat4x3<f32> = construct %4, %6, %8, %10
+    ret %11
   }
 }
 )";

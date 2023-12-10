@@ -1,21 +1,38 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+// GEN_BUILD:CONDITION(tint_build_wgsl_writer)
 
 #include <sstream>
 #include <string>
 
 #include "src/tint/lang/core/ir/disassembler.h"
+#include "src/tint/lang/core/type/storage_texture.h"
+#include "src/tint/lang/wgsl/ir/builtin_call.h"
 #include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program.h"
 #include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program_test.h"
 #include "src/tint/lang/wgsl/writer/writer.h"
@@ -29,8 +46,7 @@ using namespace tint::core::fluent_types;     // NOLINT
 IRToProgramTest::Result IRToProgramTest::Run() {
     Result result;
 
-    tint::core::ir::Disassembler d{mod};
-    result.ir = d.Disassemble();
+    result.ir = tint::core::ir::Disassemble(mod);
 
     auto output_program = IRToProgram(mod);
     if (!output_program.IsValid()) {
@@ -3191,6 +3207,143 @@ fn y() {
   var v : mat3x3<f32>;
   let l = &(v[1i]);
   x(l);
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// chromium_experimental_read_write_storage_texture
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalReadWriteStorageTexture_TextureBarrier) {
+    auto* fn = b.Function("f", ty.void_());
+    b.Append(fn->Block(), [&] {
+        b.Append(mod.instructions.Create<wgsl::ir::BuiltinCall>(
+            b.InstructionResult(ty.void_()), wgsl::BuiltinFn::kTextureBarrier, Empty));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_read_write_storage_texture;
+
+fn f() {
+  textureBarrier();
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalReadWriteStorageTexture_ReadOnlyStorageTexture) {
+    auto* T = b.Var("T", ty.ptr<handle>(ty.Get<core::type::StorageTexture>(
+                             core::type::TextureDimension::k2d, core::TexelFormat::kR32Float,
+                             core::Access::kRead, ty.f32())));
+    T->SetBindingPoint(0, 0);
+    b.ir.root_block->Append(T);
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_read_write_storage_texture;
+
+@group(0) @binding(0) var T : texture_storage_2d<r32float, read>;
+)");
+}
+
+TEST_F(IRToProgramTest,
+       Enable_ChromiumExperimentalReadWriteStorageTexture_ReadWriteOnlyStorageTexture) {
+    auto* T = b.Var("T", ty.ptr<handle>(ty.Get<core::type::StorageTexture>(
+                             core::type::TextureDimension::k2d, core::TexelFormat::kR32Float,
+                             core::Access::kReadWrite, ty.f32())));
+    T->SetBindingPoint(0, 0);
+    b.ir.root_block->Append(T);
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_read_write_storage_texture;
+
+@group(0) @binding(0) var T : texture_storage_2d<r32float, read_write>;
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// chromium_experimental_subgroups
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalSubgroups_SubgroupBallot) {
+    auto* fn = b.Function("f", ty.void_());
+    b.Append(fn->Block(), [&] {
+        b.Append(mod.instructions.Create<wgsl::ir::BuiltinCall>(
+            b.InstructionResult(ty.vec4<u32>()), wgsl::BuiltinFn::kSubgroupBallot, Empty));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_subgroups;
+
+fn f() {
+  _ = subgroupBallot();
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalSubgroups_SubgroupBroadcast) {
+    auto* fn = b.Function("f", ty.void_());
+    b.Append(fn->Block(), [&] {
+        auto* one = b.Value(1_u);
+        b.Append(mod.instructions.Create<wgsl::ir::BuiltinCall>(
+            b.InstructionResult(ty.u32()), wgsl::BuiltinFn::kSubgroupBroadcast, Vector{one, one}));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_subgroups;
+
+fn f() {
+  _ = subgroupBroadcast(1u, 1u);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalSubgroups_StructBuiltin_SubgroupInvocationId) {
+    core::type::Manager::StructMemberDesc member;
+    member.name = mod.symbols.New("a");
+    member.type = ty.u32();
+    member.attributes.builtin = core::BuiltinValue::kSubgroupInvocationId;
+
+    auto* S = ty.Struct(mod.symbols.New("S"), {member});
+
+    auto* fn = b.Function("f", ty.void_());
+    fn->SetParams({b.FunctionParam(S)});
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_subgroups;
+
+struct S {
+  @builtin(subgroup_invocation_id)
+  a : u32,
+}
+
+fn f(v : S) {
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalSubgroups_StructBuiltin_SubgroupSize) {
+    core::type::Manager::StructMemberDesc member;
+    member.name = mod.symbols.New("a");
+    member.type = ty.u32();
+    member.attributes.builtin = core::BuiltinValue::kSubgroupSize;
+
+    auto* S = ty.Struct(mod.symbols.New("S"), {member});
+
+    auto* fn = b.Function("f", ty.void_());
+    fn->SetParams({b.FunctionParam(S)});
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_subgroups;
+
+struct S {
+  @builtin(subgroup_size)
+  a : u32,
+}
+
+fn f(v : S) {
 }
 )");
 }

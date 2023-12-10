@@ -1,16 +1,29 @@
-/// Copyright 2020 The Tint Authors.
+/// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/hlsl/writer/ast_printer/ast_printer.h"
 
@@ -337,7 +350,7 @@ ASTPrinter::ASTPrinter(const Program& program) : builder_(ProgramBuilder::Wrap(p
 ASTPrinter::~ASTPrinter() = default;
 
 bool ASTPrinter::Generate() {
-    if (!tint::writer::CheckSupportedExtensions(
+    if (!tint::wgsl::CheckSupportedExtensions(
             "HLSL", builder_.AST(), diagnostics_,
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
@@ -398,11 +411,8 @@ bool ASTPrinter::Generate() {
                     return EmitEntryPointFunction(func);
                 }
                 return EmitFunction(func);
-            },
-            [&](Default) {
-                TINT_ICE() << "unhandled module-scope declaration: " << decl->TypeInfo().name;
-                return false;
-            });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
 
         if (!ok) {
             return false;
@@ -1093,10 +1103,7 @@ bool ASTPrinter::EmitCall(StringStream& out, const ast::CallExpression* expr) {
         [&](const sem::BuiltinFn* builtin) { return EmitBuiltinCall(out, call, builtin); },
         [&](const sem::ValueConversion* conv) { return EmitValueConversion(out, call, conv); },
         [&](const sem::ValueConstructor* ctor) { return EmitValueConstructor(out, call, ctor); },
-        [&](Default) {
-            TINT_ICE() << "unhandled call target: " << target->TypeInfo().name;
-            return false;
-        });
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitFunctionCall(StringStream& out,
@@ -2021,10 +2028,6 @@ bool ASTPrinter::EmitWorkgroupAtomicCall(StringStream& out,
                 if (i > 0) {
                     pre << ", ";
                 }
-                if (i == 1 && builtin->Fn() == wgsl::BuiltinFn::kAtomicSub) {
-                    // Sub uses InterlockedAdd with the operand negated.
-                    pre << "-";
-                }
                 if (!EmitExpression(pre, arg)) {
                     return false;
                 }
@@ -2138,8 +2141,35 @@ bool ASTPrinter::EmitWorkgroupAtomicCall(StringStream& out,
         }
 
         case wgsl::BuiltinFn::kAtomicAdd:
-        case wgsl::BuiltinFn::kAtomicSub:
             return call("InterlockedAdd");
+
+        case wgsl::BuiltinFn::kAtomicSub: {
+            auto pre = Line();
+            // Sub uses InterlockedAdd with the operand negated.
+            pre << "InterlockedAdd";
+            {
+                ScopedParen sp(pre);
+                TINT_ASSERT(expr->args.Length() == 2);
+
+                if (!EmitExpression(pre, expr->args[0])) {
+                    return false;
+                }
+                pre << ", -";
+                {
+                    ScopedParen argSP(pre);
+                    if (!EmitExpression(pre, expr->args[1])) {
+                        return false;
+                    }
+                }
+
+                pre << ", " << result;
+            }
+
+            pre << ";";
+
+            out << result;
+        }
+            return true;
 
         case wgsl::BuiltinFn::kAtomicMax:
             return call("InterlockedMax");
@@ -2842,13 +2872,13 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
                                      zero, i32, core::EvaluationStage::kRuntime, stmt,
                                      /* constant_value */ nullptr,
                                      /* has_side_effects */ false));
-        auto* packed = tint::writer::AppendVector(&builder_, vector, zero);
+        auto* packed = tint::wgsl::AppendVector(&builder_, vector, zero);
         return EmitExpression(out, packed->Declaration());
     };
 
     auto emit_vector_appended_with_level = [&](const ast::Expression* vector) {
         if (auto* level = arg(Usage::kLevel)) {
-            auto* packed = tint::writer::AppendVector(&builder_, vector, level);
+            auto* packed = tint::wgsl::AppendVector(&builder_, vector, level);
             return EmitExpression(out, packed->Declaration());
         }
         return emit_vector_appended_with_i32_zero(vector);
@@ -2856,7 +2886,7 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
 
     if (auto* array_index = arg(Usage::kArrayIndex)) {
         // Array index needs to be appended to the coordinates.
-        auto* packed = tint::writer::AppendVector(&builder_, param_coords, array_index);
+        auto* packed = tint::wgsl::AppendVector(&builder_, param_coords, array_index);
         if (pack_level_in_coords) {
             // Then mip level needs to be appended to the coordinates.
             if (!emit_vector_appended_with_level(packed->Declaration())) {
@@ -3083,12 +3113,8 @@ bool ASTPrinter::EmitExpression(StringStream& out, const ast::Expression* expr) 
         [&](const ast::IdentifierExpression* i) { return EmitIdentifier(out, i); },
         [&](const ast::LiteralExpression* l) { return EmitLiteral(out, l); },
         [&](const ast::MemberAccessorExpression* m) { return EmitMemberAccessor(out, m); },
-        [&](const ast::UnaryOpExpression* u) { return EmitUnaryOp(out, u); },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer, "unknown expression type: " +
-                                                             std::string(expr->TypeInfo().name));
-            return false;
-        });
+        [&](const ast::UnaryOpExpression* u) { return EmitUnaryOp(out, u); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitIdentifier(StringStream& out, const ast::IdentifierExpression* expr) {
@@ -3299,12 +3325,8 @@ bool ASTPrinter::EmitGlobalVariable(const ast::Variable* global) {
         },
         [&](const ast::Const*) {
             return true;  // Constants are embedded at their use
-        },
-        [&](Default) {
-            TINT_ICE() << "unhandled global variable type " << global->TypeInfo().name;
-
-            return false;
-        });
+        },                //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitUniformVariable(const ast::Var* var, const sem::Variable* sem) {
@@ -3720,12 +3742,8 @@ bool ASTPrinter::EmitConstant(StringStream& out,
             }
 
             return true;
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   "unhandled constant type: " + constant->Type()->FriendlyName());
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* lit) {
@@ -3757,11 +3775,8 @@ bool ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* li
             }
             diagnostics_.add_error(diag::System::Writer, "unknown integer literal suffix type");
             return false;
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer, "unknown literal type");
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitValue(StringStream& out, const core::type::Type* type, int value) {
@@ -3830,12 +3845,8 @@ bool ASTPrinter::EmitValue(StringStream& out, const core::type::Type* type, int 
             TINT_DEFER(out << ")" << value);
             return EmitType(out, type, core::AddressSpace::kUndefined, core::Access::kUndefined,
                             "");
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   "Invalid type for value emission: " + type->FriendlyName());
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitZeroValue(StringStream& out, const core::type::Type* type) {
@@ -4045,11 +4056,8 @@ bool ASTPrinter::EmitMemberAccessor(StringStream& out, const ast::MemberAccessor
         [&](const sem::StructMemberAccess* member_access) {
             out << member_access->Member()->Name().Name();
             return true;
-        },
-        [&](Default) {
-            TINT_ICE() << "unknown member access type: " << sem->TypeInfo().name;
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitReturn(const ast::ReturnStatement* stmt) {
@@ -4120,20 +4128,13 @@ bool ASTPrinter::EmitStatement(const ast::Statement* stmt) {
                 [&](const ast::Let* let) { return EmitLet(let); },
                 [&](const ast::Const*) {
                     return true;  // Constants are embedded at their use
-                },
-                [&](Default) {  //
-                    TINT_ICE() << "unknown variable type: " << v->variable->TypeInfo().name;
-                    return false;
-                });
+                },                //
+                TINT_ICE_ON_NO_MATCH);
         },
         [&](const ast::ConstAssert*) {
             return true;  // Not emitted
-        },
-        [&](Default) {  //
-            diagnostics_.add_error(diag::System::Writer,
-                                   "unknown statement type: " + std::string(stmt->TypeInfo().name));
-            return false;
-        });
+        },                //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitDefaultOnlySwitch(const ast::SwitchStatement* stmt) {
@@ -4414,11 +4415,8 @@ bool ASTPrinter::EmitType(StringStream& out,
         [&](const core::type::Void*) {
             out << "void";
             return true;
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer, "unknown type in EmitType");
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitTypeAndName(StringStream& out,
@@ -4565,12 +4563,41 @@ bool ASTPrinter::EmitVar(const ast::Var* var) {
     return true;
 }
 
+bool ASTPrinter::IsStructOrArrayOfMatrix(const core::type::Type* ty) {
+    if (!ty->IsAnyOf<core::type::Struct, core::type::Array>()) {
+        return false;
+    }
+    return GetOrCreate(is_struct_or_array_of_matrix_, ty, [&]() {
+        Vector<const core::type::Type*, 4> to_visit({ty});
+        while (!to_visit.IsEmpty()) {
+            auto* curr = to_visit.Pop();
+            if (curr->Is<core::type::Matrix>()) {
+                return true;
+            }
+            auto [child_ty, child_count] = curr->Elements();
+            if (child_ty) {
+                to_visit.Push(child_ty);
+            } else {
+                for (uint32_t i = 0; i < child_count; ++i) {
+                    to_visit.Push(curr->Element(i));
+                }
+            }
+        }
+        return false;
+    });
+}
+
 bool ASTPrinter::EmitLet(const ast::Let* let) {
     auto* sem = builder_.Sem().Get(let);
     auto* type = sem->Type()->UnwrapRef();
 
     auto out = Line();
-    out << "const ";
+
+    // TODO(crbug.com/tint/2059): Workaround DXC bug with const instances of struct/array-of-matrix.
+    if (!IsStructOrArrayOfMatrix(type)) {
+        out << "const ";
+    }
+
     if (!EmitTypeAndName(out, type, core::AddressSpace::kUndefined, core::Access::kUndefined,
                          let->name->symbol.Name())) {
         return false;

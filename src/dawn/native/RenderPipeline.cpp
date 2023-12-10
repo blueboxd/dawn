@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/RenderPipeline.h"
 
@@ -258,10 +271,10 @@ MaybeError ValidatePrimitiveState(const DeviceBase* device, const PrimitiveState
 
 MaybeError ValidateDepthStencilState(const DeviceBase* device,
                                      const DepthStencilState* descriptor) {
-    DAWN_INVALID_IF(descriptor->nextInChain != nullptr, "nextInChain is not nullptr.");
-
-    DAWN_TRY_CONTEXT(ValidateCompareFunction(descriptor->depthCompare),
-                     "validating depth compare function");
+    if (descriptor->depthCompare != wgpu::CompareFunction::Undefined) {
+        DAWN_TRY_CONTEXT(ValidateCompareFunction(descriptor->depthCompare),
+                         "validating depth compare function");
+    }
     DAWN_TRY_CONTEXT(ValidateCompareFunction(descriptor->stencilFront.compare),
                      "validating stencil front compare function");
     DAWN_TRY_CONTEXT(ValidateStencilOperation(descriptor->stencilFront.failOp),
@@ -291,12 +304,38 @@ MaybeError ValidateDepthStencilState(const DeviceBase* device,
         descriptor->depthBiasSlopeScale, descriptor->depthBiasClamp);
 
     DAWN_INVALID_IF(
-        !format->HasDepth() && (descriptor->depthCompare != wgpu::CompareFunction::Always ||
-                                descriptor->depthWriteEnabled),
+        format->HasDepth() && descriptor->depthCompare == wgpu::CompareFunction::Undefined &&
+            (descriptor->depthWriteEnabled ||
+             descriptor->stencilFront.depthFailOp != wgpu::StencilOperation::Keep ||
+             descriptor->stencilBack.depthFailOp != wgpu::StencilOperation::Keep),
+        "Depth stencil format (%s) has a depth aspect and depthCompare is %s while it's actually "
+        "used by depthWriteEnabled (%u), or stencil front depth fail operation (%s), or "
+        "stencil back depth fail operation (%s).",
+        descriptor->format, wgpu::CompareFunction::Undefined, descriptor->depthWriteEnabled,
+        descriptor->stencilFront.depthFailOp, descriptor->stencilBack.depthFailOp);
+
+    UnpackedDepthStencilStateChain unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+    if (const auto* depthWriteDefined =
+            std::get<const DepthStencilStateDepthWriteDefinedDawn*>(unpacked)) {
+        DAWN_INVALID_IF(
+            format->HasDepth() && !depthWriteDefined->depthWriteDefined,
+            "Depth stencil format (%s) has a depth aspect and depthWriteEnabled is undefined.",
+            descriptor->format);
+    }
+
+    DAWN_INVALID_IF(
+        !format->HasDepth() && descriptor->depthCompare != wgpu::CompareFunction::Always &&
+            descriptor->depthCompare != wgpu::CompareFunction::Undefined,
         "Depth stencil format (%s) doesn't have depth aspect while depthCompare (%s) is "
-        "not %s or depthWriteEnabled (%u) is true.",
+        "neither %s nor %s.",
         descriptor->format, descriptor->depthCompare, wgpu::CompareFunction::Always,
-        descriptor->depthWriteEnabled);
+        wgpu::CompareFunction::Undefined);
+
+    DAWN_INVALID_IF(
+        !format->HasDepth() && descriptor->depthWriteEnabled,
+        "Depth stencil format (%s) doesn't have depth aspect while depthWriteEnabled (%u) is true.",
+        descriptor->format, descriptor->depthWriteEnabled);
 
     DAWN_INVALID_IF(!format->HasStencil() && StencilTestEnabled(descriptor),
                     "Depth stencil format (%s) doesn't have stencil aspect while stencil "
@@ -601,22 +640,21 @@ MaybeError ValidateInterStageMatching(DeviceBase* device,
     const EntryPointMetadata& fragmentMetadata =
         fragmentState.module->GetEntryPoint(fragmentState.entryPoint);
 
-    if (DAWN_UNLIKELY(
-            (vertexMetadata.usedInterStageVariables | fragmentMetadata.usedInterStageVariables) !=
-            vertexMetadata.usedInterStageVariables)) {
-        for (size_t i : IterateBitSet(fragmentMetadata.usedInterStageVariables)) {
-            if (!vertexMetadata.usedInterStageVariables.test(i)) {
+    size_t maxInterStageShaderVariables = device->GetLimits().v1.maxInterStageShaderVariables;
+    DAWN_ASSERT(vertexMetadata.usedInterStageVariables.size() == maxInterStageShaderVariables);
+    DAWN_ASSERT(fragmentMetadata.usedInterStageVariables.size() == maxInterStageShaderVariables);
+    for (size_t i = 0; i < maxInterStageShaderVariables; ++i) {
+        if (!vertexMetadata.usedInterStageVariables[i]) {
+            if (fragmentMetadata.usedInterStageVariables[i]) {
                 return DAWN_VALIDATION_ERROR(
                     "The fragment input at location %u doesn't have a corresponding vertex output.",
                     i);
             }
+            continue;
         }
-        DAWN_UNREACHABLE();
-    }
 
-    for (size_t i : IterateBitSet(vertexMetadata.usedInterStageVariables)) {
-        if (!fragmentMetadata.usedInterStageVariables.test(i)) {
-            // It is valid that fragment output is a subset of vertex input
+        // It is valid that fragment output is a subset of vertex input
+        if (!fragmentMetadata.usedInterStageVariables[i]) {
             continue;
         }
         const auto& vertexOutputInfo = vertexMetadata.interStageVariables[i];
@@ -818,6 +856,18 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
 
     if (mAttachmentState->HasDepthStencilAttachment()) {
         mDepthStencil = *descriptor->depthStencil;
+        // Reify depth option for stencil-only formats
+        const Format& format = device->GetValidInternalFormat(mDepthStencil.format);
+        if (!format.HasDepth()) {
+            mDepthStencil.depthWriteEnabled = false;
+            mDepthStencil.depthCompare = wgpu::CompareFunction::Always;
+        }
+        if (format.HasDepth() && mDepthStencil.depthCompare == wgpu::CompareFunction::Undefined &&
+            !mDepthStencil.depthWriteEnabled &&
+            mDepthStencil.stencilFront.depthFailOp == wgpu::StencilOperation::Keep &&
+            mDepthStencil.stencilBack.depthFailOp == wgpu::StencilOperation::Keep) {
+            mDepthStencil.depthCompare = wgpu::CompareFunction::Always;
+        }
         mWritesDepth = mDepthStencil.depthWriteEnabled;
         if (mDepthStencil.stencilWriteMask) {
             if ((mPrimitive.cullMode != wgpu::CullMode::Front &&

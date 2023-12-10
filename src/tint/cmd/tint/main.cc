@@ -1,16 +1,29 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <charconv>
 #include <cstdio>
@@ -23,11 +36,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#if TINT_BUILD_GLSL_WRITER
-#include "glslang/Public/ResourceLimits.h"
-#include "glslang/Public/ShaderLang.h"
-#endif  // TINT_BUILD_GLSL_WRITER
 
 #if TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 #include "spirv-tools/libspirv.hpp"
@@ -46,7 +54,6 @@
 #include "src/tint/lang/wgsl/ast/transform/single_entry_point.h"
 #include "src/tint/lang/wgsl/ast/transform/substitute_override.h"
 #include "src/tint/lang/wgsl/helpers/flatten_bindings.h"
-#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 #include "src/tint/utils/cli/cli.h"
 #include "src/tint/utils/command/command.h"
 #include "src/tint/utils/containers/transform.h"
@@ -61,10 +68,12 @@
 #endif  // TINT_BUILD_SPV_READER
 
 #if TINT_BUILD_WGSL_READER
+#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 #include "src/tint/lang/wgsl/reader/reader.h"
 #endif  // TINT_BUILD_WGSL_READER
 
 #if TINT_BUILD_SPV_WRITER
+#include "src/tint/lang/spirv/writer/helpers/generate_bindings.h"
 #include "src/tint/lang/spirv/writer/writer.h"
 #endif  // TINT_BUILD_SPV_WRITER
 
@@ -85,6 +94,10 @@
 #if TINT_BUILD_GLSL_WRITER
 #include "src/tint/lang/glsl/writer/writer.h"
 #endif  // TINT_BUILD_GLSL_WRITER
+
+#if TINT_BUILD_GLSL_VALIDATOR
+#include "src/tint/lang/glsl/validate/validate.h"
+#endif  // TINT_BUILD_GLSL_VALIDATOR
 
 #if TINT_BUILD_SPV_WRITER
 #define SPV_WRITER_ONLY(x) x
@@ -495,7 +508,9 @@ Options:
 /// like `std::string` and `std::vector` do.
 /// @returns true on success
 template <typename ContainerT>
-bool WriteFile(const std::string& output_file, const std::string mode, const ContainerT& buffer) {
+[[maybe_unused]] bool WriteFile(const std::string& output_file,
+                                const std::string mode,
+                                const ContainerT& buffer) {
     const bool use_stdout = output_file.empty() || output_file == "-";
     FILE* file = stdout;
 
@@ -579,8 +594,7 @@ bool GenerateSpirv(const tint::Program& program, const Options& options) {
     tint::spirv::writer::Options gen_options;
     gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
-    gen_options.external_texture_options.bindings_map =
-        tint::cmd::GenerateExternalTextureBindings(program);
+    gen_options.bindings = tint::spirv::writer::GenerateBindings(program);
     gen_options.use_tint_ir = options.use_ir;
 
     auto result = tint::spirv::writer::Generate(program, gen_options);
@@ -631,7 +645,8 @@ bool GenerateSpirv(const tint::Program& program, const Options& options) {
 /// @param program the program to generate
 /// @param options the options that Tint was invoked with
 /// @returns true on success
-bool GenerateWgsl(const tint::Program& program, const Options& options) {
+bool GenerateWgsl([[maybe_unused]] const tint::Program& program,
+                  [[maybe_unused]] const Options& options) {
 #if TINT_BUILD_WGSL_WRITER
     // TODO(jrprice): Provide a way for the user to set non-default options.
     tint::wgsl::writer::Options gen_options;
@@ -650,6 +665,7 @@ bool GenerateWgsl(const tint::Program& program, const Options& options) {
         PrintHash(hash);
     }
 
+#if TINT_BUILD_WGSL_READER
     if (options.validate && options.skip_hash.count(hash) == 0) {
         // Attempt to re-parse the output program with Tint's WGSL reader.
         auto source = std::make_unique<tint::Source::File>(options.input_filename, result->wgsl);
@@ -661,11 +677,10 @@ bool GenerateWgsl(const tint::Program& program, const Options& options) {
             return false;
         }
     }
+#endif  // TINT_BUILD_WGSL_READER
 
     return true;
 #else
-    (void)program;
-    (void)options;
     std::cerr << "WGSL writer not enabled in tint build" << std::endl;
     return false;
 #endif  // TINT_BUILD_WGSL_WRITER
@@ -675,12 +690,16 @@ bool GenerateWgsl(const tint::Program& program, const Options& options) {
 /// @param program the program to generate
 /// @param options the options that Tint was invoked with
 /// @returns true on success
-bool GenerateMsl(const tint::Program& program, const Options& options) {
-#if TINT_BUILD_MSL_WRITER
+bool GenerateMsl([[maybe_unused]] const tint::Program& program,
+                 [[maybe_unused]] const Options& options) {
+#if !TINT_BUILD_MSL_WRITER
+    std::cerr << "MSL writer not enabled in tint build" << std::endl;
+    return false;
+#else
     // Remap resource numbers to a flat namespace.
     // TODO(crbug.com/tint/1501): Do this via Options::BindingMap.
     const tint::Program* input_program = &program;
-    auto flattened = tint::writer::FlattenBindings(program);
+    auto flattened = tint::wgsl::FlattenBindings(program);
     if (flattened) {
         input_program = &*flattened;
     }
@@ -752,11 +771,6 @@ bool GenerateMsl(const tint::Program& program, const Options& options) {
     }
 
     return true;
-#else
-    (void)program;
-    (void)options;
-    std::cerr << "MSL writer not enabled in tint build" << std::endl;
-    return false;
 #endif  // TINT_BUILD_MSL_WRITER
 }
 
@@ -883,32 +897,16 @@ bool GenerateHlsl(const tint::Program& program, const Options& options) {
 #endif  // TINT_BUILD_HLSL_WRITER
 }
 
-#if TINT_BUILD_GLSL_WRITER
-EShLanguage pipeline_stage_to_esh_language(tint::ast::PipelineStage stage) {
-    switch (stage) {
-        case tint::ast::PipelineStage::kFragment:
-            return EShLangFragment;
-        case tint::ast::PipelineStage::kVertex:
-            return EShLangVertex;
-        case tint::ast::PipelineStage::kCompute:
-            return EShLangCompute;
-        default:
-            TINT_UNREACHABLE();
-            return EShLangVertex;
-    }
-}
-#endif
-
 /// Generate GLSL code for a program.
 /// @param program the program to generate
 /// @param options the options that Tint was invoked with
 /// @returns true on success
-bool GenerateGlsl(const tint::Program& program, const Options& options) {
-#if TINT_BUILD_GLSL_WRITER
-    if (options.validate) {
-        glslang::InitializeProcess();
-    }
-
+bool GenerateGlsl([[maybe_unused]] const tint::Program& program,
+                  [[maybe_unused]] const Options& options) {
+#if !TINT_BUILD_GLSL_WRITER
+    std::cerr << "GLSL writer not enabled in tint build" << std::endl;
+    return false;
+#else
     auto generate = [&](const tint::Program& prg, const std::string entry_point_name) -> bool {
         tint::glsl::writer::Options gen_options;
         gen_options.disable_robustness = !options.enable_robustness;
@@ -935,22 +933,16 @@ bool GenerateGlsl(const tint::Program& program, const Options& options) {
         }
 
         if (options.validate && options.skip_hash.count(hash) == 0) {
-            for (auto entry_pt : result->entry_points) {
-                EShLanguage lang = pipeline_stage_to_esh_language(entry_pt.second);
-                glslang::TShader shader(lang);
-                const char* strings[1] = {result->glsl.c_str()};
-                int lengths[1] = {static_cast<int>(result->glsl.length())};
-                shader.setStringsWithLengths(strings, lengths, 1);
-                shader.setEntryPoint("main");
-                bool glslang_result = shader.parse(GetDefaultResources(), 310, EEsProfile, false,
-                                                   false, EShMsgDefault);
-                if (!glslang_result) {
-                    std::cerr << "Error parsing GLSL shader:\n"
-                              << shader.getInfoLog() << "\n"
-                              << shader.getInfoDebugLog() << "\n";
-                    return false;
-                }
+#if !TINT_BUILD_GLSL_VALIDATOR
+            std::cerr << "GLSL validator not enabled in tint build" << std::endl;
+            return false;
+#else
+            auto val = tint::glsl::validate::Validate(result->glsl, result->entry_points);
+            if (!val) {
+                std::cerr << val.Failure();
+                return false;
             }
+#endif
         }
         return true;
     };
@@ -968,11 +960,6 @@ bool GenerateGlsl(const tint::Program& program, const Options& options) {
         success &= generate(program, entry_point.name);
     }
     return success;
-#else
-    (void)program;
-    (void)options;
-    std::cerr << "GLSL writer not enabled in tint build" << std::endl;
-    return false;
 #endif  // TINT_BUILD_GLSL_WRITER
 }
 
@@ -1116,8 +1103,7 @@ int main(int argc, const char** argv) {
         } else {
             auto mod = result.Move();
             if (options.dump_ir) {
-                tint::core::ir::Disassembler d(mod);
-                std::cout << d.Disassemble() << std::endl;
+                std::cout << tint::core::ir::Disassemble(mod) << std::endl;
             }
         }
     }

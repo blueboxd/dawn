@@ -1,43 +1,82 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <map>
 #include <optional>
 #include <utility>
 #include <vector>
 
-#include "dawn/wire/ObjectHandle.h"
-#include "dawn/wire/client/Client.h"
 #include "dawn/wire/client/EventManager.h"
 
+#include "dawn/wire/client/Client.h"
+
 namespace dawn::wire::client {
+
+// TrackedEvent
+
+TrackedEvent::TrackedEvent(WGPUCallbackMode mode) : mMode(mode) {}
+
+TrackedEvent::~TrackedEvent() {
+    DAWN_ASSERT(mEventState == EventState::Complete);
+}
+
+WGPUCallbackMode TrackedEvent::GetCallbackMode() const {
+    return mMode;
+}
+
+bool TrackedEvent::IsReady() const {
+    return mEventState == EventState::Ready;
+}
+
+void TrackedEvent::SetReady() {
+    DAWN_ASSERT(mEventState == EventState::Pending);
+    mEventState = EventState::Ready;
+}
+
+void TrackedEvent::Complete(EventCompletionType type) {
+    DAWN_ASSERT(mEventState != EventState::Complete);
+    CompleteImpl(type);
+    mEventState = EventState::Complete;
+}
 
 // EventManager
 
 EventManager::EventManager(Client* client) : mClient(client) {}
 
-std::pair<FutureID, bool> EventManager::TrackEvent(TrackedEvent* event) {
+std::pair<FutureID, bool> EventManager::TrackEvent(std::unique_ptr<TrackedEvent> event) {
     FutureID futureID = mNextFutureID++;
-    std::unique_ptr<TrackedEvent> ptr(event);
 
     if (mClient->IsDisconnected()) {
-        std::move(ptr)->Complete(EventCompletionType::Shutdown);
+        event->Complete(EventCompletionType::Shutdown);
         return {futureID, false};
     }
 
     mTrackedEvents.Use([&](auto trackedEvents) {
-        auto [it, inserted] = trackedEvents->emplace(futureID, std::move(ptr));
+        auto [it, inserted] = trackedEvents->emplace(futureID, std::move(event));
         DAWN_ASSERT(inserted);
     });
 
@@ -47,48 +86,19 @@ std::pair<FutureID, bool> EventManager::TrackEvent(TrackedEvent* event) {
 void EventManager::ShutDown() {
     // Call any outstanding callbacks before destruction.
     while (true) {
-        std::map<FutureID, std::unique_ptr<TrackedEvent>> movedEvents;
-        mTrackedEvents.Use([&](auto trackedEvents) { movedEvents = std::move(*trackedEvents); });
+        std::map<FutureID, std::unique_ptr<TrackedEvent>> events;
+        mTrackedEvents.Use([&](auto trackedEvents) { events = std::move(*trackedEvents); });
 
-        if (movedEvents.empty()) {
+        if (events.empty()) {
             break;
         }
 
         // Ordering guaranteed because we are using a sorted map.
-        for (auto& [futureID, trackedEvent] : movedEvents) {
-            std::move(trackedEvent)->Complete(EventCompletionType::Shutdown);
+        for (auto& [futureID, event] : events) {
+            event->Complete(EventCompletionType::Shutdown);
         }
     }
-}
-
-void EventManager::SetFutureReady(FutureID futureID, std::function<void(TrackedEvent&)>&& ready) {
-    DAWN_ASSERT(futureID > 0);
-    // If the client was already disconnected, then all the callbacks should already have fired so
-    // we don't need to fire the callback anymore.
-    if (mClient->IsDisconnected()) {
-        return;
-    }
-
-    std::optional<std::unique_ptr<TrackedEvent>> event;
-    mTrackedEvents.Use([&](auto trackedEvents) {
-        std::unique_ptr<TrackedEvent>& trackedEvent =
-            trackedEvents->at(futureID);  // Asserts futureID is in the map
-        trackedEvent->mReady = true;
-        if (ready) {
-            ready(*trackedEvent);
-        }
-
-        // If the event can be spontaneously completed, do so now.
-        if (trackedEvent->mMode == WGPUCallbackMode_AllowSpontaneous) {
-            event = std::move(trackedEvent);
-            trackedEvents->erase(futureID);
-        }
-    });
-
-    // Handle spontaneous completions.
-    if (event.has_value()) {
-        std::move(*event)->Complete(EventCompletionType::Ready);
-    }
+    mIsShutdown = true;
 }
 
 void EventManager::ProcessPollEvents() {
@@ -96,10 +106,11 @@ void EventManager::ProcessPollEvents() {
     std::vector<std::unique_ptr<TrackedEvent>> eventsToCompleteNow;
     mTrackedEvents.Use([&](auto trackedEvents) {
         for (auto it = trackedEvents->begin(); it != trackedEvents->end();) {
-            std::unique_ptr<TrackedEvent>& event = it->second;
-            bool shouldRemove = (event->mMode == WGPUCallbackMode_AllowProcessEvents ||
-                                 event->mMode == WGPUCallbackMode_AllowSpontaneous) &&
-                                event->mReady;
+            auto& event = it->second;
+            WGPUCallbackMode callbackMode = event->GetCallbackMode();
+            bool shouldRemove = (callbackMode == WGPUCallbackMode_AllowProcessEvents ||
+                                 callbackMode == WGPUCallbackMode_AllowSpontaneous) &&
+                                event->IsReady();
             if (!shouldRemove) {
                 ++it;
                 continue;
@@ -109,8 +120,8 @@ void EventManager::ProcessPollEvents() {
         }
     });
 
-    for (std::unique_ptr<TrackedEvent>& event : eventsToCompleteNow) {
-        std::move(event)->Complete(EventCompletionType::Ready);
+    for (auto& event : eventsToCompleteNow) {
+        event->Complete(EventCompletionType::Ready);
     }
 }
 
@@ -145,10 +156,10 @@ WGPUWaitStatus EventManager::WaitAny(size_t count, WGPUFutureWaitInfo* infos, ui
                 continue;
             }
 
-            std::unique_ptr<TrackedEvent>& event = it->second;
+            auto& event = it->second;
             // Early update .completed, in prep to complete the callback if ready.
-            infos[i].completed = event->mReady;
-            if (event->mReady) {
+            infos[i].completed = event->IsReady();
+            if (event->IsReady()) {
                 anyCompleted = true;
                 eventsToCompleteNow.emplace(it->first, std::move(event));
                 trackedEvents->erase(it);
@@ -158,22 +169,10 @@ WGPUWaitStatus EventManager::WaitAny(size_t count, WGPUFutureWaitInfo* infos, ui
 
     for (auto& [_, event] : eventsToCompleteNow) {
         // .completed has already been set to true (before the callback, per API contract).
-        std::move(event)->Complete(EventCompletionType::Ready);
+        event->Complete(EventCompletionType::Ready);
     }
 
     return anyCompleted ? WGPUWaitStatus_Success : WGPUWaitStatus_TimedOut;
-}
-
-// TrackedEvent
-
-TrackedEvent::TrackedEvent(WGPUCallbackMode mode, void* userdata)
-    : mMode(mode), mUserdata(userdata) {}
-
-TrackedEvent::~TrackedEvent() = default;
-
-void TrackedEvent::Complete(EventCompletionType type) {
-    DAWN_ASSERT(type == EventCompletionType::Shutdown || mReady);
-    CompleteImpl(type);
 }
 
 }  // namespace dawn::wire::client

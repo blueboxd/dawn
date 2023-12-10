@@ -18,11 +18,11 @@ vars = {
   'dawn_node': False, # Also fetches dependencies required for building NodeJS bindings.
   'dawn_cmake_version': 'version:2@3.23.3',
   'dawn_cmake_win32_sha1': 'b106d66bcdc8a71ea2cdf5446091327bfdb1bcd7',
-  'dawn_gn_version': 'git_revision:bd99dbf98cbdefe18a4128189665c5761263bcfb',
+  'dawn_gn_version': 'git_revision:182a6eb05d15cc76d2302f7928fdb4f645d52c53',
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
   'dawn_ninja_version': 'version:2@1.11.1.chromium.6',
-  'dawn_go_version': 'version:2@1.18.4',
+  'dawn_go_version': 'version:2@1.21.3',
 
   'node_darwin_arm64_sha': '31859fc1fa0994a95f44f09c367d6ff63607cfde',
   'node_darwin_x64_sha': '16dfd094763b71988933a31735f9dea966f9abd6',
@@ -34,6 +34,14 @@ vars = {
 
   # Fetch clang-tidy into the same bin/ directory as our clang binary.
   'checkout_clang_tidy': False,
+
+  # Fetch the rust toolchain.
+  #
+  # Use a custom_vars section to enable it:
+  # "custom_vars": {
+  #   "checkout_rust": True,
+  # }
+  'checkout_rust': False,
 
   # Fetch configuration files required for the 'use_remoteexec' gn arg
   'download_remoteexec_cfg': False,
@@ -53,11 +61,6 @@ vars = {
 }
 
 deps = {
-  # Dependencies required to use GN/Clang in standalone
-  'build': {
-    'url': '{chromium_git}/chromium/src/build@5885d3c24833ad72845a52a1b913a2b8bc651b56',
-    'condition': 'dawn_standalone',
-  },
   'buildtools': {
     'url': '{chromium_git}/chromium/src/buildtools@a9a6f0c49d0e8fa0cda37337430b4736ab3dc944',
     'condition': 'dawn_standalone',
@@ -101,9 +104,20 @@ deps = {
     'condition': 'dawn_standalone',
   },
 
-  'tools/clang': {
-    'url': '{chromium_git}/chromium/src/tools/clang@8f75392b4aa947fb55c7c206b36804229595e4da',
+  # Dependencies required to use GN, Clang, and Rust in standalone.
+  # The //build, //tools/clang, and //tools/rust deps should all be updated
+  # in unison, as there are dependencies between them.
+  'build': {
+    'url': '{chromium_git}/chromium/src/build@e2f4d00875f7d00fad39d5af2c6869ac7c7413cc',
     'condition': 'dawn_standalone',
+  },
+  'tools/clang': {
+    'url': '{chromium_git}/chromium/src/tools/clang@86aed39db276fb876a2b98c93cc6ff8940377903',
+    'condition': 'dawn_standalone',
+  },
+  'tools/rust': {
+    'url': '{chromium_git}/chromium/src/tools/rust@7052bd3aa0eba2d3d701b7a76219e3b04770540e',
+    'condition': 'dawn_standalone and checkout_rust',
   },
   'tools/clang/dsymutil': {
     'packages': [{
@@ -158,17 +172,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@3d5308aac229dabf751b9ebf8a7e81fa2b0477cd',
+    'url': '{chromium_git}/angle/angle@b56a72045a2b8ca5daf15d8177b462d256fc5181',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@7f4d495c89c200c1945cce5995d348dd41dadb5a',
+    'url': '{swiftshader_git}/SwiftShader@d9ec9befba05a8dfca09c1e88f3f7be0e4b153c6',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@7413048934e28b97ae00c37c419e576db8add866',
+    'url': '{chromium_git}/vulkan-deps@1a99a795c2297084596c89b559c3a3a55bbf7abf',
     'condition': 'dawn_standalone',
   },
 
@@ -183,7 +197,7 @@ deps = {
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@6b4b0eb5f2ca9b9039a7dbf7b324a9478fbd6f03',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@64030a4e01e27c608b6c5f1ab5add43575e086f9',
   },
 
   'third_party/dxheaders': {
@@ -202,7 +216,7 @@ deps = {
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@be1210e145e89e7a2943947d983f9592495e0f52',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@2ef3f322027bec1bb5572f5083d478148d355d79',
     'condition': 'build_with_chromium',
   },
 
@@ -216,7 +230,7 @@ deps = {
     'condition': 'dawn_node',
   },
   'third_party/gpuweb': {
-    'url': '{github_git}/gpuweb/gpuweb.git@b42b4b8b8d7da145ee8eef120747fbd390283f5f',
+    'url': '{github_git}/gpuweb/gpuweb.git@17f7771857dd6cf0377a99e6a63a723b80485e50',
     'condition': 'dawn_node',
   },
 
@@ -262,6 +276,13 @@ deps = {
   # Misc dependencies inherited from Tint
   'third_party/protobuf': {
     'url': '{chromium_git}/external/github.com/protocolbuffers/protobuf.git@2b673bbb57e34fe1bd4570f726fc86b769a3a3d2',
+    'condition': 'dawn_standalone',
+  },
+
+  # Dependencies for PartitionAlloc.
+  # Doc: https://docs.google.com/document/d/1wz45t0alQthsIU9P7_rQcfQyqnrBMXzrOjSzdQo-V-A
+  'third_party/partition_alloc': {
+    'url': '{chromium_git}/chromium/src/base/allocator/partition_allocator.git@6f90cb04abb81942abaab7b63d34c02882208172',
     'condition': 'dawn_standalone',
   },
 }
@@ -324,6 +345,12 @@ hooks = [
     'condition': 'dawn_standalone and checkout_clang_tidy',
     'action': ['python3', 'tools/clang/scripts/update.py',
                '--package=clang-tidy'],
+  },
+  {
+    'name': 'rust',
+    'pattern': '.',
+    'action': ['python3', 'tools/rust/update_rust.py'],
+    'condition': 'dawn_standalone and checkout_rust',
   },
   {
     # Pull rc binaries using checked-in hashes.

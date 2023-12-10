@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/spirv/writer/raise/raise.h"
 
@@ -22,6 +35,7 @@
 #include "src/tint/lang/core/ir/transform/binding_remapper.h"
 #include "src/tint/lang/core/ir/transform/block_decorated_structs.h"
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
+#include "src/tint/lang/core/ir/transform/combine_access_instructions.h"
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
 #include "src/tint/lang/core/ir/transform/demote_to_helper.h"
 #include "src/tint/lang/core/ir/transform/direct_variable_access.h"
@@ -29,11 +43,14 @@
 #include "src/tint/lang/core/ir/transform/preserve_padding.h"
 #include "src/tint/lang/core/ir/transform/robustness.h"
 #include "src/tint/lang/core/ir/transform/std140.h"
+#include "src/tint/lang/core/ir/transform/vectorize_scalar_matrix_constructors.h"
 #include "src/tint/lang/core/ir/transform/zero_init_workgroup_memory.h"
+#include "src/tint/lang/spirv/writer/common/option_builder.h"
 #include "src/tint/lang/spirv/writer/raise/builtin_polyfill.h"
 #include "src/tint/lang/spirv/writer/raise/expand_implicit_splats.h"
 #include "src/tint/lang/spirv/writer/raise/handle_matrix_arithmetic.h"
 #include "src/tint/lang/spirv/writer/raise/merge_return.h"
+#include "src/tint/lang/spirv/writer/raise/pass_matrix_by_pointer.h"
 #include "src/tint/lang/spirv/writer/raise/shader_io.h"
 #include "src/tint/lang/spirv/writer/raise/var_for_dynamic_index.h"
 
@@ -48,8 +65,11 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         }                                \
     } while (false)
 
-    RUN_TRANSFORM(core::ir::transform::BindingRemapper, module,
-                  options.binding_remapper_options.binding_points);
+    ExternalTextureOptions external_texture_options{};
+    RemapperData remapper_data{};
+    PopulateRemapperAndMultiplanarOptions(options, remapper_data, external_texture_options);
+
+    RUN_TRANSFORM(core::ir::transform::BindingRemapper, module, remapper_data);
 
     core::ir::transform::BinaryPolyfillConfig binary_polyfills;
     binary_polyfills.bitshift_modulo = true;
@@ -83,13 +103,14 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     }
 
     RUN_TRANSFORM(core::ir::transform::MultiplanarExternalTexture, module,
-                  options.external_texture_options);
+                  external_texture_options);
 
     if (!options.disable_workgroup_init &&
         !options.use_zero_initialize_workgroup_memory_extension) {
         RUN_TRANSFORM(core::ir::transform::ZeroInitWorkgroupMemory, module);
     }
 
+    // PreservePadding must come before DirectVariableAccess.
     RUN_TRANSFORM(core::ir::transform::PreservePadding, module);
 
     core::ir::transform::DirectVariableAccessOptions dva_options;
@@ -97,9 +118,21 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     dva_options.transform_private = true;
     RUN_TRANSFORM(core::ir::transform::DirectVariableAccess, module, dva_options);
 
+    if (options.pass_matrix_by_pointer) {
+        // PassMatrixByPointer must come after PreservePadding+DirectVariableAccess.
+        RUN_TRANSFORM(PassMatrixByPointer, module);
+    }
+
     RUN_TRANSFORM(core::ir::transform::AddEmptyEntryPoint, module);
     RUN_TRANSFORM(core::ir::transform::Bgra8UnormPolyfill, module);
     RUN_TRANSFORM(core::ir::transform::BlockDecoratedStructs, module);
+    RUN_TRANSFORM(core::ir::transform::VectorizeScalarMatrixConstructors, module);
+
+    // CombineAccessInstructions must come after DirectVariableAccess and BlockDecoratedStructs.
+    // We run this transform as some Qualcomm drivers struggle with partial access chains that
+    // produce pointers to matrices.
+    RUN_TRANSFORM(core::ir::transform::CombineAccessInstructions, module);
+
     RUN_TRANSFORM(BuiltinPolyfill, module);
     RUN_TRANSFORM(core::ir::transform::DemoteToHelper, module);
     RUN_TRANSFORM(ExpandImplicitSplats, module);

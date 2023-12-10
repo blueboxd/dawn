@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program.h"
 
@@ -75,11 +88,6 @@
 #include "src/tint/utils/macros/scoped_assignment.h"
 #include "src/tint/utils/math/math.h"
 #include "src/tint/utils/rtti/switch.h"
-
-// Helper for calling TINT_UNIMPLEMENTED() from a Switch(object_ptr) default case.
-#define UNHANDLED_CASE(object_ptr)                         \
-    TINT_UNIMPLEMENTED() << "unhandled case in Switch(): " \
-                         << (object_ptr ? object_ptr->TypeInfo().name : "<null>")
 
 // Helper for incrementing nesting_depth_ and then decrementing nesting_depth_ at the end
 // of the scope that holds the call.
@@ -189,7 +197,7 @@ class State {
             tint::Switch(
                 inst,                                   //
                 [&](core::ir::Var* var) { Var(var); },  //
-                [&](Default) { UNHANDLED_CASE(inst); });
+                TINT_ICE_ON_NO_MATCH);
         }
     }
     const ast::Function* Fn(core::ir::Function* fn) {
@@ -328,7 +336,7 @@ class State {
             [&](core::ir::Unary* i) { Unary(i); },                            //
             [&](core::ir::Unreachable*) {},                                   //
             [&](core::ir::Var* i) { Var(i); },                                //
-            [&](Default) { UNHANDLED_CASE(inst); });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     void If(core::ir::If* if_) {
@@ -596,6 +604,18 @@ class State {
                     disabled_derivative_uniformity_ = true;
                 }
 
+                switch (c->Func()) {
+                    case wgsl::BuiltinFn::kTextureBarrier:
+                        Enable(wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
+                        break;
+                    case wgsl::BuiltinFn::kSubgroupBallot:
+                    case wgsl::BuiltinFn::kSubgroupBroadcast:
+                        Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+                        break;
+                    default:
+                        break;
+                }
+
                 auto* expr = b.Call(c->Func(), std::move(args));
                 if (!call->HasResults() || call->Result()->Type()->Is<core::type::Void>()) {
                     Append(b.CallStmt(expr));
@@ -616,7 +636,7 @@ class State {
                 Bind(c->Result(), b.Bitcast(ty, args[0]), PtrKind::kPtr);
             },
             [&](core::ir::Discard*) { Append(b.Discard()); },  //
-            [&](Default) { UNHANDLED_CASE(call); });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     void Load(core::ir::Load* l) { Bind(l->Result(), Expr(l->From())); }
@@ -628,11 +648,11 @@ class State {
 
     void Unary(core::ir::Unary* u) {
         const ast::Expression* expr = nullptr;
-        switch (u->Kind()) {
-            case core::ir::Unary::Kind::kComplement:
+        switch (u->Op()) {
+            case core::ir::UnaryOp::kComplement:
                 expr = b.Complement(Expr(u->Val()));
                 break;
-            case core::ir::Unary::Kind::kNegation:
+            case core::ir::UnaryOp::kNegation:
                 expr = b.Negation(Expr(u->Val()));
                 break;
         }
@@ -667,8 +687,8 @@ class State {
                     } else {
                         TINT_ICE() << "invalid index for struct type: " << index->TypeInfo().name;
                     }
-                },
-                [&](Default) { UNHANDLED_CASE(obj_ty); });
+                },  //
+                TINT_ICE_ON_NO_MATCH);
         }
         Bind(a->Result(), expr);
     }
@@ -689,7 +709,7 @@ class State {
     }
 
     void Binary(core::ir::Binary* e) {
-        if (e->Kind() == core::ir::Binary::Kind::kEqual) {
+        if (e->Op() == core::ir::BinaryOp::kEqual) {
             auto* rhs = e->RHS()->As<core::ir::Constant>();
             if (rhs && rhs->Type()->Is<core::type::Bool>() &&
                 rhs->Value()->ValueAs<bool>() == false) {
@@ -701,53 +721,53 @@ class State {
         auto* lhs = Expr(e->LHS());
         auto* rhs = Expr(e->RHS());
         const ast::Expression* expr = nullptr;
-        switch (e->Kind()) {
-            case core::ir::Binary::Kind::kAdd:
+        switch (e->Op()) {
+            case core::ir::BinaryOp::kAdd:
                 expr = b.Add(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kSubtract:
+            case core::ir::BinaryOp::kSubtract:
                 expr = b.Sub(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kMultiply:
+            case core::ir::BinaryOp::kMultiply:
                 expr = b.Mul(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kDivide:
+            case core::ir::BinaryOp::kDivide:
                 expr = b.Div(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kModulo:
+            case core::ir::BinaryOp::kModulo:
                 expr = b.Mod(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kAnd:
+            case core::ir::BinaryOp::kAnd:
                 expr = b.And(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kOr:
+            case core::ir::BinaryOp::kOr:
                 expr = b.Or(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kXor:
+            case core::ir::BinaryOp::kXor:
                 expr = b.Xor(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kEqual:
+            case core::ir::BinaryOp::kEqual:
                 expr = b.Equal(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kNotEqual:
+            case core::ir::BinaryOp::kNotEqual:
                 expr = b.NotEqual(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kLessThan:
+            case core::ir::BinaryOp::kLessThan:
                 expr = b.LessThan(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kGreaterThan:
+            case core::ir::BinaryOp::kGreaterThan:
                 expr = b.GreaterThan(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kLessThanEqual:
+            case core::ir::BinaryOp::kLessThanEqual:
                 expr = b.LessThanEqual(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kGreaterThanEqual:
+            case core::ir::BinaryOp::kGreaterThanEqual:
                 expr = b.GreaterThanEqual(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kShiftLeft:
+            case core::ir::BinaryOp::kShiftLeft:
                 expr = b.Shl(lhs, rhs);
                 break;
-            case core::ir::Binary::Kind::kShiftRight:
+            case core::ir::BinaryOp::kShiftRight:
                 expr = b.Shr(lhs, rhs);
                 break;
         }
@@ -843,11 +863,8 @@ class State {
             [&](const core::type::Array*) { return composite(/* can_splat */ false); },
             [&](const core::type::Vector*) { return composite(/* can_splat */ true); },
             [&](const core::type::Matrix*) { return composite(/* can_splat */ false); },
-            [&](const core::type::Struct*) { return composite(/* can_splat */ false); },
-            [&](Default) {
-                UNHANDLED_CASE(c->Type());
-                return b.Expr("<error>");
-            });
+            [&](const core::type::Struct*) { return composite(/* can_splat */ false); },  //
+            TINT_ICE_ON_NO_MATCH);
     }
 
     void Enable(wgsl::Extension ext) {
@@ -925,6 +942,9 @@ class State {
                 return b.ty.sampled_texture(t->dim(), el);
             },
             [&](const core::type::StorageTexture* t) {
+                if (t->access() == core::Access::kRead || t->access() == core::Access::kReadWrite) {
+                    Enable(wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
+                }
                 return b.ty.storage_texture(t->dim(), t->texel_format(), t->access());
             },
             [&](const core::type::Sampler* s) { return b.ty.sampler(s->kind()); },
@@ -941,11 +961,8 @@ class State {
             [&](const core::type::Reference*) {
                 TINT_ICE() << "reference types should never appear in the IR";
                 return b.ty.i32();
-            },
-            [&](Default) {
-                UNHANDLED_CASE(ty);
-                return b.ty.i32();
-            });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
     }
 
     ast::Type Struct(const core::type::Struct* s) {
@@ -968,6 +985,9 @@ class State {
                     ast_attrs.Push(b.Index(u32(*index)));
                 }
                 if (auto builtin = ir_attrs.builtin) {
+                    if (RequiresSubgroups(*builtin)) {
+                        Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+                    }
                     ast_attrs.Push(b.Builtin(*builtin));
                 }
                 if (auto interpolation = ir_attrs.interpolation) {
@@ -1165,6 +1185,18 @@ class State {
             case wgsl::BuiltinFn::kTextureSample:
             case wgsl::BuiltinFn::kTextureSampleBias:
             case wgsl::BuiltinFn::kTextureSampleCompare:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// @returns true if the builtin value requires the kChromiumExperimentalSubgroups extension to
+    /// be enabled.
+    bool RequiresSubgroups(core::BuiltinValue builtin) {
+        switch (builtin) {
+            case core::BuiltinValue::kSubgroupInvocationId:
+            case core::BuiltinValue::kSubgroupSize:
                 return true;
             default:
                 return false;

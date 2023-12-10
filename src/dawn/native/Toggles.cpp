@@ -1,16 +1,29 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <array>
 
@@ -232,6 +245,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"disable_timestamp_query_conversion",
       "Resolve timestamp queries into ticks instead of nanoseconds.", "https://crbug.com/dawn/1305",
       ToggleStage::Device}},
+    {Toggle::TimestampQuantization,
+     {"timestamp_quantization",
+      "Enable timestamp queries quantization to reduce the precision of timers that can be created "
+      "with timestamp queries.",
+      "https://crbug.com/dawn/1800", ToggleStage::Device}},
     {Toggle::ClearBufferBeforeResolveQueries,
      {"clear_buffer_before_resolve_queries",
       "clear destination buffer to zero before resolving queries. This toggle is enabled on Intel "
@@ -397,6 +415,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Use a blit instead of a copy command to copy bgra8unorm texture to a buffer."
       "Workaround for OpenGLES.",
       "https://crbug.com/dawn/1393", ToggleStage::Device}},
+    {Toggle::UseBlitForRGB9E5UfloatTextureCopy,
+     {"use_blit_for_rgb9e5ufloat_texture_copy",
+      "Use a blit instead of a copy command to copy rgb9e5ufloat texture to a texture or a buffer."
+      "Workaround for OpenGLES.",
+      "https://crbug.com/dawn/2079", ToggleStage::Device}},
     {Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha,
      {"d3d12_replace_add_with_minus_when_dst_factor_is_zero_and_src_factor_is_dst_alpha",
       "Replace the blending operation 'Add' with 'Minus' when dstBlendFactor is 'Zero' and "
@@ -453,6 +476,12 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
     {Toggle::UseTintIR,
      {"use_tint_ir", "Enable the use of the Tint IR for backend codegen.",
       "https://crbug.com/tint/1718", ToggleStage::Device}},
+    {Toggle::D3DDisableIEEEStrictness,
+     {"d3d_disable_ieee_strictness",
+      "Disable IEEE strictness when compiling shaders. It is otherwise enabled by default to "
+      "workaround issues where FXC can miscompile code that depends on special float values (NaN, "
+      "INF, etc).",
+      "https://crbug.com/tint/976", ToggleStage::Device}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
       "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "

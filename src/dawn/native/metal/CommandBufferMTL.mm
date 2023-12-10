@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/metal/CommandBufferMTL.h"
 
@@ -120,33 +133,23 @@ void SetSampleBufferAttachments(PassDescriptor* descriptor, BeginPass* cmd) {
     // Use @available instead of API_AVAILABLE because GetCounterSampleBuffer() also needs checking
     // API availability.
     if (@available(macOS 11.0, iOS 14.0, *)) {
-        QuerySetBase* beginQuerySet = cmd->beginTimestamp.querySet.Get();
-        QuerySetBase* endQuerySet = cmd->endTimestamp.querySet.Get();
-
+        QuerySetBase* querySet = cmd->timestampWrites.querySet.Get();
+        if (querySet == nullptr) {
+            return;
+        }
         SampleBufferAttachment<PassDescriptor> sampleBufferAttachment;
-
-        if (beginQuerySet != nullptr) {
-            sampleBufferAttachment.SetSampleBuffer(
-                descriptor, ToBackend(beginQuerySet)->GetCounterSampleBuffer());
-            sampleBufferAttachment.SetStartSampleIndex(descriptor,
-                                                       NSUInteger(cmd->beginTimestamp.queryIndex));
-
-            if (beginQuerySet == endQuerySet) {
-                sampleBufferAttachment.SetEndSampleIndex(descriptor,
-                                                         NSUInteger(cmd->endTimestamp.queryIndex));
-            } else {
-                sampleBufferAttachment.SetEndSampleIndex(descriptor, MTLCounterDontSample);
-            }
-        }
-
-        // Set to other sampleBufferAttachment if the endQuerySet is different with beginQuerySet.
-        if (endQuerySet != nullptr && beginQuerySet != endQuerySet) {
-            sampleBufferAttachment.SetSampleBuffer(
-                descriptor, ToBackend(endQuerySet)->GetCounterSampleBuffer());
-            sampleBufferAttachment.SetStartSampleIndex(descriptor, MTLCounterDontSample);
-            sampleBufferAttachment.SetEndSampleIndex(descriptor,
-                                                     NSUInteger(cmd->endTimestamp.queryIndex));
-        }
+        sampleBufferAttachment.SetSampleBuffer(descriptor,
+                                               ToBackend(querySet)->GetCounterSampleBuffer());
+        uint32_t beginningOfPassWriteIndex = cmd->timestampWrites.beginningOfPassWriteIndex;
+        sampleBufferAttachment.SetStartSampleIndex(
+            descriptor, beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined
+                            ? NSUInteger(beginningOfPassWriteIndex)
+                            : MTLCounterDontSample);
+        uint32_t endOfPassWriteIndex = cmd->timestampWrites.endOfPassWriteIndex;
+        sampleBufferAttachment.SetEndSampleIndex(
+            descriptor, endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined
+                            ? NSUInteger(endOfPassWriteIndex)
+                            : MTLCounterDontSample);
     } else {
         DAWN_UNREACHABLE();
     }
@@ -672,7 +675,7 @@ void RecordCopyBufferToTexture(CommandRecordingContext* commandContext,
                       sourceBytesPerRow:copyInfo.bytesPerRow
                     sourceBytesPerImage:copyInfo.bytesPerImage
                              sourceSize:MTLSizeMake(copyInfo.copyExtent.width, 1, 1)
-                              toTexture:texture->GetMTLTexture()
+                              toTexture:texture->GetMTLTexture(aspect)
                        destinationSlice:0
                        destinationLevel:mipLevel
                       destinationOrigin:MTLOriginMake(copyInfo.textureOrigin.x, 0, 0)
@@ -692,7 +695,7 @@ void RecordCopyBufferToTexture(CommandRecordingContext* commandContext,
                                                sourceBytesPerRow:copyInfo.bytesPerRow
                                              sourceBytesPerImage:copyInfo.bytesPerImage
                                                       sourceSize:copyExtent
-                                                       toTexture:texture->GetMTLTexture()
+                                                       toTexture:texture->GetMTLTexture(aspect)
                                                 destinationSlice:z
                                                 destinationLevel:mipLevel
                                                destinationOrigin:textureOrigin
@@ -710,7 +713,7 @@ void RecordCopyBufferToTexture(CommandRecordingContext* commandContext,
                              sourceSize:MTLSizeMake(copyInfo.copyExtent.width,
                                                     copyInfo.copyExtent.height,
                                                     copyInfo.copyExtent.depthOrArrayLayers)
-                              toTexture:texture->GetMTLTexture()
+                              toTexture:texture->GetMTLTexture(aspect)
                        destinationSlice:0
                        destinationLevel:mipLevel
                       destinationOrigin:MTLOriginMake(copyInfo.textureOrigin.x,
@@ -919,7 +922,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                     switch (texture->GetDimension()) {
                         case wgpu::TextureDimension::e1D: {
                             [commandContext->EnsureBlit()
-                                         copyFromTexture:texture->GetMTLTexture()
+                                         copyFromTexture:texture->GetMTLTexture(src.aspect)
                                              sourceSlice:0
                                              sourceLevel:src.mipLevel
                                             sourceOrigin:MTLOriginMake(copyInfo.textureOrigin.x, 0,
@@ -945,7 +948,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                                  copyInfo.textureOrigin.z + copyInfo.copyExtent.depthOrArrayLayers;
                                  ++z) {
                                 [commandContext->EnsureBlit()
-                                             copyFromTexture:texture->GetMTLTexture()
+                                             copyFromTexture:texture->GetMTLTexture(src.aspect)
                                                  sourceSlice:z
                                                  sourceLevel:src.mipLevel
                                                 sourceOrigin:textureOrigin
@@ -961,7 +964,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                         }
                         case wgpu::TextureDimension::e3D: {
                             [commandContext->EnsureBlit()
-                                         copyFromTexture:texture->GetMTLTexture()
+                                         copyFromTexture:texture->GetMTLTexture(src.aspect)
                                              sourceSlice:0
                                              sourceLevel:src.mipLevel
                                             sourceOrigin:MTLOriginMake(copyInfo.textureOrigin.x,
@@ -1033,7 +1036,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                         dstTexture->CreateFormatView(srcTexture->GetFormat().format);
 
                     [commandContext->EnsureBlit()
-                          copyFromTexture:srcTexture->GetMTLTexture()
+                          copyFromTexture:srcTexture->GetMTLTexture(copy->source.aspect)
                               sourceSlice:sourceLayer
                               sourceLevel:copy->source.mipLevel
                              sourceOrigin:MTLOriginMake(copy->source.origin.x,
@@ -1213,13 +1216,15 @@ MaybeError CommandBuffer::EncodeComputePass(CommandRecordingContext* commandCont
         encoder = commandContext->BeginCompute();
 
         if (@available(macOS 10.15, iOS 14.0, *)) {
-            if (computePassCmd->beginTimestamp.querySet.Get() != nullptr) {
+            if (computePassCmd->timestampWrites.beginningOfPassWriteIndex !=
+                wgpu::kQuerySetIndexUndefined) {
                 DAWN_ASSERT(ToBackend(GetDevice())->UseCounterSamplingAtCommandBoundary());
 
                 [encoder
-                    sampleCountersInBuffer:ToBackend(computePassCmd->beginTimestamp.querySet.Get())
+                    sampleCountersInBuffer:ToBackend(computePassCmd->timestampWrites.querySet.Get())
                                                ->GetCounterSampleBuffer()
-                             atSampleIndex:NSUInteger(computePassCmd->beginTimestamp.queryIndex)
+                             atSampleIndex:NSUInteger(computePassCmd->timestampWrites
+                                                          .beginningOfPassWriteIndex)
                                withBarrier:YES];
             }
         }
@@ -1236,16 +1241,16 @@ MaybeError CommandBuffer::EncodeComputePass(CommandRecordingContext* commandCont
                     // Simulate timestamp write at the end of render pass if it does not support
                     // counter sampling at stage boundary.
                     if (ToBackend(GetDevice())->UseCounterSamplingAtCommandBoundary() &&
-                        computePassCmd->endTimestamp.querySet.Get() != nullptr) {
+                        computePassCmd->timestampWrites.endOfPassWriteIndex !=
+                            wgpu::kQuerySetIndexUndefined) {
                         DAWN_ASSERT(!ToBackend(GetDevice())->UseCounterSamplingAtStageBoundary());
 
-                        [encoder
-                            sampleCountersInBuffer:ToBackend(
-                                                       computePassCmd->endTimestamp.querySet.Get())
-                                                       ->GetCounterSampleBuffer()
-                                     atSampleIndex:NSUInteger(
-                                                       computePassCmd->endTimestamp.queryIndex)
-                                       withBarrier:YES];
+                        [encoder sampleCountersInBuffer:ToBackend(computePassCmd->timestampWrites
+                                                                      .querySet.Get())
+                                                            ->GetCounterSampleBuffer()
+                                          atSampleIndex:NSUInteger(computePassCmd->timestampWrites
+                                                                       .endOfPassWriteIndex)
+                                            withBarrier:YES];
                     }
                 }
 
@@ -1377,13 +1382,16 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
         // Simulate timestamp write at the beginning of render pass by
         // sampleCountersInBuffer if it does not support counter sampling at stage boundary.
         if (ToBackend(GetDevice())->UseCounterSamplingAtCommandBoundary() &&
-            renderPassCmd->beginTimestamp.querySet.Get() != nullptr) {
+            renderPassCmd->timestampWrites.beginningOfPassWriteIndex !=
+                wgpu::kQuerySetIndexUndefined) {
             DAWN_ASSERT(!ToBackend(GetDevice())->UseCounterSamplingAtStageBoundary());
 
-            [encoder sampleCountersInBuffer:ToBackend(renderPassCmd->beginTimestamp.querySet.Get())
-                                                ->GetCounterSampleBuffer()
-                              atSampleIndex:NSUInteger(renderPassCmd->beginTimestamp.queryIndex)
-                                withBarrier:YES];
+            [encoder
+                sampleCountersInBuffer:ToBackend(renderPassCmd->timestampWrites.querySet.Get())
+                                           ->GetCounterSampleBuffer()
+                         atSampleIndex:NSUInteger(
+                                           renderPassCmd->timestampWrites.beginningOfPassWriteIndex)
+                           withBarrier:YES];
         }
     }
     SetDebugName(GetDevice(), encoder, "Dawn_RenderPassEncoder", renderPassCmd->label);
@@ -1597,16 +1605,16 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
                     // Simulate timestamp write at the end of render pass if it does not support
                     // counter sampling at stage boundary.
                     if (ToBackend(GetDevice())->UseCounterSamplingAtCommandBoundary() &&
-                        renderPassCmd->endTimestamp.querySet.Get() != nullptr) {
+                        renderPassCmd->timestampWrites.endOfPassWriteIndex !=
+                            wgpu::kQuerySetIndexUndefined) {
                         DAWN_ASSERT(!ToBackend(GetDevice())->UseCounterSamplingAtStageBoundary());
 
-                        [encoder
-                            sampleCountersInBuffer:ToBackend(
-                                                       renderPassCmd->endTimestamp.querySet.Get())
-                                                       ->GetCounterSampleBuffer()
-                                     atSampleIndex:NSUInteger(
-                                                       renderPassCmd->endTimestamp.queryIndex)
-                                       withBarrier:YES];
+                        [encoder sampleCountersInBuffer:ToBackend(renderPassCmd->timestampWrites
+                                                                      .querySet.Get())
+                                                            ->GetCounterSampleBuffer()
+                                          atSampleIndex:NSUInteger(renderPassCmd->timestampWrites
+                                                                       .endOfPassWriteIndex)
+                                            withBarrier:YES];
                     }
                 }
 

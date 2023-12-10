@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/d3d12/TextureD3D12.h"
 
@@ -246,7 +259,7 @@ MaybeError Texture::InitializeAsInternalTexture() {
     resourceDescriptor.Dimension = D3D12TextureDimension(GetDimension());
     resourceDescriptor.Alignment = 0;
 
-    const Extent3D& size = GetSize();
+    const Extent3D& size = GetBaseSize();
     resourceDescriptor.Width = size.width;
     resourceDescriptor.Height = size.height;
     resourceDescriptor.DepthOrArraySize = size.depthOrArrayLayers;
@@ -812,7 +825,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
                 uint32_t sliceCount = 1;
                 if (GetDimension() == wgpu::TextureDimension::e3D) {
                     baseSlice = 0;
-                    sliceCount = std::max(GetDepth() >> level, 1u);
+                    sliceCount = std::max(GetDepth(Aspect::Color) >> level, 1u);
                 }
                 D3D12_RENDER_TARGET_VIEW_DESC rtvDesc =
                     GetRTVDescriptor(GetFormat(), level, baseSlice, sliceCount);
@@ -830,7 +843,8 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
         for (Aspect aspect : IterateEnumMask(range.aspects)) {
             const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(aspect).block;
 
-            Extent3D largestMipSize = GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel);
+            Extent3D largestMipSize =
+                GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel, aspect);
 
             uint32_t bytesPerRow =
                 Align((largestMipSize.width / blockInfo.width) * blockInfo.byteSize,
@@ -847,7 +861,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
             for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
                  ++level) {
                 // compute d3d12 texture copy locations for texture and buffer
-                Extent3D copySize = GetMipLevelSingleSubresourcePhysicalSize(level);
+                Extent3D copySize = GetMipLevelSingleSubresourcePhysicalSize(level, aspect);
 
                 for (uint32_t layer = range.baseArrayLayer;
                      layer < range.baseArrayLayer + range.layerCount; ++layer) {
@@ -1116,7 +1130,8 @@ D3D12_UNORDERED_ACCESS_VIEW_DESC TextureView::GetUAVDescriptor() const {
         case wgpu::TextureViewDimension::e3D:
             uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE3D;
             uavDesc.Texture3D.FirstWSlice = 0;
-            uavDesc.Texture3D.WSize = std::max(1u, GetTexture()->GetDepth() >> GetBaseMipLevel());
+            uavDesc.Texture3D.WSize =
+                std::max(1u, GetSingleSubresourceVirtualSize().depthOrArrayLayers);
             uavDesc.Texture3D.MipSlice = GetBaseMipLevel();
             break;
         // Cube and Cubemap can't be used as storage texture. So there is no need to create UAV

@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/wgsl/resolver/uniformity.h"
 
@@ -176,8 +189,8 @@ struct ParameterInfo {
 struct FunctionInfo {
     /// Constructor
     /// @param func the AST function
-    /// @param builder the program builder
-    FunctionInfo(const ast::Function* func, const ProgramBuilder* builder) {
+    /// @param b the program builder
+    FunctionInfo(const ast::Function* func, const ProgramBuilder& b) {
         name = func->name->symbol.Name();
         callsite_tag = {CallSiteTag::CallSiteNoRestriction};
         function_tag = NoRestriction;
@@ -197,7 +210,7 @@ struct FunctionInfo {
         for (size_t i = 0; i < func->params.Length(); i++) {
             auto* param = func->params[i];
             auto param_name = param->name->symbol.Name();
-            auto* sem = builder->Sem().Get<sem::Parameter>(param);
+            auto* sem = b.Sem().Get<sem::Parameter>(param);
             parameters[i].sem = sem;
 
             parameters[i].value = CreateNode({"param_", param_name});
@@ -339,8 +352,8 @@ class UniformityGraph {
   public:
     /// Constructor.
     /// @param builder the program to analyze
-    explicit UniformityGraph(ProgramBuilder* builder)
-        : builder_(builder), sem_(builder->Sem()), diagnostics_(builder->Diagnostics()) {}
+    explicit UniformityGraph(ProgramBuilder& builder)
+        : b(builder), sem_(b.Sem()), diagnostics_(builder.Diagnostics()) {}
 
     /// Destructor.
     ~UniformityGraph() {}
@@ -374,7 +387,7 @@ class UniformityGraph {
     }
 
   private:
-    const ProgramBuilder* builder_;
+    const ProgramBuilder& b;
     const sem::Info& sem_;
     diag::List& diagnostics_;
 
@@ -418,7 +431,7 @@ class UniformityGraph {
     /// @param func the function to process
     /// @returns true if there are no uniformity issues, false otherwise
     bool ProcessFunction(const ast::Function* func) {
-        current_function_ = functions_.Add(func, FunctionInfo(func, builder_)).value;
+        current_function_ = functions_.Add(func, FunctionInfo(func, b)).value;
 
         // Process function body.
         if (func->body) {
@@ -565,21 +578,22 @@ class UniformityGraph {
                 return cf_r;
             },
 
-            [&](const ast::BlockStatement* b) {
+            [&](const ast::BlockStatement* block) {
                 Hashmap<const sem::Variable*, Node*, 4> scoped_assignments;
+                auto* sem = sem_.Get(block);
                 {
                     // Push a new scope for variable assignments in the block.
                     current_function_->variables.Push();
                     TINT_DEFER(current_function_->variables.Pop());
 
-                    for (auto* s : b->statements) {
+                    for (auto* s : block->statements) {
                         cf = ProcessStatement(cf, s);
                         if (!sem_.Get(s)->Behaviors().Contains(sem::Behavior::kNext)) {
                             break;
                         }
                     }
 
-                    auto* parent = sem_.Get(b)->Parent();
+                    auto* parent = sem->Parent();
                     auto* loop = parent ? parent->As<sem::LoopStatement>() : nullptr;
                     if (loop) {
                         // We've reached the end of a loop body. If there is a continuing block,
@@ -587,7 +601,7 @@ class UniformityGraph {
                         // loop body are visible to the continuing block.
                         if (auto* continuing =
                                 loop->Declaration()->As<ast::LoopStatement>()->continuing) {
-                            auto& loop_body_behavior = sem_.Get(b)->Behaviors();
+                            auto& loop_body_behavior = sem->Behaviors();
                             if (loop_body_behavior.Contains(sem::Behavior::kNext) ||
                                 loop_body_behavior.Contains(sem::Behavior::kContinue)) {
                                 cf = ProcessStatement(cf, continuing);
@@ -595,7 +609,7 @@ class UniformityGraph {
                         }
                     }
 
-                    if (sem_.Get<sem::FunctionBlockStatement>(b)) {
+                    if (sem_.Get<sem::FunctionBlockStatement>(block)) {
                         // We've reached the end of the function body.
                         // Add edges from pointer parameter outputs to their current value.
                         for (auto& param : current_function_->parameters) {
@@ -611,7 +625,7 @@ class UniformityGraph {
 
                 // Propagate all variables assignments to the containing scope if the behavior is
                 // 'Next'.
-                auto& behaviors = sem_.Get(b)->Behaviors();
+                auto& behaviors = sem->Behaviors();
                 if (behaviors.Contains(sem::Behavior::kNext)) {
                     for (auto var : scoped_assignments) {
                         current_function_->variables.Set(var.key, var.value);
@@ -619,16 +633,16 @@ class UniformityGraph {
                 }
 
                 // Remove any variables declared in this scope from the set of in-scope variables.
-                for (auto decl : sem_.Get<sem::BlockStatement>(b)->Decls()) {
+                for (auto decl : sem->Decls()) {
                     current_function_->local_var_decls.Remove(decl.value.variable);
                 }
 
                 return cf;
             },
 
-            [&](const ast::BreakStatement* b) {
+            [&](const ast::BreakStatement* brk) {
                 // Find the loop or switch statement that we are in.
-                auto* parent = sem_.Get(b)
+                auto* parent = sem_.Get(brk)
                                    ->FindFirstParent<sem::SwitchStatement, sem::LoopStatement,
                                                      sem::ForLoopStatement, sem::WhileStatement>();
 
@@ -654,20 +668,21 @@ class UniformityGraph {
                 return cf;
             },
 
-            [&](const ast::BreakIfStatement* b) {
+            [&](const ast::BreakIfStatement* brk) {
                 // This works very similar to the IfStatement uniformity below, execpt instead of
                 // processing the body, we directly inline the BreakStatement uniformity from
                 // above.
+                auto* sem = sem_.Get(brk);
 
-                auto [_, v_cond] = ProcessExpression(cf, b->condition);
+                auto [_, v_cond] = ProcessExpression(cf, brk->condition);
 
                 // Add a diagnostic node to capture the control flow change.
-                auto* v = CreateNode({"break_if_stmt"}, b);
+                auto* v = CreateNode({"break_if_stmt"}, brk);
                 v->affects_control_flow = true;
                 v->AddEdge(v_cond);
 
                 {
-                    auto* parent = sem_.Get(b)->FindFirstParent<sem::LoopStatement>();
+                    auto* parent = sem->FindFirstParent<sem::LoopStatement>();
                     auto& info = current_function_->LoopSwitchInfoFor(parent);
 
                     // Propagate variable values to the loop exit nodes.
@@ -689,8 +704,7 @@ class UniformityGraph {
                     }
                 }
 
-                auto* sem_break_if = sem_.Get(b);
-                if (sem_break_if->Behaviors() != sem::Behaviors{sem::Behavior::kNext}) {
+                if (sem->Behaviors() != sem::Behaviors{sem::Behavior::kNext}) {
                     auto* cf_end = CreateNode({"break_if_CFend"});
                     cf_end->AddEdge(v);
                     return cf_end;
@@ -1160,10 +1174,7 @@ class UniformityGraph {
                 return cf;  // No impact on uniformity
             },
 
-            [&](Default) {
-                TINT_ICE() << "unknown statement type: " << std::string(stmt->TypeInfo().name);
-                return nullptr;
-            });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// Process an identifier expression.
@@ -1178,7 +1189,7 @@ class UniformityGraph {
         auto has_nonuniform_entry_point_attribute = [&](auto* obj) {
             // Only the num_workgroups and workgroup_id builtins are uniform.
             if (auto* builtin_attr = ast::GetAttribute<ast::BuiltinAttribute>(obj->attributes)) {
-                auto builtin = builder_->Sem().Get(builtin_attr)->Value();
+                auto builtin = b.Sem().Get(builtin_attr)->Value();
                 if (builtin == core::BuiltinValue::kNumWorkgroups ||
                     builtin == core::BuiltinValue::kWorkgroupId) {
                     return false;
@@ -1292,11 +1303,7 @@ class UniformityGraph {
                 return std::make_pair(cf, node);
             },
 
-            [&](Default) {
-                TINT_ICE() << "unknown identifier expression type: "
-                           << std::string(sem->TypeInfo().name);
-                return std::pair<Node*, Node*>(nullptr, nullptr);
-            });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// Process an expression.
@@ -1316,29 +1323,29 @@ class UniformityGraph {
         return Switch(
             expr,
 
-            [&](const ast::BinaryExpression* b) {
-                if (b->IsLogical()) {
+            [&](const ast::BinaryExpression* e) {
+                if (e->IsLogical()) {
                     // Short-circuiting binary operators are a special case.
-                    auto [cf1, v1] = ProcessExpression(cf, b->lhs);
+                    auto [cf1, v1] = ProcessExpression(cf, e->lhs);
 
                     // Add a diagnostic node to capture the control flow change.
-                    auto* v1_cf = CreateNode({"short_circuit_op"}, b);
+                    auto* v1_cf = CreateNode({"short_circuit_op"}, e);
                     v1_cf->affects_control_flow = true;
                     v1_cf->AddEdge(v1);
 
-                    auto [cf2, v2] = ProcessExpression(v1_cf, b->rhs);
+                    auto [cf2, v2] = ProcessExpression(v1_cf, e->rhs);
                     return std::pair<Node*, Node*>(cf, v2);
                 } else {
-                    auto [cf1, v1] = ProcessExpression(cf, b->lhs);
-                    auto [cf2, v2] = ProcessExpression(cf1, b->rhs);
-                    auto* result = CreateNode({"binary_expr_result"}, b);
+                    auto [cf1, v1] = ProcessExpression(cf, e->lhs);
+                    auto [cf2, v2] = ProcessExpression(cf1, e->rhs);
+                    auto* result = CreateNode({"binary_expr_result"}, e);
                     result->AddEdge(v1);
                     result->AddEdge(v2);
                     return std::pair<Node*, Node*>(cf2, result);
                 }
             },
 
-            [&](const ast::BitcastExpression* b) { return ProcessExpression(cf, b->expr); },
+            [&](const ast::BitcastExpression* e) { return ProcessExpression(cf, e->expr); },
 
             [&](const ast::CallExpression* c) { return ProcessCall(cf, c); },
 
@@ -1365,10 +1372,7 @@ class UniformityGraph {
                 return ProcessExpression(cf, u->expr, load_rule);
             },
 
-            [&](Default) {
-                TINT_ICE() << "unknown expression type: " << std::string(expr->TypeInfo().name);
-                return std::pair<Node*, Node*>(nullptr, nullptr);
-            });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// @param u unary expression with op == kIndirection
@@ -1472,11 +1476,7 @@ class UniformityGraph {
                 return ProcessLValueExpression(cf, u->expr, is_partial_reference);
             },
 
-            [&](Default) {
-                TINT_ICE() << "unknown lvalue expression type: "
-                           << std::string(expr->TypeInfo().name);
-                return LValue{};
-            });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// Process a function call expression.
@@ -1594,8 +1594,8 @@ class UniformityGraph {
             [&](const sem::ValueConversion*) {
                 callsite_tag = {CallSiteTag::CallSiteNoRestriction};
                 function_tag = NoRestriction;
-            },
-            [&](Default) { TINT_ICE() << "unhandled function call target: " << name; });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
 
         cf_after->AddEdge(call_node);
 
@@ -1885,8 +1885,8 @@ class UniformityGraph {
             [&](const ast::Expression* e) {
                 diagnostics_.add_note(diag::System::Resolver,
                                       "result of expression may be non-uniform", e->source);
-            },
-            [&](Default) { TINT_ICE() << "unhandled source of non-uniformity"; });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// Generate a diagnostic message for a uniformity issue.
@@ -1977,7 +1977,7 @@ class UniformityGraph {
 
 }  // namespace
 
-bool AnalyzeUniformity(ProgramBuilder* builder, const DependencyGraph& dependency_graph) {
+bool AnalyzeUniformity(ProgramBuilder& builder, const DependencyGraph& dependency_graph) {
     UniformityGraph graph(builder);
     return graph.Build(dependency_graph);
 }

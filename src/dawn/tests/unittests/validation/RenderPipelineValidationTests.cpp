@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <cmath>
 #include <sstream>
@@ -1239,19 +1252,98 @@ TEST_F(RenderPipelineValidationTest, DepthClipControlWithoutFeature) {
     }
 }
 
-// Test that depthStencil.depthCompare must not be undefiend.
-TEST_F(RenderPipelineValidationTest, DepthCompareUndefinedIsError) {
+// Test that depthStencil.depthCompare is required only for formats with depth.
+TEST_F(RenderPipelineValidationTest, DepthCompareRequiredForFormatsWithDepth) {
     utils::ComboRenderPipelineDescriptor descriptor;
     descriptor.vertex.module = vsModule;
     descriptor.cFragment.module = fsModule;
+
+    descriptor.cDepthStencil.depthWriteEnabled = true;
     descriptor.EnableDepthStencil(wgpu::TextureFormat::Depth32Float);
 
-    // Control case: Always is valid.
+    // Control case: Always is valid for format with depth.
     descriptor.cDepthStencil.depthCompare = wgpu::CompareFunction::Always;
     device.CreateRenderPipeline(&descriptor);
 
-    // Error case: Undefined is invalid.
+    // Error case: Undefined is invalid for format with depth.
     descriptor.cDepthStencil.depthCompare = wgpu::CompareFunction::Undefined;
+    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+
+    // Undefined is valid though if depthCompare is not used by anything.
+    descriptor.cDepthStencil.depthWriteEnabled = false;
+    descriptor.cDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
+    descriptor.cDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Keep;
+    device.CreateRenderPipeline(&descriptor);
+
+    // Undefined is invalid if depthCompare is used by depthWriteEnabled.
+    descriptor.cDepthStencil.depthWriteEnabled = true;
+    descriptor.cDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
+    descriptor.cDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Keep;
+    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+
+    // Undefined is invalid if depthCompare is used by stencilFront.depthFailOp.
+    descriptor.cDepthStencil.depthWriteEnabled = false;
+    descriptor.cDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Zero;
+    descriptor.cDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Keep;
+    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+
+    // Undefined is invalid if depthCompare is used by stencilBack.depthFailOp.
+    descriptor.cDepthStencil.depthWriteEnabled = false;
+    descriptor.cDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
+    descriptor.cDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Zero;
+    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+
+    descriptor.cDepthStencil.depthWriteEnabled = false;
+    descriptor.cDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
+    descriptor.cDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Keep;
+    descriptor.EnableDepthStencil(wgpu::TextureFormat::Stencil8);
+
+    // Always is valid for format with no depth.
+    descriptor.cDepthStencil.depthCompare = wgpu::CompareFunction::Always;
+    device.CreateRenderPipeline(&descriptor);
+
+    // Undefined is also valid for format with no depth.
+    descriptor.cDepthStencil.depthCompare = wgpu::CompareFunction::Undefined;
+    device.CreateRenderPipeline(&descriptor);
+}
+
+// Test that depthStencil.depthWriteEnabled is required only for formats with depth.
+TEST_F(RenderPipelineValidationTest, DepthWriteEnabledRequiredForFormatsWithDepth) {
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = vsModule;
+    descriptor.cFragment.module = fsModule;
+    descriptor.cDepthStencil.depthCompare = wgpu::CompareFunction::Always;
+
+    wgpu::DepthStencilState* depthStencil =
+        descriptor.EnableDepthStencil(wgpu::TextureFormat::Depth32Float);
+
+    // Control case: Set depthWriteEnabled to false for format with depth.
+    depthStencil->depthWriteEnabled = false;
+    device.CreateRenderPipeline(&descriptor);
+
+    // When DepthStencilStateDepthWriteDefinedDawn struct is chained, depthWriteEnabled is now
+    // considered optional and depthWriteDefined needs to be true for formats with depth only.
+    wgpu::DepthStencilStateDepthWriteDefinedDawn depthWriteDefined;
+    depthStencil = descriptor.EnableDepthStencil(wgpu::TextureFormat::Stencil8);
+    depthStencil->nextInChain = &depthWriteDefined;
+
+    // depthWriteDefined set to true is valid for format with no depth.
+    depthWriteDefined.depthWriteDefined = true;
+    device.CreateRenderPipeline(&descriptor);
+
+    // depthWriteDefined set to false is valid for format with no depth.
+    depthWriteDefined.depthWriteDefined = false;
+    device.CreateRenderPipeline(&descriptor);
+
+    depthStencil = descriptor.EnableDepthStencil(wgpu::TextureFormat::Depth32Float);
+    depthStencil->nextInChain = &depthWriteDefined;
+
+    // depthWriteDefined set to true is valid for format with depth.
+    depthWriteDefined.depthWriteDefined = true;
+    device.CreateRenderPipeline(&descriptor);
+
+    // Error case: depthWriteDefined set to false is invalid for format with depth.
+    depthWriteDefined.depthWriteDefined = false;
     ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
 }
 

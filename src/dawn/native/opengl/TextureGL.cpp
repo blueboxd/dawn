@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/opengl/TextureGL.h"
 
@@ -193,7 +206,7 @@ Texture::Texture(Device* device, const TextureDescriptor* descriptor)
 
     gl.BindTexture(mTarget, mHandle);
 
-    AllocateTexture(gl, mTarget, GetSampleCount(), levels, glFormat.internalFormat, GetSize());
+    AllocateTexture(gl, mTarget, GetSampleCount(), levels, glFormat.internalFormat, GetBaseSize());
 
     // The texture is not complete if it uses mipmapping and not all levels up to
     // MAX_LEVEL have been defined.
@@ -375,7 +388,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
             const GLFormat& glFormat = GetGLFormat();
             for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
                  ++level) {
-                Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(level);
+                Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(level, Aspect::Color);
                 for (uint32_t layer = range.baseArrayLayer;
                      layer < range.baseArrayLayer + range.layerCount; ++layer) {
                     if (clearValue == TextureBase::ClearValue::Zero &&
@@ -441,8 +454,9 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
                                 DoClear();
                                 break;
                             case wgpu::TextureDimension::e3D:
-                                uint32_t depth = GetMipLevelSingleSubresourceVirtualSize(level)
-                                                     .depthOrArrayLayers;
+                                uint32_t depth =
+                                    GetMipLevelSingleSubresourceVirtualSize(level, Aspect::Color)
+                                        .depthOrArrayLayers;
                                 for (GLint z = 0; z < static_cast<GLint>(depth); ++z) {
                                     gl.FramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, attachment,
                                                                GetHandle(), level, z);
@@ -471,7 +485,8 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
         const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(Aspect::Color).block;
         DAWN_ASSERT(kTextureBytesPerRowAlignment % blockInfo.byteSize == 0);
 
-        Extent3D largestMipSize = GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel);
+        Extent3D largestMipSize =
+            GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel, Aspect::Color);
         uint32_t bytesPerRow =
             Align((largestMipSize.width / blockInfo.width) * blockInfo.byteSize, 4);
 
@@ -515,7 +530,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
             dataLayout.bytesPerRow = bytesPerRow;
             dataLayout.rowsPerImage = largestMipSize.height;
 
-            Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(level);
+            Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(level, Aspect::Color);
 
             for (uint32_t layer = range.baseArrayLayer;
                  layer < range.baseArrayLayer + range.layerCount; ++layer) {
@@ -647,8 +662,8 @@ void TextureView::CopyIfNeeded() {
     uint32_t srcLevel = GetBaseMipLevel();
     uint32_t numLevels = GetLevelCount();
 
-    uint32_t width = texture->GetWidth() >> srcLevel;
-    uint32_t height = texture->GetHeight() >> srcLevel;
+    uint32_t width = GetSingleSubresourceVirtualSize().width;
+    uint32_t height = GetSingleSubresourceVirtualSize().height;
     Extent3D size{width, height, GetLayerCount()};
 
     if (mHandle == 0) {

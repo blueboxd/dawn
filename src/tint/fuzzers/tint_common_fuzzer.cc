@@ -1,16 +1,29 @@
-// Copyright 2021 The Tint Authors.
+// Copyright 2021 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/fuzzers/tint_common_fuzzer.h"
 
@@ -40,6 +53,10 @@
 #include "src/tint/utils/diagnostic/formatter.h"
 #include "src/tint/utils/diagnostic/printer.h"
 #include "src/tint/utils/math/hash.h"
+
+#if TINT_BUILD_SPV_WRITER
+#include "src/tint/lang/spirv/writer/helpers/generate_bindings.h"
+#endif  // TINT_BUILD_SPV_WRITER
 
 namespace tint::fuzzers {
 
@@ -244,10 +261,23 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
         }
     }
 
+    switch (output_) {
+        case OutputFormat::kMSL:
+            break;
+        case OutputFormat::kHLSL:
+            break;
+        case OutputFormat::kSpv:
+#if TINT_BUILD_SPV_WRITER
+            options_spirv_.bindings = tint::spirv::writer::GenerateBindings(program);
+#endif  // TINT_BUILD_SPV_WRITER
+            break;
+        case OutputFormat::kWGSL:
+            break;
+    }
+
     // For the generates which use MultiPlanar, make sure the configuration options are provided so
     // that the transformer will execute.
-    if (output_ == OutputFormat::kMSL || output_ == OutputFormat::kHLSL ||
-        output_ == OutputFormat::kSpv) {
+    if (output_ == OutputFormat::kMSL || output_ == OutputFormat::kHLSL) {
         // Gather external texture binding information
         // Collect next valid binding number per group
         std::unordered_map<uint32_t, uint32_t> group_to_next_binding_number;
@@ -284,7 +314,6 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
                 break;
             }
             case OutputFormat::kSpv: {
-                options_spirv_.external_texture_options.bindings_map = new_bindings_map;
                 break;
             }
             default:
@@ -337,7 +366,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
 
             // Remap resource numbers to a flat namespace.
             // TODO(crbug.com/tint/1501): Do this via Options::BindingMap.
-            if (auto flattened = tint::writer::FlattenBindings(program)) {
+            if (auto flattened = tint::wgsl::FlattenBindings(program)) {
                 program = std::move(*flattened);
             }
 

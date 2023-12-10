@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/vulkan/CommandBufferVk.h"
 
@@ -33,6 +46,7 @@
 #include "dawn/native/vulkan/PhysicalDeviceVk.h"
 #include "dawn/native/vulkan/PipelineLayoutVk.h"
 #include "dawn/native/vulkan/QuerySetVk.h"
+#include "dawn/native/vulkan/QueueVk.h"
 #include "dawn/native/vulkan/RenderPassCache.h"
 #include "dawn/native/vulkan/RenderPipelineVk.h"
 #include "dawn/native/vulkan/TextureVk.h"
@@ -222,8 +236,8 @@ MaybeError RecordBeginRenderPass(CommandRecordingContext* recordingContext,
 
             query.SetDepthStencil(attachmentInfo.view->GetTexture()->GetFormat().format,
                                   attachmentInfo.depthLoadOp, attachmentInfo.depthStoreOp,
-                                  attachmentInfo.stencilLoadOp, attachmentInfo.stencilStoreOp,
-                                  attachmentInfo.depthReadOnly || attachmentInfo.stencilReadOnly);
+                                  attachmentInfo.depthReadOnly, attachmentInfo.stencilLoadOp,
+                                  attachmentInfo.stencilStoreOp, attachmentInfo.stencilReadOnly);
         }
 
         query.SetSampleCount(renderPass->attachmentState->GetSampleCount());
@@ -525,10 +539,6 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
     size_t nextComputePassNumber = 0;
     size_t nextRenderPassNumber = 0;
 
-    // Need to track if a render pass has already been recorded for the
-    // VulkanSplitCommandBufferOnComputePassAfterRenderPass workaround.
-    bool hasRecordedRenderPassInCurrentCommandBuffer = false;
-
     Command type;
     while (mCommands.NextCommandId(&type)) {
         switch (type) {
@@ -579,7 +589,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
                     GetSubresourcesAffectedByCopy(copy->destination, copy->copySize);
 
                 if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize,
-                                                  subresource.mipLevel)) {
+                                                  subresource.mipLevel, dst.aspect)) {
                     // Since texture has been overwritten, it has been "initialized"
                     dst.texture->SetIsSubresourceContentInitialized(true, range);
                 } else {
@@ -647,8 +657,8 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
 
                 DAWN_TRY(ToBackend(src.texture)
                              ->EnsureSubresourceContentInitialized(recordingContext, srcRange));
-                if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize,
-                                                  dst.mipLevel)) {
+                if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize, dst.mipLevel,
+                                                  dst.aspect)) {
                     // Since destination texture has been overwritten, it has been "initialized"
                     dst.texture->SetIsSubresourceContentInitialized(true, dstRange);
                 } else {
@@ -740,7 +750,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
                 LazyClearRenderPassAttachments(cmd);
                 DAWN_TRY(RecordRenderPass(recordingContext, cmd));
 
-                hasRecordedRenderPassInCurrentCommandBuffer = true;
+                recordingContext->hasRecordedRenderPass = true;
                 nextRenderPassNumber++;
                 break;
             }
@@ -750,12 +760,12 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
 
                 // If required, split the command buffer any time a compute pass follows a render
                 // pass to work around a Qualcomm bug.
-                if (hasRecordedRenderPassInCurrentCommandBuffer &&
+                if (recordingContext->hasRecordedRenderPass &&
                     device->IsToggleEnabled(
                         Toggle::VulkanSplitCommandBufferOnComputePassAfterRenderPass)) {
                     // Identified a potential crash case, split the command buffer.
-                    DAWN_TRY(device->SplitRecordingContext(recordingContext));
-                    hasRecordedRenderPassInCurrentCommandBuffer = false;
+                    DAWN_TRY(
+                        ToBackend(device->GetQueue())->SplitRecordingContext(recordingContext));
                     commands = recordingContext->commandBuffer;
                 }
 
@@ -906,10 +916,11 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* recordingCo
     Device* device = ToBackend(GetDevice());
 
     // Write timestamp at the beginning of compute pass if it's set
-    if (computePassCmd->beginTimestamp.querySet.Get() != nullptr) {
+    if (computePassCmd->timestampWrites.beginningOfPassWriteIndex !=
+        wgpu::kQuerySetIndexUndefined) {
         RecordWriteTimestampCmd(recordingContext, device,
-                                computePassCmd->beginTimestamp.querySet.Get(),
-                                computePassCmd->beginTimestamp.queryIndex, false);
+                                computePassCmd->timestampWrites.querySet.Get(),
+                                computePassCmd->timestampWrites.beginningOfPassWriteIndex, false);
     }
 
     VkCommandBuffer commands = recordingContext->commandBuffer;
@@ -924,10 +935,11 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* recordingCo
                 mCommands.NextCommand<EndComputePassCmd>();
 
                 // Write timestamp at the end of compute pass if it's set.
-                if (computePassCmd->endTimestamp.querySet.Get() != nullptr) {
-                    RecordWriteTimestampCmd(recordingContext, device,
-                                            computePassCmd->endTimestamp.querySet.Get(),
-                                            computePassCmd->endTimestamp.queryIndex, false);
+                if (computePassCmd->timestampWrites.endOfPassWriteIndex !=
+                    wgpu::kQuerySetIndexUndefined) {
+                    RecordWriteTimestampCmd(
+                        recordingContext, device, computePassCmd->timestampWrites.querySet.Get(),
+                        computePassCmd->timestampWrites.endOfPassWriteIndex, false);
                 }
                 return {};
             }
@@ -1057,10 +1069,10 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
     DAWN_TRY(RecordBeginRenderPass(recordingContext, device, renderPassCmd));
 
     // Write timestamp at the beginning of render pass if it's set.
-    if (renderPassCmd->beginTimestamp.querySet.Get() != nullptr) {
+    if (renderPassCmd->timestampWrites.beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
         RecordWriteTimestampCmd(recordingContext, device,
-                                renderPassCmd->beginTimestamp.querySet.Get(),
-                                renderPassCmd->beginTimestamp.queryIndex, true);
+                                renderPassCmd->timestampWrites.querySet.Get(),
+                                renderPassCmd->timestampWrites.beginningOfPassWriteIndex, true);
     }
 
     // Set the default value for the dynamic state
@@ -1268,10 +1280,11 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
                 mCommands.NextCommand<EndRenderPassCmd>();
 
                 // Write timestamp at the end of render pass if it's set.
-                if (renderPassCmd->endTimestamp.querySet.Get() != nullptr) {
-                    RecordWriteTimestampCmd(recordingContext, device,
-                                            renderPassCmd->endTimestamp.querySet.Get(),
-                                            renderPassCmd->endTimestamp.queryIndex, true);
+                if (renderPassCmd->timestampWrites.endOfPassWriteIndex !=
+                    wgpu::kQuerySetIndexUndefined) {
+                    RecordWriteTimestampCmd(
+                        recordingContext, device, renderPassCmd->timestampWrites.querySet.Get(),
+                        renderPassCmd->timestampWrites.endOfPassWriteIndex, true);
                 }
 
                 device->fn.CmdEndRenderPass(commands);

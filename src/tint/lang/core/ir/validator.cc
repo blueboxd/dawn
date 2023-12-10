@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/validator.h"
 
@@ -271,6 +284,7 @@ class Validator {
     Disassembler dis_{mod_};
     Block* current_block_ = nullptr;
     Hashset<Function*, 4> all_functions_;
+    Hashset<Instruction*, 4> visited_instructions_;
     Vector<ControlInstruction*, 8> control_stack_;
 
     void DisassembleIfNeeded();
@@ -298,6 +312,15 @@ Result<SuccessType> Validator::Run() {
 
     for (auto* func : mod_.functions) {
         CheckFunction(func);
+    }
+
+    if (!diagnostics_.contains_errors()) {
+        // Check for orphaned instructions.
+        for (auto* inst : mod_.instructions.Objects()) {
+            if (inst->Alive() && !visited_instructions_.Contains(inst)) {
+                AddError("orphaned instruction: " + inst->FriendlyName());
+            }
+        }
     }
 
     if (diagnostics_.contains_errors()) {
@@ -448,6 +471,7 @@ void Validator::CheckBlock(Block* blk) {
 }
 
 void Validator::CheckInstruction(Instruction* inst) {
+    visited_instructions_.Add(inst);
     if (!inst->Alive()) {
         AddError(inst, InstError(inst, "destroyed instruction found in instruction list"));
         return;
@@ -893,11 +917,10 @@ Result<SuccessType> Validate(Module& mod) {
 Result<SuccessType> ValidateAndDumpIfNeeded([[maybe_unused]] Module& ir,
                                             [[maybe_unused]] const char* msg) {
 #if TINT_DUMP_IR_WHEN_VALIDATING
-    Disassembler disasm(ir);
     std::cout << "=========================================================" << std::endl;
     std::cout << "== IR dump before " << msg << ":" << std::endl;
     std::cout << "=========================================================" << std::endl;
-    std::cout << disasm.Disassemble();
+    std::cout << Disassemble(ir);
 #endif
 
 #ifndef NDEBUG

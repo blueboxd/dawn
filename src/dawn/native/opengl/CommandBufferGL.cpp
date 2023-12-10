@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/opengl/CommandBufferGL.h"
 
@@ -513,7 +526,7 @@ Extent3D ComputeTextureCopyExtent(const TextureCopy& textureCopy, const Extent3D
     Extent3D validTextureCopyExtent = copySize;
     const TextureBase* texture = textureCopy.texture.Get();
     Extent3D virtualSizeAtLevel =
-        texture->GetMipLevelSingleSubresourceVirtualSize(textureCopy.mipLevel);
+        texture->GetMipLevelSingleSubresourceVirtualSize(textureCopy.mipLevel, textureCopy.aspect);
     DAWN_ASSERT(textureCopy.origin.x <= virtualSizeAtLevel.width);
     DAWN_ASSERT(textureCopy.origin.y <= virtualSizeAtLevel.height);
     if (copySize.width > virtualSizeAtLevel.width - textureCopy.origin.x) {
@@ -628,8 +641,8 @@ MaybeError CommandBuffer::Execute() {
 
                 buffer->EnsureDataInitialized();
                 SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copy->copySize);
-                if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize,
-                                                  dst.mipLevel)) {
+                if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize, dst.mipLevel,
+                                                  dst.aspect)) {
                     dst.texture->SetIsSubresourceContentInitialized(true, range);
                 } else {
                     DAWN_TRY(ToBackend(dst.texture)->EnsureSubresourceContentInitialized(range));
@@ -776,7 +789,7 @@ MaybeError CommandBuffer::Execute() {
                 SubresourceRange dstRange = GetSubresourcesAffectedByCopy(dst, copy->copySize);
 
                 DAWN_TRY(srcTexture->EnsureSubresourceContentInitialized(srcRange));
-                if (IsCompleteSubresourceCopiedTo(dstTexture, copySize, dst.mipLevel)) {
+                if (IsCompleteSubresourceCopiedTo(dstTexture, copySize, dst.mipLevel, dst.aspect)) {
                     dstTexture->SetIsSubresourceContentInitialized(true, dstRange);
                 } else {
                     DAWN_TRY(dstTexture->EnsureSubresourceContentInitialized(dstRange));
@@ -1342,7 +1355,8 @@ void DoTexSubImage(const OpenGLFunctions& gl,
     uint32_t z = destination.origin.z;
     if (texture->GetFormat().isCompressed) {
         size_t rowSize = copySize.width / blockInfo.width * blockInfo.byteSize;
-        Extent3D virtSize = texture->GetMipLevelSingleSubresourceVirtualSize(destination.mipLevel);
+        Extent3D virtSize = texture->GetMipLevelSingleSubresourceVirtualSize(destination.mipLevel,
+                                                                             destination.aspect);
         uint32_t width = std::min(copySize.width, virtSize.width - x);
 
         // In GLES glPixelStorei() doesn't affect CompressedTexSubImage*D() and

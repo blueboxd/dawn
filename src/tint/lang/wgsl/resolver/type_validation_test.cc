@@ -1,16 +1,29 @@
-// Copyright 2021 The Tint Authors.
+// Copyright 2021 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
@@ -579,7 +592,20 @@ TEST_F(ResolverTypeValidationTest, RuntimeArrayInFunction_Fail) {
 56:78 note: while instantiating 'var' a)");
 }
 
-TEST_F(ResolverTypeValidationTest, Struct_Member_VectorNoType) {
+TEST_F(ResolverTypeValidationTest, PtrType_ArrayIncomplete) {
+    // fn f(l: ptr<function, array>) {}
+
+    Func("f",
+         Vector{
+             Param("l", ty.ptr(function, ty(Source{{12, 34}}, "array"))),
+         },
+         ty.void_(), Empty);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: expected '<' for 'array'");
+}
+
+TEST_F(ResolverTypeValidationTest, Struct_Member_VectorIncomplete) {
     // struct S {
     //   a: vec3;
     // };
@@ -592,7 +618,7 @@ TEST_F(ResolverTypeValidationTest, Struct_Member_VectorNoType) {
     EXPECT_EQ(r()->error(), "12:34 error: expected '<' for 'vec3'");
 }
 
-TEST_F(ResolverTypeValidationTest, Struct_Member_MatrixNoType) {
+TEST_F(ResolverTypeValidationTest, Struct_Member_MatrixIncomplete) {
     // struct S {
     //   a: mat3x3;
     // };
@@ -766,6 +792,21 @@ TEST_F(ResolverTypeValidationTest, RuntimeArrayAsParameter_Fail) {
     EXPECT_EQ(r()->error(),
               R"(12:34 error: runtime-sized arrays can only be used in the <storage> address space
 56:78 note: while instantiating parameter a)");
+}
+
+TEST_F(ResolverTypeValidationTest, PtrToPtr_Fail) {
+    // fn func(a : ptr<workgroup, ptr<workgroup, u32>>) {}
+    auto* param = Param("a", ty.ptr(workgroup, ty.ptr<workgroup, u32>(Source{{12, 34}})));
+
+    Func("func", Vector{param}, ty.void_(),
+         Vector{
+             Return(),
+         });
+
+    EXPECT_FALSE(r()->Resolve()) << r()->error();
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: ptr<workgroup, u32, read_write> cannot be used as the store type of a pointer)");
 }
 
 TEST_F(ResolverTypeValidationTest, PtrToRuntimeArrayAsPointerParameter_Fail) {

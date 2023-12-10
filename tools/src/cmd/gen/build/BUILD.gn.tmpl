@@ -56,7 +56,7 @@ if({{$.Condition}}) {
 {{  if      $.Kind.IsLib -}}
 libtint_source_set("{{$.Directory.Name}}") {
 {{- else if $.Kind.IsCmd -}}
-executable("{{$.Directory.Name}}") {
+tint_executable("{{$.Directory.Name}}") {
 {{- else if $.Kind.IsTest -}}
 tint_unittests_source_set("unittests") {
 {{- else if $.Kind.IsBench -}}
@@ -83,7 +83,7 @@ tint_fuzzer_test("{{$.Directory.Name}}") {
   ]
   deps = [
 
-{{- /* Emit unconditional inernal dependencies */}}
+{{- /* Emit unconditional internal dependencies */}}
 {{- range $Dep := $.Dependencies.UnconditionalInternal}}
     "{{Eval "Dependency" $Dep}}",
 {{- end}}

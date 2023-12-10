@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
@@ -162,9 +175,9 @@ TEST_F(SpirvWriterTest, Convert_F32_to_I32) {
       %value = OpFunctionParameter %float
          %10 = OpLabel
          %11 = OpConvertFToS %int %value
-         %12 = OpFOrdGreaterThan %bool %value %float_n2_14748365e_09
+         %12 = OpFOrdGreaterThanEqual %bool %value %float_n2_14748365e_09
          %15 = OpSelect %int %12 %11 %int_n2147483648
-         %17 = OpFOrdLessThan %bool %value %float_2_14748352e_09
+         %17 = OpFOrdLessThanEqual %bool %value %float_2_14748352e_09
          %19 = OpSelect %int %17 %15 %int_2147483647
                OpReturnValue %19
                OpFunctionEnd
@@ -195,9 +208,9 @@ TEST_F(SpirvWriterTest, Convert_F32_to_U32) {
       %value = OpFunctionParameter %float
          %10 = OpLabel
          %11 = OpConvertFToU %uint %value
-         %12 = OpFOrdGreaterThan %bool %value %float_0
+         %12 = OpFOrdGreaterThanEqual %bool %value %float_0
          %15 = OpSelect %uint %12 %11 %uint_0
-         %17 = OpFOrdLessThan %bool %value %float_4_29496704e_09
+         %17 = OpFOrdLessThanEqual %bool %value %float_4_29496704e_09
          %19 = OpSelect %uint %17 %15 %uint_4294967295
                OpReturnValue %19
                OpFunctionEnd
@@ -228,9 +241,9 @@ TEST_F(SpirvWriterTest, Convert_F16_to_I32) {
       %value = OpFunctionParameter %half
          %10 = OpLabel
          %11 = OpConvertFToS %int %value
-         %12 = OpFOrdGreaterThan %bool %value %half_n0x1_ffcp_15
+         %12 = OpFOrdGreaterThanEqual %bool %value %half_n0x1_ffcp_15
          %15 = OpSelect %int %12 %11 %int_n2147483648
-         %17 = OpFOrdLessThan %bool %value %half_0x1_ffcp_15
+         %17 = OpFOrdLessThanEqual %bool %value %half_0x1_ffcp_15
          %19 = OpSelect %int %17 %15 %int_2147483647
                OpReturnValue %19
                OpFunctionEnd
@@ -261,9 +274,9 @@ TEST_F(SpirvWriterTest, Convert_F16_to_U32) {
       %value = OpFunctionParameter %half
          %10 = OpLabel
          %11 = OpConvertFToU %uint %value
-         %12 = OpFOrdGreaterThan %bool %value %half_0x0p_0
+         %12 = OpFOrdGreaterThanEqual %bool %value %half_0x0p_0
          %15 = OpSelect %uint %12 %11 %uint_0
-         %17 = OpFOrdLessThan %bool %value %half_0x1_ffcp_15
+         %17 = OpFOrdLessThanEqual %bool %value %half_0x1_ffcp_15
          %19 = OpSelect %uint %17 %15 %uint_4294967295
                OpReturnValue %19
                OpFunctionEnd
@@ -307,9 +320,9 @@ TEST_F(SpirvWriterTest, Convert_F32_to_I32_Vec2) {
       %value = OpFunctionParameter %v2float
          %12 = OpLabel
          %13 = OpConvertFToS %v2int %value
-         %14 = OpFOrdGreaterThan %v2bool %value %15
+         %14 = OpFOrdGreaterThanEqual %v2bool %value %15
          %19 = OpSelect %v2int %14 %13 %20
-         %22 = OpFOrdLessThan %v2bool %value %23
+         %22 = OpFOrdLessThanEqual %v2bool %value %23
          %25 = OpSelect %v2int %22 %19 %26
                OpReturnValue %25
                OpFunctionEnd
@@ -347,9 +360,9 @@ TEST_F(SpirvWriterTest, Convert_F32_to_U32_Vec3) {
       %value = OpFunctionParameter %v3float
          %12 = OpLabel
          %13 = OpConvertFToU %v3uint %value
-         %14 = OpFOrdGreaterThan %v3bool %value %15
+         %14 = OpFOrdGreaterThanEqual %v3bool %value %15
          %18 = OpSelect %v3uint %14 %13 %19
-         %20 = OpFOrdLessThan %v3bool %value %21
+         %20 = OpFOrdLessThanEqual %v3bool %value %21
          %23 = OpSelect %v3uint %20 %18 %24
                OpReturnValue %23
                OpFunctionEnd
@@ -393,9 +406,9 @@ TEST_F(SpirvWriterTest, Convert_F16_to_I32_Vec2) {
       %value = OpFunctionParameter %v2half
          %12 = OpLabel
          %13 = OpConvertFToS %v2int %value
-         %14 = OpFOrdGreaterThan %v2bool %value %15
+         %14 = OpFOrdGreaterThanEqual %v2bool %value %15
          %19 = OpSelect %v2int %14 %13 %20
-         %22 = OpFOrdLessThan %v2bool %value %23
+         %22 = OpFOrdLessThanEqual %v2bool %value %23
          %25 = OpSelect %v2int %22 %19 %26
                OpReturnValue %25
                OpFunctionEnd
@@ -433,9 +446,9 @@ TEST_F(SpirvWriterTest, Convert_F16_to_U32_Vec4) {
       %value = OpFunctionParameter %v4half
          %12 = OpLabel
          %13 = OpConvertFToU %v4uint %value
-         %14 = OpFOrdGreaterThan %v4bool %value %15
+         %14 = OpFOrdGreaterThanEqual %v4bool %value %15
          %18 = OpSelect %v4uint %14 %13 %19
-         %20 = OpFOrdLessThan %v4bool %value %21
+         %20 = OpFOrdLessThanEqual %v4bool %value %21
          %23 = OpSelect %v4uint %20 %18 %24
                OpReturnValue %23
                OpFunctionEnd

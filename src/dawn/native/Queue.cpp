@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/Queue.h"
 
@@ -232,13 +245,15 @@ void TrackTaskCallback::SetFinishedSerial(ExecutionSerial serial) {
 // QueueBase
 
 QueueBase::QueueBase(DeviceBase* device, const QueueDescriptor* descriptor)
-    : ApiObjectBase(device, descriptor->label) {}
+    : ApiObjectBase(device, descriptor->label) {
+    GetObjectTrackingList()->Track(this);
+}
 
 QueueBase::QueueBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label)
     : ApiObjectBase(device, tag, label) {}
 
 QueueBase::~QueueBase() {
-    DAWN_ASSERT(mTasksInFlight.Empty());
+    DAWN_ASSERT(mTasksInFlight->Empty());
 }
 
 void QueueBase::DestroyImpl() {}
@@ -265,12 +280,10 @@ void QueueBase::APISubmit(uint32_t commandCount, CommandBufferBase* const* comma
         ityp::span<uint32_t, CommandBufferBase* const>(commands, commandCount)));
 }
 
-void QueueBase::APIOnSubmittedWorkDone(uint64_t signalValue,
-                                       WGPUQueueWorkDoneCallback callback,
-                                       void* userdata) {
+void QueueBase::APIOnSubmittedWorkDone(WGPUQueueWorkDoneCallback callback, void* userdata) {
     // The error status depends on the type of error so we let the validation function choose it
     wgpu::QueueWorkDoneStatus status;
-    if (GetDevice()->ConsumedError(ValidateOnSubmittedWorkDone(signalValue, &status))) {
+    if (GetDevice()->ConsumedError(ValidateOnSubmittedWorkDone(&status))) {
         GetDevice()->GetCallbackTaskManager()->AddCallbackTask(
             [callback, status, userdata] { callback(ToAPI(status), userdata); });
         return;
@@ -297,7 +310,7 @@ Future QueueBase::APIOnSubmittedWorkDoneF(const QueueWorkDoneCallbackInfo& callb
     Ref<EventManager::TrackedEvent> event;
 
     wgpu::QueueWorkDoneStatus validationEarlyStatus;
-    if (GetDevice()->ConsumedError(ValidateOnSubmittedWorkDone(0, &validationEarlyStatus))) {
+    if (GetDevice()->ConsumedError(ValidateOnSubmittedWorkDone(&validationEarlyStatus))) {
         // TODO(crbug.com/dawn/2021): This is here to pretend that things succeed when the device is
         // lost. When the old OnSubmittedWorkDone is removed then we can update
         // ValidateOnSubmittedWorkDone to just return the correct thing here.
@@ -336,7 +349,7 @@ void QueueBase::TrackTask(std::unique_ptr<TrackTaskCallback> task, ExecutionSeri
         task->SetFinishedSerial(GetCompletedCommandSerial());
         GetDevice()->GetCallbackTaskManager()->AddCallbackTask(std::move(task));
     } else {
-        mTasksInFlight.Enqueue(std::move(task), serial);
+        mTasksInFlight->Enqueue(std::move(task), serial);
     }
 }
 
@@ -346,7 +359,7 @@ void QueueBase::TrackTaskAfterEventualFlush(std::unique_ptr<TrackTaskCallback> t
 }
 
 void QueueBase::TrackPendingTask(std::unique_ptr<TrackTaskCallback> task) {
-    mTasksInFlight.Enqueue(std::move(task), GetPendingCommandSerial());
+    mTasksInFlight->Enqueue(std::move(task), GetPendingCommandSerial());
 }
 
 void QueueBase::Tick(ExecutionSerial finishedSerial) {
@@ -359,11 +372,12 @@ void QueueBase::Tick(ExecutionSerial finishedSerial) {
                  uint64_t(finishedSerial));
 
     std::vector<std::unique_ptr<TrackTaskCallback>> tasks;
-    for (auto& task : mTasksInFlight.IterateUpTo(finishedSerial)) {
-        tasks.push_back(std::move(task));
-    }
-    mTasksInFlight.ClearUpTo(finishedSerial);
-
+    mTasksInFlight.Use([&](auto tasksInFlight) {
+        for (auto& task : tasksInFlight->IterateUpTo(finishedSerial)) {
+            tasks.push_back(std::move(task));
+        }
+        tasksInFlight->ClearUpTo(finishedSerial);
+    });
     // Tasks' serials have passed. Move them to the callback task manager. They
     // are ready to be called.
     for (auto& task : tasks) {
@@ -373,11 +387,13 @@ void QueueBase::Tick(ExecutionSerial finishedSerial) {
 }
 
 void QueueBase::HandleDeviceLoss() {
-    for (auto& task : mTasksInFlight.IterateAll()) {
-        task->OnDeviceLoss();
-        GetDevice()->GetCallbackTaskManager()->AddCallbackTask(std::move(task));
-    }
-    mTasksInFlight.Clear();
+    mTasksInFlight.Use([&](auto tasksInFlight) {
+        for (auto& task : tasksInFlight->IterateAll()) {
+            task->OnDeviceLoss();
+            GetDevice()->GetCallbackTaskManager()->AddCallbackTask(std::move(task));
+        }
+        tasksInFlight->Clear();
+    });
 }
 
 void QueueBase::APIWriteBuffer(BufferBase* buffer,
@@ -590,15 +606,12 @@ MaybeError QueueBase::ValidateSubmit(uint32_t commandCount,
     return {};
 }
 
-MaybeError QueueBase::ValidateOnSubmittedWorkDone(uint64_t signalValue,
-                                                  wgpu::QueueWorkDoneStatus* status) const {
+MaybeError QueueBase::ValidateOnSubmittedWorkDone(wgpu::QueueWorkDoneStatus* status) const {
     *status = wgpu::QueueWorkDoneStatus::DeviceLost;
     DAWN_TRY(GetDevice()->ValidateIsAlive());
 
     *status = wgpu::QueueWorkDoneStatus::Error;
     DAWN_TRY(GetDevice()->ValidateObject(this));
-
-    DAWN_INVALID_IF(signalValue != 0, "SignalValue (%u) is not 0.", signalValue);
 
     return {};
 }

@@ -1,16 +1,29 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/Format.h"
 
@@ -138,40 +151,6 @@ const AspectInfo& Format::GetAspectInfo(Aspect aspect) const {
     const size_t aspectIndex = GetAspectIndex(aspect);
     DAWN_ASSERT(aspectIndex < GetAspectCount(aspects));
     return aspectInfo[aspectIndex];
-}
-
-Extent3D Format::GetAspectSize(Aspect aspect, const Extent3D& textureSize) const {
-    switch (aspect) {
-        case Aspect::Color:
-        case Aspect::Depth:
-        case Aspect::Stencil:
-        case Aspect::CombinedDepthStencil:
-            return textureSize;
-        case Aspect::Plane0:
-            DAWN_ASSERT(IsMultiPlanar());
-            return textureSize;
-        case Aspect::Plane1: {
-            DAWN_ASSERT(IsMultiPlanar());
-            auto planeSize = textureSize;
-            switch (format) {
-                case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
-                    if (planeSize.width > 1) {
-                        planeSize.width >>= 1;
-                    }
-                    if (planeSize.height > 1) {
-                        planeSize.height >>= 1;
-                    }
-                    break;
-                default:
-                    DAWN_UNREACHABLE();
-            }
-            return planeSize;
-        }
-        case Aspect::None:
-            break;
-    }
-
-    DAWN_UNREACHABLE();
 }
 
 FormatIndex Format::GetIndex() const {
@@ -582,11 +561,12 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
 
     // multi-planar formats
     const UnsupportedReason multiPlanarFormatUnsupportedReason = device->HasFeature(Feature::DawnMultiPlanarFormats) ?  Format::supported : RequiresFeature{wgpu::FeatureName::DawnMultiPlanarFormats};
+    auto multiPlanarCapabilities = device->HasFeature(Feature::MultiPlanarRenderTargets) ? Cap::Renderable : Cap::None;
     AddMultiAspectFormat(wgpu::TextureFormat::R8BG8Biplanar420Unorm, Aspect::Plane0 | Aspect::Plane1,
-        wgpu::TextureFormat::R8Unorm, wgpu::TextureFormat::RG8Unorm, Cap::None, multiPlanarFormatUnsupportedReason, ComponentCount(3));
+        wgpu::TextureFormat::R8Unorm, wgpu::TextureFormat::RG8Unorm, multiPlanarCapabilities, multiPlanarFormatUnsupportedReason, ComponentCount(3));
     const UnsupportedReason multiPlanarFormatP010UnsupportedReason = device->HasFeature(Feature::MultiPlanarFormatP010) ?  Format::supported : RequiresFeature{wgpu::FeatureName::MultiPlanarFormatP010};
     AddMultiAspectFormat(wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm, Aspect::Plane0 | Aspect::Plane1,
-        wgpu::TextureFormat::R16Unorm, wgpu::TextureFormat::RG16Unorm, Cap::None, multiPlanarFormatP010UnsupportedReason, ComponentCount(3));
+        wgpu::TextureFormat::R16Unorm, wgpu::TextureFormat::RG16Unorm, multiPlanarCapabilities, multiPlanarFormatP010UnsupportedReason, ComponentCount(3));
 
     // clang-format on
 

@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/BlitTextureToBuffer.h"
 
@@ -120,7 +133,6 @@ fn textureLoadGeneral(tex: texture_depth_2d_array, coords: vec3u, level: u32) ->
 )";
 
 constexpr std::string_view kCommon = R"(
-
 struct Params {
     // copyExtent
     srcOrigin: vec3u,
@@ -273,28 +285,21 @@ constexpr std::string_view kPackDepth16UnormToU32 = R"(
         // TODO(dawn:1782): profiling against making a separate pass for this edge case
         // as it requires reading from dst_buf.
         let original: u32 = dst_buf[dstOffset];
-        let mask = 0xffff0000u;
+        const mask = 0xffff0000u;
         result = (original & mask) | (pack2x16unorm(v) & ~mask);
     }
 )";
 
+// Storing snorm8 texel values
+// later called by pack4x8snorm to convert to u32.
 constexpr std::string_view kPackRGBA8SnormToU32 = R"(
-    // Storing snorm8 texel values
-    // later called by pack4x8snorm to convert to u32.
-    var v: vec4<f32>;
-
-    let texel0 = textureLoadGeneral(src_tex, coord0, 0);
-    v[0] = texel0.r;
-    v[1] = texel0.g;
-    v[2] = texel0.b;
-    v[3] = texel0.a;
-
+    let v = textureLoadGeneral(src_tex, coord0, 0);
     let result: u32 = pack4x8snorm(v);
 )";
 
+// Storing and swizzling bgra8unorm texel values
+// later called by pack4x8unorm to convert to u32.
 constexpr std::string_view kPackBGRA8UnormToU32 = R"(
-    // Storing and swizzling bgra8unorm texel values
-    // later called by pack4x8unorm to convert to u32.
     var v: vec4<f32>;
 
     let texel0 = textureLoadGeneral(src_tex, coord0, 0);
@@ -303,6 +308,51 @@ constexpr std::string_view kPackBGRA8UnormToU32 = R"(
     let result: u32 = pack4x8unorm(v);
 )";
 
+// Storing rgb9e5ufloat texel values
+// In this format float is represented as
+// 2^(exponent - bias) * (mantissa / 2^numMantissaBits)
+// Packing algorithm is from:
+// https://registry.khronos.org/OpenGL/extensions/EXT/EXT_texture_shared_exponent.txt
+//
+// Note: there are multiple bytes that could represent the same value in this format.
+// e.g.
+// 0x0a090807 and 0x0412100e both unpack to
+// [8.344650268554688e-7, 0.000015735626220703125, 0.000015497207641601562]
+// So the bytes copied via blit could be different.
+constexpr std::string_view kPackRGB9E5UfloatToU32 = R"(
+    let v = textureLoadGeneral(src_tex, coord0, 0);
+
+    const n = 9; // number of mantissa bits
+    const e_max = 31; // max exponent
+    const b = 15; // exponent bias
+    const sharedexp_max: f32 = (f32((1 << n) - 1) / f32(1 << n)) * (1 << (e_max - b));
+
+    let red_c = clamp(v.r, 0.0, sharedexp_max);
+    let green_c = clamp(v.g, 0.0, sharedexp_max);
+    let blue_c = clamp(v.b, 0.0, sharedexp_max);
+
+    let max_c = max(max(red_c, green_c), blue_c);
+    let exp_shared_p: i32 = max(-b - 1, i32(floor(log2(max_c)))) + 1 + b;
+    let max_s = u32(floor(max_c / exp2(f32(exp_shared_p - b - n)) + 0.5));
+    var exp_shared = exp_shared_p;
+    if (max_s == (1 << n)) {
+        exp_shared += 1;
+    }
+
+    let scalar = 1.0 / exp2(f32(exp_shared - b - n));
+    let red_s = u32(red_c * scalar + 0.5);
+    let green_s = u32(green_c * scalar + 0.5);
+    let blue_s = u32(blue_c * scalar + 0.5);
+
+    const mask_9 = 0x1ffu;
+    let result = (u32(exp_shared) << 27u) |
+        ((blue_s & mask_9) << 18u) |
+        ((green_s & mask_9) << 9u) |
+        (red_s & mask_9);
+)";
+
+// Directly loading depth32float values into dst_buf
+// No bit manipulation and packing is needed.
 constexpr std::string_view kLoadDepth32Float = R"(
     dst_buf[dstOffset] = textureLoadGeneral(src_tex, coord0, 0);
 }
@@ -412,6 +462,13 @@ ResultOrError<Ref<ComputePipelineBase>> GetOrCreateTextureToBufferPipeline(
             shader += kCommonEnd;
             textureSampleType = wgpu::TextureSampleType::Float;
             break;
+        case wgpu::TextureFormat::RGB9E5Ufloat:
+            AppendFloatTextureHead();
+            shader += kCommon;
+            shader += kPackRGB9E5UfloatToU32;
+            shader += kCommonEnd;
+            textureSampleType = wgpu::TextureSampleType::Float;
+            break;
         case wgpu::TextureFormat::Depth16Unorm:
             AppendDepthTextureHead();
             shader += kCommon;
@@ -455,7 +512,8 @@ ResultOrError<Ref<ComputePipelineBase>> GetOrCreateTextureToBufferPipeline(
                 default:
                     DAWN_UNREACHABLE();
             }
-        } break;
+            break;
+        }
         default:
             DAWN_UNREACHABLE();
     }

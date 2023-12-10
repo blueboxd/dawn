@@ -1,16 +1,29 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/wgsl/resolver/validator.h"
 
@@ -21,7 +34,6 @@
 
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/abstract_numeric.h"
-#include "src/tint/lang/core/type/array.h"
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
@@ -53,6 +65,7 @@
 #include "src/tint/lang/wgsl/ast/unary_op_expression.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 #include "src/tint/lang/wgsl/ast/workgroup_attribute.h"
+#include "src/tint/lang/wgsl/sem/array.h"
 #include "src/tint/lang/wgsl/sem/break_if_statement.h"
 #include "src/tint/lang/wgsl/sem/call.h"
 #include "src/tint/lang/wgsl/sem/for_loop_statement.h"
@@ -202,7 +215,7 @@ bool Validator::AddDiagnostic(wgsl::DiagnosticRule rule,
 // https://gpuweb.github.io/gpuweb/wgsl/#plain-types-section
 bool Validator::IsPlain(const core::type::Type* type) const {
     return type->IsAnyOf<core::type::Scalar, core::type::Atomic, core::type::Vector,
-                         core::type::Matrix, core::type::Array, core::type::Struct>();
+                         core::type::Matrix, sem::Array, core::type::Struct>();
 }
 
 // https://gpuweb.github.io/gpuweb/wgsl/#fixed-footprint-types
@@ -212,7 +225,7 @@ bool Validator::IsFixedFootprint(const core::type::Type* type) const {
         [&](const core::type::Vector*) { return true; },  //
         [&](const core::type::Matrix*) { return true; },  //
         [&](const core::type::Atomic*) { return true; },
-        [&](const core::type::Array* arr) {
+        [&](const sem::Array* arr) {
             return !arr->Count()->Is<core::type::RuntimeArrayCount>() &&
                    IsFixedFootprint(arr->ElemType());
         },
@@ -236,7 +249,7 @@ bool Validator::IsHostShareable(const core::type::Type* type) const {
         type,  //
         [&](const core::type::Vector* vec) { return IsHostShareable(vec->type()); },
         [&](const core::type::Matrix* mat) { return IsHostShareable(mat->type()); },
-        [&](const core::type::Array* arr) { return IsHostShareable(arr->ElemType()); },
+        [&](const sem::Array* arr) { return IsHostShareable(arr->ElemType()); },
         [&](const core::type::Struct* str) {
             for (auto* member : str->Members()) {
                 if (!IsHostShareable(member->Type())) {
@@ -305,6 +318,12 @@ bool Validator::Pointer(const ast::TemplatedIdentifier* a, const core::type::Poi
                      a->source);
             return false;
         }
+    }
+
+    if (auto* store_ty = s->StoreType(); !IsStorable(store_ty)) {
+        AddError(sem_.TypeNameOf(store_ty) + " cannot be used as the store type of a pointer",
+                 a->arguments[1]->source);
+        return false;
     }
 
     return CheckTypeAccessAddressSpace(s->StoreType(), s->Access(), s->AddressSpace(), tint::Empty,
@@ -416,7 +435,7 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
 
     auto is_uniform_struct_or_array = [address_space](const core::type::Type* ty) {
         return address_space == core::AddressSpace::kUniform &&
-               ty->IsAnyOf<core::type::Array, core::type::Struct>();
+               ty->IsAnyOf<sem::Array, core::type::Struct>();
     };
 
     auto is_uniform_struct = [address_space](const core::type::Type* ty) {
@@ -523,7 +542,7 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
     }
 
     // For uniform buffer array members, validate that array elements are aligned to 16 bytes
-    if (auto* arr = store_ty->As<core::type::Array>()) {
+    if (auto* arr = store_ty->As<sem::Array>()) {
         // Recurse into the element type.
         // TODO(crbug.com/tint/1388): Ideally we'd pass the source for nested element type here, but
         // we can't easily get that from the semantic node. We should consider recursing through the
@@ -588,11 +607,7 @@ bool Validator::LocalVariable(const sem::Variable* local) const {
         },                                            //
         [&](const ast::Let*) { return Let(local); },  //
         [&](const ast::Const*) { return true; },      //
-        [&](Default) {
-            TINT_ICE() << "Validator::Variable() called with a unknown variable type: "
-                       << decl->TypeInfo().name;
-            return false;
-        });
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool Validator::GlobalVariable(
@@ -626,12 +641,8 @@ bool Validator::GlobalVariable(
             return Var(global);
         },
         [&](const ast::Override*) { return Override(global, override_ids); },
-        [&](const ast::Const*) { return Const(global); },
-        [&](Default) {
-            TINT_ICE() << "Validator::GlobalVariable() called with a unknown variable type: "
-                       << decl->TypeInfo().name;
-            return false;
-        });
+        [&](const ast::Const*) { return Const(global); },  //
+        TINT_ICE_ON_NO_MATCH);
 
     if (!ok) {
         return false;
@@ -844,19 +855,21 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
     bool is_output = !is_input;
     auto builtin = sem_.Get(attr)->Value();
     switch (builtin) {
-        case core::BuiltinValue::kPosition:
+        case core::BuiltinValue::kPosition: {
             if (stage != ast::PipelineStage::kNone &&
                 !((is_input && stage == ast::PipelineStage::kFragment) ||
                   (is_output && stage == ast::PipelineStage::kVertex))) {
                 is_stage_mismatch = true;
             }
-            if (!(type->is_float_vector() && type->As<core::type::Vector>()->Width() == 4)) {
+            auto* vec = type->As<core::type::Vector>();
+            if (!(vec && vec->Width() == 4 && vec->type()->Is<core::type::F32>())) {
                 StringStream err;
                 err << "store type of @builtin(" << builtin << ") must be 'vec4<f32>'";
                 AddError(err.str(), attr->source);
                 return false;
             }
             break;
+        }
         case core::BuiltinValue::kGlobalInvocationId:
         case core::BuiltinValue::kLocalInvocationId:
         case core::BuiltinValue::kNumWorkgroups:
@@ -1635,7 +1648,8 @@ bool Validator::BuiltinCall(const sem::Call* call) const {
             // used instead.
             auto* builtin = call->Target()->As<sem::BuiltinFn>();
             auto name = tint::ToString(builtin->Fn());
-            AddError("builtin '" + name + "' does not return a value", call->Declaration()->source);
+            AddError("builtin function '" + name + "' does not return a value",
+                     call->Declaration()->source);
             return false;
         }
     }
@@ -1888,7 +1902,7 @@ bool Validator::StructureInitializer(const ast::CallExpression* ctor,
 }
 
 bool Validator::ArrayConstructor(const ast::CallExpression* ctor,
-                                 const core::type::Array* array_type) const {
+                                 const sem::Array* array_type) const {
     auto& values = ctor->args;
     auto* elem_ty = array_type->ElemType();
     for (auto* value : values) {
@@ -2068,7 +2082,7 @@ bool Validator::ModuleScopeVarUsages(VectorRef<sem::Function*> entry_points) con
     return true;
 }
 
-bool Validator::Array(const core::type::Array* arr, const Source& el_source) const {
+bool Validator::Array(const sem::Array* arr, const Source& el_source) const {
     auto* el_ty = arr->ElemType();
 
     if (!IsPlain(el_ty)) {
@@ -2122,7 +2136,7 @@ bool Validator::Structure(const sem::Struct* str, ast::PipelineStage stage) cons
     auto has_index = false;
     Hashset<std::pair<uint32_t, uint32_t>, 8> locationsAndIndexes;
     for (auto* member : str->Members()) {
-        if (auto* r = member->Type()->As<core::type::Array>()) {
+        if (auto* r = member->Type()->As<sem::Array>()) {
             if (r->Count()->Is<core::type::RuntimeArrayCount>()) {
                 if (member != str->Members().Back()) {
                     AddError("runtime arrays may only appear as the last member of a struct",
@@ -2606,7 +2620,7 @@ bool Validator::IsValidationEnabled(VectorRef<const ast::Attribute*> attributes,
 }
 
 bool Validator::IsArrayWithOverrideCount(const core::type::Type* ty) const {
-    if (auto* arr = ty->UnwrapRef()->As<core::type::Array>()) {
+    if (auto* arr = ty->UnwrapRef()->As<sem::Array>()) {
         if (arr->Count()->IsAnyOf<sem::NamedOverrideArrayCount, sem::UnnamedOverrideArrayCount>()) {
             return true;
         }
@@ -2714,7 +2728,7 @@ bool Validator::CheckTypeAccessAddressSpace(const core::type::Type* store_ty,
             return true;
         },
         [&](const core::type::Struct*) { return check_sub_atomics(); },  //
-        [&](const core::type::Array*) { return check_sub_atomics(); },   //
+        [&](const sem::Array*) { return check_sub_atomics(); },          //
         [&](Default) { return true; });
 }
 
