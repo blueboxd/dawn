@@ -48,8 +48,15 @@ message Type {
         TypeMatrix matrix = 3;
         TypeArray array = 4;
         TypePointer pointer = 5;
-        uint32 atomic = 6;  // Module.types
-        // TODO: textures, samplers
+        TypeStruct struct = 6;
+        TypeAtomic atomic = 7;
+        TypeDepthTexture depth_texture = 8;
+        TypeSampledTexture sampled_texture = 9;
+        TypeMultisampledTexture multisampled_texture = 10;
+        TypeDepthMultisampledTexture depth_multisampled_texture = 11;
+        TypeStorageTexture storage_texture = 12;
+        TypeExternalTexture external_texture = 13;
+        TypeSampler sampler = 14;
     }
 }
 
@@ -86,6 +93,53 @@ message TypePointer {
     AccessControl access = 3;
 }
 
+message TypeStruct {
+    string name = 1;
+    repeated TypeStructMember member = 2;
+}
+
+message TypeStructMember {
+    string name = 1;
+    uint32 type = 2;
+    uint32 size = 3;
+    uint32 align = 4;
+    optional AttributesStructMember attributes = 5;
+}
+
+message TypeAtomic {
+    uint32 type = 1;  // Module.types
+}
+
+message TypeDepthTexture {
+    TextureDimension dimension = 1;
+}
+
+message TypeSampledTexture {
+    TextureDimension dimension = 1;
+    uint32 sub_type = 2;  // Module.types
+}
+
+message TypeMultisampledTexture {
+    TextureDimension dimension = 1;
+    uint32 sub_type = 2;  // Module.types
+}
+
+message TypeDepthMultisampledTexture {
+    TextureDimension dimension = 1;
+}
+
+message TypeStorageTexture {
+    TextureDimension dimension = 1;
+    TexelFormat texel_format = 2;
+    AccessControl access = 3;
+}
+
+message TypeExternalTexture {}
+
+message TypeSampler {
+    SamplerKind kind = 1;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Values
 ////////////////////////////////////////////////////////////////////////////////
@@ -94,7 +148,8 @@ message Value {
         uint32 function = 1;  // Module.functions
         InstructionResult instruction_result = 2;
         FunctionParameter function_parameter = 3;
-        uint32 constant = 4;  // Module.constant_values
+        BlockParameter block_parameter = 4;
+        uint32 constant = 5;  // Module.constant_values
     }
 }
 
@@ -104,6 +159,12 @@ message InstructionResult {
 }
 
 message FunctionParameter {
+    uint32 type = 1;  // Module.types
+    optional string name = 2;
+    optional AttributesFunctionParameter attributes = 3;
+}
+
+message BlockParameter {
     uint32 type = 1;  // Module.types
     optional string name = 2;
 }
@@ -150,6 +211,9 @@ message Function {
     optional PipelineStage pipeline_stage = 4;
     optional WorkgroupSize workgroup_size = 5;
     repeated uint32 parameters = 6;  // Module.values
+    optional Location return_location = 7;
+    optional BuiltinValue return_builtin = 8;
+    bool return_invariant = 9;
 }
 
 enum PipelineStage {
@@ -170,6 +234,7 @@ message WorkgroupSize {
 message Block {
     repeated uint32 parameters = 1;  // Module.values
     repeated Instruction instructions = 2;
+    bool is_multi_in = 3;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -183,18 +248,30 @@ message Instruction {
         InstructionUnary unary = 4;
         InstructionBinary binary = 5;
         InstructionBuiltin builtin = 6;
-        InstructionConstructor constructor = 7;
-        InstructionDiscard discard = 8;
-        InstructionLet let = 9;
-        InstructionVar var = 10;
+        InstructionDiscard discard = 7;
+        InstructionLet let = 8;
+        InstructionVar var = 9;
+        InstructionBitcast bitcast = 10;
         InstructionConstruct construct = 11;
-        InstructionAccess access = 12;
-        InstructionUserCall user_call = 13;
-        InstructionLoad load = 14;
-        InstructionStore store = 15;
-        InstructionLoadVectorElement load_vector_element = 16;
-        InstructionStoreVectorElement store_vector_element = 17;
-        InstructionSwizzle swizzle = 18;
+        InstructionConvert convert = 12;
+        InstructionAccess access = 13;
+        InstructionUserCall user_call = 14;
+        InstructionBuiltinCall builtin_call = 15;
+        InstructionLoad load = 16;
+        InstructionStore store = 17;
+        InstructionLoadVectorElement load_vector_element = 18;
+        InstructionStoreVectorElement store_vector_element = 19;
+        InstructionSwizzle swizzle = 20;
+        InstructionIf if = 21;
+        InstructionSwitch switch = 22;
+        InstructionLoop loop = 23;
+        InstructionExitIf exit_if = 24;
+        InstructionExitSwitch exit_switch = 25;
+        InstructionExitLoop exit_loop = 26;
+        InstructionNextIteration next_iteration = 27;
+        InstructionContinue continue = 28;
+        InstructionBreakIf break_if = 29;
+        InstructionUnreachable unreachable = 30;
     }
 }
 
@@ -210,7 +287,9 @@ message InstructionBinary {
 
 message InstructionBuiltin {}
 
-message InstructionConstructor {}
+message InstructionBitcast {}
+
+message InstructionConstruct {}
 
 message InstructionDiscard {}
 
@@ -220,11 +299,15 @@ message InstructionVar {
     optional BindingPoint binding_point = 1;
 }
 
-message InstructionConstruct {}
+message InstructionConvert {}
 
 message InstructionAccess {}
 
 message InstructionUserCall {}
+
+message InstructionBuiltinCall {
+    BuiltinFn builtin = 1;
+}
 
 message InstructionLoad {}
 
@@ -238,9 +321,73 @@ message InstructionSwizzle {
     repeated uint32 indices = 1;
 }
 
+message InstructionIf {
+    optional uint32 true = 1;   // Module.blocks
+    optional uint32 false = 2;  // Module.blocks
+}
+
+message InstructionSwitch {
+    repeated SwitchCase cases = 1;  // Module.blocks
+}
+
+message InstructionLoop {
+    optional uint32 initalizer = 1;  // Module.blocks
+    optional uint32 body = 2;        // Module.blocks
+    optional uint32 continuing = 3;  // Module.blocks
+}
+
+message InstructionExitIf {}
+
+message InstructionExitSwitch {}
+
+message InstructionExitLoop {}
+
+message SwitchCase {
+    uint32 block = 1;               // Module.blocks
+    repeated uint32 selectors = 2;  // Module.constant_values
+    bool is_default = 3;
+}
+
 message BindingPoint {
     uint32 group = 1;
     uint32 binding = 2;
+}
+
+message InstructionNextIteration {}
+
+message InstructionContinue {}
+
+message InstructionBreakIf {}
+
+message InstructionUnreachable {}
+
+////////////////////////////////////////////////////////////////////////////////
+// Attributes
+////////////////////////////////////////////////////////////////////////////////
+message AttributesStructMember {
+    optional uint32 location = 1;
+    optional uint32 blend_src = 2;
+    optional uint32 color = 3;
+    optional BuiltinValue builtin = 4;
+    optional Interpolation interpolation = 5;
+    bool invariant = 6;
+}
+
+message AttributesFunctionParameter {
+    optional BuiltinValue builtin = 1;
+    optional Location location = 2;
+    optional BindingPoint binding_point = 3;
+    bool invariant = 4;
+}
+
+message Interpolation {
+    InterpolationType type = 1;
+    optional InterpolationSampling sampling = 2;
+}
+
+message Location {
+    uint32 value = 1;
+    optional Interpolation interpolation = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -266,6 +413,9 @@ enum AccessControl {
 enum UnaryOp {
     complement = 0;
     negation = 1;
+    address_of = 2;
+    indirection = 3;
+    not = 4;
 }
 
 enum BinaryOp {
@@ -285,4 +435,188 @@ enum BinaryOp {
     greater_than_equal = 13;
     shift_left = 14;
     shift_right = 15;
+    logical_and = 16;
+    logical_or = 17;
+}
+
+enum TextureDimension {
+    _1d = 0;
+    _2d = 1;
+    _2d_array = 2;
+    _3d = 3;
+    cube = 4;
+    cube_array = 5;
+}
+
+enum TexelFormat {
+    bgra8_unorm = 0;
+    r32_float = 1;
+    r32_sint = 2;
+    r32_uint = 3;
+    rg32_float = 4;
+    rg32_sint = 5;
+    rg32_uint = 6;
+    rgba16_float = 7;
+    rgba16_sint = 8;
+    rgba16_uint = 9;
+    rgba32_float = 10;
+    rgba32_sint = 11;
+    rgba32_uint = 12;
+    rgba8_sint = 13;
+    rgba8_snorm = 14;
+    rgba8_uint = 15;
+    rgba8_unorm = 16;
+}
+
+enum SamplerKind {
+    sampler = 0;
+    comparison = 1;
+}
+
+enum InterpolationType {
+    flat = 0;
+    linear = 1;
+    perspective = 2;
+}
+
+enum InterpolationSampling {
+    center = 0;
+    centroid = 1;
+    sample = 2;
+}
+
+enum BuiltinValue {
+    point_size = 0;
+    frag_depth = 1;
+    front_facing = 2;
+    global_invocation_id = 3;
+    instance_index = 4;
+    local_invocation_id = 5;
+    local_invocation_index = 6;
+    num_workgroups = 7;
+    position = 8;
+    sample_index = 9;
+    sample_mask = 10;
+    subgroup_invocation_id = 11;
+    subgroup_size = 12;
+    vertex_index = 13;
+    workgroup_id = 14;
+}
+
+enum BuiltinFn {
+    abs = 0;
+    acos = 1;
+    acosh = 2;
+    all = 3;
+    any = 4;
+    array_length = 5;
+    asin = 6;
+    asinh = 7;
+    atan = 8;
+    atan2 = 9;
+    atanh = 10;
+    ceil = 11;
+    clamp = 12;
+    cos = 13;
+    cosh = 14;
+    count_leading_zeros = 15;
+    count_one_bits = 16;
+    count_trailing_zeros = 17;
+    cross = 18;
+    degrees = 19;
+    determinant = 20;
+    distance = 21;
+    dot = 22;
+    dot4i8_packed = 23;
+    dot4u8_packed = 24;
+    dpdx = 25;
+    dpdx_coarse = 26;
+    dpdx_fine = 27;
+    dpdy = 28;
+    dpdy_coarse = 29;
+    dpdy_fine = 30;
+    exp = 31;
+    exp2 = 32;
+    extract_bits = 33;
+    face_forward = 34;
+    first_leading_bit = 35;
+    first_trailing_bit = 36;
+    floor = 37;
+    fma = 38;
+    fract = 39;
+    frexp = 40;
+    fwidth = 41;
+    fwidth_coarse = 42;
+    fwidth_fine = 43;
+    insert_bits = 44;
+    inverse_sqrt = 45;
+    ldexp = 46;
+    length = 47;
+    log = 48;
+    log2 = 49;
+    max = 50;
+    min = 51;
+    mix = 52;
+    modf = 53;
+    normalize = 54;
+    pack2x16_float = 55;
+    pack2x16_snorm = 56;
+    pack2x16_unorm = 57;
+    pack4x8_snorm = 58;
+    pack4x8_unorm = 59;
+    pow = 60;
+    quantize_to_f16 = 61;
+    radians = 62;
+    reflect = 63;
+    refract = 64;
+    reverse_bits = 65;
+    round = 66;
+    saturate = 67;
+    select = 68;
+    sign = 69;
+    sin = 70;
+    sinh = 71;
+    smoothstep = 72;
+    sqrt = 73;
+    step = 74;
+    storage_barrier = 75;
+    tan = 76;
+    tanh = 77;
+    transpose = 78;
+    trunc = 79;
+    unpack2x16_float = 80;
+    unpack2x16_snorm = 81;
+    unpack2x16_unorm = 82;
+    unpack4x8_snorm = 83;
+    unpack4x8_unorm = 84;
+    workgroup_barrier = 85;
+    texture_barrier = 86;
+    texture_dimensions = 87;
+    texture_gather = 88;
+    texture_gather_compare = 89;
+    texture_num_layers = 90;
+    texture_num_levels = 91;
+    texture_num_samples = 92;
+    texture_sample = 93;
+    texture_sample_bias = 94;
+    texture_sample_compare = 95;
+    texture_sample_compare_level = 96;
+    texture_sample_grad = 97;
+    texture_sample_level = 98;
+    texture_sample_base_clamp_to_edge = 99;
+    texture_store = 100;
+    texture_load = 101;
+    atomic_load = 102;
+    atomic_store = 103;
+    atomic_add = 104;
+    atomic_sub = 105;
+    atomic_max = 106;
+    atomic_min = 107;
+    atomic_and = 108;
+    atomic_or = 109;
+    atomic_xor = 110;
+    atomic_exchange = 111;
+    atomic_compare_exchange_weak = 112;
+    subgroup_ballot = 113;
+    subgroup_broadcast = 114;
 }

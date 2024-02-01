@@ -68,9 +68,9 @@ TEST_F(SpirvWriter_ShaderIOTest, NoInputsOrOutputs) {
 TEST_F(SpirvWriter_ShaderIOTest, Parameters_NonStruct) {
     auto* ep = b.Function("foo", ty.void_());
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
-    front_facing->SetBuiltin(core::ir::FunctionParam::Builtin::kFrontFacing);
+    front_facing->SetBuiltin(core::BuiltinValue::kFrontFacing);
     auto* position = b.FunctionParam("position", ty.vec4<f32>());
-    position->SetBuiltin(core::ir::FunctionParam::Builtin::kPosition);
+    position->SetBuiltin(core::BuiltinValue::kPosition);
     position->SetInvariant(true);
     auto* color1 = b.FunctionParam("color1", ty.f32());
     color1->SetLocation(0, {});
@@ -328,7 +328,7 @@ TEST_F(SpirvWriter_ShaderIOTest, Parameters_Mixed) {
 
     auto* ep = b.Function("foo", ty.void_());
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
-    front_facing->SetBuiltin(core::ir::FunctionParam::Builtin::kFrontFacing);
+    front_facing->SetBuiltin(core::BuiltinValue::kFrontFacing);
     auto* str_param = b.FunctionParam("inputs", str_ty);
     auto* color2 = b.FunctionParam("color2", ty.f32());
     color2->SetLocation(1, core::Interpolation{core::InterpolationType::kLinear,
@@ -420,7 +420,7 @@ Inputs = struct @align(16) {
 
 TEST_F(SpirvWriter_ShaderIOTest, ReturnValue_NonStructBuiltin) {
     auto* ep = b.Function("foo", ty.vec4<f32>());
-    ep->SetReturnBuiltin(core::ir::Function::ReturnBuiltin::kPosition);
+    ep->SetReturnBuiltin(core::BuiltinValue::kPosition);
     ep->SetReturnInvariant(true);
     ep->SetStage(core::ir::Function::PipelineStage::kVertex);
 
@@ -679,8 +679,8 @@ Output = struct @align(4) {
 }
 
 %b1 = block {  # root
-  %foo_loc0_idx0_Output:ptr<__out, f32, write> = var @location(0) @index(0)
-  %foo_loc0_idx1_Output:ptr<__out, f32, write> = var @location(0) @index(1)
+  %foo_loc0_idx0_Output:ptr<__out, f32, write> = var @location(0) @blend_src(0)
+  %foo_loc0_idx1_Output:ptr<__out, f32, write> = var @location(0) @blend_src(1)
 }
 
 %foo_inner = func():Output -> %b2 {
@@ -975,7 +975,7 @@ TEST_F(SpirvWriter_ShaderIOTest, SampleMask) {
                              });
 
     auto* mask_in = b.FunctionParam("mask_in", ty.u32());
-    mask_in->SetBuiltin(core::ir::FunctionParam::Builtin::kSampleMask);
+    mask_in->SetBuiltin(core::BuiltinValue::kSampleMask);
 
     auto* ep = b.Function("foo", str_ty);
     ep->SetStage(core::ir::Function::PipelineStage::kFragment);
@@ -1065,7 +1065,7 @@ TEST_F(SpirvWriter_ShaderIOTest, InterpolationOnVertexInputOrFragmentOutput) {
     // Vertex shader.
     {
         auto* ep = b.Function("vert", ty.vec4<f32>());
-        ep->SetReturnBuiltin(core::ir::Function::ReturnBuiltin::kPosition);
+        ep->SetReturnBuiltin(core::BuiltinValue::kPosition);
         ep->SetReturnInvariant(true);
         ep->SetStage(core::ir::Function::PipelineStage::kVertex);
 
@@ -1254,7 +1254,7 @@ FragDepthClampArgs = struct @align(4), @block {
 %b1 = block {  # root
   %foo_loc0_Output:ptr<__out, f32, write> = var @location(0)
   %foo_frag_depth_Output:ptr<__out, f32, write> = var @builtin(frag_depth)
-  %tint_frag_depth_clamp_args:ptr<push_constant, FragDepthClampArgs, read_write> = var
+  %tint_frag_depth_clamp_args:ptr<push_constant, FragDepthClampArgs, read> = var
 }
 
 %foo_inner = func():Outputs -> %b2 {
@@ -1367,7 +1367,7 @@ FragDepthClampArgs = struct @align(4), @block {
 %b1 = block {  # root
   %ep1_loc0_Output:ptr<__out, f32, write> = var @location(0)
   %ep1_frag_depth_Output:ptr<__out, f32, write> = var @builtin(frag_depth)
-  %tint_frag_depth_clamp_args:ptr<push_constant, FragDepthClampArgs, read_write> = var
+  %tint_frag_depth_clamp_args:ptr<push_constant, FragDepthClampArgs, read> = var
   %ep2_loc0_Output:ptr<__out, f32, write> = var @location(0)
   %ep2_frag_depth_Output:ptr<__out, f32, write> = var @builtin(frag_depth)
   %ep3_loc0_Output:ptr<__out, f32, write> = var @location(0)
@@ -1446,7 +1446,7 @@ FragDepthClampArgs = struct @align(4), @block {
 TEST_F(SpirvWriter_ShaderIOTest, EmitVertexPointSize) {
     auto* ep = b.Function("foo", ty.vec4<f32>());
     ep->SetStage(core::ir::Function::PipelineStage::kVertex);
-    ep->SetReturnBuiltin(core::ir::Function::ReturnBuiltin::kPosition);
+    ep->SetReturnBuiltin(core::BuiltinValue::kPosition);
 
     b.Append(ep->Block(), [&] {  //
         b.Return(ep, b.Construct(ty.vec4<f32>(), 0.5_f));

@@ -41,10 +41,12 @@
 #include "dawn/native/d3d12/CommandRecordingContext.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/HeapD3D12.h"
+#include "dawn/native/d3d12/QueueD3D12.h"
 #include "dawn/native/d3d12/ResidencyManagerD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "dawn/platform/tracing/TraceEvent.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native::d3d12 {
 
@@ -116,12 +118,11 @@ size_t D3D12BufferSizeAlignment(wgpu::BufferUsage usage) {
 }  // namespace
 
 // static
-ResultOrError<Ref<Buffer>> Buffer::Create(Device* device, const BufferDescriptor* descriptor) {
+ResultOrError<Ref<Buffer>> Buffer::Create(Device* device,
+                                          const UnpackedPtr<BufferDescriptor>& descriptor) {
     Ref<Buffer> buffer = AcquireRef(new Buffer(device, descriptor));
 
-    const BufferHostMappedPointer* hostMappedDesc = nullptr;
-    FindInChain(descriptor->nextInChain, &hostMappedDesc);
-    if (hostMappedDesc != nullptr) {
+    if (auto* hostMappedDesc = descriptor.Get<BufferHostMappedPointer>()) {
         DAWN_TRY(buffer->InitializeHostMapped(hostMappedDesc));
     } else {
         DAWN_TRY(buffer->Initialize(descriptor->mappedAtCreation));
@@ -129,7 +130,7 @@ ResultOrError<Ref<Buffer>> Buffer::Create(Device* device, const BufferDescriptor
     return buffer;
 }
 
-Buffer::Buffer(Device* device, const BufferDescriptor* descriptor)
+Buffer::Buffer(Device* device, const UnpackedPtr<BufferDescriptor>& descriptor)
     : BufferBase(device, descriptor) {}
 
 MaybeError Buffer::Initialize(bool mappedAtCreation) {
@@ -193,7 +194,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
         !mappedAtCreation) {
         CommandRecordingContext* commandRecordingContext;
         DAWN_TRY_ASSIGN(commandRecordingContext,
-                        ToBackend(GetDevice())->GetPendingCommandContext());
+                        ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext());
 
         DAWN_TRY(ClearBuffer(commandRecordingContext, uint8_t(1u)));
     }
@@ -204,7 +205,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
         if (paddingBytes > 0) {
             CommandRecordingContext* commandRecordingContext;
             DAWN_TRY_ASSIGN(commandRecordingContext,
-                            ToBackend(GetDevice())->GetPendingCommandContext());
+                            ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext());
 
             uint32_t clearSize = paddingBytes;
             uint64_t clearOffset = GetSize();
@@ -300,7 +301,7 @@ bool Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* commandCon
     // There may be no heap if the allocation is an external one.
     Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
     if (heap) {
-        commandContext->TrackHeapUsage(heap, GetDevice()->GetPendingCommandSerial());
+        commandContext->TrackHeapUsage(heap, GetDevice()->GetQueue()->GetPendingCommandSerial());
     }
 
     MarkUsedInPendingCommands();
@@ -351,7 +352,8 @@ bool Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* commandCon
     // occur. When that buffer is used again, the previously recorded serial must be compared to
     // the last completed serial to determine if the buffer has implicity decayed to the common
     // state.
-    const ExecutionSerial pendingCommandSerial = ToBackend(GetDevice())->GetPendingCommandSerial();
+    const ExecutionSerial pendingCommandSerial =
+        ToBackend(GetDevice())->GetQueue()->GetPendingCommandSerial();
     if (pendingCommandSerial > mLastUsedSerial) {
         lastState = D3D12_RESOURCE_STATE_COMMON;
         mLastUsedSerial = pendingCommandSerial;
@@ -447,7 +449,8 @@ MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) 
     // Skip the unnecessary GetPendingCommandContext() call saves an extra fence.
     if (NeedsInitialization()) {
         CommandRecordingContext* commandContext;
-        DAWN_TRY_ASSIGN(commandContext, ToBackend(GetDevice())->GetPendingCommandContext());
+        DAWN_TRY_ASSIGN(commandContext,
+                        ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext());
         DAWN_TRY(EnsureDataInitialized(commandContext));
     }
 
@@ -513,7 +516,7 @@ void Buffer::DestroyImpl() {
 
             std::unique_ptr<Heap> heap;
             wgpu::Callback callback;
-            void* userdata;
+            raw_ptr<void> userdata;
         };
         std::unique_ptr<DisposeTask> request = std::make_unique<DisposeTask>(
             std::move(mHostMappedHeap), mHostMappedDisposeCallback, mHostMappedDisposeUserdata);
@@ -612,8 +615,9 @@ MaybeError Buffer::ClearBuffer(CommandRecordingContext* commandContext,
         // includes STORAGE.
         DynamicUploader* uploader = device->GetDynamicUploader();
         UploadHandle uploadHandle;
-        DAWN_TRY_ASSIGN(uploadHandle, uploader->Allocate(size, device->GetPendingCommandSerial(),
-                                                         kCopyBufferToBufferOffsetAlignment));
+        DAWN_TRY_ASSIGN(uploadHandle,
+                        uploader->Allocate(size, device->GetQueue()->GetPendingCommandSerial(),
+                                           kCopyBufferToBufferOffsetAlignment));
 
         memset(uploadHandle.mappedBuffer, clearValue, size);
 

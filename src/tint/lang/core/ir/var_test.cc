@@ -87,7 +87,8 @@ TEST_F(IR_VarTest, Clone) {
     EXPECT_EQ(new_v->Result(0)->Type(),
               mod.Types().ptr(core::AddressSpace::kFunction, mod.Types().f32()));
 
-    auto new_val = v->Initializer()->As<Constant>()->Value();
+    ASSERT_NE(nullptr, new_v->Initializer());
+    auto new_val = new_v->Initializer()->As<Constant>()->Value();
     ASSERT_TRUE(new_val->Is<core::constant::Scalar<f32>>());
     EXPECT_FLOAT_EQ(4_f, new_val->As<core::constant::Scalar<f32>>()->ValueAs<f32>());
 
@@ -99,8 +100,8 @@ TEST_F(IR_VarTest, Clone) {
     EXPECT_TRUE(attrs.location.has_value());
     EXPECT_EQ(3u, attrs.location.value());
 
-    EXPECT_TRUE(attrs.index.has_value());
-    EXPECT_EQ(4u, attrs.index.value());
+    EXPECT_TRUE(attrs.blend_src.has_value());
+    EXPECT_EQ(4u, attrs.blend_src.value());
 
     EXPECT_TRUE(attrs.builtin.has_value());
     EXPECT_EQ(core::BuiltinValue::kFragDepth, attrs.builtin.value());

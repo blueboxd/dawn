@@ -62,6 +62,17 @@ std::vector<wgpu::FeatureName> VideoViewsTestsBase::GetRequiredFeatures() {
     if (mIsMultiPlanarFormatsSupported) {
         requiredFeatures.push_back(wgpu::FeatureName::DawnMultiPlanarFormats);
     }
+
+    // Required for the Mac tests.
+    // NOTE: It's not possible to obtain platform-specific features from
+    // `mBackend` as `mBackend` is created after GetRequiredFeatures() is
+    // invoked.
+    if (SupportsFeatures({wgpu::FeatureName::SharedTextureMemoryIOSurface,
+                          wgpu::FeatureName::SharedFenceMTLSharedEvent})) {
+        requiredFeatures.push_back(wgpu::FeatureName::SharedTextureMemoryIOSurface);
+        requiredFeatures.push_back(wgpu::FeatureName::SharedFenceMTLSharedEvent);
+    }
+
     mIsMultiPlanarFormatP010Supported =
         SupportsFeatures({wgpu::FeatureName::MultiPlanarFormatP010});
     if (mIsMultiPlanarFormatP010Supported) {
@@ -949,6 +960,11 @@ TEST_P(VideoViewsValidationTests, CreateYUVViewValidation) {
     // Compatible view format but wrong aspect.
     viewDesc.format = GetPlaneFormat(0);
     viewDesc.aspect = wgpu::TextureAspect::All;
+    ASSERT_DEVICE_ERROR(platformTexture->wgpuTexture.CreateView(&viewDesc));
+
+    // Compatible view format but wrong aspect (due to defaulting).
+    viewDesc.format = GetPlaneFormat(0);
+    viewDesc.aspect = wgpu::TextureAspect::Undefined;
     ASSERT_DEVICE_ERROR(platformTexture->wgpuTexture.CreateView(&viewDesc));
 
     // Create a single plane texture.

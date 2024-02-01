@@ -134,6 +134,16 @@ class ValidationError : public interop::GPUValidationError {
     std::string message_;
 };
 
+class InternalError : public interop::GPUInternalError {
+  public:
+    explicit InternalError(std::string message) : message_(std::move(message)) {}
+
+    std::string getMessage(Napi::Env) override { return message_; };
+
+  private:
+    std::string message_;
+};
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -189,6 +199,14 @@ GPUDevice::~GPUDevice() {
         device_.Destroy();
         destroyed_ = true;
     }
+}
+
+void GPUDevice::ForceLoss(interop::GPUDeviceLostReason reason, const char* message) {
+    if (lost_promise_.GetState() == interop::PromiseState::Pending) {
+        lost_promise_.Resolve(
+            interop::GPUDeviceLostInfo::Create<DeviceLostInfo>(env_, reason, message));
+    }
+    device_.InjectError(wgpu::ErrorType::DeviceLost, message);
 }
 
 interop::Interface<interop::GPUSupportedFeatures> GPUDevice::getFeatures(Napi::Env env) {
@@ -568,12 +586,18 @@ interop::Promise<std::optional<interop::Interface<interop::GPUError>>> GPUDevice
                     c->promise.Resolve(err);
                     break;
                 }
+                case WGPUErrorType::WGPUErrorType_Internal: {
+                    interop::Interface<interop::GPUError> err{
+                        interop::GPUInternalError::Create<InternalError>(env, message)};
+                    c->promise.Resolve(err);
+                    break;
+                }
                 case WGPUErrorType::WGPUErrorType_Unknown:
                 case WGPUErrorType::WGPUErrorType_DeviceLost:
                     c->promise.Reject(Errors::OperationError(env, message));
                     break;
                 default:
-                    c->promise.Reject("unhandled error type");
+                    c->promise.Reject("unhandled error type (" + std::to_string(type) + ")");
                     break;
             }
         },

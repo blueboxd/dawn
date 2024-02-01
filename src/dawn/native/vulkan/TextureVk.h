@@ -56,7 +56,7 @@ VkImageLayout VulkanImageLayoutForDepthStencilAttachment(const Format& format,
 VkSampleCountFlagBits VulkanSampleCount(uint32_t sampleCount);
 
 MaybeError ValidateVulkanImageCanBeWrapped(const DeviceBase* device,
-                                           const Unpacked<TextureDescriptor>& descriptor);
+                                           const UnpackedPtr<TextureDescriptor>& descriptor);
 
 bool IsSampleCountSupported(const dawn::native::vulkan::Device* device,
                             const VkImageCreateInfo& imageCreateInfo);
@@ -65,26 +65,26 @@ class Texture final : public TextureBase {
   public:
     // Used to create a regular texture from a descriptor.
     static ResultOrError<Ref<Texture>> Create(Device* device,
-                                              const Unpacked<TextureDescriptor>& descriptor,
+                                              const UnpackedPtr<TextureDescriptor>& descriptor,
                                               VkImageUsageFlags extraUsages = 0);
 
     // Creates a texture and initializes it with a VkImage that references an external memory
     // object. Before the texture can be used, the VkDeviceMemory associated with the external
     // image must be bound via Texture::BindExternalMemory.
-    static ResultOrError<Texture*> CreateFromExternal(
+    static ResultOrError<Ref<Texture>> CreateFromExternal(
         Device* device,
         const ExternalImageDescriptorVk* descriptor,
-        const Unpacked<TextureDescriptor>& textureDescriptor,
+        const UnpackedPtr<TextureDescriptor>& textureDescriptor,
         external_memory::Service* externalMemoryService);
 
     // Create a texture from contents of a SharedTextureMemory.
     static ResultOrError<Ref<Texture>> CreateFromSharedTextureMemory(
         SharedTextureMemory* memory,
-        const Unpacked<TextureDescriptor>& textureDescriptor);
+        const UnpackedPtr<TextureDescriptor>& textureDescriptor);
 
     // Creates a texture that wraps a swapchain-allocated VkImage.
     static Ref<Texture> CreateForSwapChain(Device* device,
-                                           const Unpacked<TextureDescriptor>& descriptor,
+                                           const UnpackedPtr<TextureDescriptor>& descriptor,
                                            VkImage nativeImage);
 
     VkImage GetHandle() const;
@@ -138,7 +138,7 @@ class Texture final : public TextureBase {
 
   private:
     ~Texture() override;
-    Texture(Device* device, const Unpacked<TextureDescriptor>& descriptor);
+    Texture(Device* device, const UnpackedPtr<TextureDescriptor>& descriptor);
 
     MaybeError InitializeAsInternalTexture(VkImageUsageFlags extraUsages);
     MaybeError InitializeFromExternal(const ExternalImageDescriptorVk* descriptor,

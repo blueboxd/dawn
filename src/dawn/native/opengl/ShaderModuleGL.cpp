@@ -28,18 +28,17 @@
 #include "dawn/native/opengl/ShaderModuleGL.h"
 
 #include <sstream>
+#include <unordered_map>
 #include <utility>
 
 #include "dawn/native/BindGroupLayoutInternal.h"
 #include "dawn/native/CacheRequest.h"
 #include "dawn/native/Pipeline.h"
 #include "dawn/native/TintUtils.h"
+#include "dawn/native/opengl/BindingPoint.h"
 #include "dawn/native/opengl/DeviceGL.h"
 #include "dawn/native/opengl/PipelineLayoutGL.h"
-#include "dawn/native/stream/BlobSource.h"
-#include "dawn/native/stream/ByteVectorSink.h"
 #include "dawn/platform/DawnPlatform.h"
-#include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
 
 #include "tint/tint.h"
@@ -94,16 +93,14 @@ using InterstageLocationAndName = std::pair<uint32_t, std::string>;
     X(LimitsForCompilationRequest, limits)                                                       \
     X(bool, disableSymbolRenaming)                                                               \
     X(std::vector<InterstageLocationAndName>, interstageVariables)                               \
+    X(std::vector<std::string>, bufferBindingVariables)                                          \
     X(tint::glsl::writer::Options, tintOptions)                                                  \
     X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, platform)
 
 DAWN_MAKE_CACHE_REQUEST(GLSLCompilationRequest, GLSL_COMPILATION_REQUEST_MEMBERS);
 #undef GLSL_COMPILATION_REQUEST_MEMBERS
 
-#define GLSL_COMPILATION_MEMBERS(X)     \
-    X(std::string, glsl)                \
-    X(bool, needsInternalUniformBuffer) \
-    X(tint::TextureBuiltinsFromUniformOptions::BindingPointToFieldAndOffset, bindingPointToData)
+#define GLSL_COMPILATION_MEMBERS(X) X(std::string, glsl)
 
 DAWN_SERIALIZABLE(struct, GLSLCompilation, GLSL_COMPILATION_MEMBERS){};
 #undef GLSL_COMPILATION_MEMBERS
@@ -146,7 +143,7 @@ std::string CombinedSampler::GetName() const {
 // static
 ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     Device* device,
-    const ShaderModuleDescriptor* descriptor,
+    const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
     Ref<ShaderModule> module = AcquireRef(new ShaderModule(device, descriptor));
@@ -154,7 +151,7 @@ ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     return module;
 }
 
-ShaderModule::ShaderModule(Device* device, const ShaderModuleDescriptor* descriptor)
+ShaderModule::ShaderModule(Device* device, const UnpackedPtr<ShaderModuleDescriptor>& descriptor)
     : ShaderModuleBase(device, descriptor) {}
 
 MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult,
@@ -174,11 +171,15 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
     const PipelineLayout* layout,
     bool* needsPlaceholderSampler,
     bool* needsTextureBuiltinUniformBuffer,
-    tint::TextureBuiltinsFromUniformOptions::BindingPointToFieldAndOffset* bindingPointToData)
-    const {
+    BindingPointToFunctionAndOffset* bindingPointToData) const {
     TRACE_EVENT0(GetDevice()->GetPlatform(), General, "TranslateToGLSL");
 
     const OpenGLVersion& version = ToBackend(GetDevice())->GetGL().GetVersion();
+
+    GLSLCompilationRequest req = {};
+
+    auto tintProgram = GetTintProgram();
+    req.inputProgram = &(tintProgram->program);
 
     using tint::BindingPoint;
     // Since (non-Vulkan) GLSL does not support descriptor sets, generate a
@@ -202,6 +203,13 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
             if (srcBindingPoint != dstBindingPoint) {
                 glBindings.emplace(srcBindingPoint, dstBindingPoint);
             }
+
+            // For buffer bindings that can be sharable across stages, we need to rename them to
+            // avoid GL program link failures due to block naming issues.
+            if (std::holds_alternative<BufferBindingInfo>(bindingInfo.bindingInfo) &&
+                stage != SingleShaderStage::Compute) {
+                req.bufferBindingVariables.emplace_back(bindingInfo.name);
+            }
         }
 
         for (const auto& [_, expansion] : bgl->GetExternalTextureBindingExpansionMap()) {
@@ -216,10 +224,48 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
         }
     }
 
+    tint::inspector::Inspector inspector(*req.inputProgram);
+
     // Some texture builtin functions are unsupported on GLSL ES. These are emulated with internal
     // uniforms.
     tint::TextureBuiltinsFromUniformOptions textureBuiltinsFromUniform;
     textureBuiltinsFromUniform.ubo_binding = {kMaxBindGroups + 1, 0};
+
+    auto textureBuiltinsFromUniformData = inspector.GetTextureQueries(programmableStage.entryPoint);
+    bool needsInternalUBO = false;
+    if (!textureBuiltinsFromUniformData.empty()) {
+        needsInternalUBO = true;
+        for (size_t i = 0; i < textureBuiltinsFromUniformData.size(); ++i) {
+            const auto& info = textureBuiltinsFromUniformData[i];
+
+            // This is the unmodified binding point from the WGSL shader.
+            BindingPoint srcBindingPoint{info.group, info.binding};
+            textureBuiltinsFromUniform.ubo_bindingpoint_ordering.emplace_back(srcBindingPoint);
+
+            // The remapped binding point is inserted into the Dawn data structure.
+            const BindGroupLayoutInternalBase* bgl =
+                layout->GetBindGroupLayout(BindGroupIndex{info.group});
+            BindingPoint dstBindingPoint = BindingPoint{
+                info.group,
+                static_cast<uint32_t>(bgl->GetBindingIndex(BindingNumber{info.binding}))};
+
+            BindPointFunction type = BindPointFunction::kTextureNumLevels;
+            switch (info.type) {
+                case tint::inspector::Inspector::TextureQueryType::kTextureNumLevels:
+                    type = BindPointFunction::kTextureNumLevels;
+                    break;
+                case tint::inspector::Inspector::TextureQueryType::kTextureNumSamples:
+                    type = BindPointFunction::kTextureNumSamples;
+                    break;
+            }
+
+            // Note, the `sizeof(uint32_t)` has to match up with the data type created by the
+            // `TextureBuiltinsFromUniform` when it creates the UBO structure.
+            bindingPointToData->emplace(
+                dstBindingPoint, std::pair{type, static_cast<uint32_t>(i * sizeof(uint32_t))});
+        }
+    }
+
     // Remap the internal ubo binding as well.
     glBindings.emplace(textureBuiltinsFromUniform.ubo_binding,
                        BindingPoint{0, layout->GetInternalUniformBinding()});
@@ -231,8 +277,6 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
 
     const CombinedLimits& limits = GetDevice()->GetLimits();
 
-    GLSLCompilationRequest req = {};
-    req.inputProgram = GetTintProgram();
     req.stage = stage;
     req.entryPointName = programmableStage.entryPoint;
     req.substituteOverrideConfig = std::move(substituteOverrideConfig);
@@ -256,13 +300,14 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
     req.tintOptions.external_texture_options = BuildExternalTextureTransformBindings(layout);
     req.tintOptions.binding_remapper_options.binding_points = std::move(glBindings);
     req.tintOptions.texture_builtins_from_uniform = std::move(textureBuiltinsFromUniform);
+    req.tintOptions.disable_polyfill_integer_div_mod =
+        GetDevice()->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
 
     // When textures are accessed without a sampler (e.g., textureLoad()),
     // GetSamplerTextureUses() will return this sentinel value.
     BindingPoint placeholderBindingPoint{static_cast<uint32_t>(kMaxBindGroupsTyped), 0};
 
     *needsPlaceholderSampler = false;
-    tint::inspector::Inspector inspector(*req.inputProgram);
     // Find all the sampler/texture pairs for this entry point, and create
     // CombinedSamplers for them. CombinedSampler records the binding points
     // of the original texture and sampler, and generates a unique name. The
@@ -308,12 +353,22 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
             transformInputs.Add<tint::ast::transform::SingleEntryPoint::Config>(r.entryPointName);
 
             {
+                tint::ast::transform::Renamer::Remappings assignedRenamings = {};
+
                 // Give explicit renaming mappings for interstage variables
                 // Because GLSL requires interstage IO names to match.
-                tint::ast::transform::Renamer::Remappings interstage_renamings = {};
                 for (const auto& it : r.interstageVariables) {
-                    interstage_renamings.emplace(
+                    assignedRenamings.emplace(
                         it.second, "dawn_interstage_location_" + std::to_string(it.first));
+                }
+
+                // Prepend v_ or f_ to buffer binding variable names in order to avoid collisions in
+                // renamed interface blocks. The AddBlockAttribute transform in the Tint GLSL
+                // printer will always generate wrapper structs from such bindings.
+                for (const auto& variableName : r.bufferBindingVariables) {
+                    assignedRenamings.emplace(
+                        variableName,
+                        (r.stage == SingleShaderStage::Vertex ? "v_" : "f_") + variableName);
                 }
 
                 // Needs to run early so that they can use builtin names safely.
@@ -322,7 +377,7 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
                 transformInputs.Add<tint::ast::transform::Renamer::Config>(
                     r.disableSymbolRenaming ? tint::ast::transform::Renamer::Target::kGlslKeywords
                                             : tint::ast::transform::Renamer::Target::kAll,
-                    false, std::move(interstage_renamings));
+                    false, std::move(assignedRenamings));
             }
 
             if (r.substituteOverrideConfig) {
@@ -338,37 +393,39 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
             DAWN_TRY_ASSIGN(program, RunTransforms(&transformManager, r.inputProgram,
                                                    transformInputs, &transformOutputs, nullptr));
 
-            // Get the entry point name after the renamer pass.
             // TODO(dawn:2180): refactor out.
+            // Get the entry point name after the renamer pass.
+            // In the case of the entry-point name being a reserved GLSL keyword
+            // (including `main`) the entry-point would have been renamed
+            // regardless of the `disableSymbolRenaming` flag. Always check the
+            // rename map, and if the name was changed, get the new one.
+            auto* data = transformOutputs.Get<tint::ast::transform::Renamer::Data>();
+            DAWN_ASSERT(data != nullptr);
+            auto it = data->remappings.find(r.entryPointName.data());
             std::string remappedEntryPoint;
-            if (r.disableSymbolRenaming) {
-                remappedEntryPoint = r.entryPointName;
-            } else {
-                auto* data = transformOutputs.Get<tint::ast::transform::Renamer::Data>();
-                DAWN_ASSERT(data != nullptr);
-
-                auto it = data->remappings.find(r.entryPointName.data());
-                DAWN_ASSERT(it != data->remappings.end());
+            if (it != data->remappings.end()) {
                 remappedEntryPoint = it->second;
-
-                // Names of inter stage variables need to match
+            } else {
+                remappedEntryPoint = r.entryPointName;
             }
             DAWN_ASSERT(remappedEntryPoint != "");
 
             if (r.stage == SingleShaderStage::Compute) {
                 // Validate workgroup size after program runs transforms.
                 Extent3D _;
-                DAWN_TRY_ASSIGN(
-                    _, ValidateComputeStageWorkgroupSize(program, remappedEntryPoint.c_str(),
-                                                         r.limits, /* fullSubgroups */ {}));
+                DAWN_TRY_ASSIGN(_, ValidateComputeStageWorkgroupSize(
+                                       program, remappedEntryPoint.c_str(), r.limits,
+                                       /* fullSubgroups */ {}));
             }
 
+            r.tintOptions.first_instance_offset =
+                4 * PipelineLayout::PushConstantLocation::FirstInstance;
+
             auto result = tint::glsl::writer::Generate(program, r.tintOptions, remappedEntryPoint);
-            DAWN_INVALID_IF(!result, "An error occurred while generating GLSL:\n%s",
+            DAWN_INVALID_IF(result != tint::Success, "An error occurred while generating GLSL:\n%s",
                             result.Failure().reason.str());
 
-            return GLSLCompilation{{std::move(result->glsl), result->needs_internal_uniform_buffer,
-                                    result->bindpoint_to_data}};
+            return GLSLCompilation{{std::move(result->glsl)}};
         },
         "OpenGL.CompileShaderToGLSL");
 
@@ -400,20 +457,7 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
     }
 
     GetDevice()->GetBlobCache()->EnsureStored(compilationResult);
-    *needsTextureBuiltinUniformBuffer = compilationResult->needsInternalUniformBuffer;
-
-    // Since the TextureBuiltinsFromUniform transform runs before BindingRemapper,
-    // we need to take care of their binding remappings here.
-    for (const auto& e : compilationResult->bindingPointToData) {
-        tint::BindingPoint bindingPoint = e.first;
-
-        const BindGroupLayoutInternalBase* bgl =
-            layout->GetBindGroupLayout(BindGroupIndex{bindingPoint.group});
-        bindingPoint.binding =
-            static_cast<uint32_t>(bgl->GetBindingIndex(BindingNumber{bindingPoint.binding}));
-
-        bindingPointToData->emplace(bindingPoint, e.second);
-    }
+    *needsTextureBuiltinUniformBuffer = needsInternalUBO;
 
     *combinedSamplers = std::move(combinedSamplerInfo);
     return shader;

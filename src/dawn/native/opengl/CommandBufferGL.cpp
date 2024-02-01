@@ -38,6 +38,7 @@
 #include "dawn/native/Commands.h"
 #include "dawn/native/ExternalTexture.h"
 #include "dawn/native/RenderBundle.h"
+#include "dawn/native/opengl/BindingPoint.h"
 #include "dawn/native/opengl/BufferGL.h"
 #include "dawn/native/opengl/ComputePipelineGL.h"
 #include "dawn/native/opengl/DeviceGL.h"
@@ -49,6 +50,7 @@
 #include "dawn/native/opengl/SamplerGL.h"
 #include "dawn/native/opengl/TextureGL.h"
 #include "dawn/native/opengl/UtilsGL.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native::opengl {
 
@@ -224,13 +226,13 @@ class VertexStateBufferBindingTracker {
 
   private:
     bool mIndexBufferDirty = false;
-    Buffer* mIndexBuffer = nullptr;
+    raw_ptr<Buffer> mIndexBuffer = nullptr;
 
     VertexBufferMask mDirtyVertexBuffers;
     PerVertexBuffer<Buffer*> mVertexBuffers;
     PerVertexBuffer<uint64_t> mVertexBufferOffsets;
 
-    RenderPipelineBase* mLastPipeline = nullptr;
+    raw_ptr<RenderPipelineBase> mLastPipeline = nullptr;
 };
 
 class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
@@ -355,6 +357,9 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                                     break;
                             }
                         }
+                        gl.TexParameteri(target, GL_TEXTURE_BASE_LEVEL, view->GetBaseMipLevel());
+                        gl.TexParameteri(target, GL_TEXTURE_MAX_LEVEL,
+                                         view->GetBaseMipLevel() + view->GetLevelCount() - 1);
                     }
 
                     // Some texture builtin function data needs emulation to update into the
@@ -426,15 +431,15 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
         }
 
         // Update data by retrieving information from texture view object.
-        const tint::TextureBuiltinsFromUniformOptions::Field field = iter->second.first;
+        const BindPointFunction field = iter->second.first;
         const size_t byteOffset = static_cast<size_t>(iter->second.second);
 
         uint32_t data;
         switch (field) {
-            case tint::TextureBuiltinsFromUniformOptions::Field::TextureNumLevels:
+            case BindPointFunction::kTextureNumLevels:
                 data = view->GetLevelCount();
                 break;
-            case tint::TextureBuiltinsFromUniformOptions::Field::TextureNumSamples:
+            case BindPointFunction::kTextureNumSamples:
                 data = view->GetTexture()->GetSampleCount();
                 break;
         }
@@ -474,7 +479,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
         ResetInternalUniformDataDirtyRange();
     }
 
-    PipelineGL* mPipeline = nullptr;
+    raw_ptr<PipelineGL> mPipeline = nullptr;
 
     // The data used for mPipeline's internal uniform buffer from current bind group.
     // Expecting no more than 4 texture bindings called as textureNumLevels/textureNumSamples
@@ -728,6 +733,8 @@ MaybeError CommandBuffer::Execute() {
 
                 uint8_t* offset = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(dst.offset));
                 switch (texture->GetDimension()) {
+                    case wgpu::TextureDimension::Undefined:
+                        DAWN_UNREACHABLE();
                     case wgpu::TextureDimension::e1D:
                     case wgpu::TextureDimension::e2D: {
                         if (texture->GetArrayLayers() == 1) {
@@ -1116,6 +1123,10 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 vertexStateBufferBindingTracker.Apply(gl);
                 bindGroupTracker.Apply(gl);
 
+                if (lastPipeline->UsesInstanceIndex()) {
+                    gl.Uniform1ui(PipelineLayout::PushConstantLocation::FirstInstance,
+                                  draw->firstInstance);
+                }
                 if (gl.DrawArraysInstancedBaseInstanceANGLE) {
                     gl.DrawArraysInstancedBaseInstanceANGLE(
                         lastPipeline->GetGLPrimitiveTopology(), draw->firstVertex,
@@ -1138,6 +1149,10 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 vertexStateBufferBindingTracker.Apply(gl);
                 bindGroupTracker.Apply(gl);
 
+                if (lastPipeline->UsesInstanceIndex()) {
+                    gl.Uniform1ui(PipelineLayout::PushConstantLocation::FirstInstance,
+                                  draw->firstInstance);
+                }
                 if (gl.DrawElementsInstancedBaseVertexBaseInstanceANGLE) {
                     gl.DrawElementsInstancedBaseVertexBaseInstanceANGLE(
                         lastPipeline->GetGLPrimitiveTopology(), draw->indexCount, indexBufferFormat,
@@ -1174,6 +1189,9 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
 
             case Command::DrawIndirect: {
                 DrawIndirectCmd* draw = iter->NextCommand<DrawIndirectCmd>();
+                if (lastPipeline->UsesInstanceIndex()) {
+                    gl.Uniform1ui(PipelineLayout::PushConstantLocation::FirstInstance, 0);
+                }
                 vertexStateBufferBindingTracker.Apply(gl);
                 bindGroupTracker.Apply(gl);
 
@@ -1191,6 +1209,9 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
             case Command::DrawIndexedIndirect: {
                 DrawIndexedIndirectCmd* draw = iter->NextCommand<DrawIndexedIndirectCmd>();
 
+                if (lastPipeline->UsesInstanceIndex()) {
+                    gl.Uniform1ui(PipelineLayout::PushConstantLocation::FirstInstance, 0);
+                }
                 vertexStateBufferBindingTracker.Apply(gl);
                 bindGroupTracker.Apply(gl);
 

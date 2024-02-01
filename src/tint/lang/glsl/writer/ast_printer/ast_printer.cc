@@ -67,6 +67,7 @@
 #include "src/tint/lang/wgsl/ast/transform/expand_compound_assignment.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
 #include "src/tint/lang/wgsl/ast/transform/multiplanar_external_texture.h"
+#include "src/tint/lang/wgsl/ast/transform/offset_first_index.h"
 #include "src/tint/lang/wgsl/ast/transform/preserve_padding.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_initializers_to_let.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_side_effects_to_decl.h"
@@ -151,9 +152,6 @@ SanitizedResult Sanitize(const Program& in,
         manager.Add<ast::transform::SingleEntryPoint>();
         data.Add<ast::transform::SingleEntryPoint::Config>(entry_point);
     }
-    manager.Add<ast::transform::Renamer>();
-    data.Add<ast::transform::Renamer::Config>(ast::transform::Renamer::Target::kGlslKeywords,
-                                              /* preserve_unicode */ false);
 
     manager.Add<ast::transform::PreservePadding>();  // Must come before DirectVariableAccess
 
@@ -185,11 +183,13 @@ SanitizedResult Sanitize(const Program& in,
         polyfills.first_leading_bit = true;
         polyfills.first_trailing_bit = true;
         polyfills.insert_bits = ast::transform::BuiltinPolyfill::Level::kClampParameters;
-        polyfills.int_div_mod = true;
+        polyfills.int_div_mod = !options.disable_polyfill_integer_div_mod;
         polyfills.saturate = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
         polyfills.dot_4x8_packed = true;
+        polyfills.pack_unpack_4x8 = true;
+        polyfills.pack_4xu8_clamp = true;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<ast::transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }
@@ -201,6 +201,8 @@ SanitizedResult Sanitize(const Program& in,
         // ZeroInitWorkgroupMemory may inject new builtin parameters.
         manager.Add<ast::transform::ZeroInitWorkgroupMemory>();
     }
+
+    manager.Add<ast::transform::OffsetFirstIndex>();
 
     // CanonicalizeEntryPointIO must come after Robustness
     manager.Add<ast::transform::CanonicalizeEntryPointIO>();
@@ -216,11 +218,10 @@ SanitizedResult Sanitize(const Program& in,
     // TextureBuiltinsFromUniform must come before CombineSamplers to preserve texture binding point
     // info, instead of combined sampler binding point. As a result, TextureBuiltinsFromUniform also
     // comes before BindingRemapper so the binding point info it reflects is before remapping.
-    if (options.texture_builtins_from_uniform) {
-        manager.Add<TextureBuiltinsFromUniform>();
-        data.Add<TextureBuiltinsFromUniform::Config>(
-            options.texture_builtins_from_uniform->ubo_binding);
-    }
+    manager.Add<TextureBuiltinsFromUniform>();
+    data.Add<TextureBuiltinsFromUniform::Config>(
+        options.texture_builtins_from_uniform.ubo_binding,
+        options.texture_builtins_from_uniform.ubo_bindingpoint_ordering);
 
     data.Add<CombineSamplers::BindingInfo>(options.binding_map, options.placeholder_binding_point);
     manager.Add<CombineSamplers>();
@@ -245,13 +246,11 @@ SanitizedResult Sanitize(const Program& in,
     data.Add<ast::transform::CanonicalizeEntryPointIO::Config>(
         ast::transform::CanonicalizeEntryPointIO::ShaderStyle::kGlsl);
 
+    data.Add<ast::transform::OffsetFirstIndex::Config>(std::nullopt, options.first_instance_offset);
+
     SanitizedResult result;
     ast::transform::DataMap outputs;
     result.program = manager.Run(in, data, outputs);
-    if (auto* res = outputs.Get<TextureBuiltinsFromUniform::Result>()) {
-        result.needs_internal_uniform_buffer = true;
-        result.bindpoint_to_data = std::move(res->bindpoint_to_data);
-    }
     return result;
 }
 
@@ -265,7 +264,6 @@ bool ASTPrinter::Generate() {
             "GLSL", builder_.AST(), diagnostics_,
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
-                wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
                 wgsl::Extension::kF16,
@@ -302,7 +300,8 @@ bool ASTPrinter::Generate() {
                 }
                 bool is_block =
                     ast::HasAttribute<ast::transform::AddBlockAttribute::BlockAttribute>(
-                        str->attributes);
+                        str->attributes) &&
+                    !sem->UsedAs(core::AddressSpace::kPushConstant);
                 if (!has_rt_arr && !is_block) {
                     EmitStructType(current_buffer_, sem);
                 }
@@ -1898,9 +1897,7 @@ void ASTPrinter::EmitGlobalVariable(const ast::Variable* global) {
                     EmitIOVariable(sem);
                     return;
                 case core::AddressSpace::kPushConstant:
-                    diagnostics_.add_error(
-                        diag::System::Writer,
-                        "unhandled address space " + tint::ToString(sem->AddressSpace()));
+                    EmitPushConstant(sem);
                     return;
                 default: {
                     TINT_ICE() << "unhandled address space " << sem->AddressSpace();
@@ -2090,6 +2087,18 @@ void ASTPrinter::EmitIOVariable(const sem::GlobalVariable* var) {
         out << " = ";
         EmitExpression(out, initializer);
     }
+    out << ";";
+}
+
+void ASTPrinter::EmitPushConstant(const sem::GlobalVariable* var) {
+    auto* decl = var->Declaration();
+
+    auto out = Line();
+
+    auto name = decl->name->symbol.Name();
+    auto* type = var->Type()->UnwrapRef();
+    out << "layout(location=0) ";
+    EmitTypeAndName(out, type, var->AddressSpace(), var->Access(), name);
     out << ";";
 }
 
@@ -2643,6 +2652,7 @@ void ASTPrinter::EmitType(StringStream& out,
             break;
         }
         case core::AddressSpace::kUniform:
+        case core::AddressSpace::kPushConstant:
         case core::AddressSpace::kHandle: {
             out << "uniform ";
             break;

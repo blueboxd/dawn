@@ -340,24 +340,7 @@ class Impl {
                                 program_.Sem()
                                     .Get(b)
                                     ->As<sem::BuiltinEnumExpression<core::BuiltinValue>>()) {
-                            switch (ident_sem->Value()) {
-                                case core::BuiltinValue::kPosition:
-                                    ir_func->SetReturnBuiltin(
-                                        core::ir::Function::ReturnBuiltin::kPosition);
-                                    break;
-                                case core::BuiltinValue::kFragDepth:
-                                    ir_func->SetReturnBuiltin(
-                                        core::ir::Function::ReturnBuiltin::kFragDepth);
-                                    break;
-                                case core::BuiltinValue::kSampleMask:
-                                    ir_func->SetReturnBuiltin(
-                                        core::ir::Function::ReturnBuiltin::kSampleMask);
-                                    break;
-                                default:
-                                    TINT_ICE() << "Unknown builtin value in return attributes "
-                                               << ident_sem->Value();
-                                    return;
-                            }
+                            ir_func->SetReturnBuiltin(ident_sem->Value());
                         } else {
                             TINT_ICE() << "Builtin attribute sem invalid";
                             return;
@@ -393,63 +376,7 @@ class Impl {
                                 program_.Sem()
                                     .Get(b)
                                     ->As<sem::BuiltinEnumExpression<core::BuiltinValue>>()) {
-                            switch (ident_sem->Value()) {
-                                case core::BuiltinValue::kVertexIndex:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kVertexIndex);
-                                    break;
-                                case core::BuiltinValue::kInstanceIndex:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kInstanceIndex);
-                                    break;
-                                case core::BuiltinValue::kPosition:
-                                    param->SetBuiltin(core::ir::FunctionParam::Builtin::kPosition);
-                                    break;
-                                case core::BuiltinValue::kFrontFacing:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kFrontFacing);
-                                    break;
-                                case core::BuiltinValue::kLocalInvocationId:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kLocalInvocationId);
-                                    break;
-                                case core::BuiltinValue::kLocalInvocationIndex:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kLocalInvocationIndex);
-                                    break;
-                                case core::BuiltinValue::kGlobalInvocationId:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kGlobalInvocationId);
-                                    break;
-                                case core::BuiltinValue::kWorkgroupId:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kWorkgroupId);
-                                    break;
-                                case core::BuiltinValue::kNumWorkgroups:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kNumWorkgroups);
-                                    break;
-                                case core::BuiltinValue::kSampleIndex:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kSampleIndex);
-                                    break;
-                                case core::BuiltinValue::kSampleMask:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kSampleMask);
-                                    break;
-                                case core::BuiltinValue::kSubgroupInvocationId:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kSubgroupInvocationId);
-                                    break;
-                                case core::BuiltinValue::kSubgroupSize:
-                                    param->SetBuiltin(
-                                        core::ir::FunctionParam::Builtin::kSubgroupSize);
-                                    break;
-                                default:
-                                    TINT_ICE() << "Unknown builtin value in parameter attributes "
-                                               << ident_sem->Value();
-                                    return;
-                            }
+                            param->SetBuiltin(ident_sem->Value());
                         } else {
                             TINT_ICE() << "Builtin attribute sem invalid";
                             return;
@@ -1023,7 +950,7 @@ class Impl {
                 if (!rhs) {
                     return;
                 }
-                core::ir::Binary* inst = impl.BinaryOp(ty, lhs, rhs, b->op);
+                auto* inst = impl.BinaryOp(ty, lhs, rhs, b->op);
                 if (!inst) {
                     return;
                 }
@@ -1171,12 +1098,12 @@ class Impl {
                     return std::nullopt;
                 }
 
-                auto* ref = access->Object()->Type()->As<core::type::Reference>();
-                if (!ref) {
+                auto* memory_view = access->Object()->Type()->As<core::type::MemoryView>();
+                if (!memory_view) {
                     return std::nullopt;
                 }
 
-                if (!ref->StoreType()->Is<core::type::Vector>()) {
+                if (!memory_view->StoreType()->Is<core::type::Vector>()) {
                     return std::nullopt;
                 }
                 return tint::Switch(
@@ -1361,10 +1288,10 @@ class Impl {
             TINT_ICE_ON_NO_MATCH);
     }
 
-    core::ir::Binary* BinaryOp(const core::type::Type* ty,
-                               core::ir::Value* lhs,
-                               core::ir::Value* rhs,
-                               core::BinaryOp op) {
+    core::ir::CoreBinary* BinaryOp(const core::type::Type* ty,
+                                   core::ir::Value* lhs,
+                                   core::ir::Value* rhs,
+                                   core::BinaryOp op) {
         switch (op) {
             case core::BinaryOp::kAnd:
                 return builder_.And(ty, lhs, rhs);
@@ -1417,7 +1344,7 @@ tint::Result<core::ir::Module> ProgramToIR(const Program& program) {
 
     Impl b(program);
     auto r = b.Build();
-    if (!r) {
+    if (r != Success) {
         diag::List err = std::move(r.Failure().reason);
         err.add_note(diag::System::IR, "AST:\n" + Program::printer(program), Source{});
         return Failure{err};

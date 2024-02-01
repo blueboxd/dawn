@@ -35,17 +35,17 @@
 
 namespace tint::spirv::validate {
 
-Result<SuccessType> Validate(Slice<const uint32_t> spirv) {
+Result<SuccessType> Validate(Slice<const uint32_t> spirv, spv_target_env target_env) {
     Vector<diag::Diagnostic, 4> diags;
     diags.Push(diag::Diagnostic{});  // Filled in on error
 
-    spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_3);
+    spvtools::SpirvTools tools(target_env);
     tools.SetMessageConsumer(
         [&](spv_message_level_t level, const char*, const spv_position_t& pos, const char* msg) {
             diag::Diagnostic diag;
             diag.message = msg;
-            diag.source.range.begin.line = pos.line + 1;
-            diag.source.range.begin.column = pos.column + 1;
+            diag.source.range.begin.line = static_cast<uint32_t>(pos.line) + 1;
+            diag.source.range.begin.column = static_cast<uint32_t>(pos.column) + 1;
             diag.source.range.end = diag.source.range.begin;
             switch (level) {
                 case SPV_MSG_FATAL:

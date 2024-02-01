@@ -31,6 +31,7 @@
 #include <set>
 
 #include "dawn/native/Buffer.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 #include "dawn/common/SerialQueue.h"
 #include "dawn/common/vulkan_platform.h"
@@ -44,7 +45,8 @@ struct VulkanFunctions;
 
 class Buffer final : public BufferBase {
   public:
-    static ResultOrError<Ref<Buffer>> Create(Device* device, const BufferDescriptor* descriptor);
+    static ResultOrError<Ref<Buffer>> Create(Device* device,
+                                             const UnpackedPtr<BufferDescriptor>& descriptor);
 
     VkBuffer GetHandle() const;
 
@@ -102,7 +104,7 @@ class Buffer final : public BufferBase {
     VkDeviceMemory mDedicatedDeviceMemory = VK_NULL_HANDLE;
 
     wgpu::Callback mHostMappedDisposeCallback = nullptr;
-    void* mHostMappedDisposeUserdata = nullptr;
+    raw_ptr<void> mHostMappedDisposeUserdata = nullptr;
 
     // Track which usage was the last to write to the buffer.
     wgpu::BufferUsage mLastWriteUsage = wgpu::BufferUsage::None;

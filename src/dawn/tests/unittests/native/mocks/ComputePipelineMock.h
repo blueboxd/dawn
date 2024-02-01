@@ -38,16 +38,20 @@ namespace dawn::native {
 class ComputePipelineMock : public ComputePipelineBase {
   public:
     // Creates a compute pipeline given the descriptor.
+    static Ref<ComputePipelineMock> Create(
+        DeviceMock* device,
+        const UnpackedPtr<ComputePipelineDescriptor>& descriptor);
     static Ref<ComputePipelineMock> Create(DeviceMock* device,
                                            const ComputePipelineDescriptor* descriptor);
 
     ~ComputePipelineMock() override;
 
-    MOCK_METHOD(MaybeError, Initialize, (), (override));
+    MOCK_METHOD(MaybeError, InitializeImpl, (), (override));
     MOCK_METHOD(void, DestroyImpl, (), (override));
 
   protected:
-    ComputePipelineMock(DeviceBase* device, const ComputePipelineDescriptor* descriptor);
+    ComputePipelineMock(DeviceBase* device,
+                        const UnpackedPtr<ComputePipelineDescriptor>& descriptor);
 };
 
 }  // namespace dawn::native

@@ -37,12 +37,13 @@ TINT_INSTANTIATE_TYPEINFO(tint::core::ir::CoreBuiltinCall);
 
 namespace tint::core::ir {
 
+CoreBuiltinCall::CoreBuiltinCall() = default;
+
 CoreBuiltinCall::CoreBuiltinCall(InstructionResult* result,
                                  core::BuiltinFn func,
                                  VectorRef<Value*> arguments)
     : Base(result, arguments), func_(func) {
     TINT_ASSERT(func != core::BuiltinFn::kNone);
-    TINT_ASSERT(func != core::BuiltinFn::kTintMaterialize);
 }
 
 CoreBuiltinCall::~CoreBuiltinCall() = default;

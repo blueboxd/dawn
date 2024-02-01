@@ -424,6 +424,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Use a blit instead of a copy command to copy rgb9e5ufloat texture to a texture or a buffer."
       "Workaround for OpenGLES.",
       "https://crbug.com/dawn/2079", ToggleStage::Device}},
+    {Toggle::UseT2B2TForSRGBTextureCopy,
+     {"use_t2b2t_for_srgb_texture_copy",
+      "Use T2B and B2T copies to emulate a T2T copy between sRGB and non-sRGB textures."
+      "Workaround for OpenGLES.",
+      "https://crbug.com/dawn/2362", ToggleStage::Device}},
     {Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha,
      {"d3d12_replace_add_with_minus_when_dst_factor_is_zero_and_src_factor_is_dst_alpha",
       "Replace the blending operation 'Add' with 'Minus' when dstBlendFactor is 'Zero' and "
@@ -490,6 +495,12 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"polyfill_packed_4x8_dot_product",
       "Always use the polyfill version of dot4I8Packed() and dot4U8Packed().",
       "https://crbug.com/tint/1497", ToggleStage::Device}},
+    {Toggle::D3D12PolyFillPackUnpack4x8,
+     {"d3d12_polyfill_pack_unpack_4x8",
+      "Always use the polyfill version of pack4xI8(), pack4xU8(), pack4xI8Clamp(), unpack4xI8() "
+      "and unpack4xU8() on D3D12 backends. Note that these functions are always polyfilled on all "
+      "other backends right now.",
+      "https://crbug.com/tint/1497", ToggleStage::Device}},
     {Toggle::ExposeWGSLTestingFeatures,
      {"expose_wgsl_testing_features",
       "Make the Instance expose the ChromiumTesting* features for testing of "
@@ -500,6 +511,16 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Make the Instance expose the experimental features but not the unsage ones, so that safe "
       "experimental features can be used without the need for allow_unsafe_apis",
       "https://crbug.com/dawn/2260", ToggleStage::Instance}},
+    {Toggle::DisablePolyfillsOnIntegerDivisonAndModulo,
+     {"disable_polyfills_on_integer_div_and_mod",
+      "Disable the Tint polyfills on integer division and modulo.", "https://crbug.com/tint/2128",
+      ToggleStage::Device}},
+    {Toggle::EnableImmediateErrorHandling,
+     {"enable_immediate_error_handling",
+      "Have the uncaptured error callback invoked immediately when an error occurs, rather than "
+      "waiting for the next Tick. This enables using the stack trace in which the uncaptured error "
+      "occured when breaking into the uncaptured error callback.",
+      "https://crbug.com/dawn/1789", ToggleStage::Device}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
       "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "

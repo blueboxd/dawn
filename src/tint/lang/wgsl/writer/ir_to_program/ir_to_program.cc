@@ -103,8 +103,8 @@ class State {
   public:
     explicit State(const core::ir::Module& m) : mod(m) {}
 
-    Program Run() {
-        if (auto res = core::ir::Validate(mod); !res) {
+    Program Run(const ProgramOptions& options) {
+        if (auto res = core::ir::Validate(mod); res != Success) {
             // IR module failed validation.
             b.Diagnostics() = res.Failure().reason;
             return Program{resolver::Resolve(b)};
@@ -116,7 +116,14 @@ class State {
         for (auto& fn : mod.functions) {
             Fn(fn);
         }
-        return Program{resolver::Resolve(b)};
+
+        if (options.allow_non_uniform_derivatives) {
+            // Suppress errors regarding non-uniform derivative operations if requested, by adding a
+            // diagnostic directive to the module.
+            b.DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, "derivative_uniformity");
+        }
+
+        return Program{resolver::Resolve(b, options.allowed_features)};
     }
 
   private:
@@ -193,17 +200,74 @@ class State {
     const ast::Function* Fn(const core::ir::Function* fn) {
         SCOPED_NESTING();
 
-        // TODO(crbug.com/tint/1915): Properly implement this when we've fleshed out Function
+        // Emit parameters.
         static constexpr size_t N = decltype(ast::Function::params)::static_length;
         auto params = tint::Transform<N>(fn->Params(), [&](const core::ir::FunctionParam* param) {
             auto ty = Type(param->Type());
             auto name = NameFor(param);
+            Vector<const ast::Attribute*, 1> attrs{};
             Bind(param, name, PtrKind::kPtr);
 
-            if (ParamRequiresFullPtrParameters(param->Type())) {
-                Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
+            // Emit parameter attributes.
+            if (auto builtin = param->Builtin()) {
+                switch (builtin.value()) {
+                    case core::BuiltinValue::kVertexIndex:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kVertexIndex));
+                        break;
+                    case core::BuiltinValue::kInstanceIndex:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kInstanceIndex));
+                        break;
+                    case core::BuiltinValue::kPosition:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kPosition));
+                        break;
+                    case core::BuiltinValue::kFrontFacing:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kFrontFacing));
+                        break;
+                    case core::BuiltinValue::kLocalInvocationId:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kLocalInvocationId));
+                        break;
+                    case core::BuiltinValue::kLocalInvocationIndex:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kLocalInvocationIndex));
+                        break;
+                    case core::BuiltinValue::kGlobalInvocationId:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kGlobalInvocationId));
+                        break;
+                    case core::BuiltinValue::kWorkgroupId:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kWorkgroupId));
+                        break;
+                    case core::BuiltinValue::kNumWorkgroups:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kNumWorkgroups));
+                        break;
+                    case core::BuiltinValue::kSampleIndex:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kSampleIndex));
+                        break;
+                    case core::BuiltinValue::kSampleMask:
+                        attrs.Push(b.Builtin(core::BuiltinValue::kSampleMask));
+                        break;
+                    case core::BuiltinValue::kSubgroupInvocationId:
+                        Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+                        attrs.Push(b.Builtin(core::BuiltinValue::kSubgroupInvocationId));
+                        break;
+                    case core::BuiltinValue::kSubgroupSize:
+                        Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+                        attrs.Push(b.Builtin(core::BuiltinValue::kSubgroupSize));
+                        break;
+                    default:
+                        TINT_UNIMPLEMENTED() << builtin.value();
+                        break;
+                }
             }
-            return b.Param(name, ty);
+            if (auto loc = param->Location()) {
+                attrs.Push(b.Location(AInt(loc->value)));
+                if (auto interp = loc->interpolation) {
+                    attrs.Push(b.Interpolate(interp->type, interp->sampling));
+                }
+            }
+            if (param->Invariant()) {
+                attrs.Push(b.Invariant());
+            }
+
+            return b.Param(name, ty, std::move(attrs));
         });
 
         auto name = NameFor(fn);
@@ -211,6 +275,52 @@ class State {
         auto* body = Block(fn->Block());
         Vector<const ast::Attribute*, 1> attrs{};
         Vector<const ast::Attribute*, 1> ret_attrs{};
+
+        // Emit entry point attributes.
+        switch (fn->Stage()) {
+            case core::ir::Function::PipelineStage::kUndefined:
+                break;
+            case core::ir::Function::PipelineStage::kCompute: {
+                auto wgsize = fn->WorkgroupSize().value();
+                attrs.Push(b.Stage(ast::PipelineStage::kCompute));
+                attrs.Push(b.WorkgroupSize(AInt(wgsize[0]), AInt(wgsize[1]), AInt(wgsize[2])));
+                break;
+            }
+            case core::ir::Function::PipelineStage::kFragment:
+                attrs.Push(b.Stage(ast::PipelineStage::kFragment));
+                break;
+            case core::ir::Function::PipelineStage::kVertex:
+                attrs.Push(b.Stage(ast::PipelineStage::kVertex));
+                break;
+        }
+
+        // Emit return type attributes.
+        if (auto builtin = fn->ReturnBuiltin()) {
+            switch (builtin.value()) {
+                case core::BuiltinValue::kPosition:
+                    ret_attrs.Push(b.Builtin(core::BuiltinValue::kPosition));
+                    break;
+                case core::BuiltinValue::kFragDepth:
+                    ret_attrs.Push(b.Builtin(core::BuiltinValue::kFragDepth));
+                    break;
+                case core::BuiltinValue::kSampleMask:
+                    ret_attrs.Push(b.Builtin(core::BuiltinValue::kSampleMask));
+                    break;
+                default:
+                    TINT_UNIMPLEMENTED() << builtin.value();
+                    break;
+            }
+        }
+        if (auto loc = fn->ReturnLocation()) {
+            ret_attrs.Push(b.Location(AInt(loc->value)));
+            if (auto interp = loc->interpolation) {
+                ret_attrs.Push(b.Interpolate(interp->type, interp->sampling));
+            }
+        }
+        if (fn->ReturnInvariant()) {
+            ret_attrs.Push(b.Invariant());
+        }
+
         return b.Func(name, std::move(params), ret_ty, body, std::move(attrs),
                       std::move(ret_attrs));
     }
@@ -573,12 +683,6 @@ class State {
         tint::Switch(
             call,  //
             [&](const core::ir::UserCall* c) {
-                for (auto* arg : call->Args()) {
-                    if (ArgRequiresFullPtrParameters(arg)) {
-                        Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
-                        break;
-                    }
-                }
                 auto* expr = b.Call(NameFor(c->Target()), std::move(args));
                 if (call->Results().IsEmpty() || !call->Result(0)->IsUsed()) {
                     Append(b.CallStmt(expr));
@@ -636,11 +740,14 @@ class State {
     void Unary(const core::ir::Unary* u) {
         const ast::Expression* expr = nullptr;
         switch (u->Op()) {
-            case core::ir::UnaryOp::kComplement:
+            case core::UnaryOp::kComplement:
                 expr = b.Complement(Expr(u->Val()));
                 break;
-            case core::ir::UnaryOp::kNegation:
+            case core::UnaryOp::kNegation:
                 expr = b.Negation(Expr(u->Val()));
+                break;
+            default:
+                TINT_UNIMPLEMENTED() << u->Op();
                 break;
         }
         Bind(u->Result(0), expr);
@@ -696,7 +803,7 @@ class State {
     }
 
     void Binary(const core::ir::Binary* e) {
-        if (e->Op() == core::ir::BinaryOp::kEqual) {
+        if (e->Op() == core::BinaryOp::kEqual) {
             auto* rhs = e->RHS()->As<core::ir::Constant>();
             if (rhs && rhs->Type()->Is<core::type::Bool>() &&
                 rhs->Value()->ValueAs<bool>() == false) {
@@ -709,53 +816,59 @@ class State {
         auto* rhs = Expr(e->RHS());
         const ast::Expression* expr = nullptr;
         switch (e->Op()) {
-            case core::ir::BinaryOp::kAdd:
+            case core::BinaryOp::kAdd:
                 expr = b.Add(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kSubtract:
+            case core::BinaryOp::kSubtract:
                 expr = b.Sub(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kMultiply:
+            case core::BinaryOp::kMultiply:
                 expr = b.Mul(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kDivide:
+            case core::BinaryOp::kDivide:
                 expr = b.Div(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kModulo:
+            case core::BinaryOp::kModulo:
                 expr = b.Mod(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kAnd:
+            case core::BinaryOp::kAnd:
                 expr = b.And(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kOr:
+            case core::BinaryOp::kOr:
                 expr = b.Or(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kXor:
+            case core::BinaryOp::kXor:
                 expr = b.Xor(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kEqual:
+            case core::BinaryOp::kEqual:
                 expr = b.Equal(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kNotEqual:
+            case core::BinaryOp::kNotEqual:
                 expr = b.NotEqual(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kLessThan:
+            case core::BinaryOp::kLessThan:
                 expr = b.LessThan(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kGreaterThan:
+            case core::BinaryOp::kGreaterThan:
                 expr = b.GreaterThan(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kLessThanEqual:
+            case core::BinaryOp::kLessThanEqual:
                 expr = b.LessThanEqual(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kGreaterThanEqual:
+            case core::BinaryOp::kGreaterThanEqual:
                 expr = b.GreaterThanEqual(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kShiftLeft:
+            case core::BinaryOp::kShiftLeft:
                 expr = b.Shl(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kShiftRight:
+            case core::BinaryOp::kShiftRight:
                 expr = b.Shr(lhs, rhs);
+                break;
+            case core::BinaryOp::kLogicalAnd:
+                expr = b.LogicalAnd(lhs, rhs);
+                break;
+            case core::BinaryOp::kLogicalOr:
+                expr = b.LogicalOr(lhs, rhs);
                 break;
         }
         Bind(e->Result(0), expr);
@@ -965,9 +1078,9 @@ class State {
                 if (auto location = ir_attrs.location) {
                     ast_attrs.Push(b.Location(u32(*location)));
                 }
-                if (auto index = ir_attrs.index) {
+                if (auto blend_src = ir_attrs.blend_src) {
                     Enable(wgsl::Extension::kChromiumInternalDualSourceBlending);
-                    ast_attrs.Push(b.Index(u32(*index)));
+                    ast_attrs.Push(b.BlendSrc(u32(*blend_src)));
                 }
                 if (auto builtin = ir_attrs.builtin) {
                     if (RequiresSubgroups(*builtin)) {
@@ -1188,50 +1301,12 @@ class State {
                 return false;
         }
     }
-
-    /// @returns true if a parameter of the type @p ty requires the
-    /// kChromiumExperimentalFullPtrParameters extension to be enabled.
-    bool ParamRequiresFullPtrParameters(const core::type::Type* ty) {
-        if (auto* ptr = ty->As<core::type::Pointer>()) {
-            switch (ptr->AddressSpace()) {
-                case core::AddressSpace::kUniform:
-                case core::AddressSpace::kStorage:
-                case core::AddressSpace::kWorkgroup:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-        return false;
-    }
-
-    /// @returns true if the argument @p arg requires the kChromiumExperimentalFullPtrParameters
-    /// extension to be enabled.
-    bool ArgRequiresFullPtrParameters(const core::ir::Value* arg) {
-        if (!arg->Type()->Is<core::type::Pointer>()) {
-            return false;
-        }
-
-        auto res = arg->As<core::ir::InstructionResult>();
-        while (res) {
-            auto* inst = res->Instruction();
-            if (inst->Is<core::ir::Access>()) {
-                return true;  // Passing pointer into sub-object
-            }
-            if (auto* let = inst->As<core::ir::Let>()) {
-                res = let->Value()->As<core::ir::InstructionResult>();
-            } else {
-                break;
-            }
-        }
-        return false;
-    }
 };
 
 }  // namespace
 
-Program IRToProgram(const core::ir::Module& i) {
-    return State{i}.Run();
+Program IRToProgram(const core::ir::Module& i, const ProgramOptions& options) {
+    return State{i}.Run(options);
 }
 
 }  // namespace tint::wgsl::writer

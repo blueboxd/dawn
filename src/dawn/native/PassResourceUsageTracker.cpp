@@ -70,11 +70,10 @@ void SyncScopeUsageTracker::TextureRangeUsedAs(TextureBase* texture,
                                                wgpu::ShaderStage shaderStages) {
     // Get or create a new TextureSubresourceSyncInfo for that texture (initially filled with
     // wgpu::TextureUsage::None and WGPUShaderStage_None)
-    auto it = mTextureSyncInfos.emplace(
-        std::piecewise_construct, std::forward_as_tuple(texture),
-        std::forward_as_tuple(texture->GetFormat().aspects, texture->GetArrayLayers(),
-                              texture->GetNumMipLevels(),
-                              TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None}));
+    auto it = mTextureSyncInfos.try_emplace(
+        texture, texture->GetFormat().aspects, texture->GetArrayLayers(),
+        texture->GetNumMipLevels(),
+        TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None});
     TextureSubresourceSyncInfo& textureSyncInfo = it.first->second;
 
     textureSyncInfo.Update(
@@ -89,11 +88,10 @@ void SyncScopeUsageTracker::AddRenderBundleTextureUsage(
     const TextureSubresourceSyncInfo& textureSyncInfo) {
     // Get or create a new TextureSubresourceSyncInfo for that texture (initially filled with
     // wgpu::TextureUsage::None and WGPUShaderStage_None)
-    auto it = mTextureSyncInfos.emplace(
-        std::piecewise_construct, std::forward_as_tuple(texture),
-        std::forward_as_tuple(texture->GetFormat().aspects, texture->GetArrayLayers(),
-                              texture->GetNumMipLevels(),
-                              TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None}));
+    auto it = mTextureSyncInfos.try_emplace(
+        texture, texture->GetFormat().aspects, texture->GetArrayLayers(),
+        texture->GetNumMipLevels(),
+        TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None});
     TextureSubresourceSyncInfo* passTextureSyncInfo = &it.first->second;
 
     passTextureSyncInfo->Merge(
@@ -230,7 +228,8 @@ void ComputePassResourceUsageTracker::AddResourcesReferencedByBindGroup(BindGrou
                 break;
             }
 
-            case BindingInfoType::Texture: {
+            case BindingInfoType::Texture:
+            case BindingInfoType::StorageTexture: {
                 mUsage.referencedTextures.insert(
                     group->GetBindingAsTextureView(index)->GetTexture());
                 break;
@@ -238,7 +237,6 @@ void ComputePassResourceUsageTracker::AddResourcesReferencedByBindGroup(BindGrou
 
             case BindingInfoType::ExternalTexture:
                 DAWN_UNREACHABLE();
-            case BindingInfoType::StorageTexture:
             case BindingInfoType::Sampler:
                 break;
         }
@@ -288,7 +286,7 @@ void RenderPassResourceUsageTracker::TrackQueryAvailability(QuerySetBase* queryS
 
     // Gets the iterator for that querySet or create a new vector of bool set to false
     // if the querySet wasn't registered.
-    auto it = mQueryAvailabilities.emplace(querySet, querySet->GetQueryCount()).first;
+    auto it = mQueryAvailabilities.try_emplace(querySet, querySet->GetQueryCount()).first;
     it->second[queryIndex] = true;
 }
 

@@ -32,15 +32,15 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
-#include <unordered_map>
 #include <variant>
 
+#include "absl/container/flat_hash_map.h"
 #include "dawn/common/FutureUtils.h"
 #include "dawn/common/MutexProtected.h"
 #include "dawn/common/NonCopyable.h"
 #include "dawn/common/Ref.h"
-#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Error.h"
+#include "dawn/native/Forward.h"
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/SystemEvent.h"
 
@@ -64,7 +64,7 @@ class EventManager final : NonMovable {
     EventManager();
     ~EventManager();
 
-    MaybeError Initialize(const Unpacked<InstanceDescriptor>& descriptor);
+    MaybeError Initialize(const UnpackedPtr<InstanceDescriptor>& descriptor);
     // Called by WillDropLastExternalRef. Once shut down, the EventManager stops tracking anything.
     // It drops any refs to TrackedEvents, to break reference cycles. If doing so frees the last ref
     // of any uncompleted TrackedEvents, they'll get completed with EventCompletionType::Shutdown.
@@ -73,7 +73,7 @@ class EventManager final : NonMovable {
     class TrackedEvent;
     // Track a TrackedEvent and give it a FutureID.
     [[nodiscard]] FutureID TrackEvent(wgpu::CallbackMode mode, Ref<TrackedEvent>&&);
-    void ProcessPollEvents();
+    bool ProcessPollEvents();
     [[nodiscard]] wgpu::WaitStatus WaitAny(size_t count,
                                            FutureWaitInfo* infos,
                                            Nanoseconds timeout);
@@ -88,7 +88,7 @@ class EventManager final : NonMovable {
 
     // Freed once the user has dropped their last ref to the Instance, so can't call WaitAny or
     // ProcessEvents anymore. This breaks reference cycles.
-    using EventMap = std::unordered_map<FutureID, Ref<TrackedEvent>>;
+    using EventMap = absl::flat_hash_map<FutureID, Ref<TrackedEvent>>;
     std::optional<MutexProtected<EventMap>> mEvents;
 };
 
@@ -108,14 +108,18 @@ struct QueueAndSerial {
 // completed) will be cleaned up at that time.
 class EventManager::TrackedEvent : public RefCounted {
   protected:
-    // Note: TrackedEvents are (currently) only for Device events. Events like RequestAdapter and
-    // RequestDevice complete immediately in dawn native, so should never need to be tracked.
+    // Create an event from a SystemEvent. Note that events like RequestAdapter and
+    // RequestDevice complete immediately in dawn native, and may use an already-completed event.
     TrackedEvent(wgpu::CallbackMode callbackMode, Ref<SystemEvent> completionEvent);
 
     // Create a TrackedEvent from a queue completion serial.
     TrackedEvent(wgpu::CallbackMode callbackMode,
                  QueueBase* queue,
                  ExecutionSerial completionSerial);
+
+    struct Completed {};
+    // Create a TrackedEvent that is already completed.
+    TrackedEvent(wgpu::CallbackMode callbackMode, Completed tag);
 
   public:
     // Subclasses must implement this to complete the event (if not completed) with

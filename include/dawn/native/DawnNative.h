@@ -137,6 +137,10 @@ struct DAWN_NATIVE_EXPORT DawnInstanceDescriptor : wgpu::ChainedStruct {
     const char* const* additionalRuntimeSearchPaths;
     dawn::platform::Platform* platform = nullptr;
 
+    BackendValidationLevel backendValidationLevel = BackendValidationLevel::Disabled;
+    bool beginCaptureOnStartup = false;
+    bool enableAdapterBlocklist = false;
+
     // Equality operators, mostly for testing. Note that this tests
     // strict pointer-pointer equality if the struct contains member pointers.
     bool operator==(const DawnInstanceDescriptor& rhs) const;
@@ -214,7 +218,7 @@ DAWN_NATIVE_EXPORT std::vector<const char*> GetProcMapNamesForTesting();
 
 DAWN_NATIVE_EXPORT bool DeviceTick(WGPUDevice device);
 
-DAWN_NATIVE_EXPORT void InstanceProcessEvents(WGPUInstance instance);
+DAWN_NATIVE_EXPORT bool InstanceProcessEvents(WGPUInstance instance);
 
 // ErrorInjector functions used for testing only. Defined in dawn_native/ErrorInjector.cpp
 DAWN_NATIVE_EXPORT void EnableErrorInjector();
@@ -270,7 +274,9 @@ DAWN_NATIVE_EXPORT uint64_t GetAllocatedSizeForTesting(WGPUBuffer buffer);
 
 DAWN_NATIVE_EXPORT std::vector<const ToggleInfo*> AllToggleInfos();
 
-DAWN_NATIVE_EXPORT FeatureInfo GetFeatureInfo(wgpu::FeatureName featureName);
+// Used to query the details of an feature. Return nullptr if featureName is not a valid
+// name of an feature supported in Dawn.
+DAWN_NATIVE_EXPORT const FeatureInfo* GetFeatureInfo(wgpu::FeatureName feature);
 
 }  // namespace dawn::native
 

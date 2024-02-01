@@ -1,6 +1,7 @@
 cbuffer cbuffer_u : register(b0) {
   uint4 u[4];
 };
+RWByteAddressBuffer s : register(u1);
 groupshared matrix<float16_t, 2, 3> w[4];
 
 struct tint_symbol_1 {
@@ -35,7 +36,7 @@ u_load_ret u_load(uint offset) {
 void f_inner(uint local_invocation_index) {
   {
     for(uint idx = local_invocation_index; (idx < 4u); idx = (idx + 1u)) {
-      const uint i = idx;
+      uint i = idx;
       w[i] = matrix<float16_t, 2, 3>((float16_t(0.0h)).xxx, (float16_t(0.0h)).xxx);
     }
   }
@@ -47,6 +48,7 @@ void f_inner(uint local_invocation_index) {
   float16_t ubo_load_4_y = f16tof32(ubo_load_4[0] >> 16);
   w[1][0] = vector<float16_t, 3>(ubo_load_4_xz[0], ubo_load_4_y, ubo_load_4_xz[1]).zxy;
   w[1][0].x = float16_t(f16tof32(((u[0].z) & 0xFFFF)));
+  s.Store<float16_t>(0u, w[1][0].x);
 }
 
 [numthreads(1, 1, 1)]

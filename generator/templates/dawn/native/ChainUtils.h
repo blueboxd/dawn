@@ -80,9 +80,9 @@ struct AdditionalExtensions {
 
 // Template structs to get the typing for the unpacked chains.
 template <typename...>
-struct UnpackedChain;
+struct UnpackedPtrChain;
 template <typename... Additionals, typename... Ts>
-struct UnpackedChain<AdditionalExtensionsList<Additionals...>, Ts...> {
+struct UnpackedPtrChain<AdditionalExtensionsList<Additionals...>, Ts...> {
     using Type = std::tuple<Ts..., Additionals...>;
 };
 
@@ -92,106 +92,6 @@ template <typename T>
 constexpr inline wgpu::SType STypeFor = detail::STypeForImpl<T>;
 template <typename T>
 constexpr inline wgpu::SType STypeFor<const T*> = detail::STypeForImpl<T>;
-
-template <typename T>
-void FindInChain(const ChainedStruct* chain, const T** out) {
-    for (; chain; chain = chain->nextInChain) {
-        if (chain->sType == STypeFor<T>) {
-            *out = static_cast<const T*>(chain);
-            break;
-        }
-    }
-}
-template <typename T>
-void FindInChain(ChainedStructOut* chain, T** out) {
-    for (; chain; chain = chain->nextInChain) {
-        if (chain->sType == STypeFor<T>) {
-            *out = static_cast<T*>(chain);
-            break;
-        }
-    }
-}
-
-// Verifies that |chain| only contains ChainedStructs of types enumerated in
-// |oneOfConstraints| and contains no duplicate sTypes. Each vector in
-// |oneOfConstraints| defines a set of sTypes that cannot coexist in the same chain.
-// For example:
-//   ValidateSTypes(chain, { { ShaderModuleSPIRVDescriptor, ShaderModuleWGSLDescriptor } }))
-//   ValidateSTypes(chain, { { Extension1 }, { Extension2 } })
-MaybeError ValidateSTypes(const ChainedStruct* chain,
-                          std::vector<std::vector<{{namespace}}::SType>> oneOfConstraints);
-MaybeError ValidateSTypes(const ChainedStructOut* chain,
-                          std::vector<std::vector<{{namespace}}::SType>> oneOfConstraints);
-
-template <typename T>
-MaybeError ValidateSingleSTypeInner(const ChainedStruct* chain, T sType) {
-    DAWN_INVALID_IF(chain->sType != sType,
-        "Unsupported sType (%s). Expected (%s)", chain->sType, sType);
-    return {};
-}
-template <typename T>
-MaybeError ValidateSingleSTypeInner(const ChainedStructOut* chain, T sType) {
-    DAWN_INVALID_IF(chain->sType != sType,
-        "Unsupported sType (%s). Expected (%s)", chain->sType, sType);
-    return {};
-}
-
-template <typename T, typename... Args>
-MaybeError ValidateSingleSTypeInner(const ChainedStruct* chain, T sType, Args... sTypes) {
-    if (chain->sType == sType) {
-        return {};
-    }
-    return ValidateSingleSTypeInner(chain, sTypes...);
-}
-template <typename T, typename... Args>
-MaybeError ValidateSingleSTypeInner(const ChainedStructOut* chain, T sType, Args... sTypes) {
-    if (chain->sType == sType) {
-        return {};
-    }
-    return ValidateSingleSTypeInner(chain, sTypes...);
-}
-
-// Verifies that |chain| contains a single ChainedStruct of type |sType| or no ChainedStructs
-// at all.
-template <typename T>
-MaybeError ValidateSingleSType(const ChainedStruct* chain, T sType) {
-    if (chain == nullptr) {
-        return {};
-    }
-    DAWN_INVALID_IF(chain->nextInChain != nullptr,
-        "Chain can only contain a single chained struct.");
-    return ValidateSingleSTypeInner(chain, sType);
-}
-template <typename T>
-MaybeError ValidateSingleSType(const ChainedStructOut* chain, T sType) {
-    if (chain == nullptr) {
-        return {};
-    }
-    DAWN_INVALID_IF(chain->nextInChain != nullptr,
-        "Chain can only contain a single chained struct.");
-    return ValidateSingleSTypeInner(chain, sType);
-}
-
-// Verifies that |chain| contains a single ChainedStruct with a type enumerated in the
-// parameter pack or no ChainedStructs at all.
-template <typename T, typename... Args>
-MaybeError ValidateSingleSType(const ChainedStruct* chain, T sType, Args... sTypes) {
-    if (chain == nullptr) {
-        return {};
-    }
-    DAWN_INVALID_IF(chain->nextInChain != nullptr,
-        "Chain can only contain a single chained struct.");
-    return ValidateSingleSTypeInner(chain, sType, sTypes...);
-}
-template <typename T, typename... Args>
-MaybeError ValidateSingleSType(const ChainedStructOut* chain, T sType, Args... sTypes) {
-    if (chain == nullptr) {
-        return {};
-    }
-    DAWN_INVALID_IF(chain->nextInChain != nullptr,
-        "Chain can only contain a single chained struct.");
-    return ValidateSingleSTypeInner(chain, sType, sTypes...);
-}
 
 }  // namespace {{native_namespace}}
 
@@ -203,7 +103,7 @@ namespace detail {
 
 // Template type to get the unpacked chain type from the root type.
 template <typename Root>
-struct UnpackedTypeFor;
+struct UnpackedPtrTypeFor;
 
 // Template for extensible structures typing.
 enum class Extensibility { In, Out };
@@ -214,8 +114,8 @@ inline Extensibility ExtensibilityFor;
     {% set T = as_cppType(type.name) %}
     {% if type.extensible == "in" %}
         template <>
-        struct UnpackedTypeFor<{{T}}> {
-            using Type = UnpackedChain<
+        struct UnpackedPtrTypeFor<{{T}}> {
+            using Type = UnpackedPtrChain<
                 AdditionalExtensions<{{T}}>::List
                 {% for extension in type.extensions %}
                     , const {{as_cppType(extension.name)}}*
@@ -227,8 +127,8 @@ inline Extensibility ExtensibilityFor;
 
     {% elif type.extensible == "out" %}
         template <>
-        struct UnpackedTypeFor<{{T}}> {
-            using Type = UnpackedChain<
+        struct UnpackedPtrTypeFor<{{T}}> {
+            using Type = UnpackedPtrChain<
                 AdditionalExtensions<{{T}}>::List
                 {% for extension in type.extensions %}
                     , {{as_cppType(extension.name)}}*

@@ -34,6 +34,7 @@
 #include "dawn/common/Constants.h"
 #include "dawn/common/Platform.h"
 #include "dawn/common/WindowsUtils.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/BackendD3D12.h"
@@ -143,6 +144,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::DualSourceBlending);
     EnableFeature(Feature::Norm16TextureFormats);
     EnableFeature(Feature::AdapterPropertiesMemoryHeaps);
+    EnableFeature(Feature::AdapterPropertiesD3D);
 
     if (AreTimestampQueriesSupported()) {
         EnableFeature(Feature::TimestampQuery);
@@ -216,7 +218,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // Slot values can be 0-15, inclusive:
     // https://docs.microsoft.com/en-ca/windows/win32/api/d3d12/ns-d3d12-d3d12_input_element_desc
     limits->v1.maxVertexBuffers = 16;
-    limits->v1.maxVertexAttributes = D3D12_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT;
+    // Both SV_VertexID and SV_InstanceID will consume vertex input slots.
+    limits->v1.maxVertexAttributes = D3D12_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT - 2;
 
     // Note: WebGPU requires FL11.1+
     // https://docs.microsoft.com/en-us/windows/win32/direct3d12/hardware-support
@@ -539,13 +542,18 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // By default use the maximum shader-visible heap size allowed.
     deviceToggles->Default(Toggle::UseD3D12SmallShaderVisibleHeapForTesting, false);
 
-    // By default use D3D12 Root Signature Version 1.1 when possible, otherwise we should never
-    // enable this toggle.
-    if (!GetDeviceInfo().supportsRootSignatureVersion1_1) {
+    // By default use D3D12 Root Signature Version 1.1 when possible, otherwise we should force
+    // disable this toggle.
+    // Additionally, DESCRIPTORS_STATIC_KEEPING_BUFFER_BOUNDS_CHECKS was only added in the
+    // Windows 10 2018 Spring Creator's Update. Force disable the toggle if we do not have
+    // at least WWDM 2.4.
+    // https://microsoft.github.io/DirectX-Specs/d3d/ResourceBinding.html#flags-added-in-root-signature-version-11
+    if (!GetDeviceInfo().supportsRootSignatureVersion1_1 || GetDriverVersion()[0] < 24) {
         deviceToggles->ForceSet(Toggle::D3D12UseRootSignatureVersion1_1, false);
+    } else {
+        deviceToggles->Default(Toggle::D3D12UseRootSignatureVersion1_1,
+                               GetDeviceInfo().supportsRootSignatureVersion1_1);
     }
-    deviceToggles->Default(Toggle::D3D12UseRootSignatureVersion1_1,
-                           GetDeviceInfo().supportsRootSignatureVersion1_1);
 
     // By default create MSAA textures with 64KB (D3D12_SMALL_MSAA_RESOURCE_PLACEMENT_ALIGNMENT)
     // alignment when possible, otherwise we should never enable this toggle.
@@ -567,6 +575,12 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
         !deviceToggles->IsEnabled(Toggle::UseDXC) ||
         !GetBackend()->IsDXCAvailableAndVersionAtLeast(1, 4, 1, 4)) {
         deviceToggles->ForceSet(Toggle::PolyFillPacked4x8DotProduct, true);
+    }
+
+    if (!GetDeviceInfo().supportsPackUnpack4x8Intrinsics ||
+        !deviceToggles->IsEnabled(Toggle::UseDXC) ||
+        !GetBackend()->IsDXCAvailableAndVersionAtLeast(1, 6, 1, 6)) {
+        deviceToggles->ForceSet(Toggle::D3D12PolyFillPackUnpack4x8, true);
     }
 
     uint32_t deviceId = GetDeviceId();
@@ -692,9 +706,10 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     }
 }
 
-ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,
-                                                                const DeviceDescriptor* descriptor,
-                                                                const TogglesState& deviceToggles) {
+ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
+    AdapterBase* adapter,
+    const UnpackedPtr<DeviceDescriptor>& descriptor,
+    const TogglesState& deviceToggles) {
     return Device::Create(adapter, descriptor, deviceToggles);
 }
 
@@ -710,39 +725,43 @@ MaybeError PhysicalDevice::ResetInternalDeviceForTestingImpl() {
     return {};
 }
 
-void PhysicalDevice::PopulateMemoryHeapInfo(
-    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
-    // https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html describes
-    // the properties of D3D12 Default/Upload/Readback heaps.
-    if (mDeviceInfo.isUMA) {
-        auto* heapInfo = new MemoryHeapInfo[1];
-        memoryHeapProperties->heapCount = 1;
-        memoryHeapProperties->heapInfo = heapInfo;
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const {
+    if (auto* memoryHeapProperties = properties.Get<AdapterPropertiesMemoryHeaps>()) {
+        // https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html describes
+        // the properties of D3D12 Default/Upload/Readback heaps.
+        if (mDeviceInfo.isUMA) {
+            auto* heapInfo = new MemoryHeapInfo[1];
+            memoryHeapProperties->heapCount = 1;
+            memoryHeapProperties->heapInfo = heapInfo;
 
-        heapInfo[0].size =
-            std::max(mDeviceInfo.dedicatedVideoMemory, mDeviceInfo.sharedSystemMemory);
+            heapInfo[0].size =
+                std::max(mDeviceInfo.dedicatedVideoMemory, mDeviceInfo.sharedSystemMemory);
 
-        if (mDeviceInfo.isCacheCoherentUMA) {
-            heapInfo[0].properties =
-                wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
-                wgpu::HeapProperty::HostCoherent | wgpu::HeapProperty::HostCached;
+            if (mDeviceInfo.isCacheCoherentUMA) {
+                heapInfo[0].properties =
+                    wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                    wgpu::HeapProperty::HostCoherent | wgpu::HeapProperty::HostCached;
+            } else {
+                heapInfo[0].properties =
+                    wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                    wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+            }
         } else {
-            heapInfo[0].properties =
-                wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+            auto* heapInfo = new MemoryHeapInfo[2];
+            memoryHeapProperties->heapCount = 2;
+            memoryHeapProperties->heapInfo = heapInfo;
+
+            heapInfo[0].size = mDeviceInfo.dedicatedVideoMemory;
+            heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
+
+            heapInfo[1].size = mDeviceInfo.sharedSystemMemory;
+            heapInfo[1].properties =
+                wgpu::HeapProperty::HostVisible | wgpu::HeapProperty::HostCoherent |
                 wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
         }
-    } else {
-        auto* heapInfo = new MemoryHeapInfo[2];
-        memoryHeapProperties->heapCount = 2;
-        memoryHeapProperties->heapInfo = heapInfo;
-
-        heapInfo[0].size = mDeviceInfo.dedicatedVideoMemory;
-        heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
-
-        heapInfo[1].size = mDeviceInfo.sharedSystemMemory;
-        heapInfo[1].properties = wgpu::HeapProperty::HostVisible |
-                                 wgpu::HeapProperty::HostCoherent |
-                                 wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+    }
+    if (auto* d3dProperties = properties.Get<AdapterPropertiesD3D>()) {
+        d3dProperties->shaderModel = GetDeviceInfo().shaderModel;
     }
 }
 

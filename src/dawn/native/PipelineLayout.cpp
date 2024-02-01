@@ -34,6 +34,7 @@
 #include "dawn/common/Assert.h"
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Enumerator.h"
+#include "dawn/common/MatchVariant.h"
 #include "dawn/common/Numeric.h"
 #include "dawn/common/Range.h"
 #include "dawn/common/ityp_stack_vec.h"
@@ -47,13 +48,15 @@
 
 namespace dawn::native {
 
-MaybeError ValidatePipelineLayoutDescriptor(DeviceBase* device,
-                                            const PipelineLayoutDescriptor* descriptor,
-                                            PipelineCompatibilityToken pipelineCompatibilityToken) {
+ResultOrError<UnpackedPtr<PipelineLayoutDescriptor>> ValidatePipelineLayoutDescriptor(
+    DeviceBase* device,
+    const PipelineLayoutDescriptor* descriptor,
+    PipelineCompatibilityToken pipelineCompatibilityToken) {
+    UnpackedPtr<PipelineLayoutDescriptor> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
+
     // Validation for any pixel local storage.
-    const PipelineLayoutPixelLocalStorage* pls = nullptr;
-    FindInChain(descriptor->nextInChain, &pls);
-    if (pls != nullptr) {
+    if (auto* pls = unpacked.Get<PipelineLayoutPixelLocalStorage>()) {
         StackVector<StorageAttachmentInfoForValidation, 4> attachments;
         for (size_t i = 0; i < pls->storageAttachmentCount; i++) {
             const PipelineLayoutStorageAttachment& attachment = pls->storageAttachments[i];
@@ -91,7 +94,7 @@ MaybeError ValidatePipelineLayoutDescriptor(DeviceBase* device,
     }
 
     DAWN_TRY(ValidateBindingCounts(device->GetLimits(), bindingCounts));
-    return {};
+    return unpacked;
 }
 
 StageAndDescriptor::StageAndDescriptor(SingleShaderStage shaderStage,
@@ -108,7 +111,7 @@ StageAndDescriptor::StageAndDescriptor(SingleShaderStage shaderStage,
 // PipelineLayoutBase
 
 PipelineLayoutBase::PipelineLayoutBase(DeviceBase* device,
-                                       const PipelineLayoutDescriptor* descriptor,
+                                       const UnpackedPtr<PipelineLayoutDescriptor>& descriptor,
                                        ApiObjectBase::UntrackedByDeviceTag tag)
     : ApiObjectBase(device, descriptor->label) {
     DAWN_ASSERT(descriptor->bindGroupLayoutCount <= kMaxBindGroups);
@@ -121,9 +124,7 @@ PipelineLayoutBase::PipelineLayoutBase(DeviceBase* device,
     }
 
     // Gather the PLS information.
-    const PipelineLayoutPixelLocalStorage* pls = nullptr;
-    FindInChain(descriptor->nextInChain, &pls);
-    if (pls != nullptr) {
+    if (auto* pls = descriptor.Get<PipelineLayoutPixelLocalStorage>()) {
         mHasPLS = true;
         mStorageAttachmentSlots = std::vector<wgpu::TextureFormat>(
             pls->totalPixelLocalStorageSize / kPLSSlotByteSize, wgpu::TextureFormat::Undefined);
@@ -135,7 +136,7 @@ PipelineLayoutBase::PipelineLayoutBase(DeviceBase* device,
 }
 
 PipelineLayoutBase::PipelineLayoutBase(DeviceBase* device,
-                                       const PipelineLayoutDescriptor* descriptor)
+                                       const UnpackedPtr<PipelineLayoutDescriptor>& descriptor)
     : PipelineLayoutBase(device, descriptor, kUntrackedByDevice) {
     GetObjectTrackingList()->Track(this);
 }
@@ -152,8 +153,8 @@ void PipelineLayoutBase::DestroyImpl() {
 }
 
 // static
-PipelineLayoutBase* PipelineLayoutBase::MakeError(DeviceBase* device, const char* label) {
-    return new PipelineLayoutBase(device, ObjectBase::kError, label);
+Ref<PipelineLayoutBase> PipelineLayoutBase::MakeError(DeviceBase* device, const char* label) {
+    return AcquireRef(new PipelineLayoutBase(device, ObjectBase::kError, label));
 }
 
 // static
@@ -232,21 +233,22 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
            const ExternalTextureBindingLayout* externalTextureBindingEntry)
         -> BindGroupLayoutEntry {
         BindGroupLayoutEntry entry = {};
-        switch (shaderBinding.bindingType) {
-            case BindingInfoType::Buffer:
-                entry.buffer.type = shaderBinding.buffer.type;
-                entry.buffer.hasDynamicOffset = shaderBinding.buffer.hasDynamicOffset;
-                entry.buffer.minBindingSize = shaderBinding.buffer.minBindingSize;
-                break;
-            case BindingInfoType::Sampler:
-                if (shaderBinding.sampler.isComparison) {
+
+        MatchVariant(
+            shaderBinding.bindingInfo,
+            [&](const BufferBindingInfo& bindingInfo) {
+                entry.buffer.type = bindingInfo.type;
+                entry.buffer.minBindingSize = bindingInfo.minBindingSize;
+            },
+            [&](const SamplerBindingInfo& bindingInfo) {
+                if (bindingInfo.isComparison) {
                     entry.sampler.type = wgpu::SamplerBindingType::Comparison;
                 } else {
                     entry.sampler.type = wgpu::SamplerBindingType::Filtering;
                 }
-                break;
-            case BindingInfoType::Texture:
-                switch (shaderBinding.texture.compatibleSampleTypes) {
+            },
+            [&](const SampledTextureBindingInfo& bindingInfo) {
+                switch (bindingInfo.compatibleSampleTypes) {
                     case SampleTypeBit::Depth:
                         entry.texture.sampleType = wgpu::TextureSampleType::Depth;
                         break;
@@ -262,27 +264,27 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
                         DAWN_UNREACHABLE();
                         break;
                     default:
-                        if (shaderBinding.texture.compatibleSampleTypes ==
+                        if (bindingInfo.compatibleSampleTypes ==
                             (SampleTypeBit::Float | SampleTypeBit::UnfilterableFloat)) {
-                            // Default to UnfilterableFloat. It will be promoted to Float if it
-                            // is used with a sampler.
+                            // Default to UnfilterableFloat. It will be promoted to Float
+                            // if it is used with a sampler.
                             entry.texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
                         } else {
                             DAWN_UNREACHABLE();
                         }
                 }
-                entry.texture.viewDimension = shaderBinding.texture.viewDimension;
-                entry.texture.multisampled = shaderBinding.texture.multisampled;
-                break;
-            case BindingInfoType::StorageTexture:
-                entry.storageTexture.access = shaderBinding.storageTexture.access;
-                entry.storageTexture.format = shaderBinding.storageTexture.format;
-                entry.storageTexture.viewDimension = shaderBinding.storageTexture.viewDimension;
-                break;
-            case BindingInfoType::ExternalTexture:
+                entry.texture.viewDimension = bindingInfo.viewDimension;
+                entry.texture.multisampled = bindingInfo.multisampled;
+            },
+            [&](const StorageTextureBindingInfo& bindingInfo) {
+                entry.storageTexture.access = bindingInfo.access;
+                entry.storageTexture.format = bindingInfo.format;
+                entry.storageTexture.viewDimension = bindingInfo.viewDimension;
+            },
+            [&](const ExternalTextureBindingInfo&) {
                 entry.nextInChain = externalTextureBindingEntry;
-                break;
-        }
+            });
+
         return entry;
     };
 
@@ -384,10 +386,12 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
     desc.bindGroupLayouts = bgls.data();
     desc.bindGroupLayoutCount = static_cast<uint32_t>(pipelineBGLCount);
 
-    DAWN_TRY(ValidatePipelineLayoutDescriptor(device, &desc, pipelineCompatibilityToken));
+    UnpackedPtr<PipelineLayoutDescriptor> unpacked;
+    DAWN_TRY_ASSIGN(unpacked,
+                    ValidatePipelineLayoutDescriptor(device, &desc, pipelineCompatibilityToken));
 
     Ref<PipelineLayoutBase> result;
-    DAWN_TRY_ASSIGN(result, device->GetOrCreatePipelineLayout(&desc));
+    DAWN_TRY_ASSIGN(result, device->GetOrCreatePipelineLayout(unpacked));
     DAWN_ASSERT(!result->IsError());
 
     // Check in debug that the pipeline layout is compatible with the current pipeline.

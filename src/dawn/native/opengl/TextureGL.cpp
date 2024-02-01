@@ -33,6 +33,7 @@
 #include "dawn/common/Assert.h"
 #include "dawn/common/Constants.h"
 #include "dawn/common/Math.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/opengl/BufferGL.h"
 #include "dawn/native/opengl/CommandBufferGL.h"
@@ -43,8 +44,10 @@ namespace dawn::native::opengl {
 
 namespace {
 
-GLenum TargetForTexture(const Unpacked<TextureDescriptor>& descriptor) {
+GLenum TargetForTexture(const UnpackedPtr<TextureDescriptor>& descriptor) {
     switch (descriptor->dimension) {
+        case wgpu::TextureDimension::Undefined:
+            DAWN_UNREACHABLE();
         case wgpu::TextureDimension::e1D:
         case wgpu::TextureDimension::e2D:
             if (descriptor->size.depthOrArrayLayers > 1) {
@@ -127,10 +130,6 @@ bool RequiresCreatingNewTextureView(const TextureBase* texture,
         return true;
     }
 
-    if (texture->GetNumMipLevels() != textureViewDescriptor->mipLevelCount) {
-        return true;
-    }
-
     if (ToBackend(texture)->GetGLFormat().format == GL_DEPTH_STENCIL &&
         (texture->GetUsage() & wgpu::TextureUsage::TextureBinding) != 0 &&
         textureViewDescriptor->aspect == wgpu::TextureAspect::StencilOnly) {
@@ -188,7 +187,7 @@ void AllocateTexture(const OpenGLFunctions& gl,
 
 // static
 ResultOrError<Ref<Texture>> Texture::Create(Device* device,
-                                            const Unpacked<TextureDescriptor>& descriptor) {
+                                            const UnpackedPtr<TextureDescriptor>& descriptor) {
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
         DAWN_TRY(
@@ -197,7 +196,7 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device,
     return std::move(texture);
 }
 
-Texture::Texture(Device* device, const Unpacked<TextureDescriptor>& descriptor)
+Texture::Texture(Device* device, const UnpackedPtr<TextureDescriptor>& descriptor)
     : Texture(device, descriptor, 0) {
     const OpenGLFunctions& gl = device->GetGL();
 
@@ -224,7 +223,7 @@ uint32_t Texture::GetGenID() const {
     return mGenID;
 }
 
-Texture::Texture(Device* device, const Unpacked<TextureDescriptor>& descriptor, GLuint handle)
+Texture::Texture(Device* device, const UnpackedPtr<TextureDescriptor>& descriptor, GLuint handle)
     : TextureBase(device, descriptor), mHandle(handle) {
     mTarget = TargetForTexture(descriptor);
 }
@@ -254,11 +253,6 @@ const GLFormat& Texture::GetGLFormat() const {
 
 MaybeError Texture::ClearTexture(const SubresourceRange& range,
                                  TextureBase::ClearValue clearValue) {
-    // TODO(crbug.com/dawn/850): initialize the textures with compressed formats.
-    if (GetFormat().isCompressed) {
-        return {};
-    }
-
     Device* device = ToBackend(GetDevice());
     const OpenGLFunctions& gl = device->GetGL();
 
@@ -355,6 +349,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
                         break;
 
                     case wgpu::TextureDimension::e3D:
+                    case wgpu::TextureDimension::Undefined:
                         DAWN_UNREACHABLE();
                 }
             }
@@ -450,6 +445,8 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
 
                     if (GetArrayLayers() == 1) {
                         switch (GetDimension()) {
+                            case wgpu::TextureDimension::Undefined:
+                                DAWN_UNREACHABLE();
                             case wgpu::TextureDimension::e1D:
                             case wgpu::TextureDimension::e2D:
                                 gl.FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, attachment,

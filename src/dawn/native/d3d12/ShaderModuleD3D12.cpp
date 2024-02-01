@@ -106,7 +106,7 @@ void DumpDXCCompiledShader(Device* device,
 // static
 ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     Device* device,
-    const ShaderModuleDescriptor* descriptor,
+    const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
     Ref<ShaderModule> module = AcquireRef(new ShaderModule(device, descriptor));
@@ -114,7 +114,7 @@ ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     return module;
 }
 
-ShaderModule::ShaderModule(Device* device, const ShaderModuleDescriptor* descriptor)
+ShaderModule::ShaderModule(Device* device, const UnpackedPtr<ShaderModuleDescriptor>& descriptor)
     : ShaderModuleBase(device, descriptor) {}
 
 MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult,
@@ -195,7 +195,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         // the Tint AST to make the "bindings" decoration match the offset chosen by
         // d3d12::BindGroupLayout so that Tint produces HLSL with the correct registers
         // assigned to each interface variable.
-        for (const auto& [binding, bindingInfo] : moduleGroupBindingInfo) {
+        for (const auto& [binding, shaderBindingInfo] : moduleGroupBindingInfo) {
             BindingIndex bindingIndex = bgl->GetBindingIndex(binding);
             BindingPoint srcBindingPoint{static_cast<uint32_t>(group),
                                          static_cast<uint32_t>(binding)};
@@ -205,12 +205,18 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
                 bindingRemapper.binding_points.emplace(srcBindingPoint, dstBindingPoint);
             }
 
+            const auto* bufferBindingInfo =
+                std::get_if<BufferBindingInfo>(&shaderBindingInfo.bindingInfo);
+            if (bufferBindingInfo == nullptr) {
+                continue;
+            }
+
             // Declaring a read-only storage buffer in HLSL but specifying a storage
             // buffer in the BGL produces the wrong output. Force read-only storage
             // buffer bindings to be treated as UAV instead of SRV. Internal storage
             // buffer is a storage buffer used in the internal pipeline.
             const bool forceStorageBufferAsUAV =
-                (bindingInfo.buffer.type == wgpu::BufferBindingType::ReadOnlyStorage &&
+                (bufferBindingInfo->type == wgpu::BufferBindingType::ReadOnlyStorage &&
                  (bgl->GetBindingInfo(bindingIndex).buffer.type ==
                       wgpu::BufferBindingType::Storage ||
                   bgl->GetBindingInfo(bindingIndex).buffer.type == kInternalStorageBufferBinding));
@@ -242,8 +248,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
             //     }
             //     return 0u;
             // }
-            if ((bindingInfo.buffer.type == wgpu::BufferBindingType::Storage ||
-                 bindingInfo.buffer.type == wgpu::BufferBindingType::ReadOnlyStorage) &&
+            if ((bufferBindingInfo->type == wgpu::BufferBindingType::Storage ||
+                 bufferBindingInfo->type == wgpu::BufferBindingType::ReadOnlyStorage) &&
                 !bgl->GetBindingInfo(bindingIndex).buffer.hasDynamicOffset) {
                 req.hlsl.tintOptions.binding_points_ignored_in_robustness_transform.emplace_back(
                     srcBindingPoint);
@@ -276,7 +282,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         substituteOverrideConfig = BuildSubstituteOverridesTransformConfig(programmableStage);
     }
 
-    req.hlsl.inputProgram = GetTintProgram();
+    auto tintProgram = GetTintProgram();
+    req.hlsl.inputProgram = &(tintProgram->program);
     req.hlsl.entryPointName = programmableStage.entryPoint.c_str();
     req.hlsl.stage = stage;
     req.hlsl.firstIndexOffsetShaderRegister = layout->GetFirstIndexOffsetShaderRegister();
@@ -317,6 +324,10 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         device->IsToggleEnabled(Toggle::D3D12PolyfillReflectVec2F32);
     req.hlsl.tintOptions.polyfill_dot_4x8_packed =
         device->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
+    req.hlsl.tintOptions.disable_polyfill_integer_div_mod =
+        device->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
+    req.hlsl.tintOptions.polyfill_pack_unpack_4x8 =
+        device->IsToggleEnabled(Toggle::D3D12PolyFillPackUnpack4x8);
 
     const CombinedLimits& limits = device->GetLimits();
     req.hlsl.limits = LimitsForCompilationRequest::Create(limits.v1);
@@ -346,7 +357,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     // outside of the compilation.
     d3d::CompiledShader result = compiledShader.Acquire();
     result.hlslSource = "";
-    return result;
+    return std::move(result);
 }
 
 }  // namespace dawn::native::d3d12

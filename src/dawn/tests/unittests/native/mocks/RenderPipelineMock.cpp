@@ -27,27 +27,36 @@
 
 #include "dawn/tests/unittests/native/mocks/RenderPipelineMock.h"
 
+#include "dawn/native/ChainUtils.h"
+
 namespace dawn::native {
 
 using ::testing::NiceMock;
 
 RenderPipelineMock::RenderPipelineMock(DeviceMock* device,
-                                       const RenderPipelineDescriptor* descriptor)
+                                       const UnpackedPtr<RenderPipelineDescriptor>& descriptor)
     : RenderPipelineBase(device, descriptor) {
-    ON_CALL(*this, Initialize).WillByDefault([]() -> MaybeError { return {}; });
+    ON_CALL(*this, InitializeImpl).WillByDefault([]() -> MaybeError { return {}; });
     ON_CALL(*this, DestroyImpl).WillByDefault([this] { this->RenderPipelineBase::DestroyImpl(); });
 }
 
 RenderPipelineMock::~RenderPipelineMock() = default;
 
 // static
-Ref<RenderPipelineMock> RenderPipelineMock::Create(DeviceMock* device,
-                                                   const RenderPipelineDescriptor* descriptor) {
+Ref<RenderPipelineMock> RenderPipelineMock::Create(
+    DeviceMock* device,
+    const UnpackedPtr<RenderPipelineDescriptor>& descriptor) {
     RenderPipelineDescriptor appliedDescriptor;
     Ref<PipelineLayoutBase> layoutRef = ValidateLayoutAndGetRenderPipelineDescriptorWithDefaults(
-                                            device, *descriptor, &appliedDescriptor)
+                                            device, **descriptor, &appliedDescriptor)
                                             .AcquireSuccess();
-    return AcquireRef(new NiceMock<RenderPipelineMock>(device, &appliedDescriptor));
+    return AcquireRef(new NiceMock<RenderPipelineMock>(device, Unpack(&appliedDescriptor)));
+}
+
+// static
+Ref<RenderPipelineMock> RenderPipelineMock::Create(DeviceMock* device,
+                                                   const RenderPipelineDescriptor* descriptor) {
+    return Create(device, Unpack(descriptor));
 }
 
 }  // namespace dawn::native

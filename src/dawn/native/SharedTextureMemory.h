@@ -28,14 +28,11 @@
 #ifndef SRC_DAWN_NATIVE_SHAREDTEXTUREMEMORY_H_
 #define SRC_DAWN_NATIVE_SHAREDTEXTUREMEMORY_H_
 
-#include <map>
-#include <stack>
-
 #include "dawn/common/StackContainer.h"
 #include "dawn/common/WeakRef.h"
 #include "dawn/common/WeakRefSupport.h"
-#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Error.h"
+#include "dawn/native/Forward.h"
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/SharedFence.h"
@@ -57,11 +54,8 @@ class SharedTextureMemoryBase : public ApiObjectBase,
     using EndAccessState = SharedTextureMemoryEndAccessState;
     using PendingFenceList = StackVector<FenceAndSignalValue, 1>;
 
-    static SharedTextureMemoryBase* MakeError(DeviceBase* device,
-                                              const SharedTextureMemoryDescriptor* descriptor);
-
-    // Strip out properties based on what the Dawn device actually supports.
-    static void ReifyProperties(DeviceBase* device, SharedTextureMemoryProperties* properties);
+    static Ref<SharedTextureMemoryBase> MakeError(DeviceBase* device,
+                                                  const SharedTextureMemoryDescriptor* descriptor);
 
     void Initialize();
 
@@ -95,32 +89,37 @@ class SharedTextureMemoryBase : public ApiObjectBase,
 
     void DestroyImpl() override;
 
-    SharedTextureMemoryProperties mProperties;
-
-    Ref<TextureBase> mCurrentAccess;
+    bool HasWriteAccess() const;
+    bool HasExclusiveReadAccess() const;
+    int GetReadAccessCount() const;
 
   private:
     virtual Ref<SharedTextureMemoryContents> CreateContents();
 
     ResultOrError<Ref<TextureBase>> CreateTexture(const TextureDescriptor* rawDescriptor);
-    MaybeError BeginAccess(TextureBase* texture, const BeginAccessDescriptor* descriptor);
-    MaybeError EndAccess(TextureBase* texture, EndAccessState* state);
+    MaybeError BeginAccess(TextureBase* texture, const BeginAccessDescriptor* rawDescriptor);
+    MaybeError EndAccess(TextureBase* texture, EndAccessState* state, bool* didEnd);
     ResultOrError<FenceAndSignalValue> EndAccessInternal(TextureBase* texture,
-                                                         EndAccessState* state);
+                                                         EndAccessState* rawState);
 
     virtual ResultOrError<Ref<TextureBase>> CreateTextureImpl(
-        const Unpacked<TextureDescriptor>& descriptor) = 0;
+        const UnpackedPtr<TextureDescriptor>& descriptor) = 0;
 
     // BeginAccessImpl validates the operation is valid on the backend, and performs any
     // backend specific operations. It does NOT need to acquire begin fences; that is done in the
     // frontend in BeginAccess.
     virtual MaybeError BeginAccessImpl(TextureBase* texture,
-                                       const BeginAccessDescriptor* descriptor) = 0;
+                                       const UnpackedPtr<BeginAccessDescriptor>& descriptor) = 0;
     // EndAccessImpl validates the operation is valid on the backend, and returns the end fence.
     // It should also write out any backend specific state in chained out structs of EndAccessState.
-    virtual ResultOrError<FenceAndSignalValue> EndAccessImpl(TextureBase* texture,
-                                                             EndAccessState* state) = 0;
+    virtual ResultOrError<FenceAndSignalValue> EndAccessImpl(
+        TextureBase* texture,
+        UnpackedPtr<EndAccessState>& state) = 0;
 
+    SharedTextureMemoryProperties mProperties;
+    bool mHasWriteAccess = false;
+    bool mHasExclusiveReadAccess = false;
+    int mReadAccessCount = 0;
     Ref<SharedTextureMemoryContents> mContents;
 };
 

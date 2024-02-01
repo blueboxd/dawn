@@ -34,6 +34,7 @@
 
 #include "dawn/common/Assert.h"
 #include "dawn/common/FutureUtils.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/Queue.h"
@@ -271,7 +272,7 @@ EventManager::~EventManager() {
     DAWN_ASSERT(!mEvents.has_value());
 }
 
-MaybeError EventManager::Initialize(const Unpacked<InstanceDescriptor>& descriptor) {
+MaybeError EventManager::Initialize(const UnpackedPtr<InstanceDescriptor>& descriptor) {
     if (descriptor) {
         if (descriptor->features.timedWaitAnyMaxCount > kTimedWaitAnyMaxCountDefault) {
             // We don't yet support a higher timedWaitAnyMaxCount because it would be complicated
@@ -300,7 +301,7 @@ FutureID EventManager::TrackEvent(wgpu::CallbackMode mode, Ref<TrackedEvent>&& f
     return futureID;
 }
 
-void EventManager::ProcessPollEvents() {
+bool EventManager::ProcessPollEvents() {
     DAWN_ASSERT(mEvents.has_value());
 
     std::vector<TrackedFutureWaitInfo> futures;
@@ -322,7 +323,7 @@ void EventManager::ProcessPollEvents() {
         std::lock_guard<std::mutex> lock(mProcessEventLock);
         wgpu::WaitStatus waitStatus = WaitImpl(futures, Nanoseconds(0));
         if (waitStatus == wgpu::WaitStatus::TimedOut) {
-            return;
+            return false;
         }
         DAWN_ASSERT(waitStatus == wgpu::WaitStatus::Success);
     }
@@ -342,6 +343,7 @@ void EventManager::ProcessPollEvents() {
     for (auto it = futures.begin(); it != readyEnd; ++it) {
         it->event->EnsureComplete(EventCompletionType::Ready);
     }
+    return readyEnd != futures.end();
 }
 
 wgpu::WaitStatus EventManager::WaitAny(size_t count, FutureWaitInfo* infos, Nanoseconds timeout) {
@@ -435,6 +437,14 @@ EventManager::TrackedEvent::TrackedEvent(wgpu::CallbackMode callbackMode,
                                          QueueBase* queue,
                                          ExecutionSerial completionSerial)
     : mCallbackMode(callbackMode), mCompletionData(QueueAndSerial{queue, completionSerial}) {}
+
+EventManager::TrackedEvent::TrackedEvent(wgpu::CallbackMode callbackMode, Completed tag)
+    : TrackedEvent(callbackMode, [] {
+          // Make a system event that is already signaled.
+          // Note that this won't make a real OS event because the OS
+          // event is lazily created when waited on.
+          return SystemEvent::CreateSignaled();
+      }()) {}
 
 EventManager::TrackedEvent::~TrackedEvent() {
     DAWN_ASSERT(mCompleted);

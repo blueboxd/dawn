@@ -41,8 +41,6 @@ if(TINT_BUILD_SPV_WRITER)
 # Condition: TINT_BUILD_SPV_WRITER
 ################################################################################
 tint_add_target(tint_lang_spirv_writer_ast_raise lib
-  lang/spirv/writer/ast_raise/clamp_frag_depth.cc
-  lang/spirv/writer/ast_raise/clamp_frag_depth.h
   lang/spirv/writer/ast_raise/for_loop_to_loop.cc
   lang/spirv/writer/ast_raise/for_loop_to_loop.h
   lang/spirv/writer/ast_raise/merge_return.cc
@@ -91,7 +89,6 @@ if(TINT_BUILD_SPV_WRITER AND TINT_BUILD_WGSL_READER AND TINT_BUILD_WGSL_WRITER)
 # Condition: TINT_BUILD_SPV_WRITER AND TINT_BUILD_WGSL_READER AND TINT_BUILD_WGSL_WRITER
 ################################################################################
 tint_add_target(tint_lang_spirv_writer_ast_raise_test test
-  lang/spirv/writer/ast_raise/clamp_frag_depth_test.cc
   lang/spirv/writer/ast_raise/for_loop_to_loop_test.cc
   lang/spirv/writer/ast_raise/merge_return_test.cc
   lang/spirv/writer/ast_raise/var_for_dynamic_index_test.cc
@@ -112,6 +109,7 @@ tint_target_add_dependencies(tint_lang_spirv_writer_ast_raise_test test
   tint_lang_wgsl_features
   tint_lang_wgsl_program
   tint_lang_wgsl_sem
+  tint_lang_wgsl_writer_ir_to_program
   tint_utils_containers
   tint_utils_diagnostic
   tint_utils_ice

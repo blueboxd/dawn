@@ -27,17 +27,93 @@
 
 #include "dawn/wire/client/Device.h"
 
+#include <memory>
+#include <string>
 #include <utility>
 
 #include "dawn/common/Assert.h"
 #include "dawn/common/Log.h"
 #include "dawn/wire/client/ApiObjects_autogen.h"
 #include "dawn/wire/client/Client.h"
+#include "dawn/wire/client/EventManager.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::wire::client {
+namespace {
 
-Device::Device(const ObjectBaseParams& params, const WGPUDeviceDescriptor* descriptor)
-    : ObjectBase(params), mIsAlive(std::make_shared<bool>()) {
+template <typename PipelineT, EventType Type, typename CallbackInfoT>
+class CreatePipelineEventBase : public TrackedEvent {
+  public:
+    // Export these types upwards for ease of use.
+    using Pipeline = PipelineT;
+    using CallbackInfo = CallbackInfoT;
+
+    static constexpr EventType kType = Type;
+
+    CreatePipelineEventBase(const CallbackInfo& callbackInfo, Pipeline* pipeline)
+        : TrackedEvent(callbackInfo.mode),
+          mCallback(callbackInfo.callback),
+          mUserdata(callbackInfo.userdata),
+          mPipeline(pipeline) {
+        DAWN_ASSERT(mPipeline != nullptr);
+    }
+
+    EventType GetType() override { return kType; }
+
+    WireResult ReadyHook(FutureID futureID,
+                         WGPUCreatePipelineAsyncStatus status,
+                         const char* message) {
+        DAWN_ASSERT(mPipeline != nullptr);
+        mStatus = status;
+        if (message != nullptr) {
+            mMessage = message;
+        }
+        return WireResult::Success;
+    }
+
+  private:
+    void CompleteImpl(FutureID futureID, EventCompletionType completionType) override {
+        // By default, we are initialized to a success state, and on shutdown we just return success
+        // so we don't need to handle it specifically.
+        if (mStatus != WGPUCreatePipelineAsyncStatus_Success) {
+            // If there was an error we need to reclaim the pipeline allocation.
+            mPipeline->GetClient()->Free(mPipeline.get());
+            mPipeline = nullptr;
+        }
+        if (mCallback) {
+            mCallback(mStatus, ToAPI(mPipeline), mMessage ? mMessage->c_str() : nullptr, mUserdata);
+        }
+    }
+
+    using Callback = decltype(std::declval<CallbackInfo>().callback);
+    Callback mCallback;
+    // TODO(https://crbug.com/dawn/2345): Investigate `DanglingUntriaged` in dawn/wire.
+    raw_ptr<void, DanglingUntriaged> mUserdata;
+
+    // Note that the message is optional because we want to return nullptr when it wasn't set
+    // instead of a pointer to an empty string.
+    WGPUCreatePipelineAsyncStatus mStatus = WGPUCreatePipelineAsyncStatus_Success;
+    std::optional<std::string> mMessage;
+
+    // TODO(https://crbug.com/dawn/2345): Investigate `DanglingUntriaged` in dawn/wire.
+    raw_ptr<Pipeline, DanglingUntriaged> mPipeline = nullptr;
+};
+
+using CreateComputePipelineEvent =
+    CreatePipelineEventBase<ComputePipeline,
+                            EventType::CreateComputePipeline,
+                            WGPUCreateComputePipelineAsyncCallbackInfo>;
+using CreateRenderPipelineEvent =
+    CreatePipelineEventBase<RenderPipeline,
+                            EventType::CreateRenderPipeline,
+                            WGPUCreateRenderPipelineAsyncCallbackInfo>;
+
+}  // namespace
+
+Device::Device(const ObjectBaseParams& params,
+               const ObjectHandle& eventManagerHandle,
+               const WGPUDeviceDescriptor* descriptor)
+    : ObjectWithEventsBase(params, eventManagerHandle), mIsAlive(std::make_shared<bool>()) {
     if (descriptor && descriptor->deviceLostCallback) {
         mDeviceLostCallback = descriptor->deviceLostCallback;
         mDeviceLostUserdata = descriptor->deviceLostUserdata;
@@ -72,21 +148,6 @@ Device::~Device() {
     mErrorScopes.CloseAll([](ErrorScopeData* request) {
         request->callback(WGPUErrorType_Unknown, "Device destroyed before callback",
                           request->userdata);
-    });
-
-    mCreatePipelineAsyncRequests.CloseAll([this](CreatePipelineAsyncRequest* request) {
-        if (request->createComputePipelineAsyncCallback != nullptr) {
-            request->createComputePipelineAsyncCallback(
-                WGPUCreatePipelineAsyncStatus_Success,
-                ToAPI(GetClient()->Get<ComputePipeline>(request->pipelineObjectID)), "",
-                request->userdata);
-        } else {
-            DAWN_ASSERT(request->createRenderPipelineAsyncCallback != nullptr);
-            request->createRenderPipelineAsyncCallback(
-                WGPUCreatePipelineAsyncStatus_Success,
-                ToAPI(GetClient()->Get<RenderPipeline>(request->pipelineObjectID)), "",
-                request->userdata);
-        }
     });
 
     if (mQueue != nullptr) {
@@ -137,21 +198,6 @@ void Device::HandleDeviceLost(WGPUDeviceLostReason reason, const char* message) 
 void Device::CancelCallbacksForDisconnect() {
     mErrorScopes.CloseAll([](ErrorScopeData* request) {
         request->callback(WGPUErrorType_DeviceLost, "Device lost", request->userdata);
-    });
-
-    mCreatePipelineAsyncRequests.CloseAll([this](CreatePipelineAsyncRequest* request) {
-        if (request->createComputePipelineAsyncCallback != nullptr) {
-            request->createComputePipelineAsyncCallback(
-                WGPUCreatePipelineAsyncStatus_Success,
-                ToAPI(GetClient()->Get<ComputePipeline>(request->pipelineObjectID)), "",
-                request->userdata);
-        } else {
-            DAWN_ASSERT(request->createRenderPipelineAsyncCallback != nullptr);
-            request->createRenderPipelineAsyncCallback(
-                WGPUCreatePipelineAsyncStatus_Success,
-                ToAPI(GetClient()->Get<RenderPipeline>(request->pipelineObjectID)), "",
-                request->userdata);
-        }
     });
 }
 
@@ -232,7 +278,7 @@ WGPUQueue Device::GetQueue() {
     if (mQueue == nullptr) {
         // Get the primary queue for this device.
         Client* client = GetClient();
-        mQueue = client->Make<Queue>();
+        mQueue = client->Make<Queue>(GetEventManagerHandle());
 
         DeviceGetQueueCmd cmd;
         cmd.self = ToAPI(this);
@@ -245,102 +291,80 @@ WGPUQueue Device::GetQueue() {
     return ToAPI(mQueue);
 }
 
-void Device::CreateComputePipelineAsync(WGPUComputePipelineDescriptor const* descriptor,
-                                        WGPUCreateComputePipelineAsyncCallback callback,
-                                        void* userdata) {
-    Client* client = GetClient();
-    ComputePipeline* pipeline = client->Make<ComputePipeline>();
+template <typename Event, typename Cmd, typename CallbackInfo, typename Descriptor>
+WGPUFuture Device::CreatePipelineAsyncF(Descriptor const* descriptor,
+                                        const CallbackInfo& callbackInfo) {
+    using Pipeline = typename Event::Pipeline;
 
-    if (client->IsDisconnected()) {
-        return callback(WGPUCreatePipelineAsyncStatus_Success, ToAPI(pipeline), "", userdata);
+    Client* client = GetClient();
+    Pipeline* pipeline = client->Make<Pipeline>();
+    auto [futureIDInternal, tracked] =
+        GetEventManager().TrackEvent(std::make_unique<Event>(callbackInfo, pipeline));
+    if (!tracked) {
+        return {futureIDInternal};
     }
 
-    CreatePipelineAsyncRequest request = {};
-    request.createComputePipelineAsyncCallback = callback;
-    request.userdata = userdata;
-    request.pipelineObjectID = pipeline->GetWireId();
-
-    uint64_t serial = mCreatePipelineAsyncRequests.Add(std::move(request));
-
-    DeviceCreateComputePipelineAsyncCmd cmd;
+    Cmd cmd;
     cmd.deviceId = GetWireId();
     cmd.descriptor = descriptor;
-    cmd.requestSerial = serial;
+    cmd.eventManagerHandle = GetEventManagerHandle();
+    cmd.future = {futureIDInternal};
     cmd.pipelineObjectHandle = pipeline->GetWireHandle();
 
     client->SerializeCommand(cmd);
+    return {futureIDInternal};
 }
 
-bool Device::OnCreateComputePipelineAsyncCallback(uint64_t requestSerial,
-                                                  WGPUCreatePipelineAsyncStatus status,
-                                                  const char* message) {
-    CreatePipelineAsyncRequest request;
-    if (!mCreatePipelineAsyncRequests.Acquire(requestSerial, &request)) {
-        return false;
-    }
+void Device::CreateComputePipelineAsync(WGPUComputePipelineDescriptor const* descriptor,
+                                        WGPUCreateComputePipelineAsyncCallback callback,
+                                        void* userdata) {
+    WGPUCreateComputePipelineAsyncCallbackInfo callbackInfo = {};
+    callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+    callbackInfo.callback = callback;
+    callbackInfo.userdata = userdata;
+    CreateComputePipelineAsyncF(descriptor, callbackInfo);
+}
 
-    Client* client = GetClient();
-    ComputePipeline* pipeline = client->Get<ComputePipeline>(request.pipelineObjectID);
+WGPUFuture Device::CreateComputePipelineAsyncF(
+    WGPUComputePipelineDescriptor const* descriptor,
+    const WGPUCreateComputePipelineAsyncCallbackInfo& callbackInfo) {
+    return CreatePipelineAsyncF<CreateComputePipelineEvent, DeviceCreateComputePipelineAsyncCmd>(
+        descriptor, callbackInfo);
+}
 
-    // If the return status is a failure we should give a null pipeline to the callback and
-    // free the allocation.
-    if (status != WGPUCreatePipelineAsyncStatus_Success) {
-        client->Free(pipeline);
-        request.createComputePipelineAsyncCallback(status, nullptr, message, request.userdata);
-        return true;
-    }
-
-    request.createComputePipelineAsyncCallback(status, ToAPI(pipeline), message, request.userdata);
-    return true;
+bool Client::DoDeviceCreateComputePipelineAsyncCallback(ObjectHandle eventManager,
+                                                        WGPUFuture future,
+                                                        WGPUCreatePipelineAsyncStatus status,
+                                                        const char* message) {
+    return GetEventManager(eventManager)
+               .SetFutureReady<CreateComputePipelineEvent>(future.id, status, message) ==
+           WireResult::Success;
 }
 
 void Device::CreateRenderPipelineAsync(WGPURenderPipelineDescriptor const* descriptor,
                                        WGPUCreateRenderPipelineAsyncCallback callback,
                                        void* userdata) {
-    Client* client = GetClient();
-    RenderPipeline* pipeline = client->Make<RenderPipeline>();
-
-    if (client->IsDisconnected()) {
-        return callback(WGPUCreatePipelineAsyncStatus_Success, ToAPI(pipeline), "", userdata);
-    }
-
-    CreatePipelineAsyncRequest request = {};
-    request.createRenderPipelineAsyncCallback = callback;
-    request.userdata = userdata;
-    request.pipelineObjectID = pipeline->GetWireId();
-
-    uint64_t serial = mCreatePipelineAsyncRequests.Add(std::move(request));
-
-    DeviceCreateRenderPipelineAsyncCmd cmd;
-    cmd.deviceId = GetWireId();
-    cmd.descriptor = descriptor;
-    cmd.requestSerial = serial;
-    cmd.pipelineObjectHandle = pipeline->GetWireHandle();
-
-    client->SerializeCommand(cmd);
+    WGPUCreateRenderPipelineAsyncCallbackInfo callbackInfo = {};
+    callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+    callbackInfo.callback = callback;
+    callbackInfo.userdata = userdata;
+    CreateRenderPipelineAsyncF(descriptor, callbackInfo);
 }
 
-bool Device::OnCreateRenderPipelineAsyncCallback(uint64_t requestSerial,
-                                                 WGPUCreatePipelineAsyncStatus status,
-                                                 const char* message) {
-    CreatePipelineAsyncRequest request;
-    if (!mCreatePipelineAsyncRequests.Acquire(requestSerial, &request)) {
-        return false;
-    }
+WGPUFuture Device::CreateRenderPipelineAsyncF(
+    WGPURenderPipelineDescriptor const* descriptor,
+    const WGPUCreateRenderPipelineAsyncCallbackInfo& callbackInfo) {
+    return CreatePipelineAsyncF<CreateRenderPipelineEvent, DeviceCreateRenderPipelineAsyncCmd>(
+        descriptor, callbackInfo);
+}
 
-    Client* client = GetClient();
-    RenderPipeline* pipeline = client->Get<RenderPipeline>(request.pipelineObjectID);
-
-    // If the return status is a failure we should give a null pipeline to the callback and
-    // free the allocation.
-    if (status != WGPUCreatePipelineAsyncStatus_Success) {
-        client->Free(pipeline);
-        request.createRenderPipelineAsyncCallback(status, nullptr, message, request.userdata);
-        return true;
-    }
-
-    request.createRenderPipelineAsyncCallback(status, ToAPI(pipeline), message, request.userdata);
-    return true;
+bool Client::DoDeviceCreateRenderPipelineAsyncCallback(ObjectHandle eventManager,
+                                                       WGPUFuture future,
+                                                       WGPUCreatePipelineAsyncStatus status,
+                                                       const char* message) {
+    return GetEventManager(eventManager)
+               .SetFutureReady<CreateRenderPipelineEvent>(future.id, status, message) ==
+           WireResult::Success;
 }
 
 }  // namespace dawn::wire::client

@@ -48,6 +48,7 @@
 #include "dawn/native/Device.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/dawn_platform.h"
+#include "dawn/tests/PartitionAllocSupport.h"
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/PlatformDebugLogger.h"
 #include "dawn/utils/SystemUtils.h"
@@ -57,6 +58,7 @@
 #include "dawn/utils/WireHelper.h"
 #include "dawn/wire/WireClient.h"
 #include "dawn/wire/WireServer.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 #if defined(DAWN_ENABLE_BACKEND_OPENGL)
 #include "dawn/native/OpenGLBackend.h"
@@ -66,7 +68,7 @@ namespace dawn {
 namespace {
 
 struct MapReadUserdata {
-    DawnTestBase* test;
+    raw_ptr<DawnTestBase> test;
     size_t slot;
 };
 
@@ -194,6 +196,9 @@ void DawnTestEnvironment::SetEnvironment(DawnTestEnvironment* env) {
 }
 
 DawnTestEnvironment::DawnTestEnvironment(int argc, char** argv) {
+    InitializePartitionAllocForTesting();
+    InitializeDanglingPointerDetectorForTesting();
+
     ParseArgs(argc, argv);
 
     if (mBackendValidationLevel != native::BackendValidationLevel::Disabled) {
@@ -411,6 +416,8 @@ std::unique_ptr<native::Instance> DawnTestEnvironment::CreateInstance(
 
     dawn::native::DawnInstanceDescriptor dawnInstanceDesc;
     dawnInstanceDesc.platform = platform;
+    dawnInstanceDesc.beginCaptureOnStartup = mBeginCaptureOnStartup;
+    dawnInstanceDesc.backendValidationLevel = mBackendValidationLevel;
     dawnInstanceDesc.nextInChain = &instanceToggles;
 
     wgpu::InstanceDescriptor instanceDesc{};
@@ -419,9 +426,6 @@ std::unique_ptr<native::Instance> DawnTestEnvironment::CreateInstance(
 
     auto instance = std::make_unique<native::Instance>(
         reinterpret_cast<const WGPUInstanceDescriptor*>(&instanceDesc));
-    instance->EnableBeginCaptureOnStartup(mBeginCaptureOnStartup);
-    instance->SetBackendValidationLevel(mBackendValidationLevel);
-    instance->EnableAdapterBlocklist(false);
 
 #ifdef DAWN_ENABLE_BACKEND_OPENGLES
     if (GetEnvironmentVar("ANGLE_DEFAULT_PLATFORM").first.empty()) {
@@ -1394,7 +1398,6 @@ std::ostringstream& DawnTestBase::ExpectSampledFloatDataImpl(wgpu::Texture textu
 
     wgpu::ComputePipelineDescriptor pipelineDescriptor;
     pipelineDescriptor.compute.module = csModule;
-    pipelineDescriptor.compute.entryPoint = "main";
 
     wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&pipelineDescriptor);
 
@@ -1470,7 +1473,6 @@ std::ostringstream& DawnTestBase::ExpectAttachmentDepthStencilTestData(
     std::vector<float> expectedDepth,
     uint8_t* expectedStencil) {
     wgpu::CommandEncoder commandEncoder = device.CreateCommandEncoder();
-    std::cerr << "here1\n";
 
     // Make the color attachment that we'll use to read back.
     wgpu::TextureDescriptor colorTexDesc = {};

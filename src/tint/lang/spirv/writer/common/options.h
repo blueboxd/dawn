@@ -146,6 +146,9 @@ struct Options {
     /// Set to `true` to generate polyfill for `dot4I8Packed` and `dot4U8Packed` builtins
     bool polyfill_dot_4x8_packed = false;
 
+    /// Set to `true` to disable the polyfills on integer division and modulo.
+    bool disable_polyfill_integer_div_mod = false;
+
     /// The bindings
     Bindings bindings;
 
@@ -157,8 +160,10 @@ struct Options {
                  use_zero_initialize_workgroup_memory_extension,
                  emit_vertex_point_size,
                  clamp_frag_depth,
+                 pass_matrix_by_pointer,
                  experimental_require_subgroup_uniform_control_flow,
                  polyfill_dot_4x8_packed,
+                 disable_polyfill_integer_div_mod,
                  bindings);
 };
 

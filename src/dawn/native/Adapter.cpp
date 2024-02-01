@@ -35,9 +35,9 @@
 
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/Device.h"
-#include "dawn/native/Error.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/PhysicalDevice.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native {
 
@@ -81,7 +81,7 @@ bool AdapterBase::APIGetLimits(SupportedLimits* limits) const {
     DAWN_ASSERT(limits != nullptr);
     InstanceBase* instance = mPhysicalDevice->GetInstance();
 
-    Unpacked<SupportedLimits> unpacked;
+    UnpackedPtr<SupportedLimits> unpacked;
     if (instance->ConsumedError(ValidateAndUnpack(limits), &unpacked)) {
         return false;
     }
@@ -110,21 +110,26 @@ void AdapterBase::APIGetProperties(AdapterProperties* properties) const {
     DAWN_ASSERT(properties != nullptr);
     InstanceBase* instance = mPhysicalDevice->GetInstance();
 
-    Unpacked<AdapterProperties> unpacked;
+    UnpackedPtr<AdapterProperties> unpacked;
     if (instance->ConsumedError(ValidateAndUnpack(properties), &unpacked)) {
         return;
     }
 
-    if (auto* memoryHeaps = unpacked.Get<AdapterPropertiesMemoryHeaps>()) {
-        if (!mSupportedFeatures.IsEnabled(wgpu::FeatureName::AdapterPropertiesMemoryHeaps)) {
-            mPhysicalDevice->GetInstance()->ConsumedError(
-                DAWN_VALIDATION_ERROR("Feature AdapterPropertiesMemoryHeaps is not available."));
-        }
-        mPhysicalDevice->PopulateMemoryHeapInfo(memoryHeaps);
+    if (unpacked.Get<AdapterPropertiesMemoryHeaps>() != nullptr &&
+        !mSupportedFeatures.IsEnabled(wgpu::FeatureName::AdapterPropertiesMemoryHeaps)) {
+        instance->ConsumedError(
+            DAWN_VALIDATION_ERROR("Feature AdapterPropertiesMemoryHeaps is not available."));
+    }
+    if (unpacked.Get<AdapterPropertiesD3D>() != nullptr &&
+        !mSupportedFeatures.IsEnabled(wgpu::FeatureName::AdapterPropertiesD3D)) {
+        instance->ConsumedError(
+            DAWN_VALIDATION_ERROR("Feature AdapterPropertiesD3D is not available."));
     }
     if (auto* powerPreferenceDesc = unpacked.Get<DawnAdapterPropertiesPowerPreference>()) {
         powerPreferenceDesc->powerPreference = mPowerPreference;
     }
+
+    mPhysicalDevice->PopulateBackendProperties(unpacked);
 
     properties->vendorID = mPhysicalDevice->GetVendorId();
     properties->deviceID = mPhysicalDevice->GetDeviceId();
@@ -187,16 +192,17 @@ DeviceBase* AdapterBase::APICreateDevice(const DeviceDescriptor* descriptor) {
         mPhysicalDevice->GetInstance()->ConsumedError(result.AcquireError());
         return nullptr;
     }
-    return result.AcquireSuccess().Detach();
+    return ReturnToAPI(result.AcquireSuccess());
 }
 
-ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDevice(const DeviceDescriptor* descriptor) {
-    DAWN_ASSERT(descriptor != nullptr);
+ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDevice(const DeviceDescriptor* rawDescriptor) {
+    DAWN_ASSERT(rawDescriptor != nullptr);
 
     // Create device toggles state from required toggles descriptor and inherited adapter toggles
     // state.
-    const DawnTogglesDescriptor* deviceTogglesDesc = nullptr;
-    FindInChain(descriptor->nextInChain, &deviceTogglesDesc);
+    UnpackedPtr<DeviceDescriptor> descriptor;
+    DAWN_TRY_ASSIGN(descriptor, ValidateAndUnpack(rawDescriptor));
+    auto* deviceTogglesDesc = descriptor.Get<DawnTogglesDescriptor>();
 
     // Create device toggles state.
     TogglesState deviceToggles =
@@ -259,7 +265,51 @@ void AdapterBase::APIRequestDevice(const DeviceDescriptor* descriptor,
     WGPURequestDeviceStatus status =
         device == nullptr ? WGPURequestDeviceStatus_Unknown : WGPURequestDeviceStatus_Success;
     // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
-    callback(status, ToAPI(device.Detach()), nullptr, userdata);
+    callback(status, ToAPI(ReturnToAPI(std::move(device))), nullptr, userdata);
+}
+
+Future AdapterBase::APIRequestDeviceF(const DeviceDescriptor* descriptor,
+                                      const RequestDeviceCallbackInfo& callbackInfo) {
+    struct RequestDeviceEvent final : public EventManager::TrackedEvent {
+        WGPURequestDeviceCallback mCallback;
+        // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
+        raw_ptr<void, DanglingUntriaged> mUserdata;
+        ResultOrError<Ref<DeviceBase>> mDeviceOrError;
+
+        RequestDeviceEvent(const RequestDeviceCallbackInfo& callbackInfo,
+                           ResultOrError<Ref<DeviceBase>> deviceOrError)
+            : TrackedEvent(callbackInfo.mode, TrackedEvent::Completed{}),
+              mCallback(callbackInfo.callback),
+              mUserdata(callbackInfo.userdata),
+              mDeviceOrError(std::move(deviceOrError)) {
+            CompleteIfSpontaneous();
+        }
+
+        ~RequestDeviceEvent() override { EnsureComplete(EventCompletionType::Shutdown); }
+
+        void Complete(EventCompletionType completionType) override {
+            if (mDeviceOrError.IsError()) {
+                std::unique_ptr<ErrorData> errorData = mDeviceOrError.AcquireError();
+                mCallback(WGPURequestDeviceStatus_Error, nullptr,
+                          errorData->GetFormattedMessage().c_str(), mUserdata);
+                return;
+            }
+            Ref<DeviceBase> device = mDeviceOrError.AcquireSuccess();
+            WGPURequestDeviceStatus status = device == nullptr ? WGPURequestDeviceStatus_Unknown
+                                                               : WGPURequestDeviceStatus_Success;
+            mCallback(status, ToAPI(ReturnToAPI(std::move(device))), nullptr, mUserdata);
+        }
+    };
+
+    constexpr DeviceDescriptor kDefaultDescriptor = {};
+    if (descriptor == nullptr) {
+        descriptor = &kDefaultDescriptor;
+    }
+
+    FutureID futureID = mPhysicalDevice->GetInstance()->GetEventManager()->TrackEvent(
+        callbackInfo.mode,
+        AcquireRef(new RequestDeviceEvent(callbackInfo, CreateDevice(descriptor))));
+    return {futureID};
 }
 
 const TogglesState& AdapterBase::GetTogglesState() const {

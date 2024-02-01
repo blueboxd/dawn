@@ -126,9 +126,7 @@ TEST_F(CompatValidationTest, CanNotCreatePipelineWithDifferentPerTargetBlendStat
     utils::ComboRenderPipelineDescriptor testDescriptor;
     testDescriptor.layout = {};
     testDescriptor.vertex.module = module;
-    testDescriptor.vertex.entryPoint = "vs";
     testDescriptor.cFragment.module = module;
-    testDescriptor.cFragment.entryPoint = "fs";
     testDescriptor.cFragment.targetCount = 3;
     testDescriptor.cTargets[1].format = wgpu::TextureFormat::Undefined;
 
@@ -184,6 +182,37 @@ TEST_F(CompatValidationTest, CanNotCreatePipelineWithDifferentPerTargetBlendStat
     }
 }
 
+TEST_F(CompatValidationTest, CanNotCreatePipelineWithNonZeroDepthBiasClamp) {
+    wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
+        @vertex fn vs() -> @builtin(position) vec4f {
+            return vec4f(0);
+        }
+
+        @fragment fn fs() -> @location(0) vec4f {
+            return vec4f(0);
+        }
+    )");
+
+    utils::ComboRenderPipelineDescriptor testDescriptor;
+    testDescriptor.layout = {};
+    testDescriptor.vertex.module = module;
+    testDescriptor.cFragment.module = module;
+    testDescriptor.cFragment.targetCount = 1;
+    testDescriptor.cTargets[1].format = wgpu::TextureFormat::RGBA8Unorm;
+
+    wgpu::DepthStencilState* depthStencil =
+        testDescriptor.EnableDepthStencil(wgpu::TextureFormat::Depth24Plus);
+    depthStencil->depthWriteEnabled = true;
+    depthStencil->depthBias = 0;
+    depthStencil->depthBiasSlopeScale = 0;
+
+    depthStencil->depthBiasClamp = 0;
+    device.CreateRenderPipeline(&testDescriptor);
+
+    depthStencil->depthBiasClamp = 1;
+    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&testDescriptor));
+}
+
 TEST_F(CompatValidationTest, CanNotUseFragmentShaderWithSampleMask) {
     wgpu::ShaderModule moduleSampleMaskOutput = utils::CreateShaderModule(device, R"(
         @vertex fn vs() -> @builtin(position) vec4f {
@@ -210,7 +239,6 @@ TEST_F(CompatValidationTest, CanNotUseFragmentShaderWithSampleMask) {
     {
         utils::ComboRenderPipelineDescriptor descriptor;
         descriptor.vertex.module = moduleSampleMaskOutput;
-        descriptor.vertex.entryPoint = "vs";
         descriptor.cFragment.module = moduleSampleMaskOutput;
         descriptor.cFragment.entryPoint = "fsWithoutSampleMaskUsage";
         descriptor.multisample.count = 4;
@@ -223,7 +251,6 @@ TEST_F(CompatValidationTest, CanNotUseFragmentShaderWithSampleMask) {
     {
         utils::ComboRenderPipelineDescriptor descriptor;
         descriptor.vertex.module = moduleSampleMaskOutput;
-        descriptor.vertex.entryPoint = "vs";
         descriptor.cFragment.module = moduleSampleMaskOutput;
         descriptor.cFragment.entryPoint = "fsWithSampleMaskUsage";
         descriptor.multisample.count = 4;
@@ -231,6 +258,136 @@ TEST_F(CompatValidationTest, CanNotUseFragmentShaderWithSampleMask) {
 
         ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor),
                             testing::HasSubstr("sample_mask"));
+    }
+}
+
+TEST_F(CompatValidationTest, CanNotUseFragmentShaderWithSampleIndex) {
+    wgpu::ShaderModule moduleSampleMaskOutput = utils::CreateShaderModule(device, R"(
+        @vertex fn vs() -> @builtin(position) vec4f {
+            return vec4f(1);
+        }
+        struct Output {
+            @location(0) color : vec4f,
+        }
+        @fragment fn fsWithoutSampleIndexUsage() -> @location(0) vec4f {
+            return vec4f(1.0, 1.0, 1.0, 1.0);
+        }
+        @fragment fn fsWithSampleIndexUsage(@builtin(sample_index) sNdx: u32) -> Output {
+            var o: Output;
+            _ = sNdx;
+            o.color = vec4f(1.0, 1.0, 1.0, 1.0);
+            return o;
+        }
+    )");
+
+    // Check we can use a fragment shader that doesn't use sample_index from
+    // the same module as one that does.
+    {
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = moduleSampleMaskOutput;
+        descriptor.vertex.entryPoint = "vs";
+        descriptor.cFragment.module = moduleSampleMaskOutput;
+        descriptor.cFragment.entryPoint = "fsWithoutSampleIndexUsage";
+        descriptor.multisample.count = 4;
+        descriptor.multisample.alphaToCoverageEnabled = false;
+
+        device.CreateRenderPipeline(&descriptor);
+    }
+
+    // Check we can not use a fragment shader that uses sample_index.
+    {
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = moduleSampleMaskOutput;
+        descriptor.vertex.entryPoint = "vs";
+        descriptor.cFragment.module = moduleSampleMaskOutput;
+        descriptor.cFragment.entryPoint = "fsWithSampleIndexUsage";
+        descriptor.multisample.count = 4;
+        descriptor.multisample.alphaToCoverageEnabled = false;
+
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor),
+                            testing::HasSubstr("sample_index"));
+    }
+}
+
+TEST_F(CompatValidationTest, CanNotUseShaderWithUnsupportedInterpolateTypeOrSampling) {
+    static const char* interpolateParams[] = {
+        "linear",
+        "perspective, sample",
+    };
+    for (auto interpolateParam : interpolateParams) {
+        auto wgsl = absl::StrFormat(R"(
+            struct Vertex {
+                @builtin(position) pos: vec4f,
+                @location(0) @interpolate(%s) color : vec4f,
+            };
+            @vertex fn vs() -> Vertex {
+                var v: Vertex;
+                v.pos = vec4f(1);
+                v.color = vec4f(1);
+                return v;
+            }
+            @fragment fn fsWithoutBadInterpolationUsage() -> @location(0) vec4f {
+                return vec4f(1);
+            }
+            @fragment fn fsWithBadInterpolationUsage1(v: Vertex) -> @location(0) vec4f {
+                return vec4f(1);
+            }
+            @fragment fn fsWithBadInterpolationUsage2(v: Vertex) -> @location(0) vec4f {
+                return v.pos;
+            }
+            @fragment fn fsWithBadInterpolationUsage3(v: Vertex) -> @location(0) vec4f {
+                return v.color;
+            }
+        )",
+                                    interpolateParam);
+        wgpu::ShaderModule moduleInterpolationLinear =
+            utils::CreateShaderModule(device, wgsl.c_str());
+
+        static const char* entryPoints[] = {
+            "fsWithoutBadInterpolationUsage",
+            "fsWithBadInterpolationUsage1",
+            "fsWithBadInterpolationUsage2",
+            "fsWithBadInterpolationUsage3",
+        };
+        for (auto entryPoint : entryPoints) {
+            utils::ComboRenderPipelineDescriptor descriptor;
+            descriptor.vertex.module = moduleInterpolationLinear;
+            descriptor.cFragment.module = moduleInterpolationLinear;
+            descriptor.cFragment.entryPoint = entryPoint;
+
+            bool shouldSucceed = entryPoint == entryPoints[0];
+
+            if (shouldSucceed) {
+                device.CreateRenderPipeline(&descriptor);
+            } else {
+                ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor),
+                                    testing::HasSubstr("in compatibility mode"));
+            }
+        }
+    }
+}
+
+TEST_F(CompatValidationTest, CanNotCreateRGxxxStorageTexture) {
+    const wgpu::TextureFormat formats[] = {
+        wgpu::TextureFormat::RGBA8Unorm,  // pass check
+        wgpu::TextureFormat::RG32Sint,
+        wgpu::TextureFormat::RG32Uint,
+        wgpu::TextureFormat::RG32Float,
+    };
+    for (auto format : formats) {
+        wgpu::TextureDescriptor descriptor;
+        descriptor.size = {1, 1, 1};
+        descriptor.dimension = wgpu::TextureDimension::e2D;
+        descriptor.format = format;
+        descriptor.usage = wgpu::TextureUsage::StorageBinding;
+        wgpu::Texture texture;
+
+        if (format == wgpu::TextureFormat::RGBA8Unorm) {
+            texture = device.CreateTexture(&descriptor);
+        } else {
+            ASSERT_DEVICE_ERROR(texture = device.CreateTexture(&descriptor));
+        }
+        texture.Destroy();
     }
 }
 
@@ -300,9 +457,7 @@ void TestMultipleTextureViewValidationInRenderPass(
 
     utils::ComboRenderPipelineDescriptor pDesc;
     pDesc.vertex.module = module;
-    pDesc.vertex.entryPoint = "vs";
     pDesc.cFragment.module = module;
-    pDesc.cFragment.entryPoint = "fs";
     pDesc.cTargets[0].format = wgpu::TextureFormat::RGBA8Unorm;
     wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&pDesc);
 
@@ -551,7 +706,6 @@ void TestMultipleTextureViewValidationInComputePass(
 
     wgpu::ComputePipelineDescriptor pDesc;
     pDesc.compute.module = module;
-    pDesc.compute.entryPoint = "cs";
     wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&pDesc);
 
     fn(device, texture, pipeline,
@@ -1253,9 +1407,7 @@ class CompatMaxVertexAttributesTest : public CompatValidationTest {
 
         utils::ComboRenderPipelineDescriptor descriptor;
         descriptor.layout = {};
-        descriptor.vertex.entryPoint = "vs";
         descriptor.vertex.bufferCount = 1;
-        descriptor.cFragment.entryPoint = "fs";
         descriptor.cBuffers[0].arrayStride = 16;
         descriptor.cBuffers[0].attributeCount = numAttributes;
 

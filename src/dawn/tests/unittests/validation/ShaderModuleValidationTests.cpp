@@ -592,7 +592,6 @@ TEST_F(ShaderModuleValidationTest, MaxBindingNumber) {
     static_assert(kMaxBindingsPerBindGroup == 1000);
 
     wgpu::ComputePipelineDescriptor desc;
-    desc.compute.entryPoint = "main";
 
     // kMaxBindingsPerBindGroup-1 is valid.
     desc.compute.module = utils::CreateShaderModule(device, R"(
@@ -803,7 +802,6 @@ constexpr struct WGSLExtensionInfo kExtensions[] = {
 
     // Currently the following WGSL extensions are not enabled under any situation.
     /*
-    {"chromium_experimental_full_ptr_parameters", true, nullptr},
     {"chromium_experimental_push_constant", true, nullptr},
     {"chromium_internal_relaxed_uniform_layout", true, nullptr},
     */

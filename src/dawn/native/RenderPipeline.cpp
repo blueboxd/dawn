@@ -101,11 +101,12 @@ MaybeError ValidateVertexAttribute(DeviceBase* device,
     DAWN_TRY(ValidateVertexFormat(attribute->format));
     const VertexFormatInfo& formatInfo = GetVertexFormatInfo(attribute->format);
 
+    uint32_t maxVertexAttributes = device->GetLimits().v1.maxVertexAttributes;
     DAWN_INVALID_IF(
-        attribute->shaderLocation >= kMaxVertexAttributes,
+        attribute->shaderLocation >= maxVertexAttributes,
         "Attribute shader location (%u) exceeds the maximum number of vertex attributes "
         "(%u).",
-        attribute->shaderLocation, kMaxVertexAttributes);
+        attribute->shaderLocation, maxVertexAttributes);
 
     VertexAttributeLocation location(static_cast<uint8_t>(attribute->shaderLocation));
 
@@ -249,10 +250,10 @@ ResultOrError<ShaderModuleEntryPoint> ValidateVertexState(
     return entryPoint;
 }
 
-MaybeError ValidatePrimitiveState(const DeviceBase* device, const PrimitiveState* descriptor) {
-    DAWN_TRY(ValidateSingleSType(descriptor->nextInChain, wgpu::SType::PrimitiveDepthClipControl));
-    const PrimitiveDepthClipControl* depthClipControl = nullptr;
-    FindInChain(descriptor->nextInChain, &depthClipControl);
+MaybeError ValidatePrimitiveState(const DeviceBase* device, const PrimitiveState* rawDescriptor) {
+    UnpackedPtr<PrimitiveState> descriptor;
+    DAWN_TRY_ASSIGN(descriptor, ValidateAndUnpack(rawDescriptor));
+    const auto* depthClipControl = descriptor.Get<PrimitiveDepthClipControl>();
     DAWN_INVALID_IF(depthClipControl && !device->HasFeature(Feature::DepthClipControl),
                     "%s is not supported", wgpu::FeatureName::DepthClipControl);
     DAWN_TRY(ValidatePrimitiveTopology(descriptor->topology));
@@ -274,10 +275,8 @@ MaybeError ValidatePrimitiveState(const DeviceBase* device, const PrimitiveState
 
 MaybeError ValidateDepthStencilState(const DeviceBase* device,
                                      const DepthStencilState* descriptor) {
-    if (descriptor->depthCompare != wgpu::CompareFunction::Undefined) {
-        DAWN_TRY_CONTEXT(ValidateCompareFunction(descriptor->depthCompare),
-                         "validating depth compare function");
-    }
+    DAWN_TRY_CONTEXT(ValidateCompareFunction(descriptor->depthCompare),
+                     "validating depth compare function");
     DAWN_TRY_CONTEXT(ValidateCompareFunction(descriptor->stencilFront.compare),
                      "validating stencil front compare function");
     DAWN_TRY_CONTEXT(ValidateStencilOperation(descriptor->stencilFront.failOp),
@@ -306,6 +305,10 @@ MaybeError ValidateDepthStencilState(const DeviceBase* device,
         "Either depthBiasSlopeScale (%f) or depthBiasClamp (%f) is NaN.",
         descriptor->depthBiasSlopeScale, descriptor->depthBiasClamp);
 
+    DAWN_INVALID_IF(device->IsCompatibilityMode() && descriptor->depthBiasClamp != 0.0f,
+                    "depthBiasClamp (%f) is not zero as required in compatibility mode.",
+                    descriptor->depthBiasClamp);
+
     DAWN_INVALID_IF(
         format->HasDepth() && descriptor->depthCompare == wgpu::CompareFunction::Undefined &&
             (descriptor->depthWriteEnabled ||
@@ -317,7 +320,7 @@ MaybeError ValidateDepthStencilState(const DeviceBase* device,
         descriptor->format, wgpu::CompareFunction::Undefined, descriptor->depthWriteEnabled,
         descriptor->stencilFront.depthFailOp, descriptor->stencilBack.depthFailOp);
 
-    Unpacked<DepthStencilState> unpacked;
+    UnpackedPtr<DepthStencilState> unpacked;
     DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
     if (const auto* depthWriteDefined = unpacked.Get<DepthStencilStateDepthWriteDefinedDawn>()) {
         DAWN_INVALID_IF(
@@ -348,9 +351,10 @@ MaybeError ValidateDepthStencilState(const DeviceBase* device,
 }
 
 MaybeError ValidateMultisampleState(const DeviceBase* device, const MultisampleState* descriptor) {
-    const DawnMultisampleStateRenderToSingleSampled* msaaRenderToSingleSampledDesc = nullptr;
-    FindInChain(descriptor->nextInChain, &msaaRenderToSingleSampledDesc);
-    if (msaaRenderToSingleSampledDesc != nullptr) {
+    UnpackedPtr<MultisampleState> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
+    if (auto* msaaRenderToSingleSampledDesc =
+            unpacked.Get<DawnMultisampleStateRenderToSingleSampled>()) {
         DAWN_INVALID_IF(!device->HasFeature(Feature::MSAARenderToSingleSampled),
                         "The msaaRenderToSingleSampledDesc is not empty while the "
                         "msaa-render-to-single-sampled feature is not enabled.");
@@ -644,6 +648,11 @@ ResultOrError<ShaderModuleEntryPoint> ValidateFragmentState(DeviceBase* device,
             "sample_mask is not supported in compatibility mode in the fragment stage (%s, %s)",
             descriptor->module, &entryPoint);
 
+        DAWN_INVALID_IF(
+            fragmentMetadata.usesSampleIndex,
+            "sample_index is not supported in compatibility mode in the fragment stage (%s, %s)",
+            descriptor->module, &entryPoint);
+
         // Check that all the color target states match.
         ColorAttachmentIndex firstColorTargetIndex{};
         const ColorTargetState* firstColorTargetState = nullptr;
@@ -715,6 +724,18 @@ MaybeError ValidateInterStageMatching(DeviceBase* device,
             "different from the interpolation sampling (%s) of the fragment input at "
             "location %u.",
             vertexOutputInfo.interpolationSampling, i, fragmentInputInfo.interpolationSampling, i);
+
+        DAWN_INVALID_IF(device->IsCompatibilityMode() &&
+                            vertexOutputInfo.interpolationType == InterpolationType::Linear,
+                        "The interpolation type (%s) of the vertex output at location %u is not "
+                        "supported in compatibility mode",
+                        vertexOutputInfo.interpolationType, i);
+
+        DAWN_INVALID_IF(device->IsCompatibilityMode() &&
+                            vertexOutputInfo.interpolationSampling == InterpolationSampling::Sample,
+                        "The interpolation sampling (%s) of the vertex output at location %u is "
+                        "not supported in compatibility mode",
+                        vertexOutputInfo.interpolationSampling, i);
     }
 
     return {};
@@ -741,7 +762,8 @@ bool IsStripPrimitiveTopology(wgpu::PrimitiveTopology primitiveTopology) {
 
 MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
                                             const RenderPipelineDescriptor* descriptor) {
-    DAWN_INVALID_IF(descriptor->nextInChain != nullptr, "nextInChain must be nullptr.");
+    UnpackedPtr<RenderPipelineDescriptor> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
 
     if (descriptor->layout != nullptr) {
         DAWN_TRY(device->ValidateObject(descriptor->layout));
@@ -825,21 +847,25 @@ bool StencilTestEnabled(const DepthStencilState* depthStencil) {
 // RenderPipelineBase
 
 RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
-                                       const RenderPipelineDescriptor* descriptor)
+                                       const UnpackedPtr<RenderPipelineDescriptor>& descriptor)
     : PipelineBase(device,
                    descriptor->layout,
                    descriptor->label,
-                   GetRenderStagesAndSetPlaceholderShader(device, descriptor)),
+                   GetRenderStagesAndSetPlaceholderShader(device, *descriptor)),
       mAttachmentState(device->GetOrCreateAttachmentState(descriptor, GetLayout())) {
     mVertexBufferCount = descriptor->vertex.bufferCount;
 
     auto buffers =
         ityp::SpanFromUntyped<VertexBufferSlot>(descriptor->vertex.buffers, mVertexBufferCount);
-    for (auto [slot, buffer] : Enumerate(buffers)) {
+    for (auto [slot, bufferOrig] : Enumerate(buffers)) {
         // Skip unused slots
-        if (buffer.stepMode == wgpu::VertexStepMode::VertexBufferNotUsed) {
+        if (bufferOrig.stepMode == wgpu::VertexStepMode::VertexBufferNotUsed) {
             continue;
         }
+
+        // Make a local copy with defaulting applied, before copying the
+        // now-defaulted values into mVertexBufferInfos.
+        VertexBufferLayout buffer = bufferOrig.WithTrivialFrontendDefaults();
 
         mVertexBuffersUsed.set(slot);
         mVertexBufferInfos[slot].arrayStride = buffer.arrayStride;
@@ -853,7 +879,8 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
             case wgpu::VertexStepMode::Instance:
                 mVertexBuffersUsedAsInstanceBuffer.set(slot);
                 break;
-            default:
+            case wgpu::VertexStepMode::VertexBufferNotUsed:
+            case wgpu::VertexStepMode::Undefined:
                 DAWN_UNREACHABLE();
         }
 
@@ -883,17 +910,17 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
         }
     }
 
-    mPrimitive = descriptor->primitive;
-    const PrimitiveDepthClipControl* depthClipControl = nullptr;
-    FindInChain(mPrimitive.nextInChain, &depthClipControl);
-    if (depthClipControl) {
+    mPrimitive = descriptor->primitive.WithTrivialFrontendDefaults();
+    UnpackedPtr<PrimitiveState> unpackedPrimitive = Unpack(&mPrimitive);
+    if (auto* depthClipControl = unpackedPrimitive.Get<PrimitiveDepthClipControl>()) {
         mUnclippedDepth = depthClipControl->unclippedDepth;
     }
 
     mMultisample = descriptor->multisample;
 
     if (mAttachmentState->HasDepthStencilAttachment()) {
-        mDepthStencil = *descriptor->depthStencil;
+        mDepthStencil = descriptor->depthStencil->WithTrivialFrontendDefaults();
+
         // Reify depth option for stencil-only formats
         const Format& format = device->GetValidInternalFormat(mDepthStencil.format);
         if (!format.HasDepth()) {
@@ -924,22 +951,10 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
         // The values indicate that depth and stencil test are disabled when backends
         // set their own depth stencil states/descriptors according to the values in
         // mDepthStencil.
-        mDepthStencil.format = wgpu::TextureFormat::Undefined;
-        mDepthStencil.depthWriteEnabled = false;
+        // - Most defaults come from the dawn::native::DepthStencilState definition.
+        mDepthStencil = {};
+        // - depthCompare is nullable for validation purposes but should default to Always.
         mDepthStencil.depthCompare = wgpu::CompareFunction::Always;
-        mDepthStencil.stencilBack.compare = wgpu::CompareFunction::Always;
-        mDepthStencil.stencilBack.failOp = wgpu::StencilOperation::Keep;
-        mDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Keep;
-        mDepthStencil.stencilBack.passOp = wgpu::StencilOperation::Keep;
-        mDepthStencil.stencilFront.compare = wgpu::CompareFunction::Always;
-        mDepthStencil.stencilFront.failOp = wgpu::StencilOperation::Keep;
-        mDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
-        mDepthStencil.stencilFront.passOp = wgpu::StencilOperation::Keep;
-        mDepthStencil.stencilReadMask = 0xff;
-        mDepthStencil.stencilWriteMask = 0xff;
-        mDepthStencil.depthBias = 0;
-        mDepthStencil.depthBiasSlopeScale = 0.0f;
-        mDepthStencil.depthBiasClamp = 0.0f;
     }
 
     for (auto i : IterateBitSet(mAttachmentState->GetColorAttachmentsMask())) {
@@ -950,13 +965,18 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
         mTargets[i] = *target;
 
         if (target->blend != nullptr) {
-            mTargetBlend[i] = *target->blend;
+            mTargetBlend[i] = target->blend->WithTrivialFrontendDefaults();
             mTargets[i].blend = &mTargetBlend[i];
         }
     }
 
     if (HasStage(SingleShaderStage::Fragment)) {
         mUsesFragDepth = GetStage(SingleShaderStage::Fragment).metadata->usesFragDepth;
+    }
+
+    if (HasStage(SingleShaderStage::Vertex)) {
+        mUsesVertexIndex = GetStage(SingleShaderStage::Vertex).metadata->usesVertexIndex;
+        mUsesInstanceIndex = GetStage(SingleShaderStage::Vertex).metadata->usesInstanceIndex;
     }
 
     SetContentHash(ComputeContentHash());
@@ -982,19 +1002,19 @@ void RenderPipelineBase::DestroyImpl() {
 }
 
 // static
-RenderPipelineBase* RenderPipelineBase::MakeError(DeviceBase* device, const char* label) {
+Ref<RenderPipelineBase> RenderPipelineBase::MakeError(DeviceBase* device, const char* label) {
     class ErrorRenderPipeline final : public RenderPipelineBase {
       public:
         explicit ErrorRenderPipeline(DeviceBase* device, const char* label)
             : RenderPipelineBase(device, ObjectBase::kError, label) {}
 
-        MaybeError Initialize() override {
+        MaybeError InitializeImpl() override {
             DAWN_UNREACHABLE();
             return {};
         }
     };
 
-    return new ErrorRenderPipeline(device, label);
+    return AcquireRef(new ErrorRenderPipeline(device, label));
 }
 
 ObjectType RenderPipelineBase::GetType() const {
@@ -1151,6 +1171,16 @@ bool RenderPipelineBase::WritesStencil() const {
 bool RenderPipelineBase::UsesFragDepth() const {
     DAWN_ASSERT(!IsError());
     return mUsesFragDepth;
+}
+
+bool RenderPipelineBase::UsesVertexIndex() const {
+    DAWN_ASSERT(!IsError());
+    return mUsesVertexIndex;
+}
+
+bool RenderPipelineBase::UsesInstanceIndex() const {
+    DAWN_ASSERT(!IsError());
+    return mUsesInstanceIndex;
 }
 
 size_t RenderPipelineBase::ComputeContentHash() {

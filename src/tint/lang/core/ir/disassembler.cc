@@ -506,8 +506,8 @@ void Disassembler::EmitInstruction(const Instruction* inst) {
             if (v->Attributes().location.has_value()) {
                 out_ << " @location(" << v->Attributes().location.value() << ")";
             }
-            if (v->Attributes().index.has_value()) {
-                out_ << " @index(" << v->Attributes().index.value() << ")";
+            if (v->Attributes().blend_src.has_value()) {
+                out_ << " @blend_src(" << v->Attributes().blend_src.value() << ")";
             }
             if (v->Attributes().interpolation.has_value()) {
                 auto& interp = v->Attributes().interpolation.value();
@@ -847,10 +847,16 @@ void Disassembler::EmitBinary(const Binary* b) {
             out_ << "gte";
             break;
         case BinaryOp::kShiftLeft:
-            out_ << "shiftl";
+            out_ << "shl";
             break;
         case BinaryOp::kShiftRight:
-            out_ << "shiftr";
+            out_ << "shr";
+            break;
+        case BinaryOp::kLogicalAnd:
+            out_ << "logical-and";
+            break;
+        case BinaryOp::kLogicalOr:
+            out_ << "logical-or";
             break;
     }
     out_ << " ";
@@ -869,6 +875,15 @@ void Disassembler::EmitUnary(const Unary* u) {
             break;
         case UnaryOp::kNegation:
             out_ << "negation";
+            break;
+        case UnaryOp::kAddressOf:
+            out_ << "ref-to-ptr";
+            break;
+        case UnaryOp::kIndirection:
+            out_ << "ptr-to-ref";
+            break;
+        case UnaryOp::kNot:
+            out_ << "not";
             break;
     }
     out_ << " ";

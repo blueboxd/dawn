@@ -1,4 +1,4 @@
-void set_vector_float2x4(inout float2x4 mat, int col, float4 val) {
+void set_matrix_column(inout float2x4 mat, int col, float4 val) {
   switch (col) {
     case 0: mat[0] = val; break;
     case 1: mat[1] = val; break;
@@ -8,7 +8,7 @@ void set_vector_float2x4(inout float2x4 mat, int col, float4 val) {
 groupshared float2x4 S;
 
 void func_S_X(uint pointer[1]) {
-  set_vector_float2x4(S, pointer[0], (0.0f).xxxx);
+  set_matrix_column(S, pointer[0], (0.0f).xxxx);
 }
 
 struct tint_symbol_1 {
@@ -20,7 +20,7 @@ void main_inner(uint local_invocation_index) {
     S = float2x4((0.0f).xxxx, (0.0f).xxxx);
   }
   GroupMemoryBarrierWithGroupSync();
-  const uint tint_symbol_2[1] = {1u};
+  uint tint_symbol_2[1] = {1u};
   func_S_X(tint_symbol_2);
 }
 

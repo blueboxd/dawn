@@ -28,11 +28,12 @@
 #ifndef SRC_DAWN_NATIVE_COMMANDENCODER_H_
 #define SRC_DAWN_NATIVE_COMMANDENCODER_H_
 
-#include <set>
 #include <string>
 
 #include "dawn/native/dawn_platform.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
+#include "absl/container/flat_hash_set.h"
 #include "dawn/native/EncodingContext.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/ObjectBase.h"
@@ -42,18 +43,17 @@ namespace dawn::native {
 
 enum class UsageValidationMode;
 
-bool HasDeprecatedColor(const RenderPassColorAttachment& attachment);
-
 Color ClampClearColorValueToLegalRange(const Color& originalColor, const Format& format);
 
-MaybeError ValidateCommandEncoderDescriptor(const DeviceBase* device,
-                                            const CommandEncoderDescriptor* descriptor);
+ResultOrError<UnpackedPtr<CommandEncoderDescriptor>> ValidateCommandEncoderDescriptor(
+    const DeviceBase* device,
+    const CommandEncoderDescriptor* descriptor);
 
 class CommandEncoder final : public ApiObjectBase {
   public:
     static Ref<CommandEncoder> Create(DeviceBase* device,
-                                      const CommandEncoderDescriptor* descriptor);
-    static CommandEncoder* MakeError(DeviceBase* device, const char* label);
+                                      const UnpackedPtr<CommandEncoderDescriptor>& descriptor);
+    static Ref<CommandEncoder> MakeError(DeviceBase* device, const char* label);
 
     ObjectType GetType() const override;
 
@@ -126,14 +126,14 @@ class CommandEncoder final : public ApiObjectBase {
         friend class CommandEncoder;
         InternalUsageScope(CommandEncoder* encoder);
 
-        CommandEncoder* mEncoder;
+        raw_ptr<CommandEncoder> mEncoder;
         UsageValidationMode mUsageValidationMode;
     };
 
     [[nodiscard]] InternalUsageScope MakeInternalUsageScope();
 
   private:
-    CommandEncoder(DeviceBase* device, const CommandEncoderDescriptor* descriptor);
+    CommandEncoder(DeviceBase* device, const UnpackedPtr<CommandEncoderDescriptor>& descriptor);
     CommandEncoder(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label);
 
     void DestroyImpl() override;
@@ -147,9 +147,9 @@ class CommandEncoder final : public ApiObjectBase {
     MaybeError ValidateFinish() const;
 
     EncodingContext mEncodingContext;
-    std::set<BufferBase*> mTopLevelBuffers;
-    std::set<TextureBase*> mTopLevelTextures;
-    std::set<QuerySetBase*> mUsedQuerySets;
+    absl::flat_hash_set<BufferBase*> mTopLevelBuffers;
+    absl::flat_hash_set<TextureBase*> mTopLevelTextures;
+    absl::flat_hash_set<QuerySetBase*> mUsedQuerySets;
 
     uint64_t mDebugGroupStackSize = 0;
 

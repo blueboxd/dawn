@@ -41,7 +41,7 @@ class Device;
 
 class PipelineLayout final : public PipelineLayoutBase {
   public:
-    PipelineLayout(Device* device, const PipelineLayoutDescriptor* descriptor);
+    PipelineLayout(Device* device, const UnpackedPtr<PipelineLayoutDescriptor>& descriptor);
 
     // GL backend does not support separate bind group index
     // BindingIndexInfo is a map from BindingPoint(group, binding) to a flattened GLuint binding
@@ -54,6 +54,10 @@ class PipelineLayout final : public PipelineLayoutBase {
     size_t GetNumSampledTextures() const;
 
     GLuint GetInternalUniformBinding() const;
+
+    enum PushConstantLocation {
+        FirstInstance = 0,
+    };
 
   private:
     ~PipelineLayout() override = default;

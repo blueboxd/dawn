@@ -151,9 +151,11 @@ DawnInstanceDescriptor::DawnInstanceDescriptor() {
 
 bool DawnInstanceDescriptor::operator==(const DawnInstanceDescriptor& rhs) const {
     return (nextInChain == rhs.nextInChain) &&
-           std::tie(additionalRuntimeSearchPathsCount, additionalRuntimeSearchPaths, platform) ==
+           std::tie(additionalRuntimeSearchPathsCount, additionalRuntimeSearchPaths, platform,
+                    backendValidationLevel, beginCaptureOnStartup, enableAdapterBlocklist) ==
                std::tie(rhs.additionalRuntimeSearchPathsCount, rhs.additionalRuntimeSearchPaths,
-                        rhs.platform);
+                        rhs.platform, rhs.backendValidationLevel, rhs.beginCaptureOnStartup,
+                        rhs.enableAdapterBlocklist);
 }
 
 // Instance
@@ -256,8 +258,8 @@ DAWN_NATIVE_EXPORT bool DeviceTick(WGPUDevice device) {
     return FromAPI(device)->APITick();
 }
 
-DAWN_NATIVE_EXPORT void InstanceProcessEvents(WGPUInstance instance) {
-    FromAPI(instance)->APIProcessEvents();
+DAWN_NATIVE_EXPORT bool InstanceProcessEvents(WGPUInstance instance) {
+    return FromAPI(instance)->ProcessEvents();
 }
 
 // ExternalImageDescriptor
@@ -293,8 +295,12 @@ std::vector<const ToggleInfo*> AllToggleInfos() {
     return TogglesInfo::AllToggleInfos();
 }
 
-FeatureInfo GetFeatureInfo(wgpu::FeatureName featureName) {
-    return kFeatureNameAndInfoList[FromAPI(featureName)];
+const FeatureInfo* GetFeatureInfo(wgpu::FeatureName feature) {
+    Feature f = FromAPI(feature);
+    if (f == Feature::InvalidEnum) {
+        return nullptr;
+    }
+    return &kFeatureNameAndInfoList[FromAPI(feature)];
 }
 
 }  // namespace dawn::native

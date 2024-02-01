@@ -71,10 +71,11 @@ class SharedTextureMemory final : public SharedTextureMemoryBase {
     void DestroyImpl() override;
 
     ResultOrError<Ref<TextureBase>> CreateTextureImpl(
-        const Unpacked<TextureDescriptor>& descriptor) override;
-    MaybeError BeginAccessImpl(TextureBase* texture, const BeginAccessDescriptor*) override;
+        const UnpackedPtr<TextureDescriptor>& descriptor) override;
+    MaybeError BeginAccessImpl(TextureBase* texture,
+                               const UnpackedPtr<BeginAccessDescriptor>& descriptor) override;
     ResultOrError<FenceAndSignalValue> EndAccessImpl(TextureBase* texture,
-                                                     EndAccessState* state) override;
+                                                     UnpackedPtr<EndAccessState>& state) override;
 
     Ref<RefCountedVkHandle<VkImage>> mVkImage;
     Ref<RefCountedVkHandle<VkDeviceMemory>> mVkDeviceMemory;

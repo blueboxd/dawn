@@ -40,12 +40,13 @@ class Device;
 
 class ComputePipeline final : public ComputePipelineBase, public PipelineGL {
   public:
-    static Ref<ComputePipeline> CreateUninitialized(Device* device,
-                                                    const ComputePipelineDescriptor* descriptor);
+    static Ref<ComputePipeline> CreateUninitialized(
+        Device* device,
+        const UnpackedPtr<ComputePipelineDescriptor>& descriptor);
 
     void ApplyNow();
 
-    MaybeError Initialize() override;
+    MaybeError InitializeImpl() override;
 
   private:
     using ComputePipelineBase::ComputePipelineBase;

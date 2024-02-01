@@ -33,6 +33,7 @@
 
 #include "dawn/wire/ChunkedCommandSerializer.h"
 #include "dawn/wire/server/ServerBase_autogen.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::wire::server {
 
@@ -64,7 +65,7 @@ class MemoryTransferService;
 //
 // void Server::MyCallbackHandler(MyUserdata* userdata, Other args) { }
 struct CallbackUserdata {
-    Server* const server;
+    const raw_ptr<Server> server;
     std::weak_ptr<bool> const serverIsAlive;
 
     CallbackUserdata() = delete;
@@ -105,6 +106,7 @@ struct MapUserdata : CallbackUserdata {
 
     ObjectHandle buffer;
     WGPUBuffer bufferObj;
+    ObjectHandle eventManager;
     WGPUFuture future;
     uint64_t offset;
     uint64_t size;
@@ -129,6 +131,7 @@ struct QueueWorkDoneUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
     ObjectHandle queue;
+    ObjectHandle eventManager;
     WGPUFuture future;
 };
 
@@ -136,14 +139,15 @@ struct CreatePipelineAsyncUserData : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
     ObjectHandle device;
-    uint64_t requestSerial;
+    ObjectHandle eventManager;
+    WGPUFuture future;
     ObjectId pipelineObjectID;
 };
 
 struct RequestAdapterUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
-    ObjectHandle instance;
+    ObjectHandle eventManager;
     WGPUFuture future;
     ObjectId adapterObjectId;
 };
@@ -151,8 +155,8 @@ struct RequestAdapterUserdata : CallbackUserdata {
 struct RequestDeviceUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
-    ObjectHandle adapter;
-    uint64_t requestSerial;
+    ObjectHandle eventManager;
+    WGPUFuture future;
     ObjectId deviceObjectId;
 };
 
@@ -240,7 +244,7 @@ class Server : public ServerBase {
     ChunkedCommandSerializer mSerializer;
     DawnProcTable mProcs;
     std::unique_ptr<MemoryTransferService> mOwnedMemoryTransferService = nullptr;
-    MemoryTransferService* mMemoryTransferService = nullptr;
+    raw_ptr<MemoryTransferService> mMemoryTransferService = nullptr;
 
     std::shared_ptr<bool> mIsAlive;
 };

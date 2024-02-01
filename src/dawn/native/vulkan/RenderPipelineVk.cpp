@@ -28,6 +28,7 @@
 #include "dawn/native/vulkan/RenderPipelineVk.h"
 
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -54,6 +55,7 @@ VkVertexInputRate VulkanInputRate(wgpu::VertexStepMode stepMode) {
         case wgpu::VertexStepMode::Instance:
             return VK_VERTEX_INPUT_RATE_INSTANCE;
         case wgpu::VertexStepMode::VertexBufferNotUsed:
+        case wgpu::VertexStepMode::Undefined:
             break;
     }
     DAWN_UNREACHABLE();
@@ -140,6 +142,8 @@ VkPrimitiveTopology VulkanPrimitiveTopology(wgpu::PrimitiveTopology topology) {
             return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         case wgpu::PrimitiveTopology::TriangleStrip:
             return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+        case wgpu::PrimitiveTopology::Undefined:
+            break;
     }
     DAWN_UNREACHABLE();
 }
@@ -155,6 +159,8 @@ bool ShouldEnablePrimitiveRestart(wgpu::PrimitiveTopology topology) {
         case wgpu::PrimitiveTopology::LineStrip:
         case wgpu::PrimitiveTopology::TriangleStrip:
             return true;
+        case wgpu::PrimitiveTopology::Undefined:
+            break;
     }
     DAWN_UNREACHABLE();
 }
@@ -165,6 +171,8 @@ VkFrontFace VulkanFrontFace(wgpu::FrontFace face) {
             return VK_FRONT_FACE_COUNTER_CLOCKWISE;
         case wgpu::FrontFace::CW:
             return VK_FRONT_FACE_CLOCKWISE;
+        case wgpu::FrontFace::Undefined:
+            break;
     }
     DAWN_UNREACHABLE();
 }
@@ -177,6 +185,8 @@ VkCullModeFlagBits VulkanCullMode(wgpu::CullMode mode) {
             return VK_CULL_MODE_FRONT_BIT;
         case wgpu::CullMode::Back:
             return VK_CULL_MODE_BACK_BIT;
+        case wgpu::CullMode::Undefined:
+            break;
     }
     DAWN_UNREACHABLE();
 }
@@ -217,6 +227,8 @@ VkBlendFactor VulkanBlendFactor(wgpu::BlendFactor factor) {
             return VK_BLEND_FACTOR_SRC1_ALPHA;
         case wgpu::BlendFactor::OneMinusSrc1Alpha:
             return VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
+        case wgpu::BlendFactor::Undefined:
+            break;
     }
     DAWN_UNREACHABLE();
 }
@@ -233,6 +245,8 @@ VkBlendOp VulkanBlendOperation(wgpu::BlendOperation operation) {
             return VK_BLEND_OP_MIN;
         case wgpu::BlendOperation::Max:
             return VK_BLEND_OP_MAX;
+        case wgpu::BlendOperation::Undefined:
+            break;
     }
     DAWN_UNREACHABLE();
 }
@@ -300,6 +314,8 @@ VkStencilOp VulkanStencilOp(wgpu::StencilOperation op) {
             return VK_STENCIL_OP_INCREMENT_AND_WRAP;
         case wgpu::StencilOperation::DecrementWrap:
             return VK_STENCIL_OP_DECREMENT_AND_WRAP;
+        case wgpu::StencilOperation::Undefined:
+            break;
     }
     DAWN_UNREACHABLE();
 }
@@ -352,11 +368,11 @@ VkPipelineDepthStencilStateCreateInfo ComputeDepthStencilDesc(const DepthStencil
 // static
 Ref<RenderPipeline> RenderPipeline::CreateUninitialized(
     Device* device,
-    const RenderPipelineDescriptor* descriptor) {
+    const UnpackedPtr<RenderPipelineDescriptor>& descriptor) {
     return AcquireRef(new RenderPipeline(device, descriptor));
 }
 
-MaybeError RenderPipeline::Initialize() {
+MaybeError RenderPipeline::InitializeImpl() {
     Device* device = ToBackend(GetDevice());
     const PipelineLayout* layout = ToBackend(GetLayout());
 
@@ -365,6 +381,7 @@ MaybeError RenderPipeline::Initialize() {
 
     // There are at most 2 shader stages in render pipeline, i.e. vertex and fragment
     std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+    std::array<std::string, 2> shaderStageEntryPoints;
     uint32_t stageCount = 0;
 
     auto AddShaderStage = [&](SingleShaderStage stage, VkShaderStageFlagBits vkStage,
@@ -385,7 +402,8 @@ MaybeError RenderPipeline::Initialize() {
         shaderStage->flags = 0;
         shaderStage->pSpecializationInfo = nullptr;
         shaderStage->stage = vkStage;
-        shaderStage->pName = moduleAndSpirv.remappedEntryPoint;
+        shaderStageEntryPoints[stageCount] = moduleAndSpirv.remappedEntryPoint;
+        shaderStage->pName = shaderStageEntryPoints[stageCount].c_str();
 
         stageCount++;
         return {};

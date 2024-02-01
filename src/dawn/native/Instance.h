@@ -31,11 +31,11 @@
 #include <array>
 #include <memory>
 #include <mutex>
-#include <set>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "dawn/common/MutexProtected.h"
 #include "dawn/common/Ref.h"
 #include "dawn/common/ityp_array.h"
@@ -43,12 +43,13 @@
 #include "dawn/native/Adapter.h"
 #include "dawn/native/BackendConnection.h"
 #include "dawn/native/BlobCache.h"
-#include "dawn/native/ChainUtils.h"
 #include "dawn/native/EventManager.h"
 #include "dawn/native/Features.h"
+#include "dawn/native/Forward.h"
 #include "dawn/native/RefCountedWithExternalCount.h"
 #include "dawn/native/Toggles.h"
 #include "dawn/native/dawn_platform.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 #include "tint/lang/wgsl/features/language_feature.h"
 
 namespace dawn::platform {
@@ -161,6 +162,10 @@ class InstanceBase final : public RefCountedWithExternalCount {
     const X11Functions* GetOrLoadX11Functions();
     const AHBFunctions* GetOrLoadAHBFunctions();
 
+    // TODO(dawn:752) Standardize webgpu.h to decide if we should return bool.
+    //   Currently this is a backdoor for Chromium's process event loop.
+    bool ProcessEvents();
+
     // Dawn API
     Surface* APICreateSurface(const SurfaceDescriptor* descriptor);
     void APIProcessEvents();
@@ -182,7 +187,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     InstanceBase(const InstanceBase& other) = delete;
     InstanceBase& operator=(const InstanceBase& other) = delete;
 
-    MaybeError Initialize(const Unpacked<InstanceDescriptor> descriptor);
+    MaybeError Initialize(const UnpackedPtr<InstanceDescriptor>& descriptor);
     void SetPlatform(dawn::platform::Platform* platform);
 
     // Lazily creates connections to all backends that have been compiled, may return null even for
@@ -191,7 +196,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
 
     // Enumerate physical devices according to options and return them.
     std::vector<Ref<PhysicalDeviceBase>> EnumeratePhysicalDevices(
-        const RequestAdapterOptions* options);
+        const UnpackedPtr<RequestAdapterOptions>& options);
 
     // Helper function that create adapter on given physical device handling required adapter
     // toggles descriptor.
@@ -203,7 +208,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     void GatherWGSLFeatures(const DawnWGSLBlocklist* wgslBlocklist);
     void ConsumeError(std::unique_ptr<ErrorData> error);
 
-    std::unordered_set<std::string> warningMessages;
+    absl::flat_hash_set<std::string> mWarningMessages;
 
     std::vector<std::string> mRuntimeSearchPaths;
 
@@ -211,7 +216,8 @@ class InstanceBase final : public RefCountedWithExternalCount {
     bool mEnableAdapterBlocklist = false;
     BackendValidationLevel mBackendValidationLevel = BackendValidationLevel::Disabled;
 
-    dawn::platform::Platform* mPlatform = nullptr;
+    // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
+    raw_ptr<dawn::platform::Platform, DanglingUntriaged> mPlatform = nullptr;
     std::unique_ptr<dawn::platform::Platform> mDefaultPlatform;
     std::unique_ptr<BlobCache> mBlobCache;
     BlobCache mPassthroughBlobCache;
@@ -222,7 +228,8 @@ class InstanceBase final : public RefCountedWithExternalCount {
     TogglesState mToggles;
     TogglesInfo mTogglesInfo;
 
-    std::unordered_set<wgpu::WGSLFeatureName> mWGSLFeatures;
+    absl::flat_hash_set<wgpu::WGSLFeatureName> mWGSLFeatures;
+    // TODO(dawn:1513): Use absl::flat_hash_set after it is supported in Tint.
     std::unordered_set<tint::wgsl::LanguageFeature> mTintLanguageFeatures;
 
 #if defined(DAWN_USE_X11)
@@ -235,7 +242,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     Ref<CallbackTaskManager> mCallbackTaskManager;
     EventManager mEventManager;
 
-    MutexProtected<std::set<DeviceBase*>> mDevicesList;
+    MutexProtected<absl::flat_hash_set<DeviceBase*>> mDevicesList;
 };
 
 }  // namespace dawn::native

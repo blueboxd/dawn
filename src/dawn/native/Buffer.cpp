@@ -50,6 +50,7 @@
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "dawn/platform/tracing/TraceEvent.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native {
 
@@ -136,7 +137,7 @@ struct BufferBase::MapAsyncEvent final : public EventManager::TrackedEvent {
     MutexProtected<std::variant<BufferBase*, wgpu::BufferMapAsyncStatus>> mBufferOrEarlyStatus;
 
     WGPUBufferMapCallback mCallback;
-    void* mUserdata;
+    raw_ptr<void> mUserdata;
 
     // Create an event backed by the given queue execution serial.
     MapAsyncEvent(DeviceBase* device,
@@ -214,8 +215,10 @@ struct BufferBase::MapAsyncEvent final : public EventManager::TrackedEvent {
     }
 };
 
-MaybeError ValidateBufferDescriptor(DeviceBase* device, const BufferDescriptor* descriptor) {
-    Unpacked<BufferDescriptor> unpacked;
+ResultOrError<UnpackedPtr<BufferDescriptor>> ValidateBufferDescriptor(
+    DeviceBase* device,
+    const BufferDescriptor* descriptor) {
+    UnpackedPtr<BufferDescriptor> unpacked;
     DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
 
     DAWN_TRY(ValidateBufferUsage(descriptor->usage));
@@ -273,12 +276,12 @@ MaybeError ValidateBufferDescriptor(DeviceBase* device, const BufferDescriptor* 
                     "Buffer size (%u) exceeds the max buffer size limit (%u).", descriptor->size,
                     device->GetLimits().v1.maxBufferSize);
 
-    return {};
+    return unpacked;
 }
 
 // Buffer
 
-BufferBase::BufferBase(DeviceBase* device, const BufferDescriptor* descriptor)
+BufferBase::BufferBase(DeviceBase* device, const UnpackedPtr<BufferDescriptor>& descriptor)
     : ApiObjectBase(device, descriptor->label),
       mSize(descriptor->size),
       mUsage(descriptor->usage),
@@ -318,8 +321,7 @@ BufferBase::BufferBase(DeviceBase* device, const BufferDescriptor* descriptor)
         }
     }
 
-    const BufferHostMappedPointer* hostMappedDesc = nullptr;
-    FindInChain(descriptor->nextInChain, &hostMappedDesc);
+    auto* hostMappedDesc = descriptor.Get<BufferHostMappedPointer>();
     if (hostMappedDesc != nullptr) {
         mState = BufferState::HostMappedPersistent;
     }
@@ -367,8 +369,8 @@ void BufferBase::DestroyImpl() {
 }
 
 // static
-BufferBase* BufferBase::MakeError(DeviceBase* device, const BufferDescriptor* descriptor) {
-    return new ErrorBuffer(device, descriptor);
+Ref<BufferBase> BufferBase::MakeError(DeviceBase* device, const BufferDescriptor* descriptor) {
+    return AcquireRef(new ErrorBuffer(device, descriptor));
 }
 
 ObjectType BufferBase::GetType() const {
@@ -857,7 +859,7 @@ void BufferBase::SetIsDataInitialized() {
 }
 
 void BufferBase::MarkUsedInPendingCommands() {
-    ExecutionSerial serial = GetDevice()->GetPendingCommandSerial();
+    ExecutionSerial serial = GetDevice()->GetQueue()->GetPendingCommandSerial();
     DAWN_ASSERT(serial >= mLastUsageSerial);
     mLastUsageSerial = serial;
 }

@@ -250,12 +250,17 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         polyfills.first_leading_bit = true;
         polyfills.first_trailing_bit = true;
         polyfills.insert_bits = ast::transform::BuiltinPolyfill::Level::kFull;
-        polyfills.int_div_mod = true;
+        polyfills.int_div_mod = !options.disable_polyfill_integer_div_mod;
         polyfills.precise_float_mod = true;
         polyfills.reflect_vec2_f32 = options.polyfill_reflect_vec2_f32;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
         polyfills.dot_4x8_packed = options.polyfill_dot_4x8_packed;
+        polyfills.pack_unpack_4x8 = options.polyfill_pack_unpack_4x8;
+        // Currently Pack4xU8Clamp() must be polyfilled because on latest DXC pack_clamp_u8()
+        // receives an int32_t4 as its input.
+        // See https://github.com/microsoft/DirectXShaderCompiler/issues/5091 for more details.
+        polyfills.pack_4xu8_clamp = true;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<ast::transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }
@@ -380,7 +385,6 @@ bool ASTPrinter::Generate() {
             "HLSL", builder_.AST(), diagnostics_,
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
-                wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
                 wgsl::Extension::kF16,
@@ -411,6 +415,8 @@ bool ASTPrinter::Generate() {
         }
         last_kind = kind;
 
+        global_insertion_point_ = current_buffer_->lines.size();
+
         bool ok = Switch(
             decl,
             [&](const ast::Variable* global) {  //
@@ -419,9 +425,9 @@ bool ASTPrinter::Generate() {
             [&](const ast::Struct* str) {
                 auto* ty = builder_.Sem().Get(str);
                 auto address_space_uses = ty->AddressSpaceUsage();
-                if (address_space_uses.size() !=
-                    (address_space_uses.count(core::AddressSpace::kStorage) +
-                     address_space_uses.count(core::AddressSpace::kUniform))) {
+                if (address_space_uses.Count() !=
+                    ((address_space_uses.Contains(core::AddressSpace::kStorage) ? 1u : 0u) +
+                     (address_space_uses.Contains(core::AddressSpace::kUniform) ? 1u : 0u))) {
                     // The structure is used as something other than a storage buffer or
                     // uniform buffer, so it needs to be emitted.
                     // Storage buffer are read and written to via a ByteAddressBuffer
@@ -455,15 +461,7 @@ bool ASTPrinter::Generate() {
 bool ASTPrinter::EmitDynamicVectorAssignment(const ast::AssignmentStatement* stmt,
                                              const core::type::Vector* vec) {
     auto name = tint::GetOrCreate(dynamic_vector_write_, vec, [&]() -> std::string {
-        std::string fn;
-        {
-            StringStream ss;
-            if (!EmitType(ss, vec, tint::core::AddressSpace::kUndefined, core::Access::kUndefined,
-                          "")) {
-                return "";
-            }
-            fn = UniqueIdentifier("set_" + ss.str());
-        }
+        std::string fn = UniqueIdentifier("set_vector_element");
         {
             auto out = Line(&helpers_);
             out << "void " << fn << "(inout ";
@@ -528,15 +526,7 @@ bool ASTPrinter::EmitDynamicVectorAssignment(const ast::AssignmentStatement* stm
 bool ASTPrinter::EmitDynamicMatrixVectorAssignment(const ast::AssignmentStatement* stmt,
                                                    const core::type::Matrix* mat) {
     auto name = tint::GetOrCreate(dynamic_matrix_vector_write_, mat, [&]() -> std::string {
-        std::string fn;
-        {
-            StringStream ss;
-            if (!EmitType(ss, mat, tint::core::AddressSpace::kUndefined, core::Access::kUndefined,
-                          "")) {
-                return "";
-            }
-            fn = UniqueIdentifier("set_vector_" + ss.str());
-        }
+        std::string fn = UniqueIdentifier("set_matrix_column");
         {
             auto out = Line(&helpers_);
             out << "void " << fn << "(inout ";
@@ -597,15 +587,7 @@ bool ASTPrinter::EmitDynamicMatrixScalarAssignment(const ast::AssignmentStatemen
     auto* lhs_col_access = lhs_row_access->object->As<ast::IndexAccessorExpression>();
 
     auto name = tint::GetOrCreate(dynamic_matrix_scalar_write_, mat, [&]() -> std::string {
-        std::string fn;
-        {
-            StringStream ss;
-            if (!EmitType(ss, mat, tint::core::AddressSpace::kUndefined, core::Access::kUndefined,
-                          "")) {
-                return "";
-            }
-            fn = UniqueIdentifier("set_scalar_" + ss.str());
-        }
+        std::string fn = UniqueIdentifier("set_matrix_scalar");
         {
             auto out = Line(&helpers_);
             out << "void " << fn << "(inout ";
@@ -650,7 +632,7 @@ bool ASTPrinter::EmitDynamicMatrixScalarAssignment(const ast::AssignmentStatemen
                                     break;
                                 default: {
                                     auto* vec = TypeOf(lhs_row_access->object)
-                                                    ->UnwrapRef()
+                                                    ->UnwrapPtrOrRef()
                                                     ->As<core::type::Vector>();
                                     TINT_UNREACHABLE() << "invalid vector size " << vec->Width();
                                     break;
@@ -906,10 +888,24 @@ bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
 
 bool ASTPrinter::EmitAssign(const ast::AssignmentStatement* stmt) {
     if (auto* lhs_access = stmt->lhs->As<ast::IndexAccessorExpression>()) {
+        auto validate_obj_not_pointer = [&](const core::type::Type* object_ty) {
+            if (TINT_UNLIKELY(object_ty->Is<core::type::Pointer>())) {
+                TINT_ICE() << "lhs of index accessor should not be a pointer. These should have "
+                              "been removed by transforms such as SimplifyPointers, "
+                              "DecomposeMemoryAccess, and DirectVariableAccess";
+                return false;
+            }
+            return true;
+        };
+
         // BUG(crbug.com/tint/1333): work around assignment of scalar to matrices
         // with at least one dynamic index
         if (auto* lhs_sub_access = lhs_access->object->As<ast::IndexAccessorExpression>()) {
-            if (auto* mat = TypeOf(lhs_sub_access->object)->UnwrapRef()->As<core::type::Matrix>()) {
+            const auto* lhs_sub_access_type = TypeOf(lhs_sub_access->object);
+            if (!validate_obj_not_pointer(lhs_sub_access_type)) {
+                return false;
+            }
+            if (auto* mat = lhs_sub_access_type->UnwrapRef()->As<core::type::Matrix>()) {
                 auto* rhs_row_idx_sem = builder_.Sem().GetVal(lhs_access->index);
                 auto* rhs_col_idx_sem = builder_.Sem().GetVal(lhs_sub_access->index);
                 if (!rhs_row_idx_sem->ConstantValue() || !rhs_col_idx_sem->ConstantValue()) {
@@ -919,8 +915,11 @@ bool ASTPrinter::EmitAssign(const ast::AssignmentStatement* stmt) {
         }
         // BUG(crbug.com/tint/1333): work around assignment of vector to matrices
         // with dynamic indices
-        const auto* lhs_access_type = TypeOf(lhs_access->object)->UnwrapRef();
-        if (auto* mat = lhs_access_type->As<core::type::Matrix>()) {
+        const auto* lhs_access_type = TypeOf(lhs_access->object);
+        if (!validate_obj_not_pointer(lhs_access_type)) {
+            return false;
+        }
+        if (auto* mat = lhs_access_type->UnwrapRef()->As<core::type::Matrix>()) {
             auto* lhs_index_sem = builder_.Sem().GetVal(lhs_access->index);
             if (!lhs_index_sem->ConstantValue()) {
                 return EmitDynamicMatrixVectorAssignment(stmt, mat);
@@ -928,7 +927,7 @@ bool ASTPrinter::EmitAssign(const ast::AssignmentStatement* stmt) {
         }
         // BUG(crbug.com/tint/534): work around assignment to vectors with dynamic
         // indices
-        if (auto* vec = lhs_access_type->As<core::type::Vector>()) {
+        if (auto* vec = lhs_access_type->UnwrapRef()->As<core::type::Vector>()) {
             auto* rhs_sem = builder_.Sem().GetVal(lhs_access->index);
             if (!rhs_sem->ConstantValue()) {
                 return EmitDynamicVectorAssignment(stmt, vec);
@@ -2523,6 +2522,56 @@ bool ASTPrinter::EmitDataUnpackingCall(StringStream& out,
 bool ASTPrinter::EmitPacked4x8IntegerDotProductBuiltinCall(StringStream& out,
                                                            const ast::CallExpression* expr,
                                                            const sem::BuiltinFn* builtin) {
+    switch (builtin->Fn()) {
+        case wgsl::BuiltinFn::kDot4I8Packed:
+        case wgsl::BuiltinFn::kDot4U8Packed:
+            break;
+        case wgsl::BuiltinFn::kPack4XI8: {
+            out << "uint(pack_s8(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << "))";
+            return true;
+        }
+        case wgsl::BuiltinFn::kPack4XU8: {
+            out << "uint(pack_u8(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << "))";
+            return true;
+        }
+        case wgsl::BuiltinFn::kPack4XI8Clamp: {
+            out << "uint(pack_clamp_s8(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << "))";
+            return true;
+        }
+        case wgsl::BuiltinFn::kUnpack4XI8: {
+            out << "unpack_s8s32(int8_t4_packed(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << "))";
+            return true;
+        }
+        case wgsl::BuiltinFn::kUnpack4XU8: {
+            out << "unpack_u8u32(uint8_t4_packed(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << "))";
+            return true;
+        }
+        case wgsl::BuiltinFn::kPack4XU8Clamp:
+        default:
+            TINT_UNIMPLEMENTED() << builtin->Fn();
+            return false;
+    }
+
     return CallBuiltinHelper(
         out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
             std::string functionName;
@@ -3775,14 +3824,20 @@ bool ASTPrinter::EmitConstant(StringStream& out,
                 }
             } else {
                 // HLSL requires structure initializers to be assigned directly to a variable.
+                // For these constants use 'static const' at global-scope. 'const' at global scope
+                // creates a variable who's initializer is ignored, and the value is expected to be
+                // provided in a cbuffer. 'static const' is a true value-embedded-in-the-shader-code
+                // constant. We also emit these for function-local constant expressions for
+                // consistency and to ensure that these are not computed at execution time.
                 auto name = UniqueIdentifier("c");
                 {
-                    auto decl = Line();
-                    decl << "const " << StructName(s) << " " << name << " = ";
+                    StringStream decl;
+                    decl << "static const " << StructName(s) << " " << name << " = ";
                     if (!emit_member_values(decl)) {
                         return false;
                     }
                     decl << ";";
+                    current_buffer_->Insert(decl.str(), global_insertion_point_++, 0);
                 }
                 out << name;
             }
@@ -4499,21 +4554,22 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
 
             if (auto location = attributes.location) {
                 auto& pipeline_stage_uses = str->PipelineStageUses();
-                if (TINT_UNLIKELY(pipeline_stage_uses.size() != 1)) {
+                if (TINT_UNLIKELY(pipeline_stage_uses.Count() != 1)) {
                     TINT_ICE() << "invalid entry point IO struct uses";
                 }
-                if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kVertexInput)) {
+                if (pipeline_stage_uses.Contains(core::type::PipelineStageUsage::kVertexInput)) {
                     post += " : TEXCOORD" + std::to_string(location.value());
-                } else if (pipeline_stage_uses.count(
+                } else if (pipeline_stage_uses.Contains(
                                core::type::PipelineStageUsage::kVertexOutput)) {
                     post += " : TEXCOORD" + std::to_string(location.value());
-                } else if (pipeline_stage_uses.count(
+                } else if (pipeline_stage_uses.Contains(
                                core::type::PipelineStageUsage::kFragmentInput)) {
                     post += " : TEXCOORD" + std::to_string(location.value());
-                } else if (TINT_LIKELY(pipeline_stage_uses.count(
+                } else if (TINT_LIKELY(pipeline_stage_uses.Contains(
                                core::type::PipelineStageUsage::kFragmentOutput))) {
-                    if (auto index = attributes.index) {
-                        post += " : SV_Target" + std::to_string(location.value() + index.value());
+                    if (auto blend_src = attributes.blend_src) {
+                        post +=
+                            " : SV_Target" + std::to_string(location.value() + blend_src.value());
                     } else {
                         post += " : SV_Target" + std::to_string(location.value());
                     }
@@ -4609,41 +4665,11 @@ bool ASTPrinter::EmitVar(const ast::Var* var) {
     return true;
 }
 
-bool ASTPrinter::IsStructOrArrayOfMatrix(const core::type::Type* ty) {
-    if (!ty->IsAnyOf<core::type::Struct, core::type::Array>()) {
-        return false;
-    }
-    return GetOrCreate(is_struct_or_array_of_matrix_, ty, [&]() {
-        Vector<const core::type::Type*, 4> to_visit({ty});
-        while (!to_visit.IsEmpty()) {
-            auto* curr = to_visit.Pop();
-            if (curr->Is<core::type::Matrix>()) {
-                return true;
-            }
-            auto [child_ty, child_count] = curr->Elements();
-            if (child_ty) {
-                to_visit.Push(child_ty);
-            } else {
-                for (uint32_t i = 0; i < child_count; ++i) {
-                    to_visit.Push(curr->Element(i));
-                }
-            }
-        }
-        return false;
-    });
-}
-
 bool ASTPrinter::EmitLet(const ast::Let* let) {
     auto* sem = builder_.Sem().Get(let);
     auto* type = sem->Type()->UnwrapRef();
 
     auto out = Line();
-
-    // TODO(crbug.com/tint/2059): Workaround DXC bug with const instances of struct/array-of-matrix.
-    if (!IsStructOrArrayOfMatrix(type)) {
-        out << "const ";
-    }
-
     if (!EmitTypeAndName(out, type, core::AddressSpace::kUndefined, core::Access::kUndefined,
                          let->name->symbol.Name())) {
         return false;

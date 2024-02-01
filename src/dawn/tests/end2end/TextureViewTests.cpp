@@ -133,17 +133,14 @@ class TextureViewSamplingTest : public TextureViewTestBase {
 
         mRenderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
 
-        wgpu::FilterMode kFilterMode = wgpu::FilterMode::Nearest;
-        wgpu::MipmapFilterMode kMipmapFilterMode = wgpu::MipmapFilterMode::Nearest;
-        wgpu::AddressMode kAddressMode = wgpu::AddressMode::ClampToEdge;
-
         wgpu::SamplerDescriptor samplerDescriptor = {};
-        samplerDescriptor.minFilter = kFilterMode;
-        samplerDescriptor.magFilter = kFilterMode;
-        samplerDescriptor.mipmapFilter = kMipmapFilterMode;
-        samplerDescriptor.addressModeU = kAddressMode;
-        samplerDescriptor.addressModeV = kAddressMode;
-        samplerDescriptor.addressModeW = kAddressMode;
+        // (Off-topic) spot-test for defaulting of these six fields.
+        samplerDescriptor.minFilter = wgpu::FilterMode::Undefined;
+        samplerDescriptor.magFilter = wgpu::FilterMode::Undefined;
+        samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Undefined;
+        samplerDescriptor.addressModeU = wgpu::AddressMode::Undefined;
+        samplerDescriptor.addressModeV = wgpu::AddressMode::Undefined;
+        samplerDescriptor.addressModeW = wgpu::AddressMode::Undefined;
         mSampler = device.CreateSampler(&samplerDescriptor);
 
         mVSModule = CreateDefaultVertexShaderModule(device);
@@ -393,6 +390,8 @@ TEST_P(TextureViewSamplingTest, Default2DArrayTexture) {
     InitTexture(kLayers, kMipLevels);
 
     wgpu::TextureViewDescriptor descriptor;
+    // (Off-topic) spot-test for defaulting of .aspect.
+    descriptor.aspect = wgpu::TextureAspect::Undefined;
     descriptor.dimension = wgpu::TextureViewDimension::e2DArray;
     wgpu::TextureView textureView = mTexture.CreateView(&descriptor);
 
@@ -435,6 +434,8 @@ TEST_P(TextureViewSamplingTest, Texture2DArrayViewOnSingleLayer2DTexture) {
     descriptor.arrayLayerCount = 1;
     descriptor.baseMipLevel = 0;
     descriptor.mipLevelCount = 1;
+    // (Off-topic) spot-test for defaulting of .aspect.
+    descriptor.aspect = wgpu::TextureAspect::Undefined;
     wgpu::TextureView textureView = mTexture.CreateView(&descriptor);
 
     const char* fragmentShader = R"(
@@ -464,6 +465,7 @@ TEST_P(TextureViewSamplingTest, Texture2DViewOnOneLevelOf2DArrayTexture) {
 
 // Test sampling from a 2D array texture view created on a mipmap level of a 2D array texture.
 TEST_P(TextureViewSamplingTest, Texture2DArrayViewOnOneLevelOf2DArrayTexture) {
+    DAWN_TEST_UNSUPPORTED_IF(IsCompatibilityMode());
     Texture2DArrayViewTest(6, 6, 2, 4);
 }
 
@@ -1137,9 +1139,7 @@ TEST_P(TextureView1DTest, Sampling) {
     )");
     utils::ComboRenderPipelineDescriptor pDesc;
     pDesc.vertex.module = module;
-    pDesc.vertex.entryPoint = "vs";
     pDesc.cFragment.module = module;
-    pDesc.cFragment.entryPoint = "fs";
     pDesc.cTargets[0].format = wgpu::TextureFormat::RGBA8Unorm;
     wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&pDesc);
 

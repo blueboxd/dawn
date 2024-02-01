@@ -33,6 +33,7 @@
 #include "dawn/common/Platform.h"
 #include "dawn/native/Blob.h"
 #include "dawn/native/CacheResult.h"
+#include "partition_alloc/pointers/raw_ptr_exclusion.h"
 
 namespace dawn::platform {
 class CachingInterface;
@@ -77,7 +78,8 @@ class BlobCache {
 
     // Protects thread safety of access to mCache.
     std::mutex mMutex;
-    dawn::platform::CachingInterface* mCache;
+    // TODO(https://crbug.com/dawn/2365): Convert this member to `raw_ptr`.
+    RAW_PTR_EXCLUSION dawn::platform::CachingInterface* mCache;
 };
 
 }  // namespace dawn::native

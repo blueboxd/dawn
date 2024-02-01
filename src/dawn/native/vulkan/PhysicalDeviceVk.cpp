@@ -31,6 +31,7 @@
 #include <string>
 
 #include "dawn/common/GPUInfo.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/Limits.h"
 #include "dawn/native/vulkan/BackendVk.h"
@@ -497,8 +498,11 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
         vkLimits.maxVertexInputAttributeOffset < baseLimits.v1.maxVertexBufferArrayStride - 1) {
         return DAWN_INTERNAL_ERROR("Insufficient Vulkan limits for maxVertexBufferArrayStride");
     }
+    // Note that some drivers have UINT32_MAX as maxVertexInputAttributeOffset so we do that +1 only
+    // after the std::min.
     limits->v1.maxVertexBufferArrayStride =
-        std::min(vkLimits.maxVertexInputBindingStride, vkLimits.maxVertexInputAttributeOffset + 1);
+        std::min(vkLimits.maxVertexInputBindingStride - 1, vkLimits.maxVertexInputAttributeOffset) +
+        1;
 
     if (vkLimits.maxVertexOutputComponents < baseLimits.v1.maxInterStageShaderComponents ||
         vkLimits.maxFragmentInputComponents < baseLimits.v1.maxInterStageShaderComponents) {
@@ -719,9 +723,10 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     }
 }
 
-ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,
-                                                                const DeviceDescriptor* descriptor,
-                                                                const TogglesState& deviceToggles) {
+ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
+    AdapterBase* adapter,
+    const UnpackedPtr<DeviceDescriptor>& descriptor,
+    const TogglesState& deviceToggles) {
     return Device::Create(adapter, descriptor, deviceToggles);
 }
 
@@ -810,31 +815,32 @@ uint32_t PhysicalDevice::GetDefaultComputeSubgroupSize() const {
     return mDefaultComputeSubgroupSize;
 }
 
-void PhysicalDevice::PopulateMemoryHeapInfo(
-    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
-    size_t count = mDeviceInfo.memoryHeaps.size();
-    auto* heapInfo = new MemoryHeapInfo[count];
-    memoryHeapProperties->heapCount = count;
-    memoryHeapProperties->heapInfo = heapInfo;
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const {
+    if (auto* memoryHeapProperties = properties.Get<AdapterPropertiesMemoryHeaps>()) {
+        size_t count = mDeviceInfo.memoryHeaps.size();
+        auto* heapInfo = new MemoryHeapInfo[count];
+        memoryHeapProperties->heapCount = count;
+        memoryHeapProperties->heapInfo = heapInfo;
 
-    for (size_t i = 0; i < count; ++i) {
-        heapInfo[i].size = mDeviceInfo.memoryHeaps[i].size;
-        heapInfo[i].properties = {};
-        if (mDeviceInfo.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
-            heapInfo[i].properties |= wgpu::HeapProperty::DeviceLocal;
+        for (size_t i = 0; i < count; ++i) {
+            heapInfo[i].size = mDeviceInfo.memoryHeaps[i].size;
+            heapInfo[i].properties = {};
+            if (mDeviceInfo.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+                heapInfo[i].properties |= wgpu::HeapProperty::DeviceLocal;
+            }
         }
-    }
-    for (const auto& memoryType : mDeviceInfo.memoryTypes) {
-        if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostVisible;
-        }
-        if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
-            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCoherent;
-        }
-        if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
-            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCached;
-        } else {
-            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostUncached;
+        for (const auto& memoryType : mDeviceInfo.memoryTypes) {
+            if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostVisible;
+            }
+            if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
+                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCoherent;
+            }
+            if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
+                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCached;
+            } else {
+                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostUncached;
+            }
         }
     }
 }

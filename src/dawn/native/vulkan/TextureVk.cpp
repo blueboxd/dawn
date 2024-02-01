@@ -31,15 +31,18 @@
 
 #include "dawn/common/Assert.h"
 #include "dawn/common/Math.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/VulkanBackend.h"
 #include "dawn/native/vulkan/BufferVk.h"
+#include "dawn/native/vulkan/CommandBufferVk.h"
 #include "dawn/native/vulkan/CommandRecordingContext.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
 #include "dawn/native/vulkan/PhysicalDeviceVk.h"
+#include "dawn/native/vulkan/QueueVk.h"
 #include "dawn/native/vulkan/ResourceHeapVk.h"
 #include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
@@ -276,6 +279,9 @@ void FillVulkanCreateInfoSizesAndType(const Texture& texture, VkImageCreateInfo*
     // Fill in the image type, and paper over differences in how the array layer count is
     // specified between WebGPU and Vulkan.
     switch (texture.GetDimension()) {
+        case wgpu::TextureDimension::Undefined:
+            DAWN_UNREACHABLE();
+
         case wgpu::TextureDimension::e1D:
             info->imageType = VK_IMAGE_TYPE_1D;
             info->extent = {size.width, 1, 1};
@@ -653,7 +659,7 @@ VkSampleCountFlagBits VulkanSampleCount(uint32_t sampleCount) {
 }
 
 MaybeError ValidateVulkanImageCanBeWrapped(const DeviceBase*,
-                                           const Unpacked<TextureDescriptor>& descriptor) {
+                                           const UnpackedPtr<TextureDescriptor>& descriptor) {
     DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D,
                     "Texture dimension (%s) is not %s.", descriptor->dimension,
                     wgpu::TextureDimension::e2D);
@@ -689,7 +695,7 @@ bool IsSampleCountSupported(const dawn::native::vulkan::Device* device,
 
 // static
 ResultOrError<Ref<Texture>> Texture::Create(Device* device,
-                                            const Unpacked<TextureDescriptor>& descriptor,
+                                            const UnpackedPtr<TextureDescriptor>& descriptor,
                                             VkImageUsageFlags extraUsages) {
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     DAWN_TRY(texture->InitializeAsInternalTexture(extraUsages));
@@ -697,20 +703,20 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device,
 }
 
 // static
-ResultOrError<Texture*> Texture::CreateFromExternal(
+ResultOrError<Ref<Texture>> Texture::CreateFromExternal(
     Device* device,
     const ExternalImageDescriptorVk* descriptor,
-    const Unpacked<TextureDescriptor>& textureDescriptor,
+    const UnpackedPtr<TextureDescriptor>& textureDescriptor,
     external_memory::Service* externalMemoryService) {
     Ref<Texture> texture = AcquireRef(new Texture(device, textureDescriptor));
     DAWN_TRY(texture->InitializeFromExternal(descriptor, externalMemoryService));
-    return texture.Detach();
+    return texture;
 }
 
 // static
 ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
     SharedTextureMemory* memory,
-    const Unpacked<TextureDescriptor>& textureDescriptor) {
+    const UnpackedPtr<TextureDescriptor>& textureDescriptor) {
     Ref<Texture> texture =
         AcquireRef(new Texture(ToBackend(memory->GetDevice()), textureDescriptor));
     texture->mSharedTextureMemoryContents = memory->GetContents();
@@ -723,14 +729,14 @@ ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
 
 // static
 Ref<Texture> Texture::CreateForSwapChain(Device* device,
-                                         const Unpacked<TextureDescriptor>& descriptor,
+                                         const UnpackedPtr<TextureDescriptor>& descriptor,
                                          VkImage nativeImage) {
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     texture->InitializeForSwapChain(nativeImage);
     return texture;
 }
 
-Texture::Texture(Device* device, const Unpacked<TextureDescriptor>& descriptor)
+Texture::Texture(Device* device, const UnpackedPtr<TextureDescriptor>& descriptor)
     : TextureBase(device, descriptor),
       mCombinedAspect(ComputeCombinedAspect(device, GetFormat())),
       // A usage of none will make sure the texture is transitioned before its first use as
@@ -787,19 +793,20 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
         createInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
     }
 
-    if (requiresViewFormatsList) {
-        if (device->GetDeviceInfo().HasExt(DeviceExt::ImageFormatList)) {
-            createInfoChain.Add(&imageFormatListInfo,
-                                VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
-            viewFormats.push_back(VulkanImageFormat(device, GetFormat().format));
-            for (FormatIndex i : IterateBitSet(GetViewFormats())) {
-                const Format& viewFormat = device->GetValidInternalFormat(i);
-                viewFormats.push_back(VulkanImageFormat(device, viewFormat.format));
-            }
-
-            imageFormatListInfo.viewFormatCount = viewFormats.size();
-            imageFormatListInfo.pViewFormats = viewFormats.data();
+    // Add the view format list only when the usage does not have storage. Otherwise, the VVL will
+    // say creation of the texture is invalid.
+    // See https://github.com/gpuweb/gpuweb/issues/4426.
+    if (requiresViewFormatsList && device->GetDeviceInfo().HasExt(DeviceExt::ImageFormatList) &&
+        !(createInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+        createInfoChain.Add(&imageFormatListInfo, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
+        viewFormats.push_back(VulkanImageFormat(device, GetFormat().format));
+        for (FormatIndex i : IterateBitSet(GetViewFormats())) {
+            const Format& viewFormat = device->GetValidInternalFormat(i);
+            viewFormats.push_back(VulkanImageFormat(device, viewFormat.format));
         }
+
+        imageFormatListInfo.viewFormatCount = viewFormats.size();
+        imageFormatListInfo.pViewFormats = viewFormats.data();
     }
 
     DAWN_ASSERT(IsSampleCountSupported(device, createInfo));
@@ -859,13 +866,13 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
         textureIsBuggy &= GetDimension() == wgpu::TextureDimension::e2D;
         textureIsBuggy &= IsPowerOfTwo(GetBaseSize().width) && IsPowerOfTwo(GetBaseSize().height);
         if (textureIsBuggy) {
-            DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
+            DAWN_TRY(ClearTexture(ToBackend(GetDevice()->GetQueue())->GetPendingRecordingContext(),
                                   GetAllSubresources(), TextureBase::ClearValue::Zero));
         }
     }
 
     if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-        DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
+        DAWN_TRY(ClearTexture(ToBackend(GetDevice()->GetQueue())->GetPendingRecordingContext(),
                               GetAllSubresources(), TextureBase::ClearValue::NonZero));
     }
 
@@ -1045,10 +1052,10 @@ MaybeError Texture::EndAccess(ExternalSemaphoreHandle* handle,
     if (mExternalSemaphoreHandle == kNullExternalSemaphoreHandle || targetLayout != currentLayout) {
         mDesiredExportLayout = targetLayout;
 
-        Device* device = ToBackend(GetDevice());
-        CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
+        Queue* queue = ToBackend(GetDevice()->GetQueue());
+        CommandRecordingContext* recordingContext = queue->GetPendingRecordingContext();
         recordingContext->externalTexturesForEagerTransition.insert(this);
-        DAWN_TRY(device->SubmitPendingCommands());
+        DAWN_TRY(queue->SubmitPendingCommands());
 
         currentLayout = targetLayout;
     }
@@ -1303,45 +1310,45 @@ void Texture::TransitionUsageForPassImpl(
     wgpu::ShaderStage allNewShaderStages = wgpu::ShaderStage::None;
     wgpu::ShaderStage allLastShaderStages = wgpu::ShaderStage::None;
 
-    mSubresourceLastSyncInfos.Merge(
-        subresourceSyncInfos, [&](const SubresourceRange& range, TextureSyncInfo* lastSyncInfo,
-                                  const TextureSyncInfo& newSyncInfo) {
-            if (newSyncInfo.usage == wgpu::TextureUsage::None ||
-                CanReuseWithoutBarrier(lastSyncInfo->usage, newSyncInfo.usage,
-                                       lastSyncInfo->shaderStages, newSyncInfo.shaderStages)) {
-                return;
-            }
+    mSubresourceLastSyncInfos.Merge(subresourceSyncInfos, [&](const SubresourceRange& range,
+                                                              TextureSyncInfo* lastSyncInfo,
+                                                              const TextureSyncInfo& newSyncInfo) {
+        wgpu::TextureUsage newUsage = newSyncInfo.usage;
+        if (newSyncInfo.shaderStages == wgpu::ShaderStage::None) {
+            // If the image isn't used in any shader stages, ignore shader usages. Eg. ignore a
+            // texture binding that isn't actually sampled in any shader.
+            newUsage &= ~kShaderTextureUsages;
+        }
 
-            imageBarriers->push_back(
-                BuildMemoryBarrier(this, lastSyncInfo->usage, newSyncInfo.usage, range));
+        if (newUsage == wgpu::TextureUsage::None ||
+            CanReuseWithoutBarrier(lastSyncInfo->usage, newUsage, lastSyncInfo->shaderStages,
+                                   newSyncInfo.shaderStages)) {
+            return;
+        }
 
-            allLastUsages |= lastSyncInfo->usage;
-            allNewUsages |= newSyncInfo.usage;
+        imageBarriers->push_back(BuildMemoryBarrier(this, lastSyncInfo->usage, newUsage, range));
 
-            allLastShaderStages |= lastSyncInfo->shaderStages;
-            allNewShaderStages |= newSyncInfo.shaderStages;
+        allLastUsages |= lastSyncInfo->usage;
+        allNewUsages |= newUsage;
 
-            if (lastSyncInfo->usage == newSyncInfo.usage &&
-                IsSubset(lastSyncInfo->usage, kReadOnlyTextureUsages)) {
-                // Read only usage and no layout transition. We can keep previous shader stages so
-                // future uses in those stages don't insert barriers.
-                lastSyncInfo->shaderStages |= newSyncInfo.shaderStages;
-            } else {
-                // Image was altered by write or layout transition. We need to clear previous shader
-                // stages so future uses in those stages will insert barriers.
-                lastSyncInfo->shaderStages = newSyncInfo.shaderStages;
-            }
-            lastSyncInfo->usage = newSyncInfo.usage;
-        });
+        allLastShaderStages |= lastSyncInfo->shaderStages;
+        allNewShaderStages |= newSyncInfo.shaderStages;
+
+        if (lastSyncInfo->usage == newUsage &&
+            IsSubset(lastSyncInfo->usage, kReadOnlyTextureUsages)) {
+            // Read only usage and no layout transition. We can keep previous shader stages so
+            // future uses in those stages don't insert barriers.
+            lastSyncInfo->shaderStages |= newSyncInfo.shaderStages;
+        } else {
+            // Image was altered by write or layout transition. We need to clear previous shader
+            // stages so future uses in those stages will insert barriers.
+            lastSyncInfo->shaderStages = newSyncInfo.shaderStages;
+        }
+        lastSyncInfo->usage = newUsage;
+    });
 
     if (mExternalState != ExternalState::InternalOnly) {
         TweakTransitionForExternalUsage(recordingContext, imageBarriers, transitionBarrierStart);
-    }
-
-    if (allNewShaderStages == wgpu::ShaderStage::None) {
-        // If the image isn't used in any shader stages, ignore shader usages. Eg. ignore a texture
-        // binding that isn't actually sampled in any shader.
-        allNewUsages &= ~kShaderTextureUsages;
     }
 
     // Skip adding pipeline stages if no barrier was needed to avoid putting TOP_OF_PIPE in the
@@ -1446,20 +1453,116 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
 
     const bool isZero = clearValue == TextureBase::ClearValue::Zero;
     uint32_t uClearColor = isZero ? 0 : 1;
-    int32_t sClearColor = isZero ? 0 : 1;
     float fClearColor = isZero ? 0.f : 1.f;
-
-    TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, wgpu::ShaderStage::None,
-                       range);
 
     VkImageSubresourceRange imageRange = {};
     imageRange.levelCount = 1;
     imageRange.layerCount = 1;
 
-    if (GetFormat().isCompressed || GetFormat().IsMultiPlanar()) {
+    if ((GetInternalUsage() & wgpu::TextureUsage::RenderAttachment) && GetFormat().IsColor() &&
+        !GetFormat().IsMultiPlanar()) {
+        TransitionUsageNow(recordingContext, wgpu::TextureUsage::RenderAttachment,
+                           wgpu::ShaderStage::None, range);
+
+        for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
+             ++level) {
+            for (uint32_t layer = range.baseArrayLayer;
+                 layer < range.baseArrayLayer + range.layerCount; ++layer) {
+                Aspect aspects = Aspect::None;
+                for (Aspect aspect : IterateEnumMask(range.aspects)) {
+                    if (clearValue == TextureBase::ClearValue::Zero &&
+                        IsSubresourceContentInitialized(
+                            SubresourceRange::SingleMipAndLayer(level, layer, aspect))) {
+                        // Skip lazy clears if already initialized.
+                        continue;
+                    }
+                    aspects |= aspect;
+                }
+
+                if (aspects == Aspect::None) {
+                    continue;
+                }
+
+                Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(level, aspects);
+                BeginRenderPassCmd beginCmd{};
+                beginCmd.width = mipSize.width;
+                beginCmd.height = mipSize.height;
+
+                TextureViewDescriptor viewDesc = {};
+                viewDesc.format = GetFormat().format;
+                viewDesc.dimension = wgpu::TextureViewDimension::e2D;
+                viewDesc.baseMipLevel = level;
+                viewDesc.mipLevelCount = 1u;
+                viewDesc.baseArrayLayer = layer;
+                viewDesc.arrayLayerCount = 1u;
+
+                ColorAttachmentIndex ca0(uint8_t(0));
+                DAWN_TRY_ASSIGN(beginCmd.colorAttachments[ca0].view,
+                                TextureView::Create(this, &viewDesc));
+
+                RenderPassColorAttachment colorAttachment{};
+                colorAttachment.view = beginCmd.colorAttachments[ca0].view.Get();
+                beginCmd.colorAttachments[ca0].clearColor = colorAttachment.clearValue = {
+                    fClearColor, fClearColor, fClearColor, fClearColor};
+                beginCmd.colorAttachments[ca0].loadOp = colorAttachment.loadOp =
+                    wgpu::LoadOp::Clear;
+                beginCmd.colorAttachments[ca0].storeOp = colorAttachment.storeOp =
+                    wgpu::StoreOp::Store;
+
+                RenderPassDescriptor passDesc{};
+                passDesc.colorAttachmentCount = 1u;
+                passDesc.colorAttachments = &colorAttachment;
+                beginCmd.attachmentState = device->GetOrCreateAttachmentState(Unpack(&passDesc));
+
+                DAWN_TRY(
+                    RecordBeginRenderPass(recordingContext, ToBackend(GetDevice()), &beginCmd));
+                ToBackend(GetDevice())->fn.CmdEndRenderPass(recordingContext->commandBuffer);
+            }
+        }
+    } else if (GetFormat().HasDepthOrStencil()) {
+        TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, wgpu::ShaderStage::None,
+                           range);
+
+        for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
+             ++level) {
+            imageRange.baseMipLevel = level;
+            for (uint32_t layer = range.baseArrayLayer;
+                 layer < range.baseArrayLayer + range.layerCount; ++layer) {
+                Aspect aspects = Aspect::None;
+                for (Aspect aspect : IterateEnumMask(range.aspects)) {
+                    if (clearValue == TextureBase::ClearValue::Zero &&
+                        IsSubresourceContentInitialized(
+                            SubresourceRange::SingleMipAndLayer(level, layer, aspect))) {
+                        // Skip lazy clears if already initialized.
+                        continue;
+                    }
+                    aspects |= aspect;
+                }
+
+                if (aspects == Aspect::None) {
+                    continue;
+                }
+
+                imageRange.aspectMask = VulkanAspectMask(aspects);
+                imageRange.baseMipLevel = level;
+                imageRange.baseArrayLayer = layer;
+
+                VkClearDepthStencilValue clearDepthStencilValue[1];
+                clearDepthStencilValue[0].depth = fClearColor;
+                clearDepthStencilValue[0].stencil = uClearColor;
+                device->fn.CmdClearDepthStencilImage(recordingContext->commandBuffer, GetHandle(),
+                                                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                                     clearDepthStencilValue, 1, &imageRange);
+            }
+        }
+    } else {
         if (range.aspects == Aspect::None) {
             return {};
         }
+
+        TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, wgpu::ShaderStage::None,
+                           range);
+
         // need to clear the texture with a copy from buffer
         DAWN_ASSERT(range.aspects == Aspect::Color || range.aspects == Aspect::Plane0 ||
                     range.aspects == Aspect::Plane1 || range.aspects == Aspect::Plane2);
@@ -1474,9 +1577,9 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                               largestMipSize.depthOrArrayLayers;
         DynamicUploader* uploader = device->GetDynamicUploader();
         UploadHandle uploadHandle;
-        DAWN_TRY_ASSIGN(
-            uploadHandle,
-            uploader->Allocate(bufferSize, device->GetPendingCommandSerial(), blockInfo.byteSize));
+        DAWN_TRY_ASSIGN(uploadHandle, uploader->Allocate(
+                                          bufferSize, device->GetQueue()->GetPendingCommandSerial(),
+                                          blockInfo.byteSize));
         memset(uploadHandle.mappedBuffer, uClearColor, bufferSize);
 
         std::vector<VkBufferImageCopy> regions;
@@ -1509,67 +1612,6 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
         device->fn.CmdCopyBufferToImage(
             recordingContext->commandBuffer, ToBackend(uploadHandle.stagingBuffer)->GetHandle(),
             GetHandle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regions.size(), regions.data());
-    } else {
-        for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
-             ++level) {
-            imageRange.baseMipLevel = level;
-            for (uint32_t layer = range.baseArrayLayer;
-                 layer < range.baseArrayLayer + range.layerCount; ++layer) {
-                Aspect aspects = Aspect::None;
-                for (Aspect aspect : IterateEnumMask(range.aspects)) {
-                    if (clearValue == TextureBase::ClearValue::Zero &&
-                        IsSubresourceContentInitialized(
-                            SubresourceRange::SingleMipAndLayer(level, layer, aspect))) {
-                        // Skip lazy clears if already initialized.
-                        continue;
-                    }
-                    aspects |= aspect;
-                }
-
-                if (aspects == Aspect::None) {
-                    continue;
-                }
-
-                imageRange.aspectMask = VulkanAspectMask(aspects);
-                imageRange.baseArrayLayer = layer;
-
-                if (aspects & (Aspect::Depth | Aspect::Stencil | Aspect::CombinedDepthStencil)) {
-                    VkClearDepthStencilValue clearDepthStencilValue[1];
-                    clearDepthStencilValue[0].depth = fClearColor;
-                    clearDepthStencilValue[0].stencil = uClearColor;
-                    device->fn.CmdClearDepthStencilImage(recordingContext->commandBuffer,
-                                                         GetHandle(),
-                                                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                                         clearDepthStencilValue, 1, &imageRange);
-                } else {
-                    DAWN_ASSERT(aspects == Aspect::Color);
-                    VkClearColorValue clearColorValue;
-                    switch (GetFormat().GetAspectInfo(Aspect::Color).baseType) {
-                        case TextureComponentType::Float:
-                            clearColorValue.float32[0] = fClearColor;
-                            clearColorValue.float32[1] = fClearColor;
-                            clearColorValue.float32[2] = fClearColor;
-                            clearColorValue.float32[3] = fClearColor;
-                            break;
-                        case TextureComponentType::Sint:
-                            clearColorValue.int32[0] = sClearColor;
-                            clearColorValue.int32[1] = sClearColor;
-                            clearColorValue.int32[2] = sClearColor;
-                            clearColorValue.int32[3] = sClearColor;
-                            break;
-                        case TextureComponentType::Uint:
-                            clearColorValue.uint32[0] = uClearColor;
-                            clearColorValue.uint32[1] = uClearColor;
-                            clearColorValue.uint32[2] = uClearColor;
-                            clearColorValue.uint32[3] = uClearColor;
-                            break;
-                    }
-                    device->fn.CmdClearColorImage(recordingContext->commandBuffer, GetHandle(),
-                                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                                  &clearColorValue, 1, &imageRange);
-                }
-            }
-        }
     }
 
     if (clearValue == TextureBase::ClearValue::Zero) {
@@ -1641,6 +1683,17 @@ MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {
 
     Device* device = ToBackend(GetTexture()->GetDevice());
     VkImageViewCreateInfo createInfo = GetCreateInfo(descriptor->format, descriptor->dimension);
+
+    // Remove StorageBinding usage if the format doesn't support it.
+    wgpu::TextureUsage usage = GetTexture()->GetInternalUsage();
+    if (!GetFormat().supportsStorageUsage) {
+        usage &= ~wgpu::TextureUsage::StorageBinding;
+    }
+
+    VkImageViewUsageCreateInfo usageInfo = {};
+    usageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO;
+    usageInfo.usage = VulkanImageUsage(usage, GetFormat());
+    createInfo.pNext = &usageInfo;
 
     DAWN_TRY(CheckVkSuccess(
         device->fn.CreateImageView(device->GetVkDevice(), &createInfo, nullptr, &*mHandle),

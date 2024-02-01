@@ -51,6 +51,8 @@ tint_add_target(tint_lang_wgsl_ast_transform lib
   lang/wgsl/ast/transform/builtin_polyfill.h
   lang/wgsl/ast/transform/canonicalize_entry_point_io.cc
   lang/wgsl/ast/transform/canonicalize_entry_point_io.h
+  lang/wgsl/ast/transform/clamp_frag_depth.cc
+  lang/wgsl/ast/transform/clamp_frag_depth.h
   lang/wgsl/ast/transform/data.cc
   lang/wgsl/ast/transform/data.h
   lang/wgsl/ast/transform/demote_to_helper.cc
@@ -71,6 +73,8 @@ tint_add_target(tint_lang_wgsl_ast_transform lib
   lang/wgsl/ast/transform/manager.h
   lang/wgsl/ast/transform/multiplanar_external_texture.cc
   lang/wgsl/ast/transform/multiplanar_external_texture.h
+  lang/wgsl/ast/transform/offset_first_index.cc
+  lang/wgsl/ast/transform/offset_first_index.h
   lang/wgsl/ast/transform/preserve_padding.cc
   lang/wgsl/ast/transform/preserve_padding.h
   lang/wgsl/ast/transform/promote_initializers_to_let.cc
@@ -146,6 +150,7 @@ tint_add_target(tint_lang_wgsl_ast_transform_test test
   lang/wgsl/ast/transform/binding_remapper_test.cc
   lang/wgsl/ast/transform/builtin_polyfill_test.cc
   lang/wgsl/ast/transform/canonicalize_entry_point_io_test.cc
+  lang/wgsl/ast/transform/clamp_frag_depth_test.cc
   lang/wgsl/ast/transform/demote_to_helper_test.cc
   lang/wgsl/ast/transform/direct_variable_access_test.cc
   lang/wgsl/ast/transform/disable_uniformity_analysis_test.cc
@@ -156,6 +161,7 @@ tint_add_target(tint_lang_wgsl_ast_transform_test test
   lang/wgsl/ast/transform/hoist_to_decl_before_test.cc
   lang/wgsl/ast/transform/manager_test.cc
   lang/wgsl/ast/transform/multiplanar_external_texture_test.cc
+  lang/wgsl/ast/transform/offset_first_index_test.cc
   lang/wgsl/ast/transform/preserve_padding_test.cc
   lang/wgsl/ast/transform/promote_initializers_to_let_test.cc
   lang/wgsl/ast/transform/promote_side_effects_to_decl_test.cc
@@ -193,6 +199,7 @@ tint_target_add_dependencies(tint_lang_wgsl_ast_transform_test test
   tint_lang_wgsl_program
   tint_lang_wgsl_resolver
   tint_lang_wgsl_sem
+  tint_lang_wgsl_writer_ir_to_program
   tint_utils_containers
   tint_utils_diagnostic
   tint_utils_ice
