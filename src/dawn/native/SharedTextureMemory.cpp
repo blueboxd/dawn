@@ -52,7 +52,8 @@ class ErrorSharedTextureMemory : public SharedTextureMemoryBase {
                                const BeginAccessDescriptor* descriptor) override {
         DAWN_UNREACHABLE();
     }
-    ResultOrError<FenceAndSignalValue> EndAccessImpl(TextureBase* texture) override {
+    ResultOrError<FenceAndSignalValue> EndAccessImpl(TextureBase* texture,
+                                                     EndAccessState* state) override {
         DAWN_UNREACHABLE();
     }
 };
@@ -82,13 +83,21 @@ SharedTextureMemoryBase::SharedTextureMemoryBase(DeviceBase* device,
                                                  const char* label,
                                                  const SharedTextureMemoryProperties& properties)
     : ApiObjectBase(device, label), mProperties(properties) {
+    // `properties.usage` contains all usages supported by the underlying
+    // texture. Strip out any not supported for `format`.
     const Format& internalFormat = device->GetValidInternalFormat(properties.format);
-    if (!internalFormat.supportsStorageUsage) {
-        DAWN_ASSERT(!(mProperties.usage & wgpu::TextureUsage::StorageBinding));
+    if (!internalFormat.supportsStorageUsage || internalFormat.IsMultiPlanar()) {
+        mProperties.usage = mProperties.usage & ~wgpu::TextureUsage::StorageBinding;
     }
-    if (!internalFormat.isRenderable) {
-        DAWN_ASSERT(!(mProperties.usage & wgpu::TextureUsage::RenderAttachment));
+    if (!internalFormat.isRenderable || (internalFormat.IsMultiPlanar() &&
+                                         !device->HasFeature(Feature::MultiPlanarRenderTargets))) {
+        mProperties.usage = mProperties.usage & ~wgpu::TextureUsage::RenderAttachment;
     }
+    if (internalFormat.IsMultiPlanar() &&
+        !device->HasFeature(Feature::MultiPlanarFormatExtendedUsages)) {
+        mProperties.usage = mProperties.usage & ~wgpu::TextureUsage::CopyDst;
+    }
+
     GetObjectTrackingList()->Track(this);
 }
 
@@ -215,6 +224,10 @@ bool SharedTextureMemoryBase::APIBeginAccess(TextureBase* texture,
     return didBegin;
 }
 
+bool SharedTextureMemoryBase::APIIsDeviceLost() {
+    return GetDevice()->IsLost();
+}
+
 MaybeError SharedTextureMemoryBase::BeginAccess(TextureBase* texture,
                                                 const BeginAccessDescriptor* descriptor) {
     // Append begin fences first. Fences should be tracked regardless of whether later errors occur.
@@ -308,7 +321,7 @@ ResultOrError<FenceAndSignalValue> SharedTextureMemoryBase::EndAccessInternal(
     EndAccessState* state) {
     DAWN_TRY(GetDevice()->ValidateObject(texture));
     DAWN_TRY(ValidateTextureCreatedFromSelf(texture));
-    return EndAccessImpl(texture);
+    return EndAccessImpl(texture, state);
 }
 
 // SharedTextureMemoryContents

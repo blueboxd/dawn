@@ -373,7 +373,8 @@ MaybeError RenderPipeline::Initialize() {
         ShaderModule::ModuleAndSpirv moduleAndSpirv;
         DAWN_TRY_ASSIGN(moduleAndSpirv,
                         ToBackend(programmableStage.module)
-                            ->GetHandleAndSpirv(stage, programmableStage, layout, clampFragDepth));
+                            ->GetHandleAndSpirv(stage, programmableStage, layout, clampFragDepth,
+                                                /* fullSubgroups */ {}));
         // Record cache key for each shader since it will become inaccessible later on.
         StreamIn(&mCacheKey, stream::Iterable(moduleAndSpirv.spirv, moduleAndSpirv.wordCount));
 
@@ -488,13 +489,13 @@ MaybeError RenderPipeline::Initialize() {
             blend.colorWriteMask = 0;
         }
 
-        const auto& fragmentOutputsWritten =
-            GetStage(SingleShaderStage::Fragment).metadata->fragmentOutputsWritten;
-        ColorAttachmentIndex highestColorAttachmentIndexPlusOne =
+        const auto& fragmentOutputMask =
+            GetStage(SingleShaderStage::Fragment).metadata->fragmentOutputMask;
+        auto highestColorAttachmentIndexPlusOne =
             GetHighestBitIndexPlusOne(GetColorAttachmentsMask());
-        for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
+        for (auto i : IterateBitSet(GetColorAttachmentsMask())) {
             const ColorTargetState* target = GetColorTargetState(i);
-            colorBlendAttachments[i] = ComputeColorDesc(target, fragmentOutputsWritten[i]);
+            colorBlendAttachments[i] = ComputeColorDesc(target, fragmentOutputMask[i]);
         }
 
         colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -533,7 +534,7 @@ MaybeError RenderPipeline::Initialize() {
     {
         RenderPassCacheQuery query;
 
-        for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
+        for (auto i : IterateBitSet(GetColorAttachmentsMask())) {
             query.SetColor(i, GetColorAttachmentFormat(i), wgpu::LoadOp::Load, wgpu::StoreOp::Store,
                            false);
         }

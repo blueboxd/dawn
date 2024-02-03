@@ -53,8 +53,11 @@ class Device final : public d3d::Device {
 
     ID3D11Device* GetD3D11Device() const;
     ID3D11Device5* GetD3D11Device5() const;
+    ID3D11Fence* GetD3D11Fence() const;
 
-    CommandRecordingContext* GetPendingCommandContext(SubmitMode submitMode = SubmitMode::Normal);
+    ScopedCommandRecordingContext GetScopedPendingCommandContext(SubmitMode submitMode);
+    ScopedSwapStateCommandRecordingContext GetScopedSwapStatePendingCommandContext(
+        SubmitMode submitMode);
 
     const DeviceInfo& GetDeviceInfo() const;
 
@@ -154,6 +157,7 @@ class Device final : public d3d::Device {
     HANDLE mFenceEvent = nullptr;
 
     ComPtr<ID3D11Device> mD3d11Device;
+    bool mIsDebugLayerEnabled = false;
     ComPtr<ID3D11Device5> mD3d11Device5;
     CommandRecordingContext mPendingCommands;
     SerialQueue<ExecutionSerial, ComPtr<IUnknown>> mUsedComObjectRefs;

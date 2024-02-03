@@ -27,6 +27,7 @@
 
 #include "dawn/native/d3d12/PhysicalDeviceD3D12.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 
@@ -141,20 +142,18 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::Float32Filterable);
     EnableFeature(Feature::DualSourceBlending);
     EnableFeature(Feature::Norm16TextureFormats);
+    EnableFeature(Feature::AdapterPropertiesMemoryHeaps);
+    EnableFeature(Feature::ChromiumExperimentalDp4a);
 
     if (AreTimestampQueriesSupported()) {
         EnableFeature(Feature::TimestampQuery);
         EnableFeature(Feature::ChromiumExperimentalTimestampQueryInsidePasses);
     }
 
-    // Both Dp4a and ShaderF16 features require DXC version being 1.4 or higher
-    if (GetBackend()->IsDXCAvailableAndVersionAtLeast(1, 4, 1, 4)) {
-        if (mDeviceInfo.supportsDP4a) {
-            EnableFeature(Feature::ChromiumExperimentalDp4a);
-        }
-        if (mDeviceInfo.supportsShaderF16) {
-            EnableFeature(Feature::ShaderF16);
-        }
+    // ShaderF16 features require DXC version being 1.4 or higher
+    if (GetBackend()->IsDXCAvailableAndVersionAtLeast(1, 4, 1, 4) &&
+        mDeviceInfo.supportsShaderF16) {
+        EnableFeature(Feature::ShaderF16);
     }
 
     // ChromiumExperimentalSubgroups requires SM >= 6.0 and capabilities flags.
@@ -375,15 +374,14 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     return {};
 }
 
-MaybeError PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
+FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     wgpu::FeatureName feature,
     const TogglesState& toggles) const {
-    // shader-f16 feature and chromium-experimental-dp4a feature require DXC 1.4 or higher for
-    // D3D12. Note that DXC version is checked in InitializeSupportedFeaturesImpl.
-    if (feature == wgpu::FeatureName::ShaderF16 ||
-        feature == wgpu::FeatureName::ChromiumExperimentalDp4a) {
-        DAWN_INVALID_IF(!toggles.IsEnabled(Toggle::UseDXC), "Feature %s requires DXC for D3D12.",
-                        GetInstance()->GetFeatureInfo(feature)->name);
+    // The feature `shader-f16` requires DXC 1.4 or higher. Note that DXC version is checked in
+    // InitializeSupportedFeaturesImpl.
+    if (feature == wgpu::FeatureName::ShaderF16 && !toggles.IsEnabled(Toggle::UseDXC)) {
+        return FeatureValidationResult(absl::StrFormat(
+            "Feature %s requires DXC for D3D12.", GetInstance()->GetFeatureInfo(feature)->name));
     }
     return {};
 }
@@ -566,6 +564,11 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     deviceToggles->Default(Toggle::D3D12CreateNotZeroedHeap,
                            GetDeviceInfo().supportsHeapFlagCreateNotZeroed);
 
+    if (!GetDeviceInfo().supportsDP4a || !deviceToggles->IsEnabled(Toggle::UseDXC) ||
+        !GetBackend()->IsDXCAvailableAndVersionAtLeast(1, 4, 1, 4)) {
+        deviceToggles->ForceSet(Toggle::PolyFillPacked4x8DotProduct, true);
+    }
+
     uint32_t deviceId = GetDeviceId();
     uint32_t vendorId = GetVendorId();
 
@@ -705,6 +708,42 @@ MaybeError PhysicalDevice::ResetInternalDeviceForTestingImpl() {
     DAWN_TRY(Initialize());
 
     return {};
+}
+
+void PhysicalDevice::PopulateMemoryHeapInfo(
+    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
+    // https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html describes
+    // the properties of D3D12 Default/Upload/Readback heaps.
+    if (mDeviceInfo.isUMA) {
+        auto* heapInfo = new MemoryHeapInfo[1];
+        memoryHeapProperties->heapCount = 1;
+        memoryHeapProperties->heapInfo = heapInfo;
+
+        heapInfo[0].size =
+            std::max(mDeviceInfo.dedicatedVideoMemory, mDeviceInfo.sharedSystemMemory);
+
+        if (mDeviceInfo.isCacheCoherentUMA) {
+            heapInfo[0].properties =
+                wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                wgpu::HeapProperty::HostCoherent | wgpu::HeapProperty::HostCached;
+        } else {
+            heapInfo[0].properties =
+                wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+        }
+    } else {
+        auto* heapInfo = new MemoryHeapInfo[2];
+        memoryHeapProperties->heapCount = 2;
+        memoryHeapProperties->heapInfo = heapInfo;
+
+        heapInfo[0].size = mDeviceInfo.dedicatedVideoMemory;
+        heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
+
+        heapInfo[1].size = mDeviceInfo.sharedSystemMemory;
+        heapInfo[1].properties = wgpu::HeapProperty::HostVisible |
+                                 wgpu::HeapProperty::HostCoherent |
+                                 wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+    }
 }
 
 }  // namespace dawn::native::d3d12

@@ -112,10 +112,14 @@ wgsl::Extension BuiltinFn::RequiredExtension() const {
     if (IsSubgroup()) {
         return wgsl::Extension::kChromiumExperimentalSubgroups;
     }
-    if (fn_ == wgsl::BuiltinFn::kTextureBarrier) {
-        return wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture;
-    }
     return wgsl::Extension::kUndefined;
+}
+
+wgsl::LanguageFeature BuiltinFn::RequiredLanguageFeature() const {
+    if (fn_ == wgsl::BuiltinFn::kTextureBarrier) {
+        return wgsl::LanguageFeature::kReadonlyAndReadwriteStorageTextures;
+    }
+    return wgsl::LanguageFeature::kUndefined;
 }
 
 }  // namespace tint::sem

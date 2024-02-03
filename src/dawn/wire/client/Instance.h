@@ -42,14 +42,13 @@ WGPUInstance ClientCreateInstance(WGPUInstanceDescriptor const* descriptor);
 class Instance final : public ObjectBase {
   public:
     using ObjectBase::ObjectBase;
-    ~Instance() override;
-
-    void CancelCallbacksForDisconnect() override;
 
     void RequestAdapter(const WGPURequestAdapterOptions* options,
                         WGPURequestAdapterCallback callback,
                         void* userdata);
-    bool OnRequestAdapterCallback(uint64_t requestSerial,
+    WGPUFuture RequestAdapterF(const WGPURequestAdapterOptions* options,
+                               const WGPURequestAdapterCallbackInfo& callbackInfo);
+    bool OnRequestAdapterCallback(WGPUFuture future,
                                   WGPURequestAdapterStatus status,
                                   const char* message,
                                   const WGPUAdapterProperties* properties,
@@ -60,13 +59,10 @@ class Instance final : public ObjectBase {
     void ProcessEvents();
     WGPUWaitStatus WaitAny(size_t count, WGPUFutureWaitInfo* infos, uint64_t timeoutNS);
 
-  private:
-    struct RequestAdapterData {
-        WGPURequestAdapterCallback callback = nullptr;
-        ObjectId adapterObjectId;
-        void* userdata = nullptr;
-    };
-    RequestTracker<RequestAdapterData> mRequestAdapterRequests;
+    bool HasWGSLLanguageFeature(WGPUWGSLFeatureName feature) const;
+    // Always writes the full list when features is not nullptr.
+    // TODO(https://github.com/webgpu-native/webgpu-headers/issues/252): Add a count argument.
+    size_t EnumerateWGSLLanguageFeatures(WGPUWGSLFeatureName* features) const;
 };
 
 }  // namespace dawn::wire::client

@@ -94,24 +94,28 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
     /// @returns the operands of the instruction
     VectorRef<ir::Value*> Operands() override { return operands_; }
 
-    /// @returns true if the instruction has result values
-    bool HasResults() override { return !results_.IsEmpty(); }
-    /// @returns true if the instruction has multiple values
-    bool HasMultiResults() override { return results_.Length() > 1; }
-
-    /// @returns the first result. Returns `nullptr` if there are no results, or if ther are
-    /// multi-results
-    InstructionResult* Result() override {
-        if (!HasResults() || HasMultiResults()) {
-            return nullptr;
-        }
-        return results_[0];
-    }
-
-    using Instruction::Result;
+    /// @returns the operands of the instruction
+    VectorRef<const ir::Value*> Operands() const override { return operands_; }
 
     /// @returns the result values for this instruction
     VectorRef<InstructionResult*> Results() override { return results_; }
+
+    /// @returns the result values for this instruction
+    VectorRef<const InstructionResult*> Results() const override { return results_; }
+
+    /// @param idx the index of the result
+    /// @returns the result with index @p idx, or `nullptr` if there are no results or the index is
+    /// out of bounds.
+    InstructionResult* Result(size_t idx) {
+        return idx < results_.Length() ? results_[idx] : nullptr;
+    }
+
+    /// @param idx the index of the result
+    /// @returns the result with index @p idx, or `nullptr` if there are no results or the index is
+    /// out of bounds.
+    const InstructionResult* Result(size_t idx) const {
+        return idx < results_.Length() ? results_[idx] : nullptr;
+    }
 
   protected:
     /// Append a new operand to the operand list for this instruction.
@@ -141,7 +145,7 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
     /// @param value the value to append
     void AddResult(InstructionResult* value) {
         if (value) {
-            value->SetSource(this);
+            value->SetInstruction(this);
         }
         results_.Push(value);
     }

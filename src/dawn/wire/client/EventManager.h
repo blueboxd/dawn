@@ -46,13 +46,16 @@ class Client;
 
 enum class EventType {
     MapAsync,
+    RequestAdapter,
     WorkDone,
 };
 
-// Implementations of TrackedEvents must implement the CompleteImpl and ReadyHook functions. In most
-// scenarios, the CompleteImpl function should call the callbacks while the ReadyHook should process
-// and copy memory (if necessary) from the wire deserialization buffer into a local copy that can be
-// readily used by the user callback.
+// Implementations of TrackedEvents must implement the GetType, CompleteImpl, and ReadyHook
+// functions. In most scenarios, the CompleteImpl function should call the callbacks while the
+// ReadyHook should process and copy memory (if necessary) from the wire deserialization buffer
+// into a local copy that can be readily used by the user callback. Specifically, the wire
+// deserialization data is guaranteed to be alive when the ReadyHook is called, but not when
+// CompleteImpl is called.
 class TrackedEvent : NonMovable {
   public:
     explicit TrackedEvent(WGPUCallbackMode mode);
@@ -64,10 +67,10 @@ class TrackedEvent : NonMovable {
     bool IsReady() const;
 
     void SetReady();
-    void Complete(EventCompletionType type);
+    void Complete(FutureID futureID, EventCompletionType type);
 
   protected:
-    virtual void CompleteImpl(EventCompletionType type) = 0;
+    virtual void CompleteImpl(FutureID futureID, EventCompletionType type) = 0;
 
     const WGPUCallbackMode mMode;
     enum class EventState {
@@ -138,7 +141,7 @@ class EventManager final : NonMovable {
 
         // Handle spontaneous completions.
         if (spontaneousEvent) {
-            spontaneousEvent->Complete(EventCompletionType::Ready);
+            spontaneousEvent->Complete(futureID, EventCompletionType::Ready);
         }
         return WireResult::Success;
     }

@@ -45,7 +45,7 @@
 #include "src/tint/lang/core/ir/transform/std140.h"
 #include "src/tint/lang/core/ir/transform/vectorize_scalar_matrix_constructors.h"
 #include "src/tint/lang/core/ir/transform/zero_init_workgroup_memory.h"
-#include "src/tint/lang/spirv/writer/common/option_builder.h"
+#include "src/tint/lang/spirv/writer/common/option_helpers.h"
 #include "src/tint/lang/spirv/writer/raise/builtin_polyfill.h"
 #include "src/tint/lang/spirv/writer/raise/expand_implicit_splats.h"
 #include "src/tint/lang/spirv/writer/raise/handle_matrix_arithmetic.h"
@@ -133,8 +133,10 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     // produce pointers to matrices.
     RUN_TRANSFORM(core::ir::transform::CombineAccessInstructions, module);
 
-    RUN_TRANSFORM(BuiltinPolyfill, module);
+    // DemoteToHelper must come before any transform that introduces non-core instructions.
     RUN_TRANSFORM(core::ir::transform::DemoteToHelper, module);
+
+    RUN_TRANSFORM(BuiltinPolyfill, module);
     RUN_TRANSFORM(ExpandImplicitSplats, module);
     RUN_TRANSFORM(HandleMatrixArithmetic, module);
     RUN_TRANSFORM(MergeReturn, module);

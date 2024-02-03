@@ -32,6 +32,7 @@
 
 #include "src/tint/lang/core/ir/terminator.h"
 #include "src/tint/lang/core/ir/value.h"
+#include "src/tint/utils/containers/const_propagating_ptr.h"
 #include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
@@ -60,22 +61,26 @@ class BreakIf final : public Castable<BreakIf, Terminator> {
     /// @copydoc Instruction::Clone()
     BreakIf* Clone(CloneContext& ctx) override;
 
-    /// @returns the MultiInBlock arguments
-    tint::Slice<Value* const> Args() override {
-        return operands_.Slice().Offset(kArgsOperandOffset);
-    }
+    /// @returns the offset of the arguments in Operands()
+    size_t ArgsOperandOffset() const override { return kArgsOperandOffset; }
 
     /// @returns the break condition
     Value* Condition() { return operands_[kConditionOperandOffset]; }
 
+    /// @returns the break condition
+    const Value* Condition() const { return operands_[kConditionOperandOffset]; }
+
     /// @returns the loop containing the break-if
     ir::Loop* Loop() { return loop_; }
 
+    /// @returns the loop containing the break-if
+    const ir::Loop* Loop() const { return loop_; }
+
     /// @returns the friendly name for the instruction
-    std::string FriendlyName() override { return "break_if"; }
+    std::string FriendlyName() const override { return "break_if"; }
 
   private:
-    ir::Loop* loop_ = nullptr;
+    ConstPropagatingPtr<ir::Loop> loop_;
 };
 
 }  // namespace tint::core::ir

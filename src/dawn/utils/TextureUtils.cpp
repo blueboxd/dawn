@@ -134,6 +134,11 @@ bool IsASTCTextureFormat(wgpu::TextureFormat textureFormat) {
     }
 }
 
+bool IsCompressedTextureFormat(wgpu::TextureFormat textureFormat) {
+    return IsASTCTextureFormat(textureFormat) || IsBCTextureFormat(textureFormat) ||
+           IsETC2TextureFormat(textureFormat);
+}
+
 bool IsNorm16TextureFormat(wgpu::TextureFormat textureFormat) {
     switch (textureFormat) {
         case wgpu::TextureFormat::R16Unorm:
@@ -177,9 +182,35 @@ bool IsMultiPlanarFormat(wgpu::TextureFormat textureFormat) {
     switch (textureFormat) {
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
+        case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
             return true;
         default:
             return false;
+    }
+}
+
+bool IsRenderableFormat(const wgpu::Device& device, wgpu::TextureFormat textureFormat) {
+    if (IsBCTextureFormat(textureFormat) || IsETC2TextureFormat(textureFormat) ||
+        IsASTCTextureFormat(textureFormat)) {
+        return false;
+    }
+
+    if (IsNorm16TextureFormat(textureFormat)) {
+        return device.HasFeature(wgpu::FeatureName::Norm16TextureFormats);
+    }
+
+    switch (textureFormat) {
+        case wgpu::TextureFormat::RGB9E5Ufloat:
+        case wgpu::TextureFormat::R8Snorm:
+        case wgpu::TextureFormat::RG8Snorm:
+        case wgpu::TextureFormat::RGBA8Snorm:
+            return false;
+
+        case wgpu::TextureFormat::RG11B10Ufloat:
+            return device.HasFeature(wgpu::FeatureName::RG11B10UfloatRenderable);
+
+        default:
+            return true;
     }
 }
 
@@ -391,6 +422,7 @@ uint32_t GetTexelBlockSizeInBytes(wgpu::TextureFormat textureFormat) {
         // Block size of a multi-planar format depends on aspect.
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
+        case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
 
         case wgpu::TextureFormat::Undefined:
             break;
@@ -515,6 +547,7 @@ uint32_t GetTextureFormatBlockWidth(wgpu::TextureFormat textureFormat) {
         // Block size of a multi-planar format depends on aspect.
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
+        case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
 
         case wgpu::TextureFormat::Undefined:
             break;
@@ -639,6 +672,7 @@ uint32_t GetTextureFormatBlockHeight(wgpu::TextureFormat textureFormat) {
         // Block size of a multi-planar format depends on aspect.
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
+        case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
 
         case wgpu::TextureFormat::Undefined:
             break;

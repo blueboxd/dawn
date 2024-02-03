@@ -189,6 +189,7 @@ SanitizedResult Sanitize(const Program& in,
         polyfills.saturate = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
+        polyfills.dot_4x8_packed = true;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<ast::transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }
@@ -267,7 +268,6 @@ bool ASTPrinter::Generate() {
                 wgsl::Extension::kChromiumExperimentalDp4A,
                 wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
-                wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
                 wgsl::Extension::kF16,
             })) {
@@ -318,6 +318,9 @@ bool ASTPrinter::Generate() {
             [&](const ast::Enable* enable) {
                 // Record the required extension for generating extension directive later
                 RecordExtension(enable);
+            },  //
+            [&](const ast::Requires*) {
+                // Do nothing for requiring language features in GLSL.
             },  //
             TINT_ICE_ON_NO_MATCH);
     }
@@ -1926,7 +1929,7 @@ void ASTPrinter::EmitUniformVariable(const ast::Var* var, const sem::Variable* s
         TINT_ICE() << "storage variable must be of struct type";
         return;
     }
-    auto bp = *sem->As<sem::GlobalVariable>()->BindingPoint();
+    auto bp = *sem->As<sem::GlobalVariable>()->Attributes().binding_point;
     {
         auto out = Line();
         out << "layout(binding = " << bp.binding << ", std140";
@@ -1945,7 +1948,7 @@ void ASTPrinter::EmitStorageVariable(const ast::Var* var, const sem::Variable* s
         TINT_ICE() << "storage variable must be of struct type";
         return;
     }
-    auto bp = *sem->As<sem::GlobalVariable>()->BindingPoint();
+    auto bp = *sem->As<sem::GlobalVariable>()->Attributes().binding_point;
     Line() << "layout(binding = " << bp.binding << ", std430) buffer "
            << UniqueIdentifier(StructName(str) + "_ssbo") << " {";
     EmitStructMembers(current_buffer_, str);
@@ -2077,7 +2080,7 @@ void ASTPrinter::EmitIOVariable(const sem::GlobalVariable* var) {
     }
 
     auto out = Line();
-    EmitAttributes(out, var, decl->attributes);
+    EmitAttributes(out, var);
     EmitInterpolationQualifiers(out, decl->attributes);
 
     auto name = decl->name->symbol.Name();
@@ -2127,23 +2130,17 @@ void ASTPrinter::EmitInterpolationQualifiers(StringStream& out,
     }
 }
 
-void ASTPrinter::EmitAttributes(StringStream& out,
-                                const sem::GlobalVariable* var,
-                                VectorRef<const ast::Attribute*> attributes) {
-    if (attributes.IsEmpty()) {
-        return;
-    }
+void ASTPrinter::EmitAttributes(StringStream& out, const sem::GlobalVariable* var) {
+    auto& attrs = var->Attributes();
 
     bool first = true;
-    for (auto* attr : attributes) {
-        if (attr->As<ast::LocationAttribute>()) {
-            out << (first ? "layout(" : ", ");
-            out << "location = " << std::to_string(var->Location().value());
-            first = false;
-        }
-        if (attr->As<ast::IndexAttribute>()) {
-            out << ", index = " << std::to_string(var->Index().value());
-        }
+    if (attrs.location.has_value()) {
+        out << (first ? "layout(" : ", ");
+        out << "location = " << std::to_string(attrs.location.value());
+        first = false;
+    }
+    if (attrs.index.has_value()) {
+        out << ", index = " << std::to_string(attrs.index.value());
     }
     if (!first) {
         out << ") ";

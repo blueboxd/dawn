@@ -157,11 +157,14 @@ ProgramInfo LoadProgramInfo(const LoadProgramOptions& opts) {
                     exit(1);
                 }
 
+                tint::wgsl::reader::Options options;
+                options.allowed_features = tint::wgsl::AllowedFeatures::Everything();
+
                 auto file = std::make_unique<tint::Source::File>(
                     opts.filename, std::string(data.begin(), data.end()));
 
                 return ProgramInfo{
-                    /* program */ tint::wgsl::reader::Parse(file.get()),
+                    /* program */ tint::wgsl::reader::Parse(file.get(), options),
                     /* source_file */ std::move(file),
                 };
 #else
@@ -267,8 +270,12 @@ void PrintInspectorData(tint::inspector::Inspector& inspector) {
             for (const auto& var : entry_point.input_variables) {
                 std::cout << "\t";
 
-                if (var.has_location_attribute) {
-                    std::cout << "@location(" << var.location_attribute << ") ";
+                if (auto location = var.attributes.location) {
+                    std::cout << "@location(" << location.value() << ") ";
+                }
+
+                if (auto color = var.attributes.color) {
+                    std::cout << "@color(" << color.value() << ") ";
                 }
                 std::cout << var.name << std::endl;
             }
@@ -279,8 +286,8 @@ void PrintInspectorData(tint::inspector::Inspector& inspector) {
             for (const auto& var : entry_point.output_variables) {
                 std::cout << "\t";
 
-                if (var.has_location_attribute) {
-                    std::cout << "@location(" << var.location_attribute << ") ";
+                if (auto location = var.attributes.location) {
+                    std::cout << "@location(" << location.value() << ") ";
                 }
                 std::cout << var.name << std::endl;
             }

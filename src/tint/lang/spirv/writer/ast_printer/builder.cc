@@ -263,12 +263,14 @@ Builder::AccessorInfo::~AccessorInfo() {}
 
 Builder::Builder(const Program& program,
                  bool zero_initialize_workgroup_memory,
-                 bool experimental_require_subgroup_uniform_control_flow)
+                 bool experimental_require_subgroup_uniform_control_flow,
+                 bool polyfill_dot_4x8_packed)
     : builder_(ProgramBuilder::Wrap(program)),
       scope_stack_{Scope{}},
       zero_initialize_workgroup_memory_(zero_initialize_workgroup_memory),
       experimental_require_subgroup_uniform_control_flow_(
-          experimental_require_subgroup_uniform_control_flow) {}
+          experimental_require_subgroup_uniform_control_flow),
+      polyfill_dot_4x8_packed_(polyfill_dot_4x8_packed) {}
 
 Builder::~Builder() = default;
 
@@ -280,7 +282,6 @@ bool Builder::Build() {
                 wgsl::Extension::kChromiumExperimentalDp4A,
                 wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
-                wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
                 wgsl::Extension::kF16,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
@@ -350,9 +351,11 @@ Operand Builder::result_op() {
 bool Builder::GenerateExtension(wgsl::Extension extension) {
     switch (extension) {
         case wgsl::Extension::kChromiumExperimentalDp4A:
-            module_.PushExtension("SPV_KHR_integer_dot_product");
-            module_.PushCapability(SpvCapabilityDotProductKHR);
-            module_.PushCapability(SpvCapabilityDotProductInput4x8BitPackedKHR);
+            if (!polyfill_dot_4x8_packed_) {
+                module_.PushExtension("SPV_KHR_integer_dot_product");
+                module_.PushCapability(SpvCapabilityDotProductKHR);
+                module_.PushCapability(SpvCapabilityDotProductInput4x8BitPackedKHR);
+            }
             break;
         case wgsl::Extension::kF16:
             module_.PushCapability(SpvCapabilityFloat16);
@@ -806,13 +809,13 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
             [&](const ast::LocationAttribute*) {
                 module_.PushAnnot(spv::Op::OpDecorate,
                                   {Operand(var_id), U32Operand(SpvDecorationLocation),
-                                   Operand(sem->Location().value())});
+                                   Operand(sem->Attributes().location.value())});
                 return true;
             },
             [&](const ast::IndexAttribute*) {
                 module_.PushAnnot(spv::Op::OpDecorate,
                                   {Operand(var_id), U32Operand(SpvDecorationIndex),
-                                   Operand(sem->Index().value())});
+                                   Operand(sem->Attributes().index.value())});
                 return true;
             },
             [&](const ast::InterpolateAttribute* interpolate) {
@@ -837,14 +840,14 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
                 return true;
             },
             [&](const ast::BindingAttribute*) {
-                auto bp = sem->BindingPoint();
+                auto bp = sem->Attributes().binding_point;
                 module_.PushAnnot(
                     spv::Op::OpDecorate,
                     {Operand(var_id), U32Operand(SpvDecorationBinding), Operand(bp->binding)});
                 return true;
             },
             [&](const ast::GroupAttribute*) {
-                auto bp = sem->BindingPoint();
+                auto bp = sem->Attributes().binding_point;
                 module_.PushAnnot(
                     spv::Op::OpDecorate,
                     {Operand(var_id), U32Operand(SpvDecorationDescriptorSet), Operand(bp->group)});

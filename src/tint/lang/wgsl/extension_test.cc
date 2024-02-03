@@ -59,12 +59,11 @@ inline std::ostream& operator<<(std::ostream& out, Case c) {
 static constexpr Case kValidCases[] = {
     {"chromium_disable_uniformity_analysis", Extension::kChromiumDisableUniformityAnalysis},
     {"chromium_experimental_dp4a", Extension::kChromiumExperimentalDp4A},
+    {"chromium_experimental_framebuffer_fetch", Extension::kChromiumExperimentalFramebufferFetch},
     {"chromium_experimental_full_ptr_parameters",
      Extension::kChromiumExperimentalFullPtrParameters},
     {"chromium_experimental_pixel_local", Extension::kChromiumExperimentalPixelLocal},
     {"chromium_experimental_push_constant", Extension::kChromiumExperimentalPushConstant},
-    {"chromium_experimental_read_write_storage_texture",
-     Extension::kChromiumExperimentalReadWriteStorageTexture},
     {"chromium_experimental_subgroups", Extension::kChromiumExperimentalSubgroups},
     {"chromium_internal_dual_source_blending", Extension::kChromiumInternalDualSourceBlending},
     {"chromium_internal_relaxed_uniform_layout", Extension::kChromiumInternalRelaxedUniformLayout},
@@ -78,18 +77,18 @@ static constexpr Case kInvalidCases[] = {
     {"chro1ium_experimental_dp4a", Extension::kUndefined},
     {"chrJmium_experiqqetal_dp4a", Extension::kUndefined},
     {"chromium_experimenll77l_dp4a", Extension::kUndefined},
-    {"chroium_experimental_full_ptr_paqqppmetHHrs", Extension::kUndefined},
-    {"chrium_evperiental_full_ptr_paraceters", Extension::kUndefined},
-    {"chromium_expGimental_fullbptr_parameters", Extension::kUndefined},
-    {"vhromium_experimental_pixel_liical", Extension::kUndefined},
-    {"chromium_experiment8l_pixel_lWWcal", Extension::kUndefined},
-    {"chromium_expeimentMl_xxixel_local", Extension::kUndefined},
-    {"chrXmium_experimeggtal_ush_constant", Extension::kUndefined},
-    {"chromiu_experVmentalpusX_constant", Extension::kUndefined},
-    {"chro3ium_experimental_push_constant", Extension::kUndefined},
-    {"chromium_experimentEl_read_write_storage_texture", Extension::kUndefined},
-    {"chromium_experimePPtTT_read_write_storage_texture", Extension::kUndefined},
-    {"chromium_expeimental_read_write_stoddagexxtexture", Extension::kUndefined},
+    {"cqqromium_eppperimental_framebuffe_fetcHH", Extension::kUndefined},
+    {"chrmium_experimvntal_frcmebufer_ftch", Extension::kUndefined},
+    {"chromium_expebimental_framGbufer_fetch", Extension::kUndefined},
+    {"chvomium_exiierimental_full_ptr_parameters", Extension::kUndefined},
+    {"chromium_WWxperimental_full8ptr_parameters", Extension::kUndefined},
+    {"chromxxum_Mperimental_full_ptr_parameters", Extension::kUndefined},
+    {"chromum_experimental_pixeX_loggal", Extension::kUndefined},
+    {"chromium_expVrXmntal_ixel_local", Extension::kUndefined},
+    {"3hromium_experimental_pixel_local", Extension::kUndefined},
+    {"chromium_experEmental_push_constant", Extension::kUndefined},
+    {"chPPomiumexperimental_push_conTTtant", Extension::kUndefined},
+    {"chromixxm_experimentddl_push_constnt", Extension::kUndefined},
     {"chromium_experimental_44ubgroups", Extension::kUndefined},
     {"cSSromVVum_experimental_subgroups", Extension::kUndefined},
     {"chrmium_e22perimental_suRgrRups", Extension::kUndefined},
@@ -120,7 +119,7 @@ using ExtensionPrintTest = testing::TestWithParam<Case>;
 TEST_P(ExtensionPrintTest, Print) {
     Extension value = GetParam().value;
     const char* expect = GetParam().string;
-    EXPECT_EQ(expect, tint::ToString(value));
+    EXPECT_EQ(expect, ToString(value));
 }
 
 INSTANTIATE_TEST_SUITE_P(ValidCases, ExtensionPrintTest, testing::ValuesIn(kValidCases));

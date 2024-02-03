@@ -44,20 +44,7 @@ class ExperimentalDP4aTests : public DawnTestWithParams<ExperimentalDP4aTestsPar
             return {};
         }
 
-        if (!IsD3D12()) {
-            mUseDxcEnabledOrNonD3D12 = true;
-        } else {
-            bool useDxcDisabled = false;
-            for (auto* disabledToggle : GetParam().forceDisabledWorkarounds) {
-                if (strncmp(disabledToggle, "use_dxc", strlen("use_dxc")) == 0) {
-                    useDxcDisabled = true;
-                    break;
-                }
-            }
-            mUseDxcEnabledOrNonD3D12 = !useDxcDisabled;
-        }
-
-        if (GetParam().mRequestDP4aExtension && mUseDxcEnabledOrNonD3D12) {
+        if (GetParam().mRequestDP4aExtension) {
             return {wgpu::FeatureName::ChromiumExperimentalDp4a};
         }
 
@@ -65,14 +52,16 @@ class ExperimentalDP4aTests : public DawnTestWithParams<ExperimentalDP4aTestsPar
     }
 
     bool IsDP4aSupportedOnAdapter() const { return mIsDP4aSupportedOnAdapter; }
-    bool UseDxcEnabledOrNonD3D12() const { return mUseDxcEnabledOrNonD3D12; }
 
   private:
     bool mIsDP4aSupportedOnAdapter = false;
-    bool mUseDxcEnabledOrNonD3D12 = false;
 };
 
 TEST_P(ExperimentalDP4aTests, BasicDP4aFeaturesTest) {
+    // TODO(dawn:1704): investigate why the creation of compute pipeline with dot4{U|I}Packed()
+    // fails on Pixel 4
+    DAWN_SUPPRESS_TEST_IF(IsQualcomm());
+
     const char* computeShader = R"(
         enable chromium_experimental_dp4a;
 
@@ -86,8 +75,8 @@ TEST_P(ExperimentalDP4aTests, BasicDP4aFeaturesTest) {
 
         @compute @workgroup_size(1)
         fn main() {
-            var a = 0xFFFFFFFFu;
-            var b = 0xFFFFFFFEu;
+            var a = 0xFFFEFDFCu;
+            var b = 0xFBFAF9F8u;
             var c = 0x01020304u;
             buf.data1 = dot4I8Packed(a, b);
             buf.data2 = dot4U8Packed(a, b);
@@ -100,10 +89,10 @@ TEST_P(ExperimentalDP4aTests, BasicDP4aFeaturesTest) {
         GetParam().mRequestDP4aExtension &&
         // Adapter support the feature
         IsDP4aSupportedOnAdapter() &&
-        // Proper toggle, allow_unsafe_apis and use_dxc if d3d12
+        // Proper toggle (allow_unsafe_apis)
         // Note that "allow_unsafe_apis" is always enabled in
         // DawnTestEnvironment::CreateInstance.
-        HasToggleEnabled("allow_unsafe_apis") && UseDxcEnabledOrNonD3D12();
+        HasToggleEnabled("allow_unsafe_apis");
     const bool deviceSupportDP4AFeature =
         device.HasFeature(wgpu::FeatureName::ChromiumExperimentalDp4a);
     EXPECT_EQ(deviceSupportDP4AFeature, shouldDP4AFeatureSupportedByDevice);
@@ -137,18 +126,15 @@ TEST_P(ExperimentalDP4aTests, BasicDP4aFeaturesTest) {
     wgpu::CommandBuffer commands = encoder.Finish();
     queue.Submit(1, &commands);
 
-    uint32_t expected[] = {5, 259845, static_cast<uint32_t>(-10), 2550};
+    uint32_t expected[] = {70, 252998, static_cast<uint32_t>(-30), 2530};
     EXPECT_BUFFER_U32_RANGE_EQ(expected, bufferOut, 0, 4);
 }
 
 // DawnTestBase::CreateDeviceImpl always enables allow_unsafe_apis toggle.
 DAWN_INSTANTIATE_TEST_P(ExperimentalDP4aTests,
-                        {
-                            D3D12Backend(),
-                            D3D12Backend({}, {"use_dxc"}),
-                            MetalBackend(),
-                            VulkanBackend(),
-                        },
+                        {D3D11Backend(), D3D12Backend(), D3D12Backend({}, {"use_dxc"}),
+                         D3D12Backend({"polyfill_packed_4x8_dot_product"}), MetalBackend(),
+                         VulkanBackend(), VulkanBackend({"polyfill_packed_4x8_dot_product"})},
                         {true, false});
 
 }  // anonymous namespace

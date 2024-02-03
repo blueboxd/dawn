@@ -29,6 +29,7 @@
 #define SRC_DAWN_TESTS_WHITE_BOX_SHAREDTEXTUREMEMORYTESTS_H_
 
 #include <gtest/gtest.h>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,14 +40,17 @@ namespace dawn {
 
 class SharedTextureMemoryTestBackend {
   public:
+    virtual void SetUp() {}
+    virtual void TearDown() {}
+
     // The name used in gtest parameterization. Names of backends must be unique.
     virtual std::string Name() const = 0;
 
     // The required features for testing this backend.
-    virtual std::vector<wgpu::FeatureName> RequiredFeatures() const = 0;
+    virtual std::vector<wgpu::FeatureName> RequiredFeatures(const wgpu::Adapter& device) const = 0;
 
     // Create one basic shared texture memory. It should support most operations.
-    virtual wgpu::SharedTextureMemory CreateSharedTextureMemory(wgpu::Device& device) = 0;
+    virtual wgpu::SharedTextureMemory CreateSharedTextureMemory(const wgpu::Device& device) = 0;
 
     // Create a variety of valid SharedTextureMemory for testing, one on each device.
     // Backends should return all interesting types of shared texture memory here, including
@@ -63,6 +67,11 @@ class SharedTextureMemoryTestBackend {
     // device.
     std::vector<wgpu::SharedTextureMemory> CreateSharedTextureMemories(wgpu::Device& device);
 
+    // Wrapper around CreateSharedTextureMemories() that restricts the returned
+    // vector to only the single-planar instances.
+    std::vector<wgpu::SharedTextureMemory> CreateSinglePlanarSharedTextureMemories(
+        wgpu::Device& device);
+
     // Wrapper around CreatePerDeviceSharedTextureMemories that filters the memories by
     // usage to ensure they have `requiredUsage`.
     std::vector<std::vector<wgpu::SharedTextureMemory>>
@@ -78,6 +87,46 @@ class SharedTextureMemoryTestBackend {
     // so it is concurrent reads across disjoint Dawn devices - not concurrent
     // reads on the same Dawn device.
     virtual bool SupportsConcurrentRead() const { return true; }
+
+    // Opaque object which holds backend-specific begin access state.
+    class BackendBeginState {
+      public:
+        virtual ~BackendBeginState() = default;
+    };
+
+    // Opaque object which holds backend-specific end access state.
+    class BackendEndState {
+      public:
+        virtual ~BackendEndState() = default;
+    };
+
+    // Create backend-specific begin access state suitable for initial import and chain it on
+    // `beginDesc` overwriting all chains. Backend-specific state should be allocated inside of the
+    // returned `BackendBeginState`.
+    virtual std::unique_ptr<BackendBeginState> ChainInitialBeginState(
+        wgpu::SharedTextureMemoryBeginAccessDescriptor* beginDesc) {
+        beginDesc->nextInChain = nullptr;
+        return std::make_unique<BackendBeginState>();
+    }
+
+    // Create backend-specific end access state and chain it on `endState` overwriting all chains.
+    // Backend-specific state should be allocated inside of the returned `BackendEndState`.
+    virtual std::unique_ptr<BackendEndState> ChainEndState(
+        wgpu::SharedTextureMemoryEndAccessState* endState) {
+        endState->nextInChain = nullptr;
+        return std::make_unique<BackendEndState>();
+    }
+
+    // Create backend-specific begin access state that is suitable following a prior export using
+    // the backend-specific information written in the provided `endState`. Chain the being state on
+    // `beignDesc` overwriting all chains. Backend-specific state should be allocated inside of the
+    // returned `BackendBeginState`.
+    virtual std::unique_ptr<BackendBeginState> ChainBeginState(
+        wgpu::SharedTextureMemoryBeginAccessDescriptor* beginDesc,
+        const wgpu::SharedTextureMemoryEndAccessState& endState) {
+        beginDesc->nextInChain = nullptr;
+        return std::make_unique<BackendBeginState>();
+    }
 };
 
 inline std::ostream& operator<<(std::ostream& o, SharedTextureMemoryTestBackend* backend) {
@@ -91,6 +140,7 @@ DAWN_TEST_PARAM_STRUCT(SharedTextureMemoryTestParams, Backend);
 class SharedTextureMemoryNoFeatureTests : public DawnTestWithParams<SharedTextureMemoryTestParams> {
   protected:
     void SetUp() override;
+    void TearDown() override;
 };
 
 class SharedTextureMemoryTests : public DawnTestWithParams<SharedTextureMemoryTestParams> {
@@ -98,6 +148,7 @@ class SharedTextureMemoryTests : public DawnTestWithParams<SharedTextureMemoryTe
     std::vector<wgpu::FeatureName> GetRequiredFeatures() override;
 
     void SetUp() override;
+    void TearDown() override;
 
     wgpu::Device CreateDevice();
 

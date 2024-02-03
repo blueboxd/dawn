@@ -59,6 +59,7 @@
 #include "src/tint/lang/msl/writer/ast_raise/packed_vec3.h"
 #include "src/tint/lang/msl/writer/ast_raise/pixel_local.h"
 #include "src/tint/lang/msl/writer/ast_raise/subgroup_ballot.h"
+#include "src/tint/lang/msl/writer/common/option_helpers.h"
 #include "src/tint/lang/msl/writer/common/printer_support.h"
 #include "src/tint/lang/wgsl/ast/alias.h"
 #include "src/tint/lang/wgsl/ast/bool_literal_expression.h"
@@ -191,21 +192,34 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         manager.Add<ast::transform::BuiltinPolyfill>();
     }
 
-    // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
-    data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(
-        options.external_texture_options.bindings_map);
-    manager.Add<ast::transform::MultiplanarExternalTexture>();
+    ExternalTextureOptions external_texture_options{};
+    RemapperData remapper_data{};
+    PopulateRemapperAndMultiplanarOptions(options, remapper_data, external_texture_options);
 
-    // BindingRemapper must come after MultiplanarExternalTexture
     manager.Add<ast::transform::BindingRemapper>();
     data.Add<ast::transform::BindingRemapper::Remappings>(
-        options.binding_remapper_options.binding_points,
-        std::unordered_map<BindingPoint, core::Access>{}, /* allow_collisions */ true);
+        remapper_data, std::unordered_map<BindingPoint, core::Access>{},
+        /* allow_collisions */ true);
+
+    // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
+    // MultiplanarExternalTexture must come after BindingRemapper
+    data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(
+        external_texture_options.bindings_map, /* allow_collisions */ true);
+    manager.Add<ast::transform::MultiplanarExternalTexture>();
 
     if (!options.disable_workgroup_init) {
         // ZeroInitWorkgroupMemory must come before CanonicalizeEntryPointIO as
         // ZeroInitWorkgroupMemory may inject new builtin parameters.
         manager.Add<ast::transform::ZeroInitWorkgroupMemory>();
+    }
+
+    {
+        PixelLocal::Config cfg;
+        for (auto it : options.pixel_local_options.attachments) {
+            cfg.attachments.Add(it.first, it.second);
+        }
+        data.Add<PixelLocal::Config>(cfg);
+        manager.Add<PixelLocal>();
     }
 
     // CanonicalizeEntryPointIO must come after Robustness
@@ -224,15 +238,6 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
 
     // SubgroupBallot() must come after CanonicalizeEntryPointIO.
     manager.Add<SubgroupBallot>();
-
-    {
-        PixelLocal::Config cfg;
-        for (auto it : options.pixel_local_options.attachments) {
-            cfg.attachments.Add(it.first, it.second);
-        }
-        data.Add<PixelLocal::Config>(cfg);
-        manager.Add<PixelLocal>();
-    }
 
     // ArrayLengthFromUniform must come after SimplifyPointers, as
     // it assumes that the form of the array length argument is &var.array.
@@ -273,9 +278,8 @@ bool ASTPrinter::Generate() {
                 wgsl::Extension::kChromiumExperimentalDp4A,
                 wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumExperimentalPixelLocal,
-                wgsl::Extension::kChromiumExperimentalPushConstant,
-                wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
+                wgsl::Extension::kChromiumExperimentalFramebufferFetch,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
                 wgsl::Extension::kChromiumInternalRelaxedUniformLayout,
                 wgsl::Extension::kF16,
@@ -323,6 +327,10 @@ bool ASTPrinter::Generate() {
             },
             [&](const ast::Enable*) {
                 // Do nothing for enabling extension in MSL
+                return true;
+            },
+            [&](const ast::Requires*) {
+                // Do nothing for requiring language features in MSL.
                 return true;
             },
             [&](const ast::ConstAssert*) {
@@ -1966,11 +1974,10 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
             TINT_ICE() << "missing binding attributes for entry point parameter";
             return kInvalidBindingIndex;
         }
-        auto* param_sem = builder_.Sem().Get<sem::Parameter>(param);
-        auto bp = param_sem->BindingPoint();
+        auto* param_sem = builder_.Sem().Get(param);
+        auto bp = param_sem->Attributes().binding_point;
         if (TINT_UNLIKELY(bp->group != 0)) {
-            TINT_ICE() << "encountered non-zero resource group index (use "
-                          "BindingRemapper to fix)";
+            TINT_ICE() << "encountered non-zero resource group index (use BindingRemapper to fix)";
             return kInvalidBindingIndex;
         }
         return bp->binding;
@@ -2003,20 +2010,8 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
 
             bool ok = Switch(
                 type,  //
-                [&](const core::type::Struct* str) {
-                    bool is_pixel_local = false;
-                    if (auto* sem_str = str->As<sem::Struct>()) {
-                        for (auto* member : sem_str->Members()) {
-                            if (ast::HasAttribute<PixelLocal::Attachment>(
-                                    member->Declaration()->attributes)) {
-                                is_pixel_local = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!is_pixel_local) {
-                        out << " [[stage_in]]";
-                    }
+                [&](const core::type::Struct*) {
+                    out << " [[stage_in]]";
                     return true;
                 },
                 [&](const core::type::Texture*) {
@@ -2836,6 +2831,10 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
             }
         }
 
+        if (auto color = attributes.color) {
+            out << " [[color(" + std::to_string(color.value()) + ")]]";
+        }
+
         if (auto interpolation = attributes.interpolation) {
             auto name = InterpolationToAttribute(interpolation->type, interpolation->sampling);
             if (name.empty()) {
@@ -2848,13 +2847,6 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
         if (attributes.invariant) {
             invariant_define_name_ = UniqueIdentifier("TINT_INVARIANT");
             out << " " << invariant_define_name_;
-        }
-
-        if (auto* sem_mem = mem->As<sem::StructMember>()) {
-            if (auto* attachment =
-                    ast::GetAttribute<PixelLocal::Attachment>(sem_mem->Declaration()->attributes)) {
-                out << " [[color(" << attachment->index << ")]]";
-            }
         }
 
         out << ";";

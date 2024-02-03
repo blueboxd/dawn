@@ -374,8 +374,8 @@ void DeviceBase::WillDropLastExternalRef() {
     // references, they can no longer get the queue from APIGetQueue().
     mQueue = nullptr;
 
-    // Reset callbacks since after this, since after dropping the last external reference, the
-    // application may have freed any device-scope memory needed to run the callback.
+    // Reset callbacks since after dropping the last external reference, the application may have
+    // freed any device-scope memory needed to run the callback.
     mUncapturedErrorCallback = [](WGPUErrorType, char const* message, void*) {
         dawn::WarningLog() << "Uncaptured error after last external device reference dropped.\n"
                            << message;
@@ -450,7 +450,7 @@ void DeviceBase::Destroy() {
     // inside which the application may destroy the device. Thus, we should be careful not
     // to delete objects that are needed inside Tick after callbacks have been called.
     //  - mCallbackTaskManager is not deleted since we flush the callback queue at the end
-    // of Tick(). Note: that flush should always be emtpy since all callbacks are drained
+    // of Tick(). Note: that flush should always be empty since all callbacks are drained
     // inside Destroy() so there should be no outstanding tasks holding objects alive.
     //  - Similiarly, mAsyncTaskManager is not deleted since we use it to return a status
     // from Tick() whether or not there is any more pending work.
@@ -520,16 +520,17 @@ void DeviceBase::Destroy() {
     // implementations of DestroyImpl checks that we are disconnected before doing work.
     mState = State::Disconnected;
 
-    // Note: mQueue is not released here since the application may still get it after calling
-    // Destroy() via APIGetQueue.
     mDynamicUploader = nullptr;
     mEmptyBindGroupLayout = nullptr;
     mEmptyPipelineLayout = nullptr;
     mInternalPipelineStore = nullptr;
     mExternalTexturePlaceholderView = nullptr;
 
+    // Note: mQueue is not released here since the application may still get it after calling
+    // Destroy() via APIGetQueue.
     if (mQueue != nullptr) {
         mQueue->AssumeCommandsComplete();
+        mQueue->Destroy();
     }
 
     // Now that the GPU timeline is empty, destroy the backend device.
@@ -1241,7 +1242,7 @@ ShaderModuleBase* DeviceBase::APICreateErrorShaderModule(const ShaderModuleDescr
         ShaderModuleBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     std::unique_ptr<OwnedCompilationMessages> compilationMessages(
         std::make_unique<OwnedCompilationMessages>());
-    compilationMessages->AddMessage(errorMessage, wgpu::CompilationMessageType::Error);
+    compilationMessages->AddUnanchoredMessage(errorMessage, wgpu::CompilationMessageType::Error);
     result->InjectCompilationMessages(std::move(compilationMessages));
 
     std::unique_ptr<ErrorData> errorData =
@@ -1449,34 +1450,46 @@ bool DeviceBase::HasFeature(Feature feature) const {
 }
 
 void DeviceBase::SetWGSLExtensionAllowList() {
-    // Set the WGSL extensions allow list based on device's enabled features and other
-    // properties.
+    // Set the WGSL extensions and language features allow list based on device's enabled features
+    // and other properties.
     if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalDp4a)) {
-        mWGSLExtensionAllowList.insert("chromium_experimental_dp4a");
+        mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kChromiumExperimentalDp4A);
     }
     if (mEnabledFeatures.IsEnabled(Feature::ShaderF16)) {
-        mWGSLExtensionAllowList.insert("f16");
+        mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kF16);
     }
     if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalSubgroups)) {
-        mWGSLExtensionAllowList.insert("chromium_experimental_subgroups");
-    }
-    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalReadWriteStorageTexture)) {
-        mWGSLExtensionAllowList.insert("chromium_experimental_read_write_storage_texture");
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumExperimentalSubgroups);
     }
     if (IsToggleEnabled(Toggle::AllowUnsafeAPIs)) {
-        mWGSLExtensionAllowList.insert("chromium_disable_uniformity_analysis");
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumDisableUniformityAnalysis);
     }
     if (mEnabledFeatures.IsEnabled(Feature::DualSourceBlending)) {
-        mWGSLExtensionAllowList.insert("chromium_internal_dual_source_blending");
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumInternalDualSourceBlending);
     }
     if (mEnabledFeatures.IsEnabled(Feature::PixelLocalStorageNonCoherent) ||
         mEnabledFeatures.IsEnabled(Feature::PixelLocalStorageCoherent)) {
-        mWGSLExtensionAllowList.insert("chromium_experimental_pixel_local");
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumExperimentalPixelLocal);
+    }
+    if (mEnabledFeatures.IsEnabled(Feature::FramebufferFetch)) {
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumExperimentalFramebufferFetch);
+    }
+
+    // Language features are enabled instance-wide.
+    // mAdapter is not set for mock test devices.
+    // TODO(crbug.com/dawn/1702): using a mock adapter and instance could avoid the null checking.
+    if (mAdapter != nullptr) {
+        mWGSLAllowedFeatures.features = GetInstance()->GetAllowedWGSLLanguageFeatures();
     }
 }
 
-WGSLExtensionSet DeviceBase::GetWGSLExtensionAllowList() const {
-    return mWGSLExtensionAllowList;
+const tint::wgsl::AllowedFeatures& DeviceBase::GetWGSLAllowedFeatures() const {
+    return mWGSLAllowedFeatures;
 }
 
 bool DeviceBase::IsValidationEnabled() const {
@@ -2113,13 +2126,6 @@ uint64_t DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil() const {
     // For depth-stencil texture, buffer offset must be a multiple of 4, which is required
     // by WebGPU and Vulkan SPEC.
     return 4u;
-}
-
-bool DeviceBase::WaitAnyImpl(size_t futureCount,
-                             TrackedFutureWaitInfo* futures,
-                             Nanoseconds timeout) {
-    // Default for backends which don't actually need to do anything special in this case.
-    return WaitAnySystemEvent(futureCount, futures, timeout);
 }
 
 MaybeError DeviceBase::CopyFromStagingToBuffer(BufferBase* source,

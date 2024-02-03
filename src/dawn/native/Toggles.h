@@ -45,6 +45,7 @@ enum class Toggle {
     NonzeroClearResourcesOnCreationForTesting,
     AlwaysResolveIntoZeroLevelAndLayer,
     LazyClearResourceOnFirstUse,
+    DisableLazyClearForMappedAtCreationBuffer,
     TurnOffVsync,
     UseTemporaryBufferInCompressedTextureToTextureCopy,
     UseD3D12ResourceHeapTier2,
@@ -121,6 +122,8 @@ enum class Toggle {
     D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources,
     UseTintIR,
     D3DDisableIEEEStrictness,
+    PolyFillPacked4x8DotProduct,
+    ExposeWGSLTestingFeatures,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

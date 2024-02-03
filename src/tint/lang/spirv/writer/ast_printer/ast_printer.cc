@@ -37,7 +37,7 @@
 #include "src/tint/lang/spirv/writer/ast_raise/var_for_dynamic_index.h"
 #include "src/tint/lang/spirv/writer/ast_raise/vectorize_matrix_conversions.h"
 #include "src/tint/lang/spirv/writer/ast_raise/while_to_loop.h"
-#include "src/tint/lang/spirv/writer/common/option_builder.h"
+#include "src/tint/lang/spirv/writer/common/option_helpers.h"
 #include "src/tint/lang/wgsl/ast/transform/add_block_attribute.h"
 #include "src/tint/lang/wgsl/ast/transform/add_empty_entry_point.h"
 #include "src/tint/lang/wgsl/ast/transform/binding_remapper.h"
@@ -145,6 +145,7 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.quantize_to_vec_f16 = true;  // crbug.com/tint/1741
         polyfills.workgroup_uniform_load = true;
+        polyfills.dot_4x8_packed = options.polyfill_dot_4x8_packed;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<ast::transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }
@@ -200,10 +201,12 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
 
 ASTPrinter::ASTPrinter(const Program& program,
                        bool zero_initialize_workgroup_memory,
-                       bool experimental_require_subgroup_uniform_control_flow)
+                       bool experimental_require_subgroup_uniform_control_flow,
+                       bool polyfill_dot_4x8_packed)
     : builder_(program,
                zero_initialize_workgroup_memory,
-               experimental_require_subgroup_uniform_control_flow) {}
+               experimental_require_subgroup_uniform_control_flow,
+               polyfill_dot_4x8_packed) {}
 
 bool ASTPrinter::Generate() {
     if (builder_.Build()) {

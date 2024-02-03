@@ -27,11 +27,9 @@
 
 #include "src/tint/lang/hlsl/writer/ast_printer/ast_printer.h"
 
-#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <iomanip>
-#include <set>
 #include <utility>
 #include <vector>
 
@@ -41,7 +39,6 @@
 #include "src/tint/lang/core/type/array.h"
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
-#include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
@@ -50,10 +47,10 @@
 #include "src/tint/lang/hlsl/writer/ast_raise/decompose_memory_access.h"
 #include "src/tint/lang/hlsl/writer/ast_raise/localize_struct_array_assignment.h"
 #include "src/tint/lang/hlsl/writer/ast_raise/num_workgroups_from_uniform.h"
+#include "src/tint/lang/hlsl/writer/ast_raise/pixel_local.h"
 #include "src/tint/lang/hlsl/writer/ast_raise/remove_continue_in_switch.h"
 #include "src/tint/lang/hlsl/writer/ast_raise/truncate_interstage_variables.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
-#include "src/tint/lang/wgsl/ast/id_attribute.h"
 #include "src/tint/lang/wgsl/ast/internal_attribute.h"
 #include "src/tint/lang/wgsl/ast/interpolate_attribute.h"
 #include "src/tint/lang/wgsl/ast/transform/add_empty_entry_point.h"
@@ -140,7 +137,7 @@ void PrintF32(StringStream& out, float value) {
     } else if (std::isnan(value)) {
         out << "0.0f /* nan */";
     } else {
-        out << tint::writer::FloatToString(value) << "f";
+        out << tint::strconv::FloatToString(value) << "f";
     }
 }
 
@@ -150,7 +147,7 @@ void PrintF16(StringStream& out, float value) {
     } else if (std::isnan(value)) {
         out << "0.0h /* nan */";
     } else {
-        out << tint::writer::FloatToString(value) << "h";
+        out << tint::strconv::FloatToString(value) << "h";
     }
 }
 
@@ -258,6 +255,7 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         polyfills.reflect_vec2_f32 = options.polyfill_reflect_vec2_f32;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
+        polyfills.dot_4x8_packed = options.polyfill_dot_4x8_packed;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<ast::transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }
@@ -268,6 +266,34 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         // ZeroInitWorkgroupMemory must come before CanonicalizeEntryPointIO as
         // ZeroInitWorkgroupMemory may inject new builtin parameters.
         manager.Add<ast::transform::ZeroInitWorkgroupMemory>();
+    }
+
+    {
+        PixelLocal::Config cfg;
+        for (auto it : options.pixel_local_options.attachments) {
+            cfg.pls_member_to_rov_reg.Add(it.first, it.second);
+        }
+        for (auto it : options.pixel_local_options.attachment_formats) {
+            core::TexelFormat format = core::TexelFormat::kUndefined;
+            switch (it.second) {
+                case PixelLocalOptions::TexelFormat::kR32Sint:
+                    format = core::TexelFormat::kR32Sint;
+                    break;
+                case PixelLocalOptions::TexelFormat::kR32Uint:
+                    format = core::TexelFormat::kR32Uint;
+                    break;
+                case PixelLocalOptions::TexelFormat::kR32Float:
+                    format = core::TexelFormat::kR32Float;
+                    break;
+                default:
+                    TINT_ICE() << "missing texel format for pixel local storage attachment";
+                    return SanitizedResult();
+            }
+            cfg.pls_member_to_rov_format.Add(it.first, format);
+        }
+        cfg.rov_group_index = options.pixel_local_options.pixel_local_group_index;
+        data.Add<PixelLocal::Config>(cfg);
+        manager.Add<PixelLocal>();
     }
 
     // CanonicalizeEntryPointIO must come after Robustness
@@ -357,10 +383,10 @@ bool ASTPrinter::Generate() {
                 wgsl::Extension::kChromiumExperimentalDp4A,
                 wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
-                wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
                 wgsl::Extension::kF16,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
+                wgsl::Extension::kChromiumExperimentalPixelLocal,
             })) {
         return false;
     }
@@ -370,7 +396,8 @@ bool ASTPrinter::Generate() {
 
     auto* mod = builder_.Sem().Module();
     for (auto* decl : mod->DependencyOrderedDeclarations()) {
-        if (decl->IsAnyOf<ast::Alias, ast::DiagnosticDirective, ast::Enable, ast::ConstAssert>()) {
+        if (decl->IsAnyOf<ast::Alias, ast::DiagnosticDirective, ast::Enable, ast::Requires,
+                          ast::ConstAssert>()) {
             continue;  // These are not emitted.
         }
 
@@ -2813,10 +2840,16 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
             break;
         case wgsl::BuiltinFn::kTextureLoad:
             out << ".Load(";
-            // Multisampled textures do not support mip-levels.
-            if (!texture_type->Is<core::type::MultisampledTexture>()) {
-                pack_level_in_coords = true;
+            // Multisampled textures and read-write storage textures do not support mip-levels.
+            if (texture_type->Is<core::type::MultisampledTexture>()) {
+                break;
             }
+            if (auto* storage_texture_type = texture_type->As<core::type::StorageTexture>()) {
+                if (storage_texture_type->access() == core::Access::kReadWrite) {
+                    break;
+                }
+            }
+            pack_level_in_coords = true;
             break;
         case wgsl::BuiltinFn::kTextureGather:
             out << ".Gather";
@@ -3330,7 +3363,7 @@ bool ASTPrinter::EmitGlobalVariable(const ast::Variable* global) {
 }
 
 bool ASTPrinter::EmitUniformVariable(const ast::Var* var, const sem::Variable* sem) {
-    auto binding_point = *sem->As<sem::GlobalVariable>()->BindingPoint();
+    auto binding_point = *sem->As<sem::GlobalVariable>()->Attributes().binding_point;
     auto* type = sem->Type()->UnwrapRef();
     auto name = var->name->symbol.Name();
     Line() << "cbuffer cbuffer_" << name << RegisterAndSpace('b', binding_point) << " {";
@@ -3359,7 +3392,7 @@ bool ASTPrinter::EmitStorageVariable(const ast::Var* var, const sem::Variable* s
 
     auto* global_sem = sem->As<sem::GlobalVariable>();
     out << RegisterAndSpace(sem->Access() == core::Access::kRead ? 't' : 'u',
-                            *global_sem->BindingPoint())
+                            *global_sem->Attributes().binding_point)
         << ";";
 
     return true;
@@ -3371,7 +3404,22 @@ bool ASTPrinter::EmitHandleVariable(const ast::Var* var, const sem::Variable* se
 
     auto name = var->name->symbol.Name();
     auto* type = sem->Type()->UnwrapRef();
-    if (!EmitTypeAndName(out, type, sem->AddressSpace(), sem->Access(), name)) {
+    if (ast::HasAttribute<PixelLocal::RasterizerOrderedView>(var->attributes)) {
+        TINT_ASSERT(!type->Is<core::type::MultisampledTexture>());
+        auto* storage = type->As<core::type::StorageTexture>();
+        if (!storage) {
+            TINT_ICE() << "Rasterizer Ordered View type isn't storage texture";
+            return false;
+        }
+        out << "RasterizerOrderedTexture2D";
+        auto* component = image_format_to_rwtexture_type(storage->texel_format());
+        if (TINT_UNLIKELY(!component)) {
+            TINT_ICE() << "Unsupported StorageTexture TexelFormat: "
+                       << static_cast<int>(storage->texel_format());
+            return false;
+        }
+        out << "<" << component << "> " << name;
+    } else if (!EmitTypeAndName(out, type, sem->AddressSpace(), sem->Access(), name)) {
         return false;
     }
 
@@ -3388,7 +3436,7 @@ bool ASTPrinter::EmitHandleVariable(const ast::Var* var, const sem::Variable* se
     }
 
     if (register_space) {
-        auto bp = sem->As<sem::GlobalVariable>()->BindingPoint();
+        auto bp = sem->As<sem::GlobalVariable>()->Attributes().binding_point;
         out << " : register(" << register_space << bp->binding;
         // Omit the space if it's 0, as it's the default.
         // SM 5.0 doesn't support spaces, so we don't emit them if group is 0 for better

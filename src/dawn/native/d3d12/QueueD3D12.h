@@ -28,8 +28,10 @@
 #ifndef SRC_DAWN_NATIVE_D3D12_QUEUED3D12_H_
 #define SRC_DAWN_NATIVE_D3D12_QUEUED3D12_H_
 
-#include "dawn/native/Queue.h"
-
+#include "dawn/common/MutexProtected.h"
+#include "dawn/common/SerialMap.h"
+#include "dawn/native/SystemEvent.h"
+#include "dawn/native/d3d/QueueD3D.h"
 #include "dawn/native/d3d12/CommandRecordingContext.h"
 #include "dawn/native/d3d12/d3d12_platform.h"
 
@@ -37,12 +39,12 @@ namespace dawn::native::d3d12 {
 
 class Device;
 
-class Queue final : public QueueBase {
+class Queue final : public d3d::Queue {
   public:
     static Ref<Queue> Create(Device* device, const QueueDescriptor* descriptor);
 
   private:
-    Queue(Device* device, const QueueDescriptor* descriptor);
+    using d3d::Queue::Queue;
 
     void Initialize();
 
@@ -51,6 +53,8 @@ class Queue final : public QueueBase {
     ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
     void ForceEventualFlushOfCommands() override;
     MaybeError WaitForIdleForDestruction() override;
+
+    void SetEventOnCompletion(ExecutionSerial serial, HANDLE event) override;
 
     // Dawn API
     void SetLabelImpl() override;

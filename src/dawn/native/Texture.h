@@ -72,6 +72,10 @@ static constexpr wgpu::TextureUsage kReadOnlyTextureUsages =
 static constexpr wgpu::TextureUsage kResolveTextureLoadAndStoreUsages =
     kResolveAttachmentLoadingUsage | wgpu::TextureUsage::RenderAttachment;
 
+static constexpr wgpu::TextureUsage kShaderTextureUsages =
+    wgpu::TextureUsage::TextureBinding | kReadOnlyStorageTexture |
+    wgpu::TextureUsage::StorageBinding | kWriteOnlyStorageTexture;
+
 class TextureBase : public ApiObjectBase {
   public:
     enum class ClearValue { Zero, NonZero };
@@ -81,6 +85,7 @@ class TextureBase : public ApiObjectBase {
     ObjectType GetType() const override;
 
     wgpu::TextureDimension GetDimension() const;
+    wgpu::TextureViewDimension GetCompatibilityTextureBindingViewDimension() const;
     const Format& GetFormat() const;
     const FormatSet& GetViewFormats() const;
 
@@ -175,6 +180,8 @@ class TextureBase : public ApiObjectBase {
     TextureBase(DeviceBase* device, const TextureDescriptor* descriptor, ObjectBase::ErrorTag tag);
 
     wgpu::TextureDimension mDimension;
+    wgpu::TextureViewDimension
+        mCompatibilityTextureBindingViewDimension;  // only used for compatibility mode
     const Format& mFormat;
     FormatSet mViewFormats;
     Extent3D mBaseSize;

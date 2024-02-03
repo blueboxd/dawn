@@ -456,8 +456,6 @@ fn f(tex : texture_storage_3d<rgba8unorm, write>) {
 
 TEST_F(BuiltinPolyfillTest, Bgra8unorm_TextureLoad) {
     auto* src = R"(
-enable chromium_experimental_read_write_storage_texture;
-
 @group(0) @binding(0) var tex : texture_storage_2d<bgra8unorm, read>;
 
 fn f(coords : vec2<i32>) -> vec4<f32> {
@@ -466,8 +464,6 @@ fn f(coords : vec2<i32>) -> vec4<f32> {
 )";
 
     auto* expect = R"(
-enable chromium_experimental_read_write_storage_texture;
-
 @group(0) @binding(0) var tex : texture_storage_2d<rgba8unorm, read>;
 
 fn f(coords : vec2<i32>) -> vec4<f32> {
@@ -554,8 +550,6 @@ fn f(coords : vec2<i32>, value : vec4<f32>) {
 
 TEST_F(BuiltinPolyfillTest, Bgra8unorm_TextureLoadAndStore) {
     auto* src = R"(
-enable chromium_experimental_read_write_storage_texture;
-
 @group(0) @binding(0) var tex : texture_storage_2d<bgra8unorm, read_write>;
 
 fn f(coords : vec2<i32>) {
@@ -564,8 +558,6 @@ fn f(coords : vec2<i32>) {
 )";
 
     auto* expect = R"(
-enable chromium_experimental_read_write_storage_texture;
-
 @group(0) @binding(0) var tex : texture_storage_2d<rgba8unorm, read_write>;
 
 fn f(coords : vec2<i32>) {
@@ -4058,6 +4050,83 @@ fn f() {
 )";
 
     auto got = Run<BuiltinPolyfill>(src, polyfillQuantizeToF16_2d_f32());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Built-in functions in packed_4x8_integer_dot_product
+////////////////////////////////////////////////////////////////////////////////
+DataMap polyfillPacked4x8IntegerDotProduct() {
+    BuiltinPolyfill::Builtins builtins;
+    builtins.dot_4x8_packed = true;
+    DataMap data;
+    data.Add<BuiltinPolyfill::Config>(builtins);
+    return data;
+}
+
+TEST_F(BuiltinPolyfillTest, Dot4I8Packed) {
+    auto* src = R"(
+enable chromium_experimental_dp4a;
+
+fn f() {
+  let v1 = 0x01020304u;
+  let v2 = 0xF1F2F3F4u;
+  _ = dot4I8Packed(v1, v2);
+}
+)";
+
+    auto* expect = R"(
+enable chromium_experimental_dp4a;
+
+fn tint_dot4_i8_packed(a : u32, b : u32) -> i32 {
+  const n = vec4<u32>(24, 16, 8, 0);
+  let a_i8 = (bitcast<vec4<i32>>((vec4<u32>(a) << n)) >> vec4<u32>(24));
+  let b_i8 = (bitcast<vec4<i32>>((vec4<u32>(b) << n)) >> vec4<u32>(24));
+  return dot(a_i8, b_i8);
+}
+
+fn f() {
+  let v1 = 16909060u;
+  let v2 = 4059231220u;
+  _ = tint_dot4_i8_packed(v1, v2);
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillPacked4x8IntegerDotProduct());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, Dot4U8Packed) {
+    auto* src = R"(
+enable chromium_experimental_dp4a;
+
+fn f() {
+  let v1 = 0x01020304u;
+  let v2 = 0xF1F2F3F4u;
+  _ = dot4U8Packed(v1, v2);
+}
+)";
+
+    auto* expect = R"(
+enable chromium_experimental_dp4a;
+
+fn tint_dot4_u8_packed(a : u32, b : u32) -> u32 {
+  const n = vec4<u32>(24, 16, 8, 0);
+  let a_u8 = ((vec4<u32>(a) >> n) & vec4<u32>(255));
+  let b_u8 = ((vec4<u32>(b) >> n) & vec4<u32>(255));
+  return dot(a_u8, b_u8);
+}
+
+fn f() {
+  let v1 = 16909060u;
+  let v2 = 4059231220u;
+  _ = tint_dot4_u8_packed(v1, v2);
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillPacked4x8IntegerDotProduct());
 
     EXPECT_EQ(expect, str(got));
 }

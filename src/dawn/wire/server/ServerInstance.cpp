@@ -34,7 +34,7 @@
 namespace dawn::wire::server {
 
 WireResult Server::DoInstanceRequestAdapter(Known<WGPUInstance> instance,
-                                            uint64_t requestSerial,
+                                            WGPUFuture future,
                                             ObjectHandle adapterHandle,
                                             const WGPURequestAdapterOptions* options) {
     Known<WGPUAdapter> adapter;
@@ -42,7 +42,7 @@ WireResult Server::DoInstanceRequestAdapter(Known<WGPUInstance> instance,
 
     auto userdata = MakeUserdata<RequestAdapterUserdata>();
     userdata->instance = instance.AsHandle();
-    userdata->requestSerial = requestSerial;
+    userdata->future = future;
     userdata->adapterObjectId = adapter.id;
 
     mProcs.instanceRequestAdapter(instance->handle, options,
@@ -57,7 +57,7 @@ void Server::OnRequestAdapterCallback(RequestAdapterUserdata* data,
                                       const char* message) {
     ReturnInstanceRequestAdapterCallbackCmd cmd = {};
     cmd.instance = data->instance;
-    cmd.requestSerial = data->requestSerial;
+    cmd.future = data->future;
     cmd.status = status;
     cmd.message = message;
 
@@ -87,6 +87,14 @@ void Server::OnRequestAdapterCallback(RequestAdapterUserdata* data,
 
     // Query and report the adapter properties.
     WGPUAdapterProperties properties = {};
+
+    // Query AdapterPropertiesMemoryHeaps if the feature is supported.
+    WGPUAdapterPropertiesMemoryHeaps memoryHeapProperties = {};
+    memoryHeapProperties.chain.sType = WGPUSType_AdapterPropertiesMemoryHeaps;
+    if (mProcs.adapterHasFeature(adapter, WGPUFeatureName_AdapterPropertiesMemoryHeaps)) {
+        properties.nextInChain = &memoryHeapProperties.chain;
+    }
+
     mProcs.adapterGetProperties(adapter, &properties);
     cmd.properties = &properties;
 
@@ -102,6 +110,7 @@ void Server::OnRequestAdapterCallback(RequestAdapterUserdata* data,
 
     SerializeCommand(cmd);
     mProcs.adapterPropertiesFreeMembers(properties);
+    mProcs.adapterPropertiesMemoryHeapsFreeMembers(memoryHeapProperties);
 }
 
 }  // namespace dawn::wire::server

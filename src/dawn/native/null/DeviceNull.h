@@ -199,14 +199,17 @@ class PhysicalDevice : public PhysicalDeviceBase {
     void InitializeSupportedFeaturesImpl() override;
     MaybeError InitializeSupportedLimitsImpl(CombinedLimits* limits) override;
 
-    MaybeError ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
-                                                       const TogglesState& toggles) const override;
+    FeatureValidationResult ValidateFeatureSupportedWithTogglesImpl(
+        wgpu::FeatureName feature,
+        const TogglesState& toggles) const override;
 
     void SetupBackendAdapterToggles(TogglesState* adapterToggles) const override;
     void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override;
     ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(AdapterBase* adapter,
                                                     const DeviceDescriptor* descriptor,
                                                     const TogglesState& deviceToggles) override;
+
+    void PopulateMemoryHeapInfo(AdapterPropertiesMemoryHeaps* memoryHeapProperties) const override;
 };
 
 // Helper class so |BindGroup| can allocate memory for its binding data,
@@ -283,6 +286,7 @@ class Queue final : public QueueBase {
     ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
     void ForceEventualFlushOfCommands() override;
     bool HasPendingCommands() const override;
+    ResultOrError<bool> WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) override;
     MaybeError WaitForIdleForDestruction() override;
 };
 

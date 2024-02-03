@@ -141,6 +141,19 @@ constexpr SkippedMessage kSkippedMessages[] = {
     // have a corresponding attachment
     {"UNASSIGNED-CoreValidation-Shader-OutputNotConsumed",
      "fragment shader writes to output location 0 with no matching attachment"},
+
+    // http://crbug.com/1499919
+    {"VUID-VkMemoryAllocateInfo-allocationSize-01742",
+     "vkAllocateMemory(): pAllocateInfo->allocationSize allocationSize (4096) "
+     "does not match pAllocateInfo->pNext<VkImportMemoryFdInfoKHR>"},
+    {"VUID-VkMemoryAllocateInfo-allocationSize-01742",
+     "vkAllocateMemory(): pAllocateInfo->allocationSize allocationSize (512) "
+     "does not match pAllocateInfo->pNext<VkImportMemoryFdInfoKHR>"},
+    {"VUID-VkMemoryAllocateInfo-allocationSize-01742",
+     "vkAllocateMemory(): pAllocateInfo->memoryTypeIndex memoryTypeIndex (7) "
+     "does not match pAllocateInfo->pNext<VkImportMemoryFdInfoKHR>"},
+    {"VUID-VkMemoryDedicatedAllocateInfo-image-01878",
+     "vkAllocateMemory(): pAllocateInfo->pNext<VkMemoryDedicatedAllocateInfo>"},
 };
 
 namespace dawn::native::vulkan {

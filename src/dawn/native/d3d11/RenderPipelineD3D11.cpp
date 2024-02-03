@@ -34,6 +34,7 @@
 #include <optional>
 #include <utility>
 
+#include "dawn/common/Range.h"
 #include "dawn/native/CreatePipelineAsyncTask.h"
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d/ShaderUtils.h"
@@ -248,7 +249,7 @@ MaybeError RenderPipeline::Initialize() {
 
 RenderPipeline::~RenderPipeline() = default;
 
-void RenderPipeline::ApplyNow(CommandRecordingContext* commandContext,
+void RenderPipeline::ApplyNow(const ScopedSwapStateCommandRecordingContext* commandContext,
                               const std::array<float, 4>& blendColor,
                               uint32_t stencilReference) {
     auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
@@ -264,14 +265,15 @@ void RenderPipeline::ApplyNow(CommandRecordingContext* commandContext,
     ApplyDepthStencilState(commandContext, stencilReference);
 }
 
-void RenderPipeline::ApplyBlendState(CommandRecordingContext* commandContext,
+void RenderPipeline::ApplyBlendState(const ScopedSwapStateCommandRecordingContext* commandContext,
                                      const std::array<float, 4>& blendColor) {
     auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
     d3d11DeviceContext->OMSetBlendState(mBlendState.Get(), blendColor.data(), GetSampleMask());
 }
 
-void RenderPipeline::ApplyDepthStencilState(CommandRecordingContext* commandContext,
-                                            uint32_t stencilReference) {
+void RenderPipeline::ApplyDepthStencilState(
+    const ScopedSwapStateCommandRecordingContext* commandContext,
+    uint32_t stencilReference) {
     auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
     d3d11DeviceContext->OMSetDepthStencilState(mDepthStencilState.Get(), stencilReference);
 }
@@ -356,10 +358,10 @@ MaybeError RenderPipeline::InitializeBlendState() {
     blendDesc.IndependentBlendEnable = TRUE;
 
     static_assert(kMaxColorAttachments == std::size(blendDesc.RenderTarget));
-    for (ColorAttachmentIndex i(0Ui8); i < ColorAttachmentIndex(kMaxColorAttachments); ++i) {
+    for (auto i : Range(kMaxColorAttachmentsTyped)) {
         D3D11_RENDER_TARGET_BLEND_DESC& rtBlendDesc =
             blendDesc.RenderTarget[static_cast<uint8_t>(i)];
-        const ColorTargetState* descriptor = GetColorTargetState(ColorAttachmentIndex(i));
+        const ColorTargetState* descriptor = GetColorTargetState(i);
         rtBlendDesc.BlendEnable = descriptor->blend != nullptr;
         if (rtBlendDesc.BlendEnable) {
             rtBlendDesc.SrcBlend = D3DBlendFactor(descriptor->blend->color.srcFactor);
@@ -461,13 +463,57 @@ MaybeError RenderPipeline::InitializeShaders() {
         mUsesInstanceIndex = compiledShader[SingleShaderStage::Vertex].usesInstanceIndex;
     }
 
+    std::optional<tint::PixelLocalOptions> pixelLocalOptions;
     if (GetStageMask() & wgpu::ShaderStage::Fragment) {
+        pixelLocalOptions = tint::PixelLocalOptions();
+        // HLSL SM5.0 doesn't support groups, so we set group index to 0.
+        pixelLocalOptions->pixel_local_group_index = 0;
+
+        if (GetAttachmentState()->HasPixelLocalStorage()) {
+            const std::vector<wgpu::TextureFormat>& storageAttachmentSlots =
+                GetAttachmentState()->GetStorageAttachmentSlots();
+            DAWN_ASSERT(ToBackend(GetLayout())->GetTotalUAVBindingCount() >
+                        storageAttachmentSlots.size());
+            // Currently all the pixel local storage UAVs are allocated at the last several UAV
+            // slots. For example, when there are 4 pixel local storage attachments, we will
+            // allocate register u60 to u63 for them.
+            uint32_t basePixelLocalAttachmentIndex =
+                ToBackend(GetLayout())->GetTotalUAVBindingCount() -
+                static_cast<uint32_t>(storageAttachmentSlots.size());
+            for (size_t i = 0; i < storageAttachmentSlots.size(); i++) {
+                pixelLocalOptions->attachments[i] = basePixelLocalAttachmentIndex + i;
+
+                static_assert(
+                    RenderPipelineBase::kImplicitPLSSlotFormat == wgpu::TextureFormat::R32Uint,
+                    "The implicit Pixel Local Storage format should be R32Uint.");
+                switch (storageAttachmentSlots[i]) {
+                        // We use R32Uint as default pixel local storage attachment format
+                    case wgpu::TextureFormat::Undefined:
+                    case wgpu::TextureFormat::R32Uint:
+                        pixelLocalOptions->attachment_formats[i] =
+                            tint::PixelLocalOptions::TexelFormat::kR32Uint;
+                        break;
+                    case wgpu::TextureFormat::R32Sint:
+                        pixelLocalOptions->attachment_formats[i] =
+                            tint::PixelLocalOptions::TexelFormat::kR32Sint;
+                        break;
+                    case wgpu::TextureFormat::R32Float:
+                        pixelLocalOptions->attachment_formats[i] =
+                            tint::PixelLocalOptions::TexelFormat::kR32Float;
+                        break;
+                    default:
+                        DAWN_UNREACHABLE();
+                        break;
+                }
+            }
+        }
+
         const ProgrammableStage& programmableStage = GetStage(SingleShaderStage::Fragment);
         DAWN_TRY_ASSIGN(
             compiledShader[SingleShaderStage::Fragment],
             ToBackend(programmableStage.module)
                 ->Compile(programmableStage, SingleShaderStage::Fragment, ToBackend(GetLayout()),
-                          compileFlags, usedInterstageVariables));
+                          compileFlags, usedInterstageVariables, pixelLocalOptions));
         DAWN_TRY(CheckHRESULT(device->GetD3D11Device()->CreatePixelShader(
                                   compiledShader[SingleShaderStage::Fragment].shaderBlob.Data(),
                                   compiledShader[SingleShaderStage::Fragment].shaderBlob.Size(),

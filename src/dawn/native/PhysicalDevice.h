@@ -47,6 +47,16 @@ namespace dawn::native {
 
 class DeviceBase;
 
+struct FeatureValidationResult {
+    // Constructor of successful result
+    FeatureValidationResult();
+    // Constructor of failed result
+    explicit FeatureValidationResult(std::string errorMsg);
+
+    bool success;
+    std::string errorMessage;
+};
+
 class PhysicalDeviceBase : public RefCounted {
   public:
     PhysicalDeviceBase(InstanceBase* instance, wgpu::BackendType backend);
@@ -93,8 +103,13 @@ class PhysicalDeviceBase : public RefCounted {
     virtual void SetupBackendDeviceToggles(TogglesState* deviceToggles) const = 0;
 
     // Check if a feature os supported by this adapter AND suitable with given toggles.
-    MaybeError ValidateFeatureSupportedWithToggles(wgpu::FeatureName feature,
-                                                   const TogglesState& toggles) const;
+    FeatureValidationResult ValidateFeatureSupportedWithToggles(wgpu::FeatureName feature,
+                                                                const TogglesState& toggles) const;
+
+    // Populate information about the memory heaps. Ownership of allocations written to
+    // `memoryHeapProperties` are owned by the caller.
+    virtual void PopulateMemoryHeapInfo(
+        AdapterPropertiesMemoryHeaps* memoryHeapProperties) const = 0;
 
   protected:
     uint32_t mVendorId = 0xFFFFFFFF;
@@ -132,7 +147,7 @@ class PhysicalDeviceBase : public RefCounted {
 
     virtual void InitializeVendorArchitectureImpl();
 
-    virtual MaybeError ValidateFeatureSupportedWithTogglesImpl(
+    virtual FeatureValidationResult ValidateFeatureSupportedWithTogglesImpl(
         wgpu::FeatureName feature,
         const TogglesState& toggles) const = 0;
 

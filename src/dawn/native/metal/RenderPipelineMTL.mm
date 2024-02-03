@@ -36,6 +36,7 @@
 #include "dawn/native/metal/ShaderModuleMTL.h"
 #include "dawn/native/metal/TextureMTL.h"
 #include "dawn/native/metal/UtilsMetal.h"
+#include "dawn/platform/metrics/HistogramMacros.h"
 
 namespace dawn::native::metal {
 
@@ -392,20 +393,40 @@ MaybeError RenderPipeline::Initialize() {
         ShaderModule::MetalFunctionData fragmentData;
         DAWN_TRY(ToBackend(fragmentStage.module.Get())
                      ->CreateFunction(SingleShaderStage::Fragment, fragmentStage,
-                                      ToBackend(GetLayout()), &fragmentData, GetSampleMask()));
+                                      ToBackend(GetLayout()), &fragmentData, GetSampleMask(),
+                                      this));
 
         descriptorMTL.fragmentFunction = fragmentData.function.Get();
         if (fragmentData.needsStorageBufferLength) {
             mStagesRequiringStorageBufferLength |= wgpu::ShaderStage::Fragment;
         }
 
-        const auto& fragmentOutputsWritten = fragmentStage.metadata->fragmentOutputsWritten;
-        for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
+        const auto& fragmentOutputMask = fragmentStage.metadata->fragmentOutputMask;
+        for (auto i : IterateBitSet(GetColorAttachmentsMask())) {
             descriptorMTL.colorAttachments[static_cast<uint8_t>(i)].pixelFormat =
                 MetalPixelFormat(GetDevice(), GetColorAttachmentFormat(i));
             const ColorTargetState* descriptor = GetColorTargetState(i);
             ComputeBlendDesc(descriptorMTL.colorAttachments[static_cast<uint8_t>(i)], descriptor,
-                             fragmentOutputsWritten[i]);
+                             fragmentOutputMask[i]);
+        }
+
+        if (GetAttachmentState()->HasPixelLocalStorage()) {
+            const std::vector<wgpu::TextureFormat>& storageAttachmentSlots =
+                GetAttachmentState()->GetStorageAttachmentSlots();
+            std::vector<ColorAttachmentIndex> storageAttachmentPacking =
+                GetAttachmentState()->ComputeStorageAttachmentPackingInColorAttachments();
+
+            for (size_t i = 0; i < storageAttachmentSlots.size(); i++) {
+                uint8_t index = static_cast<uint8_t>(storageAttachmentPacking[i]);
+
+                if (storageAttachmentSlots[i] == wgpu::TextureFormat::Undefined) {
+                    descriptorMTL.colorAttachments[index].pixelFormat =
+                        MetalPixelFormat(GetDevice(), kImplicitPLSSlotFormat);
+                } else {
+                    descriptorMTL.colorAttachments[index].pixelFormat =
+                        MetalPixelFormat(GetDevice(), storageAttachmentSlots[i]);
+                }
+            }
         }
     }
 
@@ -436,6 +457,7 @@ MaybeError RenderPipeline::Initialize() {
     descriptorMTL.rasterSampleCount = GetSampleCount();
     descriptorMTL.alphaToCoverageEnabled = IsAlphaToCoverageEnabled();
 
+    platform::metrics::DawnHistogramTimer timer(GetDevice()->GetPlatform());
     NSError* error = nullptr;
     mMtlRenderPipelineState =
         AcquireNSPRef([mtlDevice newRenderPipelineStateWithDescriptor:descriptorMTL error:&error]);
@@ -444,6 +466,7 @@ MaybeError RenderPipeline::Initialize() {
                                    [error.localizedDescription UTF8String]);
     }
     DAWN_ASSERT(mMtlRenderPipelineState != nil);
+    timer.RecordMicroseconds("Metal.newRenderPipelineStateWithDescriptor.CacheMiss");
 
     // Create depth stencil state and cache it, fetch the cached depth stencil state when we
     // call setDepthStencilState() for a given render pipeline in CommandEncoder, in order

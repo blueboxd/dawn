@@ -36,6 +36,7 @@
 #include "dawn/native/ResourceMemoryAllocation.h"
 #include "dawn/native/Texture.h"
 #include "dawn/native/vulkan/ExternalHandle.h"
+#include "dawn/native/vulkan/SharedTextureMemoryVk.h"
 #include "dawn/native/vulkan/external_memory/MemoryService.h"
 #include "dawn/native/vulkan/external_semaphore/SemaphoreService.h"
 
@@ -75,6 +76,11 @@ class Texture final : public TextureBase {
         const TextureDescriptor* textureDescriptor,
         external_memory::Service* externalMemoryService);
 
+    // Create a texture from contents of a SharedTextureMemory.
+    static ResultOrError<Ref<Texture>> CreateFromSharedTextureMemory(
+        SharedTextureMemory* memory,
+        const TextureDescriptor* textureDescriptor);
+
     // Creates a texture that wraps a swapchain-allocated VkImage.
     static Ref<Texture> CreateForSwapChain(Device* device,
                                            const TextureDescriptor* descriptor,
@@ -89,9 +95,10 @@ class Texture final : public TextureBase {
     // TODO(crbug.com/dawn/851): coalesce barriers and do them early when possible.
     void TransitionUsageNow(CommandRecordingContext* recordingContext,
                             wgpu::TextureUsage usage,
+                            wgpu::ShaderStage shaderStages,
                             const SubresourceRange& range);
     void TransitionUsageForPass(CommandRecordingContext* recordingContext,
-                                const TextureSubresourceUsage& textureUsages,
+                                const TextureSubresourceSyncInfo& textureSyncInfos,
                                 std::vector<VkImageMemoryBarrier>* imageBarriers,
                                 VkPipelineStageFlags* srcStages,
                                 VkPipelineStageFlags* dstStages);
@@ -117,6 +124,12 @@ class Texture final : public TextureBase {
                                      VkImageLayout* releasedOldLayout,
                                      VkImageLayout* releasedNewLayout);
 
+    void SetPendingAcquire(VkImageLayout pendingAcquireOldLayout,
+                           VkImageLayout pendingAcquireNewLayout);
+    MaybeError EndAccess(ExternalSemaphoreHandle* handle,
+                         VkImageLayout* releasedOldLayout,
+                         VkImageLayout* releasedNewLayout);
+
     void SetLabelHelper(const char* prefix);
 
     // Dawn API
@@ -138,16 +151,18 @@ class Texture final : public TextureBase {
 
     // Implementation details of the barrier computations for the texture.
     void TransitionUsageAndGetResourceBarrier(wgpu::TextureUsage usage,
+                                              wgpu::ShaderStage shaderStages,
                                               const SubresourceRange& range,
                                               std::vector<VkImageMemoryBarrier>* imageBarriers,
                                               VkPipelineStageFlags* srcStages,
                                               VkPipelineStageFlags* dstStages);
     void TransitionUsageForPassImpl(CommandRecordingContext* recordingContext,
-                                    const SubresourceStorage<wgpu::TextureUsage>& subresourceUsages,
+                                    const SubresourceStorage<TextureSyncInfo>& subresourceSyncInfos,
                                     std::vector<VkImageMemoryBarrier>* imageBarriers,
                                     VkPipelineStageFlags* srcStages,
                                     VkPipelineStageFlags* dstStages);
     void TransitionUsageAndGetResourceBarrierImpl(wgpu::TextureUsage usage,
+                                                  wgpu::ShaderStage shaderStages,
                                                   const SubresourceRange& range,
                                                   std::vector<VkImageMemoryBarrier>* imageBarriers,
                                                   VkPipelineStageFlags* srcStages,
@@ -155,12 +170,20 @@ class Texture final : public TextureBase {
     void TweakTransitionForExternalUsage(CommandRecordingContext* recordingContext,
                                          std::vector<VkImageMemoryBarrier>* barriers,
                                          size_t transitionBarrierStart);
-    bool CanReuseWithoutBarrier(wgpu::TextureUsage lastUsage, wgpu::TextureUsage usage);
+    bool CanReuseWithoutBarrier(wgpu::TextureUsage lastUsage,
+                                wgpu::TextureUsage usage,
+                                wgpu::ShaderStage lastShaderStage,
+                                wgpu::ShaderStage shaderStage);
 
     VkImage mHandle = VK_NULL_HANDLE;
     bool mOwnsHandle = false;
     ResourceMemoryAllocation mMemoryAllocation;
     VkDeviceMemory mExternalAllocation = VK_NULL_HANDLE;
+    struct SharedTextureMemoryObjects {
+        Ref<RefCountedVkHandle<VkImage>> vkImage;
+        Ref<RefCountedVkHandle<VkDeviceMemory>> vkDeviceMemory;
+    };
+    SharedTextureMemoryObjects mSharedTextureMemoryObjects;
 
     // The states of an external texture:
     //   InternalOnly: Not initialized as an external texture yet.
@@ -200,7 +223,7 @@ class Texture final : public TextureBase {
     //
     // This variable, if not Aspect::None, is the combined aspect to use for all transitions.
     const Aspect mCombinedAspect;
-    SubresourceStorage<wgpu::TextureUsage> mSubresourceLastUsages;
+    SubresourceStorage<TextureSyncInfo> mSubresourceLastSyncInfos;
 
     bool UseCombinedAspects() const;
 };

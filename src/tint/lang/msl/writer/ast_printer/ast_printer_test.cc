@@ -49,13 +49,26 @@ TEST_F(MslASTPrinterTest, InvalidProgram) {
 }
 
 TEST_F(MslASTPrinterTest, UnsupportedExtension) {
-    Enable(Source{{12, 34}}, wgsl::Extension::kUndefined);
+    Enable(Source{{12, 34}}, wgsl::Extension::kChromiumExperimentalPushConstant);
 
     ASTPrinter& gen = Build();
 
     ASSERT_FALSE(gen.Generate());
-    EXPECT_EQ(gen.Diagnostics().str(),
-              R"(12:34 error: MSL backend does not support extension 'undefined')");
+    EXPECT_EQ(
+        gen.Diagnostics().str(),
+        R"(12:34 error: MSL backend does not support extension 'chromium_experimental_push_constant')");
+}
+
+TEST_F(MslASTPrinterTest, RequiresDirective) {
+    Require(wgsl::LanguageFeature::kReadonlyAndReadwriteStorageTextures);
+
+    ASTPrinter& gen = Build();
+
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    EXPECT_EQ(gen.Result(), R"(#include <metal_stdlib>
+
+using namespace metal;
+)");
 }
 
 TEST_F(MslASTPrinterTest, Generate) {

@@ -34,6 +34,7 @@
 #include "dawn/common/GPUInfo.h"
 #include "dawn/common/Log.h"
 #include "dawn/common/SystemUtils.h"
+#include "dawn/common/WGSLFeatureMapping.h"
 #include "dawn/native/CallbackTaskManager.h"
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/Device.h"
@@ -42,6 +43,7 @@
 #include "dawn/native/Toggles.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "tint/lang/wgsl/features/status.h"
 
 // For SwiftShader fallback
 #if defined(DAWN_ENABLE_BACKEND_VULKAN)
@@ -106,6 +108,31 @@ dawn::platform::CachingInterface* GetCachingInterface(dawn::platform::Platform* 
     return nullptr;
 }
 
+wgpu::WGSLFeatureName ToWGPUFeature(tint::wgsl::LanguageFeature f) {
+    switch (f) {
+#define CASE(WgslName, WgpuName)                \
+    case tint::wgsl::LanguageFeature::WgslName: \
+        return wgpu::WGSLFeatureName::WgpuName;
+        DAWN_FOREACH_WGSL_FEATURE(CASE)
+#undef CASE
+    }
+}
+
+tint::wgsl::LanguageFeature ToWGSLFeature(wgpu::WGSLFeatureName f) {
+    switch (f) {
+#define CASE(WgslName, WgpuName)          \
+    case wgpu::WGSLFeatureName::WgpuName: \
+        return tint::wgsl::LanguageFeature::WgslName;
+        DAWN_FOREACH_WGSL_FEATURE(CASE)
+#undef CASE
+        case wgpu::WGSLFeatureName::Packed4x8IntegerDotProduct:
+        case wgpu::WGSLFeatureName::UnrestrictedPointerParameters:
+        case wgpu::WGSLFeatureName::PointerCompositeAccess:
+            return tint::wgsl::LanguageFeature::kUndefined;
+    }
+}
+DAWN_UNUSED_FUNC(ToWGSLFeature);
+
 }  // anonymous namespace
 
 wgpu::Bool APIGetInstanceFeatures(InstanceFeatures* features) {
@@ -151,6 +178,28 @@ Ref<InstanceBase> InstanceBase::Create(const InstanceDescriptor* descriptor) {
 InstanceBase::InstanceBase(const TogglesState& instanceToggles) : mToggles(instanceToggles) {}
 
 InstanceBase::~InstanceBase() = default;
+
+void InstanceBase::DeleteThis() {
+    // Flush all remaining callback tasks on all devices and on the instance.
+    std::set<DeviceBase*> devices;
+    do {
+        devices.clear();
+        mDevicesList.Use([&](auto deviceList) { devices.swap(*deviceList); });
+        for (auto device : devices) {
+            device->GetCallbackTaskManager()->HandleShutDown();
+            do {
+                device->GetCallbackTaskManager()->Flush();
+            } while (!device->GetCallbackTaskManager()->IsEmpty());
+        }
+    } while (!devices.empty());
+
+    mCallbackTaskManager->HandleShutDown();
+    do {
+        mCallbackTaskManager->Flush();
+    } while (!mCallbackTaskManager->IsEmpty());
+
+    RefCountedWithExternalCount::DeleteThis();
+}
 
 void InstanceBase::WillDropLastExternalRef() {
     // InstanceBase uses RefCountedWithExternalCount to break refcycles.
@@ -200,6 +249,8 @@ MaybeError InstanceBase::Initialize(const InstanceDescriptor* descriptor) {
 
     DAWN_TRY(mEventManager.Initialize(descriptor));
 
+    GatherWGSLFeatures();
+
     return {};
 }
 
@@ -216,6 +267,12 @@ void InstanceBase::APIRequestAdapter(const RequestAdapterOptions* options,
     } else {
         callback(WGPURequestAdapterStatus_Success, ToAPI(adapters[0].Detach()), nullptr, userdata);
     }
+}
+
+Future InstanceBase::APIRequestAdapterF(const RequestAdapterOptions* options,
+                                        const RequestAdapterCallbackInfo& callbackInfo) {
+    // TODO(dawn:1987) Implement this.
+    DAWN_UNREACHABLE();
 }
 
 Ref<AdapterBase> InstanceBase::CreateAdapter(Ref<PhysicalDeviceBase> physicalDevice,
@@ -451,28 +508,24 @@ BlobCache* InstanceBase::GetBlobCache(bool enabled) {
 }
 
 uint64_t InstanceBase::GetDeviceCountForTesting() const {
-    std::lock_guard<std::mutex> lg(mDevicesListMutex);
-    return mDevicesList.size();
+    return mDevicesList.Use([](auto deviceList) { return deviceList->size(); });
 }
 
 void InstanceBase::AddDevice(DeviceBase* device) {
-    std::lock_guard<std::mutex> lg(mDevicesListMutex);
-    mDevicesList.insert(device);
+    mDevicesList.Use([&](auto deviceList) { deviceList->insert(device); });
 }
 
 void InstanceBase::RemoveDevice(DeviceBase* device) {
-    std::lock_guard<std::mutex> lg(mDevicesListMutex);
-    mDevicesList.erase(device);
+    mDevicesList.Use([&](auto deviceList) { deviceList->erase(device); });
 }
 
 void InstanceBase::APIProcessEvents() {
     std::vector<Ref<DeviceBase>> devices;
-    {
-        std::lock_guard<std::mutex> lg(mDevicesListMutex);
-        for (auto device : mDevicesList) {
+    mDevicesList.Use([&](auto deviceList) {
+        for (auto device : *deviceList) {
             devices.push_back(device);
         }
-    }
+    });
 
     for (auto device : devices) {
         device->APITick();
@@ -522,6 +575,67 @@ Surface* InstanceBase::APICreateSurface(const SurfaceDescriptor* descriptor) {
     }
 
     return new Surface(this, descriptor);
+}
+
+const std::unordered_set<tint::wgsl::LanguageFeature>&
+InstanceBase::GetAllowedWGSLLanguageFeatures() const {
+    return mTintLanguageFeatures;
+}
+
+void InstanceBase::GatherWGSLFeatures() {
+    for (auto wgslFeature : tint::wgsl::kAllLanguageFeatures) {
+        // Skip over testing features if we don't have the toggle to expose them.
+        if (!mToggles.IsEnabled(Toggle::ExposeWGSLTestingFeatures)) {
+            switch (wgslFeature) {
+                case tint::wgsl::LanguageFeature::kChromiumTestingUnimplemented:
+                case tint::wgsl::LanguageFeature::kChromiumTestingUnsafeExperimental:
+                case tint::wgsl::LanguageFeature::kChromiumTestingExperimental:
+                case tint::wgsl::LanguageFeature::kChromiumTestingShippedWithKillswitch:
+                case tint::wgsl::LanguageFeature::kChromiumTestingShipped:
+                    continue;
+                default:
+                    break;
+            }
+        }
+
+        // Expose the feature depending on its status and allow_unsafe_apis.
+        bool enable = false;
+        switch (tint::wgsl::GetLanguageFeatureStatus(wgslFeature)) {
+            case tint::wgsl::FeatureStatus::kUnknown:
+            case tint::wgsl::FeatureStatus::kUnimplemented:
+                enable = false;
+                break;
+
+            case tint::wgsl::FeatureStatus::kUnsafeExperimental:
+            case tint::wgsl::FeatureStatus::kExperimental:
+                enable = mToggles.IsEnabled(Toggle::AllowUnsafeAPIs);
+                break;
+
+            case tint::wgsl::FeatureStatus::kShippedWithKillswitch:
+            case tint::wgsl::FeatureStatus::kShipped:
+                enable = true;
+                break;
+        }
+
+        if (enable) {
+            mWGSLFeatures.emplace(ToWGPUFeature(wgslFeature));
+            mTintLanguageFeatures.emplace(wgslFeature);
+        }
+    }
+}
+
+bool InstanceBase::APIHasWGSLLanguageFeature(wgpu::WGSLFeatureName feature) const {
+    return mWGSLFeatures.count(feature) != 0;
+}
+
+size_t InstanceBase::APIEnumerateWGSLLanguageFeatures(wgpu::WGSLFeatureName* features) const {
+    if (features != nullptr) {
+        for (wgpu::WGSLFeatureName f : mWGSLFeatures) {
+            *features = f;
+            ++features;
+        }
+    }
+    return mWGSLFeatures.size();
 }
 
 }  // namespace dawn::native

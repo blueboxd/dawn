@@ -34,6 +34,7 @@
 #                       Do not modify this file directly
 ################################################################################
 
+include(lang/core/ir/binary/BUILD.cmake)
 include(lang/core/ir/transform/BUILD.cmake)
 
 ################################################################################
@@ -89,6 +90,7 @@ tint_add_target(tint_lang_core_ir lib
   lang/core/ir/function.h
   lang/core/ir/function_param.cc
   lang/core/ir/function_param.h
+  lang/core/ir/ice.h
   lang/core/ir/if.cc
   lang/core/ir/if.h
   lang/core/ir/instruction.cc

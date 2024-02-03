@@ -319,6 +319,8 @@ class DawnTestBase {
     void ResolveDeferredExpectationsNow();
 
   protected:
+    wgpu::Instance instance;
+    wgpu::Adapter adapter;
     wgpu::Device device;
     wgpu::Queue queue;
 
@@ -606,8 +608,6 @@ class DawnTestBase {
   private:
     AdapterTestParam mParam;
     std::unique_ptr<utils::WireHelper> mWireHelper;
-    wgpu::Instance mInstance;
-    wgpu::Adapter mAdapter;
 
     // Helps generate unique userdata values passed to deviceLostUserdata.
     std::atomic<uintptr_t> mNextUniqueUserdata = 0;
@@ -843,6 +843,7 @@ extern template class ExpectEq<uint8_t>;
 extern template class ExpectEq<int16_t>;
 extern template class ExpectEq<uint32_t>;
 extern template class ExpectEq<uint64_t>;
+extern template class ExpectEq<int32_t>;
 extern template class ExpectEq<utils::RGBA8>;
 extern template class ExpectEq<float>;
 extern template class ExpectEq<float, uint16_t>;

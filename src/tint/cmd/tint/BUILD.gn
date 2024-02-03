@@ -55,6 +55,8 @@ tint_executable("tint") {
     "${tint_src_dir}/lang/wgsl",
     "${tint_src_dir}/lang/wgsl/ast",
     "${tint_src_dir}/lang/wgsl/ast/transform",
+    "${tint_src_dir}/lang/wgsl/common",
+    "${tint_src_dir}/lang/wgsl/features",
     "${tint_src_dir}/lang/wgsl/helpers",
     "${tint_src_dir}/lang/wgsl/inspector",
     "${tint_src_dir}/lang/wgsl/program",
@@ -100,11 +102,8 @@ tint_executable("tint") {
       "${tint_src_dir}/lang/msl/validate",
       "${tint_src_dir}/lang/msl/writer",
       "${tint_src_dir}/lang/msl/writer/common",
+      "${tint_src_dir}/lang/msl/writer/helpers",
     ]
-  }
-
-  if (tint_build_spv_reader) {
-    deps += [ "${tint_src_dir}/lang/spirv/reader" ]
   }
 
   if (tint_build_spv_reader || tint_build_spv_writer) {

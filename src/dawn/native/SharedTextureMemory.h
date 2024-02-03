@@ -69,6 +69,10 @@ class SharedTextureMemoryBase : public ApiObjectBase,
     bool APIBeginAccess(TextureBase* texture, const BeginAccessDescriptor* descriptor);
     // Returns true if access was released.
     bool APIEndAccess(TextureBase* texture, EndAccessState* state);
+    // Returns true iff the device passed to this object on creation is now lost.
+    // TODO(crbug.com/1506468): Eliminate this API once Chromium has been
+    // transitioned away from using it in favor of observing device lost events.
+    bool APIIsDeviceLost();
 
     ObjectType GetType() const override;
 
@@ -87,7 +91,7 @@ class SharedTextureMemoryBase : public ApiObjectBase,
 
     void DestroyImpl() override;
 
-    const SharedTextureMemoryProperties mProperties;
+    SharedTextureMemoryProperties mProperties;
 
     Ref<TextureBase> mCurrentAccess;
 
@@ -109,7 +113,9 @@ class SharedTextureMemoryBase : public ApiObjectBase,
     virtual MaybeError BeginAccessImpl(TextureBase* texture,
                                        const BeginAccessDescriptor* descriptor) = 0;
     // EndAccessImpl validates the operation is valid on the backend, and returns the end fence.
-    virtual ResultOrError<FenceAndSignalValue> EndAccessImpl(TextureBase* texture) = 0;
+    // It should also write out any backend specific state in chained out structs of EndAccessState.
+    virtual ResultOrError<FenceAndSignalValue> EndAccessImpl(TextureBase* texture,
+                                                             EndAccessState* state) = 0;
 
     Ref<SharedTextureMemoryContents> mContents;
 };
