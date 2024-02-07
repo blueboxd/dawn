@@ -347,7 +347,7 @@ ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
         DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
     }
     if (!program.IsValid()) {
-        return DAWN_VALIDATION_ERROR("Error while parsing WGSL: %s\n", program.Diagnostics().str());
+        return DAWN_VALIDATION_ERROR("Error while parsing WGSL: %s\n", program.Diagnostics().Str());
     }
 
     return std::move(program);
@@ -369,7 +369,7 @@ ResultOrError<tint::Program> ParseSPIRV(const std::vector<uint32_t>& spirv,
     }
     if (!program.IsValid()) {
         return DAWN_VALIDATION_ERROR("Error while parsing SPIR-V: %s\n",
-                                     program.Diagnostics().str());
+                                     program.Diagnostics().Str());
     }
 
     return std::move(program);
@@ -383,7 +383,9 @@ std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingGroupInfoMap& shad
 
     for (BindingIndex bindingIndex{0}; bindingIndex < layout->GetBufferCount(); ++bindingIndex) {
         const BindingInfo& bindingInfo = layout->GetBindingInfo(bindingIndex);
-        if (bindingInfo.buffer.minBindingSize != 0) {
+        const auto* bufferBindingLayout =
+            std::get_if<BufferBindingLayout>(&bindingInfo.bindingLayout);
+        if (bufferBindingLayout == nullptr || bufferBindingLayout->minBindingSize > 0) {
             // Skip bindings that have minimum buffer size set in the layout
             continue;
         }
@@ -411,20 +413,20 @@ std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingGroupInfoMap& shad
 }
 
 bool IsShaderCompatibleWithPipelineLayoutOnStorageTextureAccess(
-    const BindingInfo& bindingInfo,
-    const StorageTextureBindingInfo& bindingLayout) {
-    return bindingInfo.storageTexture.access == bindingLayout.access ||
-           (bindingInfo.storageTexture.access == wgpu::StorageTextureAccess::ReadWrite &&
-            bindingLayout.access == wgpu::StorageTextureAccess::WriteOnly);
+    const StorageTextureBindingLayout& pipelineBindingLayout,
+    const StorageTextureBindingInfo& shaderBindingInfo) {
+    return pipelineBindingLayout.access == shaderBindingInfo.access ||
+           (pipelineBindingLayout.access == wgpu::StorageTextureAccess::ReadWrite &&
+            shaderBindingInfo.access == wgpu::StorageTextureAccess::WriteOnly);
 }
 
 BindingInfoType GetShaderBindingType(const ShaderBindingInfo& shaderInfo) {
     return MatchVariant(
-        shaderInfo.bindingInfo, [&](const BufferBindingInfo&) { return BindingInfoType::Buffer; },
-        [&](const StorageTextureBindingInfo&) { return BindingInfoType::StorageTexture; },
-        [&](const SampledTextureBindingInfo&) { return BindingInfoType::Texture; },
-        [&](const SamplerBindingInfo&) { return BindingInfoType::Sampler; },
-        [&](const ExternalTextureBindingInfo&) { return BindingInfoType::ExternalTexture; });
+        shaderInfo.bindingInfo, [](const BufferBindingInfo&) { return BindingInfoType::Buffer; },
+        [](const SamplerBindingInfo&) { return BindingInfoType::Sampler; },
+        [](const SampledTextureBindingInfo&) { return BindingInfoType::Texture; },
+        [](const StorageTextureBindingInfo&) { return BindingInfoType::StorageTexture; },
+        [](const ExternalTextureBindingInfo&) { return BindingInfoType::ExternalTexture; });
 }
 
 MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* device,
@@ -460,10 +462,11 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
     BindingIndex bindingIndex(bindingIt->second);
     const BindingInfo& layoutInfo = layout->GetBindingInfo(bindingIndex);
 
+    BindingInfoType bindingLayoutType = GetBindingInfoType(layoutInfo);
     BindingInfoType shaderBindingType = GetShaderBindingType(shaderInfo);
-    DAWN_INVALID_IF(layoutInfo.bindingType != shaderBindingType,
+    DAWN_INVALID_IF(bindingLayoutType != shaderBindingType,
                     "Binding type in the shader (%s) doesn't match the type in the layout (%s).",
-                    shaderBindingType, layoutInfo.bindingType);
+                    shaderBindingType, bindingLayoutType);
 
     ExternalTextureBindingExpansionMap expansions = layout->GetExternalTextureBindingExpansionMap();
     DAWN_INVALID_IF(expansions.find(bindingNumber) != expansions.end(),
@@ -477,21 +480,23 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
     return MatchVariant(
         shaderInfo.bindingInfo,
         [&](const SampledTextureBindingInfo& bindingInfo) -> MaybeError {
+            const TextureBindingLayout& bindingLayout =
+                std::get<TextureBindingLayout>(layoutInfo.bindingLayout);
             DAWN_INVALID_IF(
-                layoutInfo.texture.multisampled != bindingInfo.multisampled,
+                bindingLayout.multisampled != bindingInfo.multisampled,
                 "Binding multisampled flag (%u) doesn't match the layout's multisampled "
                 "flag (%u)",
-                layoutInfo.texture.multisampled, bindingInfo.multisampled);
+                bindingLayout.multisampled, bindingInfo.multisampled);
 
             // TODO(dawn:563): Provide info about the sample types.
             SampleTypeBit requiredType;
-            if (layoutInfo.texture.sampleType == kInternalResolveAttachmentSampleType) {
+            if (bindingLayout.sampleType == kInternalResolveAttachmentSampleType) {
                 // If the layout's texture's sample type is
                 // kInternalResolveAttachmentSampleType, then the shader's compatible sample
                 // types must contain float.
                 requiredType = SampleTypeBit::UnfilterableFloat;
             } else {
-                requiredType = SampleTypeToSampleTypeBit(layoutInfo.texture.sampleType);
+                requiredType = SampleTypeToSampleTypeBit(bindingLayout.sampleType);
             }
 
             DAWN_INVALID_IF(!(bindingInfo.compatibleSampleTypes & requiredType),
@@ -499,68 +504,72 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
                             "sample type of the layout.");
 
             DAWN_INVALID_IF(
-                layoutInfo.texture.viewDimension != bindingInfo.viewDimension,
+                bindingLayout.viewDimension != bindingInfo.viewDimension,
                 "The shader's binding dimension (%s) doesn't match the shader's binding "
                 "dimension (%s).",
-                layoutInfo.texture.viewDimension, bindingInfo.viewDimension);
+                bindingLayout.viewDimension, bindingInfo.viewDimension);
             return {};
         },
         [&](const StorageTextureBindingInfo& bindingInfo) -> MaybeError {
-            DAWN_ASSERT(layoutInfo.storageTexture.format != wgpu::TextureFormat::Undefined);
+            const StorageTextureBindingLayout& bindingLayout =
+                std::get<StorageTextureBindingLayout>(layoutInfo.bindingLayout);
+            DAWN_ASSERT(bindingLayout.format != wgpu::TextureFormat::Undefined);
             DAWN_ASSERT(bindingInfo.format != wgpu::TextureFormat::Undefined);
 
             DAWN_INVALID_IF(!IsShaderCompatibleWithPipelineLayoutOnStorageTextureAccess(
-                                layoutInfo, bindingInfo),
+                                bindingLayout, bindingInfo),
                             "The layout's binding access (%s) isn't compatible with the shader's "
                             "binding access (%s).",
-                            layoutInfo.storageTexture.access, bindingInfo.access);
+                            bindingLayout.access, bindingInfo.access);
 
-            DAWN_INVALID_IF(layoutInfo.storageTexture.format != bindingInfo.format,
+            DAWN_INVALID_IF(bindingLayout.format != bindingInfo.format,
                             "The layout's binding format (%s) doesn't match the shader's binding "
                             "format (%s).",
-                            layoutInfo.storageTexture.format, bindingInfo.format);
+                            bindingLayout.format, bindingInfo.format);
 
-            DAWN_INVALID_IF(layoutInfo.storageTexture.viewDimension != bindingInfo.viewDimension,
+            DAWN_INVALID_IF(bindingLayout.viewDimension != bindingInfo.viewDimension,
                             "The layout's binding dimension (%s) doesn't match the "
                             "shader's binding dimension (%s).",
-                            layoutInfo.storageTexture.viewDimension, bindingInfo.viewDimension);
+                            bindingLayout.viewDimension, bindingInfo.viewDimension);
             return {};
         },
         [&](const BufferBindingInfo& bindingInfo) -> MaybeError {
+            const BufferBindingLayout& bindingLayout =
+                std::get<BufferBindingLayout>(layoutInfo.bindingLayout);
             // Binding mismatch between shader and bind group is invalid. For example, a
             // writable binding in the shader with a readonly storage buffer in the bind
             // group layout is invalid. For internal usage with internal shaders, a storage
             // binding in the shader with an internal storage buffer in the bind group
             // layout is also valid.
-            bool validBindingConversion =
-                (layoutInfo.buffer.type == kInternalStorageBufferBinding &&
-                 bindingInfo.type == wgpu::BufferBindingType::Storage);
+            bool validBindingConversion = (bindingLayout.type == kInternalStorageBufferBinding &&
+                                           bindingInfo.type == wgpu::BufferBindingType::Storage);
 
             DAWN_INVALID_IF(
-                layoutInfo.buffer.type != bindingInfo.type && !validBindingConversion,
+                bindingLayout.type != bindingInfo.type && !validBindingConversion,
                 "The buffer type in the shader (%s) is not compatible with the type in the "
                 "layout (%s).",
-                bindingInfo.type, layoutInfo.buffer.type);
+                bindingInfo.type, bindingLayout.type);
 
-            DAWN_INVALID_IF(layoutInfo.buffer.minBindingSize != 0 &&
-                                bindingInfo.minBindingSize > layoutInfo.buffer.minBindingSize,
+            DAWN_INVALID_IF(bindingLayout.minBindingSize != 0 &&
+                                bindingInfo.minBindingSize > bindingLayout.minBindingSize,
                             "The shader uses more bytes of the buffer (%u) than the layout's "
                             "minBindingSize (%u).",
-                            bindingInfo.minBindingSize, layoutInfo.buffer.minBindingSize);
+                            bindingInfo.minBindingSize, bindingLayout.minBindingSize);
             return {};
         },
         [&](const SamplerBindingInfo& bindingInfo) -> MaybeError {
+            const SamplerBindingLayout& bindingLayout =
+                std::get<SamplerBindingLayout>(layoutInfo.bindingLayout);
             DAWN_INVALID_IF(
-                (layoutInfo.sampler.type == wgpu::SamplerBindingType::Comparison) !=
+                (bindingLayout.type == wgpu::SamplerBindingType::Comparison) !=
                     bindingInfo.isComparison,
                 "The sampler type in the shader (comparison: %u) doesn't match the type in "
                 "the layout (comparison: %u).",
                 bindingInfo.isComparison,
-                layoutInfo.sampler.type == wgpu::SamplerBindingType::Comparison);
+                bindingLayout.type == wgpu::SamplerBindingType::Comparison);
             return {};
         },
-
-        [&](const ExternalTextureBindingInfo&) -> MaybeError {
+        [](const ExternalTextureBindingInfo&) -> MaybeError {
             DAWN_UNREACHABLE();
             return {};
         });
@@ -1123,7 +1132,7 @@ ResultOrError<tint::Program> RunTransforms(tint::ast::transform::Manager* transf
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(result.Diagnostics()));
     }
-    DAWN_INVALID_IF(!result.IsValid(), "Tint program failure: %s\n", result.Diagnostics().str());
+    DAWN_INVALID_IF(!result.IsValid(), "Tint program failure: %s\n", result.Diagnostics().Str());
     if (outputs != nullptr) {
         *outputs = std::move(transform_outputs);
     }
@@ -1153,21 +1162,17 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
             layout->GetBindGroupLayout(pair.sampler.group);
         const BindingInfo& samplerInfo =
             samplerBGL->GetBindingInfo(samplerBGL->GetBindingIndex(pair.sampler.binding));
-        if (samplerInfo.sampler.type != wgpu::SamplerBindingType::Filtering) {
+        const SamplerBindingLayout& samplerLayout =
+            std::get<SamplerBindingLayout>(samplerInfo.bindingLayout);
+        if (samplerLayout.type != wgpu::SamplerBindingType::Filtering) {
             continue;
         }
         const BindGroupLayoutInternalBase* textureBGL =
             layout->GetBindGroupLayout(pair.texture.group);
         const BindingInfo& textureInfo =
             textureBGL->GetBindingInfo(textureBGL->GetBindingIndex(pair.texture.binding));
-
-        DAWN_ASSERT(textureInfo.bindingType != BindingInfoType::Buffer &&
-                    textureInfo.bindingType != BindingInfoType::Sampler &&
-                    textureInfo.bindingType != BindingInfoType::StorageTexture);
-
-        if (textureInfo.bindingType != BindingInfoType::Texture) {
-            continue;
-        }
+        const TextureBindingLayout& sampledTextureBindingLayout =
+            std::get<TextureBindingLayout>(textureInfo.bindingLayout);
 
         // Uint/Sint can't be statically used with a sampler, so they any
         // texture bindings reflected must be float or depth textures. If
@@ -1175,12 +1180,12 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
         // specifies a uint/sint texture binding,
         // |ValidateCompatibilityWithBindGroupLayout| will fail since the
         // sampleType does not match.
-        DAWN_ASSERT(textureInfo.texture.sampleType != wgpu::TextureSampleType::Undefined &&
-                    textureInfo.texture.sampleType != wgpu::TextureSampleType::Uint &&
-                    textureInfo.texture.sampleType != wgpu::TextureSampleType::Sint);
+        DAWN_ASSERT(sampledTextureBindingLayout.sampleType != wgpu::TextureSampleType::Undefined &&
+                    sampledTextureBindingLayout.sampleType != wgpu::TextureSampleType::Uint &&
+                    sampledTextureBindingLayout.sampleType != wgpu::TextureSampleType::Sint);
 
         DAWN_INVALID_IF(
-            textureInfo.texture.sampleType == wgpu::TextureSampleType::UnfilterableFloat,
+            sampledTextureBindingLayout.sampleType == wgpu::TextureSampleType::UnfilterableFloat,
             "Texture binding (group:%u, binding:%u) is %s but used statically with a sampler "
             "(group:%u, binding:%u) that's %s",
             pair.texture.group, pair.texture.binding, wgpu::TextureSampleType::UnfilterableFloat,
@@ -1319,48 +1324,47 @@ bool ShaderModuleBase::EqualityFunc::operator()(const ShaderModuleBase* a,
 }
 
 ShaderModuleBase::ScopedUseTintProgram ShaderModuleBase::UseTintProgram() {
-    return mTintData.Use(
-        [&](auto tintData) {
-            if (tintData->tintProgram) {
-                return ScopedUseTintProgram(this);
-            }
-
-            // When the ShaderModuleBase is not referenced externally, and not used for initializing
-            // any pipeline, the mTintProgram will be released. However the ShaderModuleBase itself
-            // may still alive due to being referenced by some pipelines. In this case, when
-            // DeviceBase::APICreateShaderModule() with the same shader source code, Dawn will look
-            // up from the cache and return the same ShaderModuleBase. In this case, we have to
-            // recreate mTintProgram, when the mTintProgram is required for initializing new
-            // pipelines.
-            ShaderModuleDescriptor descriptor;
-            ShaderModuleWGSLDescriptor wgslDescriptor;
-            ShaderModuleSPIRVDescriptor sprivDescriptor;
-
-            switch (mType) {
-                case Type::Spirv:
-                    sprivDescriptor.codeSize = mOriginalSpirv.size();
-                    sprivDescriptor.code = mOriginalSpirv.data();
-                    descriptor.nextInChain = &sprivDescriptor;
-                    break;
-                case Type::Wgsl:
-                    wgslDescriptor.code = mWgsl.c_str();
-                    descriptor.nextInChain = &wgslDescriptor;
-                    break;
-                default:
-                    DAWN_ASSERT(false);
-            }
-
-            ShaderModuleParseResult parseResult;
-            ValidateAndParseShaderModule(GetDevice(), Unpack(&descriptor), &parseResult,
-                                         /*compilationMessages=*/nullptr)
-                .AcquireSuccess();
-            DAWN_ASSERT(parseResult.tintProgram != nullptr);
-
-            tintData->tintProgram = std::move(parseResult.tintProgram);
-            tintData->tintProgramRecreateCount++;
-
+    return mTintData.Use([&](auto tintData) {
+        if (tintData->tintProgram) {
             return ScopedUseTintProgram(this);
-        });
+        }
+
+        // When the ShaderModuleBase is not referenced externally, and not used for initializing
+        // any pipeline, the mTintProgram will be released. However the ShaderModuleBase itself
+        // may still alive due to being referenced by some pipelines. In this case, when
+        // DeviceBase::APICreateShaderModule() with the same shader source code, Dawn will look
+        // up from the cache and return the same ShaderModuleBase. In this case, we have to
+        // recreate mTintProgram, when the mTintProgram is required for initializing new
+        // pipelines.
+        ShaderModuleDescriptor descriptor;
+        ShaderModuleWGSLDescriptor wgslDescriptor;
+        ShaderModuleSPIRVDescriptor sprivDescriptor;
+
+        switch (mType) {
+            case Type::Spirv:
+                sprivDescriptor.codeSize = mOriginalSpirv.size();
+                sprivDescriptor.code = mOriginalSpirv.data();
+                descriptor.nextInChain = &sprivDescriptor;
+                break;
+            case Type::Wgsl:
+                wgslDescriptor.code = mWgsl.c_str();
+                descriptor.nextInChain = &wgslDescriptor;
+                break;
+            default:
+                DAWN_ASSERT(false);
+        }
+
+        ShaderModuleParseResult parseResult;
+        ValidateAndParseShaderModule(GetDevice(), Unpack(&descriptor), &parseResult,
+                                     /*compilationMessages=*/nullptr)
+            .AcquireSuccess();
+        DAWN_ASSERT(parseResult.tintProgram != nullptr);
+
+        tintData->tintProgram = std::move(parseResult.tintProgram);
+        tintData->tintProgramRecreateCount++;
+
+        return ScopedUseTintProgram(this);
+    });
 }
 
 Ref<TintProgram> ShaderModuleBase::GetTintProgram() const {

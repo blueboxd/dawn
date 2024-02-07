@@ -265,7 +265,7 @@ struct CanonicalizeEntryPointIO::State {
 
         // Get or create the intrinsic function.
         auto builtin = BuiltinOf(attrs);
-        auto intrinsic = wave_intrinsics.GetOrCreate(builtin, [&] {
+        auto intrinsic = wave_intrinsics.GetOrAdd(builtin, [&] {
             if (builtin == core::BuiltinValue::kSubgroupInvocationId) {
                 return make_intrinsic("__WaveGetLaneIndex",
                                       HLSLWaveIntrinsic::Op::kWaveGetLaneIndex);
@@ -950,8 +950,8 @@ Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program& src,
 
     auto* cfg = inputs.Get<Config>();
     if (cfg == nullptr) {
-        b.Diagnostics().add_error(diag::System::Transform,
-                                  "missing transform data for " + std::string(TypeInfo().name));
+        b.Diagnostics().AddError(diag::System::Transform,
+                                 "missing transform data for " + std::string(TypeInfo().name));
         return resolver::Resolve(b);
     }
 

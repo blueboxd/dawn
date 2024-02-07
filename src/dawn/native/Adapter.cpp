@@ -211,6 +211,9 @@ ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDevice(const DeviceDescriptor*
     // Default toggles for all backend
     deviceToggles.Default(Toggle::LazyClearResourceOnFirstUse, true);
     deviceToggles.Default(Toggle::TimestampQuantization, true);
+    if (mPhysicalDevice->GetInstance()->IsBackendValidationEnabled()) {
+        deviceToggles.Default(Toggle::UseUserDefinedLabelsInBackend, true);
+    }
 
     // Backend-specific forced and default device toggles
     mPhysicalDevice->SetupBackendDeviceToggles(&deviceToggles);
@@ -288,15 +291,22 @@ Future AdapterBase::APIRequestDeviceF(const DeviceDescriptor* descriptor,
         ~RequestDeviceEvent() override { EnsureComplete(EventCompletionType::Shutdown); }
 
         void Complete(EventCompletionType completionType) override {
-            if (mDeviceOrError.IsError()) {
-                std::unique_ptr<ErrorData> errorData = mDeviceOrError.AcquireError();
-                mCallback(WGPURequestDeviceStatus_Error, nullptr,
-                          errorData->GetFormattedMessage().c_str(), mUserdata);
-                return;
+            WGPURequestDeviceStatus status;
+            Ref<DeviceBase> device;
+
+            if (completionType == EventCompletionType::Shutdown) {
+                status = WGPURequestDeviceStatus_InstanceDropped;
+            } else {
+                if (mDeviceOrError.IsError()) {
+                    std::unique_ptr<ErrorData> errorData = mDeviceOrError.AcquireError();
+                    mCallback(WGPURequestDeviceStatus_Error, nullptr,
+                              errorData->GetFormattedMessage().c_str(), mUserdata);
+                    return;
+                }
+                device = mDeviceOrError.AcquireSuccess();
+                status = device == nullptr ? WGPURequestDeviceStatus_Unknown
+                                           : WGPURequestDeviceStatus_Success;
             }
-            Ref<DeviceBase> device = mDeviceOrError.AcquireSuccess();
-            WGPURequestDeviceStatus status = device == nullptr ? WGPURequestDeviceStatus_Unknown
-                                                               : WGPURequestDeviceStatus_Success;
             mCallback(status, ToAPI(ReturnToAPI(std::move(device))), nullptr, mUserdata);
         }
     };

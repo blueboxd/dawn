@@ -25,7 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-package update
+package expectations
 
 import (
 	"context"
@@ -68,7 +68,7 @@ type cmd struct {
 }
 
 func (cmd) Name() string {
-	return "update"
+	return "update-expectations"
 }
 
 func (cmd) Desc() string {
@@ -142,7 +142,6 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 
 		// Update the expectations file with the results
 		log.Printf("updating expectations %s...\n", expectationsFilename)
-		// Not clear what to do here
 		name := result.ExecutionMode("core")
 		if strings.Contains(expectationsFilename, "compat") {
 			name = "compat"

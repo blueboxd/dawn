@@ -202,6 +202,8 @@ SanitizedResult Sanitize(const Program& in,
         manager.Add<ast::transform::ZeroInitWorkgroupMemory>();
     }
 
+    manager.Add<ast::transform::AddBlockAttribute>();
+
     manager.Add<ast::transform::OffsetFirstIndex>();
 
     // CanonicalizeEntryPointIO must come after Robustness
@@ -234,7 +236,6 @@ SanitizedResult Sanitize(const Program& in,
 
     manager.Add<ast::transform::PromoteInitializersToLet>();
     manager.Add<ast::transform::AddEmptyEntryPoint>();
-    manager.Add<ast::transform::AddBlockAttribute>();
 
     // Std140 must come after PromoteSideEffectsToDecl and before SimplifyPointers.
     manager.Add<ast::transform::Std140>();
@@ -354,7 +355,7 @@ bool ASTPrinter::Generate() {
         helpers_insertion_point += helpers_.lines.size();
     }
 
-    return !diagnostics_.contains_errors();
+    return !diagnostics_.ContainsErrors();
 }
 
 void ASTPrinter::RecordExtension(const ast::Enable* enable) {
@@ -381,8 +382,8 @@ void ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
     auto* dst_type = TypeOf(expr)->UnwrapRef();
 
     if (!dst_type->is_integer_scalar_or_vector() && !dst_type->is_float_scalar_or_vector()) {
-        diagnostics_.add_error(diag::System::Writer,
-                               "Unable to do bitcast to type " + dst_type->FriendlyName());
+        diagnostics_.AddError(diag::System::Writer,
+                              "Unable to do bitcast to type " + dst_type->FriendlyName());
         return;
     }
 
@@ -398,8 +399,8 @@ void ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
         auto* src_vec = src_type->As<core::type::Vector>();
         TINT_ASSERT(src_vec);
         TINT_ASSERT(((src_vec->Width() == 2u) || (src_vec->Width() == 4u)));
-        std::string fn = GetOrCreate(
-            bitcast_funcs_, BinaryOperandType{{src_type, dst_type}}, [&]() -> std::string {
+        std::string fn =
+            GetOrAdd(bitcast_funcs_, BinaryOperandType{{src_type, dst_type}}, [&]() -> std::string {
                 TextBuffer b;
                 TINT_DEFER(helpers_.Append(b));
 
@@ -452,8 +453,8 @@ void ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
         auto* dst_vec = dst_type->As<core::type::Vector>();
         TINT_ASSERT(dst_vec);
         TINT_ASSERT(((dst_vec->Width() == 2u) || (dst_vec->Width() == 4u)));
-        std::string fn = GetOrCreate(
-            bitcast_funcs_, BinaryOperandType{{src_type, dst_type}}, [&]() -> std::string {
+        std::string fn =
+            GetOrAdd(bitcast_funcs_, BinaryOperandType{{src_type, dst_type}}, [&]() -> std::string {
                 TextBuffer b;
                 TINT_DEFER(helpers_.Append(b));
 
@@ -613,37 +614,37 @@ void ASTPrinter::EmitFloatModulo(StringStream& out, const ast::BinaryExpression*
     auto* ret_ty = TypeOf(expr)->UnwrapRef();
     auto* lhs_ty = TypeOf(expr->lhs)->UnwrapRef();
     auto* rhs_ty = TypeOf(expr->rhs)->UnwrapRef();
-    fn = tint::GetOrCreate(float_modulo_funcs_, BinaryOperandType{{lhs_ty, rhs_ty}},
-                           [&]() -> std::string {
-                               TextBuffer b;
-                               TINT_DEFER(helpers_.Append(b));
+    fn = tint::GetOrAdd(float_modulo_funcs_, BinaryOperandType{{lhs_ty, rhs_ty}},
+                        [&]() -> std::string {
+                            TextBuffer b;
+                            TINT_DEFER(helpers_.Append(b));
 
-                               auto fn_name = UniqueIdentifier("tint_float_modulo");
-                               std::vector<std::string> parameter_names;
-                               {
-                                   auto decl = Line(&b);
-                                   EmitTypeAndName(decl, ret_ty, core::AddressSpace::kUndefined,
-                                                   core::Access::kUndefined, fn_name);
-                                   {
-                                       ScopedParen sp(decl);
-                                       const auto* ty = TypeOf(expr->lhs)->UnwrapRef();
-                                       EmitTypeAndName(decl, ty, core::AddressSpace::kUndefined,
-                                                       core::Access::kUndefined, "lhs");
-                                       decl << ", ";
-                                       ty = TypeOf(expr->rhs)->UnwrapRef();
-                                       EmitTypeAndName(decl, ty, core::AddressSpace::kUndefined,
-                                                       core::Access::kUndefined, "rhs");
-                                   }
-                                   decl << " {";
-                               }
-                               {
-                                   ScopedIndent si(&b);
-                                   Line(&b) << "return (lhs - rhs * trunc(lhs / rhs));";
-                               }
-                               Line(&b) << "}";
-                               Line(&b);
-                               return fn_name;
-                           });
+                            auto fn_name = UniqueIdentifier("tint_float_modulo");
+                            std::vector<std::string> parameter_names;
+                            {
+                                auto decl = Line(&b);
+                                EmitTypeAndName(decl, ret_ty, core::AddressSpace::kUndefined,
+                                                core::Access::kUndefined, fn_name);
+                                {
+                                    ScopedParen sp(decl);
+                                    const auto* ty = TypeOf(expr->lhs)->UnwrapRef();
+                                    EmitTypeAndName(decl, ty, core::AddressSpace::kUndefined,
+                                                    core::Access::kUndefined, "lhs");
+                                    decl << ", ";
+                                    ty = TypeOf(expr->rhs)->UnwrapRef();
+                                    EmitTypeAndName(decl, ty, core::AddressSpace::kUndefined,
+                                                    core::Access::kUndefined, "rhs");
+                                }
+                                decl << " {";
+                            }
+                            {
+                                ScopedIndent si(&b);
+                                Line(&b) << "return (lhs - rhs * trunc(lhs / rhs));";
+                            }
+                            Line(&b) << "}";
+                            Line(&b);
+                            return fn_name;
+                        });
 
     // Call the helper
     out << fn;
@@ -1145,7 +1146,7 @@ void ASTPrinter::EmitDotCall(StringStream& out,
     if (vec_ty->type()->is_integer_scalar()) {
         // GLSL does not have a builtin for dot() with integer vector types.
         // Generate the helper function if it hasn't been created already
-        fn = tint::GetOrCreate(int_dot_funcs_, vec_ty, [&]() -> std::string {
+        fn = tint::GetOrAdd(int_dot_funcs_, vec_ty, [&]() -> std::string {
             TextBuffer b;
             TINT_DEFER(helpers_.Append(b));
 
@@ -1503,9 +1504,9 @@ void ASTPrinter::EmitTextureCall(StringStream& out,
             out << "imageStore";
             break;
         default:
-            diagnostics_.add_error(diag::System::Writer,
-                                   "Internal compiler error: Unhandled texture builtin '" +
-                                       std::string(builtin->str()) + "'");
+            diagnostics_.AddError(diag::System::Writer,
+                                  "Internal compiler error: Unhandled texture builtin '" +
+                                      std::string(builtin->str()) + "'");
             return;
     }
 
@@ -1728,8 +1729,8 @@ std::string ASTPrinter::generate_builtin_name(const sem::BuiltinFn* builtin) {
         case wgsl::BuiltinFn::kUnpack4X8Unorm:
             return "unpackUnorm4x8";
         default:
-            diagnostics_.add_error(diag::System::Writer,
-                                   "Unknown builtin method: " + std::string(builtin->str()));
+            diagnostics_.AddError(diag::System::Writer,
+                                  "Unknown builtin method: " + std::string(builtin->str()));
     }
 
     return "";
@@ -1908,9 +1909,9 @@ void ASTPrinter::EmitGlobalVariable(const ast::Variable* global) {
         [&](const ast::Let* let) { EmitProgramConstVariable(let); },
         [&](const ast::Override*) {
             // Override is removed with SubstituteOverride
-            diagnostics_.add_error(diag::System::Writer,
-                                   "override-expressions should have been removed with the "
-                                   "SubstituteOverride transform");
+            diagnostics_.AddError(diag::System::Writer,
+                                  "override-expressions should have been removed with the "
+                                  "SubstituteOverride transform");
         },
         [&](const ast::Const*) {
             // Constants are embedded at their use
@@ -2174,7 +2175,7 @@ void ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
             out << "local_size_" << (i == 0 ? "x" : i == 1 ? "y" : "z") << " = ";
 
             if (!wgsize[i].has_value()) {
-                diagnostics_.add_error(
+                diagnostics_.AddError(
                     diag::System::Writer,
                     "override-expressions should have been removed with the SubstituteOverride "
                     "transform");
@@ -2278,8 +2279,8 @@ void ASTPrinter::EmitConstant(StringStream& out, const core::constant::Value* co
 
             auto count = a->ConstantCount();
             if (!count) {
-                diagnostics_.add_error(diag::System::Writer,
-                                       core::type::Array::kErrExpectedConstantCount);
+                diagnostics_.AddError(diag::System::Writer,
+                                      core::type::Array::kErrExpectedConstantCount);
                 return;
             }
 
@@ -2330,7 +2331,7 @@ void ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* li
                     return;
                 }
             }
-            diagnostics_.add_error(diag::System::Writer, "unknown integer literal suffix type");
+            diagnostics_.AddError(diag::System::Writer, "unknown integer literal suffix type");
         },  //
         TINT_ICE_ON_NO_MATCH);
 }
@@ -2382,8 +2383,8 @@ void ASTPrinter::EmitZeroValue(StringStream& out, const core::type::Type* type) 
 
         auto count = arr->ConstantCount();
         if (!count) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   core::type::Array::kErrExpectedConstantCount);
+            diagnostics_.AddError(diag::System::Writer,
+                                  core::type::Array::kErrExpectedConstantCount);
             return;
         }
 
@@ -2394,8 +2395,8 @@ void ASTPrinter::EmitZeroValue(StringStream& out, const core::type::Type* type) 
             EmitZeroValue(out, arr->ElemType());
         }
     } else {
-        diagnostics_.add_error(diag::System::Writer,
-                               "Invalid type for zero emission: " + type->FriendlyName());
+        diagnostics_.AddError(diag::System::Writer,
+                              "Invalid type for zero emission: " + type->FriendlyName());
     }
 }
 
@@ -2670,8 +2671,8 @@ void ASTPrinter::EmitType(StringStream& out,
             } else {
                 auto count = arr->ConstantCount();
                 if (!count) {
-                    diagnostics_.add_error(diag::System::Writer,
-                                           core::type::Array::kErrExpectedConstantCount);
+                    diagnostics_.AddError(diag::System::Writer,
+                                          core::type::Array::kErrExpectedConstantCount);
                     return;
                 }
                 sizes.push_back(count.value());
@@ -2826,7 +2827,7 @@ void ASTPrinter::EmitType(StringStream& out,
     } else if (type->Is<core::type::Void>()) {
         out << "void";
     } else {
-        diagnostics_.add_error(diag::System::Writer, "unknown type in EmitType");
+        diagnostics_.AddError(diag::System::Writer, "unknown type in EmitType");
     }
 }
 
@@ -2942,7 +2943,7 @@ void ASTPrinter::CallBuiltinHelper(StringStream& out,
                                    const sem::BuiltinFn* builtin,
                                    F&& build) {
     // Generate the helper function if it hasn't been created already
-    auto fn = tint::GetOrCreate(builtins_, builtin, [&]() -> std::string {
+    auto fn = tint::GetOrAdd(builtins_, builtin, [&]() -> std::string {
         TextBuffer b;
         TINT_DEFER(helpers_.Append(b));
 
@@ -3009,8 +3010,8 @@ core::type::Type* ASTPrinter::BoolTypeToUint(const core::type::Type* type) {
 std::string ASTPrinter::StructName(const core::type::Struct* s) {
     auto name = s->Name().Name();
     if (HasPrefix(name, "__")) {
-        name = tint::GetOrCreate(builtin_struct_names_, s,
-                                 [&] { return UniqueIdentifier(name.substr(2)); });
+        name = tint::GetOrAdd(builtin_struct_names_, s,
+                              [&] { return UniqueIdentifier(name.substr(2)); });
     }
     return name;
 }

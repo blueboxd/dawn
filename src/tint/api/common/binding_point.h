@@ -46,7 +46,10 @@ struct BindingPoint {
     uint32_t binding = 0;
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
-    TINT_REFLECT(group, binding);
+    TINT_REFLECT(BindingPoint, group, binding);
+
+    /// @returns the hash code of the BindingPoint
+    tint::HashCode HashCode() const { return tint::Hash(group, binding); }
 
     /// Equality operator
     /// @param rhs the BindingPoint to compare against
@@ -74,6 +77,9 @@ struct BindingPoint {
     }
 };
 
+/// Ensure that all the fields of BindingPoint are reflected.
+TINT_ASSERT_ALL_FIELDS_REFLECTED(BindingPoint);
+
 /// Prints the BindingPoint @p bp to @p o
 /// @param o the stream to write to
 /// @param bp the BindingPoint
@@ -94,8 +100,9 @@ class hash<tint::BindingPoint> {
   public:
     /// @param binding_point the binding point to create a hash for
     /// @return the hash value
-    inline std::size_t operator()(const tint::BindingPoint& binding_point) const {
-        return tint::Hash(binding_point.group, binding_point.binding);
+    inline size_t operator()(const tint::BindingPoint& binding_point) const {
+        return static_cast<size_t>(binding_point.group) << 16 |
+               static_cast<size_t>(binding_point.binding);
     }
 };
 

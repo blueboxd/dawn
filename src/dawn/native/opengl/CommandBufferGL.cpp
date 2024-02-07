@@ -32,6 +32,7 @@
 #include <utility>
 #include <vector>
 
+#include "dawn/common/MatchVariant.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/BindGroupTracker.h"
 #include "dawn/native/CommandEncoder.h"
@@ -269,7 +270,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
              ++bindingIndex) {
             const BindingInfo& bindingInfo = group->GetLayout()->GetBindingInfo(bindingIndex);
 
-            if (bindingInfo.bindingType == BindingInfoType::Texture) {
+            if (std::holds_alternative<TextureBindingLayout>(bindingInfo.bindingLayout)) {
                 TextureView* view = ToBackend(group->GetBindingAsTextureView(bindingIndex));
                 view->CopyIfNeeded();
             }
@@ -278,21 +279,21 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
         for (BindingIndex bindingIndex{0}; bindingIndex < group->GetLayout()->GetBindingCount();
              ++bindingIndex) {
             const BindingInfo& bindingInfo = group->GetLayout()->GetBindingInfo(bindingIndex);
-
-            switch (bindingInfo.bindingType) {
-                case BindingInfoType::Buffer: {
+            MatchVariant(
+                bindingInfo.bindingLayout,
+                [&](const BufferBindingLayout& layout) {
                     BufferBinding binding = group->GetBindingAsBufferBinding(bindingIndex);
                     GLuint buffer = ToBackend(binding.buffer)->GetHandle();
                     GLuint index = indices[bindingIndex];
                     GLuint offset = binding.offset;
 
-                    if (bindingInfo.buffer.hasDynamicOffset) {
+                    if (layout.hasDynamicOffset) {
                         // Dynamic buffers are packed at the front of BindingIndices.
                         offset += dynamicOffsets[bindingIndex];
                     }
 
                     GLenum target;
-                    switch (bindingInfo.buffer.type) {
+                    switch (layout.type) {
                         case wgpu::BufferBindingType::Uniform:
                             target = GL_UNIFORM_BUFFER;
                             break;
@@ -306,10 +307,8 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                     }
 
                     gl.BindBufferRange(target, index, buffer, offset, binding.size);
-                    break;
-                }
-
-                case BindingInfoType::Sampler: {
+                },
+                [&](const SamplerBindingLayout&) {
                     Sampler* sampler = ToBackend(group->GetBindingAsSampler(bindingIndex));
                     GLuint samplerIndex = indices[bindingIndex];
 
@@ -323,10 +322,8 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                             gl.BindSampler(unit.unit, sampler->GetNonFilteringHandle());
                         }
                     }
-                    break;
-                }
-
-                case BindingInfoType::Texture: {
+                },
+                [&](const TextureBindingLayout&) {
                     TextureView* view = ToBackend(group->GetBindingAsTextureView(bindingIndex));
                     GLuint handle = view->GetHandle();
                     GLenum target = view->GetGLTarget();
@@ -365,18 +362,15 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                     // Some texture builtin function data needs emulation to update into the
                     // internal uniform buffer.
                     UpdateTextureBuiltinsUniformData(gl, view, groupIndex, bindingIndex);
-
-                    break;
-                }
-
-                case BindingInfoType::StorageTexture: {
+                },
+                [&](const StorageTextureBindingLayout& layout) {
                     TextureView* view = ToBackend(group->GetBindingAsTextureView(bindingIndex));
                     Texture* texture = ToBackend(view->GetTexture());
                     GLuint handle = texture->GetHandle();
                     GLuint imageIndex = indices[bindingIndex];
 
                     GLenum access;
-                    switch (bindingInfo.storageTexture.access) {
+                    switch (layout.access) {
                         case wgpu::StorageTextureAccess::WriteOnly:
                             access = GL_WRITE_ONLY;
                             break;
@@ -405,13 +399,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                                         view->GetBaseArrayLayer(), access,
                                         texture->GetGLFormat().internalFormat);
                     texture->Touch();
-                    break;
-                }
-
-                case BindingInfoType::ExternalTexture:
-                    DAWN_UNREACHABLE();
-                    break;
-            }
+                });
         }
     }
 
@@ -1469,18 +1457,21 @@ void DoTexSubImage(const OpenGLFunctions& gl,
     } else {
         uint32_t width = copySize.width;
         uint32_t height = copySize.height;
+        DAWN_ASSERT(gl.GetVersion().IsDesktop() ||
+                    gl.IsGLExtensionSupported("GL_OES_texture_stencil8"));
+        GLenum adjustedFormat = format.format == GL_STENCIL ? GL_STENCIL_INDEX : format.format;
         if (dataLayout.bytesPerRow % blockInfo.byteSize == 0) {
             // Valid values for GL_UNPACK_ALIGNMENT are 1, 2, 4, 8
             gl.PixelStorei(GL_UNPACK_ALIGNMENT, std::min(8u, blockInfo.byteSize));
             gl.PixelStorei(GL_UNPACK_ROW_LENGTH,
                            dataLayout.bytesPerRow / blockInfo.byteSize * blockInfo.width);
             if (texture->GetArrayLayers() == 1 && Is1DOr2D(texture->GetDimension())) {
-                gl.TexSubImage2D(target, destination.mipLevel, x, y, width, height, format.format,
+                gl.TexSubImage2D(target, destination.mipLevel, x, y, width, height, adjustedFormat,
                                  format.type, data);
             } else {
                 gl.PixelStorei(GL_UNPACK_IMAGE_HEIGHT, dataLayout.rowsPerImage * blockInfo.height);
                 gl.TexSubImage3D(target, destination.mipLevel, x, y, z, width, height,
-                                 copySize.depthOrArrayLayers, format.format, format.type, data);
+                                 copySize.depthOrArrayLayers, adjustedFormat, format.type, data);
                 gl.PixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
             }
             gl.PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
@@ -1489,7 +1480,7 @@ void DoTexSubImage(const OpenGLFunctions& gl,
             if (texture->GetArrayLayers() == 1 && Is1DOr2D(texture->GetDimension())) {
                 const uint8_t* d = static_cast<const uint8_t*>(data);
                 for (; y < destination.origin.y + height; ++y) {
-                    gl.TexSubImage2D(target, destination.mipLevel, x, y, width, 1, format.format,
+                    gl.TexSubImage2D(target, destination.mipLevel, x, y, width, 1, adjustedFormat,
                                      format.type, d);
                     d += dataLayout.bytesPerRow;
                 }
@@ -1499,7 +1490,7 @@ void DoTexSubImage(const OpenGLFunctions& gl,
                     const uint8_t* d = slice;
                     for (y = destination.origin.y; y < destination.origin.y + height; ++y) {
                         gl.TexSubImage3D(target, destination.mipLevel, x, y, z, width, 1, 1,
-                                         format.format, format.type, d);
+                                         adjustedFormat, format.type, d);
                         d += dataLayout.bytesPerRow;
                     }
                     slice += dataLayout.rowsPerImage * dataLayout.bytesPerRow;

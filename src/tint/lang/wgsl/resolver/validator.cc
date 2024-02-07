@@ -182,15 +182,15 @@ Validator::Validator(
 Validator::~Validator() = default;
 
 void Validator::AddError(const std::string& msg, const Source& source) const {
-    diagnostics_.add_error(diag::System::Resolver, msg, source);
+    diagnostics_.AddError(diag::System::Resolver, msg, source);
 }
 
 void Validator::AddWarning(const std::string& msg, const Source& source) const {
-    diagnostics_.add_warning(diag::System::Resolver, msg, source);
+    diagnostics_.AddWarning(diag::System::Resolver, msg, source);
 }
 
 void Validator::AddNote(const std::string& msg, const Source& source) const {
-    diagnostics_.add_note(diag::System::Resolver, msg, source);
+    diagnostics_.AddNote(diag::System::Resolver, msg, source);
 }
 
 bool Validator::AddDiagnostic(wgsl::DiagnosticRule rule,
@@ -203,7 +203,7 @@ bool Validator::AddDiagnostic(wgsl::DiagnosticRule rule,
         d.system = diag::System::Resolver;
         d.source = source;
         d.message = msg;
-        diagnostics_.add(std::move(d));
+        diagnostics_.Add(std::move(d));
         if (severity == wgsl::DiagnosticSeverity::kError) {
             return false;
         }
@@ -802,7 +802,7 @@ bool Validator::Override(const sem::GlobalVariable* v,
     }
 
     if (auto id = v->Attributes().override_id) {
-        if (auto var = override_ids.Find(*id); var && *var != v) {
+        if (auto var = override_ids.Get(*id); var && *var != v) {
             auto* attr = ast::GetAttribute<ast::IdAttribute>(v->Declaration()->attributes);
             AddError("@id values must be unique", attr->source);
             AddNote("a override with an ID of " + std::to_string(id->value) +
@@ -1149,7 +1149,8 @@ bool Validator::EntryPoint(const sem::Function* func, ast::PipelineStage stage) 
     Hashset<core::BuiltinValue, 4> builtins;
     Hashset<std::pair<uint32_t, uint32_t>, 8> locations_and_blend_srcs;
     const ast::LocationAttribute* first_nonzero_location = nullptr;
-    const ast::BlendSrcAttribute* first_nonzero_blend_src = nullptr;
+    const ast::BlendSrcAttribute* first_blend_src = nullptr;
+    const ast::LocationAttribute* first_location_without_blend_src = nullptr;
     Hashset<uint32_t, 4> colors;
     enum class ParamOrRetType {
         kParameter,
@@ -1311,16 +1312,28 @@ bool Validator::EntryPoint(const sem::Function* func, ast::PipelineStage stage) 
                 }
             }
 
+            if (blend_src_attribute) {
+                first_blend_src = blend_src_attribute;
+            } else if (location_attribute) {
+                first_location_without_blend_src = location_attribute;
+            }
+
+            if (first_blend_src && first_location_without_blend_src) {
+                AddError(
+                    "use of @blend_src requires all the output @location attributes of the entry "
+                    "point to be paired with a @blend_src attribute",
+                    first_location_without_blend_src->source);
+                AddNote("use of @blend_src here", first_blend_src->source);
+                return false;
+            }
+
             if (location_attribute) {
                 if (!first_nonzero_location && location > 0u) {
                     first_nonzero_location = location_attribute;
                 }
-                if (!first_nonzero_blend_src && blend_src > 0u) {
-                    first_nonzero_blend_src = blend_src_attribute;
-                }
-                if (first_nonzero_location && first_nonzero_blend_src) {
-                    AddError("pipeline cannot use both non-zero @blend_src and non-zero @location",
-                             first_nonzero_blend_src->source);
+                if (first_nonzero_location && first_blend_src) {
+                    AddError("pipeline cannot use both a @blend_src and non-zero @location",
+                             first_blend_src->source);
                     AddNote("non-zero @location declared here", first_nonzero_location->source);
                     return false;
                 }
@@ -1416,7 +1429,8 @@ bool Validator::EntryPoint(const sem::Function* func, ast::PipelineStage stage) 
     builtins.Clear();
     locations_and_blend_srcs.Clear();
     first_nonzero_location = nullptr;
-    first_nonzero_blend_src = nullptr;
+    first_blend_src = nullptr;
+    first_location_without_blend_src = nullptr;
 
     if (!func->ReturnType()->Is<core::type::Void>()) {
         if (!validate_entry_point_attributes(decl->return_type_attributes, func->ReturnType(),
@@ -1471,7 +1485,7 @@ bool Validator::EntryPoint(const sem::Function* func, ast::PipelineStage stage) 
             !added &&
             IsValidationEnabled(decl->attributes,
                                 ast::DisabledValidation::kBindingPointCollision) &&
-            IsValidationEnabled((*added.value)->attributes,
+            IsValidationEnabled(added.value->attributes,
                                 ast::DisabledValidation::kBindingPointCollision)) {
             // https://gpuweb.github.io/gpuweb/wgsl/#resource-interface
             // Bindings must not alias within a shader stage: two different variables in the
@@ -1483,7 +1497,7 @@ bool Validator::EntryPoint(const sem::Function* func, ast::PipelineStage stage) 
                     "' references multiple variables that use the same resource binding @group(" +
                     std::to_string(bp->group) + "), @binding(" + std::to_string(bp->binding) + ")",
                 var_decl->source);
-            AddNote("first resource binding usage declared here", (*added.value)->source);
+            AddNote("first resource binding usage declared here", added.value->source);
             return false;
         }
     }
@@ -2226,7 +2240,7 @@ bool Validator::Structure(const sem::Struct* str, ast::PipelineStage stage) cons
         return false;
     }
 
-    Hashset<std::pair<uint32_t, uint32_t>, 8> locations_and_blend_srcs;
+    Hashset<std::pair<uint32_t, std::optional<uint32_t>>, 8> locations_and_blend_srcs;
     Hashset<uint32_t, 4> colors;
     for (auto* member : str->Members()) {
         if (auto* r = member->Type()->As<sem::Array>()) {
@@ -2330,17 +2344,16 @@ bool Validator::Structure(const sem::Struct* str, ast::PipelineStage stage) cons
             return false;
         }
 
-        // Ensure all locations and index pairs are unique
+        // Ensure all locations and optional blend_src pairs are unique
         if (location_attribute) {
             uint32_t location = member->Attributes().location.value();
-            uint32_t blend_src = member->Attributes().blend_src.value_or(0);
+            std::optional<uint32_t> blend_src = member->Attributes().blend_src;
 
-            std::pair<uint32_t, uint32_t> location_and_blend_src(location, blend_src);
-            if (!locations_and_blend_srcs.Add(location_and_blend_src)) {
+            if (!locations_and_blend_srcs.Add(std::make_pair(location, blend_src))) {
                 StringStream err;
                 err << "@location(" << location << ") ";
-                if (blend_src_attribute) {
-                    err << "@blend_src(" << blend_src << ") ";
+                if (blend_src) {
+                    err << "@blend_src(" << blend_src.value() << ") ";
                 }
                 err << "appears multiple times";
                 AddError(err.str(), location_attribute->source);
@@ -2511,7 +2524,7 @@ bool Validator::SwitchStatement(const ast::SwitchStatement* s) {
                                   : std::to_string(value)) +
                              "'",
                          selector->Declaration()->source);
-                AddNote("previous case declared here", *added.value);
+                AddNote("previous case declared here", added.value);
                 return false;
             }
         }
@@ -2673,7 +2686,7 @@ bool Validator::NoDuplicateAttributes(VectorRef<const ast::Attribute*> attribute
             auto added = seen.Add(&d->TypeInfo(), d->source);
             if (!added && !d->Is<ast::InternalAttribute>()) {
                 AddError("duplicate " + d->Name() + " attribute", d->source);
-                AddNote("first attribute declared here", *added.value);
+                AddNote("first attribute declared here", added.value);
                 return false;
             }
         }
@@ -2691,7 +2704,7 @@ bool Validator::DiagnosticControls(VectorRef<const ast::DiagnosticControl*> cont
         auto name = dc->rule_name->name->symbol;
 
         auto diag_added = diagnostics.Add(std::make_pair(category, name), dc);
-        if (!diag_added && (*diag_added.value)->severity != dc->severity) {
+        if (!diag_added && diag_added.value->severity != dc->severity) {
             {
                 StringStream ss;
                 ss << "conflicting diagnostic " << use;
@@ -2701,7 +2714,7 @@ bool Validator::DiagnosticControls(VectorRef<const ast::DiagnosticControl*> cont
                 StringStream ss;
                 ss << "severity of '" << dc->rule_name->String() << "' set to '" << dc->severity
                    << "' here";
-                AddNote(ss.str(), (*diag_added.value)->rule_name->source);
+                AddNote(ss.str(), diag_added.value->rule_name->source);
             }
             return false;
         }
