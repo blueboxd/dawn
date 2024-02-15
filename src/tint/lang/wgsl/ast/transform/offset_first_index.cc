@@ -33,6 +33,7 @@
 
 #include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/core/fluent_types.h"
+#include "src/tint/lang/wgsl/ast/transform/push_constant_helper.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
@@ -53,15 +54,6 @@ namespace {
 constexpr char kFirstVertexName[] = "first_vertex";
 constexpr char kFirstInstanceName[] = "first_instance";
 
-bool ShouldRun(const Program& program) {
-    for (auto* fn : program.AST().Functions()) {
-        if (fn->PipelineStage() == PipelineStage::kVertex) {
-            return true;
-        }
-    }
-    return false;
-}
-
 }  // namespace
 
 OffsetFirstIndex::OffsetFirstIndex() = default;
@@ -70,12 +62,11 @@ OffsetFirstIndex::~OffsetFirstIndex() = default;
 Transform::ApplyResult OffsetFirstIndex::Apply(const Program& src,
                                                const DataMap& inputs,
                                                DataMap&) const {
-    if (!ShouldRun(src)) {
-        return SkipTransform;
-    }
-
     const Config* cfg = inputs.Get<Config>();
     if (!cfg) {
+        return SkipTransform;
+    }
+    if (!cfg->first_vertex_offset.has_value() && !cfg->first_instance_offset.has_value()) {
         return SkipTransform;
     }
 
@@ -86,27 +77,22 @@ Transform::ApplyResult OffsetFirstIndex::Apply(const Program& src,
     std::unordered_map<const sem::Variable*, const char*> builtin_vars;
     std::unordered_map<const core::type::StructMember*, const char*> builtin_members;
 
-    bool has_vertex_index = false;
-    bool has_instance_index = false;
-
     // Traverse the AST scanning for builtin accesses via variables (includes
     // parameters) or structure member accesses.
-    for (auto* node : ctx.src->ASTNodes().Objects()) {
+    for (auto* node : src.ASTNodes().Objects()) {
         if (auto* var = node->As<Variable>()) {
             for (auto* attr : var->attributes) {
                 if (auto* builtin_attr = attr->As<BuiltinAttribute>()) {
                     core::BuiltinValue builtin = src.Sem().Get(builtin_attr)->Value();
                     if (builtin == core::BuiltinValue::kVertexIndex && cfg &&
                         cfg->first_vertex_offset.has_value()) {
-                        auto* sem_var = ctx.src->Sem().Get(var);
+                        auto* sem_var = src.Sem().Get(var);
                         builtin_vars.emplace(sem_var, kFirstVertexName);
-                        has_vertex_index = true;
                     }
                     if (builtin == core::BuiltinValue::kInstanceIndex && cfg &&
                         cfg->first_instance_offset.has_value()) {
-                        auto* sem_var = ctx.src->Sem().Get(var);
+                        auto* sem_var = src.Sem().Get(var);
                         builtin_vars.emplace(sem_var, kFirstInstanceName);
-                        has_instance_index = true;
                     }
                 }
             }
@@ -117,54 +103,32 @@ Transform::ApplyResult OffsetFirstIndex::Apply(const Program& src,
                     core::BuiltinValue builtin = src.Sem().Get(builtin_attr)->Value();
                     if (builtin == core::BuiltinValue::kVertexIndex && cfg &&
                         cfg->first_vertex_offset.has_value()) {
-                        auto* sem_mem = ctx.src->Sem().Get(member);
+                        auto* sem_mem = src.Sem().Get(member);
                         builtin_members.emplace(sem_mem, kFirstVertexName);
-                        has_vertex_index = true;
                     }
                     if (builtin == core::BuiltinValue::kInstanceIndex && cfg &&
                         cfg->first_instance_offset.has_value()) {
-                        auto* sem_mem = ctx.src->Sem().Get(member);
+                        auto* sem_mem = src.Sem().Get(member);
                         builtin_members.emplace(sem_mem, kFirstInstanceName);
-                        has_instance_index = true;
                     }
                 }
             }
         }
     }
 
-    if (!has_vertex_index && !has_instance_index) {
-        return SkipTransform;
-    }
+    Vector<const ast::StructMember*, 8> members;
 
-    // Abort on any use of push constants in the module.
-    for (auto* global : src.AST().GlobalVariables()) {
-        if (auto* var = global->As<ast::Var>()) {
-            auto* v = src.Sem().Get(var);
-            if (TINT_UNLIKELY(v->AddressSpace() == core::AddressSpace::kPushConstant)) {
-                TINT_ICE()
-                    << "OffsetFirstIndex doesn't know how to handle module that already use push "
-                       "constants (yet)";
-                return resolver::Resolve(b);
-            }
-        }
-    }
-
-    b.Enable(wgsl::Extension::kChromiumExperimentalPushConstant);
+    PushConstantHelper helper(ctx);
 
     // Add push constant members and calculate byte offsets
-    tint::Vector<const StructMember*, 8> members;
-    if (has_vertex_index) {
-        members.Push(b.Member(kFirstVertexName, b.ty.u32(),
-                              Vector{b.MemberOffset(AInt(*cfg->first_vertex_offset))}));
+    if (cfg->first_vertex_offset.has_value()) {
+        helper.InsertMember(kFirstVertexName, b.ty.u32(), *cfg->first_vertex_offset);
     }
-    if (has_instance_index) {
-        members.Push(b.Member(kFirstInstanceName, b.ty.u32(),
-                              Vector{b.MemberOffset(AInt(*cfg->first_instance_offset))}));
+    if (cfg->first_instance_offset.has_value()) {
+        helper.InsertMember(kFirstInstanceName, b.ty.u32(), *cfg->first_instance_offset);
     }
-    auto struct_ = b.Structure(b.Symbols().New("PushConstants"), std::move(members));
-    // Create a global to hold the uniform buffer
-    Symbol buffer_name = b.Symbols().New("push_constants");
-    b.GlobalVar(buffer_name, b.ty.Of(struct_), core::AddressSpace::kPushConstant);
+
+    Symbol buffer_name = helper.Run();
 
     // Fix up all references to the builtins with the offsets
     ctx.ReplaceAll([&](const Expression* expr) -> const Expression* {
@@ -172,14 +136,14 @@ Transform::ApplyResult OffsetFirstIndex::Apply(const Program& src,
             if (auto* user = sem->UnwrapLoad()->As<sem::VariableUser>()) {
                 auto it = builtin_vars.find(user->Variable());
                 if (it != builtin_vars.end()) {
-                    return ctx.dst->Add(ctx.CloneWithoutTransform(expr),
+                    return ctx.dst->Add(b.Bitcast(b.ty.u32(), ctx.CloneWithoutTransform(expr)),
                                         ctx.dst->MemberAccessor(buffer_name, it->second));
                 }
             }
             if (auto* access = sem->As<sem::StructMemberAccess>()) {
                 auto it = builtin_members.find(access->Member());
                 if (it != builtin_members.end()) {
-                    return ctx.dst->Add(ctx.CloneWithoutTransform(expr),
+                    return ctx.dst->Add(b.Bitcast(b.ty.u32(), ctx.CloneWithoutTransform(expr)),
                                         ctx.dst->MemberAccessor(buffer_name, it->second));
                 }
             }

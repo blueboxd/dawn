@@ -41,12 +41,49 @@ using OffsetFirstIndexTest = TransformTest;
 TEST_F(OffsetFirstIndexTest, ShouldRunEmptyModule) {
     auto* src = R"()";
 
-    DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
-    EXPECT_FALSE(ShouldRun<OffsetFirstIndex>(src, config));
+    EXPECT_FALSE(ShouldRun<OffsetFirstIndex>(src));
 }
 
-TEST_F(OffsetFirstIndexTest, ShouldRunFragmentStage) {
+TEST_F(OffsetFirstIndexTest, ShouldRunNoVertexIndexNoInstanceIndex) {
+    auto* src = R"(
+@fragment
+fn entry() {
+  return;
+}
+)";
+
+    DataMap config;
+    config.Add<OffsetFirstIndex::Config>(std::nullopt, std::nullopt);
+    EXPECT_FALSE(ShouldRun<OffsetFirstIndex>(src, std::move(config)));
+}
+
+TEST_F(OffsetFirstIndexTest, ShouldRunNoVertexIndex) {
+    auto* src = R"(
+@fragment
+fn entry() {
+  return;
+}
+)";
+
+    DataMap config;
+    config.Add<OffsetFirstIndex::Config>(std::nullopt, 0);
+    EXPECT_TRUE(ShouldRun<OffsetFirstIndex>(src, std::move(config)));
+}
+
+TEST_F(OffsetFirstIndexTest, ShouldRunNoInstanceIndex) {
+    auto* src = R"(
+@fragment
+fn entry() {
+  return;
+}
+)";
+
+    DataMap config;
+    config.Add<OffsetFirstIndex::Config>(0, std::nullopt);
+    EXPECT_TRUE(ShouldRun<OffsetFirstIndex>(src, std::move(config)));
+}
+
+TEST_F(OffsetFirstIndexTest, ShouldRun) {
     auto* src = R"(
 @fragment
 fn entry() {
@@ -56,20 +93,7 @@ fn entry() {
 
     DataMap config;
     config.Add<OffsetFirstIndex::Config>(0, 4);
-    EXPECT_FALSE(ShouldRun<OffsetFirstIndex>(src, config));
-}
-
-TEST_F(OffsetFirstIndexTest, ShouldRunVertexStage) {
-    auto* src = R"(
-@vertex
-fn entry() -> @builtin(position) vec4<f32> {
-  return vec4<f32>();
-}
-)";
-
-    DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
-    EXPECT_FALSE(ShouldRun<OffsetFirstIndex>(src, config));
+    EXPECT_TRUE(ShouldRun<OffsetFirstIndex>(src, std::move(config)));
 }
 
 TEST_F(OffsetFirstIndexTest, ShouldRunVertexStageWithVertexIndex) {
@@ -82,7 +106,7 @@ fn entry(@builtin(vertex_index) vert_idx : u32) -> @builtin(position) vec4<f32> 
 
     DataMap config;
     config.Add<OffsetFirstIndex::Config>(0, 4);
-    EXPECT_TRUE(ShouldRun<OffsetFirstIndex>(src, config));
+    EXPECT_TRUE(ShouldRun<OffsetFirstIndex>(src, std::move(config)));
 }
 
 TEST_F(OffsetFirstIndexTest, ShouldRunVertexStageWithInstanceIndex) {
@@ -95,16 +119,14 @@ fn entry(@builtin(instance_index) inst_idx : u32) -> @builtin(position) vec4<f32
 
     DataMap config;
     config.Add<OffsetFirstIndex::Config>(0, 4);
-    EXPECT_TRUE(ShouldRun<OffsetFirstIndex>(src, config));
+    EXPECT_TRUE(ShouldRun<OffsetFirstIndex>(src, std::move(config)));
 }
 
 TEST_F(OffsetFirstIndexTest, EmptyModule) {
     auto* src = "";
     auto* expect = "";
 
-    DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
-    auto got = Run<OffsetFirstIndex>(src, std::move(config));
+    auto got = Run<OffsetFirstIndex>(src);
 
     EXPECT_EQ(expect, str(got));
 }
@@ -118,9 +140,7 @@ fn entry() -> @builtin(position) vec4<f32> {
 )";
     auto* expect = src;
 
-    DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
-    auto got = Run<OffsetFirstIndex>(src, std::move(config));
+    auto got = Run<OffsetFirstIndex>(src);
 
     EXPECT_EQ(expect, str(got));
 }
@@ -154,13 +174,13 @@ fn test(vert_idx : u32) -> u32 {
 
 @vertex
 fn entry(@builtin(vertex_index) vert_idx : u32) -> @builtin(position) vec4<f32> {
-  test((vert_idx + push_constants.first_vertex));
+  test((bitcast<u32>(vert_idx) + push_constants.first_vertex));
   return vec4<f32>();
 }
 )";
 
     DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
+    config.Add<OffsetFirstIndex::Config>(0, std::nullopt);
     auto got = Run<OffsetFirstIndex>(src, std::move(config));
 
     EXPECT_EQ(expect, str(got));
@@ -191,7 +211,7 @@ var<push_constant> push_constants : PushConstants;
 
 @vertex
 fn entry(@builtin(vertex_index) vert_idx : u32) -> @builtin(position) vec4<f32> {
-  test((vert_idx + push_constants.first_vertex));
+  test((bitcast<u32>(vert_idx) + push_constants.first_vertex));
   return vec4<f32>();
 }
 
@@ -201,7 +221,7 @@ fn test(vert_idx : u32) -> u32 {
 )";
 
     DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
+    config.Add<OffsetFirstIndex::Config>(0, std::nullopt);
     auto got = Run<OffsetFirstIndex>(src, std::move(config));
 
     EXPECT_EQ(expect, str(got));
@@ -238,13 +258,13 @@ fn test(inst_idx : u32) -> u32 {
 
 @vertex
 fn entry(@builtin(instance_index) inst_idx : u32) -> @builtin(position) vec4<f32> {
-  test((inst_idx + push_constants.first_instance));
+  test((bitcast<u32>(inst_idx) + push_constants.first_instance));
   return vec4<f32>();
 }
 )";
 
     DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
+    config.Add<OffsetFirstIndex::Config>(std::nullopt, 4);
     auto got = Run<OffsetFirstIndex>(src, std::move(config));
 
     EXPECT_EQ(expect, str(got));
@@ -277,7 +297,7 @@ var<push_constant> push_constants : PushConstants;
 
 @vertex
 fn entry(@builtin(instance_index) inst_idx : u32) -> @builtin(position) vec4<f32> {
-  test((inst_idx + push_constants.first_instance));
+  test((bitcast<u32>(inst_idx) + push_constants.first_instance));
   return vec4<f32>();
 }
 
@@ -287,7 +307,7 @@ fn test(inst_idx : u32) -> u32 {
 )";
 
     DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
+    config.Add<OffsetFirstIndex::Config>(std::nullopt, 4);
     auto got = Run<OffsetFirstIndex>(src, std::move(config));
 
     EXPECT_EQ(expect, str(got));
@@ -336,7 +356,7 @@ struct Inputs {
 
 @vertex
 fn entry(inputs : Inputs) -> @builtin(position) vec4<f32> {
-  test((inputs.instance_idx + push_constants.first_instance), (inputs.vert_idx + push_constants.first_vertex));
+  test((bitcast<u32>(inputs.instance_idx) + push_constants.first_instance), (bitcast<u32>(inputs.vert_idx) + push_constants.first_vertex));
   return vec4<f32>();
 }
 )";
@@ -380,7 +400,7 @@ var<push_constant> push_constants : PushConstants;
 
 @vertex
 fn entry(inputs : Inputs) -> @builtin(position) vec4<f32> {
-  test((inputs.instance_idx + push_constants.first_instance), (inputs.vert_idx + push_constants.first_vertex));
+  test((bitcast<u32>(inputs.instance_idx) + push_constants.first_instance), (bitcast<u32>(inputs.vert_idx) + push_constants.first_vertex));
   return vec4<f32>();
 }
 
@@ -398,6 +418,61 @@ fn test(instance_idx : u32, vert_idx : u32) -> u32 {
 
     DataMap config;
     config.Add<OffsetFirstIndex::Config>(0, 4);
+    auto got = Run<OffsetFirstIndex>(src, std::move(config));
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(OffsetFirstIndexTest, BasicModuleBothIndexes_OffsetsOutOfOrder) {
+    auto* src = R"(
+@vertex
+fn entry(inputs : Inputs) -> @builtin(position) vec4<f32> {
+  test(inputs.instance_idx, inputs.vert_idx);
+  return vec4<f32>();
+}
+
+struct Inputs {
+  @builtin(vertex_index) vert_idx : u32,
+  @builtin(instance_index) instance_idx : u32,
+};
+
+fn test(instance_idx : u32, vert_idx : u32) -> u32 {
+  return instance_idx + vert_idx;
+}
+)";
+
+    auto* expect = R"(
+enable chromium_experimental_push_constant;
+
+struct PushConstants {
+  /* @offset(0) */
+  first_instance : u32,
+  /* @offset(4) */
+  first_vertex : u32,
+}
+
+var<push_constant> push_constants : PushConstants;
+
+@vertex
+fn entry(inputs : Inputs) -> @builtin(position) vec4<f32> {
+  test((bitcast<u32>(inputs.instance_idx) + push_constants.first_instance), (bitcast<u32>(inputs.vert_idx) + push_constants.first_vertex));
+  return vec4<f32>();
+}
+
+struct Inputs {
+  @builtin(vertex_index)
+  vert_idx : u32,
+  @builtin(instance_index)
+  instance_idx : u32,
+}
+
+fn test(instance_idx : u32, vert_idx : u32) -> u32 {
+  return (instance_idx + vert_idx);
+}
+)";
+
+    DataMap config;
+    config.Add<OffsetFirstIndex::Config>(4, 0);
     auto got = Run<OffsetFirstIndex>(src, std::move(config));
 
     EXPECT_EQ(expect, str(got));
@@ -444,7 +519,7 @@ struct Inputs {
 
 @vertex
 fn entry(inputs : Inputs) -> @builtin(position) vec4<f32> {
-  test((inputs.instance_idx + push_constants.first_instance), inputs.vert_idx);
+  test((bitcast<u32>(inputs.instance_idx) + push_constants.first_instance), inputs.vert_idx);
   return vec4<f32>();
 }
 )";
@@ -497,7 +572,7 @@ struct Inputs {
 
 @vertex
 fn entry(inputs : Inputs) -> @builtin(position) vec4<f32> {
-  test(inputs.instance_idx, (inputs.vert_idx + push_constants.first_vertex));
+  test(inputs.instance_idx, (bitcast<u32>(inputs.vert_idx) + push_constants.first_vertex));
   return vec4<f32>();
 }
 )";
@@ -572,12 +647,12 @@ struct PushConstants {
 
 @vertex
 fn entry(@builtin(vertex_index) vert_idx : u32) -> @builtin(position) vec4<f32> {
-  return vec4<f32>((f32((vert_idx + push_constants.first_vertex)) + p.f));
+  return vec4<f32>((f32((bitcast<u32>(vert_idx) + push_constants.first_vertex)) + p.f));
 }
 )";
 
     DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
+    config.Add<OffsetFirstIndex::Config>(0, std::nullopt);
     auto got = Run<OffsetFirstIndex>(src, std::move(config));
 
     EXPECT_EQ(expect, str(got));
@@ -609,12 +684,12 @@ var<push_constant> push_constants_1 : PushConstants;
 
 @vertex
 fn entry(@builtin(vertex_index) vert_idx : u32) -> @builtin(position) vec4<f32> {
-  return vec4<f32>(f32((vert_idx + push_constants_1.first_vertex)));
+  return vec4<f32>(f32((bitcast<u32>(vert_idx) + push_constants_1.first_vertex)));
 }
 )";
 
     DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
+    config.Add<OffsetFirstIndex::Config>(0, std::nullopt);
     auto got = Run<OffsetFirstIndex>(src, std::move(config));
 
     EXPECT_EQ(expect, str(got));
@@ -657,13 +732,13 @@ fn func2(vert_idx : u32) -> u32 {
 
 @vertex
 fn entry(@builtin(vertex_index) vert_idx : u32) -> @builtin(position) vec4<f32> {
-  func2((vert_idx + push_constants.first_vertex));
+  func2((bitcast<u32>(vert_idx) + push_constants.first_vertex));
   return vec4<f32>();
 }
 )";
 
     DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
+    config.Add<OffsetFirstIndex::Config>(0, std::nullopt);
     auto got = Run<OffsetFirstIndex>(src, std::move(config));
 
     EXPECT_EQ(expect, str(got));
@@ -698,7 +773,7 @@ var<push_constant> push_constants : PushConstants;
 
 @vertex
 fn entry(@builtin(vertex_index) vert_idx : u32) -> @builtin(position) vec4<f32> {
-  func2((vert_idx + push_constants.first_vertex));
+  func2((bitcast<u32>(vert_idx) + push_constants.first_vertex));
   return vec4<f32>();
 }
 
@@ -712,7 +787,7 @@ fn func1(vert_idx : u32) -> u32 {
 )";
 
     DataMap config;
-    config.Add<OffsetFirstIndex::Config>(0, 4);
+    config.Add<OffsetFirstIndex::Config>(0, std::nullopt);
     auto got = Run<OffsetFirstIndex>(src, std::move(config));
 
     EXPECT_EQ(expect, str(got));
@@ -761,19 +836,19 @@ fn func(i : u32) -> u32 {
 
 @vertex
 fn entry_a(@builtin(vertex_index) vert_idx : u32) -> @builtin(position) vec4<f32> {
-  func((vert_idx + push_constants.first_vertex));
+  func((bitcast<u32>(vert_idx) + push_constants.first_vertex));
   return vec4<f32>();
 }
 
 @vertex
 fn entry_b(@builtin(vertex_index) vert_idx : u32, @builtin(instance_index) inst_idx : u32) -> @builtin(position) vec4<f32> {
-  func(((vert_idx + push_constants.first_vertex) + (inst_idx + push_constants.first_instance)));
+  func(((bitcast<u32>(vert_idx) + push_constants.first_vertex) + (bitcast<u32>(inst_idx) + push_constants.first_instance)));
   return vec4<f32>();
 }
 
 @vertex
 fn entry_c(@builtin(instance_index) inst_idx : u32) -> @builtin(position) vec4<f32> {
-  func((inst_idx + push_constants.first_instance));
+  func((bitcast<u32>(inst_idx) + push_constants.first_instance));
   return vec4<f32>();
 }
 )";
@@ -824,19 +899,19 @@ var<push_constant> push_constants : PushConstants;
 
 @vertex
 fn entry_a(@builtin(vertex_index) vert_idx : u32) -> @builtin(position) vec4<f32> {
-  func((vert_idx + push_constants.first_vertex));
+  func((bitcast<u32>(vert_idx) + push_constants.first_vertex));
   return vec4<f32>();
 }
 
 @vertex
 fn entry_b(@builtin(vertex_index) vert_idx : u32, @builtin(instance_index) inst_idx : u32) -> @builtin(position) vec4<f32> {
-  func(((vert_idx + push_constants.first_vertex) + (inst_idx + push_constants.first_instance)));
+  func(((bitcast<u32>(vert_idx) + push_constants.first_vertex) + (bitcast<u32>(inst_idx) + push_constants.first_instance)));
   return vec4<f32>();
 }
 
 @vertex
 fn entry_c(@builtin(instance_index) inst_idx : u32) -> @builtin(position) vec4<f32> {
-  func((inst_idx + push_constants.first_instance));
+  func((bitcast<u32>(inst_idx) + push_constants.first_instance));
   return vec4<f32>();
 }
 

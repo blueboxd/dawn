@@ -63,10 +63,10 @@ class Buffer::MapAsyncEvent : public TrackedEvent {
           mUserdata(callbackInfo.userdata),
           mBuffer(buffer) {
         DAWN_ASSERT(buffer != nullptr);
-        GetProcs().bufferReference(ToAPI(mBuffer));
+        mBuffer->Reference();
     }
 
-    ~MapAsyncEvent() override { GetProcs().bufferRelease(ToAPI(mBuffer)); }
+    ~MapAsyncEvent() override { mBuffer->Release(); }
 
     EventType GetType() override { return kType; }
 
@@ -318,6 +318,10 @@ Buffer::~Buffer() {
     FreeMappedData();
 }
 
+ObjectType Buffer::GetObjectType() const {
+    return ObjectType::Buffer;
+}
+
 void Buffer::SetFutureStatus(WGPUBufferMapAsyncStatus status) {
     if (!mPendingMapRequest) {
         return;
@@ -385,14 +389,14 @@ WGPUFuture Buffer::MapAsyncF(WGPUMapModeFlags mode,
     return {futureIDInternal};
 }
 
-bool Client::DoBufferMapAsyncCallback(ObjectHandle eventManager,
-                                      WGPUFuture future,
-                                      WGPUBufferMapAsyncStatus status,
-                                      uint64_t readDataUpdateInfoLength,
-                                      const uint8_t* readDataUpdateInfo) {
+WireResult Client::DoBufferMapAsyncCallback(ObjectHandle eventManager,
+                                            WGPUFuture future,
+                                            WGPUBufferMapAsyncStatus status,
+                                            uint64_t readDataUpdateInfoLength,
+                                            const uint8_t* readDataUpdateInfo) {
     return GetEventManager(eventManager)
-               .SetFutureReady<Buffer::MapAsyncEvent>(future.id, status, readDataUpdateInfoLength,
-                                                      readDataUpdateInfo) == WireResult::Success;
+        .SetFutureReady<Buffer::MapAsyncEvent>(future.id, status, readDataUpdateInfoLength,
+                                               readDataUpdateInfo);
 }
 
 void* Buffer::GetMappedRange(size_t offset, size_t size) {

@@ -31,6 +31,7 @@
 #include <memory>
 #include <utility>
 
+#include "dawn/common/MutexProtected.h"
 #include "dawn/wire/ChunkedCommandSerializer.h"
 #include "dawn/wire/server/ServerBase_autogen.h"
 #include "partition_alloc/pointers/raw_ptr.h"
@@ -117,7 +118,8 @@ struct ErrorScopeUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
     ObjectHandle device;
-    uint64_t requestSerial;
+    ObjectHandle eventManager;
+    WGPUFuture future;
 };
 
 struct ShaderModuleGetCompilationInfoUserdata : CallbackUserdata {
@@ -198,12 +200,12 @@ class Server : public ServerBase {
   private:
     template <typename Cmd>
     void SerializeCommand(const Cmd& cmd) {
-        mSerializer.SerializeCommand(cmd);
+        mSerializer->SerializeCommand(cmd);
     }
 
     template <typename Cmd, typename... Extensions>
     void SerializeCommand(const Cmd& cmd, Extensions&&... es) {
-        mSerializer.SerializeCommand(cmd, std::forward<Extensions>(es)...);
+        mSerializer->SerializeCommand(cmd, std::forward<Extensions>(es)...);
     }
 
     void SetForwardingDeviceCallbacks(Known<WGPUDevice> device);
@@ -241,7 +243,7 @@ class Server : public ServerBase {
 #include "dawn/wire/server/ServerPrototypes_autogen.inc"
 
     WireDeserializeAllocator mAllocator;
-    ChunkedCommandSerializer mSerializer;
+    MutexProtected<ChunkedCommandSerializer> mSerializer;
     DawnProcTable mProcs;
     std::unique_ptr<MemoryTransferService> mOwnedMemoryTransferService = nullptr;
     raw_ptr<MemoryTransferService> mMemoryTransferService = nullptr;

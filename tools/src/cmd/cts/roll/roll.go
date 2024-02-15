@@ -60,6 +60,7 @@ import (
 	"dawn.googlesource.com/dawn/tools/src/resultsdb"
 	"go.chromium.org/luci/auth"
 	"go.chromium.org/luci/auth/client/authcli"
+	"google.golang.org/api/sheets/v4"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -106,7 +107,7 @@ func (cmd) Desc() string {
 func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, error) {
 	gitPath, _ := exec.LookPath("git")
 	npmPath, _ := exec.LookPath("npm")
-	c.flags.auth.Register(flag.CommandLine, commonAuth.DefaultAuthOptions())
+	c.flags.auth.Register(flag.CommandLine, commonAuth.DefaultAuthOptions(sheets.SpreadsheetsScope))
 	flag.StringVar(&c.flags.gitPath, "git", gitPath, "path to git")
 	flag.StringVar(&c.flags.npmPath, "npm", npmPath, "path to npm")
 	flag.StringVar(&c.flags.nodePath, "node", fileutils.NodePath(), "path to node")
@@ -368,14 +369,22 @@ func (r *roller) roll(ctx context.Context) error {
 		return fmt.Errorf("failed to update change '%v': %v", changeID, err)
 	}
 
+	var psResultsByExecutionMode result.ResultsByExecutionMode
+
+	defer func() {
+		// Export the results to the Google Sheets whether the roll succeeded or failed.
+		if psResultsByExecutionMode != nil {
+			log.Println("exporting results...")
+			if err := common.Export(ctx, r.auth, r.cfg.Sheets.ID, r.ctsDir, r.flags.nodePath, r.flags.npmPath, psResultsByExecutionMode); err != nil {
+				log.Println("failed to update results spreadsheet: ", err)
+			}
+		}
+	}()
+
 	// Begin main roll loop
 	for attempt := 0; ; attempt++ {
 		// Kick builds
-		if attempt == 0 {
-			log.Println("building...")
-		} else {
-			log.Printf("building (retry %v)...\n", attempt)
-		}
+		log.Printf("building (pass %v)...\n", attempt+1)
 		builds, err := common.GetOrStartBuildsAndWait(ctx, r.cfg, ps, r.bb, r.parentSwarmingRunID, false)
 		if err != nil {
 			return err
@@ -395,15 +404,18 @@ func (r *roller) roll(ctx context.Context) error {
 
 		// Gather the build results
 		log.Println("gathering results...")
-		psResultsByExecutionMode, err := common.CacheResults(ctx, r.cfg, ps, r.flags.cacheDir, r.rdb, builds)
+		psResultsByExecutionMode, err = common.CacheResults(ctx, r.cfg, ps, r.flags.cacheDir, r.rdb, builds)
 		if err != nil {
 			return err
 		}
 
+		// If all the builds attempted, and we updated the expectations at least once, then we're done!
+		if attempt > 0 && len(failingBuilds) == 0 {
+			break
+		}
+
 		// Rebuild the expectations with the accumulated results
 		log.Println("building new expectations...")
-		// Note: The new expectations are not used if the last attempt didn't
-		// fail, but we always want to post the diagnostics
 		for _, exInfo := range exInfos {
 			// Merge the new results into the accumulated results
 			log.Printf("merging results for %s ...\n", exInfo.executionMode)
@@ -420,11 +432,6 @@ func (r *roller) roll(ctx context.Context) error {
 			if err := r.postComments(ps, exInfo.path, diags, exInfo.results); err != nil {
 				return err
 			}
-		}
-
-		// If all the builds attempted, then we're done!
-		if len(failingBuilds) == 0 {
-			break
 		}
 
 		// Otherwise, push the updated expectations, and try again
@@ -642,7 +649,7 @@ func (r *roller) postComments(ps gerrit.Patchset, path string, diags []expectati
 		}
 		sb.WriteString("```\n")
 		for i, r := range topN {
-			fmt.Fprintf(sb, "%3.1d: %v\n", i, r)
+			fmt.Fprintf(sb, "%3.1d: %v\n", i+1, r)
 		}
 		sb.WriteString("```\n")
 	}

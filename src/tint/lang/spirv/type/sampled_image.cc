@@ -38,6 +38,17 @@ SampledImage::SampledImage(const core::type::Type* image)
            core::type::Flags{}),
       image_(image) {}
 
+bool SampledImage::Equals(const UniqueNode& other) const {
+    if (auto* o = other.As<SampledImage>()) {
+        return o->image_ == image_;
+    }
+    return false;
+}
+
+std::string SampledImage::FriendlyName() const {
+    return "spirv.sampled_image<" + image_->FriendlyName() + ">";
+}
+
 SampledImage* SampledImage::Clone(core::type::CloneContext& ctx) const {
     auto* image = image_->Clone(ctx);
     return ctx.dst.mgr->Get<SampledImage>(image);

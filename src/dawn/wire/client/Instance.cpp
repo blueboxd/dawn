@@ -145,6 +145,10 @@ Instance::~Instance() {
     GetEventManager().TransitionTo(EventManager::State::InstanceDropped);
 }
 
+ObjectType Instance::GetObjectType() const {
+    return ObjectType::Instance;
+}
+
 WireResult Instance::Initialize(const WGPUInstanceDescriptor* descriptor) {
     if (descriptor == nullptr) {
         return WireResult::Success;
@@ -214,17 +218,17 @@ WGPUFuture Instance::RequestAdapterF(const WGPURequestAdapterOptions* options,
     return {futureIDInternal};
 }
 
-bool Client::DoInstanceRequestAdapterCallback(ObjectHandle eventManager,
-                                              WGPUFuture future,
-                                              WGPURequestAdapterStatus status,
-                                              const char* message,
-                                              const WGPUAdapterProperties* properties,
-                                              const WGPUSupportedLimits* limits,
-                                              uint32_t featuresCount,
-                                              const WGPUFeatureName* features) {
+WireResult Client::DoInstanceRequestAdapterCallback(ObjectHandle eventManager,
+                                                    WGPUFuture future,
+                                                    WGPURequestAdapterStatus status,
+                                                    const char* message,
+                                                    const WGPUAdapterProperties* properties,
+                                                    const WGPUSupportedLimits* limits,
+                                                    uint32_t featuresCount,
+                                                    const WGPUFeatureName* features) {
     return GetEventManager(eventManager)
-               .SetFutureReady<RequestAdapterEvent>(future.id, status, message, properties, limits,
-                                                    featuresCount, features) == WireResult::Success;
+        .SetFutureReady<RequestAdapterEvent>(future.id, status, message, properties, limits,
+                                             featuresCount, features);
 }
 
 void Instance::ProcessEvents() {
