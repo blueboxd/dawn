@@ -68,6 +68,11 @@ struct State {
 
         RegisterModuleScopeDecls();
 
+        // Process the types
+        for (auto* ty : ir.Types()) {
+            EnsureResolvable(ty);
+        }
+
         // Process the module-scope variable declarations
         for (auto* inst : *ir.root_block) {
             Process(inst);
@@ -276,8 +281,7 @@ struct State {
 
     /// @return true if @p s is a builtin (non-user declared) structure.
     bool IsBuiltinStruct(const core::type::Struct* s) {
-        // TODO(bclayton): Need to do better than this.
-        return tint::HasPrefix(s->Name().NameView(), "_");
+        return tint::HasPrefix(s->Name().NameView(), "__");
     }
 };
 

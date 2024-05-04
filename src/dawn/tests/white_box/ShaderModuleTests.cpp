@@ -98,6 +98,7 @@ class ShaderModuleTests : public DawnTest {
     wgpu::RenderPipeline DoCreateRenderPipeline(const wgpu::ShaderModule& vsModule,
                                                 const wgpu::ShaderModule& fsModule) {
         utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
+        renderPipelineDescriptor.layout = utils::MakeBasicPipelineLayout(device, nullptr);
         renderPipelineDescriptor.vertex.module = vsModule;
         renderPipelineDescriptor.cFragment.module = fsModule;
         renderPipelineDescriptor.cTargets[0].format = kRenderAttachmentFormat;
@@ -109,6 +110,7 @@ class ShaderModuleTests : public DawnTest {
     void DoCreateRenderPipelineAsync(const wgpu::ShaderModule& vsModule,
                                      const wgpu::ShaderModule& fsModule) {
         utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
+        renderPipelineDescriptor.layout = utils::MakeBasicPipelineLayout(device, nullptr);
         renderPipelineDescriptor.vertex.module = vsModule;
         renderPipelineDescriptor.cFragment.module = fsModule;
         renderPipelineDescriptor.cTargets[0].format = kRenderAttachmentFormat;
@@ -132,12 +134,18 @@ class ShaderModuleTests : public DawnTest {
 
     wgpu::ComputePipeline DoCreateComputePipeline(const wgpu::ShaderModule& module) {
         wgpu::ComputePipelineDescriptor csDesc;
+        auto bgl = utils::MakeBindGroupLayout(
+            device, {{0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage}});
+        csDesc.layout = utils::MakeBasicPipelineLayout(device, &bgl);
         csDesc.compute.module = module;
         return device.CreateComputePipeline(&csDesc);
     }
 
     void DoCreateComputePipelineAsync(const wgpu::ShaderModule& module) {
         wgpu::ComputePipelineDescriptor csDesc;
+        auto bgl = utils::MakeBindGroupLayout(
+            device, {{0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage}});
+        csDesc.layout = utils::MakeBasicPipelineLayout(device, &bgl);
         csDesc.compute.module = module;
 
         device.CreateComputePipelineAsync(
@@ -363,11 +371,10 @@ TEST_P(ShaderModuleTests, CreateComputePipelineAsync) {
     EXPECT_TRUE(shaderModule.Get());
     EXPECT_TRUE(shaderModule->GetTintProgramForTesting());
 
-    if (SupportsCreatePipelineAsync()) {
-        EXPECT_LE(shaderModule->GetExternalRefCountForTesting(), 2ull);
-        EXPECT_NE(shaderModule->GetExternalRefCountForTesting(), 0ull);
-    } else {
-        EXPECT_EQ(shaderModule->GetExternalRefCountForTesting(), 1ull);
+    EXPECT_LE(shaderModule->GetExternalRefCountForTesting(), 2ull);
+    EXPECT_NE(shaderModule->GetExternalRefCountForTesting(), 0ull);
+
+    if (!SupportsCreatePipelineAsync()) {
         do {
             WaitABit();
         } while (!task.isCompleted);

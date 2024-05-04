@@ -252,6 +252,13 @@ source_set("winsock") {
   libs = [ "ws2_32.lib" ]
 }
 
+config("dxc-include-config") {
+  include_dirs = [ "${dawn_dxc_dir}/include" ]
+}
+source_set("dxc-include") {
+  public_configs = [ ":dxc-include-config" ]
+}
+
 ###############################################################################
 # Fuzzers
 ###############################################################################
@@ -284,16 +291,16 @@ group("cmds") {
       "${tint_src_dir}/cmd/tint",
     ]
   }
+  if (tint_build_tintd) {
+    deps += [ "${tint_src_dir}/cmd/tintd" ]
+  }
 }
 
 group("fuzzers") {
   testonly = true
   deps = []
   if (tint_has_fuzzers) {
-    deps += [
-      "${tint_src_dir}/cmd/fuzz/wgsl",
-      "${tint_src_dir}/fuzzers",
-    ]
+    deps += [ "${tint_src_dir}/cmd/fuzz/wgsl" ]
   }
 }
 

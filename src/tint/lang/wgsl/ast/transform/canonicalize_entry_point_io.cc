@@ -979,8 +979,7 @@ Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program& src,
 
     auto* cfg = inputs.Get<Config>();
     if (cfg == nullptr) {
-        b.Diagnostics().AddError(diag::System::Transform,
-                                 "missing transform data for " + std::string(TypeInfo().name));
+        b.Diagnostics().AddError(Source{}) << "missing transform data for " << TypeInfo().name;
         return resolver::Resolve(b);
     }
 
@@ -1010,6 +1009,8 @@ Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program& src,
     ctx.Clone();
     return resolver::Resolve(b);
 }
+
+CanonicalizeEntryPointIO::Config::Config() = default;
 
 CanonicalizeEntryPointIO::Config::Config(ShaderStyle style,
                                          uint32_t sample_mask,

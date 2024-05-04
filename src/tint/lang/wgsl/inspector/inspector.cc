@@ -571,12 +571,12 @@ std::vector<std::pair<std::string, Source>> Inspector::GetEnableDirectives() {
 const ast::Function* Inspector::FindEntryPointByName(const std::string& name) {
     auto* func = program_.AST().Functions().Find(program_.Symbols().Get(name));
     if (!func) {
-        diagnostics_.AddError(diag::System::Inspector, name + " was not found!");
+        diagnostics_.AddError(Source{}) << name << " was not found!";
         return nullptr;
     }
 
     if (!func->IsEntryPoint()) {
-        diagnostics_.AddError(diag::System::Inspector, name + " is not an entry point!");
+        diagnostics_.AddError(Source{}) << name << " is not an entry point!";
         return nullptr;
     }
 
@@ -1028,18 +1028,14 @@ std::vector<Inspector::LevelSampleInfo> Inspector::GetTextureQueries(const std::
 
     std::unordered_set<BindingPoint> seen = {};
 
-    auto sample_type_for_call_and_type = [](wgsl::BuiltinFn builtin, const core::type::Type* ty) {
-        if (builtin == wgsl::BuiltinFn::kTextureNumLevels) {
+    auto sample_type_for_call_and_type = [](wgsl::BuiltinFn builtin) {
+        if (builtin == wgsl::BuiltinFn::kTextureNumLevels ||
+            builtin == wgsl::BuiltinFn::kTextureDimensions ||
+            builtin == wgsl::BuiltinFn::kTextureLoad) {
             return TextureQueryType::kTextureNumLevels;
         }
-        if (builtin == wgsl::BuiltinFn::kTextureLoad) {
-            if (!ty->UnwrapRef()
-                     ->IsAnyOf<core::type::MultisampledTexture,
-                               core::type::DepthMultisampledTexture>()) {
-                return TextureQueryType::kTextureNumLevels;
-            }
-        }
 
+        TINT_ASSERT(builtin == wgsl::BuiltinFn::kTextureNumSamples);
         return TextureQueryType::kTextureNumSamples;
     };
 
@@ -1095,16 +1091,26 @@ std::vector<Inspector::LevelSampleInfo> Inspector::GetTextureQueries(const std::
                 [&](const sem::BuiltinFn* builtin) {
                     if (builtin->Fn() != wgsl::BuiltinFn::kTextureNumLevels &&
                         builtin->Fn() != wgsl::BuiltinFn::kTextureNumSamples &&
-                        builtin->Fn() != wgsl::BuiltinFn::kTextureLoad) {
+                        builtin->Fn() != wgsl::BuiltinFn::kTextureLoad &&
+                        // When textureDimension takes level as the input,
+                        // it requires calls to textureNumLevels to clamp mip levels.
+                        !(builtin->Fn() == wgsl::BuiltinFn::kTextureDimensions &&
+                          call->Declaration()->args.Length() > 1)) {
                         return;
                     }
 
                     auto* texture_expr = call->Declaration()->args[0];
                     auto* texture_sem = sem.GetVal(texture_expr)->RootIdentifier();
                     TINT_ASSERT(texture_sem);
+                    if (builtin->Fn() == wgsl::BuiltinFn::kTextureLoad &&
+                        texture_sem->Type()
+                            ->UnwrapRef()
+                            ->IsAnyOf<core::type::MultisampledTexture,
+                                      core::type::DepthMultisampledTexture>()) {
+                        return;
+                    }
 
-                    auto type = sample_type_for_call_and_type(builtin->Fn(), texture_sem->Type());
-
+                    auto type = sample_type_for_call_and_type(builtin->Fn());
                     tint::Switch(
                         texture_sem,  //
                         [&](const sem::GlobalVariable* global) { save_if_needed(global, type); },

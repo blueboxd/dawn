@@ -29,15 +29,18 @@
 
 #include <cmath>
 
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ObjectContentHasher.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 
 namespace dawn::native {
 
-MaybeError ValidateSamplerDescriptor(DeviceBase*, const SamplerDescriptor* descriptor) {
-    DAWN_INVALID_IF(descriptor->nextInChain != nullptr, "nextInChain must be nullptr");
+namespace vulkan {
+struct YCbCrVulkanDescriptor;
+}
 
+MaybeError ValidateSamplerDescriptor(DeviceBase* device, const SamplerDescriptor* descriptor) {
     DAWN_INVALID_IF(std::isnan(descriptor->lodMinClamp) || std::isnan(descriptor->lodMaxClamp),
                     "LOD clamp bounds [%f, %f] contain a NaN.", descriptor->lodMinClamp,
                     descriptor->lodMaxClamp);
@@ -71,6 +74,13 @@ MaybeError ValidateSamplerDescriptor(DeviceBase*, const SamplerDescriptor* descr
     DAWN_TRY(ValidateAddressMode(descriptor->addressModeW));
     DAWN_TRY(ValidateCompareFunction(descriptor->compare));
 
+    UnpackedPtr<SamplerDescriptor> unpacked = Unpack(descriptor);
+
+    if (unpacked.Get<vulkan::YCbCrVulkanDescriptor>()) {
+        DAWN_INVALID_IF(!device->HasFeature(Feature::YCbCrVulkanSamplers), "%s is not enabled.",
+                        wgpu::FeatureName::YCbCrVulkanSamplers);
+    }
+
     return {};
 }
 
@@ -89,7 +99,11 @@ SamplerBase::SamplerBase(DeviceBase* device,
       mLodMinClamp(descriptor->lodMinClamp),
       mLodMaxClamp(descriptor->lodMaxClamp),
       mCompareFunction(descriptor->compare),
-      mMaxAnisotropy(descriptor->maxAnisotropy) {}
+      mMaxAnisotropy(descriptor->maxAnisotropy) {
+    if (Unpack(descriptor).Get<vulkan::YCbCrVulkanDescriptor>()) {
+        mIsYCbCr = true;
+    }
+}
 
 SamplerBase::SamplerBase(DeviceBase* device, const SamplerDescriptor* descriptor)
     : SamplerBase(device, descriptor, kUntrackedByDevice) {
@@ -121,6 +135,10 @@ bool SamplerBase::IsComparison() const {
 bool SamplerBase::IsFiltering() const {
     return mMinFilter == wgpu::FilterMode::Linear || mMagFilter == wgpu::FilterMode::Linear ||
            mMipmapFilter == wgpu::MipmapFilterMode::Linear;
+}
+
+bool SamplerBase::IsYCbCr() const {
+    return mIsYCbCr;
 }
 
 size_t SamplerBase::ComputeContentHash() {

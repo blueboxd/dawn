@@ -189,6 +189,10 @@ void InstanceBase::DeleteThis() {
     RefCountedWithExternalCount::DeleteThis();
 }
 
+void InstanceBase::DisconnectDawnPlatform() {
+    SetPlatform(nullptr);
+}
+
 void InstanceBase::WillDropLastExternalRef() {
     // InstanceBase uses RefCountedWithExternalCount to break refcycles.
 
@@ -205,6 +209,9 @@ void InstanceBase::WillDropLastExternalRef() {
             backend->ClearPhysicalDevices();
         }
     }
+
+    mLoggingCallback = nullptr;
+    mLoggingCallbackUserdata = nullptr;
 }
 
 // TODO(crbug.com/dawn/832): make the platform an initialization parameter of the instance.
@@ -223,6 +230,29 @@ MaybeError InstanceBase::Initialize(const UnpackedPtr<InstanceDescriptor>& descr
         mBackendValidationLevel = dawnDesc->backendValidationLevel;
         mBeginCaptureOnStartup = dawnDesc->beginCaptureOnStartup;
         mEnableAdapterBlocklist = dawnDesc->enableAdapterBlocklist;
+
+        mLoggingCallback = dawnDesc->loggingCallback;
+        mLoggingCallbackUserdata = dawnDesc->loggingCallbackUserdata;
+    }
+
+    if (!mLoggingCallback) {
+        mLoggingCallback = [](WGPULoggingType type, char const* message, void*) {
+            switch (static_cast<wgpu::LoggingType>(type)) {
+                case wgpu::LoggingType::Verbose:
+                    dawn::DebugLog() << message;
+                    break;
+                case wgpu::LoggingType::Info:
+                    dawn::InfoLog() << message;
+                    break;
+                case wgpu::LoggingType::Warning:
+                    dawn::WarningLog() << message;
+                    break;
+                case wgpu::LoggingType::Error:
+                    dawn::ErrorLog() << message;
+                    break;
+            }
+        };
+        mLoggingCallbackUserdata = nullptr;
     }
 
     // Default paths to search are next to the shared library, next to the executable, and
@@ -254,8 +284,7 @@ Future InstanceBase::APIRequestAdapterF(const RequestAdapterOptions* options,
                                         const RequestAdapterCallbackInfo& callbackInfo) {
     struct RequestAdapterEvent final : public EventManager::TrackedEvent {
         WGPURequestAdapterCallback mCallback;
-        // TODO(https://crbug.com/2349): Investigate dangling pointers in dawn/native.
-        raw_ptr<void, DanglingUntriaged> mUserdata;
+        raw_ptr<void> mUserdata;
         Ref<AdapterBase> mAdapter;
 
         RequestAdapterEvent(const RequestAdapterCallbackInfo& callbackInfo,
@@ -263,24 +292,24 @@ Future InstanceBase::APIRequestAdapterF(const RequestAdapterOptions* options,
             : TrackedEvent(callbackInfo.mode, TrackedEvent::Completed{}),
               mCallback(callbackInfo.callback),
               mUserdata(callbackInfo.userdata),
-              mAdapter(std::move(adapter)) {
-            CompleteIfSpontaneous();
-        }
+              mAdapter(std::move(adapter)) {}
 
         ~RequestAdapterEvent() override { EnsureComplete(EventCompletionType::Shutdown); }
 
         void Complete(EventCompletionType completionType) override {
             if (completionType == EventCompletionType::Shutdown) {
-                mCallback(WGPURequestAdapterStatus_InstanceDropped, nullptr, nullptr, mUserdata);
+                mCallback(WGPURequestAdapterStatus_InstanceDropped, nullptr, nullptr,
+                          mUserdata.ExtractAsDangling());
                 return;
             }
 
             WGPUAdapter adapter = ToAPI(ReturnToAPI(std::move(mAdapter)));
             if (adapter == nullptr) {
                 mCallback(WGPURequestAdapterStatus_Unavailable, nullptr, "No supported adapters",
-                          mUserdata);
+                          mUserdata.ExtractAsDangling());
             } else {
-                mCallback(WGPURequestAdapterStatus_Success, adapter, nullptr, mUserdata);
+                mCallback(WGPURequestAdapterStatus_Success, adapter, nullptr,
+                          mUserdata.ExtractAsDangling());
             }
         }
     };
@@ -322,10 +351,6 @@ const ToggleInfo* InstanceBase::GetToggleInfo(const char* toggleName) {
 
 Toggle InstanceBase::ToggleNameToEnum(const char* toggleName) {
     return mTogglesInfo.ToggleNameToEnum(toggleName);
-}
-
-const FeatureInfo* InstanceBase::GetFeatureInfo(wgpu::FeatureName feature) {
-    return dawn::native::GetFeatureInfo(feature);
 }
 
 std::vector<Ref<AdapterBase>> InstanceBase::EnumerateAdapters(
@@ -453,21 +478,13 @@ std::vector<Ref<PhysicalDeviceBase>> InstanceBase::EnumeratePhysicalDevices(
     return discoveredPhysicalDevices;
 }
 
-bool InstanceBase::ConsumedError(MaybeError maybeError) {
-    if (maybeError.IsError()) {
-        ConsumeError(maybeError.AcquireError());
-        return true;
-    }
-    return false;
-}
-
 bool InstanceBase::ConsumedErrorAndWarnOnce(MaybeError maybeErr) {
     if (!maybeErr.IsError()) {
         return false;
     }
     std::string message = maybeErr.AcquireError()->GetFormattedMessage();
-    if (mWarningMessages.insert(message).second) {
-        dawn::WarningLog() << message;
+    if (mWarningMessages.insert(message).second && mLoggingCallback) {
+        mLoggingCallback(WGPULoggingType_Warning, message.c_str(), mLoggingCallbackUserdata);
     }
     return true;
 }
@@ -568,9 +585,15 @@ EventManager* InstanceBase::GetEventManager() {
     return &mEventManager;
 }
 
-void InstanceBase::ConsumeError(std::unique_ptr<ErrorData> error) {
+void InstanceBase::ConsumeError(std::unique_ptr<ErrorData> error,
+                                InternalErrorType additionalAllowedErrors) {
+    // Note: `additionalAllowedErrors` is ignored. The instance considers every type of error to be
+    // an error that is logged.
     DAWN_ASSERT(error != nullptr);
-    dawn::ErrorLog() << error->GetFormattedMessage();
+    if (mLoggingCallback) {
+        std::string messageStr = error->GetFormattedMessage();
+        mLoggingCallback(WGPULoggingType_Error, messageStr.c_str(), mLoggingCallbackUserdata);
+    }
 }
 
 const X11Functions* InstanceBase::GetOrLoadX11Functions() {

@@ -161,7 +161,7 @@ MaybeError OwnedCompilationMessages::AddMessage(const tint::diag::Diagnostic& di
     }
 
     AddMessage(
-        diagnostic.message,
+        diagnostic.message.Plain(),
         {nullptr, nullptr, tintSeverityToMessageType(diagnostic.severity), lineNum, linePosInBytes,
          offsetInBytes, lengthInBytes, linePosInUTF16, offsetInUTF16, lengthInUTF16});
 
@@ -237,19 +237,17 @@ void OwnedCompilationMessages::AddFormattedTintMessages(const tint::diag::List& 
     size_t errorCount = 0;
     for (auto& diag : diagnostics) {
         switch (diag.severity) {
-            case (tint::diag::Severity::Fatal):
-            case (tint::diag::Severity::Error):
-            case (tint::diag::Severity::InternalCompilerError): {
+            case tint::diag::Severity::Error: {
                 errorCount++;
                 messageList.Add(diag);
                 break;
             }
-            case (tint::diag::Severity::Warning): {
+            case tint::diag::Severity::Warning: {
                 warningCount++;
                 messageList.Add(diag);
                 break;
             }
-            case (tint::diag::Severity::Note): {
+            case tint::diag::Severity::Note: {
                 messageList.Add(diag);
                 break;
             }
@@ -273,7 +271,7 @@ void OwnedCompilationMessages::AddFormattedTintMessages(const tint::diag::List& 
         t << warningCount << " warning(s) ";
     }
     t << "generated while compiling the shader:" << std::endl
-      << tint::diag::Formatter{style}.Format(messageList);
+      << tint::diag::Formatter{style}.Format(messageList).Plain();
     mFormattedTintMessages.push_back(t.str());
 }
 

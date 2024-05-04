@@ -247,34 +247,16 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
                     entry.sampler.type = wgpu::SamplerBindingType::Filtering;
                 }
             },
-            [&](const SampledTextureBindingInfo& bindingInfo) {
-                switch (bindingInfo.compatibleSampleTypes) {
-                    case SampleTypeBit::Depth:
-                        entry.texture.sampleType = wgpu::TextureSampleType::Depth;
-                        break;
-                    case SampleTypeBit::Sint:
-                        entry.texture.sampleType = wgpu::TextureSampleType::Sint;
-                        break;
-                    case SampleTypeBit::Uint:
-                        entry.texture.sampleType = wgpu::TextureSampleType::Uint;
-                        break;
-                    case SampleTypeBit::Float:
-                    case SampleTypeBit::UnfilterableFloat:
-                    case SampleTypeBit::None:
-                        DAWN_UNREACHABLE();
-                        break;
-                    default:
-                        if (bindingInfo.compatibleSampleTypes ==
-                            (SampleTypeBit::Float | SampleTypeBit::UnfilterableFloat)) {
-                            // Default to UnfilterableFloat. It will be promoted to Float
-                            // if it is used with a sampler.
-                            entry.texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
-                        } else {
-                            DAWN_UNREACHABLE();
-                        }
-                }
+            [&](const TextureBindingInfo& bindingInfo) {
+                entry.texture.sampleType = bindingInfo.sampleType;
                 entry.texture.viewDimension = bindingInfo.viewDimension;
                 entry.texture.multisampled = bindingInfo.multisampled;
+
+                // Default to UnfilterableFloat for texture_Nd<f32> as it will be promoted to Float
+                // if it is used with a sampler.
+                if (entry.texture.sampleType == wgpu::TextureSampleType::Float) {
+                    entry.texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
+                }
             },
             [&](const StorageTextureBindingInfo& bindingInfo) {
                 entry.storageTexture.access = bindingInfo.access;
@@ -386,12 +368,8 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
     desc.bindGroupLayouts = bgls.data();
     desc.bindGroupLayoutCount = static_cast<uint32_t>(pipelineBGLCount);
 
-    UnpackedPtr<PipelineLayoutDescriptor> unpacked;
-    DAWN_TRY_ASSIGN(unpacked,
-                    ValidatePipelineLayoutDescriptor(device, &desc, pipelineCompatibilityToken));
-
     Ref<PipelineLayoutBase> result;
-    DAWN_TRY_ASSIGN(result, device->GetOrCreatePipelineLayout(unpacked));
+    DAWN_TRY_ASSIGN(result, device->CreatePipelineLayout(&desc, pipelineCompatibilityToken));
     DAWN_ASSERT(!result->IsError());
 
     // Check in debug that the pipeline layout is compatible with the current pipeline.

@@ -67,6 +67,9 @@
 namespace dawn {
 namespace {
 
+using testing::_;
+using testing::AtMost;
+
 struct MapReadUserdata {
     raw_ptr<DawnTestBase> test;
     size_t slot;
@@ -758,7 +761,7 @@ DawnTestBase::DawnTestBase(const AdapterTestParam& param) : mParam(param) {
 
         WGPUAdapter cAdapter = it->Get();
         DAWN_ASSERT(cAdapter);
-        native::GetProcs().adapterReference(cAdapter);
+        native::GetProcs().adapterAddRef(cAdapter);
         callback(WGPURequestAdapterStatus_Success, cAdapter, nullptr, userdata);
     };
 
@@ -937,6 +940,16 @@ bool DawnTestBase::IsAndroid() const {
 #endif
 }
 
+bool DawnTestBase::IsMesa(const std::string& mesaVersion) const {
+#if DAWN_PLATFORM_IS(LINUX)
+    std::string mesaString = "Mesa " + mesaVersion;
+    return mParam.adapterProperties.driverDescription.find(mesaString) == std::string::npos ? false
+                                                                                            : true;
+#else
+    return false;
+#endif
+}
+
 bool DawnTestBase::UsesWire() const {
     return gTestEnv->UsesWire();
 }
@@ -1079,6 +1092,16 @@ WGPUDevice DawnTestBase::CreateDeviceImpl(std::string isolationKey,
     deviceDescriptor.requiredFeatures = requiredFeatures.data();
     deviceDescriptor.requiredFeatureCount = requiredFeatures.size();
 
+    // Set up the mocks for device loss.
+    void* deviceUserdata = GetUniqueUserdata();
+    deviceDescriptor.deviceLostCallbackInfo.mode = wgpu::CallbackMode::AllowSpontaneous;
+    deviceDescriptor.deviceLostCallbackInfo.callback = mDeviceLostCallback.Callback();
+    deviceDescriptor.deviceLostCallbackInfo.userdata =
+        mDeviceLostCallback.MakeUserdata(deviceUserdata);
+    // The loss of the device is expected to happen at the end of the test so at it directly.
+    EXPECT_CALL(mDeviceLostCallback, Call(_, WGPUDeviceLostReason_Destroyed, _, deviceUserdata))
+        .Times(AtMost(1));
+
     wgpu::DawnCacheDeviceDescriptor cacheDesc = {};
     deviceDescriptor.nextInChain = &cacheDesc;
     cacheDesc.isolationKey = isolationKey.c_str();
@@ -1099,14 +1122,7 @@ wgpu::Device DawnTestBase::CreateDevice(std::string isolationKey) {
     mNextIsolationKeyQueue.push(std::move(isolationKey));
 
     // RequestDevice is overriden by CreateDeviceImpl and device descriptor is ignored by it.
-    // Give an empty descriptor.
-    // TODO(dawn:1684): Replace empty DeviceDescriptor with nullptr after Dawn wire support it.
     wgpu::DeviceDescriptor deviceDesc = {};
-
-    // Set up the mocks for device loss.
-    void* deviceUserdata = GetUniqueUserdata();
-    deviceDesc.deviceLostCallback = mDeviceLostCallback.Callback();
-    deviceDesc.deviceLostUserdata = mDeviceLostCallback.MakeUserdata(deviceUserdata);
 
     adapter.RequestDevice(
         &deviceDesc,
@@ -1120,11 +1136,6 @@ wgpu::Device DawnTestBase::CreateDevice(std::string isolationKey) {
     // Set up the mocks for uncaptured errors.
     apiDevice.SetUncapturedErrorCallback(mDeviceErrorCallback.Callback(),
                                          mDeviceErrorCallback.MakeUserdata(apiDevice.Get()));
-
-    // The loss of the device is expected to happen at the end of the test so at it directly.
-    EXPECT_CALL(mDeviceLostCallback,
-                Call(WGPUDeviceLostReason_Destroyed, testing::_, deviceUserdata))
-        .Times(testing::AtMost(1));
 
     apiDevice.SetLoggingCallback(
         [](WGPULoggingType type, char const* message, void*) {
@@ -1214,8 +1225,7 @@ void DawnTestBase::LoseDeviceForTesting(wgpu::Device deviceToLose) {
         resolvedDevice = device;
     }
 
-    EXPECT_CALL(mDeviceLostCallback, Call(WGPUDeviceLostReason_Undefined, testing::_, testing::_))
-        .Times(1);
+    EXPECT_CALL(mDeviceLostCallback, Call(_, WGPUDeviceLostReason_Undefined, _, _)).Times(1);
     resolvedDevice.ForceLoss(wgpu::DeviceLostReason::Undefined, "Device lost for testing");
     resolvedDevice.Tick();
 }

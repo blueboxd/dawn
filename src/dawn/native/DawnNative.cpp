@@ -42,6 +42,11 @@
 
 namespace dawn::native {
 
+const char MemoryDump::kNameSize[] = "size";
+const char MemoryDump::kNameObjectCount[] = "object_count";
+const char MemoryDump::kUnitsBytes[] = "bytes";
+const char MemoryDump::kUnitsObjects[] = "objects";
+
 const DawnProcTable& GetProcsAutogen();
 
 const DawnProcTable& GetProcs() {
@@ -58,7 +63,7 @@ Adapter::Adapter() = default;
 
 Adapter::Adapter(AdapterBase* impl) : mImpl(impl) {
     if (mImpl != nullptr) {
-        mImpl->Reference();
+        mImpl->AddRef();
     }
 }
 
@@ -78,7 +83,7 @@ Adapter& Adapter::operator=(const Adapter& other) {
         }
         mImpl = other.mImpl;
         if (mImpl) {
-            mImpl->Reference();
+            mImpl->AddRef();
         }
     }
     return *this;
@@ -189,10 +194,6 @@ const ToggleInfo* Instance::GetToggleInfo(const char* toggleName) {
     return mImpl->GetToggleInfo(toggleName);
 }
 
-const FeatureInfo* Instance::GetFeatureInfo(WGPUFeatureName feature) {
-    return mImpl->GetFeatureInfo(static_cast<wgpu::FeatureName>(feature));
-}
-
 void Instance::EnableBackendValidation(bool enableBackendValidation) {
     if (enableBackendValidation) {
         mImpl->SetBackendValidationLevel(BackendValidationLevel::Full);
@@ -217,6 +218,10 @@ uint64_t Instance::GetDeviceCountForTesting() const {
 
 WGPUInstance Instance::Get() const {
     return ToAPI(mImpl);
+}
+
+void Instance::DisconnectDawnPlatform() {
+    mImpl->DisconnectDawnPlatform();
 }
 
 size_t GetLazyClearCountForTesting(WGPUDevice device) {
@@ -301,6 +306,10 @@ const FeatureInfo* GetFeatureInfo(wgpu::FeatureName feature) {
         return nullptr;
     }
     return &kFeatureNameAndInfoList[FromAPI(feature)];
+}
+
+void DumpMemoryStatistics(WGPUDevice device, MemoryDump* dump) {
+    FromAPI(device)->DumpMemoryStatistics(dump);
 }
 
 }  // namespace dawn::native

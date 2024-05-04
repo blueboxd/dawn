@@ -42,6 +42,7 @@
 #include "dawn/native/ResourceMemoryAllocation.h"
 #include "dawn/native/ToBackend.h"
 #include "dawn/native/d3d/D3DError.h"
+#include "dawn/native/d3d/KeyedMutex.h"
 #include "dawn/native/d3d12/BufferD3D12.h"
 #include "dawn/native/d3d12/CommandRecordingContext.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
@@ -199,12 +200,13 @@ ResultOrError<Ref<Texture>> Texture::CreateExternalImage(
     Device* device,
     const UnpackedPtr<TextureDescriptor>& descriptor,
     ComPtr<IUnknown> d3dTexture,
+    Ref<d3d::KeyedMutex> keyedMutex,
     std::vector<FenceAndSignalValue> waitFences,
     bool isSwapChainTexture,
     bool isInitialized) {
     Ref<Texture> dawnTexture = AcquireRef(new Texture(device, descriptor));
-    DAWN_TRY(dawnTexture->InitializeAsExternalTexture(std::move(d3dTexture), std::move(waitFences),
-                                                      isSwapChainTexture));
+    DAWN_TRY(dawnTexture->InitializeAsExternalTexture(std::move(d3dTexture), std::move(keyedMutex),
+                                                      std::move(waitFences), isSwapChainTexture));
 
     // Importing a multi-planar format must be initialized. This is required because
     // a shared multi-planar format cannot be initialized by Dawn.
@@ -233,12 +235,14 @@ ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
     const UnpackedPtr<TextureDescriptor>& descriptor) {
     Device* device = ToBackend(memory->GetDevice());
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
-    DAWN_TRY(texture->InitializeAsExternalTexture(memory->GetD3DResource(), {}, false));
-    texture->mSharedTextureMemoryContents = memory->GetContents();
+    DAWN_TRY(texture->InitializeAsExternalTexture(memory->GetD3DResource(), memory->GetKeyedMutex(),
+                                                  {}, false));
+    texture->mSharedResourceMemoryContents = memory->GetContents();
     return texture;
 }
 
 MaybeError Texture::InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
+                                                Ref<d3d::KeyedMutex> keyedMutex,
                                                 std::vector<FenceAndSignalValue> waitFences,
                                                 bool isSwapChainTexture) {
     ComPtr<ID3D12Resource> d3d12Texture;
@@ -254,7 +258,7 @@ MaybeError Texture::InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
     // texture is owned externally. The texture's owning entity must remain responsible for
     // memory management.
     mResourceAllocation = {info, 0, std::move(d3d12Texture), nullptr};
-
+    mKeyedMutex = std::move(keyedMutex);
     mWaitFences = std::move(waitFences);
     mSwapChainTexture = isSwapChainTexture;
 
@@ -326,8 +330,8 @@ MaybeError Texture::InitializeAsInternalTexture() {
 
     if (applyForceClearCopyableDepthStencilTextureOnCreationToggle ||
         device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-        CommandRecordingContext* commandContext;
-        DAWN_TRY_ASSIGN(commandContext, ToBackend(device->GetQueue())->GetPendingCommandContext());
+        CommandRecordingContext* commandContext =
+            ToBackend(device->GetQueue())->GetPendingCommandContext();
         ClearValue clearValue =
             device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)
                 ? ClearValue::NonZero
@@ -380,12 +384,9 @@ ResultOrError<ExecutionSerial> Texture::EndAccess() {
         // Even though we aren't recording any commands here, asking for a command context ensures
         // that the device fence is signaled eventually even if no commands were recorded before
         // EndAccess. This is a little sub-optimal, but shouldn't occur often in practice.
-        CommandRecordingContext* context;
-        DAWN_TRY_ASSIGN(context,
-                        queue->GetPendingCommandContext(ExecutionQueueBase::SubmitMode::Passive));
-        DAWN_UNUSED(context);
-
-        DAWN_TRY(SynchronizeTextureBeforeUse());
+        CommandRecordingContext* context =
+            queue->GetPendingCommandContext(ExecutionQueueBase::SubmitMode::Passive);
+        DAWN_TRY(SynchronizeTextureBeforeUse(context));
         DAWN_ASSERT(mSignalFenceValue);
     }
     // Make the queue signal the fence in finite time.
@@ -430,14 +431,14 @@ DXGI_FORMAT Texture::GetD3D12CopyableSubresourceFormat(Aspect aspect) const {
     }
 }
 
-MaybeError Texture::SynchronizeTextureBeforeUse() {
+MaybeError Texture::SynchronizeTextureBeforeUse(CommandRecordingContext* commandContext) {
     Device* device = ToBackend(GetDevice());
     Queue* queue = ToBackend(device->GetQueue());
 
     // Perform the wait only on the first call.
     std::vector<FenceAndSignalValue> waitFences = std::move(mWaitFences);
 
-    if (SharedTextureMemoryContents* contents = GetSharedTextureMemoryContents()) {
+    if (SharedResourceMemoryContents* contents = GetSharedResourceMemoryContents()) {
         SharedTextureMemoryBase::PendingFenceList fences;
         contents->AcquirePendingFences(&fences);
         waitFences.insert(waitFences.end(), std::make_move_iterator(fences->begin()),
@@ -453,7 +454,9 @@ MaybeError Texture::SynchronizeTextureBeforeUse() {
         // Keep D3D12 fence alive until commands complete.
         device->ReferenceUntilUnused(ToBackend(fence.object)->GetD3DFence());
     }
-
+    if (mKeyedMutex != nullptr) {
+        DAWN_TRY(commandContext->AcquireKeyedMutex(mKeyedMutex));
+    }
     mSignalFenceValue = queue->GetPendingCommandSerial();
     return {};
 }
@@ -472,6 +475,10 @@ void Texture::NotifySwapChainPresentToPIX() {
             d3dSharingContract->Present(mResourceAllocation.GetD3D12Resource(), 0, 0);
         }
     }
+}
+
+void Texture::SetIsSwapchainTexture(bool isSwapChainTexture) {
+    mSwapChainTexture = isSwapChainTexture;
 }
 
 void Texture::TrackUsageAndTransitionNow(CommandRecordingContext* commandContext,
@@ -574,7 +581,7 @@ void Texture::TransitionSubresourceRange(std::vector<D3D12_RESOURCE_BARRIER>* ba
         }
     }
 
-    if (mSharedTextureMemoryContents) {
+    if (mSharedResourceMemoryContents) {
         // SharedTextureMemory supports concurrent reads of the underlying D3D12
         // texture via multiple TextureD3D12 instances created from a single
         // SharedTextureMemory instance. Concurrent read access requires that the
@@ -582,8 +589,8 @@ void Texture::TransitionSubresourceRange(std::vector<D3D12_RESOURCE_BARRIER>* ba
         // state at all times that read accesses are happening; otherwise, the
         // texture can enter a state where it could be modified by one read access
         // (e.g., to be compressed or decrompessed) while being read by another.
-        bool inReadAccess = HasAccess() && IsReadOnly();
-        DAWN_ASSERT(state->isValidToDecay || !inReadAccess);
+        DAWN_ASSERT(state->isValidToDecay || mSharedResourceMemoryContents->HasWriteAccess() ||
+                    mSharedResourceMemoryContents->HasExclusiveReadAccess());
     }
 
     D3D12_RESOURCE_BARRIER barrier;
@@ -949,11 +956,11 @@ bool Texture::StateAndDecay::operator==(const Texture::StateAndDecay& other) con
 
 // static
 Ref<TextureView> TextureView::Create(TextureBase* texture,
-                                     const TextureViewDescriptor* descriptor) {
+                                     const UnpackedPtr<TextureViewDescriptor>& descriptor) {
     return AcquireRef(new TextureView(texture, descriptor));
 }
 
-TextureView::TextureView(TextureBase* texture, const TextureViewDescriptor* descriptor)
+TextureView::TextureView(TextureBase* texture, const UnpackedPtr<TextureViewDescriptor>& descriptor)
     : TextureViewBase(texture, descriptor) {
     mSrvDesc.Format = d3d::DXGITextureFormat(descriptor->format);
     mSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;

@@ -51,7 +51,7 @@ PipelineLayout::PipelineLayout(Device* device,
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
             MatchVariant(
                 bindingInfo.bindingLayout,
-                [&](const BufferBindingLayout& layout) {
+                [&](const BufferBindingInfo& layout) {
                     switch (layout.type) {
                         case wgpu::BufferBindingType::Uniform:
                             mIndexInfo[group][bindingIndex] = uboIndex;
@@ -67,15 +67,19 @@ PipelineLayout::PipelineLayout(Device* device,
                             DAWN_UNREACHABLE();
                     }
                 },
+                [&](const StaticSamplerHolderBindingLayout&) {
+                    mIndexInfo[group][bindingIndex] = samplerIndex;
+                    samplerIndex++;
+                },
                 [&](const SamplerBindingLayout&) {
                     mIndexInfo[group][bindingIndex] = samplerIndex;
                     samplerIndex++;
                 },
-                [&](const TextureBindingLayout&) {
+                [&](const TextureBindingInfo&) {
                     mIndexInfo[group][bindingIndex] = sampledTextureIndex;
                     sampledTextureIndex++;
                 },
-                [&](const StorageTextureBindingLayout&) {
+                [&](const StorageTextureBindingInfo&) {
                     mIndexInfo[group][bindingIndex] = storageTextureIndex;
                     storageTextureIndex++;
                 });

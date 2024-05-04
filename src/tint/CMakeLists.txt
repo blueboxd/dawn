@@ -66,6 +66,7 @@ function(tint_core_compile_options TARGET)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SYNTAX_TREE_WRITER=$<BOOL:${TINT_BUILD_SYNTAX_TREE_WRITER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_WGSL_READER=$<BOOL:${TINT_BUILD_WGSL_READER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_WGSL_WRITER=$<BOOL:${TINT_BUILD_WGSL_WRITER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_TINTD=$<BOOL:${TINT_BUILD_TINTD}>)
 
   if(TINT_BUILD_FUZZERS)
     target_compile_options(${TARGET} PRIVATE "-fsanitize=fuzzer")
@@ -268,7 +269,7 @@ function(tint_fuzz_cmd_compile_options TARGET)
   target_link_libraries(${TARGET} PRIVATE "tint_api_sanitize_fuzzer")
 endfunction()
 
-# TODO(bclayton): Remove this when fuzzers fully migrated to gen build
+# TODO(crbug.com/tint/2223): Remove this when fuzzers are fully migrated to gen build
 function(tint_fuzzer_compile_options TARGET)
   tint_fuzz_cmd_compile_options(${TARGET})
   target_link_libraries(${TARGET} PRIVATE "tint_api_sanitize_fuzzer")
@@ -500,6 +501,12 @@ function(tint_target_add_external_dependencies TARGET KIND)
       target_link_libraries(${TARGET} PRIVATE
         absl_strings
       )
+    elseif(${DEPENDENCY} STREQUAL "dxc-include")
+      target_include_directories(${TARGET} PRIVATE "${DAWN_THIRD_PARTY_DIR}/dxc/include")
+    elseif(${DEPENDENCY} STREQUAL "jsoncpp")
+      target_link_libraries(${TARGET} PRIVATE jsoncpp_static)
+    elseif(${DEPENDENCY} STREQUAL "langsvr")
+      target_link_libraries(${TARGET} PRIVATE langsvr)
     elseif(${DEPENDENCY} STREQUAL "glslang")
       target_link_libraries(${TARGET} PRIVATE glslang)
       if(NOT MSVC)
@@ -626,7 +633,6 @@ if(TINT_BUILD_FUZZERS)
   set(TINT_BUILD_TESTS FALSE)
   set(TINT_BUILD_BENCHMARKS FALSE)
   include("BUILD.cmake")
-  add_subdirectory(fuzzers)
 
   # Restore the build flags
   set(TINT_BUILD_CMD_TOOLS ${SAVE_TINT_BUILD_CMD_TOOLS})
@@ -654,36 +660,46 @@ endforeach()
 
 
 ################################################################################
+# tintd (VSCode WGSL language server)
+################################################################################
+if(TINT_BUILD_TINTD)
+  # Copy all the files out of cmd/tintd/vscode to {build}/vscode
+  set(VSCODE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmd/tintd/vscode")
+  set(VSCODE_DST_DIR "${DAWN_BUILD_GEN_DIR}/vscode")
+
+  file(GLOB VSCODE_ASSETS RELATIVE "${VSCODE_SRC_DIR}" "${VSCODE_SRC_DIR}/*")
+  foreach(FILE ${VSCODE_ASSETS})
+    configure_file("${VSCODE_SRC_DIR}/${FILE}" "${VSCODE_DST_DIR}/${FILE}" COPYONLY)
+  endforeach()
+  set_target_properties(tint_cmd_tintd_cmd PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${VSCODE_DST_DIR}")
+endif(TINT_BUILD_TINTD)
+
+
+################################################################################
 # Bespoke target settings
 ################################################################################
-if (MSVC)
+if(MSVC)
   target_sources(tint_api PRIVATE tint.natvis)
 endif()
 
+
 ################################################################################
-# Additional fuzzer tests
+# Unit tests
 ################################################################################
 if(TINT_BUILD_TESTS)
-  if(${TINT_BUILD_FUZZERS})
-    target_sources(tint_cmd_test_test_cmd PRIVATE
-      fuzzers/mersenne_twister_engine.cc
-      fuzzers/mersenne_twister_engine.h
-      fuzzers/random_generator.cc
-      fuzzers/random_generator.h
-      fuzzers/random_generator_engine.cc
-      fuzzers/random_generator_engine.h
-      fuzzers/random_generator_test.cc
-    )
-  endif()
-
   add_test(NAME tint_unittests COMMAND tint_cmd_test_test_cmd)
 endif(TINT_BUILD_TESTS)
+
 
 ################################################################################
 # Target aliases
 ################################################################################
 add_library(libtint ALIAS tint_api)
 
+
+################################################################################
+# Install rules
+################################################################################
 if (TINT_ENABLE_INSTALL)
   # We need to recurse all folders and include all headers because tint.h includes most headers from src/tint
   file(GLOB TINT_HEADERS "${DAWN_INCLUDE_DIR}/tint/*.h")

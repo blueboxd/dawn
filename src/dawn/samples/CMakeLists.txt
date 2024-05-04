@@ -25,7 +25,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-add_library(dawn_sample_utils STATIC ${DAWN_PLACEHOLDER_FILE})
+add_library(dawn_sample_utils STATIC)
 common_compile_options(dawn_sample_utils)
 target_sources(dawn_sample_utils PRIVATE
     "SampleUtils.cpp"
@@ -46,10 +46,6 @@ target_link_libraries(dawn_sample_utils PUBLIC
 add_executable(CppHelloTriangle "CppHelloTriangle.cpp")
 common_compile_options(CppHelloTriangle)
 target_link_libraries(CppHelloTriangle dawn_sample_utils)
-
-add_executable(CHelloTriangle "CHelloTriangle.cpp")
-common_compile_options(CHelloTriangle)
-target_link_libraries(CHelloTriangle dawn_sample_utils)
 
 add_executable(ComputeBoids "ComputeBoids.cpp")
 common_compile_options(ComputeBoids)

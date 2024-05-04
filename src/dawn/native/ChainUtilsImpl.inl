@@ -41,8 +41,16 @@ struct RequestAdapterOptionsD3D11Device;
 struct SharedTextureMemoryD3D11Texture2DDescriptor;
 }
 
+namespace d3d12 {
+struct SharedBufferMemoryD3D12ResourceDescriptor;
+}
+
 namespace opengl {
 struct RequestAdapterOptionsGetGLProc;
+}
+
+namespace vulkan {
+struct YCbCrVulkanDescriptor;
 }
 
 namespace detail {
@@ -83,6 +91,32 @@ template <>
 struct AdditionalExtensions<SharedTextureMemoryDescriptor> {
     using List =
         AdditionalExtensionsList<const d3d11::SharedTextureMemoryD3D11Texture2DDescriptor*>;
+};
+
+template <>
+constexpr inline wgpu::SType STypeForImpl<d3d12::SharedBufferMemoryD3D12ResourceDescriptor> =
+    wgpu::SType(WGPUSType_SharedBufferMemoryD3D12ResourceDescriptor);
+
+template <>
+struct AdditionalExtensions<SharedBufferMemoryDescriptor> {
+    using List =
+        AdditionalExtensionsList<const d3d12::SharedBufferMemoryD3D12ResourceDescriptor*>;
+};
+
+template <>
+constexpr inline wgpu::SType STypeForImpl<vulkan::YCbCrVulkanDescriptor> =
+    wgpu::SType(WGPUSType_YCbCrVulkanDescriptor);
+
+template <>
+struct AdditionalExtensions<SamplerDescriptor> {
+    using List =
+        AdditionalExtensionsList<const vulkan::YCbCrVulkanDescriptor*>;
+};
+
+template <>
+struct AdditionalExtensions<TextureViewDescriptor> {
+    using List =
+        AdditionalExtensionsList<const vulkan::YCbCrVulkanDescriptor*>;
 };
 
 }  // namespace detail

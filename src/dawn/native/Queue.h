@@ -69,6 +69,7 @@ class QueueBase : public ApiObjectBase, public ExecutionQueueBase {
     static Ref<QueueBase> MakeError(DeviceBase* device, const char* label);
 
     ObjectType GetType() const override;
+    void FormatLabel(absl::FormatSink* s) const override;
 
     // Dawn API
     void APISubmit(uint32_t commandCount, CommandBufferBase* const* commands);
@@ -136,6 +137,7 @@ class QueueBase : public ApiObjectBase, public ExecutionQueueBase {
                                        size_t size);
     virtual MaybeError WriteTextureImpl(const ImageCopyTexture& destination,
                                         const void* data,
+                                        size_t dataSize,
                                         const TextureDataLayout& dataLayout,
                                         const Extent3D& writeSize);
 

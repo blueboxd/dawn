@@ -47,6 +47,7 @@
 #include "dawn/native/RenderBundle.h"
 #include "dawn/native/RenderPipeline.h"
 #include "dawn/native/ValidationUtils_autogen.h"
+#include "dawn/native/webgpu_absl_format.h"
 
 namespace dawn::native {
 
@@ -98,10 +99,9 @@ MaybeError ValidateTimestampQuery(const DeviceBase* device,
                                   Feature requiredFeature) {
     DAWN_TRY(device->ValidateObject(querySet));
 
-    DAWN_INVALID_IF(
-        !device->HasFeature(requiredFeature),
-        "Timestamp queries used without the %s feature enabled.",
-        device->GetPhysicalDevice()->GetInstance()->GetFeatureInfo(ToAPI(requiredFeature))->name);
+    DAWN_INVALID_IF(!device->HasFeature(requiredFeature),
+                    "Timestamp queries used without the %s feature enabled.",
+                    ToAPI(requiredFeature));
 
     DAWN_INVALID_IF(querySet->GetQueryType() != wgpu::QueryType::Timestamp,
                     "The type of %s is not %s.", querySet, wgpu::QueryType::Timestamp);
@@ -277,13 +277,13 @@ MaybeError ValidateLinearTextureData(const TextureDataLayout& layout,
     DAWN_ASSERT(copyExtent.height % blockInfo.height == 0);
     uint32_t heightInBlocks = copyExtent.height / blockInfo.height;
 
-    // TODO(dawn:563): Right now kCopyStrideUndefined will be formatted as a large value in the
-    // validation message. Investigate ways to make it print as a more readable symbol.
     DAWN_INVALID_IF(
         copyExtent.depthOrArrayLayers > 1 && (layout.bytesPerRow == wgpu::kCopyStrideUndefined ||
                                               layout.rowsPerImage == wgpu::kCopyStrideUndefined),
         "Copy depth (%u) is > 1, but bytesPerRow (%u) or rowsPerImage (%u) are not specified.",
-        copyExtent.depthOrArrayLayers, layout.bytesPerRow, layout.rowsPerImage);
+        copyExtent.depthOrArrayLayers,
+        WrapUndefined(layout.bytesPerRow, wgpu::kCopyStrideUndefined),
+        WrapUndefined(layout.rowsPerImage, wgpu::kCopyStrideUndefined));
 
     DAWN_INVALID_IF(heightInBlocks > 1 && layout.bytesPerRow == wgpu::kCopyStrideUndefined,
                     "HeightInBlocks (%u) is > 1, but bytesPerRow is not specified.",

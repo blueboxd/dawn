@@ -224,7 +224,12 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "https://crbug.com/dawn/1016", ToggleStage::Device}},
     {Toggle::UseUserDefinedLabelsInBackend,
      {"use_user_defined_labels_in_backend",
-      "Enables calls to SetLabel to be forwarded to backend-specific APIs that label objects.",
+      "Enables setting labels on backend-specific APIs that label objects. The labels used will be "
+      "those of the corresponding frontend objects if non-empty and default labels otherwise. "
+      "Defaults to false. NOTE: On Vulkan, backend labels are currently always set (with default "
+      "labels if this toggle is not set). The reason is that Dawn currently uses backend "
+      "object labels on Vulkan to map errors back to the device with which the backend objects "
+      "included in the error are associated.",
       "https://crbug.com/dawn/840", ToggleStage::Device}},
     {Toggle::UsePlaceholderFragmentInVertexOnlyPipeline,
      {"use_placeholder_fragment_in_vertex_only_pipeline",
@@ -389,6 +394,12 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "texture. Works around an issue where stencil writes by copy commands are not visible "
       "to a render or compute pass.",
       "https://crbug.com/dawn/1389", ToggleStage::Device}},
+    {Toggle::UseBlitForStencilTextureWrite,
+     {"use_blit_for_stencil_texture_write",
+      "Use a blit instead of a write texture command to upload data to the stencil aspect of a "
+      "texture. Works around for OpenGLES when glTexSubImage doesn't support GL_STENCIL_INDEX, "
+      "and when the texture format is depth-stencil-combined.",
+      "https://crbug.com/dawn/2391", ToggleStage::Device}},
     {Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
      {"use_blit_for_depth_texture_to_texture_copy_to_nonzero_subresource",
       "Use a blit to copy from a depth texture to the nonzero subresource of a depth texture. "
@@ -521,6 +532,16 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "waiting for the next Tick. This enables using the stack trace in which the uncaptured error "
       "occured when breaking into the uncaptured error callback.",
       "https://crbug.com/dawn/1789", ToggleStage::Device}},
+    {Toggle::VulkanUseStorageInputOutput16,
+     {"vulkan_use_storage_input_output_16",
+      "Use the StorageInputOutput16 SPIR-V capability for f16 shader IO types when the device "
+      "supports it.",
+      "https://crbug.com/tint/2161", ToggleStage::Device}},
+    {Toggle::D3D12DontUseShaderModel66OrHigher,
+     {"d3d12_dont_use_shader_model_66_or_higher",
+      "Only use shader model 6.5 or less for D3D12 backend, to workaround issues on some Intel "
+      "devices.",
+      "https://crbug.com/dawn/2470", ToggleStage::Adapter}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
       "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "
@@ -537,6 +558,19 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Using D3D12_BLEND_DEST_ALPHA as source blend factor for both color and alpha blending "
       "doesn't work correctly on the D3D12 backend using Intel Gen9 or Gen9.5 GPUs.",
       "https://crbug.com/dawn/1579", ToggleStage::Device}},
+    {Toggle::ClearColorWithDraw,
+     {"clear_color_with_draw",
+      "Use Draw instead of ClearRenderTargetView() to clear color attachments. On D3D11, "
+      "ClearRenderTargetView() does not always clear texture correctly.",
+      "https://crbug.com/chromium/329702368", ToggleStage::Device}},
+    {Toggle::VulkanSkipDraw,
+     {"vulkan_skip_draw",
+      "Some chrome tests run with swiftshader, they don't care about the pixel output. This toggle "
+      "allows skipping expensive draw operations for them.",
+      "https://crbug.com/chromium/331688266", ToggleStage::Device}},
+    {Toggle::D3D11UseUnmonitoredFence,
+     {"d3d11_use_unmonitored_fence", "Use d3d11 unmonitored fence.",
+      "https://crbug.com/chromium/335553337", ToggleStage::Device}},
     // Comment to separate the }} so it is clearer what to copy-paste to add a toggle.
 }};
 }  // anonymous namespace

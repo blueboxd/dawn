@@ -99,7 +99,7 @@ std::vector<wgpu::FeatureName> SharedTextureMemoryTests::GetRequiredFeatures() {
         wgpu::FeatureName::MultiPlanarFormatExtendedUsages,
         wgpu::FeatureName::MultiPlanarRenderTargets,
         wgpu::FeatureName::TransientAttachments,
-        wgpu::FeatureName::Norm16TextureFormats,
+        wgpu::FeatureName::Unorm16TextureFormats,
         wgpu::FeatureName::BGRA8UnormStorage,
     };
     for (auto feature : kOptionalFeatures) {
@@ -735,14 +735,29 @@ TEST_P(SharedTextureMemoryTests, ImportSharedFenceNoChain) {
     EXPECT_EQ(exportInfo.type, wgpu::SharedFenceType::Undefined);
 }
 
-// Test that it is an error to import a shared texture memory when the device is destroyed
+// Test importing a shared texture memory when the device is destroyed
 TEST_P(SharedTextureMemoryTests, ImportSharedTextureMemoryDeviceDestroyed) {
     device.Destroy();
 
-    wgpu::SharedTextureMemoryDescriptor desc;
-    ASSERT_DEVICE_ERROR_MSG(
-        wgpu::SharedTextureMemory memory = device.ImportSharedTextureMemory(&desc),
-        HasSubstr("lost"));
+    wgpu::SharedTextureMemory memory;
+    if (GetParam().mBackend->Name().rfind("OpaqueFD", 0) == 0) {
+        // The OpaqueFD backend for `CreateSharedTextureMemory` uses several
+        // Vulkan device internals before and after the actual call to
+        // ImportSharedTextureMemory. We can't easily make it import with
+        // a destroyed device, so create the SharedTextureMemory with
+        // an invalid descriptor instead. This still tests that an uncaptured
+        // error is not generated on the import call when the device is lost.
+        wgpu::SharedTextureMemoryDescriptor desc;
+        memory = device.ImportSharedTextureMemory(&desc);
+    } else {
+        memory = GetParam().mBackend->CreateSharedTextureMemory(device);
+    }
+
+    wgpu::SharedTextureMemoryBeginAccessDescriptor beginDesc = {};
+    beginDesc.concurrentRead = false;
+    beginDesc.initialized = true;
+    // That the begin access does not succeed since the device is destroyed.
+    EXPECT_FALSE(memory.BeginAccess(memory.CreateTexture(), &beginDesc));
 }
 
 // Test that SharedTextureMemory::IsDeviceLost() returns the expected value before and
@@ -765,13 +780,59 @@ TEST_P(SharedTextureMemoryTests, CheckIsDeviceLostBeforeAndAfterLosingDevice) {
     EXPECT_TRUE(memory.IsDeviceLost());
 }
 
-// Test that it is an error to import a shared fence when the device is destroyed
+// Test importing a shared fence when the device is destroyed
 TEST_P(SharedTextureMemoryTests, ImportSharedFenceDeviceDestroyed) {
+    // Create a shared texture memory and texture
+    wgpu::SharedTextureMemory memory = GetParam().mBackend->CreateSharedTextureMemory(device);
+    wgpu::Texture texture = memory.CreateTexture();
+
+    // Begin access to use the texture
+    wgpu::SharedTextureMemoryBeginAccessDescriptor beginDesc = {};
+    beginDesc.concurrentRead = false;
+    beginDesc.initialized = true;
+    auto backendBeginState = GetParam().mBackend->ChainInitialBeginState(&beginDesc);
+    EXPECT_TRUE(memory.BeginAccess(texture, &beginDesc));
+
+    // Use the texture so there is a fence to export on end access.
+    wgpu::SharedTextureMemoryProperties properties;
+    memory.GetProperties(&properties);
+    if (properties.usage & wgpu::TextureUsage::RenderAttachment) {
+        UseInRenderPass(device, texture);
+    } else if (!utils::IsMultiPlanarFormat(properties.format)) {
+        if (properties.usage & wgpu::TextureUsage::CopySrc) {
+            UseInCopy(device, texture);
+        } else if (properties.usage & wgpu::TextureUsage::CopyDst) {
+            wgpu::Extent3D writeSize = {1, 1, 1};
+            wgpu::ImageCopyTexture dest = {};
+            dest.texture = texture;
+            wgpu::TextureDataLayout dataLayout = {};
+            uint64_t data[2];
+            device.GetQueue().WriteTexture(&dest, &data, sizeof(data), &dataLayout, &writeSize);
+        }
+    }
+
+    // End access to export a fence.
+    wgpu::SharedTextureMemoryEndAccessState endState = {};
+    auto backendEndState = GetParam().mBackend->ChainEndState(&endState);
+    EXPECT_TRUE(memory.EndAccess(texture, &endState));
+
+    // Destroy the device.
     device.Destroy();
 
-    wgpu::SharedFenceDescriptor desc;
-    ASSERT_DEVICE_ERROR_MSG(wgpu::SharedFence fence = device.ImportSharedFence(&desc),
-                            HasSubstr("lost"));
+    // Import the shared fence to the destroyed device.
+    std::vector<wgpu::SharedFence> sharedFences(endState.fenceCount);
+    for (size_t i = 0; i < endState.fenceCount; ++i) {
+        sharedFences[i] = GetParam().mBackend->ImportFenceTo(device, endState.fences[i]);
+    }
+    beginDesc.fenceCount = endState.fenceCount;
+    beginDesc.fences = sharedFences.data();
+    beginDesc.signaledValues = endState.signaledValues;
+    beginDesc.concurrentRead = false;
+    beginDesc.initialized = endState.initialized;
+    backendBeginState = GetParam().mBackend->ChainBeginState(&beginDesc, endState);
+
+    // Begin access should fail.
+    EXPECT_FALSE(memory.BeginAccess(texture, &beginDesc));
 }
 
 // Test calling GetProperties with an error memory. The properties are filled with 0/None/Undefined.
@@ -1035,7 +1096,7 @@ TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesWriteRead) {
 // followed by a read texture on a single SharedTextureMemory.
 TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesWriteConcurrentRead) {
     // TODO(dawn/2276): support concurrent read access.
-    DAWN_TEST_UNSUPPORTED_IF(IsD3D12() || IsVulkan());
+    DAWN_TEST_UNSUPPORTED_IF(IsVulkan());
 
     wgpu::SharedTextureMemory memory = GetParam().mBackend->CreateSharedTextureMemory(device);
 
@@ -1075,7 +1136,7 @@ TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesReadWrite) {
 // followed by a write texture on a single SharedTextureMemory.
 TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesConcurrentReadWrite) {
     // TODO(dawn/2276): support concurrent read access.
-    DAWN_TEST_UNSUPPORTED_IF(IsD3D12() || IsVulkan());
+    DAWN_TEST_UNSUPPORTED_IF(IsVulkan());
 
     wgpu::SharedTextureMemory memory = GetParam().mBackend->CreateSharedTextureMemory(device);
 
@@ -1133,7 +1194,7 @@ TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesReadRead) {
 // SharedTextureMemory.
 TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesConcurrentReadConcurrentRead) {
     // TODO(dawn/2276): support concurrent read access.
-    DAWN_TEST_UNSUPPORTED_IF(IsD3D12() || IsVulkan());
+    DAWN_TEST_UNSUPPORTED_IF(IsVulkan());
 
     wgpu::SharedTextureMemory memory = GetParam().mBackend->CreateSharedTextureMemory(device);
 
@@ -1158,7 +1219,7 @@ TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesConcurrentRead
 // SharedTextureMemory.
 TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesConcurrentReadRead) {
     // TODO(dawn/2276): support concurrent read access.
-    DAWN_TEST_UNSUPPORTED_IF(IsD3D12() || IsVulkan());
+    DAWN_TEST_UNSUPPORTED_IF(IsVulkan());
     wgpu::SharedTextureMemory memory = GetParam().mBackend->CreateSharedTextureMemory(device);
 
     wgpu::Texture readTexture1 = CreateReadTexture(memory);
@@ -1179,7 +1240,7 @@ TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesConcurrentRead
 // SharedTextureMemory.
 TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesReadConcurrentRead) {
     // TODO(dawn/2276): support concurrent read access.
-    DAWN_TEST_UNSUPPORTED_IF(IsD3D12() || IsVulkan());
+    DAWN_TEST_UNSUPPORTED_IF(IsVulkan());
     wgpu::SharedTextureMemory memory = GetParam().mBackend->CreateSharedTextureMemory(device);
 
     wgpu::Texture readTexture1 = CreateReadTexture(memory);
@@ -1200,7 +1261,7 @@ TEST_P(SharedTextureMemoryTests, DoubleBeginAccessSeparateTexturesReadConcurrent
 // true.
 TEST_P(SharedTextureMemoryTests, ConcurrentWrite) {
     // TODO(dawn/2276): support concurrent read access.
-    DAWN_TEST_UNSUPPORTED_IF(IsD3D12() || IsVulkan());
+    DAWN_TEST_UNSUPPORTED_IF(IsVulkan());
 
     wgpu::SharedTextureMemory memory = GetParam().mBackend->CreateSharedTextureMemory(device);
 
@@ -1281,9 +1342,7 @@ TEST_P(SharedTextureMemoryTests, UseWithoutBegin) {
     if (properties.usage & wgpu::TextureUsage::RenderAttachment) {
         ASSERT_DEVICE_ERROR_MSG(UseInRenderPass(device, texture),
                                 HasSubstr("without current access"));
-    } else if (properties.format != wgpu::TextureFormat::R8BG8Biplanar420Unorm &&
-               properties.format != wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm &&
-               properties.format != wgpu::TextureFormat::R8BG8A8Triplanar420Unorm) {
+    } else if (!utils::IsMultiPlanarFormat(properties.format)) {
         if (properties.usage & wgpu::TextureUsage::CopySrc) {
             ASSERT_DEVICE_ERROR_MSG(UseInCopy(device, texture),
                                     HasSubstr("without current access"));
@@ -1976,7 +2035,7 @@ TEST_P(SharedTextureMemoryTests, SeparateDevicesWriteThenConcurrentReadThenWrite
 // Reads should happen strictly after the writes. The final write should wait for the reads.
 TEST_P(SharedTextureMemoryTests, SameDeviceWriteThenConcurrentReadThenWrite) {
     // TODO(dawn/2276): support concurrent read access.
-    DAWN_TEST_UNSUPPORTED_IF(IsD3D12() || IsVulkan());
+    DAWN_TEST_UNSUPPORTED_IF(IsVulkan());
 
     DAWN_TEST_UNSUPPORTED_IF(!GetParam().mBackend->SupportsConcurrentRead());
 

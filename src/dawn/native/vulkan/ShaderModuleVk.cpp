@@ -27,11 +27,13 @@
 
 #include "dawn/native/vulkan/ShaderModuleVk.h"
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "dawn/common/HashUtils.h"
 #include "dawn/common/MatchVariant.h"
 #include "dawn/native/CacheRequest.h"
 #include "dawn/native/PhysicalDevice.h"
@@ -66,7 +68,7 @@ DAWN_SERIALIZABLE(struct, CompiledSpirv, COMPILED_SPIRV_MEMBERS){};
 
 bool TransformedShaderModuleCacheKey::operator==(
     const TransformedShaderModuleCacheKey& other) const {
-    if (layout != other.layout || entryPoint != other.entryPoint ||
+    if (layoutPtr != other.layoutPtr || entryPoint != other.entryPoint ||
         constants.size() != other.constants.size()) {
         return false;
     }
@@ -82,7 +84,7 @@ bool TransformedShaderModuleCacheKey::operator==(
 size_t TransformedShaderModuleCacheKeyHashFunc::operator()(
     const TransformedShaderModuleCacheKey& key) const {
     size_t hash = 0;
-    HashCombine(&hash, key.layout, key.entryPoint);
+    HashCombine(&hash, key.layoutPtr, key.entryPoint);
     for (const auto& entry : key.constants) {
         HashCombine(&hash, entry.first, entry.second);
     }
@@ -148,8 +150,7 @@ class ShaderModule::ConcurrentTransformedShaderModuleCache {
         }
     };
 
-    // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
-    raw_ptr<Device, DanglingUntriaged> mDevice;
+    raw_ptr<Device> mDevice;
     std::mutex mMutex;
     absl::flat_hash_map<TransformedShaderModuleCacheKey,
                         Entry,
@@ -215,15 +216,12 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     std::optional<uint32_t> maxSubgroupSizeForFullSubgroups) {
     TRACE_EVENT0(GetDevice()->GetPlatform(), General, "ShaderModuleVk::GetHandleAndSpirv");
 
-    // If the shader was destroyed, we should never call this function.
-    DAWN_ASSERT(IsAlive());
-
     ScopedTintICEHandler scopedICEHandler(GetDevice());
 
     // Check to see if we have the handle and spirv cached already.
-    auto cacheKey = TransformedShaderModuleCacheKey{layout, programmableStage.entryPoint.c_str(),
-                                                    programmableStage.constants,
-                                                    maxSubgroupSizeForFullSubgroups};
+    auto cacheKey = TransformedShaderModuleCacheKey{
+        reinterpret_cast<uintptr_t>(layout), programmableStage.entryPoint.c_str(),
+        programmableStage.constants, maxSubgroupSizeForFullSubgroups};
     auto handleAndSpirv = mTransformedShaderModuleCache->Find(cacheKey);
     if (handleAndSpirv.has_value()) {
         return std::move(*handleAndSpirv);
@@ -280,7 +278,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
                                              tint::spirv::writer::binding::Sampler{
                                                  dstBindingPoint.group, dstBindingPoint.binding});
                 },
-                [&](const SampledTextureBindingInfo& bindingInfo) {
+                [&](const TextureBindingInfo& bindingInfo) {
                     bindings.texture.emplace(srcBindingPoint,
                                              tint::spirv::writer::binding::Texture{
                                                  dstBindingPoint.group, dstBindingPoint.binding});
@@ -335,6 +333,8 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
         GetDevice()->IsToggleEnabled(Toggle::DisableWorkgroupInit);
     req.tintOptions.use_zero_initialize_workgroup_memory_extension =
         GetDevice()->IsToggleEnabled(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension);
+    req.tintOptions.use_storage_input_output_16 =
+        GetDevice()->IsToggleEnabled(Toggle::VulkanUseStorageInputOutput16);
     req.tintOptions.bindings = std::move(bindings);
     req.tintOptions.disable_image_robustness =
         GetDevice()->IsToggleEnabled(Toggle::VulkanUseImageRobustAccess2);

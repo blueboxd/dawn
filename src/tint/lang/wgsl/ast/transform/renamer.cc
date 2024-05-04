@@ -1264,6 +1264,7 @@ Renamer::Data::Data(Remappings&& r) : remappings(std::move(r)) {}
 Renamer::Data::Data(const Data&) = default;
 Renamer::Data::~Data() = default;
 
+Renamer::Config::Config() = default;
 Renamer::Config::Config(Target t, bool pu) : target(t), preserve_unicode(pu) {}
 Renamer::Config::Config(Target t, bool pu, Remappings&& remappings)
     : target(t), preserve_unicode(pu), requested_names(std::move(remappings)) {}
@@ -1294,7 +1295,7 @@ Transform::ApplyResult Renamer::Apply(const Program& src,
         Switch(
             node,
             [&](const MemberAccessorExpression* accessor) {
-                auto* sem = src.Sem().Get(accessor)->UnwrapLoad();
+                auto* sem = src.Sem().Get(accessor)->Unwrap();
                 if (sem->Is<sem::Swizzle>()) {
                     preserved_identifiers.Add(accessor->member);
                 } else if (auto* str_expr = src.Sem().GetVal(accessor->object)) {

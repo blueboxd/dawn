@@ -161,30 +161,6 @@ struct SamplerBindingInfo {
     bool isComparison;
 };
 
-// Mirrors wgpu::TextureBindingLayout but instead has a set of compatible sampleTypes
-// instead of a single enum.
-struct SampledTextureBindingInfo {
-    SampleTypeBit compatibleSampleTypes;
-    wgpu::TextureViewDimension viewDimension;
-    bool multisampled;
-};
-
-// Mirrors wgpu::ExternalTextureBindingLayout
-struct ExternalTextureBindingInfo {};
-
-// Mirrors wgpu::BufferBindingLayout
-struct BufferBindingInfo {
-    wgpu::BufferBindingType type;
-    uint64_t minBindingSize;
-};
-
-// Mirrors wgpu::StorageTextureBindingLayout
-struct StorageTextureBindingInfo {
-    wgpu::TextureFormat format;
-    wgpu::TextureViewDimension viewDimension;
-    wgpu::StorageTextureAccess access;
-};
-
 // Per-binding shader metadata contains some SPIRV specific information in addition to
 // most of the frontend per-binding information.
 struct ShaderBindingInfo {
@@ -199,7 +175,7 @@ struct ShaderBindingInfo {
 
     std::variant<BufferBindingInfo,
                  SamplerBindingInfo,
-                 SampledTextureBindingInfo,
+                 TextureBindingInfo,
                  StorageTextureBindingInfo,
                  ExternalTextureBindingInfo>
         bindingInfo;
@@ -347,6 +323,8 @@ class ShaderModuleBase : public RefCountedWithExternalCountBase<ApiObjectBase>,
         bool operator()(const ShaderModuleBase* a, const ShaderModuleBase* b) const;
     };
 
+    std::optional<bool> GetStrictMath() const;
+
     using ScopedUseTintProgram = APIRef<ShaderModuleBase>;
     ScopedUseTintProgram UseTintProgram();
 
@@ -355,9 +333,9 @@ class ShaderModuleBase : public RefCountedWithExternalCountBase<ApiObjectBase>,
     int GetTintProgramRecreateCountForTesting() const;
 
     void APIGetCompilationInfo(wgpu::CompilationInfoCallback callback, void* userdata);
+    Future APIGetCompilationInfoF(const CompilationInfoCallbackInfo& callbackInfo);
 
     void InjectCompilationMessages(std::unique_ptr<OwnedCompilationMessages> compilationMessages);
-
     OwnedCompilationMessages* GetCompilationMessages() const;
 
   protected:
@@ -376,6 +354,10 @@ class ShaderModuleBase : public RefCountedWithExternalCountBase<ApiObjectBase>,
     Type mType;
     std::vector<uint32_t> mOriginalSpirv;
     std::string mWgsl;
+
+    // TODO(dawn:2503): Remove the optional when Dawn can has a consistent default across backends.
+    // Right now D3D uses strictness by default, and Vulkan/Metal use fast math by default.
+    std::optional<bool> mStrictMath;
 
     EntryPointMetadataTable mEntryPoints;
     PerStage<std::string> mDefaultEntryPointNames;

@@ -6,6 +6,10 @@
 	path = third_party/clang-format/script
 	url = https://chromium.googlesource.com/external/github.com/llvm/llvm-project/clang/tools/clang-format
 	gclient-condition = dawn_standalone
+[submodule "third_party/depot_tools"]
+	path = third_party/depot_tools
+	url = https://chromium.googlesource.com/chromium/tools/depot_tools
+	gclient-condition = dawn_standalone
 [submodule "third_party/libc++/src"]
 	path = third_party/libc++/src
 	url = https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libcxx
@@ -88,6 +92,9 @@
 	path = third_party/dxheaders
 	url = https://chromium.googlesource.com/external/github.com/microsoft/DirectX-Headers
 	gclient-condition = host_os != "win"
+[submodule "third_party/webgpu-headers"]
+	path = third_party/webgpu-headers
+	url = https://chromium.googlesource.com/external/github.com/webgpu-native/webgpu-headers
 [submodule "third_party/khronos/OpenGL-Registry"]
 	path = third_party/khronos/OpenGL-Registry
 	url = https://chromium.googlesource.com/external/github.com/KhronosGroup/OpenGL-Registry
@@ -117,6 +124,14 @@
 [submodule "tools/protoc_wrapper"]
 	path = tools/protoc_wrapper
 	url = https://chromium.googlesource.com/chromium/src/tools/protoc_wrapper
+	gclient-condition = dawn_standalone
+[submodule "third_party/jsoncpp"]
+	path = third_party/jsoncpp
+	url = https://github.com/open-source-parsers/jsoncpp
+	gclient-condition = dawn_standalone
+[submodule "third_party/langsvr"]
+	path = third_party/langsvr
+	url = https://github.com/google/langsvr
 	gclient-condition = dawn_standalone
 [submodule "third_party/partition_alloc"]
 	path = third_party/partition_alloc

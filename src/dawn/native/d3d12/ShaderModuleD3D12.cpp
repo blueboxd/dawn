@@ -139,7 +139,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
 
     d3d::D3DCompilationRequest req = {};
     req.tracePlatform = UnsafeUnkeyedValue(device->GetPlatform());
-    req.hlsl.shaderModel = device->GetDeviceInfo().shaderModel;
+    req.hlsl.shaderModel = ToBackend(device->GetPhysicalDevice())
+                               ->GetAppliedShaderModelUnderToggles(device->GetTogglesState());
     req.hlsl.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
     req.hlsl.dumpShaders = device->IsToggleEnabled(Toggle::DumpShaders);
     req.hlsl.maxSubgroupSizeForFullSubgroups = maxSubgroupSizeForFullSubgroups;
@@ -159,7 +160,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         req.bytecode.dxcLibrary = device->GetDxcLibrary().Get();
         req.bytecode.dxcCompiler = device->GetDxcCompiler().Get();
         req.bytecode.compilerVersion = dxcVersionInfo.DxcCompilerVersion;
-        req.bytecode.dxcShaderProfile = device->GetDeviceInfo().shaderProfiles[stage];
+        req.bytecode.dxcShaderProfile = device->GetDxcShaderProfiles()[stage];
     } else {
         req.bytecode.compiler = d3d::Compiler::FXC;
         req.bytecode.d3dCompile = device->GetFunctions()->d3dCompile;
@@ -179,7 +180,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
 
     using tint::BindingPoint;
 
-    tint::ArrayLengthFromUniformOptions arrayLengthFromUniform;
+    tint::hlsl::writer::ArrayLengthFromUniformOptions arrayLengthFromUniform;
     arrayLengthFromUniform.ubo_binding = {layout->GetDynamicStorageBufferLengthsRegisterSpace(),
                                           layout->GetDynamicStorageBufferLengthsShaderRegister()};
 
@@ -226,8 +227,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
                 bindings.sampler.emplace(
                     srcBindingPoint, tint::hlsl::writer::binding::Sampler{dstBindingPoint.group,
                                                                           dstBindingPoint.binding});
-            } else if (std::holds_alternative<SampledTextureBindingInfo>(
-                           shaderBindingInfo.bindingInfo)) {
+            } else if (std::holds_alternative<TextureBindingInfo>(shaderBindingInfo.bindingInfo)) {
                 bindings.texture.emplace(
                     srcBindingPoint, tint::hlsl::writer::binding::Texture{dstBindingPoint.group,
                                                                           dstBindingPoint.binding});
@@ -259,7 +259,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
 
             if (bufferBindingInfo) {
                 const auto& bindingLayout =
-                    std::get<BufferBindingLayout>(bgl->GetBindingInfo(bindingIndex).bindingLayout);
+                    std::get<BufferBindingInfo>(bgl->GetBindingInfo(bindingIndex).bindingLayout);
 
                 // Declaring a read-only storage buffer in HLSL but specifying a storage
                 // buffer in the BGL produces the wrong output. Force read-only storage

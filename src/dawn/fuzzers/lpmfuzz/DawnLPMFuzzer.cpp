@@ -111,7 +111,7 @@ int Run(const fuzzing::Program& program, bool (*AdapterSupported)(const dawn::na
     serverDesc.serializer = &devNull;
 
     std::unique_ptr<dawn::wire::WireServer> wireServer(new dawn::wire::WireServer(serverDesc));
-    wireServer->InjectInstance(sInstance->Get(), kInstanceObjectId, 0);
+    wireServer->InjectInstance(sInstance->Get(), {kInstanceObjectId, 0});
 
     static dawn::utils::TerribleCommandBuffer* mCommandBuffer =
         new dawn::utils::TerribleCommandBuffer();
@@ -125,6 +125,7 @@ int Run(const fuzzing::Program& program, bool (*AdapterSupported)(const dawn::na
 
     // Note: Deleting the server will release all created objects.
     // Deleted devices will wait for idle on destruction.
+    mCommandBuffer->SetHandler(nullptr);
     wireServer = nullptr;
     return result == dawn::wire::WireResult::FatalError;
 }

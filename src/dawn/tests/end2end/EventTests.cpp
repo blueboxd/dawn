@@ -33,9 +33,13 @@
 #include "dawn/common/FutureUtils.h"
 #include "dawn/tests/DawnTest.h"
 #include "dawn/webgpu.h"
+#include "gmock/gmock.h"
 
 namespace dawn {
 namespace {
+
+using testing::AnyOf;
+using testing::Eq;
 
 wgpu::Device CreateExtraDevice(wgpu::Instance instance) {
     // IMPORTANT: DawnTest overrides RequestAdapter and RequestDevice and mixes
@@ -148,7 +152,7 @@ class EventCompletionTests : public DawnTestWithParams<EventCompletionTestParams
 
     void LoseTestDevice() {
         EXPECT_CALL(mDeviceLostCallback,
-                    Call(WGPUDeviceLostReason_Undefined, testing::_, testing::_))
+                    Call(testing::_, WGPUDeviceLostReason_Undefined, testing::_, testing::_))
             .Times(1);
         testDevice.ForceLoss(wgpu::DeviceLostReason::Undefined, "Device lost for testing");
         testInstance.ProcessEvents();
@@ -356,14 +360,8 @@ TEST_P(EventCompletionTests, WorkDoneAcrossDeviceLoss) {
 TEST_P(EventCompletionTests, WorkDoneAfterDeviceLoss) {
     TrivialSubmit();
     LoseTestDevice();
-    // Tracking and waiting need to be done together w.r.t the device error assertion because error
-    // assertion in DawnTest.h currently calls ProcessEvents which will cause the work done event to
-    // trigger before the TestWaitAll call.
-    auto TestF = [&]() {
-        TrackForTest(OnSubmittedWorkDone(WGPUQueueWorkDoneStatus_Success));
-        TestWaitAll();
-    };
-    ASSERT_DEVICE_ERROR_ON(testDevice, TestF());
+    TrackForTest(OnSubmittedWorkDone(WGPUQueueWorkDoneStatus_Success));
+    TestWaitAll();
 }
 
 // WorkDone event twice after submitting some trivial work.
@@ -429,12 +427,15 @@ TEST_P(EventCompletionTests, WorkDoneDropInstanceBeforeEvent) {
                                    },
                                    &status});
 
-    // Callback should have been called immediately because we leaked it since there's no way to
-    // call WaitAny or ProcessEvents anymore.
-    //
-    // TODO(crbug.com/dawn/2059): Once Spontaneous is implemented, this should no longer expect the
-    // callback to be cleaned up immediately (and should expect it to happen on a future Tick).
-    ASSERT_EQ(status, WGPUQueueWorkDoneStatus_InstanceDropped);
+    if (IsSpontaneous()) {
+        // TODO(crbug.com/dawn/2059): Once Spontaneous is implemented, this should no longer expect
+        // the callback to be cleaned up immediately (and should expect it to happen on a future
+        // Tick).
+        ASSERT_THAT(status, AnyOf(Eq(WGPUQueueWorkDoneStatus_Success),
+                                  Eq(WGPUQueueWorkDoneStatus_InstanceDropped)));
+    } else {
+        ASSERT_EQ(status, WGPUQueueWorkDoneStatus_InstanceDropped);
+    }
 }
 
 TEST_P(EventCompletionTests, WorkDoneDropInstanceAfterEvent) {
@@ -451,16 +452,19 @@ TEST_P(EventCompletionTests, WorkDoneDropInstanceAfterEvent) {
                                    },
                                    &status});
 
-    ASSERT_EQ(status, kStatusUninitialized);
+    if (IsSpontaneous()) {
+        testInstance = nullptr;  // Drop the last external ref to the instance.
 
-    testInstance = nullptr;  // Drop the last external ref to the instance.
-
-    // Callback should have been called immediately because we leaked it since there's no way to
-    // call WaitAny or ProcessEvents anymore.
-    //
-    // TODO(crbug.com/dawn/2059): Once Spontaneous is implemented, this should no longer expect the
-    // callback to be cleaned up immediately (and should expect it to happen on a future Tick).
-    ASSERT_EQ(status, WGPUQueueWorkDoneStatus_InstanceDropped);
+        // TODO(crbug.com/dawn/2059): Once Spontaneous is implemented, this should no longer expect
+        // the callback to be cleaned up immediately (and should expect it to happen on a future
+        // Tick).
+        ASSERT_THAT(status, AnyOf(Eq(WGPUQueueWorkDoneStatus_Success),
+                                  Eq(WGPUQueueWorkDoneStatus_InstanceDropped)));
+    } else {
+        ASSERT_EQ(status, kStatusUninitialized);
+        testInstance = nullptr;  // Drop the last external ref to the instance.
+        ASSERT_EQ(status, WGPUQueueWorkDoneStatus_InstanceDropped);
+    }
 }
 
 // TODO(crbug.com/dawn/1987):
@@ -469,8 +473,9 @@ TEST_P(EventCompletionTests, WorkDoneDropInstanceAfterEvent) {
 // - Other tests?
 
 DAWN_INSTANTIATE_TEST_P(EventCompletionTests,
-                        {D3D11Backend(), D3D12Backend(), MetalBackend(), VulkanBackend(),
-                         OpenGLBackend(), OpenGLESBackend()},
+                        {D3D11Backend(), D3D11Backend({"d3d11_use_unmonitored_fence"}),
+                         D3D12Backend(), MetalBackend(), VulkanBackend(), OpenGLBackend(),
+                         OpenGLESBackend()},
                         {
                             WaitTypeAndCallbackMode::TimedWaitAny_WaitAnyOnly,
                             WaitTypeAndCallbackMode::TimedWaitAny_AllowSpontaneous,
@@ -624,6 +629,34 @@ TEST_P(WaitAnyTests, UnsupportedMixedSources) {
 
 DAWN_INSTANTIATE_TEST(WaitAnyTests,
                       D3D11Backend(),
+                      D3D11Backend({"d3d11_use_unmonitored_fence"}),
+                      D3D12Backend(),
+                      MetalBackend(),
+                      VulkanBackend(),
+                      OpenGLBackend(),
+                      OpenGLESBackend());
+
+class FutureTests : public DawnTest {};
+
+// Regression test for crbug.com/dawn/2460 where when we have mixed source futures in a process
+// events call we were crashing.
+TEST_P(FutureTests, MixedSourcePolling) {
+    // OnSubmittedWorkDone is implemented via a queue serial.
+    device.GetQueue().OnSubmittedWorkDone({nullptr, wgpu::CallbackMode::AllowProcessEvents,
+                                           [](WGPUQueueWorkDoneStatus, void*) {}, nullptr});
+
+    // PopErrorScope is implemented via a signal.
+    device.PushErrorScope(wgpu::ErrorFilter::Validation);
+    device.PopErrorScope({nullptr, wgpu::CallbackMode::AllowProcessEvents,
+                          [](WGPUPopErrorScopeStatus, WGPUErrorType, char const*, void*) {},
+                          nullptr, nullptr});
+
+    instance.ProcessEvents();
+}
+
+DAWN_INSTANTIATE_TEST(FutureTests,
+                      D3D11Backend(),
+                      D3D11Backend({"d3d11_use_unmonitored_fence"}),
                       D3D12Backend(),
                       MetalBackend(),
                       VulkanBackend(),

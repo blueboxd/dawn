@@ -28,6 +28,7 @@
 #include "src/tint/lang/wgsl/reader/parser/parser.h"
 
 #include <limits>
+#include <utility>
 
 #include "src/tint/lang/core/attribute.h"
 #include "src/tint/lang/core/type/depth_texture.h"
@@ -36,7 +37,6 @@
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
-#include "src/tint/lang/wgsl/ast/bitcast_expression.h"
 #include "src/tint/lang/wgsl/ast/break_if_statement.h"
 #include "src/tint/lang/wgsl/ast/break_statement.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
@@ -51,6 +51,7 @@
 #include "src/tint/lang/wgsl/ast/stage_attribute.h"
 #include "src/tint/lang/wgsl/ast/switch_statement.h"
 #include "src/tint/lang/wgsl/ast/unary_op_expression.h"
+#include "src/tint/lang/wgsl/ast/var.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 #include "src/tint/lang/wgsl/ast/workgroup_attribute.h"
 #include "src/tint/lang/wgsl/reader/parser/classify_template_args.h"
@@ -243,22 +244,27 @@ Parser::Failure::Errored Parser::AddError(const Token& t, std::string_view err) 
 
 Parser::Failure::Errored Parser::AddError(const Source& source, std::string_view err) {
     if (silence_diags_ == 0) {
-        builder_.Diagnostics().AddError(diag::System::Reader, err, source);
+        builder_.Diagnostics().AddError(source) << err;
+    }
+    return Failure::kErrored;
+}
+
+Parser::Failure::Errored Parser::AddError(const Source& source, StyledText&& err) {
+    if (silence_diags_ == 0) {
+        builder_.Diagnostics().AddError(source) << std::move(err);
     }
     return Failure::kErrored;
 }
 
 void Parser::AddNote(const Source& source, std::string_view err) {
     if (silence_diags_ == 0) {
-        builder_.Diagnostics().AddNote(diag::System::Reader, err, source);
+        builder_.Diagnostics().AddNote(source) << err;
     }
 }
 
 void Parser::deprecated(const Source& source, std::string_view msg) {
     if (silence_diags_ == 0) {
-        builder_.Diagnostics().AddWarning(diag::System::Reader,
-                                          "use of deprecated language feature: " + std::string(msg),
-                                          source);
+        builder_.Diagnostics().AddWarning(source) << "use of deprecated language feature: " << msg;
     }
 }
 
@@ -661,6 +667,7 @@ Maybe<Void> Parser::global_decl() {
 // global_variable_decl
 //  : variable_attribute_list* variable_decl (EQUAL expression)?
 Maybe<const ast::Variable*> Parser::global_variable_decl(AttributeList& attrs) {
+    MultiTokenSource decl_source(this);
     auto decl = variable_decl();
     if (decl.errored) {
         return Failure::kErrored;
@@ -683,7 +690,7 @@ Maybe<const ast::Variable*> Parser::global_variable_decl(AttributeList& attrs) {
 
     TINT_DEFER(attrs.Clear());
 
-    return builder_.create<ast::Var>(decl->source,                // source
+    return builder_.create<ast::Var>(decl_source(),               // source
                                      builder_.Ident(decl->name),  // symbol
                                      decl->type,                  // type
                                      decl->address_space,         // address space
@@ -700,6 +707,7 @@ Maybe<const ast::Variable*> Parser::global_variable_decl(AttributeList& attrs) {
 Maybe<const ast::Variable*> Parser::global_constant_decl(AttributeList& attrs) {
     bool is_overridable = false;
     const char* use = nullptr;
+    MultiTokenSource decl_source(this);
     Source source;
     if (match(Token::Type::kConst)) {
         use = "'const' declaration";
@@ -741,17 +749,17 @@ Maybe<const ast::Variable*> Parser::global_constant_decl(AttributeList& attrs) {
 
     TINT_DEFER(attrs.Clear());
     if (is_overridable) {
-        return builder_.Override(decl->name->source,  // source
-                                 decl->name,          // symbol
-                                 decl->type,          // type
-                                 initializer,         // initializer
-                                 std::move(attrs));   // attributes
+        return builder_.Override(decl_source(),      // source
+                                 decl->name,         // symbol
+                                 decl->type,         // type
+                                 initializer,        // initializer
+                                 std::move(attrs));  // attributes
     }
-    return builder_.GlobalConst(decl->name->source,  // source
-                                decl->name,          // symbol
-                                decl->type,          // type
-                                initializer,         // initializer
-                                std::move(attrs));   // attributes
+    return builder_.GlobalConst(decl_source(),      // source
+                                decl->name,         // symbol
+                                decl->type,         // type
+                                initializer,        // initializer
+                                std::move(attrs));  // attributes
 }
 
 // variable_decl
@@ -928,7 +936,7 @@ Expect<ENUM> Parser::expect_enum(std::string_view name,
     }
 
     /// Create a sensible error message
-    StringStream err;
+    StyledText err;
     err << "expected " << name;
 
     if (!use.empty()) {
@@ -952,7 +960,7 @@ Expect<ENUM> Parser::expect_enum(std::string_view name,
     }
 
     synchronized_ = false;
-    return AddError(t.source(), err.str());
+    return AddError(t.source(), std::move(err));
 }
 
 Expect<ast::Type> Parser::expect_type(std::string_view use) {
@@ -969,7 +977,7 @@ Expect<ast::Type> Parser::expect_type(std::string_view use) {
 // struct_decl
 //   : STRUCT IDENT struct_body_decl
 Maybe<const ast::Struct*> Parser::struct_decl() {
-    auto& t = peek();
+    MultiTokenSource source(this);
 
     if (!match(Token::Type::kStruct)) {
         return Failure::kNoMatch;
@@ -985,7 +993,7 @@ Maybe<const ast::Struct*> Parser::struct_decl() {
         return Failure::kErrored;
     }
 
-    return builder_.Structure(t.source(), name.value, std::move(body.value));
+    return builder_.Structure(source(), name.value, std::move(body.value));
 }
 
 // struct_body_decl
@@ -1060,6 +1068,8 @@ Maybe<const ast::ConstAssert*> Parser::const_assert_statement() {
 // function_decl
 //   : function_header compound_statement
 Maybe<const ast::Function*> Parser::function_decl(AttributeList& attrs) {
+    MultiTokenSource source(this);
+
     auto header = function_header();
     if (header.errored) {
         if (sync_to(Token::Type::kBraceLeft, /* consume: */ false)) {
@@ -1090,8 +1100,8 @@ Maybe<const ast::Function*> Parser::function_decl(AttributeList& attrs) {
 
     TINT_DEFER(attrs.Clear());
 
-    return builder_.Func(header->source, header->name, header->params, header->return_type,
-                         body.value, std::move(attrs), header->return_type_attributes);
+    return builder_.Func(source, header->name, header->params, header->return_type, body.value,
+                         std::move(attrs), header->return_type_attributes);
 }
 
 // function_header
@@ -1431,17 +1441,12 @@ Maybe<const ast::ReturnStatement*> Parser::return_statement() {
         return Failure::kNoMatch;
     }
 
-    if (peek_is(Token::Type::kSemicolon)) {
-        return builder_.Return(source, nullptr);
-    }
-
     auto expr = expression();
     if (expr.errored) {
         return Failure::kErrored;
     }
 
-    // TODO(bclayton): Check matched?
-    return builder_.Return(source, expr.value);
+    return expr.matched ? builder_.Return(source, expr.value) : builder_.Return(source);
 }
 
 // variable_statement
@@ -2055,32 +2060,13 @@ Maybe<const ast::BlockStatement*> Parser::continuing_statement() {
 }
 
 // primary_expression
-//   : BITCAST LESS_THAN type_specifier GREATER_THAN paren_expression
-//   | const_literal
+//   : const_literal
 //   | IDENT argument_expression_list?
 //   | paren_expression
 //
 // Note, PAREN_LEFT ( expression ( COMMA expression ) * COMMA? )? PAREN_RIGHT is replaced
 // with `argument_expression_list`.
 Maybe<const ast::Expression*> Parser::primary_expression() {
-    auto& t = peek();
-
-    if (match(Token::Type::kBitcast)) {
-        const char* use = "bitcast expression";
-
-        auto type = expect_template_arg_block(use, [&] { return expect_type(use); });
-        if (type.errored) {
-            return Failure::kErrored;
-        }
-
-        auto params = expect_paren_expression();
-        if (params.errored) {
-            return Failure::kErrored;
-        }
-
-        return builder_.Bitcast(t.source(), type.value, params.value);
-    }
-
     auto lit = const_literal();
     if (lit.errored) {
         return Failure::kErrored;
@@ -2089,6 +2075,7 @@ Maybe<const ast::Expression*> Parser::primary_expression() {
         return lit.value;
     }
 
+    auto& t = peek();
     if (t.IsIdentifier()) {
         MultiTokenSource source(this);
         next();

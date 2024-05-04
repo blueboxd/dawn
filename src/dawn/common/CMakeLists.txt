@@ -41,11 +41,13 @@ DawnGenerator(
     RESULT_VARIABLE "DAWN_GPU_INFO_AUTOGEN_SOURCES"
 )
 
-add_library(dawn_common STATIC ${DAWN_PLACEHOLDER_FILE})
+add_library(dawn_common STATIC)
 common_compile_options(dawn_common)
 target_sources(dawn_common PRIVATE
     ${DAWN_VERSION_AUTOGEN_SOURCES}
     ${DAWN_GPU_INFO_AUTOGEN_SOURCES}
+    "AlignedAlloc.cpp"
+    "AlignedAlloc.h"
     "Alloc.h"
     "Assert.cpp"
     "Assert.h"

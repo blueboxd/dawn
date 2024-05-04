@@ -63,7 +63,7 @@ PipelineLayout::PipelineLayout(Device* device,
 
                 MatchVariant(
                     bindingInfo.bindingLayout,
-                    [&](const BufferBindingLayout&) {
+                    [&](const BufferBindingInfo&) {
                         mIndexInfo[stage][group][bindingIndex] = bufferIndex;
                         bufferIndex++;
                     },
@@ -71,13 +71,19 @@ PipelineLayout::PipelineLayout(Device* device,
                         mIndexInfo[stage][group][bindingIndex] = samplerIndex;
                         samplerIndex++;
                     },
-                    [&](const TextureBindingLayout&) {
+                    [&](const TextureBindingInfo&) {
                         mIndexInfo[stage][group][bindingIndex] = textureIndex;
                         textureIndex++;
                     },
-                    [&](const StorageTextureBindingLayout&) {
+                    [&](const StorageTextureBindingInfo&) {
                         mIndexInfo[stage][group][bindingIndex] = textureIndex;
                         textureIndex++;
+                    },
+                    [&](const StaticSamplerHolderBindingLayout&) {
+                        // Static samplers are handled in the frontend.
+                        // TODO(crbug.com/dawn/2482): Implement static samplers in the
+                        // Metal backend.
+                        DAWN_UNREACHABLE();
                     });
             }
         }

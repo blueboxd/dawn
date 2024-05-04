@@ -36,6 +36,7 @@
 #include "dawn/native/vulkan/Forward.h"
 #include "dawn/native/vulkan/TextureVk.h"
 #include "dawn/native/vulkan/VulkanError.h"
+#include "dawn/native/vulkan/VulkanFunctions.h"
 
 namespace dawn::native::vulkan {
 
@@ -242,6 +243,12 @@ void SetDebugNameInternal(Device* device,
         // Prefix with the device's message ID so that if this label appears in a validation
         // message it can be parsed out and the message can be associated with the right device.
         objectNameStream << device->GetDebugPrefix() << kDeviceDebugSeparator << prefix;
+
+        // NOTE: Whereas other platforms set backend labels *only* if the
+        // `UseUserDefinedLabelsInBackend` toggle is enabled, on Vulkan these
+        // labels must always be set as they currently provide the only way to
+        // map Vulkan errors that include backend objects back to the device
+        // with which the backend objects are associated.
         if (!label.empty() && device->IsToggleEnabled(Toggle::UseUserDefinedLabelsInBackend)) {
             objectNameStream << "_" << label;
         }
@@ -274,6 +281,69 @@ std::string GetDeviceDebugPrefixFromDebugName(const char* debugName) {
 
     size_t length = separator - debugName;
     return std::string(debugName, length);
+}
+
+std::vector<VkDrmFormatModifierPropertiesEXT> GetFormatModifierProps(
+    const VulkanFunctions& fn,
+    VkPhysicalDevice vkPhysicalDevice,
+    VkFormat format) {
+    VkFormatProperties2 formatProps = {};
+    formatProps.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
+    PNextChainBuilder formatPropsChain(&formatProps);
+
+    // Obtain the list of Linux DRM format modifiers compatible with a VkFormat
+    VkDrmFormatModifierPropertiesListEXT formatModifierPropsList = {};
+    formatModifierPropsList.drmFormatModifierCount = 0;
+    formatModifierPropsList.pDrmFormatModifierProperties = nullptr;
+    formatPropsChain.Add(&formatModifierPropsList,
+                         VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT);
+
+    fn.GetPhysicalDeviceFormatProperties2(vkPhysicalDevice, format, &formatProps);
+
+    const uint32_t modifierCount = formatModifierPropsList.drmFormatModifierCount;
+
+    std::vector<VkDrmFormatModifierPropertiesEXT> formatModifierPropsVector;
+    formatModifierPropsVector.resize(modifierCount);
+    formatModifierPropsList.pDrmFormatModifierProperties = formatModifierPropsVector.data();
+
+    fn.GetPhysicalDeviceFormatProperties2(vkPhysicalDevice, format, &formatProps);
+    return formatModifierPropsVector;
+}
+
+ResultOrError<VkDrmFormatModifierPropertiesEXT> GetFormatModifierProps(
+    const VulkanFunctions& fn,
+    VkPhysicalDevice vkPhysicalDevice,
+    VkFormat format,
+    uint64_t modifier) {
+    std::vector<VkDrmFormatModifierPropertiesEXT> formatModifierPropsVector =
+        GetFormatModifierProps(fn, vkPhysicalDevice, format);
+
+    // Find the modifier props that match the modifier, and return them.
+    for (const auto& props : formatModifierPropsVector) {
+        if (props.drmFormatModifier == modifier) {
+            return VkDrmFormatModifierPropertiesEXT{props};
+        }
+    }
+    return DAWN_VALIDATION_ERROR("DRM format modifier %u not supported.", modifier);
+}
+
+MaybeError ValidateCanCreateSamplerYCbCrConversion(
+    const VkSamplerYcbcrConversionCreateInfo& vulkanYCbCrInfo) {
+#if DAWN_PLATFORM_IS(ANDROID)
+    const VkBaseInStructure* chain = static_cast<const VkBaseInStructure*>(vulkanYCbCrInfo.pNext);
+    while (chain != nullptr) {
+        if (chain->sType == VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID) {
+            const VkExternalFormatANDROID* vkExternalFormat =
+                reinterpret_cast<const VkExternalFormatANDROID*>(chain);
+            DAWN_INVALID_IF((vkExternalFormat->externalFormat == 0 &&
+                             vulkanYCbCrInfo.format == VK_FORMAT_UNDEFINED),
+                            "Both VkFormat and VkExternalFormatANDROID are undefined.");
+            break;
+        }
+        chain = chain->pNext;
+    }
+#endif  // DAWN_PLATFORM_IS(ANDROID)
+    return {};
 }
 
 }  // namespace dawn::native::vulkan

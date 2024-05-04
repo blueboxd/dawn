@@ -31,7 +31,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "src/tint/lang/core/ir/disassembler.h"
+#include "src/tint/lang/core/ir/disassembly.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/spirv/reader/common/helper_test.h"
@@ -64,7 +64,7 @@ class SpirvReaderTest : public testing::Test {
         }
 
         // Return the disassembled IR module.
-        return "\n" + core::ir::Disassemble(ir.Get());
+        return "\n" + core::ir::Disassemble(ir.Get()).Plain();
     }
 };
 
@@ -110,8 +110,8 @@ TEST_F(SpirvReaderTest, Load_VectorComponent) {
 )");
     ASSERT_EQ(got, Success);
     EXPECT_EQ(got, R"(
-%main = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
-  %b1 = block {
+%main = @compute @workgroup_size(1, 1, 1) func():void {
+  $B1: {
     %2:ptr<function, vec4<u32>, read_write> = var
     %3:u32 = load_vector_element %2, 2u
     ret
@@ -144,8 +144,8 @@ TEST_F(SpirvReaderTest, Store_VectorComponent) {
 )");
     ASSERT_EQ(got, Success);
     EXPECT_EQ(got, R"(
-%main = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
-  %b1 = block {
+%main = @compute @workgroup_size(1, 1, 1) func():void {
+  $B1: {
     %2:ptr<function, vec4<u32>, read_write> = var
     store_vector_element %2, 2u, 42u
     ret

@@ -66,11 +66,10 @@ class MemoryTransferService;
 //
 // void Server::MyCallbackHandler(MyUserdata* userdata, Other args) { }
 struct CallbackUserdata {
-    const raw_ptr<Server> server;
-    std::weak_ptr<bool> const serverIsAlive;
+    const std::weak_ptr<Server> server;
 
     CallbackUserdata() = delete;
-    CallbackUserdata(Server* server, const std::shared_ptr<bool>& serverIsAlive);
+    explicit CallbackUserdata(const std::weak_ptr<Server>& server);
 };
 
 template <auto F>
@@ -85,12 +84,13 @@ struct ForwardToServerHelper {
         static Return Callback(Args... args, void* userdata) {
             // Acquire the userdata, and cast it to UserdataT.
             std::unique_ptr<Userdata> data(static_cast<Userdata*>(userdata));
-            if (data->serverIsAlive.expired()) {
+            auto server = data->server.lock();
+            if (!server) {
                 // Do nothing if the server has already been destroyed.
                 return;
             }
             // Forward the arguments and the typed userdata to the Server:: member function.
-            (data->server->*F)(data.get(), std::forward<decltype(args)>(args)...);
+            (server.get()->*F)(data.get(), std::forward<decltype(args)>(args)...);
         }
     };
 
@@ -125,8 +125,8 @@ struct ErrorScopeUserdata : CallbackUserdata {
 struct ShaderModuleGetCompilationInfoUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
-    ObjectHandle shaderModule;
-    uint64_t requestSerial;
+    ObjectHandle eventManager;
+    WGPUFuture future;
 };
 
 struct QueueWorkDoneUserdata : CallbackUserdata {
@@ -160,33 +160,31 @@ struct RequestDeviceUserdata : CallbackUserdata {
     ObjectHandle eventManager;
     WGPUFuture future;
     ObjectId deviceObjectId;
+    WGPUFuture deviceLostFuture;
+};
+
+struct DeviceLostUserdata : CallbackUserdata {
+    using CallbackUserdata::CallbackUserdata;
+
+    ObjectHandle eventManager;
+    WGPUFuture future;
 };
 
 class Server : public ServerBase {
   public:
-    Server(const DawnProcTable& procs,
-           CommandSerializer* serializer,
-           MemoryTransferService* memoryTransferService);
+    static std::shared_ptr<Server> Create(const DawnProcTable& procs,
+                                          CommandSerializer* serializer,
+                                          MemoryTransferService* memoryTransferService);
     ~Server() override;
 
     // ChunkedCommandHandler implementation
     const volatile char* HandleCommandsImpl(const volatile char* commands, size_t size) override;
 
-    WireResult InjectTexture(WGPUTexture texture,
-                             uint32_t id,
-                             uint32_t generation,
-                             uint32_t deviceId,
-                             uint32_t deviceGeneration);
-
+    WireResult InjectTexture(WGPUTexture texture, const Handle& handle, const Handle& deviceHandle);
     WireResult InjectSwapChain(WGPUSwapChain swapchain,
-                               uint32_t id,
-                               uint32_t generation,
-                               uint32_t deviceId,
-                               uint32_t deviceGeneration);
-
-    WireResult InjectDevice(WGPUDevice device, uint32_t id, uint32_t generation);
-
-    WireResult InjectInstance(WGPUInstance instance, uint32_t id, uint32_t generation);
+                               const Handle& handle,
+                               const Handle& deviceHandle);
+    WireResult InjectInstance(WGPUInstance instance, const Handle& handle);
 
     WGPUDevice GetDevice(uint32_t id, uint32_t generation);
     bool IsDeviceKnown(WGPUDevice device) const;
@@ -194,10 +192,14 @@ class Server : public ServerBase {
     template <typename T,
               typename Enable = std::enable_if<std::is_base_of<CallbackUserdata, T>::value>>
     std::unique_ptr<T> MakeUserdata() {
-        return std::unique_ptr<T>(new T(this, mIsAlive));
+        return std::unique_ptr<T>(new T(mSelf));
     }
 
   private:
+    Server(const DawnProcTable& procs,
+           CommandSerializer* serializer,
+           MemoryTransferService* memoryTransferService);
+
     template <typename Cmd>
     void SerializeCommand(const Cmd& cmd) {
         mSerializer->SerializeCommand(cmd);
@@ -208,13 +210,27 @@ class Server : public ServerBase {
         mSerializer->SerializeCommand(cmd, std::forward<Extensions>(es)...);
     }
 
+    template <typename T>
+    WireResult FillReservation(ObjectId id, T handle, Known<T>* known = nullptr) {
+        auto result = Objects<T>().FillReservation(id, handle, known);
+        if (result == WireResult::FatalError) {
+            Release(mProcs, handle);
+        }
+        return result;
+    }
+
     void SetForwardingDeviceCallbacks(Known<WGPUDevice> device);
     void ClearDeviceCallbacks(WGPUDevice device);
 
     // Error callbacks
     void OnUncapturedError(ObjectHandle device, WGPUErrorType type, const char* message);
-    void OnDeviceLost(ObjectHandle device, WGPUDeviceLostReason reason, const char* message);
     void OnLogging(ObjectHandle device, WGPULoggingType type, const char* message);
+
+    // Async event callbacks
+    void OnDeviceLost(DeviceLostUserdata* userdata,
+                      WGPUDevice const* device,
+                      WGPUDeviceLostReason reason,
+                      const char* message);
     void OnDevicePopErrorScope(ErrorScopeUserdata* userdata,
                                WGPUErrorType type,
                                const char* message);
@@ -248,7 +264,8 @@ class Server : public ServerBase {
     std::unique_ptr<MemoryTransferService> mOwnedMemoryTransferService = nullptr;
     raw_ptr<MemoryTransferService> mMemoryTransferService = nullptr;
 
-    std::shared_ptr<bool> mIsAlive;
+    // Weak pointer to self to facilitate creation of userdata.
+    std::weak_ptr<Server> mSelf;
 };
 
 std::unique_ptr<MemoryTransferService> CreateInlineMemoryTransferService();

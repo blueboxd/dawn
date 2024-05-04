@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "dawn/common/MatchVariant.h"
+#include "dawn/native/Adapter.h"
 #include "dawn/native/AttachmentState.h"
 #include "dawn/native/BindingInfo.h"
 #include "dawn/native/Device.h"
@@ -39,6 +40,7 @@
 #include "dawn/native/PerStage.h"
 #include "dawn/native/ProgrammableEncoder.h"
 #include "dawn/native/RenderPipeline.h"
+#include "dawn/native/Sampler.h"
 #include "dawn/native/ShaderModule.h"
 #include "dawn/native/Subresource.h"
 #include "dawn/native/Surface.h"
@@ -118,7 +120,7 @@ absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConv
         new absl::ParsedFormat<'u', 's', 's', 's'>("{ binding: %u, visibility: %s, %s: %s }");
     MatchVariant(
         value.bindingLayout,
-        [&](const BufferBindingLayout& layout) {
+        [&](const BufferBindingInfo& layout) {
             s->Append(absl::StrFormat(*fmt, static_cast<uint32_t>(value.binding), value.visibility,
                                       BindingInfoType::Buffer, layout));
         },
@@ -126,15 +128,70 @@ absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConv
             s->Append(absl::StrFormat(*fmt, static_cast<uint32_t>(value.binding), value.visibility,
                                       BindingInfoType::Sampler, layout));
         },
-        [&](const TextureBindingLayout& layout) {
+        [&](const StaticSamplerHolderBindingLayout& layout) {
+            s->Append(absl::StrFormat(*fmt, static_cast<uint32_t>(value.binding), value.visibility,
+                                      BindingInfoType::StaticSampler, layout));
+        },
+        [&](const TextureBindingInfo& layout) {
             s->Append(absl::StrFormat(*fmt, static_cast<uint32_t>(value.binding), value.visibility,
                                       BindingInfoType::Texture, layout));
         },
-        [&](const StorageTextureBindingLayout& layout) {
+        [&](const StorageTextureBindingInfo& layout) {
             s->Append(absl::StrFormat(*fmt, static_cast<uint32_t>(value.binding), value.visibility,
                                       BindingInfoType::StorageTexture, layout));
         });
     return {true};
+}
+
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const BufferBindingInfo& value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s) {
+    s->Append(absl::StrFormat("{type: %s, minBindingSize: %u, hasDynamicOffset: %u}", value.type,
+                              value.minBindingSize, value.hasDynamicOffset));
+    return {true};
+}
+
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const BufferBindingLayout& value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s) {
+    BufferBindingInfo info(value);
+    return AbslFormatConvert(info, spec, s);
+}
+
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const TextureBindingInfo& value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s) {
+    s->Append(absl::StrFormat("{sampleType: %s, viewDimension: %u, multisampled: %u}",
+                              value.sampleType, value.viewDimension, value.multisampled));
+    return {true};
+}
+
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const TextureBindingLayout& value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s) {
+    TextureBindingInfo info(value);
+    return AbslFormatConvert(info, spec, s);
+}
+
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const StorageTextureBindingInfo& value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s) {
+    s->Append(absl::StrFormat("{format: %s, viewDimension: %s, access: %s}", value.format,
+                              value.viewDimension, value.access));
+    return {true};
+}
+
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const StorageTextureBindingLayout& value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s) {
+    StorageTextureBindingInfo info(value);
+    return AbslFormatConvert(info, spec, s);
 }
 
 absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
@@ -180,9 +237,35 @@ absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConv
     return {true};
 }
 
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const StaticSamplerHolderBindingLayout& value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s) {
+    s->Append(
+        absl::StrFormat("{type: StaticSamplerBindingLayout, sampler: %s}", value.sampler.Get()));
+    return {true};
+}
+
 //
 // Objects
 //
+
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const AdapterBase* value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s) {
+    if (value == nullptr) {
+        s->Append("[null]");
+        return {true};
+    }
+    s->Append("[Adapter");
+    const std::string& name = value->GetName();
+    if (!name.empty()) {
+        s->Append(absl::StrFormat(" \"%s\"", name));
+    }
+    s->Append("]");
+    return {true};
+}
 
 absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
     const DeviceBase* value,
@@ -278,6 +361,23 @@ absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConv
 
     s->Append(" }");
 
+    return {true};
+}
+
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const Surface* value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s) {
+    if (value == nullptr) {
+        s->Append("[null]");
+        return {true};
+    }
+    s->Append("[Surface");
+    const std::string& label = value->GetLabel();
+    if (!label.empty()) {
+        s->Append(absl::StrFormat(" \"%s\"", label));
+    }
+    s->Append("]");
     return {true};
 }
 
@@ -412,6 +512,9 @@ absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConv
             break;
         case BindingInfoType::ExternalTexture:
             s->Append("externalTexture");
+            break;
+        case BindingInfoType::StaticSampler:
+            s->Append("staticSampler");
             break;
     }
     return {true};

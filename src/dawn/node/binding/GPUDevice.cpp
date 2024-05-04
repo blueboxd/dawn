@@ -176,11 +176,20 @@ GPUDevice::GPUDevice(Napi::Env env,
             auto r = interop::GPUDeviceLostReason::kDestroyed;
             switch (reason) {
                 case WGPUDeviceLostReason_Force32:
+                // This case never happens with wgpu::Device::SetDeviceCallback, and is specific to
+                // wgpu::DeviceDescriptor::deviceLostCallback.
+                case WGPUDeviceLostReason_FailedCreation:
                     UNREACHABLE("WGPUDeviceLostReason_Force32");
                     break;
                 case WGPUDeviceLostReason_Destroyed:
-                case WGPUDeviceLostReason_Undefined:
                     r = interop::GPUDeviceLostReason::kDestroyed;
+                    break;
+                case WGPUDeviceLostReason_InstanceDropped:
+                    UNREACHABLE("WGPUDeviceLostReason_InstanceDropped");
+                    break;
+                case WGPUDeviceLostReason_Undefined:
+                case WGPUDeviceLostReason_Unknown:
+                    r = interop::GPUDeviceLostReason::kUnknown;
                     break;
             }
             auto* self = static_cast<GPUDevice*>(userdata);
@@ -371,6 +380,16 @@ interop::Interface<interop::GPUShaderModule> GPUDevice::createShaderModule(
         return {};
     }
     sm_desc.nextInChain = &wgsl_desc;
+
+    // Special case for a source containing a \0. This should be an error instead of just truncating
+    // the source.
+    if (descriptor.code.find('\0') != std::string::npos) {
+        return interop::GPUShaderModule::Create<GPUShaderModule>(
+            env, sm_desc,
+            device_.CreateErrorShaderModule(&sm_desc,
+                                            "The WGSL shader contains an illegal character '\\0'"),
+            async_);
+    }
 
     return interop::GPUShaderModule::Create<GPUShaderModule>(
         env, sm_desc, device_.CreateShaderModule(&sm_desc), async_);

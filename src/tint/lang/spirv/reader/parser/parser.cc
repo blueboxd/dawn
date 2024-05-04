@@ -487,7 +487,9 @@ class Parser {
                                            execution_mode.GetSingleWordInOperand(3),
                                            execution_mode.GetSingleWordInOperand(4));
                     break;
+                case spv::ExecutionMode::DepthReplacing:
                 case spv::ExecutionMode::OriginUpperLeft:
+                    // These are ignored as they are implicitly supported by Tint IR.
                     break;
                 default:
                     TINT_UNIMPLEMENTED() << "unhandled execution mode: " << mode;
@@ -512,8 +514,17 @@ class Parser {
                 case spv::Op::OpCompositeExtract:
                     EmitCompositeExtract(inst);
                     break;
+                case spv::Op::OpFAdd:
+                    EmitBinary(inst, core::BinaryOp::kAdd);
+                    break;
+                case spv::Op::OpFMul:
+                    EmitBinary(inst, core::BinaryOp::kMultiply);
+                    break;
                 case spv::Op::OpFunctionCall:
                     EmitFunctionCall(inst);
+                    break;
+                case spv::Op::OpIAdd:
+                    EmitBinary(inst, core::BinaryOp::kAdd);
                     break;
                 case spv::Op::OpLoad:
                     Emit(b_.Load(Value(inst.GetSingleWordOperand(2))), inst.result_id());
@@ -554,6 +565,15 @@ class Parser {
 
         auto* access = b_.Access(Type(inst.type_id(), access_mode), base, std::move(indices));
         Emit(access, inst.result_id());
+    }
+
+    /// @param inst the SPIR-V instruction
+    /// @param op the binary operator to use
+    void EmitBinary(const spvtools::opt::Instruction& inst, core::BinaryOp op) {
+        auto* lhs = Value(inst.GetSingleWordOperand(2));
+        auto* rhs = Value(inst.GetSingleWordOperand(3));
+        auto* binary = b_.Binary(op, Type(inst.type_id()), lhs, rhs);
+        Emit(binary, inst.result_id());
     }
 
     /// @param inst the SPIR-V instruction for OpCompositeExtract

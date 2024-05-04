@@ -27,7 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import json, os, sys
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 
 from generator_lib import Generator, run_generator, FileRender
 
@@ -45,7 +45,8 @@ class Metadata:
         self.impl_dir = metadata.get('impl_dir', '')
         self.native_namespace = metadata['native_namespace']
         self.copyright_year = metadata.get('copyright_year', None)
-
+        self.kotlin_package = 'android.dawn'
+        self.kotlin_path = self.kotlin_package.replace('.', '/')
 
 class Name:
     def __init__(self, name, native=False):
@@ -320,6 +321,12 @@ class StructureType(Record, Type):
         return any(member.requires_struct_defaulting
                    for member in self.members)
 
+    @property
+    # Returns True if the structure can be created with no parameters, e.g. all of its members have
+    # defaults or are optional,
+    def has_basic_constructor(self):
+        return all((member.optional or member.default_value)
+                   for member in self.members)
 
 class ConstantDefinition():
     def __init__(self, is_enabled, name, json_data):
@@ -758,6 +765,36 @@ def unreachable_code():
     assert False
 
 
+############################################################
+# KOTLIN STUFF
+############################################################
+
+
+def compute_kotlin_params(loaded_json):
+    params_kotlin = parse_json(loaded_json, enabled_tags=['art'])
+    by_category = params_kotlin['by_category']
+
+    # The 'length' members are removed as Kotlin can infer that from the container.
+    # 'length' members are identified when some *other* member specifies its name as the
+    # length parameter.
+    for structure in by_category['structure']:
+        structure.members = [
+            member for member in structure.members
+            if member.type.name.get() not in ['void *', 'void const *'] and
+            not [1 for other in structure.members if other.length == member]
+        ]
+
+    # A structure may need to know which other structures listed it as a chain root, e.g.
+    # to know whether to mark the generated class 'open'.
+    chain_children = defaultdict(list)
+    for structure in by_category['structure']:
+        for chain_root in structure.chain_roots:
+            chain_children[chain_root.name.get()].append(structure)
+    params_kotlin['chain_children'] = chain_children
+    params_kotlin['unreachable_code'] = unreachable_code
+    return params_kotlin
+
+
 #############################################################
 # Generator
 #############################################################
@@ -789,6 +826,10 @@ def as_cppType(name):
         return name.concatcase()
     else:
         return name.CamelCase()
+
+
+def as_ktName(name):
+    return '_' + name if '0' <= name[0] <= '9' else name
 
 
 def as_jsEnumValue(value):
@@ -868,6 +909,14 @@ def as_MethodSuffix(type_name, method_name):
     return type_name.CamelCase() + method_name.CamelCase()
 
 
+def as_CppMethodSuffix(type_name, method_name):
+    assert not type_name.native and not method_name.native
+    original_method_name_str = method_name.CamelCase()
+    if method_name.chunks[-1] == 'f':
+        return type_name.CamelCase() + original_method_name_str[:-1]
+    return type_name.CamelCase() + original_method_name_str
+
+
 def as_frontendType(metadata, typ):
     if typ.category == 'object':
         return typ.name.CamelCase() + 'Base*'
@@ -899,7 +948,9 @@ def as_formatType(typ):
 
 def c_methods(params, typ):
     return typ.methods + [
+        # TODO(dawn:2234): Deprecated. Remove when no longer used.
         Method(Name('reference'), params['types']['void'], [], False, {}),
+        Method(Name('add ref'), params['types']['void'], [], False, {}),
         Method(Name('release'), params['types']['void'], [], False, {}),
     ]
 
@@ -914,6 +965,10 @@ def has_callback_arguments(method):
     return any(arg.type.category == 'function pointer' for arg in method.arguments)
 
 
+def has_callback_info(method):
+    return method.return_type.name.get() == 'future' and any(
+        arg.name.get() == 'callback info' for arg in method.arguments)
+
 def make_base_render_params(metadata):
     c_prefix = metadata.c_prefix
 
@@ -926,14 +981,19 @@ def make_base_render_params(metadata):
         assert not type_name.native and not value_name.native
         return c_prefix + type_name.CamelCase() + '_' + value_name.CamelCase()
 
-    def as_cMethod(type_name, method_name):
+    def as_cMethodNamespaced(type_name, method_name, namespace=None):
         c_method = c_prefix.lower()
-        if type_name != None:
+        if namespace is not None:
+            c_method += namespace.CamelCase()
+        if type_name is not None:
             assert not type_name.native
             c_method += type_name.CamelCase()
         assert not method_name.native
         c_method += method_name.CamelCase()
         return c_method
+
+    def as_cMethod(type_name, method_name):
+        return as_cMethodNamespaced(type_name, method_name)
 
     def as_cProc(type_name, method_name):
         c_proc = c_prefix + 'Proc'
@@ -953,7 +1013,9 @@ def make_base_render_params(metadata):
             'as_cEnum': as_cEnum,
             'as_cppEnum': as_cppEnum,
             'as_cMethod': as_cMethod,
+            'as_cMethodNamespaced': as_cMethodNamespaced,
             'as_MethodSuffix': as_MethodSuffix,
+            'as_CppMethodSuffix': as_CppMethodSuffix,
             'as_cProc': as_cProc,
             'as_cType': lambda name: as_cType(c_prefix, name),
             'as_cReturnType': lambda typ: as_cReturnType(c_prefix, typ),
@@ -962,7 +1024,8 @@ def make_base_render_params(metadata):
             'convert_cType_to_cppType': convert_cType_to_cppType,
             'as_varName': as_varName,
             'decorate': decorate,
-            'as_formatType': as_formatType
+            'as_formatType': as_formatType,
+            'as_ktName': as_ktName,
         }
 
 
@@ -973,7 +1036,7 @@ class MultiGeneratorFromDawnJSON(Generator):
     def add_commandline_arguments(self, parser):
         allowed_targets = [
             'dawn_headers', 'cpp_headers', 'cpp', 'proc', 'mock_api', 'wire',
-            'native_utils', 'dawn_lpmfuzz_cpp', 'dawn_lpmfuzz_proto'
+            'native_utils', 'dawn_lpmfuzz_cpp', 'dawn_lpmfuzz_proto', 'kotlin'
         ]
 
         parser.add_argument('--dawn-json',
@@ -1026,14 +1089,32 @@ class MultiGeneratorFromDawnJSON(Generator):
                 FileRender('api.h', 'include/dawn/' + api + '.h',
                            [RENDER_PARAMS_BASE, params_dawn]))
             renders.append(
+                FileRender('dawn/wire/client/api.h',
+                           'include/dawn/wire/client/' + api + '.h',
+                           [RENDER_PARAMS_BASE, params_dawn]))
+            renders.append(
                 FileRender('dawn_proc_table.h',
                            'include/dawn/' + prefix + '_proc_table.h',
                            [RENDER_PARAMS_BASE, params_dawn]))
 
         if 'cpp_headers' in targets:
             renders.append(
-                FileRender('api_cpp.h', 'include/dawn/' + api + '_cpp.h',
-                           [RENDER_PARAMS_BASE, params_dawn]))
+                FileRender('api_cpp.h', 'include/dawn/' + api + '_cpp.h', [
+                    RENDER_PARAMS_BASE, params_dawn, {
+                        'c_header': api + '/' + api + '.h',
+                        'c_namespace': None,
+                    }
+                ]))
+
+            renders.append(
+                FileRender(
+                    'api_cpp.h', 'include/dawn/wire/client/' + api + '_cpp.h',
+                    [
+                        RENDER_PARAMS_BASE, params_dawn, {
+                            'c_header': 'dawn/wire/client/' + api + '.h',
+                            'c_namespace': Name('dawn wire client'),
+                        }
+                    ]))
 
             renders.append(
                 FileRender('api_cpp_print.h',
@@ -1047,7 +1128,7 @@ class MultiGeneratorFromDawnJSON(Generator):
 
         if 'proc' in targets:
             renders.append(
-                FileRender('dawn_proc.c', 'src/dawn/' + prefix + '_proc.c',
+                FileRender('dawn_proc.cpp', 'src/dawn/' + prefix + '_proc.cpp',
                            [RENDER_PARAMS_BASE, params_dawn]))
             renders.append(
                 FileRender('dawn_thread_dispatch_proc.cpp',
@@ -1058,11 +1139,6 @@ class MultiGeneratorFromDawnJSON(Generator):
             renders.append(
                 FileRender('dawn/native/api_dawn_native_proc.cpp',
                            'src/dawn/native/webgpu_dawn_native_proc.cpp',
-                           [RENDER_PARAMS_BASE, params_dawn]))
-
-        if 'cpp' in targets:
-            renders.append(
-                FileRender('api_cpp.cpp', 'src/dawn/' + api + '_cpp.cpp',
                            [RENDER_PARAMS_BASE, params_dawn]))
 
         if 'webgpu_headers' in targets:
@@ -1085,18 +1161,17 @@ class MultiGeneratorFromDawnJSON(Generator):
             renders.append(
                 FileRender(
                     'api_cpp.h',
-                    'emscripten-bits/system/include/webgpu/webgpu_cpp.h',
-                    [RENDER_PARAMS_BASE, params_emscripten]))
+                    'emscripten-bits/system/include/webgpu/webgpu_cpp.h', [
+                        RENDER_PARAMS_BASE, params_emscripten, {
+                            'c_header': api + '/' + api + '.h',
+                            'c_namespace': None,
+                        }
+                    ]))
             renders.append(
                 FileRender(
                     'api_cpp_chained_struct.h',
                     'emscripten-bits/system/include/webgpu/webgpu_cpp_chained_struct.h',
                     [RENDER_PARAMS_BASE, params_emscripten]))
-            # system/lib/webgpu
-            renders.append(
-                FileRender('api_cpp.cpp',
-                           'emscripten-bits/system/lib/webgpu/webgpu_cpp.cpp',
-                           [RENDER_PARAMS_BASE, params_emscripten]))
             # Snippets to paste into existing Emscripten files
             renders.append(
                 FileRender('api_struct_info.json',
@@ -1110,7 +1185,8 @@ class MultiGeneratorFromDawnJSON(Generator):
         if 'mock_api' in targets:
             mock_params = [
                 RENDER_PARAMS_BASE, params_dawn, {
-                    'has_callback_arguments': has_callback_arguments
+                    'has_callback_arguments': has_callback_arguments,
+                    "has_callback_info": has_callback_info
                 }
             ]
             renders.append(
@@ -1256,6 +1332,11 @@ class MultiGeneratorFromDawnJSON(Generator):
                     'dawn/wire/server/ServerPrototypes.inc',
                     'src/dawn/wire/server/ServerPrototypes_autogen.inc',
                     wire_params))
+            renders.append(
+                FileRender('dawn/wire/server/WGPUTraits.h',
+                           'src/dawn/wire/server/WGPUTraits_autogen.h',
+                           wire_params))
+
 
         if 'dawn_lpmfuzz_proto' in targets:
             params_dawn_wire = parse_json(loaded_json,
@@ -1318,6 +1399,36 @@ class MultiGeneratorFromDawnJSON(Generator):
                     'dawn/fuzzers/lpmfuzz/DawnLPMConstants.h',
                     'src/dawn/fuzzers/lpmfuzz/DawnLPMConstants_autogen.h',
                     lpm_params))
+
+        if 'kotlin' in targets:
+            params_kotlin = compute_kotlin_params(loaded_json)
+            by_category = params_kotlin['by_category']
+            for structure in by_category['structure']:
+                renders.append(
+                    FileRender(
+                        'art/api_kotlin_structure.kt',
+                        'java/' + metadata.kotlin_path + '/' +
+                        structure.name.CamelCase() + '.kt', [
+                            RENDER_PARAMS_BASE, params_kotlin, {
+                                'structure': structure
+                            }
+                        ]))
+
+            for enum in (params_kotlin['by_category']['bitmask'] +
+                         params_kotlin['by_category']['enum']):
+                renders.append(
+                    FileRender(
+                        'art/api_kotlin_enum.kt',
+                        'java/' + metadata.kotlin_path + '/' +
+                        enum.name.CamelCase() + '.kt',
+                        [RENDER_PARAMS_BASE, params_kotlin, {
+                            'enum': enum
+                        }]))
+
+            renders.append(
+                FileRender('art/api_kotlin_constants.kt',
+                           'java/' + metadata.kotlin_path + '/Constants.kt',
+                           [RENDER_PARAMS_BASE, params_kotlin]))
 
         return renders
 

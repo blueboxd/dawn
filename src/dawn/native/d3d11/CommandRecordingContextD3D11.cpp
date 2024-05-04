@@ -30,6 +30,7 @@
 #include <string>
 #include <utility>
 
+#include "dawn/native/D3DBackend.h"
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d11/BufferD3D11.h"
 #include "dawn/native/d3d11/DeviceD3D11.h"
@@ -112,6 +113,10 @@ HRESULT ScopedCommandRecordingContext::Wait(ID3D11Fence* pFence, UINT64 Value) c
     return Get()->mD3D11DeviceContext4->Wait(pFence, Value);
 }
 
+void ScopedCommandRecordingContext::Flush1(D3D11_CONTEXT_TYPE ContextType, HANDLE hEvent) const {
+    return Get()->mD3D11DeviceContext4->Flush1(ContextType, hEvent);
+}
+
 void ScopedCommandRecordingContext::WriteUniformBuffer(uint32_t offset, uint32_t element) const {
     DAWN_ASSERT(offset < CommandRecordingContext::kMaxNumBuiltinElements);
     if (Get()->mUniformBufferData[offset] != element) {
@@ -127,6 +132,18 @@ MaybeError ScopedCommandRecordingContext::FlushUniformBuffer() const {
         Get()->mUniformBufferDirty = false;
     }
     return {};
+}
+
+MaybeError ScopedCommandRecordingContext::AcquireKeyedMutex(Ref<d3d::KeyedMutex> keyedMutex) const {
+    if (!Get()->mAcquiredKeyedMutexes.contains(keyedMutex)) {
+        DAWN_TRY(keyedMutex->AcquireKeyedMutex());
+        Get()->mAcquiredKeyedMutexes.emplace(std::move(keyedMutex));
+    }
+    return {};
+}
+
+void ScopedCommandRecordingContext::SetNeedsFence() const {
+    Get()->mNeedsFence = true;
 }
 
 ScopedSwapStateCommandRecordingContext::ScopedSwapStateCommandRecordingContext(
@@ -201,6 +218,32 @@ MaybeError CommandRecordingContext::Initialize(Device* device) {
     return {};
 }
 
+void CommandRecordingContext::Destroy() {
+    // mDevice could be null due to failure of initialization.
+    if (!mDevice) {
+        return;
+    }
+
+    DAWN_ASSERT(mDevice->IsLockedByCurrentThreadIfNeeded());
+    mIsOpen = false;
+    mUniformBuffer = nullptr;
+    mDevice = nullptr;
+
+    if (mD3D11DeviceContext4) {
+        ID3D11Buffer* nullBuffer = nullptr;
+        mD3D11DeviceContext4->VSSetConstantBuffers(PipelineLayout::kReservedConstantBufferSlot, 1,
+                                                   &nullBuffer);
+        mD3D11DeviceContext4->CSSetConstantBuffers(PipelineLayout::kReservedConstantBufferSlot, 1,
+                                                   &nullBuffer);
+    }
+
+    ReleaseKeyedMutexes();
+
+    mD3D11DeviceContextState = nullptr;
+    mD3D11DeviceContext4 = nullptr;
+    mD3D11Device = nullptr;
+}
+
 // static
 ResultOrError<Ref<BufferBase>> CommandRecordingContext::CreateInternalUniformBuffer(
     DeviceBase* device) {
@@ -229,21 +272,17 @@ void CommandRecordingContext::SetInternalUniformBuffer(Ref<BufferBase> uniformBu
                                                &bufferPtr);
 }
 
-void CommandRecordingContext::Release() {
-    if (mIsOpen) {
-        DAWN_ASSERT(mDevice->IsLockedByCurrentThreadIfNeeded());
-        mIsOpen = false;
-        mUniformBuffer = nullptr;
-        mDevice = nullptr;
-        ID3D11Buffer* nullBuffer = nullptr;
-        mD3D11DeviceContext4->VSSetConstantBuffers(PipelineLayout::kReservedConstantBufferSlot, 1,
-                                                   &nullBuffer);
-        mD3D11DeviceContext4->CSSetConstantBuffers(PipelineLayout::kReservedConstantBufferSlot, 1,
-                                                   &nullBuffer);
-        mD3D11DeviceContextState = nullptr;
-        mD3D11DeviceContext4 = nullptr;
-        mD3D11Device = nullptr;
+void CommandRecordingContext::ReleaseKeyedMutexes() {
+    for (auto& keyedMutex : mAcquiredKeyedMutexes) {
+        keyedMutex->ReleaseKeyedMutex();
     }
+    mAcquiredKeyedMutexes.clear();
+}
+
+bool CommandRecordingContext::AcquireNeedsFence() {
+    bool needsFence = mNeedsFence;
+    mNeedsFence = false;
+    return needsFence;
 }
 
 }  // namespace dawn::native::d3d11

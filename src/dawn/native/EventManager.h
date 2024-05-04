@@ -37,7 +37,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "dawn/common/FutureUtils.h"
 #include "dawn/common/MutexProtected.h"
-#include "dawn/common/NonCopyable.h"
+#include "dawn/common/NonMovable.h"
 #include "dawn/common/Ref.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/Forward.h"
@@ -72,7 +72,9 @@ class EventManager final : NonMovable {
 
     class TrackedEvent;
     // Track a TrackedEvent and give it a FutureID.
-    [[nodiscard]] FutureID TrackEvent(Ref<TrackedEvent>&&);
+    FutureID TrackEvent(Ref<TrackedEvent>&&);
+    void SetFutureReady(TrackedEvent* event);
+
     // Returns true if future ProcessEvents is needed.
     bool ProcessPollEvents();
     [[nodiscard]] wgpu::WaitStatus WaitAny(size_t count,
@@ -80,6 +82,8 @@ class EventManager final : NonMovable {
                                            Nanoseconds timeout);
 
   private:
+    bool IsShutDown() const;
+
     bool mTimedWaitAnyEnable = false;
     size_t mTimedWaitAnyMaxCount = kTimedWaitAnyMaxCountDefault;
     std::atomic<FutureID> mNextFutureID = 1;
@@ -90,7 +94,7 @@ class EventManager final : NonMovable {
     // Freed once the user has dropped their last ref to the Instance, so can't call WaitAny or
     // ProcessEvents anymore. This breaks reference cycles.
     using EventMap = absl::flat_hash_map<FutureID, Ref<TrackedEvent>>;
-    std::optional<MutexProtected<EventMap>> mEvents;
+    MutexProtected<std::optional<EventMap>> mEvents;
 };
 
 struct QueueAndSerial {
@@ -145,11 +149,10 @@ class EventManager::TrackedEvent : public RefCounted {
 
   protected:
     void EnsureComplete(EventCompletionType);
-    void CompleteIfSpontaneous();
-
     virtual void Complete(EventCompletionType) = 0;
 
     wgpu::CallbackMode mCallbackMode;
+    FutureID mFutureID = kNullFutureID;
 
 #if DAWN_ENABLE_ASSERTS
     std::atomic<bool> mCurrentlyBeingWaited = false;

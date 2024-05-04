@@ -100,7 +100,7 @@ using WritableBindingAliasingResult = std::variant<std::monostate, BufferAliasin
 
 template <typename Return>
 Return FindStorageBufferBindingAliasing(const PipelineLayoutBase* pipelineLayout,
-                                        const PerBindGroup<BindGroupBase*>& bindGroups,
+                                        const PerBindGroup<raw_ptr<BindGroupBase>>& bindGroups,
                                         const PerBindGroup<std::vector<uint32_t>>& dynamicOffsets) {
     // If true, returns detailed validation error info. Otherwise simply returns if any binding
     // aliasing is found.
@@ -124,8 +124,8 @@ Return FindStorageBufferBindingAliasing(const PipelineLayoutBase* pipelineLayout
         for (BindingIndex bindingIndex{0}; bindingIndex < bgl->GetBufferCount(); ++bindingIndex) {
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
             // Buffer bindings are sorted to have smallest of bindingIndex.
-            const BufferBindingLayout& layout =
-                std::get<BufferBindingLayout>(bindingInfo.bindingLayout);
+            const BufferBindingInfo& layout =
+                std::get<BufferBindingInfo>(bindingInfo.bindingLayout);
 
             // BindGroup validation already guarantees the buffer usage includes
             // wgpu::BufferUsage::Storage
@@ -163,8 +163,7 @@ Return FindStorageBufferBindingAliasing(const PipelineLayoutBase* pipelineLayout
              bindingIndex < bgl->GetBindingCount(); ++bindingIndex) {
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
 
-            const auto* layout =
-                std::get_if<StorageTextureBindingLayout>(&bindingInfo.bindingLayout);
+            const auto* layout = std::get_if<StorageTextureBindingInfo>(&bindingInfo.bindingLayout);
             if (layout == nullptr) {
                 continue;
             }
@@ -362,8 +361,8 @@ MaybeError CommandBufferStateTracker::ValidateNoDifferentTextureViewsOnSameTextu
 
         for (BindingIndex bindingIndex{0}; bindingIndex < bgl->GetBindingCount(); ++bindingIndex) {
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
-            if (!std::holds_alternative<TextureBindingLayout>(bindingInfo.bindingLayout) &&
-                !std::holds_alternative<StorageTextureBindingLayout>(bindingInfo.bindingLayout)) {
+            if (!std::holds_alternative<TextureBindingInfo>(bindingInfo.bindingLayout) &&
+                !std::holds_alternative<StorageTextureBindingInfo>(bindingInfo.bindingLayout)) {
                 continue;
             }
 
@@ -525,7 +524,8 @@ void CommandBufferStateTracker::RecomputeLazyAspects(ValidationAspects aspects) 
 
         for (BindGroupIndex i : IterateBitSet(mLastPipelineLayout->GetBindGroupLayoutsMask())) {
             if (mBindgroups[i] == nullptr ||
-                mLastPipelineLayout->GetBindGroupLayout(i) != mBindgroups[i]->GetLayout() ||
+                !mLastPipelineLayout->GetFrontendBindGroupLayout(i)->IsLayoutEqual(
+                    mBindgroups[i]->GetFrontendLayout()) ||
                 FindFirstUndersizedBuffer(mBindgroups[i]->GetUnverifiedBufferSizes(),
                                           (*mMinBufferSizes)[i])
                     .has_value()) {
@@ -613,6 +613,8 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
     }
 
     if (aspects[VALIDATION_ASPECT_BIND_GROUPS]) {
+        // TODO(crbug.com/dawn/2476): Validate TextureViewDescriptor YCbCrInfo matches with that in
+        // SamplerDescriptor.
         for (BindGroupIndex i : IterateBitSet(mLastPipelineLayout->GetBindGroupLayoutsMask())) {
             DAWN_ASSERT(HasPipeline());
 
@@ -675,7 +677,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                     mBindgroups[i]->GetUnverifiedBufferSizes()[packedIndex.value()];
                 uint64_t minBufferSize = (*mMinBufferSizes)[i][packedIndex.value()];
 
-                const auto& layout = std::get<BufferBindingLayout>(bindingInfo.bindingLayout);
+                const auto& layout = std::get<BufferBindingInfo>(bindingInfo.bindingLayout);
                 return DAWN_VALIDATION_ERROR(
                     "%s bound with size %u at group %u, binding %u is too small. The pipeline (%s) "
                     "requires a buffer binding which is at least %u bytes.%s",
@@ -753,10 +755,13 @@ void CommandBufferStateTracker::SetBindGroup(BindGroupIndex index,
     mAspects.reset(VALIDATION_ASPECT_BIND_GROUPS);
 }
 
-void CommandBufferStateTracker::SetIndexBuffer(wgpu::IndexFormat format, uint64_t size) {
+void CommandBufferStateTracker::SetIndexBuffer(wgpu::IndexFormat format,
+                                               uint64_t offset,
+                                               uint64_t size) {
     mIndexBufferSet = true;
     mIndexFormat = format;
     mIndexBufferSize = size;
+    mIndexBufferOffset = offset;
 }
 
 void CommandBufferStateTracker::UnsetVertexBuffer(VertexBufferSlot slot) {
@@ -814,6 +819,17 @@ wgpu::IndexFormat CommandBufferStateTracker::GetIndexFormat() const {
 
 uint64_t CommandBufferStateTracker::GetIndexBufferSize() const {
     return mIndexBufferSize;
+}
+
+uint64_t CommandBufferStateTracker::GetIndexBufferOffset() const {
+    return mIndexBufferOffset;
+}
+
+void CommandBufferStateTracker::End() {
+    mLastPipelineLayout = nullptr;
+    mLastPipeline = nullptr;
+    mMinBufferSizes = nullptr;
+    mBindgroups.fill(nullptr);
 }
 
 }  // namespace dawn::native

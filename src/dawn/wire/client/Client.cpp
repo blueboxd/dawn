@@ -60,6 +60,11 @@ Client::Client(CommandSerializer* serializer, MemoryTransferService* memoryTrans
 }
 
 Client::~Client() {
+    // Transition all event managers to ClientDropped state.
+    for (auto& [_, eventManager] : mEventManagers) {
+        eventManager->TransitionTo(EventManager::State::ClientDropped);
+    }
+
     DestroyAllObjects();
 }
 
@@ -99,10 +104,8 @@ ReservedTexture Client::ReserveTexture(WGPUDevice device, const WGPUTextureDescr
 
     ReservedTexture result;
     result.texture = ToAPI(texture);
-    result.id = texture->GetWireId();
-    result.generation = texture->GetWireGeneration();
-    result.deviceId = FromAPI(device)->GetWireId();
-    result.deviceGeneration = FromAPI(device)->GetWireGeneration();
+    result.handle = texture->GetWireHandle();
+    result.deviceHandle = FromAPI(device)->GetWireHandle();
     return result;
 }
 
@@ -112,20 +115,8 @@ ReservedSwapChain Client::ReserveSwapChain(WGPUDevice device,
 
     ReservedSwapChain result;
     result.swapchain = ToAPI(swapChain);
-    result.id = swapChain->GetWireId();
-    result.generation = swapChain->GetWireGeneration();
-    result.deviceId = FromAPI(device)->GetWireId();
-    result.deviceGeneration = FromAPI(device)->GetWireGeneration();
-    return result;
-}
-
-ReservedDevice Client::ReserveDevice(WGPUInstance instance) {
-    Device* device = Make<Device>(FromAPI(instance)->GetEventManagerHandle(), nullptr);
-
-    ReservedDevice result;
-    result.device = ToAPI(device);
-    result.id = device->GetWireId();
-    result.generation = device->GetWireGeneration();
+    result.handle = swapChain->GetWireHandle();
+    result.deviceHandle = FromAPI(device)->GetWireHandle();
     return result;
 }
 
@@ -134,17 +125,15 @@ ReservedInstance Client::ReserveInstance(const WGPUInstanceDescriptor* descripto
 
     if (instance->Initialize(descriptor) != WireResult::Success) {
         Free(instance);
-        return {nullptr, 0, 0};
+        return {nullptr, {0, 0}};
     }
 
     // Reserve an EventManager for the given instance and make the association in the map.
-    mEventManagers.emplace(ObjectHandle(instance->GetWireId(), instance->GetWireGeneration()),
-                           std::make_unique<EventManager>());
+    mEventManagers.emplace(instance->GetWireHandle(), std::make_unique<EventManager>());
 
     ReservedInstance result;
     result.instance = ToAPI(instance);
-    result.id = instance->GetWireId();
-    result.generation = instance->GetWireGeneration();
+    result.handle = instance->GetWireHandle();
     return result;
 }
 
@@ -174,6 +163,11 @@ void Client::Disconnect() {
     mDisconnected = true;
     mSerializer = ChunkedCommandSerializer(NoopCommandSerializer::GetInstance());
 
+    // Transition all event managers to ClientDropped state.
+    for (auto& [_, eventManager] : mEventManagers) {
+        eventManager->TransitionTo(EventManager::State::ClientDropped);
+    }
+
     auto& deviceList = mObjects[ObjectType::Device];
     {
         for (LinkNode<ObjectBase>* device = deviceList.head(); device != deviceList.end();
@@ -187,11 +181,6 @@ void Client::Disconnect() {
              object = object->next()) {
             object->value()->CancelCallbacksForDisconnect();
         }
-    }
-
-    // Transition all event managers to ClientDropped state.
-    for (auto& [_, eventManager] : mEventManagers) {
-        eventManager->TransitionTo(EventManager::State::ClientDropped);
     }
 }
 

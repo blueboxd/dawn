@@ -36,11 +36,14 @@ namespace dawn::native {
 BindingInfoType GetBindingInfoType(const BindingInfo& info) {
     return MatchVariant(
         info.bindingLayout,
-        [](const BufferBindingLayout&) -> BindingInfoType { return BindingInfoType::Buffer; },
+        [](const BufferBindingInfo&) -> BindingInfoType { return BindingInfoType::Buffer; },
         [](const SamplerBindingLayout&) -> BindingInfoType { return BindingInfoType::Sampler; },
-        [](const TextureBindingLayout&) -> BindingInfoType { return BindingInfoType::Texture; },
-        [](const StorageTextureBindingLayout&) -> BindingInfoType {
+        [](const TextureBindingInfo&) -> BindingInfoType { return BindingInfoType::Texture; },
+        [](const StorageTextureBindingInfo&) -> BindingInfoType {
             return BindingInfoType::StorageTexture;
+        },
+        [](const StaticSamplerHolderBindingLayout&) -> BindingInfoType {
+            return BindingInfoType::StaticSampler;
         });
 }
 
@@ -86,10 +89,11 @@ void IncrementBindingCounts(BindingCounts* bindingCounts,
         perStageBindingCountMember = &PerStageBindingCounts::sampledTextureCount;
     } else if (entry->storageTexture.access != wgpu::StorageTextureAccess::Undefined) {
         perStageBindingCountMember = &PerStageBindingCounts::storageTextureCount;
-    } else {
-        if (auto* externalTextureBindingLayout = entry.Get<ExternalTextureBindingLayout>()) {
-            perStageBindingCountMember = &PerStageBindingCounts::externalTextureCount;
-        }
+    } else if (entry.Get<ExternalTextureBindingLayout>()) {
+        perStageBindingCountMember = &PerStageBindingCounts::externalTextureCount;
+    } else if (entry.Get<StaticSamplerBindingLayout>()) {
+        ++bindingCounts->staticSamplerCount;
+        perStageBindingCountMember = &PerStageBindingCounts::staticSamplerCount;
     }
 
     DAWN_ASSERT(perStageBindingCountMember != nullptr);
@@ -115,6 +119,7 @@ void AccumulateBindingCounts(BindingCounts* bindingCounts, const BindingCounts& 
         bindingCounts->perStage[stage].uniformBufferCount += rhs.perStage[stage].uniformBufferCount;
         bindingCounts->perStage[stage].externalTextureCount +=
             rhs.perStage[stage].externalTextureCount;
+        bindingCounts->perStage[stage].staticSamplerCount += rhs.perStage[stage].staticSamplerCount;
     }
 }
 
@@ -164,12 +169,14 @@ MaybeError ValidateBindingCounts(const CombinedLimits& limits, const BindingCoun
             bindingCounts.perStage[stage].externalTextureCount, stage,
             limits.v1.maxSampledTexturesPerShaderStage);
 
+        // TODO(crbug.com/dawn/2463): Account for static samplers here.
         DAWN_INVALID_IF(
             bindingCounts.perStage[stage].samplerCount > limits.v1.maxSamplersPerShaderStage,
             "The number of samplers (%u) in the %s stage exceeds the maximum per-stage limit "
             "(%u).",
             bindingCounts.perStage[stage].samplerCount, stage, limits.v1.maxSamplersPerShaderStage);
 
+        // TODO(crbug.com/dawn/2463): Account for static samplers here.
         DAWN_INVALID_IF(
             bindingCounts.perStage[stage].samplerCount +
                     (bindingCounts.perStage[stage].externalTextureCount *
@@ -220,4 +227,21 @@ MaybeError ValidateBindingCounts(const CombinedLimits& limits, const BindingCoun
     return {};
 }
 
+BufferBindingInfo::BufferBindingInfo() = default;
+
+BufferBindingInfo::BufferBindingInfo(const BufferBindingLayout& apiLayout)
+    : type(apiLayout.type),
+      minBindingSize(apiLayout.minBindingSize),
+      hasDynamicOffset(apiLayout.hasDynamicOffset) {}
+
+StorageTextureBindingInfo::StorageTextureBindingInfo() = default;
+StorageTextureBindingInfo::StorageTextureBindingInfo(const StorageTextureBindingLayout& apiLayout)
+    : format(apiLayout.format), viewDimension(apiLayout.viewDimension), access(apiLayout.access) {}
+
+TextureBindingInfo::TextureBindingInfo() {}
+
+TextureBindingInfo::TextureBindingInfo(const TextureBindingLayout& apiLayout)
+    : sampleType(apiLayout.sampleType),
+      viewDimension(apiLayout.viewDimension),
+      multisampled(apiLayout.multisampled) {}
 }  // namespace dawn::native

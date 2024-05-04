@@ -28,13 +28,16 @@
 #ifndef SRC_DAWN_NATIVE_D3D11_COMMANDRECORDINGCONTEXT_D3D11_H_
 #define SRC_DAWN_NATIVE_D3D11_COMMANDRECORDINGCONTEXT_D3D11_H_
 
+#include "absl/container/flat_hash_set.h"
 #include "dawn/common/MutexProtected.h"
 #include "dawn/common/NonCopyable.h"
 #include "dawn/common/Ref.h"
 #include "dawn/native/Error.h"
+#include "dawn/native/d3d/KeyedMutex.h"
 #include "dawn/native/d3d/d3d_platform.h"
 
 namespace dawn::native::d3d11 {
+
 class CommandAllocatorManager;
 class Buffer;
 class Device;
@@ -77,11 +80,14 @@ class CommandRecordingContext {
                                      ::dawn::detail::MutexProtectedTraits<CommandRecordingContext>>;
 
     MaybeError Initialize(Device* device);
+    void Destroy();
 
     static ResultOrError<Ref<BufferBase>> CreateInternalUniformBuffer(DeviceBase* device);
     void SetInternalUniformBuffer(Ref<BufferBase> uniformBuffer);
 
-    void Release();
+    void ReleaseKeyedMutexes();
+
+    bool AcquireNeedsFence();
 
   private:
     template <typename Ctx, typename Traits>
@@ -103,6 +109,10 @@ class CommandRecordingContext {
     Ref<Buffer> mUniformBuffer;
     std::array<uint32_t, kMaxNumBuiltinElements> mUniformBufferData;
     bool mUniformBufferDirty = true;
+
+    absl::flat_hash_set<Ref<d3d::KeyedMutex>> mAcquiredKeyedMutexes;
+
+    bool mNeedsFence = false;
 
     Ref<Device> mDevice;
 };
@@ -145,10 +155,15 @@ class ScopedCommandRecordingContext : public CommandRecordingContext::Guard {
     void Unmap(ID3D11Resource* pResource, UINT Subresource) const;
     HRESULT Signal(ID3D11Fence* pFence, UINT64 Value) const;
     HRESULT Wait(ID3D11Fence* pFence, UINT64 Value) const;
+    void Flush1(D3D11_CONTEXT_TYPE ContextType, HANDLE hEvent) const;
 
     // Write the built-in variable value to the uniform buffer.
     void WriteUniformBuffer(uint32_t offset, uint32_t element) const;
     MaybeError FlushUniformBuffer() const;
+
+    MaybeError AcquireKeyedMutex(Ref<d3d::KeyedMutex> keyedMutex) const;
+
+    void SetNeedsFence() const;
 };
 
 // For using ID3D11DeviceContext directly. It swaps and resets ID3DDeviceContextState of

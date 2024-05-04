@@ -138,7 +138,7 @@ func run() error {
 	verbose, useIr, generateExpected, generateSkip := false, false, false, false
 	flag.StringVar(&formatList, "format", "all", "comma separated list of formats to emit. Possible values are: all, wgsl, spvasm, msl, hlsl, hlsl-dxc, hlsl-fxc, glsl")
 	flag.StringVar(&ignore, "ignore", "**.expected.*", "files to ignore in globs")
-	flag.StringVar(&dxcPath, "dxc", "", "path to DXC executable for validating HLSL output")
+	flag.StringVar(&dxcPath, "dxcompiler", "", "path to DXC DLL for validating HLSL output")
 	flag.StringVar(&fxcPath, "fxc", "", "path to FXC DLL for validating HLSL output")
 	flag.StringVar(&tintPath, "tint", defaultTintPath(), "path to the tint executable")
 	flag.StringVar(&xcrunPath, "xcrun", "", "path to xcrun executable for validating MSL output")
@@ -175,6 +175,10 @@ func run() error {
 	rootPath := ""
 	globs := []string{}
 	for _, arg := range args {
+		if len(arg) > 1 && arg[0:2] == "--" {
+			return fmt.Errorf("unexpected flag after globs: %s", arg)
+		}
+
 		// Make absolute
 		if !filepath.IsAbs(arg) {
 			arg = filepath.Join(dawnRoot, arg)
@@ -236,6 +240,13 @@ func run() error {
 		defaultMSLExe = "metal.exe"
 	}
 
+	defaultDXCDll := "libdxcompiler.so"
+	if runtime.GOOS == "windows" {
+		defaultDXCDll = "dxcompiler.dll"
+	} else if runtime.GOOS == "darwin" {
+		defaultDXCDll = "libdxcompiler.dylib"
+	}
+
 	toolchainHash := sha256.New()
 
 	// If explicit verification compilers have been specified, check they exist.
@@ -245,7 +256,7 @@ func run() error {
 		lang string
 		path *string
 	}{
-		{"dxc", "hlsl-dxc", &dxcPath},
+		{defaultDXCDll, "hlsl-dxc", &dxcPath},
 		{"d3dcompiler_47.dll", "hlsl-fxc", &fxcPath},
 		{defaultMSLExe, "msl", &xcrunPath},
 	} {
@@ -1112,12 +1123,7 @@ func saveValidationCache(vc validationCache) {
 	}
 }
 
-// defaultRootPath returns the default path to the root of the test tree
-func defaultRootPath() string {
-	return filepath.Join(fileutils.DawnRoot(), "test/tint")
-}
-
 // defaultTintPath returns the default path to the tint executable
 func defaultTintPath() string {
-	return filepath.Join(fileutils.DawnRoot(), "out/active/tint")
+	return filepath.Join(fileutils.DawnRoot(), "out", "active", "tint"+fileutils.ExeExt)
 }

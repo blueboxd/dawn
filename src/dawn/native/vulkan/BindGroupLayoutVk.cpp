@@ -37,6 +37,7 @@
 #include "dawn/native/vulkan/DescriptorSetAllocator.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
+#include "dawn/native/vulkan/SamplerVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
 #include "dawn/native/vulkan/VulkanError.h"
 
@@ -65,7 +66,7 @@ VkShaderStageFlags VulkanShaderStageFlags(wgpu::ShaderStage stages) {
 VkDescriptorType VulkanDescriptorType(const BindingInfo& bindingInfo) {
     return MatchVariant(
         bindingInfo.bindingLayout,
-        [](const BufferBindingLayout& layout) -> VkDescriptorType {
+        [](const BufferBindingInfo& layout) -> VkDescriptorType {
             switch (layout.type) {
                 case wgpu::BufferBindingType::Uniform:
                     if (layout.hasDynamicOffset) {
@@ -85,8 +86,9 @@ VkDescriptorType VulkanDescriptorType(const BindingInfo& bindingInfo) {
             }
         },
         [](const SamplerBindingLayout&) { return VK_DESCRIPTOR_TYPE_SAMPLER; },
-        [](const TextureBindingLayout&) { return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE; },
-        [](const StorageTextureBindingLayout&) { return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; });
+        [](const StaticSamplerHolderBindingLayout&) { return VK_DESCRIPTOR_TYPE_SAMPLER; },
+        [](const TextureBindingInfo&) { return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE; },
+        [](const StorageTextureBindingInfo&) { return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; });
 }
 
 // static
@@ -113,7 +115,15 @@ MaybeError BindGroupLayout::Initialize() {
         vkBinding.descriptorType = VulkanDescriptorType(bindingInfo);
         vkBinding.descriptorCount = 1;
         vkBinding.stageFlags = VulkanShaderStageFlags(bindingInfo.visibility);
-        vkBinding.pImmutableSamplers = nullptr;
+
+        if (std::holds_alternative<StaticSamplerHolderBindingLayout>(bindingInfo.bindingLayout)) {
+            auto samplerLayout =
+                std::get<StaticSamplerHolderBindingLayout>(bindingInfo.bindingLayout);
+            auto sampler = ToBackend(samplerLayout.sampler);
+            vkBinding.pImmutableSamplers = &sampler->GetHandle().GetHandle();
+        } else {
+            vkBinding.pImmutableSamplers = nullptr;
+        }
 
         bindings.emplace_back(vkBinding);
     }
@@ -146,7 +156,7 @@ MaybeError BindGroupLayout::Initialize() {
     // TODO(enga): Consider deduping allocators for layouts with the same descriptor type
     // counts.
     mDescriptorSetAllocator =
-        DescriptorSetAllocator::Create(this, std::move(descriptorCountPerType));
+        DescriptorSetAllocator::Create(device, std::move(descriptorCountPerType));
 
     SetLabelImpl();
 
@@ -185,7 +195,7 @@ ResultOrError<Ref<BindGroup>> BindGroupLayout::AllocateBindGroup(
     Device* device,
     const BindGroupDescriptor* descriptor) {
     DescriptorSetAllocation descriptorSetAllocation;
-    DAWN_TRY_ASSIGN(descriptorSetAllocation, mDescriptorSetAllocator->Allocate());
+    DAWN_TRY_ASSIGN(descriptorSetAllocation, mDescriptorSetAllocator->Allocate(this));
 
     return AcquireRef(mBindGroupAllocator->Allocate(device, descriptor, descriptorSetAllocation));
 }

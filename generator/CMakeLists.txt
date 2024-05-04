@@ -25,14 +25,11 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-find_package(PythonInterp REQUIRED)
-message(STATUS "Dawn: using python at ${PYTHON_EXECUTABLE}")
-
 # Check for Jinja2
 if (NOT DAWN_JINJA2_DIR)
     message(STATUS "Dawn: Using system jinja2")
     execute_process(
-        COMMAND ${PYTHON_EXECUTABLE} -c "import jinja2"
+        COMMAND ${Python3_EXECUTABLE} -c "import jinja2"
         RESULT_VARIABLE RET
     )
     if (NOT RET EQUAL 0)
@@ -55,7 +52,7 @@ function(DawnGenerator)
 
     # Build the set of args common to all invocation of that generator.
     set(BASE_ARGS
-        ${PYTHON_EXECUTABLE}
+        ${Python3_EXECUTABLE}
         ${G_SCRIPT}
         --template-dir
         "${DAWN_TEMPLATE_DIR}"
@@ -83,9 +80,7 @@ function(DawnGenerator)
     endif()
 
     # Ask CMake to re-run if any of the dependencies changed as it might modify the build graph.
-    if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.12.0")
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${DEPENDENCIES})
-    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${DEPENDENCIES})
 
     # Call the generator to get the list of its outputs.
     execute_process(
@@ -105,7 +100,23 @@ function(DawnGenerator)
         COMMENT "Dawn: Generating files for ${G_PRINT_NAME}."
     )
 
-    set_source_files_properties(${OUTPUTS} PROPERTIES GENERATED TRUE)
+    # Prior to CMake 3.20 the GENERATED property is local to a directory which means that putting
+    # generated headers in INTERFACE properties causes dependent targets to complain that they
+    # cannot find the file. (because they don't see it as generated and want to check is is
+    # actually on the filesystem).
+    # Work around this by creating empty files placeholder generated files so that the build
+    # configuration process can success.
+    foreach(path ${OUTPUTS})
+        if (NOT EXISTS ${path})
+            string(FIND "${path}" "/" foundIndex REVERSE)
+            string(SUBSTRING "${path}" 0 ${foundIndex} dir)
+            file(MAKE_DIRECTORY ${dir})
+            file(TOUCH ${path})
+            # Also touch the generator script to make a dependency of the generated file dirty,
+            # ensuring that it gets generated and not used while it is an empty file.
+            file(TOUCH ${G_SCRIPT})
+        endif()
+    endforeach()
 
     # Return the list of outputs.
     set(${G_RESULT_VARIABLE} ${OUTPUTS} PARENT_SCOPE)

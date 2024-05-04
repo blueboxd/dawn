@@ -115,14 +115,14 @@ class ExternalTextureTests : public DawnTest {
 
     std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
         std::vector<wgpu::FeatureName> requiredFeatures = {};
-        if (SupportsFeatures({wgpu::FeatureName::Norm16TextureFormats})) {
-            mIsNorm16TextureFormatsSupported = true;
-            requiredFeatures.push_back(wgpu::FeatureName::Norm16TextureFormats);
+        if (SupportsFeatures({wgpu::FeatureName::Unorm16TextureFormats})) {
+            mIsUnorm16TextureFormatsSupported = true;
+            requiredFeatures.push_back(wgpu::FeatureName::Unorm16TextureFormats);
         }
         return requiredFeatures;
     }
 
-    bool IsNorm16TextureFormatsSupported() { return mIsNorm16TextureFormatsSupported; }
+    bool IsUnorm16TextureFormatsSupported() { return mIsUnorm16TextureFormatsSupported; }
 
     static constexpr uint32_t kWidth = 4;
     static constexpr uint32_t kHeight = 4;
@@ -134,7 +134,7 @@ class ExternalTextureTests : public DawnTest {
     wgpu::ShaderModule vsModule;
     wgpu::ShaderModule fsSampleExternalTextureModule;
 
-    bool mIsNorm16TextureFormatsSupported = false;
+    bool mIsUnorm16TextureFormatsSupported = false;
 };
 
 TEST_P(ExternalTextureTests, CreateExternalTextureSuccess) {
@@ -398,7 +398,7 @@ TEST_P(ExternalTextureTests, SampleMultiplanarExternalTexture) {
 }
 
 TEST_P(ExternalTextureTests, SampleMultiplanarExternalTextureNorm16) {
-    DAWN_TEST_UNSUPPORTED_IF(!IsNorm16TextureFormatsSupported());
+    DAWN_TEST_UNSUPPORTED_IF(!IsUnorm16TextureFormatsSupported());
 
     // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 4 OpenGLES
     DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
@@ -1258,6 +1258,31 @@ TEST_P(ExternalTextureTests, SampleExternalTextureAlpha) {
     queue.Submit(1, &commands);
 
     EXPECT_PIXEL_RGBA8_EQ(kColor, renderTexture, 0, 0);
+}
+
+// Test for crbug.com/dawn/2472
+TEST_P(ExternalTextureTests, RemappingBugDawn2472) {
+    auto wgslModule = utils::CreateShaderModule(device, R"(
+    @vertex
+    fn vertexMain() -> @builtin(position) vec4f {
+      return vec4f(1);
+    }
+
+    @group(0) @binding(0) var myTexture: texture_external;
+
+    @fragment
+    fn fragmentMain() -> @location(0) vec4f {
+      let result = textureLoad(myTexture, vec2u(1, 1));
+      return vec4f(1);
+    })");
+
+    // Pipeline Creation
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = wgslModule;
+    descriptor.cFragment.module = wgslModule;
+    wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&descriptor);
+
+    ASSERT_NE(pipeline.Get(), nullptr);
 }
 
 DAWN_INSTANTIATE_TEST(ExternalTextureTests,

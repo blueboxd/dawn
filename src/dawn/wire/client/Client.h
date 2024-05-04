@@ -71,10 +71,6 @@ class Client : public ClientBase {
         return object;
     }
 
-    template <typename T>
-    void Free(T* obj) {
-        Free(obj, ObjectTypeToTypeEnum<T>);
-    }
     void Free(ObjectBase* obj, ObjectType type);
 
     template <typename T>
@@ -90,7 +86,6 @@ class Client : public ClientBase {
     ReservedTexture ReserveTexture(WGPUDevice device, const WGPUTextureDescriptor* descriptor);
     ReservedSwapChain ReserveSwapChain(WGPUDevice device,
                                        const WGPUSwapChainDescriptor* descriptor);
-    ReservedDevice ReserveDevice(WGPUInstance instance);
     ReservedInstance ReserveInstance(const WGPUInstanceDescriptor* descriptor);
 
     void ReclaimTextureReservation(const ReservedTexture& reservation);
@@ -115,6 +110,11 @@ class Client : public ClientBase {
 
   private:
     void DestroyAllObjects();
+
+    template <typename T>
+    void Free(T* obj) {
+        Free(obj, ObjectTypeToTypeEnum<T>);
+    }
 
 #include "dawn/wire/client/ClientPrototypes_autogen.inc"
 

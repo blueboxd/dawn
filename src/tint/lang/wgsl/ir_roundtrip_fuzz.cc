@@ -30,7 +30,7 @@
 #include <iostream>
 
 #include "src/tint/cmd/fuzz/ir/fuzz.h"
-#include "src/tint/lang/core/ir/disassembler.h"
+#include "src/tint/lang/core/ir/disassembly.h"
 #include "src/tint/lang/wgsl/reader/lower/lower.h"
 #include "src/tint/lang/wgsl/reader/parser/parser.h"
 #include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
@@ -46,9 +46,11 @@ void IRRoundtripFuzzer(core::ir::Module& ir) {
         return;
     }
 
-    auto dst = tint::wgsl::writer::IRToProgram(ir);
+    writer::ProgramOptions program_options;
+    program_options.allowed_features = AllowedFeatures::Everything();
+    auto dst = tint::wgsl::writer::IRToProgram(ir, program_options);
     if (!dst.IsValid()) {
-        std::cerr << "IR:\n" << core::ir::Disassemble(ir) << std::endl;
+        std::cerr << "IR:\n" << core::ir::Disassemble(ir).Plain() << std::endl;
         if (auto result = tint::wgsl::writer::Generate(dst, {}); result == Success) {
             std::cerr << "WGSL:\n" << result->wgsl << std::endl << std::endl;
         }

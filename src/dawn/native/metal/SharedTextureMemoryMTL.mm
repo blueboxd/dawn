@@ -72,8 +72,16 @@ ResultOrError<wgpu::TextureFormat> GetFormatEquivalentToIOSurfaceFormat(uint32_t
             return wgpu::TextureFormat::R16Unorm;
         case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
             return wgpu::TextureFormat::R8BG8Biplanar420Unorm;
+        case kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange:
+            return wgpu::TextureFormat::R8BG8Biplanar422Unorm;
+        case kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange:
+            return wgpu::TextureFormat::R8BG8Biplanar444Unorm;
         case kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange:
             return wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm;
+        case kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange:
+            return wgpu::TextureFormat::R10X6BG10X6Biplanar422Unorm;
+        case kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange:
+            return wgpu::TextureFormat::R10X6BG10X6Biplanar444Unorm;
         case kCVPixelFormatType_420YpCbCr8VideoRange_8A_TriPlanar:
             return wgpu::TextureFormat::R8BG8A8Triplanar420Unorm;
         default:
@@ -209,7 +217,8 @@ ResultOrError<FenceAndSignalValue> SharedTextureMemory::EndAccessImpl(
 
         return FenceAndSignalValue{
             std::move(fence),
-            static_cast<uint64_t>(texture->GetSharedTextureMemoryContents()->GetLastUsageSerial())};
+            static_cast<uint64_t>(
+                texture->GetSharedResourceMemoryContents()->GetLastUsageSerial())};
     }
     DAWN_UNREACHABLE();
 }

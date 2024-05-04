@@ -6,6 +6,7 @@
 /.gclient_entries
 /.gclient_previous_custom_vars
 /.gclient_previous_sync_commits
+/.gcs_entries
 /.reproxy_cache
 /bazel-*
 /build
@@ -17,6 +18,7 @@
 /third_party/catapult
 /third_party/clang-format
 /third_party/cpplint
+/third_party/depot_tools
 /third_party/dxc
 /third_party/dxheaders
 /third_party/glfw

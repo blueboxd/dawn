@@ -61,16 +61,19 @@
 #include "src/tint/lang/wgsl/ast/transform/binding_remapper.h"
 #include "src/tint/lang/wgsl/ast/transform/builtin_polyfill.h"
 #include "src/tint/lang/wgsl/ast/transform/canonicalize_entry_point_io.h"
+#include "src/tint/lang/wgsl/ast/transform/clamp_frag_depth.h"
 #include "src/tint/lang/wgsl/ast/transform/demote_to_helper.h"
 #include "src/tint/lang/wgsl/ast/transform/direct_variable_access.h"
 #include "src/tint/lang/wgsl/ast/transform/disable_uniformity_analysis.h"
 #include "src/tint/lang/wgsl/ast/transform/expand_compound_assignment.h"
+#include "src/tint/lang/wgsl/ast/transform/fold_constants.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
 #include "src/tint/lang/wgsl/ast/transform/multiplanar_external_texture.h"
 #include "src/tint/lang/wgsl/ast/transform/offset_first_index.h"
 #include "src/tint/lang/wgsl/ast/transform/preserve_padding.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_initializers_to_let.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_side_effects_to_decl.h"
+#include "src/tint/lang/wgsl/ast/transform/remove_continue_in_switch.h"
 #include "src/tint/lang/wgsl/ast/transform/remove_phonies.h"
 #include "src/tint/lang/wgsl/ast/transform/renamer.h"
 #include "src/tint/lang/wgsl/ast/transform/robustness.h"
@@ -143,6 +146,8 @@ SanitizedResult Sanitize(const Program& in,
     ast::transform::Manager manager;
     ast::transform::DataMap data;
 
+    manager.Add<ast::transform::FoldConstants>();
+
     manager.Add<ast::transform::DisableUniformityAnalysis>();
 
     // ExpandCompoundAssignment must come before BuiltinPolyfill
@@ -206,6 +211,10 @@ SanitizedResult Sanitize(const Program& in,
 
     manager.Add<ast::transform::OffsetFirstIndex>();
 
+    // ClampFragDepth must come before CanonicalizeEntryPointIO, or the assignments to FragDepth are
+    // lost
+    manager.Add<ast::transform::ClampFragDepth>();
+
     // CanonicalizeEntryPointIO must come after Robustness
     manager.Add<ast::transform::CanonicalizeEntryPointIO>();
 
@@ -235,6 +244,7 @@ SanitizedResult Sanitize(const Program& in,
     manager.Add<ast::transform::BindingRemapper>();
 
     manager.Add<ast::transform::PromoteInitializersToLet>();
+    manager.Add<ast::transform::RemoveContinueInSwitch>();
     manager.Add<ast::transform::AddEmptyEntryPoint>();
 
     // Std140 must come after PromoteSideEffectsToDecl and before SimplifyPointers.
@@ -248,6 +258,8 @@ SanitizedResult Sanitize(const Program& in,
         ast::transform::CanonicalizeEntryPointIO::ShaderStyle::kGlsl);
 
     data.Add<ast::transform::OffsetFirstIndex::Config>(std::nullopt, options.first_instance_offset);
+
+    data.Add<ast::transform::ClampFragDepth::Config>(options.depth_range_offsets);
 
     SanitizedResult result;
     ast::transform::DataMap outputs;
@@ -265,8 +277,9 @@ bool ASTPrinter::Generate() {
             "GLSL", builder_.AST(), diagnostics_,
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
-                wgsl::Extension::kChromiumInternalDualSourceBlending,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
+                wgsl::Extension::kChromiumInternalDualSourceBlending,
+                wgsl::Extension::kChromiumInternalGraphite,
                 wgsl::Extension::kF16,
             })) {
         return false;
@@ -378,19 +391,20 @@ void ASTPrinter::EmitIndexAccessor(StringStream& out, const ast::IndexAccessorEx
     out << "]";
 }
 
-void ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* expr) {
-    auto* src_type = TypeOf(expr->expr)->UnwrapRef();
-    auto* dst_type = TypeOf(expr)->UnwrapRef();
+void ASTPrinter::EmitBitcastCall(StringStream& out, const ast::CallExpression* call) {
+    auto* arg = call->args[0];
+    auto* src_type = TypeOf(arg)->UnwrapRef();
+    auto* dst_type = TypeOf(call);
 
     if (!dst_type->is_integer_scalar_or_vector() && !dst_type->is_float_scalar_or_vector()) {
-        diagnostics_.AddError(diag::System::Writer,
-                              "Unable to do bitcast to type " + dst_type->FriendlyName());
+        diagnostics_.AddError(Source{})
+            << "Unable to do bitcast to type " << dst_type->FriendlyName();
         return;
     }
 
     // Handle identity bitcast.
     if (src_type == dst_type) {
-        return EmitExpression(out, expr->expr);
+        return EmitExpression(out, arg);
     }
 
     // Use packFloat2x16 and unpackFloat2x16 for f16 types.
@@ -447,7 +461,7 @@ void ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
         out << fn;
         {
             ScopedParen sp(out);
-            EmitExpression(out, expr->expr);
+            EmitExpression(out, arg);
         }
     } else if (dst_type->DeepestElement()->Is<core::type::F16>()) {
         // Destination type must be vec2<f16> or vec4<f16>.
@@ -517,7 +531,7 @@ void ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
         out << fn;
         {
             ScopedParen sp(out);
-            EmitExpression(out, expr->expr);
+            EmitExpression(out, arg);
         }
     } else {
         if (src_type->is_float_scalar_or_vector() &&
@@ -536,7 +550,7 @@ void ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
             EmitType(out, dst_type, core::AddressSpace::kUndefined, core::Access::kReadWrite, "");
         }
         ScopedParen sp(out);
-        EmitExpression(out, expr->expr);
+        EmitExpression(out, arg);
     }
 }
 
@@ -840,6 +854,8 @@ void ASTPrinter::EmitBuiltinCall(StringStream& out,
         EmitCountOneBitsCall(out, expr);
     } else if (builtin->Fn() == wgsl::BuiltinFn::kSelect) {
         EmitSelectCall(out, expr, builtin);
+    } else if (builtin->Fn() == wgsl::BuiltinFn::kBitcast) {
+        EmitBitcastCall(out, expr);
     } else if (builtin->Fn() == wgsl::BuiltinFn::kDot) {
         EmitDotCall(out, expr, builtin);
     } else if (builtin->Fn() == wgsl::BuiltinFn::kModf) {
@@ -1505,9 +1521,7 @@ void ASTPrinter::EmitTextureCall(StringStream& out,
             out << "imageStore";
             break;
         default:
-            diagnostics_.AddError(diag::System::Writer,
-                                  "Internal compiler error: Unhandled texture builtin '" +
-                                      std::string(builtin->str()) + "'");
+            TINT_ICE() << "Unhandled texture builtin '" << std::string(builtin->str()) << "'";
             return;
     }
 
@@ -1730,8 +1744,7 @@ std::string ASTPrinter::generate_builtin_name(const sem::BuiltinFn* builtin) {
         case wgsl::BuiltinFn::kUnpack4X8Unorm:
             return "unpackUnorm4x8";
         default:
-            diagnostics_.AddError(diag::System::Writer,
-                                  "Unknown builtin method: " + std::string(builtin->str()));
+            diagnostics_.AddError(Source{}) << "Unknown builtin method: " << builtin;
     }
 
     return "";
@@ -1789,7 +1802,6 @@ void ASTPrinter::EmitExpression(StringStream& out, const ast::Expression* expr) 
         expr,  //
         [&](const ast::IndexAccessorExpression* a) { EmitIndexAccessor(out, a); },
         [&](const ast::BinaryExpression* b) { EmitBinary(out, b); },
-        [&](const ast::BitcastExpression* b) { EmitBitcast(out, b); },
         [&](const ast::CallExpression* c) { EmitCall(out, c); },
         [&](const ast::IdentifierExpression* i) { EmitIdentifier(out, i); },
         [&](const ast::LiteralExpression* l) { EmitLiteral(out, l); },
@@ -1910,9 +1922,9 @@ void ASTPrinter::EmitGlobalVariable(const ast::Variable* global) {
         [&](const ast::Let* let) { EmitProgramConstVariable(let); },
         [&](const ast::Override*) {
             // Override is removed with SubstituteOverride
-            diagnostics_.AddError(diag::System::Writer,
-                                  "override-expressions should have been removed with the "
-                                  "SubstituteOverride transform");
+            diagnostics_.AddError(Source{})
+                << "override-expressions should have been removed with the "
+                   "SubstituteOverride transform";
         },
         [&](const ast::Const*) {
             // Constants are embedded at their use
@@ -2018,6 +2030,9 @@ void ASTPrinter::EmitHandleVariable(const ast::Var* var, const sem::Variable* se
                 break;
             case core::TexelFormat::kRgba32Float:
                 out << "rgba32f";
+                break;
+            case core::TexelFormat::kR8Unorm:
+                out << "r8";
                 break;
             case core::TexelFormat::kUndefined:
                 TINT_ICE() << "invalid texel format";
@@ -2176,10 +2191,9 @@ void ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
             out << "local_size_" << (i == 0 ? "x" : i == 1 ? "y" : "z") << " = ";
 
             if (!wgsize[i].has_value()) {
-                diagnostics_.AddError(
-                    diag::System::Writer,
-                    "override-expressions should have been removed with the SubstituteOverride "
-                    "transform");
+                diagnostics_.AddError(Source{})
+                    << "override-expressions should have been removed with the SubstituteOverride "
+                       "transform";
                 return;
             }
             out << std::to_string(wgsize[i].value());
@@ -2280,8 +2294,7 @@ void ASTPrinter::EmitConstant(StringStream& out, const core::constant::Value* co
 
             auto count = a->ConstantCount();
             if (!count) {
-                diagnostics_.AddError(diag::System::Writer,
-                                      core::type::Array::kErrExpectedConstantCount);
+                diagnostics_.AddError(Source{}) << core::type::Array::kErrExpectedConstantCount;
                 return;
             }
 
@@ -2332,7 +2345,7 @@ void ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* li
                     return;
                 }
             }
-            diagnostics_.AddError(diag::System::Writer, "unknown integer literal suffix type");
+            diagnostics_.AddError(Source{}) << "unknown integer literal suffix type";
         },  //
         TINT_ICE_ON_NO_MATCH);
 }
@@ -2384,8 +2397,7 @@ void ASTPrinter::EmitZeroValue(StringStream& out, const core::type::Type* type) 
 
         auto count = arr->ConstantCount();
         if (!count) {
-            diagnostics_.AddError(diag::System::Writer,
-                                  core::type::Array::kErrExpectedConstantCount);
+            diagnostics_.AddError(Source{}) << core::type::Array::kErrExpectedConstantCount;
             return;
         }
 
@@ -2396,8 +2408,8 @@ void ASTPrinter::EmitZeroValue(StringStream& out, const core::type::Type* type) 
             EmitZeroValue(out, arr->ElemType());
         }
     } else {
-        diagnostics_.AddError(diag::System::Writer,
-                              "Invalid type for zero emission: " + type->FriendlyName());
+        diagnostics_.AddError(Source{})
+            << "Invalid type for zero emission: " << type->FriendlyName();
     }
 }
 
@@ -2672,8 +2684,7 @@ void ASTPrinter::EmitType(StringStream& out,
             } else {
                 auto count = arr->ConstantCount();
                 if (!count) {
-                    diagnostics_.AddError(diag::System::Writer,
-                                          core::type::Array::kErrExpectedConstantCount);
+                    diagnostics_.AddError(Source{}) << core::type::Array::kErrExpectedConstantCount;
                     return;
                 }
                 sizes.push_back(count.value());
@@ -2828,7 +2839,7 @@ void ASTPrinter::EmitType(StringStream& out,
     } else if (type->Is<core::type::Void>()) {
         out << "void";
     } else {
-        diagnostics_.AddError(diag::System::Writer, "unknown type in EmitType");
+        diagnostics_.AddError(Source{}) << "unknown type in EmitType";
     }
 }
 

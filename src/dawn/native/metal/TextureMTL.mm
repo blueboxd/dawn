@@ -101,8 +101,9 @@ MTLTextureType MetalTextureViewType(wgpu::TextureViewDimension dimension,
     }
 }
 
-bool RequiresCreatingNewTextureView(const TextureBase* texture,
-                                    const TextureViewDescriptor* textureViewDescriptor) {
+bool RequiresCreatingNewTextureView(
+    const TextureBase* texture,
+    const UnpackedPtr<TextureViewDescriptor>& textureViewDescriptor) {
     constexpr wgpu::TextureUsage kShaderUsageNeedsView =
         wgpu::TextureUsage::StorageBinding | wgpu::TextureUsage::TextureBinding;
     constexpr wgpu::TextureUsage kUsageNeedsView = kShaderUsageNeedsView |
@@ -321,7 +322,7 @@ ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
     Device* device = ToBackend(memory->GetDevice());
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     DAWN_TRY(texture->InitializeFromSharedTextureMemory(memory, descriptor));
-    texture->mSharedTextureMemoryContents = memory->GetContents();
+    texture->mSharedResourceMemoryContents = memory->GetContents();
     return texture;
 }
 
@@ -414,7 +415,7 @@ MaybeError Texture::InitializeFromSharedTextureMemory(
 void Texture::SynchronizeTextureBeforeUse(CommandRecordingContext* commandContext) {
     if (@available(macOS 10.14, iOS 12.0, *)) {
         SharedTextureMemoryBase::PendingFenceList fences;
-        SharedTextureMemoryContents* contents = GetSharedTextureMemoryContents();
+        SharedResourceMemoryContents* contents = GetSharedResourceMemoryContents();
         if (contents != nullptr) {
             contents->AcquirePendingFences(&fences);
             contents->SetLastUsageSerial(GetDevice()->GetQueue()->GetPendingCommandSerial());
@@ -783,14 +784,15 @@ MaybeError Texture::EnsureSubresourceContentInitialized(CommandRecordingContext*
 }
 
 // static
-ResultOrError<Ref<TextureView>> TextureView::Create(TextureBase* texture,
-                                                    const TextureViewDescriptor* descriptor) {
+ResultOrError<Ref<TextureView>> TextureView::Create(
+    TextureBase* texture,
+    const UnpackedPtr<TextureViewDescriptor>& descriptor) {
     Ref<TextureView> view = AcquireRef(new TextureView(texture, descriptor));
     DAWN_TRY(view->Initialize(descriptor));
     return view;
 }
 
-MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {
+MaybeError TextureView::Initialize(const UnpackedPtr<TextureViewDescriptor>& descriptor) {
     DeviceBase* device = GetDevice();
     Texture* texture = ToBackend(GetTexture());
 

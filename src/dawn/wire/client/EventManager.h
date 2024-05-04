@@ -46,8 +46,10 @@ namespace dawn::wire::client {
 class Client;
 
 enum class EventType {
+    CompilationInfo,
     CreateComputePipeline,
     CreateRenderPipeline,
+    DeviceLost,
     MapAsync,
     PopErrorScope,
     RequestAdapter,

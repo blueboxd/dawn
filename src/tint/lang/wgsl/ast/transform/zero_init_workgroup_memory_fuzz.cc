@@ -32,7 +32,7 @@
 
 namespace tint::ast::transform {
 
-void ZeroInitWorkgroupMemoryFuzzer(const tint::Program& program) {
+void ZeroInitWorkgroupMemoryFuzzer(const Program& program) {
     if (program.AST().HasOverrides()) {
         return;
     }

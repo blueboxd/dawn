@@ -75,7 +75,7 @@ class Backend : public SharedTextureMemoryTestBackend {
     }
 
     bool UseSameDevice() const override { return mMode == Mode::D3D11Texture2D; }
-    bool SupportsConcurrentRead() const override { return !mUseKeyedMutex; }
+    bool SupportsConcurrentRead() const override { return true; }
 
     std::vector<wgpu::FeatureName> RequiredFeatures(const wgpu::Adapter& adapter) const override {
         switch (mMode) {
@@ -211,8 +211,8 @@ class Backend : public SharedTextureMemoryTestBackend {
             {DXGI_FORMAT_R8G8B8A8_UNORM},
             {DXGI_FORMAT_B8G8R8A8_UNORM},
             {DXGI_FORMAT_R10G10B10A2_UNORM},
-            {DXGI_FORMAT_R16G16_UNORM, wgpu::FeatureName::Norm16TextureFormats},
-            {DXGI_FORMAT_R16_UNORM, wgpu::FeatureName::Norm16TextureFormats},
+            {DXGI_FORMAT_R16G16_UNORM, wgpu::FeatureName::Unorm16TextureFormats},
+            {DXGI_FORMAT_R16_UNORM, wgpu::FeatureName::Unorm16TextureFormats},
             {DXGI_FORMAT_R8G8_UNORM},
             {DXGI_FORMAT_R8_UNORM},
         }};
@@ -275,6 +275,7 @@ class Backend : public SharedTextureMemoryTestBackend {
 
                         wgpu::SharedTextureMemoryDXGISharedHandleDescriptor sharedHandleDesc;
                         sharedHandleDesc.handle = sharedHandle;
+                        sharedHandleDesc.useKeyedMutex = mUseKeyedMutex;
 
                         std::string label = LabelName(f.format, size);
 

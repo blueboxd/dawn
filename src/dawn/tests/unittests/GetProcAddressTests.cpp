@@ -91,9 +91,13 @@ class GetProcAddressTests : public testing::TestWithParam<DawnFlavor> {
                 clientDesc.serializer = mC2sBuf.get();
                 mWireClient = std::make_unique<wire::WireClient>(clientDesc);
 
-                mDevice = wgpu::Device::Acquire(
-                    mWireClient->ReserveDevice(ToAPI(mNativeInstance.Get())).device);
+                // Note that currently we are passing a null device since we do not actually use the
+                // device in determining the resulting proc addresses. If/when we actually care
+                // about features on the device to determine a proc address, this should be updated
+                // accordingly.
+                mDevice = nullptr;
                 mProcs = wire::client::GetProcs();
+                mC2sBuf->SetHandler(mWireClient.get());
                 break;
             }
 
@@ -108,6 +112,9 @@ class GetProcAddressTests : public testing::TestWithParam<DawnFlavor> {
     void TearDown() override {
         // Destroy the device before freeing the instance or the wire client in the destructor
         mDevice = wgpu::Device();
+        if (mC2sBuf != nullptr) {
+            mC2sBuf->SetHandler(nullptr);
+        }
     }
 
   protected:

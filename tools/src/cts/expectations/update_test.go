@@ -85,18 +85,21 @@ some:other,test:* [ Failure ]
 				},
 			},
 			updated: `
+crbug.com/a/123 a:missing,test,result:* [ Failure ]
+crbug.com/a/123 [ tag ] another:missing,test,result:* [ Failure ]
+
 some:other,test:* [ Failure ]
 `,
 			diagnostics: expectations.Diagnostics{
 				{
-					Severity: expectations.Warning,
+					Severity: expectations.Note,
 					Line:     headerLines + 2,
-					Message:  "no results found for 'a:missing,test,result:*'",
+					Message:  "no results found for query 'a:missing,test,result:*'",
 				},
 				{
-					Severity: expectations.Warning,
+					Severity: expectations.Note,
 					Line:     headerLines + 3,
-					Message:  "no results found for 'another:missing,test,result:*' with tags [tag]",
+					Message:  "no results found for query 'another:missing,test,result:*' with tags [tag]",
 				},
 			},
 		},
@@ -121,13 +124,83 @@ some:other,test:* [ Failure ]
 				},
 			},
 			updated: `
+# KEEP
+crbug.com/a/123 a:missing,test,result:* [ Failure ]
+
+some:other,test:* [ Failure ]
+`,
+			diagnostics: expectations.Diagnostics{
+				{
+					Severity: expectations.Note,
+					Line:     headerLines + 3,
+					Message:  "no results found for query 'a:missing,test,result:*'",
+				},
+			},
+		},
+		{ //////////////////////////////////////////////////////////////////////
+			name: "unknown test",
+			expectations: `
+crbug.com/a/123 an:unknown,test:* [ Failure ]
+crbug.com/a/123 [ tag ] another:unknown:test [ Failure ]
+
+some:other,test:* [ Failure ]
+`,
+			results: result.List{
+				result.Result{
+					Query:  Q("some:other,test:*"),
+					Tags:   result.NewTags("os-a", "gpu-a"),
+					Status: result.Failure,
+				},
+				result.Result{
+					Query:  Q("some:other,test:*"),
+					Tags:   result.NewTags("os-b", "gpu-b"),
+					Status: result.Failure,
+				},
+			},
+			updated: `
+some:other,test:* [ Failure ]
+`,
+			diagnostics: expectations.Diagnostics{
+				{
+					Severity: expectations.Warning,
+					Line:     headerLines + 2,
+					Message:  "no tests exist with query 'an:unknown,test:*' - removing",
+				},
+				{
+					Severity: expectations.Warning,
+					Line:     headerLines + 3,
+					Message:  "no tests exist with query 'another:unknown:test' - removing",
+				},
+			},
+		},
+		{ //////////////////////////////////////////////////////////////////////
+			name: "unknown test found KEEP",
+			expectations: `
+# KEEP
+crbug.com/a/123 an:unknown,test:* [ Failure ]
+
+some:other,test:* [ Failure ]
+`,
+			results: result.List{
+				result.Result{
+					Query:  Q("some:other,test:*"),
+					Tags:   result.NewTags("os-a", "gpu-a"),
+					Status: result.Failure,
+				},
+				result.Result{
+					Query:  Q("some:other,test:*"),
+					Tags:   result.NewTags("os-b", "gpu-b"),
+					Status: result.Failure,
+				},
+			},
+			updated: `
 some:other,test:* [ Failure ]
 `,
 			diagnostics: expectations.Diagnostics{
 				{
 					Severity: expectations.Warning,
 					Line:     headerLines + 3,
-					Message:  "no results found for 'a:missing,test,result:*'",
+					Message:  "no tests exist with query 'an:unknown,test:*' - removing",
 				},
 			},
 		},
@@ -367,16 +440,16 @@ crbug.com/a/123 a:b,c:d:* [ Failure ]
 ################################################################################
 # New flakes. Please triage:
 ################################################################################
-crbug.com/dawn/0000 [ gpu-b os-b ] suite:dir_a,dir_b:test_c:case=5;* [ RetryOnFailure ]
 crbug.com/dawn/0000 [ gpu-a os-a ] suite:dir_a,dir_b:test_c:case=6;* [ RetryOnFailure ]
+crbug.com/dawn/0000 [ gpu-b os-b ] suite:dir_a,dir_b:test_c:case=5;* [ RetryOnFailure ]
 
 ################################################################################
 # New failures. Please triage:
 ################################################################################
-crbug.com/dawn/0000 [ gpu-b os-a ] suite:* [ Failure ]
 crbug.com/dawn/0000 [ gpu-a os-a ] suite:dir_a,dir_b:test_a:* [ Failure ]
 crbug.com/dawn/0000 [ gpu-a os-a ] suite:dir_a,dir_b:test_b:* [ Slow ]
 crbug.com/dawn/0000 [ gpu-a os-a ] suite:dir_a,dir_b:test_c:case=4;* [ Failure ]
+crbug.com/dawn/0000 [ gpu-b os-a ] suite:* [ Failure ]
 crbug.com/dawn/0000 [ gpu-b os-b ] suite:dir_a,dir_b:test_c:case=4;* [ Failure ]
 `,
 		},
@@ -491,8 +564,8 @@ crbug.com/dawn/0000 [ os-b ] a:* [ Failure ]
 ################################################################################
 # New failures. Please triage:
 ################################################################################
-crbug.com/dawn/0000 [ gpu-c os-b ] a:* [ Failure ]
 crbug.com/dawn/0000 [ gpu-b os-c ] a:* [ Failure ]
+crbug.com/dawn/0000 [ gpu-c os-b ] a:* [ Failure ]
 `,
 		},
 		{ //////////////////////////////////////////////////////////////////////
@@ -645,6 +718,12 @@ crbug.com/dawn/0000 a:b,c:29:* [ Failure ]
 		testList := container.NewMap[string, query.Query]()
 		for _, r := range test.results {
 			testList.Add(r.Query.String(), r.Query)
+		}
+		for _, s := range []string{
+			"a:missing,test,result:a=1,b=2",
+			"another:missing,test,result:cat=meow,dog=woof",
+		} {
+			testList.Add(s, query.Parse(s))
 		}
 
 		errMsg := ""
