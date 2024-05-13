@@ -344,7 +344,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         {
             bool haveStoreAndMSAAResolve = false;
 #if DAWN_PLATFORM_IS(MACOS)
-            haveStoreAndMSAAResolve = [*mDevice supportsFamily:MTLGPUFamilyCommon2];
+            haveStoreAndMSAAResolve = (@available(macOS 10.15, *)) && [*mDevice supportsFamily:MTLGPUFamilyCommon2];
 #elif DAWN_PLATFORM_IS(IOS)
 #if !defined(__IPHONE_16_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_16_0
             haveStoreAndMSAAResolve = [*mDevice supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v2];
@@ -487,8 +487,10 @@ class PhysicalDevice : public PhysicalDeviceBase {
             EnableFeature(Feature::Float32Filterable);
         }
 #elif DAWN_PLATFORM_IS(MACOS)
-        if ([*mDevice supportsFamily:MTLGPUFamilyMac2]) {
-            EnableFeature(Feature::Float32Filterable);
+        if (@available(macOS 10.15, *)) {
+            if ([*mDevice supportsFamily:MTLGPUFamilyMac2]) {
+                EnableFeature(Feature::Float32Filterable);
+            }
         }
 #endif
 
@@ -939,7 +941,8 @@ class PhysicalDevice : public PhysicalDeviceBase {
 
     void PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const override {
         if (auto* memoryHeapProperties = properties.Get<AdapterPropertiesMemoryHeaps>()) {
-            if ([*mDevice hasUnifiedMemory]) {
+            if ([*mDevice respondsToSelector:@selector(hasUnifiedMemory)] &&
+                [*mDevice hasUnifiedMemory]) {
                 auto* heapInfo = new MemoryHeapInfo[1];
                 memoryHeapProperties->heapCount = 1;
                 memoryHeapProperties->heapInfo = heapInfo;
