@@ -27,7 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import json, os, sys
-from collections import namedtuple, defaultdict
+from collections import namedtuple
 
 from generator_lib import Generator, run_generator, FileRender
 
@@ -159,6 +159,14 @@ class BitmaskType(Type):
         for value in self.values:
             self.full_mask = self.full_mask | value.value
         self.is_wire_transparent = True
+
+
+class CallbackFunctionType(Type):
+
+    def __init__(self, is_enabled, name, json_data):
+        Type.__init__(self, name, json_data)
+        self.return_type = None
+        self.arguments = []
 
 
 class FunctionPointerType(Type):
@@ -321,12 +329,14 @@ class StructureType(Record, Type):
         return any(member.requires_struct_defaulting
                    for member in self.members)
 
-    @property
-    # Returns True if the structure can be created with no parameters, e.g. all of its members have
-    # defaults or are optional,
-    def has_basic_constructor(self):
-        return all((member.optional or member.default_value)
-                   for member in self.members)
+
+
+class CallbackInfoType(StructureType):
+
+    def __init__(self, is_enabled, name, json_data):
+        StructureType.__init__(self, is_enabled, name, json_data)
+        self.extensible = 'in'
+
 
 class ConstantDefinition():
     def __init__(self, is_enabled, name, json_data):
@@ -502,6 +512,8 @@ def parse_json(json, enabled_tags, disabled_tags=None):
             disabled_tags, json_data)
     category_to_parser = {
         'bitmask': BitmaskType,
+        'callback function': CallbackFunctionType,
+        'callback info': CallbackInfoType,
         'enum': EnumType,
         'native': NativeType,
         'function pointer': FunctionPointerType,
@@ -548,6 +560,12 @@ def parse_json(json, enabled_tags, disabled_tags=None):
                 no_cpp=True)
             types[name] = func_decl
             by_category['function'].append(func_decl)
+
+    for callback_info in by_category['callback info']:
+        link_structure(callback_info, types)
+
+    for callback_function in by_category['callback function']:
+        link_function_pointer(callback_function, types)
 
     for function_pointer in by_category['function pointer']:
         link_function_pointer(function_pointer, types)
@@ -765,36 +783,6 @@ def unreachable_code():
     assert False
 
 
-############################################################
-# KOTLIN STUFF
-############################################################
-
-
-def compute_kotlin_params(loaded_json):
-    params_kotlin = parse_json(loaded_json, enabled_tags=['art'])
-    by_category = params_kotlin['by_category']
-
-    # The 'length' members are removed as Kotlin can infer that from the container.
-    # 'length' members are identified when some *other* member specifies its name as the
-    # length parameter.
-    for structure in by_category['structure']:
-        structure.members = [
-            member for member in structure.members
-            if member.type.name.get() not in ['void *', 'void const *'] and
-            not [1 for other in structure.members if other.length == member]
-        ]
-
-    # A structure may need to know which other structures listed it as a chain root, e.g.
-    # to know whether to mark the generated class 'open'.
-    chain_children = defaultdict(list)
-    for structure in by_category['structure']:
-        for chain_root in structure.chain_roots:
-            chain_children[chain_root.name.get()].append(structure)
-    params_kotlin['chain_children'] = chain_children
-    params_kotlin['unreachable_code'] = unreachable_code
-    return params_kotlin
-
-
 #############################################################
 # Generator
 #############################################################
@@ -937,15 +925,6 @@ def as_wireType(metadata, typ):
         return as_cppType(typ.name)
 
 
-def as_formatType(typ):
-    # Unsigned integral types
-    if typ.json_data['type'] in ['bool', 'uint32_t', 'uint64_t']:
-        return 'u'
-
-    # Defaults everything else to strings.
-    return 's'
-
-
 def c_methods(params, typ):
     return typ.methods + [
         # TODO(dawn:2234): Deprecated. Remove when no longer used.
@@ -965,9 +944,25 @@ def has_callback_arguments(method):
     return any(arg.type.category == 'function pointer' for arg in method.arguments)
 
 
+# TODO: crbug.com/dawn/2509 - Remove this helper when once we deprecate older APIs.
 def has_callback_info(method):
     return method.return_type.name.get() == 'future' and any(
-        arg.name.get() == 'callback info' for arg in method.arguments)
+        arg.name.get() == 'callback info'
+        and arg.type.category != 'callback info' for arg in method.arguments)
+
+
+def has_callbackInfoStruct(method):
+    return any(arg.type.category == 'callback info'
+               for arg in method.arguments)
+
+
+def is_wire_serializable(type):
+    # Function pointers, callback functions, and "void *" types (i.e. userdata) cannot
+    # be serialized.
+    return (type.category != 'function pointer'
+            and type.category != 'callback function'
+            and type.name.get() != 'void *')
+
 
 def make_base_render_params(metadata):
     c_prefix = metadata.c_prefix
@@ -1024,8 +1019,8 @@ def make_base_render_params(metadata):
             'convert_cType_to_cppType': convert_cType_to_cppType,
             'as_varName': as_varName,
             'decorate': decorate,
-            'as_formatType': as_formatType,
             'as_ktName': as_ktName,
+            'has_callbackInfoStruct': has_callbackInfoStruct,
         }
 
 
@@ -1283,6 +1278,7 @@ class MultiGeneratorFromDawnJSON(Generator):
                     'as_wireType': lambda type : as_wireType(metadata, type),
                     'as_annotated_wireType': \
                         lambda arg: annotated(as_wireType(metadata, arg.type), arg),
+                    'is_wire_serializable': lambda type : is_wire_serializable(type),
                 }, additional_params
             ]
             renders.append(
@@ -1401,18 +1397,8 @@ class MultiGeneratorFromDawnJSON(Generator):
                     lpm_params))
 
         if 'kotlin' in targets:
-            params_kotlin = compute_kotlin_params(loaded_json)
-            by_category = params_kotlin['by_category']
-            for structure in by_category['structure']:
-                renders.append(
-                    FileRender(
-                        'art/api_kotlin_structure.kt',
-                        'java/' + metadata.kotlin_path + '/' +
-                        structure.name.CamelCase() + '.kt', [
-                            RENDER_PARAMS_BASE, params_kotlin, {
-                                'structure': structure
-                            }
-                        ]))
+            params_kotlin = parse_json(loaded_json,
+                                       enabled_tags=['dawn', 'native'])
 
             for enum in (params_kotlin['by_category']['bitmask'] +
                          params_kotlin['by_category']['enum']):

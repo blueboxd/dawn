@@ -81,6 +81,14 @@
             {"name": "userdata", "type": "void *"}
         ]
     },
+    "request adapter callback 2": {
+        "category": "callback function",
+        "args": [
+            {"name": "status", "type": "request adapter status"},
+            {"name": "adapter", "type": "adapter", "optional": true},
+            {"name": "message", "type": "char", "annotation": "const*", "length": "strlen", "optional": true}
+        ]
+    },
     "request adapter callback info": {
          "category": "structure",
          "extensible": "in",
@@ -90,6 +98,12 @@
             {"name": "userdata", "type": "void *"}
          ]
     },
+    "request adapter callback info 2": {
+        "category": "callback info",
+        "members": [
+           {"name": "callback", "type": "request adapter callback 2"}
+        ]
+   },
     "request adapter status": {
         "category": "enum",
         "emscripten_no_enum_table": true,
@@ -1577,7 +1591,7 @@
         "category": "structure",
         "extensible": "in",
         "members": [
-            {"name": "mode", "type": "callback mode"},
+            {"name": "mode", "type": "callback mode", "default": "wait any only"},
             {"name": "callback", "type": "pop error scope callback"},
             {"name": "old callback", "type": "error callback", "_comment": "TODO(crbug.com/dawn/2021) Deprecate this field once we have moved callers to use the new callback signature."},
             {"name": "userdata", "type": "void *", "default": "nullptr"}
@@ -2324,7 +2338,6 @@
     },
     "image copy buffer": {
         "category": "structure",
-        "extensible": "in",
         "members": [
             {"name": "layout", "type": "texture data layout"},
             {"name": "buffer", "type": "buffer"}
@@ -2332,7 +2345,6 @@
     },
     "image copy texture": {
         "category": "structure",
-        "extensible": "in",
         "members": [
             {"name": "texture", "type": "texture"},
             {"name": "mip level", "type": "uint32_t", "default": "0"},
@@ -2400,6 +2412,16 @@
                 ]
             },
             {
+                "name": "request adapter 2",
+                "_comment": "TODO(crbug.com/dawn/2021): This is dawn/emscripten-only until we rename it to replace the old API. See bug for details.",
+                "tags": ["dawn", "emscripten"],
+                "returns": "future",
+                "args": [
+                    {"name": "options", "type": "request adapter options", "annotation": "const*", "optional": true, "no_default": true},
+                    {"name": "callback info", "type": "request adapter callback info 2"}
+                ]
+            },
+            {
                 "name": "has WGSL language feature",
                 "returns": "bool",
                 "args": [
@@ -2418,11 +2440,10 @@
     "callback mode": {
         "category": "enum",
         "emscripten_no_enum_table": true,
-        "_comment": "TODO(crbug.com/dawn/2458): Should this be renumbered to reserve 0?",
         "values": [
-            {"value": 0, "name": "wait any only"},
-            {"value": 1, "name": "allow process events"},
-            {"value": 2, "name": "allow spontaneous"}
+            {"value": 1, "name": "wait any only"},
+            {"value": 2, "name": "allow process events"},
+            {"value": 3, "name": "allow spontaneous"}
         ]
     },
     "future": {
@@ -3753,7 +3774,7 @@
             {"value": 1214, "name": "shared fence MTL shared event export info", "tags": ["dawn", "native"]},
             {"value": 1215, "name": "shared buffer memory D3D12 resource descriptor", "tags": ["dawn", "native"]},
             {"value": 1216, "name": "static sampler binding layout", "tags": ["dawn"]},
-            {"value": 1217, "name": "y cb cr vulkan descriptor", "tags": ["dawn", "native"]}
+            {"value": 1217, "name": "y cb cr vk descriptor", "tags": ["dawn"]}
         ]
     },
     "texture": {
@@ -4056,6 +4077,26 @@
             {"value": 4, "name": "cube"},
             {"value": 5, "name": "cube array"},
             {"value": 6, "name": "3D"}
+        ]
+    },
+    "y cb cr vk descriptor": {
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["sampler descriptor", "texture view descriptor"],
+        "tags": ["dawn"],
+        "members": [
+            {"name": "vk format", "type": "uint32_t", "default": "0"},
+            {"name": "vk y cb cr model", "type": "uint32_t", "default": "0"},
+            {"name": "vk y cb cr range", "type": "uint32_t", "default": "0"},
+            {"name": "vk component swizzle red", "type": "uint32_t", "default": "0"},
+            {"name": "vk component swizzle green", "type": "uint32_t", "default": "0"},
+            {"name": "vk component swizzle blue", "type": "uint32_t", "default": "0"},
+            {"name": "vk component swizzle alpha", "type": "uint32_t", "default": "0"},
+            {"name": "vk x chroma offset", "type": "uint32_t", "default": "0"},
+            {"name": "vk y chroma offset", "type": "uint32_t", "default": "0"},
+            {"name": "vk chroma filter", "type": "uint32_t", "default": "0"},
+            {"name": "force explicit reconstruction", "type": "bool", "default": "false"},
+            {"name": "external format", "type": "uint64_t", "default": "0"}
         ]
     },
     "vertex format": {

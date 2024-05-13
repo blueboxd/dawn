@@ -229,7 +229,6 @@ MaybeError InstanceBase::Initialize(const UnpackedPtr<InstanceDescriptor>& descr
 
         mBackendValidationLevel = dawnDesc->backendValidationLevel;
         mBeginCaptureOnStartup = dawnDesc->beginCaptureOnStartup;
-        mEnableAdapterBlocklist = dawnDesc->enableAdapterBlocklist;
 
         mLoggingCallback = dawnDesc->loggingCallback;
         mLoggingCallbackUserdata = dawnDesc->loggingCallbackUserdata;
@@ -282,16 +281,31 @@ void InstanceBase::APIRequestAdapter(const RequestAdapterOptions* options,
 
 Future InstanceBase::APIRequestAdapterF(const RequestAdapterOptions* options,
                                         const RequestAdapterCallbackInfo& callbackInfo) {
+    return APIRequestAdapter2(
+        options, {nullptr, ToAPI(callbackInfo.mode),
+                  [](WGPURequestAdapterStatus status, WGPUAdapter adapter, char const* message,
+                     void* callback, void* userdata) {
+                      auto cb = reinterpret_cast<WGPURequestAdapterCallback>(callback);
+                      cb(status, adapter, message, userdata);
+                  },
+                  reinterpret_cast<void*>(callbackInfo.callback), callbackInfo.userdata});
+}
+
+Future InstanceBase::APIRequestAdapter2(const RequestAdapterOptions* options,
+                                        const WGPURequestAdapterCallbackInfo2& callbackInfo) {
     struct RequestAdapterEvent final : public EventManager::TrackedEvent {
-        WGPURequestAdapterCallback mCallback;
-        raw_ptr<void> mUserdata;
+        WGPURequestAdapterCallback2 mCallback;
+        raw_ptr<void> mUserdata1;
+        raw_ptr<void> mUserdata2;
         Ref<AdapterBase> mAdapter;
 
-        RequestAdapterEvent(const RequestAdapterCallbackInfo& callbackInfo,
+        RequestAdapterEvent(const WGPURequestAdapterCallbackInfo2& callbackInfo,
                             Ref<AdapterBase> adapter)
-            : TrackedEvent(callbackInfo.mode, TrackedEvent::Completed{}),
+            : TrackedEvent(static_cast<wgpu::CallbackMode>(callbackInfo.mode),
+                           TrackedEvent::Completed{}),
               mCallback(callbackInfo.callback),
-              mUserdata(callbackInfo.userdata),
+              mUserdata1(callbackInfo.userdata1),
+              mUserdata2(callbackInfo.userdata2),
               mAdapter(std::move(adapter)) {}
 
         ~RequestAdapterEvent() override { EnsureComplete(EventCompletionType::Shutdown); }
@@ -299,17 +313,17 @@ Future InstanceBase::APIRequestAdapterF(const RequestAdapterOptions* options,
         void Complete(EventCompletionType completionType) override {
             if (completionType == EventCompletionType::Shutdown) {
                 mCallback(WGPURequestAdapterStatus_InstanceDropped, nullptr, nullptr,
-                          mUserdata.ExtractAsDangling());
+                          mUserdata1.ExtractAsDangling(), mUserdata2.ExtractAsDangling());
                 return;
             }
 
             WGPUAdapter adapter = ToAPI(ReturnToAPI(std::move(mAdapter)));
             if (adapter == nullptr) {
                 mCallback(WGPURequestAdapterStatus_Unavailable, nullptr, "No supported adapters",
-                          mUserdata.ExtractAsDangling());
+                          mUserdata1.ExtractAsDangling(), mUserdata2.ExtractAsDangling());
             } else {
                 mCallback(WGPURequestAdapterStatus_Success, adapter, nullptr,
-                          mUserdata.ExtractAsDangling());
+                          mUserdata1.ExtractAsDangling(), mUserdata2.ExtractAsDangling());
             }
         }
     };
@@ -357,7 +371,8 @@ std::vector<Ref<AdapterBase>> InstanceBase::EnumerateAdapters(
     const RequestAdapterOptions* options) {
     static constexpr RequestAdapterOptions kDefaultOptions = {};
     if (options == nullptr) {
-        // Default path that returns all WebGPU core adapters on the system with default toggles.
+        // Default path that returns all WebGPU core adapters on the system with default
+        // toggles.
         return EnumerateAdapters(&kDefaultOptions);
     }
 
@@ -509,14 +524,6 @@ bool InstanceBase::IsBeginCaptureOnStartupEnabled() const {
     return mBeginCaptureOnStartup;
 }
 
-void InstanceBase::EnableAdapterBlocklist(bool enable) {
-    mEnableAdapterBlocklist = enable;
-}
-
-bool InstanceBase::IsAdapterBlocklistEnabled() const {
-    return mEnableAdapterBlocklist;
-}
-
 void InstanceBase::SetPlatform(dawn::platform::Platform* platform) {
     if (platform == nullptr) {
         mPlatform = mDefaultPlatform.get();
@@ -627,7 +634,7 @@ Surface* InstanceBase::APICreateSurface(const SurfaceDescriptor* descriptor) {
     return ReturnToAPI(AcquireRef(new Surface(this, unpacked)));
 }
 
-const std::unordered_set<tint::wgsl::LanguageFeature>&
+const absl::flat_hash_set<tint::wgsl::LanguageFeature>&
 InstanceBase::GetAllowedWGSLLanguageFeatures() const {
     return mTintLanguageFeatures;
 }

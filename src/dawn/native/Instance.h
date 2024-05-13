@@ -32,7 +32,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
@@ -82,6 +81,8 @@ class InstanceBase final : public ErrorSink, public RefCountedWithExternalCount 
                            void* userdata);
     Future APIRequestAdapterF(const RequestAdapterOptions* options,
                               const RequestAdapterCallbackInfo& callbackInfo);
+    Future APIRequestAdapter2(const RequestAdapterOptions* options,
+                              const WGPURequestAdapterCallbackInfo2& callbackInfo);
 
     // Discovers and returns a vector of adapters.
     // All systems adapters that can be found are returned if no options are passed.
@@ -105,7 +106,7 @@ class InstanceBase final : public ErrorSink, public RefCountedWithExternalCount 
     }
 
     const TogglesState& GetTogglesState() const;
-    const std::unordered_set<tint::wgsl::LanguageFeature>& GetAllowedWGSLLanguageFeatures() const;
+    const absl::flat_hash_set<tint::wgsl::LanguageFeature>& GetAllowedWGSLLanguageFeatures() const;
 
     // Used to query the details of a toggle. Return nullptr if toggleName is not a valid name
     // of a toggle supported in Dawn.
@@ -121,11 +122,6 @@ class InstanceBase final : public ErrorSink, public RefCountedWithExternalCount 
 
     void EnableBeginCaptureOnStartup(bool beginCaptureOnStartup);
     bool IsBeginCaptureOnStartupEnabled() const;
-
-    // TODO(crbug.com/dawn/1495): Move this to a Toggle, perhaps on RequestAdapterOptions
-    // after Toggle refactor is complete.
-    void EnableAdapterBlocklist(bool enable);
-    bool IsAdapterBlocklistEnabled() const;
 
     // Testing only API that is NOT thread-safe.
     void SetPlatformForTesting(dawn::platform::Platform* platform);
@@ -200,7 +196,6 @@ class InstanceBase final : public ErrorSink, public RefCountedWithExternalCount 
     std::vector<std::string> mRuntimeSearchPaths;
 
     bool mBeginCaptureOnStartup = false;
-    bool mEnableAdapterBlocklist = false;
     BackendValidationLevel mBackendValidationLevel = BackendValidationLevel::Disabled;
 
     wgpu::LoggingCallback mLoggingCallback = nullptr;
@@ -216,8 +211,7 @@ class InstanceBase final : public ErrorSink, public RefCountedWithExternalCount 
     TogglesInfo mTogglesInfo;
 
     absl::flat_hash_set<wgpu::WGSLFeatureName> mWGSLFeatures;
-    // TODO(dawn:1513): Use absl::flat_hash_set after it is supported in Tint.
-    std::unordered_set<tint::wgsl::LanguageFeature> mTintLanguageFeatures;
+    absl::flat_hash_set<tint::wgsl::LanguageFeature> mTintLanguageFeatures;
 
 #if defined(DAWN_USE_X11)
     std::unique_ptr<X11Functions> mX11Functions;

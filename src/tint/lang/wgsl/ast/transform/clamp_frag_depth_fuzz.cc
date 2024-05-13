@@ -27,13 +27,19 @@
 
 #include "src/tint/cmd/fuzz/wgsl/fuzz.h"
 #include "src/tint/lang/wgsl/ast/transform/clamp_frag_depth.h"
+#include "src/tint/lang/wgsl/program/program.h"
 
 namespace tint::ast::transform {
 namespace {
 
 bool CanRun(const ClampFragDepth::Config& config) {
-    if (config.offsets && config.offsets->min == config.offsets->max) {
-        return false;  // member offset collision
+    if (config.offsets) {
+        if (config.offsets->min >= config.offsets->max) {
+            return false;  // member offset collision / non-ascending
+        }
+        if ((config.offsets->min & 3) != 0 || (config.offsets->max & 3) != 0) {
+            return false;  // Offsets need 4-byte alignment.
+        }
     }
     return true;
 }
@@ -49,7 +55,9 @@ void ClampFragDepthFuzzer(const Program& program, const ClampFragDepth::Config& 
     DataMap outputs;
     if (auto result = ClampFragDepth{}.Apply(program, inputs, outputs)) {
         if (!result->IsValid()) {
-            TINT_ICE() << "ClampFragDepth returned invalid program:\n" << result->Diagnostics();
+            TINT_ICE() << "ClampFragDepth returned invalid program:\n"
+                       << Program::printer(*result) << "\n"
+                       << result->Diagnostics();
         }
     }
 }

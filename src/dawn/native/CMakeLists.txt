@@ -261,6 +261,7 @@ target_link_libraries(dawn_native
             absl_str_format_internal
             absl_flat_hash_map
             absl_flat_hash_set
+            absl_inlined_vector
 )
 
 target_include_directories(dawn_native PRIVATE ${DAWN_ABSEIL_DIR})
@@ -581,6 +582,7 @@ if (DAWN_ENABLE_OPENGL)
         "opengl/BindGroupGL.h"
         "opengl/BindGroupLayoutGL.cpp"
         "opengl/BindGroupLayoutGL.h"
+        "opengl/BindingPoint.h"
         "opengl/BufferGL.cpp"
         "opengl/BufferGL.h"
         "opengl/CommandBufferGL.cpp"

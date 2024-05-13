@@ -31,9 +31,9 @@ group("samples") {
   deps = [
     ":Animometer",
     ":ComputeBoids",
-    ":CppHelloTriangle",
     ":DawnInfo",
-    ":ManualSwapChainTest",
+    ":HelloTriangle",
+    ":ManualSurfaceTest",
   ]
 }
 
@@ -51,9 +51,7 @@ static_library("utils") {
     "${dawn_root}/src/dawn/glfw",
     "${dawn_root}/src/dawn/native",
     "${dawn_root}/src/dawn/utils",
-    "${dawn_root}/src/dawn/wire",
   ]
-  public_configs = [ "${dawn_root}/src/dawn/common:internal_config" ]
 }
 
 # Template for samples to avoid listing utils as a dep every time
@@ -68,8 +66,8 @@ template("sample") {
   }
 }
 
-sample("CppHelloTriangle") {
-  sources = [ "CppHelloTriangle.cpp" ]
+sample("HelloTriangle") {
+  sources = [ "HelloTriangle.cpp" ]
 }
 
 sample("ComputeBoids") {
@@ -80,8 +78,8 @@ sample("Animometer") {
   sources = [ "Animometer.cpp" ]
 }
 
-sample("ManualSwapChainTest") {
-  sources = [ "ManualSwapChainTest.cpp" ]
+sample("ManualSurfaceTest") {
+  sources = [ "ManualSurfaceTest.cpp" ]
 }
 
 sample("DawnInfo") {

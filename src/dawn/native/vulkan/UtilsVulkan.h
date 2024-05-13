@@ -68,6 +68,11 @@ struct VulkanFunctions;
 //     featuresChain.Add(&featuresExtensions.subgroupSizeControl,
 //                       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES_EXT);
 //
+// Note:
+//   The build option `use_asan_unowned_ptr` checks the pointer to the current
+//   tail it is not dangling. So every structs in the chain must be declared
+//   before `PNextChainBuilder`.
+//
 struct PNextChainBuilder : public StackAllocated {
     // Constructor takes the address of a Vulkan structure instance, and
     // walks its pNext chain to record the current location of its tail.
@@ -179,8 +184,9 @@ ResultOrError<VkDrmFormatModifierPropertiesEXT> GetFormatModifierProps(
     VkFormat format,
     uint64_t modifier);
 
-MaybeError ValidateCanCreateSamplerYCbCrConversion(
-    const VkSamplerYcbcrConversionCreateInfo& vulkanYCbCrInfo);
+ResultOrError<VkSamplerYcbcrConversion> CreateSamplerYCbCrConversionCreateInfo(
+    YCbCrVkDescriptor yCbCrDescriptor,
+    Device* device);
 
 }  // namespace dawn::native::vulkan
 

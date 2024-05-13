@@ -82,13 +82,15 @@ function(tint_default_compile_options TARGET)
 
   set(COMMON_GNU_OPTIONS
     -Wall
-    -Werror
     -Wextra
     -Wno-documentation-unknown-command
     -Wno-padded
     -Wno-switch-enum
     -Wno-unknown-pragmas
   )
+  if (${DAWN_WERROR})
+      list(APPEND COMMON_GNU_OPTIONS -Werror)
+  endif()
 
   set(COMMON_CLANG_OPTIONS
     -Wno-c++98-compat
@@ -130,7 +132,6 @@ function(tint_default_compile_options TARGET)
       /bigobj
       /EHsc
       /W4
-      /WX
       /wd4068 # unknown pragma
       /wd4127 # conditional expression is constant
       /wd4244 # 'conversion' conversion from 'type1' to 'type2', possible loss of data
@@ -148,10 +149,19 @@ function(tint_default_compile_options TARGET)
       /wd5026 # 'type': move constructor was implicitly defined as deleted
       /wd5027 # 'type': move assignment operator was implicitly defined as deleted
     )
+    if (${DAWN_WERROR})
+      target_compile_options(${TARGET} PRIVATE /WX)
+    endif()
 
-    # When building with clang-cl on Windows, try to match our clang build
-    # options as much as possible.
+    # Some versions of MSVC ignores the [[noreturn]] on ~InternalCompilerError(), triggering a
+    # warning if its the last statement on a function that has a return value.
+    target_compile_options(${TARGET} PRIVATE
+      /wd4715 # not all control paths return a value
+    )
+
     if(COMPILER_IS_CLANG_CL)
+      # When building with clang-cl on Windows, try to match our clang build
+      # options as much as possible.
       target_compile_options(${TARGET} PRIVATE
         ${COMMON_GNU_OPTIONS}
         ${COMMON_CLANG_OPTIONS}
@@ -165,6 +175,14 @@ function(tint_default_compile_options TARGET)
         -Wno-reserved-id-macro
         -Wno-language-extension-token
       )
+    else()
+      if(NOT $CMAKE_BUILD_TYPE STREQUAL "Debug")
+        # MSVC sometimes warns code is unreachable after inlining of code, which
+        # is impossible to silence with pragmas.
+        target_compile_options(${TARGET} PRIVATE
+          /wd4702 # unreachable code
+        )
+      endif()
     endif()
   endif()
 
@@ -223,6 +241,7 @@ endfunction()
 
 function(tint_bench_compile_options TARGET)
   tint_core_compile_options(${TARGET})
+  set_target_properties(${TARGET} PROPERTIES FOLDER "Benchmarks")
 endfunction()
 
 function(tint_fuzz_compile_options TARGET)
@@ -501,6 +520,8 @@ function(tint_target_add_external_dependencies TARGET KIND)
       target_link_libraries(${TARGET} PRIVATE
         absl_strings
       )
+    elseif(${DEPENDENCY} STREQUAL "dl")
+      target_link_libraries(${TARGET} PRIVATE ${CMAKE_DL_LIBS})
     elseif(${DEPENDENCY} STREQUAL "dxc-include")
       target_include_directories(${TARGET} PRIVATE "${DAWN_THIRD_PARTY_DIR}/dxc/include")
     elseif(${DEPENDENCY} STREQUAL "jsoncpp")

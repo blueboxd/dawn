@@ -53,7 +53,6 @@ target_sources(dawn_common PRIVATE
     "Assert.h"
     "BitSetIterator.h"
     "Compiler.h"
-    "ConcurrentCache.h"
     "Constants.h"
     "ContentLessObjectCache.h"
     "ContentLessObjectCacheable.h"
@@ -61,6 +60,7 @@ target_sources(dawn_common PRIVATE
     "DynamicLib.cpp"
     "DynamicLib.h"
     "Enumerator.h"
+    "FutureUtils.cpp"
     "FutureUtils.h"
     "GPUInfo.cpp"
     "GPUInfo.h"
@@ -77,6 +77,7 @@ target_sources(dawn_common PRIVATE
     "MutexProtected.h"
     "NSRef.h"
     "NonCopyable.h"
+    "NonMovable.h"
     "Numeric.h"
     "PlacementAllocated.h"
     "Platform.h"
@@ -93,12 +94,13 @@ target_sources(dawn_common PRIVATE
     "SerialStorage.h"
     "SlabAllocator.cpp"
     "SlabAllocator.h"
-    "StackContainer.h"
+    "StackAllocated.h"
     "SystemUtils.cpp"
     "SystemUtils.h"
     "TypeTraits.h"
     "TypedInteger.h"
     "UnderlyingType.h"
+    "WGSLFeatureMapping.h"
     "WeakRef.h"
     "WeakRefSupport.cpp"
     "WeakRefSupport.h"
@@ -128,6 +130,7 @@ endif()
 target_link_libraries(dawn_common
     PUBLIC dawncpp_headers
     PUBLIC partition_alloc
+    PRIVATE absl_inlined_vector
     PRIVATE dawn_internal_config
 )
 

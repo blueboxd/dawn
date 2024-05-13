@@ -155,7 +155,7 @@ IOSurfaceRef SharedTextureMemory::GetIOSurface() const {
     return mIOSurface.Get();
 }
 
-const StackVector<NSPRef<id<MTLTexture>>, kMaxPlanesPerFormat>&
+const absl::InlinedVector<NSPRef<id<MTLTexture>>, kMaxPlanesPerFormat>&
 SharedTextureMemory::GetMtlPlaneTextures() const {
     return mMtlPlaneTextures;
 }
@@ -203,24 +203,11 @@ ResultOrError<FenceAndSignalValue> SharedTextureMemory::EndAccessImpl(
     DAWN_INVALID_IF(!GetDevice()->HasFeature(Feature::SharedFenceMTLSharedEvent),
                     "Required feature (%s) is missing.",
                     wgpu::FeatureName::SharedFenceMTLSharedEvent);
-
-    if (@available(macOS 10.14, iOS 12.0, *)) {
-        ExternalImageIOSurfaceEndAccessDescriptor oldEndAccessDesc;
-        ToBackend(GetDevice()->GetQueue())->ExportLastSignaledEvent(&oldEndAccessDesc);
-
-        SharedFenceMTLSharedEventDescriptor newDesc;
-        newDesc.sharedEvent = oldEndAccessDesc.sharedEvent;
-
-        Ref<SharedFence> fence;
-        DAWN_TRY_ASSIGN(fence, SharedFence::Create(ToBackend(GetDevice()),
-                                                   "Internal MTLSharedEvent", &newDesc));
-
-        return FenceAndSignalValue{
-            std::move(fence),
-            static_cast<uint64_t>(
-                texture->GetSharedResourceMemoryContents()->GetLastUsageSerial())};
-    }
-    DAWN_UNREACHABLE();
+    Ref<SharedFence> fence;
+    DAWN_TRY_ASSIGN(fence, ToBackend(GetDevice()->GetQueue())->GetOrCreateSharedFence());
+    return FenceAndSignalValue{
+        std::move(fence),
+        static_cast<uint64_t>(texture->GetSharedResourceMemoryContents()->GetLastUsageSerial())};
 }
 
 MaybeError SharedTextureMemory::CreateMtlTextures() {
@@ -253,7 +240,7 @@ MaybeError SharedTextureMemory::CreateMtlTextures() {
 
         mMtlUsage = mtlDesc.usage;
         mMtlFormat = mtlDesc.pixelFormat;
-        mMtlPlaneTextures->resize(1);
+        mMtlPlaneTextures.resize(1);
         mMtlPlaneTextures[0] =
             AcquireNSPRef([device->GetMTLDevice() newTextureWithDescriptor:mtlDesc
                                                                  iosurface:mIOSurface.Get()
@@ -263,7 +250,7 @@ MaybeError SharedTextureMemory::CreateMtlTextures() {
         // Multiplanar format doesn't have equivalent MTLPixelFormat so just set it to invalid.
         mMtlFormat = MTLPixelFormatInvalid;
         const size_t numPlanes = IOSurfaceGetPlaneCount(mIOSurface.Get());
-        mMtlPlaneTextures->resize(numPlanes);
+        mMtlPlaneTextures.resize(numPlanes);
         for (size_t plane = 0; plane < numPlanes; ++plane) {
             mMtlPlaneTextures[plane] = AcquireNSPRef(CreateTextureMtlForPlane(
                 mMtlUsage, *format, plane, device, /*sampleCount=*/1, mIOSurface.Get()));
