@@ -279,7 +279,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         mAdapterType = wgpu::AdapterType::IntegratedGPU;
         const char* systemName = "iOS ";
 #elif DAWN_PLATFORM_IS(MACOS)
-        if ([*mDevice hasUnifiedMemory]) {
+        if ((@available(macOS 10.15, iOS 13.0, *)) && [*mDevice hasUnifiedMemory]) {
             mAdapterType = wgpu::AdapterType::IntegratedGPU;
         } else {
             mAdapterType = wgpu::AdapterType::DiscreteGPU;
@@ -892,7 +892,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
     }
 
     void PopulateMemoryHeapInfo(AdapterPropertiesMemoryHeaps* memoryHeapProperties) const override {
-        if ([*mDevice hasUnifiedMemory]) {
+        if ((@available(macOS 10.15, iOS 13.0, *)) && [*mDevice hasUnifiedMemory]) {
             auto* heapInfo = new MemoryHeapInfo[1];
             memoryHeapProperties->heapCount = 1;
             memoryHeapProperties->heapInfo = heapInfo;
