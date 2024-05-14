@@ -592,7 +592,6 @@ TEST_F(ShaderModuleValidationTest, MaxBindingNumber) {
     static_assert(kMaxBindingsPerBindGroup == 1000);
 
     wgpu::ComputePipelineDescriptor desc;
-    desc.compute.entryPoint = "main";
 
     // kMaxBindingsPerBindGroup-1 is valid.
     desc.compute.module = utils::CreateShaderModule(device, R"(
@@ -737,8 +736,7 @@ class ShaderModuleExtensionValidationTestBase : public ValidationTest {
 
     // Create testing adapter with the AllowUnsafeAPIs toggle explicitly enabled or disabled,
     // overriding the instance's toggle.
-    void CreateTestAdapterWithUnsafeAPIToggle(wgpu::Instance instance,
-                                              wgpu::RequestAdapterOptions options,
+    void CreateTestAdapterWithUnsafeAPIToggle(wgpu::RequestAdapterOptions options,
                                               bool allowUnsafeAPIs) {
         wgpu::DawnTogglesDescriptor deviceTogglesDesc{};
         options.nextInChain = &deviceTogglesDesc;
@@ -795,16 +793,15 @@ struct WGSLExtensionInfo {
 
 constexpr struct WGSLExtensionInfo kExtensions[] = {
     {"f16", false, "shader-f16"},
-    {"chromium_experimental_dp4a", true, "chromium-experimental-dp4a"},
     {"chromium_experimental_subgroups", true, "chromium-experimental-subgroups"},
     {"chromium_experimental_pixel_local", true, "pixel-local-storage-coherent"},
     {"chromium_disable_uniformity_analysis", true, nullptr},
     {"chromium_internal_dual_source_blending", true, "dual-source-blending"},
+    {"chromium_internal_graphite", true, nullptr},
     {"chromium_experimental_framebuffer_fetch", true, "framebuffer-fetch"},
 
     // Currently the following WGSL extensions are not enabled under any situation.
     /*
-    {"chromium_experimental_full_ptr_parameters", true, nullptr},
     {"chromium_experimental_push_constant", true, nullptr},
     {"chromium_internal_relaxed_uniform_layout", true, nullptr},
     */
@@ -814,9 +811,9 @@ constexpr struct WGSLExtensionInfo kExtensions[] = {
 class ShaderModuleExtensionValidationTestSafeNoFeature
     : public ShaderModuleExtensionValidationTestBase {
   protected:
-    void CreateTestAdapter(wgpu::Instance instance, wgpu::RequestAdapterOptions options) override {
+    void CreateTestAdapter(wgpu::RequestAdapterOptions options) override {
         // Create a safe adapter
-        CreateTestAdapterWithUnsafeAPIToggle(instance, options, false);
+        CreateTestAdapterWithUnsafeAPIToggle(options, false);
     }
     WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
                                 wgpu::DeviceDescriptor descriptor) override {
@@ -846,9 +843,9 @@ TEST_F(ShaderModuleExtensionValidationTestSafeNoFeature,
 class ShaderModuleExtensionValidationTestUnsafeNoFeature
     : public ShaderModuleExtensionValidationTestBase {
   protected:
-    void CreateTestAdapter(wgpu::Instance instance, wgpu::RequestAdapterOptions options) override {
+    void CreateTestAdapter(wgpu::RequestAdapterOptions options) override {
         // Create an unsafe adapter
-        CreateTestAdapterWithUnsafeAPIToggle(instance, options, true);
+        CreateTestAdapterWithUnsafeAPIToggle(options, true);
     }
     WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
                                 wgpu::DeviceDescriptor descriptor) override {
@@ -878,9 +875,9 @@ TEST_F(ShaderModuleExtensionValidationTestUnsafeNoFeature,
 class ShaderModuleExtensionValidationTestSafeAllFeatures
     : public ShaderModuleExtensionValidationTestBase {
   protected:
-    void CreateTestAdapter(wgpu::Instance instance, wgpu::RequestAdapterOptions options) override {
+    void CreateTestAdapter(wgpu::RequestAdapterOptions options) override {
         // Create a safe adapter
-        CreateTestAdapterWithUnsafeAPIToggle(instance, options, false);
+        CreateTestAdapterWithUnsafeAPIToggle(options, false);
     }
     WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
                                 wgpu::DeviceDescriptor descriptor) override {
@@ -908,9 +905,9 @@ TEST_F(ShaderModuleExtensionValidationTestSafeAllFeatures, OnlyStableExtensionsA
 class ShaderModuleExtensionValidationTestUnsafeAllFeatures
     : public ShaderModuleExtensionValidationTestBase {
   protected:
-    void CreateTestAdapter(wgpu::Instance instance, wgpu::RequestAdapterOptions options) override {
+    void CreateTestAdapter(wgpu::RequestAdapterOptions options) override {
         // Create an unsafe adapter
-        CreateTestAdapterWithUnsafeAPIToggle(instance, options, true);
+        CreateTestAdapterWithUnsafeAPIToggle(options, true);
     }
     WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
                                 wgpu::DeviceDescriptor descriptor) override {

@@ -31,16 +31,19 @@
 #include <vector>
 
 #include "dawn/common/Log.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/D3D12Backend.h"
 #include "dawn/native/DawnNative.h"
 #include "dawn/native/d3d/DeviceD3D.h"
-#include "dawn/native/d3d/Fence.h"
 #include "dawn/native/d3d/Forward.h"
+#include "dawn/native/d3d/KeyedMutex.h"
+#include "dawn/native/d3d/QueueD3D.h"
+#include "dawn/native/d3d/SharedFenceD3D.h"
 #include "dawn/native/d3d/TextureD3D.h"
 
 namespace dawn::native::d3d {
 
-MaybeError ValidateTextureDescriptorCanBeWrapped(const TextureDescriptor* descriptor) {
+MaybeError ValidateTextureDescriptorCanBeWrapped(const UnpackedPtr<TextureDescriptor>& descriptor) {
     DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D,
                     "Texture dimension (%s) is not %s.", descriptor->dimension,
                     wgpu::TextureDimension::e2D);
@@ -57,11 +60,14 @@ MaybeError ValidateTextureDescriptorCanBeWrapped(const TextureDescriptor* descri
     return {};
 }
 
-ExternalImageDXGIImpl::ExternalImageDXGIImpl(Device* backendDevice,
-                                             ComPtr<IUnknown> d3dResource,
-                                             const TextureDescriptor* textureDescriptor)
+ExternalImageDXGIImpl::ExternalImageDXGIImpl(
+    Device* backendDevice,
+    ComPtr<IUnknown> d3dResource,
+    Ref<d3d::KeyedMutex> keyedMutex,
+    const UnpackedPtr<TextureDescriptor>& textureDescriptor)
     : mBackendDevice(backendDevice),
       mD3DResource(std::move(d3dResource)),
+      mKeyedMutex(std::move(keyedMutex)),
       mUsage(textureDescriptor->usage),
       mDimension(textureDescriptor->dimension),
       mSize(textureDescriptor->size),
@@ -80,15 +86,10 @@ ExternalImageDXGIImpl::ExternalImageDXGIImpl(Device* backendDevice,
                              textureDescriptor->nextInChain)
                              ->internalUsage;
     }
-
-    // If the resource has IDXGIKeyedMutex interface, it will be used for synchronization.
-    // TODO(dawn:1906): remove the mDXGIKeyedMutex when it is not used in chrome.
-    mD3DResource.As(&mDXGIKeyedMutex);
 }
 
 ExternalImageDXGIImpl::~ExternalImageDXGIImpl() {
     DAWN_ASSERT(mBackendDevice->IsLockedByCurrentThreadIfNeeded());
-    mDXGIKeyedMutexReleaser.reset();
     DestroyInternal();
 }
 
@@ -104,6 +105,7 @@ bool ExternalImageDXGIImpl::IsValid() const {
 void ExternalImageDXGIImpl::DestroyInternal() {
     DAWN_ASSERT(mBackendDevice->IsLockedByCurrentThreadIfNeeded());
     if (IsInList()) {
+        mKeyedMutex = nullptr;
         mD3DResource = nullptr;
     }
 
@@ -153,9 +155,9 @@ WGPUTexture ExternalImageDXGIImpl::BeginAccess(
         internalDesc.internalUsage = mUsageInternal;
     }
 
-    std::vector<Ref<Fence>> waitFences;
+    std::vector<FenceAndSignalValue> waitFences;
     for (const d3d::ExternalImageDXGIFenceDescriptor& fenceDescriptor : descriptor->waitFences) {
-        Ref<Fence> fence;
+        FenceAndSignalValue fence;
         if (mBackendDevice->ConsumedError(
                 ToBackend(mBackendDevice.Get())->CreateFence(&fenceDescriptor), &fence)) {
             dawn::ErrorLog() << "Unable to create D3D11 fence for external image";
@@ -166,20 +168,10 @@ WGPUTexture ExternalImageDXGIImpl::BeginAccess(
 
     Ref<TextureBase> texture =
         ToBackend(mBackendDevice.Get())
-            ->CreateD3DExternalTexture(&textureDescriptor, mD3DResource, std::move(waitFences),
-                                       descriptor->isSwapChainTexture, descriptor->isInitialized);
-
-    if (mDXGIKeyedMutex && mAccessCount == 0) {
-        HRESULT hr = mDXGIKeyedMutex->AcquireSync(kDXGIKeyedMutexAcquireKey, INFINITE);
-        if (FAILED(hr)) {
-            dawn::ErrorLog() << "Failed to acquire keyed mutex for external image";
-            return nullptr;
-        }
-        mDXGIKeyedMutexReleaser.emplace(mDXGIKeyedMutex);
-    }
-    ++mAccessCount;
-
-    return ToAPI(texture.Detach());
+            ->CreateD3DExternalTexture(Unpack(&textureDescriptor), mD3DResource, mKeyedMutex,
+                                       std::move(waitFences), descriptor->isSwapChainTexture,
+                                       descriptor->isInitialized);
+    return ToAPI(ReturnToAPI(std::move(texture)));
 }
 
 void ExternalImageDXGIImpl::EndAccess(WGPUTexture texture,
@@ -197,18 +189,21 @@ void ExternalImageDXGIImpl::EndAccess(WGPUTexture texture,
     Texture* backendTexture = ToBackend(FromAPI(texture));
     DAWN_ASSERT(backendTexture != nullptr);
 
-    ExecutionSerial fenceValue;
-    if (mBackendDevice->ConsumedError(backendTexture->EndAccess(), &fenceValue)) {
-        dawn::ErrorLog() << "D3D11 fence end access failed";
+    Ref<SharedFence> sharedFence;
+    if (mBackendDevice->ConsumedError(
+            ToBackend(mBackendDevice->GetQueue())->GetOrCreateSharedFence(), &sharedFence)) {
+        dawn::ErrorLog() << "Could not retrieve device shared fence";
         return;
     }
-    signalFence->fenceHandle = ToBackend(mBackendDevice.Get())->GetFenceHandle();
-    signalFence->fenceValue = static_cast<uint64_t>(fenceValue);
 
-    --mAccessCount;
-    if (mDXGIKeyedMutexReleaser && mAccessCount == 0) {
-        mDXGIKeyedMutexReleaser.reset();
+    ExecutionSerial fenceValue;
+    if (mBackendDevice->ConsumedError(backendTexture->EndAccess(), &fenceValue)) {
+        dawn::ErrorLog() << "D3D texture end access failed";
+        return;
     }
+
+    signalFence->fenceHandle = sharedFence->GetFenceHandle();
+    signalFence->fenceValue = static_cast<uint64_t>(fenceValue);
 }
 
 }  // namespace dawn::native::d3d

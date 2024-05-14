@@ -39,6 +39,7 @@
 #include "dawn/native/Instance.h"
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d/ExternalImageDXGIImpl.h"
+#include "dawn/native/d3d/KeyedMutex.h"
 #include "dawn/native/d3d/UtilsD3D.h"
 #include "dawn/native/d3d11/BackendD3D11.h"
 #include "dawn/native/d3d11/BindGroupD3D11.h"
@@ -46,7 +47,6 @@
 #include "dawn/native/d3d11/BufferD3D11.h"
 #include "dawn/native/d3d11/CommandBufferD3D11.h"
 #include "dawn/native/d3d11/ComputePipelineD3D11.h"
-#include "dawn/native/d3d11/FenceD3D11.h"
 #include "dawn/native/d3d11/PhysicalDeviceD3D11.h"
 #include "dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "dawn/native/d3d11/PlatformFunctionsD3D11.h"
@@ -111,37 +111,28 @@ void AppendDebugLayerMessagesToError(ID3D11InfoQueue* infoQueue,
 
 // static
 ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
-                                          const DeviceDescriptor* descriptor,
+                                          const UnpackedPtr<DeviceDescriptor>& descriptor,
                                           const TogglesState& deviceToggles) {
     Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
 
-MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
+MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     DAWN_TRY_ASSIGN(mD3d11Device, ToBackend(GetPhysicalDevice())->CreateD3D11Device());
     DAWN_ASSERT(mD3d11Device != nullptr);
 
     mIsDebugLayerEnabled = IsDebugLayerEnabled(mD3d11Device);
 
-    DAWN_TRY(DeviceBase::Initialize(Queue::Create(this, &descriptor->defaultQueue)));
-
     // Get the ID3D11Device5 interface which is need for creating fences.
     // TODO(dawn:1741): Handle the case where ID3D11Device5 is not available.
     DAWN_TRY(CheckHRESULT(mD3d11Device.As(&mD3d11Device5), "D3D11: getting ID3D11Device5"));
 
-    // Create the fence.
-    DAWN_TRY(
-        CheckHRESULT(mD3d11Device5->CreateFence(0, D3D11_FENCE_FLAG_SHARED, IID_PPV_ARGS(&mFence)),
-                     "D3D11: creating fence"));
+    Ref<Queue> queue;
+    DAWN_TRY_ASSIGN(queue, Queue::Create(this, &descriptor->defaultQueue));
 
-    DAWN_TRY(CheckHRESULT(mFence->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr, &mFenceHandle),
-                          "D3D11: creating fence shared handle"));
-
-    // Create the fence event.
-    mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-
-    DAWN_TRY(mPendingCommands.Intialize(this));
+    DAWN_TRY(DeviceBase::Initialize(queue));
+    DAWN_TRY(queue->InitializePendingContext());
 
     SetLabelImpl();
 
@@ -158,106 +149,16 @@ ID3D11Device5* Device::GetD3D11Device5() const {
     return mD3d11Device5.Get();
 }
 
-ID3D11Fence* Device::GetD3D11Fence() const {
-    return mFence.Get();
-}
-
-ScopedCommandRecordingContext Device::GetScopedPendingCommandContext(SubmitMode submitMode) {
-    // Callers of GetPendingCommandList do so to record commands. Only reserve a command
-    // allocator when it is needed so we don't submit empty command lists
-    DAWN_ASSERT(mPendingCommands.IsOpen());
-
-    if (submitMode == SubmitMode::Normal) {
-        mPendingCommands.SetNeedsSubmit();
-    }
-
-    return ScopedCommandRecordingContext(&mPendingCommands);
-}
-
-ScopedSwapStateCommandRecordingContext Device::GetScopedSwapStatePendingCommandContext(
-    SubmitMode submitMode) {
-    // Callers of GetPendingCommandList do so to record commands. Only reserve a command
-    // allocator when it is needed so we don't submit empty command lists
-    DAWN_ASSERT(mPendingCommands.IsOpen());
-
-    if (submitMode == SubmitMode::Normal) {
-        mPendingCommands.SetNeedsSubmit();
-    }
-
-    return ScopedSwapStateCommandRecordingContext(&mPendingCommands);
-}
-
 MaybeError Device::TickImpl() {
-    // Perform cleanup operations to free unused objects
-    [[maybe_unused]] ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
-
     // Check for debug layer messages before executing the command context in case we encounter an
     // error during execution and early out as a result.
     DAWN_TRY(CheckDebugLayerAndGenerateErrors());
-    if (mPendingCommands.IsOpen() && mPendingCommands.NeedsSubmit()) {
-        DAWN_TRY(ExecutePendingCommandContext());
-        DAWN_TRY(NextSerial());
-    }
-    DAWN_TRY(CheckDebugLayerAndGenerateErrors());
-
+    DAWN_TRY(ToBackend(GetQueue())->SubmitPendingCommands());
     return {};
-}
-
-MaybeError Device::NextSerial() {
-    GetQueue()->IncrementLastSubmittedCommandSerial();
-
-    TRACE_EVENT1(GetPlatform(), General, "D3D11Device::SignalFence", "serial",
-                 uint64_t(GetLastSubmittedCommandSerial()));
-
-    auto commandContext = GetScopedPendingCommandContext(DeviceBase::SubmitMode::Passive);
-    DAWN_TRY(
-        CheckHRESULT(commandContext.Signal(mFence.Get(), uint64_t(GetLastSubmittedCommandSerial())),
-                     "D3D11 command queue signal fence"));
-
-    return {};
-}
-
-MaybeError Device::WaitForSerial(ExecutionSerial serial) {
-    DAWN_TRY(GetQueue()->CheckPassedSerials());
-    if (GetQueue()->GetCompletedCommandSerial() < serial) {
-        DAWN_TRY(CheckHRESULT(mFence->SetEventOnCompletion(uint64_t(serial), mFenceEvent),
-                              "D3D11 set event on completion"));
-        WaitForSingleObject(mFenceEvent, INFINITE);
-        DAWN_TRY(GetQueue()->CheckPassedSerials());
-    }
-    return {};
-}
-
-ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
-    ExecutionSerial completedSerial = ExecutionSerial(mFence->GetCompletedValue());
-    if (DAWN_UNLIKELY(completedSerial == ExecutionSerial(UINT64_MAX))) {
-        // GetCompletedValue returns UINT64_MAX if the device was removed.
-        // Try to query the failure reason.
-        DAWN_TRY(CheckHRESULT(mD3d11Device->GetDeviceRemovedReason(),
-                              "ID3D11Device::GetDeviceRemovedReason"));
-        // Otherwise, return a generic device lost error.
-        return DAWN_DEVICE_LOST_ERROR("Device lost");
-    }
-
-    if (completedSerial <= GetQueue()->GetCompletedCommandSerial()) {
-        return ExecutionSerial(0);
-    }
-
-    return completedSerial;
 }
 
 void Device::ReferenceUntilUnused(ComPtr<IUnknown> object) {
-    mUsedComObjectRefs.Enqueue(object, GetPendingCommandSerial());
-}
-
-bool Device::HasPendingCommands() const {
-    return mPendingCommands.NeedsSubmit();
-}
-
-void Device::ForceEventualFlushOfCommands() {}
-
-MaybeError Device::ExecutePendingCommandContext() {
-    return mPendingCommands.ExecuteCommandList(this);
+    mUsedComObjectRefs.Enqueue(object, GetQueue()->GetPendingCommandSerial());
 }
 
 ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
@@ -270,7 +171,8 @@ ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImp
     return BindGroupLayout::Create(this, descriptor);
 }
 
-ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
+ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(
+    const UnpackedPtr<BufferDescriptor>& descriptor) {
     return Buffer::Create(this, descriptor, /*commandContext=*/nullptr);
 }
 
@@ -281,12 +183,12 @@ ResultOrError<Ref<CommandBufferBase>> Device::CreateCommandBuffer(
 }
 
 Ref<ComputePipelineBase> Device::CreateUninitializedComputePipelineImpl(
-    const ComputePipelineDescriptor* descriptor) {
+    const UnpackedPtr<ComputePipelineDescriptor>& descriptor) {
     return ComputePipeline::CreateUninitialized(this, descriptor);
 }
 
 ResultOrError<Ref<PipelineLayoutBase>> Device::CreatePipelineLayoutImpl(
-    const PipelineLayoutDescriptor* descriptor) {
+    const UnpackedPtr<PipelineLayoutDescriptor>& descriptor) {
     return PipelineLayout::Create(this, descriptor);
 }
 
@@ -295,7 +197,7 @@ ResultOrError<Ref<QuerySetBase>> Device::CreateQuerySetImpl(const QuerySetDescri
 }
 
 Ref<RenderPipelineBase> Device::CreateUninitializedRenderPipelineImpl(
-    const RenderPipelineDescriptor* descriptor) {
+    const UnpackedPtr<RenderPipelineDescriptor>& descriptor) {
     return RenderPipeline::CreateUninitialized(this, descriptor);
 }
 
@@ -304,7 +206,7 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 }
 
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
-    const ShaderModuleDescriptor* descriptor,
+    const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
     return ShaderModule::Create(this, descriptor, parseResult, compilationMessages);
@@ -317,7 +219,8 @@ ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
 
-ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
+ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
+    const UnpackedPtr<TextureDescriptor>& descriptor) {
     return Texture::Create(this, descriptor);
 }
 
@@ -341,14 +244,13 @@ void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPip
 
 ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImpl(
     const SharedTextureMemoryDescriptor* descriptor) {
-    UnpackedSharedTextureMemoryDescriptorChain unpacked;
-    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+    UnpackedPtr<SharedTextureMemoryDescriptor> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
 
     wgpu::SType type;
     DAWN_TRY_ASSIGN(
-        type, (ValidateBranches<BranchList<Branch<SharedTextureMemoryDXGISharedHandleDescriptor>,
-                                           Branch<SharedTextureMemoryD3D11Texture2DDescriptor>>>(
-                  unpacked)));
+        type, (unpacked.ValidateBranches<Branch<SharedTextureMemoryDXGISharedHandleDescriptor>,
+                                         Branch<SharedTextureMemoryD3D11Texture2DDescriptor>>()));
 
     switch (type) {
         case wgpu::SType::SharedTextureMemoryDXGISharedHandleDescriptor:
@@ -357,14 +259,14 @@ ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImp
                             wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle);
             return SharedTextureMemory::Create(
                 this, descriptor->label,
-                std::get<const SharedTextureMemoryDXGISharedHandleDescriptor*>(unpacked));
+                unpacked.Get<SharedTextureMemoryDXGISharedHandleDescriptor>());
         case wgpu::SType::SharedTextureMemoryD3D11Texture2DDescriptor:
             DAWN_INVALID_IF(!HasFeature(Feature::SharedTextureMemoryD3D11Texture2D),
                             "%s is not enabled.",
                             wgpu::FeatureName::SharedTextureMemoryD3D11Texture2D);
             return SharedTextureMemory::Create(
                 this, descriptor->label,
-                std::get<const SharedTextureMemoryD3D11Texture2DDescriptor*>(unpacked));
+                unpacked.Get<SharedTextureMemoryD3D11Texture2DDescriptor>());
         default:
             DAWN_UNREACHABLE();
     }
@@ -372,21 +274,19 @@ ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImp
 
 ResultOrError<Ref<SharedFenceBase>> Device::ImportSharedFenceImpl(
     const SharedFenceDescriptor* descriptor) {
-    UnpackedSharedFenceDescriptorChain unpacked;
-    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+    UnpackedPtr<SharedFenceDescriptor> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
 
     wgpu::SType type;
-    DAWN_TRY_ASSIGN(
-        type,
-        (ValidateBranches<BranchList<Branch<SharedFenceDXGISharedHandleDescriptor>>>(unpacked)));
+    DAWN_TRY_ASSIGN(type,
+                    (unpacked.ValidateBranches<Branch<SharedFenceDXGISharedHandleDescriptor>>()));
 
     switch (type) {
         case wgpu::SType::SharedFenceDXGISharedHandleDescriptor:
             DAWN_INVALID_IF(!HasFeature(Feature::SharedFenceDXGISharedHandle), "%s is not enabled.",
                             wgpu::FeatureName::SharedFenceDXGISharedHandle);
-            return SharedFence::Create(
-                this, descriptor->label,
-                std::get<const SharedFenceDXGISharedHandleDescriptor*>(unpacked));
+            return SharedFence::Create(this, descriptor->label,
+                                       unpacked.Get<SharedFenceDXGISharedHandleDescriptor>());
         default:
             DAWN_UNREACHABLE();
     }
@@ -400,7 +300,8 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
     // D3D11 requires that buffers are unmapped before being used in a copy.
     DAWN_TRY(source->Unmap());
 
-    auto commandContext = GetScopedPendingCommandContext(Device::SubmitMode::Normal);
+    auto commandContext =
+        ToBackend(GetQueue())->GetScopedPendingCommandContext(QueueBase::SubmitMode::Normal);
     return Buffer::Copy(&commandContext, ToBackend(source), sourceOffset, size,
                         ToBackend(destination), destinationOffset);
 }
@@ -414,14 +315,6 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
 
 const DeviceInfo& Device::GetDeviceInfo() const {
     return ToBackend(GetPhysicalDevice())->GetDeviceInfo();
-}
-
-MaybeError Device::WaitForIdleForDestruction() {
-    DAWN_TRY(NextSerial());
-    // Wait for all in-flight commands to finish executing
-    DAWN_TRY(WaitForSerial(GetLastSubmittedCommandSerial()));
-
-    return {};
 }
 
 MaybeError Device::CheckDebugLayerAndGenerateErrors() {
@@ -484,14 +377,10 @@ void Device::DestroyImpl() {
     //   other threads using the device since there are no other live refs.
     DAWN_ASSERT(GetState() == State::Disconnected);
 
+    mImplicitPixelLocalStorageAttachmentTextureViews = {};
+    mStagingBuffer = nullptr;
+
     Base::DestroyImpl();
-
-    if (mFenceEvent != nullptr) {
-        ::CloseHandle(mFenceEvent);
-        mFenceEvent = nullptr;
-    }
-
-    mPendingCommands.Release();
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {
@@ -508,10 +397,15 @@ float Device::GetTimestampPeriodInNS() const {
 
 void Device::SetLabelImpl() {}
 
-ResultOrError<Ref<d3d::Fence>> Device::CreateFence(
-    const d3d::ExternalImageDXGIFenceDescriptor* descriptor) {
-    return Fence::CreateFromHandle(mD3d11Device5.Get(), descriptor->fenceHandle,
-                                   descriptor->fenceValue);
+ResultOrError<FenceAndSignalValue> Device::CreateFence(
+    const d3d::ExternalImageDXGIFenceDescriptor* externalImageFenceDesc) {
+    SharedFenceDXGISharedHandleDescriptor sharedFenceDesc;
+    sharedFenceDesc.handle = externalImageFenceDesc->fenceHandle;
+
+    Ref<SharedFence> fence;
+    DAWN_TRY_ASSIGN(fence, SharedFence::Create(this, "Imported DXGI fence", &sharedFenceDesc));
+
+    return FenceAndSignalValue{std::move(fence), externalImageFenceDesc->fenceValue};
 }
 
 ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExternalImageDXGIImplImpl(
@@ -522,6 +416,7 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
     DAWN_TRY(ValidateIsAlive());
 
     ComPtr<ID3D11Resource> d3d11Resource;
+    ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex;
     switch (descriptor->GetType()) {
         case ExternalImageType::DXGISharedHandle: {
             const auto* sharedHandleDescriptor =
@@ -530,6 +425,11 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
                 mD3d11Device5->OpenSharedResource1(sharedHandleDescriptor->sharedHandle,
                                                    IID_PPV_ARGS(&d3d11Resource)),
                 "D3D11 OpenSharedResource1"));
+            if (sharedHandleDescriptor->useKeyedMutex) {
+                d3d11Resource.As(&dxgiKeyedMutex);
+                DAWN_INVALID_IF(!dxgiKeyedMutex,
+                                "Failed to retrieve DXGI keyed mutex when expected");
+            }
             break;
         }
         case ExternalImageType::D3D11Texture: {
@@ -543,6 +443,7 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
                 textureDevice.Get() != mD3d11Device.Get(),
                 "The D3D11 device of the texture and the D3D11 device of the WebGPU device "
                 "must be same.");
+            d3d11Resource.As(&dxgiKeyedMutex);
             break;
         }
         default: {
@@ -551,7 +452,8 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
         }
     }
 
-    const TextureDescriptor* textureDescriptor = FromAPI(descriptor->cTextureDescriptor);
+    UnpackedPtr<TextureDescriptor> textureDescriptor;
+    DAWN_TRY_ASSIGN(textureDescriptor, ValidateAndUnpack(FromAPI(descriptor->cTextureDescriptor)));
     DAWN_TRY(
         ValidateTextureDescriptor(this, textureDescriptor, AllowMultiPlanarTextureFormat::Yes));
 
@@ -569,8 +471,17 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
             this, d3d::DXGITextureFormat(textureDescriptor->format)));
     }
 
+    Ref<d3d::KeyedMutex> keyedMutex;
+    if (dxgiKeyedMutex) {
+        keyedMutex = AcquireRef(new d3d::KeyedMutex(this, std::move(dxgiKeyedMutex)));
+    }
+
     return std::make_unique<d3d::ExternalImageDXGIImpl>(this, std::move(d3d11Resource),
-                                                        textureDescriptor);
+                                                        std::move(keyedMutex), textureDescriptor);
+}
+
+void Device::DisposeKeyedMutex(ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex) {
+    // Nothing to do, the ComPtr will release the keyed mutex.
 }
 
 bool Device::MayRequireDuplicationOfIndirectParameters() const {
@@ -585,16 +496,17 @@ bool Device::IsResolveTextureBlitWithDrawSupported() const {
     return true;
 }
 
-Ref<TextureBase> Device::CreateD3DExternalTexture(const TextureDescriptor* descriptor,
+Ref<TextureBase> Device::CreateD3DExternalTexture(const UnpackedPtr<TextureDescriptor>& descriptor,
                                                   ComPtr<IUnknown> d3dTexture,
-                                                  std::vector<Ref<d3d::Fence>> waitFences,
+                                                  Ref<d3d::KeyedMutex> keyedMutex,
+                                                  std::vector<FenceAndSignalValue> waitFences,
                                                   bool isSwapChainTexture,
                                                   bool isInitialized) {
     Ref<Texture> dawnTexture;
-    if (ConsumedError(
-            Texture::CreateExternalImage(this, descriptor, std::move(d3dTexture),
-                                         std::move(waitFences), isSwapChainTexture, isInitialized),
-            &dawnTexture)) {
+    if (ConsumedError(Texture::CreateExternalImage(this, descriptor, std::move(d3dTexture),
+                                                   std::move(keyedMutex), std::move(waitFences),
+                                                   isSwapChainTexture, isInitialized),
+                      &dawnTexture)) {
         return nullptr;
     }
     return {dawnTexture};
@@ -602,6 +514,63 @@ Ref<TextureBase> Device::CreateD3DExternalTexture(const TextureDescriptor* descr
 
 uint32_t Device::GetUAVSlotCount() const {
     return ToBackend(GetPhysicalDevice())->GetUAVSlotCount();
+}
+
+ResultOrError<TextureViewBase*> Device::GetOrCreateCachedImplicitPixelLocalStorageAttachment(
+    uint32_t width,
+    uint32_t height,
+    uint32_t implicitAttachmentIndex) {
+    DAWN_ASSERT(implicitAttachmentIndex <= kMaxPLSSlots);
+
+    TextureViewBase* currentAttachmentView =
+        mImplicitPixelLocalStorageAttachmentTextureViews[implicitAttachmentIndex].Get();
+    if (currentAttachmentView == nullptr ||
+        currentAttachmentView->GetTexture()->GetWidth(Aspect::Color) < width ||
+        currentAttachmentView->GetTexture()->GetHeight(Aspect::Color) < height) {
+        // Create one 2D texture for each attachment. Note that currently on D3D11 backend we cannot
+        // create a Texture2D UAV on a 2D array texture with baseArrayLayer > 0 because D3D11
+        // requires the Unordered Access View dimension declared in the shader code must match the
+        // view type bound to the Pixel Shader unit, while TEXTURE2D doesn't match TEXTURE2DARRAY.
+        // TODO(dawn:1703): support 2D array storage textures as implicit pixel local storage
+        // attachments in WGSL.
+        TextureDescriptor desc;
+        desc.dimension = wgpu::TextureDimension::e2D;
+        desc.format = RenderPipelineBase::kImplicitPLSSlotFormat;
+        desc.usage = wgpu::TextureUsage::StorageAttachment;
+        desc.size = {width, height, 1};
+
+        Ref<TextureBase> newAttachment;
+        DAWN_TRY_ASSIGN(newAttachment, CreateTexture(&desc));
+        DAWN_TRY_ASSIGN(mImplicitPixelLocalStorageAttachmentTextureViews[implicitAttachmentIndex],
+                        newAttachment->CreateView());
+    }
+    return mImplicitPixelLocalStorageAttachmentTextureViews[implicitAttachmentIndex].Get();
+}
+
+ResultOrError<Ref<BufferBase>> Device::GetStagingBuffer(
+    const ScopedCommandRecordingContext* commandContext,
+    uint64_t size) {
+    constexpr uint64_t kMinSize = 4 * 1024;
+    constexpr uint64_t kMaxSize = 16 * 1024 * 1024;
+    uint64_t bufferSize = mStagingBuffer.Get() ? mStagingBuffer->GetSize() : 0;
+    if (size > bufferSize) {
+        bufferSize = Align(size, kMinSize);
+        BufferDescriptor descriptor;
+        descriptor.usage = wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc;
+        descriptor.size = bufferSize;
+        descriptor.mappedAtCreation = false;
+        descriptor.label = "DawnDeviceStagingBuffer";
+        Ref<BufferBase> buffer;
+        DAWN_TRY_ASSIGN(buffer, Buffer::Create(this, Unpack(&descriptor), commandContext));
+        // We don't cache the buffer if it's too large.
+        if (bufferSize > kMaxSize) {
+            return buffer;
+        }
+        mStagingBuffer = buffer;
+    }
+    // Ensure there is no more than 1 active usage of the staging buffer.
+    DAWN_ASSERT(mStagingBuffer->GetRefCountForTesting() <= 1);
+    return mStagingBuffer;
 }
 
 }  // namespace dawn::native::d3d11

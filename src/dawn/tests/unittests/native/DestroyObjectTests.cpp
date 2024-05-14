@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Toggles.h"
 #include "dawn/native/utils/WGPUHelpers.h"
 #include "dawn/tests/DawnNativeTest.h"
@@ -52,6 +53,7 @@
 #include "mocks/ShaderModuleMock.h"
 #include "mocks/SwapChainMock.h"
 #include "mocks/TextureMock.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native {
 namespace {
@@ -89,7 +91,9 @@ class ScopedRawPtrExpectation {
     ~ScopedRawPtrExpectation() { Mock::VerifyAndClearExpectations(mPtr); }
 
   private:
-    void* mPtr = nullptr;
+    // This pointer is explicitely meant to test expectations against a deleted
+    // object. So it is allowed to dangle.
+    raw_ptr<void, DisableDanglingPtrDetection> mPtr = nullptr;
 };
 
 class DestroyObjectTests : public DawnMockTest {
@@ -282,7 +286,8 @@ TEST_F(DestroyObjectTests, MappedBufferImplicit) {
 
 TEST_F(DestroyObjectTests, CommandBufferNativeExplicit) {
     CommandEncoderDescriptor commandEncoderDesc = {};
-    Ref<CommandEncoder> commandEncoder = CommandEncoder::Create(mDeviceMock, &commandEncoderDesc);
+    Ref<CommandEncoder> commandEncoder =
+        CommandEncoder::Create(mDeviceMock, Unpack(&commandEncoderDesc));
 
     CommandBufferDescriptor commandBufferDesc = {};
 
@@ -323,7 +328,6 @@ TEST_F(DestroyObjectTests, ComputePipelineNativeExplicit) {
         ShaderModuleMock::Create(mDeviceMock, kComputeShader.data());
     ComputePipelineDescriptor desc = {};
     desc.compute.module = csModuleMock.Get();
-    desc.compute.entryPoint = "main";
 
     Ref<ComputePipelineMock> computePipelineMock = ComputePipelineMock::Create(mDeviceMock, &desc);
     EXPECT_CALL(*computePipelineMock.Get(), DestroyImpl).Times(1);
@@ -340,11 +344,10 @@ TEST_F(DestroyObjectTests, ComputePipelineImplicit) {
         ShaderModuleMock::Create(mDeviceMock, kComputeShader.data());
     ComputePipelineDescriptor desc = {};
     desc.compute.module = csModuleMock.Get();
-    desc.compute.entryPoint = "main";
 
     // Compute pipelines are initialized during their creation via the device.
     Ref<ComputePipelineMock> computePipelineMock = ComputePipelineMock::Create(mDeviceMock, &desc);
-    EXPECT_CALL(*computePipelineMock.Get(), Initialize).Times(1);
+    EXPECT_CALL(*computePipelineMock.Get(), InitializeImpl).Times(1);
     EXPECT_CALL(*computePipelineMock.Get(), DestroyImpl).Times(1);
 
     {
@@ -550,7 +553,6 @@ TEST_F(DestroyObjectTests, RenderPipelineNativeExplicit) {
         ShaderModuleMock::Create(mDeviceMock, kVertexShader.data());
     RenderPipelineDescriptor desc = {};
     desc.vertex.module = vsModuleMock.Get();
-    desc.vertex.entryPoint = "main";
 
     Ref<RenderPipelineMock> renderPipelineMock = RenderPipelineMock::Create(mDeviceMock, &desc);
     EXPECT_CALL(*renderPipelineMock.Get(), DestroyImpl).Times(1);
@@ -567,11 +569,10 @@ TEST_F(DestroyObjectTests, RenderPipelineImplicit) {
         ShaderModuleMock::Create(mDeviceMock, kVertexShader.data());
     RenderPipelineDescriptor desc = {};
     desc.vertex.module = vsModuleMock.Get();
-    desc.vertex.entryPoint = "main";
 
     // Render pipelines are initialized during their creation via the device.
     Ref<RenderPipelineMock> renderPipelineMock = RenderPipelineMock::Create(mDeviceMock, &desc);
-    EXPECT_CALL(*renderPipelineMock.Get(), Initialize).Times(1);
+    EXPECT_CALL(*renderPipelineMock.Get(), InitializeImpl).Times(1);
     EXPECT_CALL(*renderPipelineMock.Get(), DestroyImpl).Times(1);
 
     {
@@ -882,11 +883,10 @@ TEST_F(DestroyObjectTests, DestroyObjectsApiExplicit) {
     {
         ComputePipelineDescriptor desc = {};
         desc.compute.module = csModuleMock.Get();
-        desc.compute.entryPoint = "main";
 
         ScopedRawPtrExpectation scoped(mDeviceMock);
         computePipelineMock = ComputePipelineMock::Create(mDeviceMock, &desc);
-        EXPECT_CALL(*computePipelineMock.Get(), Initialize).Times(1);
+        EXPECT_CALL(*computePipelineMock.Get(), InitializeImpl).Times(1);
         EXPECT_CALL(*mDeviceMock, CreateUninitializedComputePipelineImpl)
             .WillOnce(Return(computePipelineMock));
         computePipeline = device.CreateComputePipeline(ToCppAPI(&desc));
@@ -925,11 +925,10 @@ TEST_F(DestroyObjectTests, DestroyObjectsApiExplicit) {
     {
         RenderPipelineDescriptor desc = {};
         desc.vertex.module = vsModuleMock.Get();
-        desc.vertex.entryPoint = "main";
 
         ScopedRawPtrExpectation scoped(mDeviceMock);
         renderPipelineMock = RenderPipelineMock::Create(mDeviceMock, &desc);
-        EXPECT_CALL(*renderPipelineMock.Get(), Initialize).Times(1);
+        EXPECT_CALL(*renderPipelineMock.Get(), InitializeImpl).Times(1);
         EXPECT_CALL(*mDeviceMock, CreateUninitializedRenderPipelineImpl)
             .WillOnce(Return(renderPipelineMock));
         renderPipeline = device.CreateRenderPipeline(ToCppAPI(&desc));
@@ -1061,10 +1060,8 @@ TEST_F(DestroyObjectRegressionTests, LastRefInCommandRenderPipeline) {
     ::dawn::utils::ComboRenderPipelineDescriptor pipelineDesc;
     pipelineDesc.cTargets[0].writeMask = wgpu::ColorWriteMask::None;
     pipelineDesc.vertex.module = ::dawn::utils::CreateShaderModule(device, kVertexShader.data());
-    pipelineDesc.vertex.entryPoint = "main";
     pipelineDesc.cFragment.module =
         ::dawn::utils::CreateShaderModule(device, kFragmentShader.data());
-    pipelineDesc.cFragment.entryPoint = "main";
     renderEncoder.SetPipeline(device.CreateRenderPipeline(&pipelineDesc));
 
     device.Destroy();
@@ -1079,8 +1076,24 @@ TEST_F(DestroyObjectRegressionTests, LastRefInCommandComputePipeline) {
 
     wgpu::ComputePipelineDescriptor pipelineDesc;
     pipelineDesc.compute.module = ::dawn::utils::CreateShaderModule(device, kComputeShader.data());
-    pipelineDesc.compute.entryPoint = "main";
     computeEncoder.SetPipeline(device.CreateComputePipeline(&pipelineDesc));
+
+    device.Destroy();
+}
+
+// Tests that when a BindGroup's last reference is held in a command in an unfinished
+// CommandEncoder, that destroying the device still works as expected (and does not cause
+// double-free).
+TEST_F(DestroyObjectRegressionTests, LastRefInCommandBindGroup) {
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::ComputePassEncoder computeEncoder = encoder.BeginComputePass();
+
+    wgpu::Sampler sampler = device.CreateSampler();
+    wgpu::BindGroupLayout layout = ::dawn::utils::MakeBindGroupLayout(
+        device, {{0, wgpu::ShaderStage::Compute, wgpu::SamplerBindingType::Filtering}});
+    wgpu::BindGroup bindGroup = ::dawn::utils::MakeBindGroup(device, layout, {{0, sampler}});
+
+    computeEncoder.SetBindGroup(0, bindGroup);
 
     device.Destroy();
 }

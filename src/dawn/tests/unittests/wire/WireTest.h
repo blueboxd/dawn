@@ -34,6 +34,8 @@
 #include "dawn/mock_webgpu.h"
 #include "gtest/gtest.h"
 
+#include "webgpu/webgpu_cpp.h"
+
 // Definition of a "Lambda predicate matcher" for GMock to allow checking deep structures
 // are passed correctly by the wire.
 
@@ -143,12 +145,17 @@ class WireTest : public testing::Test {
     void FlushServer(bool success = true);
 
     void DefaultApiDeviceWasReleased();
+    void DefaultApiAdapterWasReleased();
 
     testing::StrictMock<MockProcTable> api;
-    WGPUDevice apiDevice;
-    WGPUQueue apiQueue;
+    WGPUInstance instance;
+    WGPUInstance apiInstance;
+    wgpu::Adapter adapter;
+    WGPUAdapter apiAdapter;
     WGPUDevice device;
+    WGPUDevice apiDevice;
     WGPUQueue queue;
+    WGPUQueue apiQueue;
 
     dawn::wire::WireServer* GetWireServer();
     dawn::wire::WireClient* GetWireClient();

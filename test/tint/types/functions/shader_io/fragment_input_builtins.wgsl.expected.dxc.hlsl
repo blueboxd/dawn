@@ -7,12 +7,12 @@ struct tint_symbol_1 {
 
 void main_inner(float4 position, bool front_facing, uint sample_index, uint sample_mask) {
   if (front_facing) {
-    const float4 foo = position;
-    const uint bar = (sample_index + sample_mask);
+    float4 foo = position;
+    uint bar = (sample_index + sample_mask);
   }
 }
 
 void main(tint_symbol_1 tint_symbol) {
-  main_inner(tint_symbol.position, tint_symbol.front_facing, tint_symbol.sample_index, tint_symbol.sample_mask);
+  main_inner(float4(tint_symbol.position.xyz, (1.0f / tint_symbol.position.w)), tint_symbol.front_facing, tint_symbol.sample_index, tint_symbol.sample_mask);
   return;
 }

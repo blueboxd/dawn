@@ -30,9 +30,9 @@
 
 #include <bitset>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/native/DawnNative.h"
 
@@ -103,6 +103,7 @@ enum class Toggle {
     MetalFillEmptyOcclusionQueriesWithZero,
     UseBlitForBufferToDepthTextureCopy,
     UseBlitForBufferToStencilTextureCopy,
+    UseBlitForStencilTextureWrite,
     UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
     UseBlitForDepth16UnormTextureToBufferCopy,
     UseBlitForDepth32FloatTextureToBufferCopy,
@@ -110,6 +111,7 @@ enum class Toggle {
     UseBlitForSnormTextureToBufferCopy,
     UseBlitForBGRA8UnormTextureToBufferCopy,
     UseBlitForRGB9E5UfloatTextureCopy,
+    UseT2B2TForSRGBTextureCopy,
     D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha,
     D3D12PolyfillReflectVec2F32,
     VulkanClearGen12TextureWithCCSAmbiguateOnCreation,
@@ -123,7 +125,13 @@ enum class Toggle {
     UseTintIR,
     D3DDisableIEEEStrictness,
     PolyFillPacked4x8DotProduct,
+    D3D12PolyFillPackUnpack4x8,
     ExposeWGSLTestingFeatures,
+    ExposeWGSLExperimentalFeatures,
+    DisablePolyfillsOnIntegerDivisonAndModulo,
+    EnableImmediateErrorHandling,
+    VulkanUseStorageInputOutput16,
+    D3D12DontUseShaderModel66OrHigher,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
@@ -225,7 +233,7 @@ class TogglesInfo {
     void EnsureToggleNameToEnumMapInitialized();
 
     bool mToggleNameToEnumMapInitialized = false;
-    std::unordered_map<std::string, Toggle> mToggleNameToEnumMap;
+    absl::flat_hash_map<std::string, Toggle> mToggleNameToEnumMap;
 };
 
 }  // namespace dawn::native

@@ -830,6 +830,9 @@ TEST_P(DepthCopyTests_Compat, FromDepthAspectToBufferAtNonZeroOffset) {
 
 // Test copying the non-zero mip, depth-only aspect into a buffer.
 TEST_P(DepthCopyTests_Compat, FromNonZeroMipDepthAspect) {
+    // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 4 OpenGLES
+    DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
+
     constexpr uint32_t kBufferCopyOffset = 0;
     constexpr uint32_t kWidth = 9;
     constexpr uint32_t kHeight = 9;
@@ -1021,8 +1024,9 @@ class StencilCopyTests : public DepthStencilCopyTests {
         // glDrawArraysInstancedBaseInstance.
         DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES() && !IsANGLE());
 
-        // TODO(crbug.com/dawn/2202): Failing on ANGLE/D3D11 for unknown reasons.
-        DAWN_TEST_UNSUPPORTED_IF(IsANGLED3D11());
+        // TODO(crbug.com/dawn/2202): Failing on ANGLE/SwiftShader due to undiagnosed ANGLE bug.
+        // Passes on ANGLE/D3D11.
+        DAWN_TEST_UNSUPPORTED_IF(IsANGLESwiftShader());
 
         // Create a stencil texture
         constexpr uint32_t kWidth = 4;
@@ -1453,6 +1457,9 @@ TEST_P(DepthStencilCopyTests_RegressionDawn1083, Run) {
     // TODO(crbug.com/dawn/1828): depth16unorm broken on Apple GPUs.
     DAWN_SUPPRESS_TEST_IF(IsApple() &&
                           GetParam().mTextureFormat == wgpu::TextureFormat::Depth16Unorm);
+
+    // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 4 OpenGLES
+    DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
 
     uint32_t mipLevelCount = 3;
     uint32_t arrayLayerCount = 3;

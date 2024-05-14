@@ -35,16 +35,15 @@
 #include "dawn/wire/WireCmd_autogen.h"
 #include "dawn/wire/client/LimitsAndFeatures.h"
 #include "dawn/wire/client/ObjectBase.h"
-#include "dawn/wire/client/RequestTracker.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::wire::client {
 
-class Adapter final : public ObjectBase {
+class Adapter final : public ObjectWithEventsBase {
   public:
-    using ObjectBase::ObjectBase;
-    ~Adapter() override;
+    using ObjectWithEventsBase::ObjectWithEventsBase;
 
-    void CancelCallbacksForDisconnect() override;
+    ObjectType GetObjectType() const override;
 
     bool GetLimits(WGPUSupportedLimits* limits) const;
     bool HasFeature(WGPUFeatureName feature) const;
@@ -56,13 +55,8 @@ class Adapter final : public ObjectBase {
     void RequestDevice(const WGPUDeviceDescriptor* descriptor,
                        WGPURequestDeviceCallback callback,
                        void* userdata);
-
-    bool OnRequestDeviceCallback(uint64_t requestSerial,
-                                 WGPURequestDeviceStatus status,
-                                 const char* message,
-                                 const WGPUSupportedLimits* limits,
-                                 uint32_t featuresCount,
-                                 const WGPUFeatureName* features);
+    WGPUFuture RequestDeviceF(const WGPUDeviceDescriptor* descriptor,
+                              const WGPURequestDeviceCallbackInfo& callbackInfo);
 
     // Unimplementable. Only availale in dawn_native.
     WGPUInstance GetInstance() const;
@@ -72,13 +66,8 @@ class Adapter final : public ObjectBase {
     LimitsAndFeatures mLimitsAndFeatures;
     WGPUAdapterProperties mProperties;
     std::vector<WGPUMemoryHeapInfo> mMemoryHeapInfo;
-
-    struct RequestDeviceData {
-        WGPURequestDeviceCallback callback = nullptr;
-        ObjectId deviceObjectId;
-        void* userdata = nullptr;
-    };
-    RequestTracker<RequestDeviceData> mRequestDeviceRequests;
+    WGPUAdapterPropertiesD3D mD3DProperties;
+    WGPUAdapterPropertiesVk mVkProperties;
 };
 
 void ClientAdapterPropertiesFreeMembers(WGPUAdapterProperties);

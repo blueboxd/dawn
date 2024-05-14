@@ -41,13 +41,13 @@ namespace dawn::native::d3d11 {
 // static
 Ref<ComputePipeline> ComputePipeline::CreateUninitialized(
     Device* device,
-    const ComputePipelineDescriptor* descriptor) {
+    const UnpackedPtr<ComputePipelineDescriptor>& descriptor) {
     return AcquireRef(new ComputePipeline(device, descriptor));
 }
 
 ComputePipeline::~ComputePipeline() = default;
 
-MaybeError ComputePipeline::Initialize() {
+MaybeError ComputePipeline::InitializeImpl() {
     Device* device = ToBackend(GetDevice());
     uint32_t compileFlags = 0;
 

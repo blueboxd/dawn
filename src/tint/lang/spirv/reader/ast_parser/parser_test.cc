@@ -39,7 +39,7 @@ using ParserTest = testing::Test;
 TEST_F(ParserTest, DataEmpty) {
     std::vector<uint32_t> data;
     auto program = Parse(data, {});
-    auto errs = program.Diagnostics().str();
+    auto errs = program.Diagnostics().Str();
     ASSERT_FALSE(program.IsValid()) << errs;
     EXPECT_EQ(errs, "error: line:0: Invalid SPIR-V magic number.");
 }
@@ -76,7 +76,7 @@ TEST_F(ParserTest, AllowNonUniformDerivatives_False) {
     Options options;
     options.allow_non_uniform_derivatives = false;
     auto program = Parse(spv, options);
-    auto errs = program.Diagnostics().str();
+    auto errs = program.Diagnostics().Str();
     EXPECT_FALSE(program.IsValid()) << errs;
     EXPECT_THAT(errs, ::testing::HasSubstr("'dpdx' must only be called from uniform control flow"));
 }
@@ -86,9 +86,46 @@ TEST_F(ParserTest, AllowNonUniformDerivatives_True) {
     Options options;
     options.allow_non_uniform_derivatives = true;
     auto program = Parse(spv, options);
-    auto errs = program.Diagnostics().str();
+    auto errs = program.Diagnostics().Str();
     EXPECT_TRUE(program.IsValid()) << errs;
-    EXPECT_EQ(program.Diagnostics().count(), 0u) << errs;
+    EXPECT_EQ(program.Diagnostics().Count(), 0u) << errs;
+}
+
+TEST_F(ParserTest, WorkgroupIdGuardingBarrier) {
+    auto spv = test::Assemble(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %foo "foo" %wgid
+               OpExecutionMode %foo LocalSize 1 1 1
+               OpDecorate %wgid BuiltIn WorkgroupId
+       %uint = OpTypeInt 32 0
+      %vec3u = OpTypeVector %uint 3
+%_ptr_Input_vec3u = OpTypePointer Input %vec3u
+     %uint_0 = OpConstant %uint 0
+     %uint_2 = OpConstant %uint 2
+   %uint_264 = OpConstant %uint 264
+       %wgid = OpVariable %_ptr_Input_vec3u Input
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+  %func_type = OpTypeFunction %void
+        %foo = OpFunction %void None %func_type
+  %foo_start = OpLabel
+ %wgid_value = OpLoad %vec3u %wgid
+     %wgid_x = OpCompositeExtract %uint %wgid_value 0
+  %condition = OpIEqual %bool %wgid_x %uint_0
+               OpSelectionMerge %merge None
+               OpBranchConditional %condition %true_branch %merge
+%true_branch = OpLabel
+               OpControlBarrier %uint_2 %uint_2 %uint_264
+               OpBranch %merge
+      %merge = OpLabel
+               OpReturn
+               OpFunctionEnd
+)");
+    auto program = Parse(spv, {});
+    auto errs = program.Diagnostics().Str();
+    EXPECT_TRUE(program.IsValid()) << errs;
+    EXPECT_EQ(program.Diagnostics().Count(), 0u) << errs;
 }
 
 // TODO(dneto): uint32 vec, valid SPIR-V

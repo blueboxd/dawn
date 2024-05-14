@@ -45,14 +45,8 @@ Extension ParseExtension(std::string_view str) {
     if (str == "chromium_disable_uniformity_analysis") {
         return Extension::kChromiumDisableUniformityAnalysis;
     }
-    if (str == "chromium_experimental_dp4a") {
-        return Extension::kChromiumExperimentalDp4A;
-    }
     if (str == "chromium_experimental_framebuffer_fetch") {
         return Extension::kChromiumExperimentalFramebufferFetch;
-    }
-    if (str == "chromium_experimental_full_ptr_parameters") {
-        return Extension::kChromiumExperimentalFullPtrParameters;
     }
     if (str == "chromium_experimental_pixel_local") {
         return Extension::kChromiumExperimentalPixelLocal;
@@ -65,6 +59,9 @@ Extension ParseExtension(std::string_view str) {
     }
     if (str == "chromium_internal_dual_source_blending") {
         return Extension::kChromiumInternalDualSourceBlending;
+    }
+    if (str == "chromium_internal_graphite") {
+        return Extension::kChromiumInternalGraphite;
     }
     if (str == "chromium_internal_relaxed_uniform_layout") {
         return Extension::kChromiumInternalRelaxedUniformLayout;
@@ -81,12 +78,8 @@ std::string_view ToString(Extension value) {
             return "undefined";
         case Extension::kChromiumDisableUniformityAnalysis:
             return "chromium_disable_uniformity_analysis";
-        case Extension::kChromiumExperimentalDp4A:
-            return "chromium_experimental_dp4a";
         case Extension::kChromiumExperimentalFramebufferFetch:
             return "chromium_experimental_framebuffer_fetch";
-        case Extension::kChromiumExperimentalFullPtrParameters:
-            return "chromium_experimental_full_ptr_parameters";
         case Extension::kChromiumExperimentalPixelLocal:
             return "chromium_experimental_pixel_local";
         case Extension::kChromiumExperimentalPushConstant:
@@ -95,6 +88,8 @@ std::string_view ToString(Extension value) {
             return "chromium_experimental_subgroups";
         case Extension::kChromiumInternalDualSourceBlending:
             return "chromium_internal_dual_source_blending";
+        case Extension::kChromiumInternalGraphite:
+            return "chromium_internal_graphite";
         case Extension::kChromiumInternalRelaxedUniformLayout:
             return "chromium_internal_relaxed_uniform_layout";
         case Extension::kF16:

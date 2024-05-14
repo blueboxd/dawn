@@ -37,6 +37,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Var);
 
 namespace tint::core::ir {
 
+Var::Var() = default;
+
 Var::Var(InstructionResult* result) {
     if (result && result->Type()) {
         TINT_ASSERT(result->Type()->Is<core::type::Pointer>());
@@ -76,7 +78,7 @@ void Var::DestroyIfOnlyAssigned() {
     if (result->Usages().All([](const Usage& u) { return u.instruction->Is<ir::Store>(); })) {
         while (!result->Usages().IsEmpty()) {
             auto& usage = *result->Usages().begin();
-            usage.instruction->Destroy();
+            usage->instruction->Destroy();
         }
         Destroy();
     }

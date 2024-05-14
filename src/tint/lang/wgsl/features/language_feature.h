@@ -51,7 +51,10 @@ enum class LanguageFeature : uint8_t {
     kChromiumTestingShippedWithKillswitch,
     kChromiumTestingUnimplemented,
     kChromiumTestingUnsafeExperimental,
+    kPacked4X8IntegerDotProduct,
+    kPointerCompositeAccess,
     kReadonlyAndReadwriteStorageTextures,
+    kUnrestrictedPointerParameters,
 };
 
 /// @param value the enum value
@@ -69,7 +72,10 @@ constexpr std::string_view kLanguageFeatureStrings[] = {
     "chromium_testing_shipped_with_killswitch",
     "chromium_testing_unimplemented",
     "chromium_testing_unsafe_experimental",
+    "packed_4x8_integer_dot_product",
+    "pointer_composite_access",
     "readonly_and_readwrite_storage_textures",
+    "unrestricted_pointer_parameters",
 };
 
 /// All features
@@ -79,7 +85,10 @@ static constexpr LanguageFeature kAllLanguageFeatures[] = {
     LanguageFeature::kChromiumTestingShippedWithKillswitch,
     LanguageFeature::kChromiumTestingUnimplemented,
     LanguageFeature::kChromiumTestingUnsafeExperimental,
+    LanguageFeature::kPacked4X8IntegerDotProduct,
+    LanguageFeature::kPointerCompositeAccess,
     LanguageFeature::kReadonlyAndReadwriteStorageTextures,
+    LanguageFeature::kUnrestrictedPointerParameters,
 };
 
 }  // namespace tint::wgsl

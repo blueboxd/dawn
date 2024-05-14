@@ -60,6 +60,7 @@ void main() {
 #version 310 es
 #extension GL_AMD_gpu_shader_half_float : require
 precision highp float;
+precision highp int;
 
 void asinh_468a48() {
   float16_t arg_0 = 0.0hf;
@@ -231,8 +232,8 @@ VertexOutput vs_main(VertexInput tint_symbol) {
 
 void main() {
   gl_PointSize = 1.0;
-  VertexInput tint_symbol_2 = VertexInput(position_1, color_1, quad_pos_1);
-  VertexOutput inner_result = vs_main(tint_symbol_2);
+  VertexInput tint_symbol_3 = VertexInput(position_1, color_1, quad_pos_1);
+  VertexOutput inner_result = vs_main(tint_symbol_3);
   gl_Position = inner_result.position;
   color_2 = inner_result.color;
   quad_pos_2 = inner_result.quad_pos;
@@ -279,8 +280,8 @@ struct Particle {
   float lifetime;
   vec4 color;
   vec2 velocity;
-  uint pad_3;
-  uint pad_4;
+  uint pad;
+  uint pad_1;
 };
 
 layout(binding = 0, std140) uniform sim_params_block_ubo {
@@ -306,8 +307,8 @@ void simulate(uvec3 GlobalInvocationID) {
   rand_seed = ((sim_params.inner.seed.xy * vec2(GlobalInvocationID.xy)) * sim_params.inner.seed.zw);
   uint idx = GlobalInvocationID.x;
   Particle particle = data.particles[idx];
-  uint tint_symbol[1] = uint[1](idx);
-  assign_and_preserve_padding_data_particles_X(tint_symbol, particle);
+  uint tint_symbol_3[1] = uint[1](idx);
+  assign_and_preserve_padding_data_particles_X(tint_symbol_3, particle);
 }
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;

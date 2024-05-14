@@ -64,10 +64,6 @@ class MultisampledSamplingTest : public DawnTest {
     void SetUp() override {
         DawnTest::SetUp();
 
-        // TODO(crbug.com/tint/1976): DXC fails to compile the following compute shader because the
-        // coordinate in texture load is not interpreted as an integer vector.
-        DAWN_SUPPRESS_TEST_IF(IsD3D12() && HasToggleEnabled("use_dxc"));
-
         {
             utils::ComboRenderPipelineDescriptor desc;
 
@@ -109,7 +105,6 @@ class MultisampledSamplingTest : public DawnTest {
         }
         {
             wgpu::ComputePipelineDescriptor desc = {};
-            desc.compute.entryPoint = "main";
             desc.compute.module = utils::CreateShaderModule(device, R"(
                 @group(0) @binding(0) var texture0 : texture_multisampled_2d<f32>;
                 @group(0) @binding(1) var texture1 : texture_depth_multisampled_2d;

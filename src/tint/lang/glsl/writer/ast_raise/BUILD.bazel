@@ -52,7 +52,6 @@ cc_library(
   ],
   deps = [
     "//src/tint/api/common",
-    "//src/tint/api/options",
     "//src/tint/lang/core",
     "//src/tint/lang/core/constant",
     "//src/tint/lang/core/type",
@@ -92,7 +91,6 @@ cc_library(
   ],
   deps = [
     "//src/tint/api/common",
-    "//src/tint/api/options",
     "//src/tint/lang/core",
     "//src/tint/lang/core/constant",
     "//src/tint/lang/core/ir",
@@ -104,6 +102,7 @@ cc_library(
     "//src/tint/lang/wgsl/features",
     "//src/tint/lang/wgsl/program",
     "//src/tint/lang/wgsl/sem",
+    "//src/tint/lang/wgsl/writer/ir_to_program",
     "//src/tint/utils/containers",
     "//src/tint/utils/diagnostic",
     "//src/tint/utils/ice",

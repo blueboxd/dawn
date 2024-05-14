@@ -27,3 +27,30 @@ struct MemoryHeapInfo {
 ```
 
 `wgpu::MemoryHeapInfo::size` is the size that should be allocated out of this heap. Allocating more than this may result in poor performance or may deterministically run out of memory.
+
+
+## D3D
+
+`wgpu::FeatureName::AdapterPropertiesD3D` allows querying D3D information from the adapter.
+
+`wgpu::AdapterPropertiesD3D` may be chained on `wgpu::AdapterProperties` in a call to `wgpu::Adapter::GetProperties` in order to query D3D information on that adapter.
+
+Adds `wgpu::AdapterPropertiesD3D` which is a struct describing the D3D adapter.
+```
+struct AdapterPropertiesD3D {
+    uint32_t shaderModel;  // The D3D shader model
+};
+```
+
+## Vulkan
+
+`wgpu::FeatureName::AdapterPropertiesVk` allows querying Vulkan information from the adapter.
+
+`wgpu::AdapterPropertiesVk` may be chained on `wgpu::AdapterProperties` in a call to `wgpu::Adapter::GetProperties` in order to query Vulkan information on that adapter.
+
+Adds `wgpu::AdapterPropertiesVk` which is a struct describing the D3D adapter.
+```
+struct AdapterPropertiesVk {
+    uint32_t driverVersion;  // The Vulkan driver version
+};
+```

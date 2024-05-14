@@ -44,6 +44,7 @@ class BindGroupBase;
 class BindGroupLayoutBase;
 class BindGroupLayoutInternalBase;
 class BufferBase;
+class SharedBufferMemoryBase;
 class ComputePipelineBase;
 class CommandBufferBase;
 class CommandEncoder;
@@ -76,6 +77,9 @@ template <typename T>
 class PerStage;
 
 struct Format;
+
+template <typename T>
+class UnpackedPtr;
 
 // Aliases for frontend-only types.
 using CommandEncoderBase = CommandEncoder;

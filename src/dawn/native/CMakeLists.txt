@@ -185,7 +185,6 @@ target_sources(dawn_native
     "QuerySet.h"
     "Queue.cpp"
     "Queue.h"
-    "RefCountedWithExternalCount.cpp"
     "RefCountedWithExternalCount.h"
     "RenderBundle.cpp"
     "RenderBundle.h"
@@ -210,6 +209,8 @@ target_sources(dawn_native
     "Serializable.h"
     "ShaderModule.cpp"
     "ShaderModule.h"
+    "SharedBufferMemory.cpp"
+    "SharedBufferMemory.h"
     "SharedFence.cpp"
     "SharedFence.h"
     "SharedTextureMemory.cpp"
@@ -247,6 +248,7 @@ target_sources(dawn_native
 )
 target_link_libraries(dawn_native
     PUBLIC dawncpp_headers
+           partition_alloc
     PRIVATE dawn_common
             dawn_platform
             dawn_internal_config
@@ -254,6 +256,8 @@ target_link_libraries(dawn_native
             SPIRV-Tools-opt
             absl_strings
             absl_str_format_internal
+            absl_flat_hash_map
+            absl_flat_hash_set
 )
 
 target_include_directories(dawn_native PRIVATE ${DAWN_ABSEIL_DIR})
@@ -263,6 +267,13 @@ if (DAWN_USE_X11)
     target_sources(dawn_native PRIVATE
         "X11Functions.cpp"
         "X11Functions.h"
+    )
+endif()
+
+if (ANDROID)
+    target_sources(dawn_native PRIVATE
+        "AHBFunctions.cpp"
+        "AHBFunctions.h"
     )
 endif()
 
@@ -300,9 +311,9 @@ if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
         "d3d/DeviceD3D.h"
         "d3d/ExternalImageDXGIImpl.cpp"
         "d3d/ExternalImageDXGIImpl.h"
-        "d3d/Fence.cpp"
-        "d3d/Fence.h"
         "d3d/Forward.h"
+        "d3d/KeyedMutex.cpp"
+        "d3d/KeyedMutex.h"
         "d3d/PhysicalDeviceD3D.cpp"
         "d3d/PhysicalDeviceD3D.h"
         "d3d/PlatformFunctions.cpp"
@@ -350,8 +361,6 @@ if (DAWN_ENABLE_D3D11)
         "d3d11/DeviceD3D11.h"
         "d3d11/DeviceInfoD3D11.cpp"
         "d3d11/DeviceInfoD3D11.h"
-        "d3d11/FenceD3D11.cpp"
-        "d3d11/FenceD3D11.h"
         "d3d11/Forward.h"
         "d3d11/PhysicalDeviceD3D11.cpp"
         "d3d11/PhysicalDeviceD3D11.h"
@@ -397,8 +406,6 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/BufferD3D12.h"
         "d3d12/CPUDescriptorHeapAllocationD3D12.cpp"
         "d3d12/CPUDescriptorHeapAllocationD3D12.h"
-        "d3d12/CommandAllocatorManager.cpp"
-        "d3d12/CommandAllocatorManager.h"
         "d3d12/CommandBufferD3D12.cpp"
         "d3d12/CommandBufferD3D12.h"
         "d3d12/CommandRecordingContext.cpp"
@@ -409,8 +416,6 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/D3D12Info.h"
         "d3d12/DeviceD3D12.cpp"
         "d3d12/DeviceD3D12.h"
-        "d3d12/FenceD3D12.cpp"
-        "d3d12/FenceD3D12.h"
         "d3d12/Forward.h"
         "d3d12/GPUDescriptorHeapAllocationD3D12.cpp"
         "d3d12/GPUDescriptorHeapAllocationD3D12.h"
@@ -451,6 +456,8 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/ShaderVisibleDescriptorAllocatorD3D12.h"
         "d3d12/StagingDescriptorAllocatorD3D12.cpp"
         "d3d12/StagingDescriptorAllocatorD3D12.h"
+        "d3d12/SharedBufferMemoryD3D12.cpp"
+        "d3d12/SharedBufferMemoryD3D12.h"
         "d3d12/SharedFenceD3D12.cpp"
         "d3d12/SharedFenceD3D12.h"
         "d3d12/SharedTextureMemoryD3D12.cpp"

@@ -117,17 +117,22 @@ class EnumType(Type):
         Type.__init__(self, name, json_data)
 
         self.values = []
+        self.hasUndefined = False
         self.contiguousFromZero = True
         lastValue = -1
         for m in self.json_data['values']:
             if not is_enabled(m):
                 continue
             value = m['value']
+            name = m['name']
+            if name == "undefined":
+                assert value == 0
+                self.hasUndefined = True
             if value != lastValue + 1:
                 self.contiguousFromZero = False
             lastValue = value
             self.values.append(
-                EnumValue(Name(m['name']), value, m.get('valid', True), m))
+                EnumValue(Name(name), value, m.get('valid', True), m))
 
         # Assert that all values are unique in enums
         all_values = set()
@@ -205,6 +210,19 @@ class RecordMember:
     def set_id_type(self, id_type):
         assert self.type.dict_name == "ObjectId"
         self.id_type = id_type
+
+    @property
+    def requires_struct_defaulting(self):
+        if self.annotation != "value":
+            return False
+
+        if self.type.category == "structure":
+            return self.type.any_member_requires_struct_defaulting
+        elif self.type.category == "enum":
+            return (self.type.hasUndefined
+                    and self.default_value not in [None, "undefined"])
+        else:
+            return False
 
 
 Method = namedtuple(
@@ -296,6 +314,11 @@ class StructureType(Record, Type):
             if m.annotation != 'value':
                 return True
         return False
+
+    @property
+    def any_member_requires_struct_defaulting(self):
+        return any(member.requires_struct_defaulting
+                   for member in self.members)
 
 
 class ConstantDefinition():
@@ -845,6 +868,14 @@ def as_MethodSuffix(type_name, method_name):
     return type_name.CamelCase() + method_name.CamelCase()
 
 
+def as_CppMethodSuffix(type_name, method_name):
+    assert not type_name.native and not method_name.native
+    original_method_name_str = method_name.CamelCase()
+    if method_name.chunks[-1] == 'f':
+        return type_name.CamelCase() + original_method_name_str[:-1]
+    return type_name.CamelCase() + original_method_name_str
+
+
 def as_frontendType(metadata, typ):
     if typ.category == 'object':
         return typ.name.CamelCase() + 'Base*'
@@ -891,6 +922,10 @@ def has_callback_arguments(method):
     return any(arg.type.category == 'function pointer' for arg in method.arguments)
 
 
+def has_callback_info(method):
+    return method.return_type.name.get() == 'future' and any(
+        arg.name.get() == 'callback info' for arg in method.arguments)
+
 def make_base_render_params(metadata):
     c_prefix = metadata.c_prefix
 
@@ -931,6 +966,7 @@ def make_base_render_params(metadata):
             'as_cppEnum': as_cppEnum,
             'as_cMethod': as_cMethod,
             'as_MethodSuffix': as_MethodSuffix,
+            'as_CppMethodSuffix': as_CppMethodSuffix,
             'as_cProc': as_cProc,
             'as_cType': lambda name: as_cType(c_prefix, name),
             'as_cReturnType': lambda typ: as_cReturnType(c_prefix, typ),
@@ -1019,7 +1055,7 @@ class MultiGeneratorFromDawnJSON(Generator):
 
             renders.append(
                 FileRender('api_cpp_chained_struct.h',
-                           'include/dawn/' + api + '_cpp_chained_struct.h',
+                           'include/webgpu/' + api + '_cpp_chained_struct.h',
                            [RENDER_PARAMS_BASE, params_dawn]))
 
         if 'proc' in targets:
@@ -1051,30 +1087,44 @@ class MultiGeneratorFromDawnJSON(Generator):
                            [RENDER_PARAMS_BASE, params_upstream]))
 
         if 'emscripten_bits' in targets:
+            assert api == 'webgpu'
             params_emscripten = parse_json(loaded_json,
                                            enabled_tags=['emscripten'])
+            # system/include/webgpu
             renders.append(
-                FileRender('api.h', 'emscripten-bits/' + api + '.h',
+                FileRender('api.h',
+                           'emscripten-bits/system/include/webgpu/webgpu.h',
                            [RENDER_PARAMS_BASE, params_emscripten]))
             renders.append(
-                FileRender('api_cpp.h', 'emscripten-bits/' + api + '_cpp.h',
-                           [RENDER_PARAMS_BASE, params_emscripten]))
+                FileRender(
+                    'api_cpp.h',
+                    'emscripten-bits/system/include/webgpu/webgpu_cpp.h',
+                    [RENDER_PARAMS_BASE, params_emscripten]))
             renders.append(
-                FileRender('api_cpp.cpp', 'emscripten-bits/' + api + '_cpp.cpp',
+                FileRender(
+                    'api_cpp_chained_struct.h',
+                    'emscripten-bits/system/include/webgpu/webgpu_cpp_chained_struct.h',
+                    [RENDER_PARAMS_BASE, params_emscripten]))
+            # system/lib/webgpu
+            renders.append(
+                FileRender('api_cpp.cpp',
+                           'emscripten-bits/system/lib/webgpu/webgpu_cpp.cpp',
                            [RENDER_PARAMS_BASE, params_emscripten]))
+            # Snippets to paste into existing Emscripten files
             renders.append(
                 FileRender('api_struct_info.json',
-                           'emscripten-bits/' + api + '_struct_info.json',
+                           'emscripten-bits/webgpu_struct_info.json',
                            [RENDER_PARAMS_BASE, params_emscripten]))
             renders.append(
                 FileRender('library_api_enum_tables.js',
-                           'emscripten-bits/library_' + api + '_enum_tables.js',
+                           'emscripten-bits/library_webgpu_enum_tables.js',
                            [RENDER_PARAMS_BASE, params_emscripten]))
 
         if 'mock_api' in targets:
             mock_params = [
                 RENDER_PARAMS_BASE, params_dawn, {
-                    'has_callback_arguments': has_callback_arguments
+                    'has_callback_arguments': has_callback_arguments,
+                    "has_callback_info": has_callback_info
                 }
             ]
             renders.append(

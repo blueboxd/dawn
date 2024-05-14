@@ -28,6 +28,7 @@
 #include "src/dawn/node/binding/Converter.h"
 
 #include <cassert>
+#include <sstream>
 
 #include "src/dawn/node/binding/GPUBuffer.h"
 #include "src/dawn/node/binding/GPUPipelineLayout.h"
@@ -533,12 +534,16 @@ bool Converter::Convert(wgpu::TextureFormat& out, const interop::GPUTextureForma
             break;
 
         default:
-            return Throw("invalid value for GPUTextureFormat");
+            std::stringstream err;
+            err << "unknown GPUTextureFormat(" << static_cast<int>(in) << ")";
+            return Throw(err.str());
     }
 
     assert(requiredFeature != wgpu::FeatureName::Undefined);
     if (!HasFeature(requiredFeature)) {
-        return Throw(Napi::TypeError::New(env, "invalid value for GPUTextureFormat"));
+        std::stringstream err;
+        err << "" << out << " requires feature '" << requiredFeature << "'";
+        return Throw(Napi::TypeError::New(env, err.str()));
     }
 
     return true;
@@ -727,6 +732,8 @@ bool Converter::Convert(interop::GPUTextureDimension& out, wgpu::TextureDimensio
         case wgpu::TextureDimension::e3D:
             out = interop::GPUTextureDimension::k3D;
             return true;
+        case wgpu::TextureDimension::Undefined:
+            break;
     }
     return false;
 }
@@ -1485,8 +1492,8 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
 
 #undef CASE
 
+        case wgpu::FeatureName::AdapterPropertiesD3D:
         case wgpu::FeatureName::ANGLETextureSharing:
-        case wgpu::FeatureName::ChromiumExperimentalDp4a:
         case wgpu::FeatureName::D3D11MultithreadProtected:
         case wgpu::FeatureName::DawnInternalUsages:
         case wgpu::FeatureName::DawnMultiPlanarFormats:
@@ -1522,6 +1529,8 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::FramebufferFetch:
         case wgpu::FeatureName::BufferMapExtendedUsages:
         case wgpu::FeatureName::AdapterPropertiesMemoryHeaps:
+        case wgpu::FeatureName::SharedBufferMemoryD3D12Resource:
+        case wgpu::FeatureName::R8UnormStorage:
         case wgpu::FeatureName::Undefined:
             return false;
     }

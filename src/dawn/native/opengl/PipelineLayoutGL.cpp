@@ -28,12 +28,14 @@
 #include "dawn/native/opengl/PipelineLayoutGL.h"
 
 #include "dawn/common/BitSetIterator.h"
+#include "dawn/common/MatchVariant.h"
 #include "dawn/native/BindGroupLayoutInternal.h"
 #include "dawn/native/opengl/DeviceGL.h"
 
 namespace dawn::native::opengl {
 
-PipelineLayout::PipelineLayout(Device* device, const PipelineLayoutDescriptor* descriptor)
+PipelineLayout::PipelineLayout(Device* device,
+                               const UnpackedPtr<PipelineLayoutDescriptor>& descriptor)
     : PipelineLayoutBase(device, descriptor) {
     GLuint uboIndex = 0;
     GLuint samplerIndex = 0;
@@ -47,9 +49,10 @@ PipelineLayout::PipelineLayout(Device* device, const PipelineLayoutDescriptor* d
 
         for (BindingIndex bindingIndex{0}; bindingIndex < bgl->GetBindingCount(); ++bindingIndex) {
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
-            switch (bindingInfo.bindingType) {
-                case BindingInfoType::Buffer:
-                    switch (bindingInfo.buffer.type) {
+            MatchVariant(
+                bindingInfo.bindingLayout,
+                [&](const BufferBindingLayout& layout) {
+                    switch (layout.type) {
                         case wgpu::BufferBindingType::Uniform:
                             mIndexInfo[group][bindingIndex] = uboIndex;
                             uboIndex++;
@@ -63,24 +66,19 @@ PipelineLayout::PipelineLayout(Device* device, const PipelineLayoutDescriptor* d
                         case wgpu::BufferBindingType::Undefined:
                             DAWN_UNREACHABLE();
                     }
-                    break;
-
-                case BindingInfoType::Sampler:
+                },
+                [&](const SamplerBindingLayout&) {
                     mIndexInfo[group][bindingIndex] = samplerIndex;
                     samplerIndex++;
-                    break;
-
-                case BindingInfoType::Texture:
-                case BindingInfoType::ExternalTexture:
+                },
+                [&](const TextureBindingLayout&) {
                     mIndexInfo[group][bindingIndex] = sampledTextureIndex;
                     sampledTextureIndex++;
-                    break;
-
-                case BindingInfoType::StorageTexture:
+                },
+                [&](const StorageTextureBindingLayout&) {
                     mIndexInfo[group][bindingIndex] = storageTextureIndex;
                     storageTextureIndex++;
-                    break;
-            }
+                });
         }
     }
 

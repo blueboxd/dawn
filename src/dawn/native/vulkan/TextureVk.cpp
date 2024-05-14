@@ -31,15 +31,18 @@
 
 #include "dawn/common/Assert.h"
 #include "dawn/common/Math.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/VulkanBackend.h"
 #include "dawn/native/vulkan/BufferVk.h"
+#include "dawn/native/vulkan/CommandBufferVk.h"
 #include "dawn/native/vulkan/CommandRecordingContext.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
 #include "dawn/native/vulkan/PhysicalDeviceVk.h"
+#include "dawn/native/vulkan/QueueVk.h"
 #include "dawn/native/vulkan/ResourceHeapVk.h"
 #include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
@@ -150,10 +153,31 @@ VkAccessFlags VulkanAccessFlags(wgpu::TextureUsage usage, const Format& format) 
     if (usage & kReadOnlyRenderAttachment) {
         flags |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
     }
-    if (usage & kPresentTextureUsage) {
-        // The present usage is only used internally by the swapchain and is never used in
+
+    if (usage & kPresentAcquireTextureUsage) {
+        // The present acquire usage is only used internally by the swapchain and is never used in
         // combination with other usages.
-        DAWN_ASSERT(usage == kPresentTextureUsage);
+        DAWN_ASSERT(usage == kPresentAcquireTextureUsage);
+        // The Vulkan spec has the following note:
+        //
+        //   When the presentable image will be accessed by some stage S, the recommended idiom
+        //   for ensuring correct synchronization is:
+        //
+        //   The VkSubmitInfo used to submit the image layout transition for execution includes
+        //   vkAcquireNextImageKHR::semaphore in its pWaitSemaphores member, with the
+        //   corresponding element of pWaitDstStageMask including S.
+        //
+        //   The synchronization command that performs any necessary image layout transition
+        //   includes S in both the srcStageMask and dstStageMask.
+        //
+        // There is no mention of an access flag because there is no access flag associated with
+        // the presentation engine, so we leave it to 0.
+        flags |= 0;
+    }
+    if (usage & kPresentReleaseTextureUsage) {
+        // The present release usage is only used internally by the swapchain and is never used in
+        // combination with other usages.
+        DAWN_ASSERT(usage == kPresentReleaseTextureUsage);
         // The Vulkan spec has the following note:
         //
         //   When transitioning the image to VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR or
@@ -218,10 +242,35 @@ VkPipelineStageFlags VulkanPipelineStage(wgpu::TextureUsage usage,
             flags |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         }
     }
-    if (usage & kPresentTextureUsage) {
-        // The present usage is only used internally by the swapchain and is never used in
+
+    if (usage & kPresentAcquireTextureUsage) {
+        // The present acquire usage is only used internally by the swapchain and is never used in
         // combination with other usages.
-        DAWN_ASSERT(usage == kPresentTextureUsage);
+        DAWN_ASSERT(usage == kPresentAcquireTextureUsage);
+        // The vkAcquireNextImageKHR method is a read operation in Vulkan which completes
+        // before the semaphore/fence out parameters are signaled. This means that future uses
+        // of the texture must performs a memory barriers that synchronizes with that
+        // semaphore/barrier. Dawn uses the ALL_COMMANDS_BIT stage for the semaphore, however
+        // such a semaphore doesn't synchronize with a subsequent BOTTOM_OF_PIPE or NONE
+        // srcStage vkPipelineBarrier because there are no common stages. Instead we also use
+        // VK_PIPELINE_STAGE_ALL_COMMANDS_BIT for srcStage for presentable images, ensuring
+        // correct ordering. This explains the idiom noted in the Vulkan spec:
+        //
+        //   When the presentable image will be accessed by some stage S, the recommended idiom
+        //   for ensuring correct synchronization is:
+        //
+        //   The VkSubmitInfo used to submit the image layout transition for execution includes
+        //   vkAcquireNextImageKHR::semaphore in its pWaitSemaphores member, with the
+        //   corresponding element of pWaitDstStageMask including S.
+        //
+        //   The synchronization command that performs any necessary image layout transition
+        //   includes S in both the srcStageMask and dstStageMask.
+        flags |= VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    }
+    if (usage & kPresentReleaseTextureUsage) {
+        // The present release usage is only used internally by the swapchain and is never used in
+        // combination with other usages.
+        DAWN_ASSERT(usage == kPresentReleaseTextureUsage);
         // The Vulkan spec has the following note:
         //
         //   When transitioning the image to VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR or
@@ -276,6 +325,9 @@ void FillVulkanCreateInfoSizesAndType(const Texture& texture, VkImageCreateInfo*
     // Fill in the image type, and paper over differences in how the array layer count is
     // specified between WebGPU and Vulkan.
     switch (texture.GetDimension()) {
+        case wgpu::TextureDimension::Undefined:
+            DAWN_UNREACHABLE();
+
         case wgpu::TextureDimension::e1D:
             info->imageType = VK_IMAGE_TYPE_1D;
             info->extent = {size.width, 1, 1};
@@ -323,106 +375,126 @@ Aspect ComputeCombinedAspect(Device* device, const Format& format) {
 
 }  // namespace
 
+#define SIMPLE_FORMAT_MAPPING(X)                                                      \
+    X(wgpu::TextureFormat::R8Unorm, VK_FORMAT_R8_UNORM)                               \
+    X(wgpu::TextureFormat::R8Snorm, VK_FORMAT_R8_SNORM)                               \
+    X(wgpu::TextureFormat::R8Uint, VK_FORMAT_R8_UINT)                                 \
+    X(wgpu::TextureFormat::R8Sint, VK_FORMAT_R8_SINT)                                 \
+                                                                                      \
+    X(wgpu::TextureFormat::R16Unorm, VK_FORMAT_R16_UNORM)                             \
+    X(wgpu::TextureFormat::R16Snorm, VK_FORMAT_R16_SNORM)                             \
+    X(wgpu::TextureFormat::R16Uint, VK_FORMAT_R16_UINT)                               \
+    X(wgpu::TextureFormat::R16Sint, VK_FORMAT_R16_SINT)                               \
+    X(wgpu::TextureFormat::R16Float, VK_FORMAT_R16_SFLOAT)                            \
+    X(wgpu::TextureFormat::RG8Unorm, VK_FORMAT_R8G8_UNORM)                            \
+    X(wgpu::TextureFormat::RG8Snorm, VK_FORMAT_R8G8_SNORM)                            \
+    X(wgpu::TextureFormat::RG8Uint, VK_FORMAT_R8G8_UINT)                              \
+    X(wgpu::TextureFormat::RG8Sint, VK_FORMAT_R8G8_SINT)                              \
+                                                                                      \
+    X(wgpu::TextureFormat::R32Uint, VK_FORMAT_R32_UINT)                               \
+    X(wgpu::TextureFormat::R32Sint, VK_FORMAT_R32_SINT)                               \
+    X(wgpu::TextureFormat::R32Float, VK_FORMAT_R32_SFLOAT)                            \
+    X(wgpu::TextureFormat::RG16Unorm, VK_FORMAT_R16G16_UNORM)                         \
+    X(wgpu::TextureFormat::RG16Snorm, VK_FORMAT_R16G16_SNORM)                         \
+    X(wgpu::TextureFormat::RG16Uint, VK_FORMAT_R16G16_UINT)                           \
+    X(wgpu::TextureFormat::RG16Sint, VK_FORMAT_R16G16_SINT)                           \
+    X(wgpu::TextureFormat::RG16Float, VK_FORMAT_R16G16_SFLOAT)                        \
+    X(wgpu::TextureFormat::RGBA8Unorm, VK_FORMAT_R8G8B8A8_UNORM)                      \
+    X(wgpu::TextureFormat::RGBA8UnormSrgb, VK_FORMAT_R8G8B8A8_SRGB)                   \
+    X(wgpu::TextureFormat::RGBA8Snorm, VK_FORMAT_R8G8B8A8_SNORM)                      \
+    X(wgpu::TextureFormat::RGBA8Uint, VK_FORMAT_R8G8B8A8_UINT)                        \
+    X(wgpu::TextureFormat::RGBA8Sint, VK_FORMAT_R8G8B8A8_SINT)                        \
+    X(wgpu::TextureFormat::BGRA8Unorm, VK_FORMAT_B8G8R8A8_UNORM)                      \
+    X(wgpu::TextureFormat::BGRA8UnormSrgb, VK_FORMAT_B8G8R8A8_SRGB)                   \
+    X(wgpu::TextureFormat::RGB10A2Uint, VK_FORMAT_A2B10G10R10_UINT_PACK32)            \
+    X(wgpu::TextureFormat::RGB10A2Unorm, VK_FORMAT_A2B10G10R10_UNORM_PACK32)          \
+    X(wgpu::TextureFormat::RG11B10Ufloat, VK_FORMAT_B10G11R11_UFLOAT_PACK32)          \
+    X(wgpu::TextureFormat::RGB9E5Ufloat, VK_FORMAT_E5B9G9R9_UFLOAT_PACK32)            \
+                                                                                      \
+    X(wgpu::TextureFormat::RG32Uint, VK_FORMAT_R32G32_UINT)                           \
+    X(wgpu::TextureFormat::RG32Sint, VK_FORMAT_R32G32_SINT)                           \
+    X(wgpu::TextureFormat::RG32Float, VK_FORMAT_R32G32_SFLOAT)                        \
+    X(wgpu::TextureFormat::RGBA16Unorm, VK_FORMAT_R16G16B16A16_UNORM)                 \
+    X(wgpu::TextureFormat::RGBA16Snorm, VK_FORMAT_R16G16B16A16_SNORM)                 \
+    X(wgpu::TextureFormat::RGBA16Uint, VK_FORMAT_R16G16B16A16_UINT)                   \
+    X(wgpu::TextureFormat::RGBA16Sint, VK_FORMAT_R16G16B16A16_SINT)                   \
+    X(wgpu::TextureFormat::RGBA16Float, VK_FORMAT_R16G16B16A16_SFLOAT)                \
+                                                                                      \
+    X(wgpu::TextureFormat::RGBA32Uint, VK_FORMAT_R32G32B32A32_UINT)                   \
+    X(wgpu::TextureFormat::RGBA32Sint, VK_FORMAT_R32G32B32A32_SINT)                   \
+    X(wgpu::TextureFormat::RGBA32Float, VK_FORMAT_R32G32B32A32_SFLOAT)                \
+                                                                                      \
+    X(wgpu::TextureFormat::Depth16Unorm, VK_FORMAT_D16_UNORM)                         \
+    X(wgpu::TextureFormat::Depth32Float, VK_FORMAT_D32_SFLOAT)                        \
+    X(wgpu::TextureFormat::Depth32FloatStencil8, VK_FORMAT_D32_SFLOAT_S8_UINT)        \
+                                                                                      \
+    X(wgpu::TextureFormat::BC1RGBAUnorm, VK_FORMAT_BC1_RGBA_UNORM_BLOCK)              \
+    X(wgpu::TextureFormat::BC1RGBAUnormSrgb, VK_FORMAT_BC1_RGBA_SRGB_BLOCK)           \
+    X(wgpu::TextureFormat::BC2RGBAUnorm, VK_FORMAT_BC2_UNORM_BLOCK)                   \
+    X(wgpu::TextureFormat::BC2RGBAUnormSrgb, VK_FORMAT_BC2_SRGB_BLOCK)                \
+    X(wgpu::TextureFormat::BC3RGBAUnorm, VK_FORMAT_BC3_UNORM_BLOCK)                   \
+    X(wgpu::TextureFormat::BC3RGBAUnormSrgb, VK_FORMAT_BC3_SRGB_BLOCK)                \
+    X(wgpu::TextureFormat::BC4RSnorm, VK_FORMAT_BC4_SNORM_BLOCK)                      \
+    X(wgpu::TextureFormat::BC4RUnorm, VK_FORMAT_BC4_UNORM_BLOCK)                      \
+    X(wgpu::TextureFormat::BC5RGSnorm, VK_FORMAT_BC5_SNORM_BLOCK)                     \
+    X(wgpu::TextureFormat::BC5RGUnorm, VK_FORMAT_BC5_UNORM_BLOCK)                     \
+    X(wgpu::TextureFormat::BC6HRGBFloat, VK_FORMAT_BC6H_SFLOAT_BLOCK)                 \
+    X(wgpu::TextureFormat::BC6HRGBUfloat, VK_FORMAT_BC6H_UFLOAT_BLOCK)                \
+    X(wgpu::TextureFormat::BC7RGBAUnorm, VK_FORMAT_BC7_UNORM_BLOCK)                   \
+    X(wgpu::TextureFormat::BC7RGBAUnormSrgb, VK_FORMAT_BC7_SRGB_BLOCK)                \
+                                                                                      \
+    X(wgpu::TextureFormat::ETC2RGB8Unorm, VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK)          \
+    X(wgpu::TextureFormat::ETC2RGB8UnormSrgb, VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK)       \
+    X(wgpu::TextureFormat::ETC2RGB8A1Unorm, VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK)      \
+    X(wgpu::TextureFormat::ETC2RGB8A1UnormSrgb, VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK)   \
+    X(wgpu::TextureFormat::ETC2RGBA8Unorm, VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK)       \
+    X(wgpu::TextureFormat::ETC2RGBA8UnormSrgb, VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK)    \
+    X(wgpu::TextureFormat::EACR11Unorm, VK_FORMAT_EAC_R11_UNORM_BLOCK)                \
+    X(wgpu::TextureFormat::EACR11Snorm, VK_FORMAT_EAC_R11_SNORM_BLOCK)                \
+    X(wgpu::TextureFormat::EACRG11Unorm, VK_FORMAT_EAC_R11G11_UNORM_BLOCK)            \
+    X(wgpu::TextureFormat::EACRG11Snorm, VK_FORMAT_EAC_R11G11_SNORM_BLOCK)            \
+                                                                                      \
+    X(wgpu::TextureFormat::ASTC4x4Unorm, VK_FORMAT_ASTC_4x4_UNORM_BLOCK)              \
+    X(wgpu::TextureFormat::ASTC4x4UnormSrgb, VK_FORMAT_ASTC_4x4_SRGB_BLOCK)           \
+    X(wgpu::TextureFormat::ASTC5x4Unorm, VK_FORMAT_ASTC_5x4_UNORM_BLOCK)              \
+    X(wgpu::TextureFormat::ASTC5x4UnormSrgb, VK_FORMAT_ASTC_5x4_SRGB_BLOCK)           \
+    X(wgpu::TextureFormat::ASTC5x5Unorm, VK_FORMAT_ASTC_5x5_UNORM_BLOCK)              \
+    X(wgpu::TextureFormat::ASTC5x5UnormSrgb, VK_FORMAT_ASTC_5x5_SRGB_BLOCK)           \
+    X(wgpu::TextureFormat::ASTC6x5Unorm, VK_FORMAT_ASTC_6x5_UNORM_BLOCK)              \
+    X(wgpu::TextureFormat::ASTC6x5UnormSrgb, VK_FORMAT_ASTC_6x5_SRGB_BLOCK)           \
+    X(wgpu::TextureFormat::ASTC6x6Unorm, VK_FORMAT_ASTC_6x6_UNORM_BLOCK)              \
+    X(wgpu::TextureFormat::ASTC6x6UnormSrgb, VK_FORMAT_ASTC_6x6_SRGB_BLOCK)           \
+    X(wgpu::TextureFormat::ASTC8x5Unorm, VK_FORMAT_ASTC_8x5_UNORM_BLOCK)              \
+    X(wgpu::TextureFormat::ASTC8x5UnormSrgb, VK_FORMAT_ASTC_8x5_SRGB_BLOCK)           \
+    X(wgpu::TextureFormat::ASTC8x6Unorm, VK_FORMAT_ASTC_8x6_UNORM_BLOCK)              \
+    X(wgpu::TextureFormat::ASTC8x6UnormSrgb, VK_FORMAT_ASTC_8x6_SRGB_BLOCK)           \
+    X(wgpu::TextureFormat::ASTC8x8Unorm, VK_FORMAT_ASTC_8x8_UNORM_BLOCK)              \
+    X(wgpu::TextureFormat::ASTC8x8UnormSrgb, VK_FORMAT_ASTC_8x8_SRGB_BLOCK)           \
+    X(wgpu::TextureFormat::ASTC10x5Unorm, VK_FORMAT_ASTC_10x5_UNORM_BLOCK)            \
+    X(wgpu::TextureFormat::ASTC10x5UnormSrgb, VK_FORMAT_ASTC_10x5_SRGB_BLOCK)         \
+    X(wgpu::TextureFormat::ASTC10x6Unorm, VK_FORMAT_ASTC_10x6_UNORM_BLOCK)            \
+    X(wgpu::TextureFormat::ASTC10x6UnormSrgb, VK_FORMAT_ASTC_10x6_SRGB_BLOCK)         \
+    X(wgpu::TextureFormat::ASTC10x8Unorm, VK_FORMAT_ASTC_10x8_UNORM_BLOCK)            \
+    X(wgpu::TextureFormat::ASTC10x8UnormSrgb, VK_FORMAT_ASTC_10x8_SRGB_BLOCK)         \
+    X(wgpu::TextureFormat::ASTC10x10Unorm, VK_FORMAT_ASTC_10x10_UNORM_BLOCK)          \
+    X(wgpu::TextureFormat::ASTC10x10UnormSrgb, VK_FORMAT_ASTC_10x10_SRGB_BLOCK)       \
+    X(wgpu::TextureFormat::ASTC12x10Unorm, VK_FORMAT_ASTC_12x10_UNORM_BLOCK)          \
+    X(wgpu::TextureFormat::ASTC12x10UnormSrgb, VK_FORMAT_ASTC_12x10_SRGB_BLOCK)       \
+    X(wgpu::TextureFormat::ASTC12x12Unorm, VK_FORMAT_ASTC_12x12_UNORM_BLOCK)          \
+    X(wgpu::TextureFormat::ASTC12x12UnormSrgb, VK_FORMAT_ASTC_12x12_SRGB_BLOCK)       \
+                                                                                      \
+    X(wgpu::TextureFormat::R8BG8Biplanar420Unorm, VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) \
+    X(wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm,                               \
+      VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16)
+
 // Converts Dawn texture format to Vulkan formats.
 VkFormat VulkanImageFormat(const Device* device, wgpu::TextureFormat format) {
     switch (format) {
-        case wgpu::TextureFormat::R8Unorm:
-            return VK_FORMAT_R8_UNORM;
-        case wgpu::TextureFormat::R8Snorm:
-            return VK_FORMAT_R8_SNORM;
-        case wgpu::TextureFormat::R8Uint:
-            return VK_FORMAT_R8_UINT;
-        case wgpu::TextureFormat::R8Sint:
-            return VK_FORMAT_R8_SINT;
-
-        case wgpu::TextureFormat::R16Unorm:
-            return VK_FORMAT_R16_UNORM;
-        case wgpu::TextureFormat::R16Snorm:
-            return VK_FORMAT_R16_SNORM;
-        case wgpu::TextureFormat::R16Uint:
-            return VK_FORMAT_R16_UINT;
-        case wgpu::TextureFormat::R16Sint:
-            return VK_FORMAT_R16_SINT;
-        case wgpu::TextureFormat::R16Float:
-            return VK_FORMAT_R16_SFLOAT;
-        case wgpu::TextureFormat::RG8Unorm:
-            return VK_FORMAT_R8G8_UNORM;
-        case wgpu::TextureFormat::RG8Snorm:
-            return VK_FORMAT_R8G8_SNORM;
-        case wgpu::TextureFormat::RG8Uint:
-            return VK_FORMAT_R8G8_UINT;
-        case wgpu::TextureFormat::RG8Sint:
-            return VK_FORMAT_R8G8_SINT;
-
-        case wgpu::TextureFormat::R32Uint:
-            return VK_FORMAT_R32_UINT;
-        case wgpu::TextureFormat::R32Sint:
-            return VK_FORMAT_R32_SINT;
-        case wgpu::TextureFormat::R32Float:
-            return VK_FORMAT_R32_SFLOAT;
-        case wgpu::TextureFormat::RG16Unorm:
-            return VK_FORMAT_R16G16_UNORM;
-        case wgpu::TextureFormat::RG16Snorm:
-            return VK_FORMAT_R16G16_SNORM;
-        case wgpu::TextureFormat::RG16Uint:
-            return VK_FORMAT_R16G16_UINT;
-        case wgpu::TextureFormat::RG16Sint:
-            return VK_FORMAT_R16G16_SINT;
-        case wgpu::TextureFormat::RG16Float:
-            return VK_FORMAT_R16G16_SFLOAT;
-        case wgpu::TextureFormat::RGBA8Unorm:
-            return VK_FORMAT_R8G8B8A8_UNORM;
-        case wgpu::TextureFormat::RGBA8UnormSrgb:
-            return VK_FORMAT_R8G8B8A8_SRGB;
-        case wgpu::TextureFormat::RGBA8Snorm:
-            return VK_FORMAT_R8G8B8A8_SNORM;
-        case wgpu::TextureFormat::RGBA8Uint:
-            return VK_FORMAT_R8G8B8A8_UINT;
-        case wgpu::TextureFormat::RGBA8Sint:
-            return VK_FORMAT_R8G8B8A8_SINT;
-        case wgpu::TextureFormat::BGRA8Unorm:
-            return VK_FORMAT_B8G8R8A8_UNORM;
-        case wgpu::TextureFormat::BGRA8UnormSrgb:
-            return VK_FORMAT_B8G8R8A8_SRGB;
-        case wgpu::TextureFormat::RGB10A2Uint:
-            return VK_FORMAT_A2B10G10R10_UINT_PACK32;
-        case wgpu::TextureFormat::RGB10A2Unorm:
-            return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
-        case wgpu::TextureFormat::RG11B10Ufloat:
-            return VK_FORMAT_B10G11R11_UFLOAT_PACK32;
-        case wgpu::TextureFormat::RGB9E5Ufloat:
-            return VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
-
-        case wgpu::TextureFormat::RG32Uint:
-            return VK_FORMAT_R32G32_UINT;
-        case wgpu::TextureFormat::RG32Sint:
-            return VK_FORMAT_R32G32_SINT;
-        case wgpu::TextureFormat::RG32Float:
-            return VK_FORMAT_R32G32_SFLOAT;
-        case wgpu::TextureFormat::RGBA16Unorm:
-            return VK_FORMAT_R16G16B16A16_UNORM;
-        case wgpu::TextureFormat::RGBA16Snorm:
-            return VK_FORMAT_R16G16B16A16_SNORM;
-        case wgpu::TextureFormat::RGBA16Uint:
-            return VK_FORMAT_R16G16B16A16_UINT;
-        case wgpu::TextureFormat::RGBA16Sint:
-            return VK_FORMAT_R16G16B16A16_SINT;
-        case wgpu::TextureFormat::RGBA16Float:
-            return VK_FORMAT_R16G16B16A16_SFLOAT;
-
-        case wgpu::TextureFormat::RGBA32Uint:
-            return VK_FORMAT_R32G32B32A32_UINT;
-        case wgpu::TextureFormat::RGBA32Sint:
-            return VK_FORMAT_R32G32B32A32_SINT;
-        case wgpu::TextureFormat::RGBA32Float:
-            return VK_FORMAT_R32G32B32A32_SFLOAT;
-
-        case wgpu::TextureFormat::Depth16Unorm:
-            return VK_FORMAT_D16_UNORM;
-        case wgpu::TextureFormat::Depth32Float:
-            return VK_FORMAT_D32_SFLOAT;
-        case wgpu::TextureFormat::Depth24Plus:
-            return VK_FORMAT_D32_SFLOAT;
+#define X(wgpuFormat, vkFormat) \
+    case wgpuFormat:            \
+        return vkFormat;
+        SIMPLE_FORMAT_MAPPING(X)
+#undef X
         case wgpu::TextureFormat::Depth24PlusStencil8:
             // Depth24PlusStencil8 maps to either of these two formats because only requires
             // that one of the two be present. The VulkanUseD32S8 toggle combines the wish of
@@ -433,8 +505,10 @@ VkFormat VulkanImageFormat(const Device* device, wgpu::TextureFormat format) {
             } else {
                 return VK_FORMAT_D24_UNORM_S8_UINT;
             }
-        case wgpu::TextureFormat::Depth32FloatStencil8:
-            return VK_FORMAT_D32_SFLOAT_S8_UINT;
+
+        case wgpu::TextureFormat::Depth24Plus:
+            return VK_FORMAT_D32_SFLOAT;
+
         case wgpu::TextureFormat::Stencil8:
             // Try to use the stencil8 format if possible, otherwise use whatever format we can
             // use that contains a stencil8 component.
@@ -444,117 +518,6 @@ VkFormat VulkanImageFormat(const Device* device, wgpu::TextureFormat format) {
                 return VulkanImageFormat(device, wgpu::TextureFormat::Depth24PlusStencil8);
             }
 
-        case wgpu::TextureFormat::BC1RGBAUnorm:
-            return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
-        case wgpu::TextureFormat::BC1RGBAUnormSrgb:
-            return VK_FORMAT_BC1_RGBA_SRGB_BLOCK;
-        case wgpu::TextureFormat::BC2RGBAUnorm:
-            return VK_FORMAT_BC2_UNORM_BLOCK;
-        case wgpu::TextureFormat::BC2RGBAUnormSrgb:
-            return VK_FORMAT_BC2_SRGB_BLOCK;
-        case wgpu::TextureFormat::BC3RGBAUnorm:
-            return VK_FORMAT_BC3_UNORM_BLOCK;
-        case wgpu::TextureFormat::BC3RGBAUnormSrgb:
-            return VK_FORMAT_BC3_SRGB_BLOCK;
-        case wgpu::TextureFormat::BC4RSnorm:
-            return VK_FORMAT_BC4_SNORM_BLOCK;
-        case wgpu::TextureFormat::BC4RUnorm:
-            return VK_FORMAT_BC4_UNORM_BLOCK;
-        case wgpu::TextureFormat::BC5RGSnorm:
-            return VK_FORMAT_BC5_SNORM_BLOCK;
-        case wgpu::TextureFormat::BC5RGUnorm:
-            return VK_FORMAT_BC5_UNORM_BLOCK;
-        case wgpu::TextureFormat::BC6HRGBFloat:
-            return VK_FORMAT_BC6H_SFLOAT_BLOCK;
-        case wgpu::TextureFormat::BC6HRGBUfloat:
-            return VK_FORMAT_BC6H_UFLOAT_BLOCK;
-        case wgpu::TextureFormat::BC7RGBAUnorm:
-            return VK_FORMAT_BC7_UNORM_BLOCK;
-        case wgpu::TextureFormat::BC7RGBAUnormSrgb:
-            return VK_FORMAT_BC7_SRGB_BLOCK;
-
-        case wgpu::TextureFormat::ETC2RGB8Unorm:
-            return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
-        case wgpu::TextureFormat::ETC2RGB8UnormSrgb:
-            return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
-        case wgpu::TextureFormat::ETC2RGB8A1Unorm:
-            return VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK;
-        case wgpu::TextureFormat::ETC2RGB8A1UnormSrgb:
-            return VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK;
-        case wgpu::TextureFormat::ETC2RGBA8Unorm:
-            return VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK;
-        case wgpu::TextureFormat::ETC2RGBA8UnormSrgb:
-            return VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK;
-        case wgpu::TextureFormat::EACR11Unorm:
-            return VK_FORMAT_EAC_R11_UNORM_BLOCK;
-        case wgpu::TextureFormat::EACR11Snorm:
-            return VK_FORMAT_EAC_R11_SNORM_BLOCK;
-        case wgpu::TextureFormat::EACRG11Unorm:
-            return VK_FORMAT_EAC_R11G11_UNORM_BLOCK;
-        case wgpu::TextureFormat::EACRG11Snorm:
-            return VK_FORMAT_EAC_R11G11_SNORM_BLOCK;
-
-        case wgpu::TextureFormat::ASTC4x4Unorm:
-            return VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC4x4UnormSrgb:
-            return VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC5x4Unorm:
-            return VK_FORMAT_ASTC_5x4_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC5x4UnormSrgb:
-            return VK_FORMAT_ASTC_5x4_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC5x5Unorm:
-            return VK_FORMAT_ASTC_5x5_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC5x5UnormSrgb:
-            return VK_FORMAT_ASTC_5x5_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC6x5Unorm:
-            return VK_FORMAT_ASTC_6x5_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC6x5UnormSrgb:
-            return VK_FORMAT_ASTC_6x5_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC6x6Unorm:
-            return VK_FORMAT_ASTC_6x6_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC6x6UnormSrgb:
-            return VK_FORMAT_ASTC_6x6_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC8x5Unorm:
-            return VK_FORMAT_ASTC_8x5_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC8x5UnormSrgb:
-            return VK_FORMAT_ASTC_8x5_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC8x6Unorm:
-            return VK_FORMAT_ASTC_8x6_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC8x6UnormSrgb:
-            return VK_FORMAT_ASTC_8x6_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC8x8Unorm:
-            return VK_FORMAT_ASTC_8x8_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC8x8UnormSrgb:
-            return VK_FORMAT_ASTC_8x8_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC10x5Unorm:
-            return VK_FORMAT_ASTC_10x5_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC10x5UnormSrgb:
-            return VK_FORMAT_ASTC_10x5_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC10x6Unorm:
-            return VK_FORMAT_ASTC_10x6_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC10x6UnormSrgb:
-            return VK_FORMAT_ASTC_10x6_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC10x8Unorm:
-            return VK_FORMAT_ASTC_10x8_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC10x8UnormSrgb:
-            return VK_FORMAT_ASTC_10x8_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC10x10Unorm:
-            return VK_FORMAT_ASTC_10x10_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC10x10UnormSrgb:
-            return VK_FORMAT_ASTC_10x10_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC12x10Unorm:
-            return VK_FORMAT_ASTC_12x10_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC12x10UnormSrgb:
-            return VK_FORMAT_ASTC_12x10_SRGB_BLOCK;
-        case wgpu::TextureFormat::ASTC12x12Unorm:
-            return VK_FORMAT_ASTC_12x12_UNORM_BLOCK;
-        case wgpu::TextureFormat::ASTC12x12UnormSrgb:
-            return VK_FORMAT_ASTC_12x12_SRGB_BLOCK;
-
-        case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
-            return VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-        case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
-            return VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16;
         // R8BG8A8Triplanar420Unorm format is only supported on macOS.
         case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
         case wgpu::TextureFormat::Undefined:
@@ -562,6 +525,32 @@ VkFormat VulkanImageFormat(const Device* device, wgpu::TextureFormat format) {
     }
     DAWN_UNREACHABLE();
 }
+
+ResultOrError<wgpu::TextureFormat> FormatFromVkFormat(const Device* device, VkFormat vkFormat) {
+    switch (vkFormat) {
+#define X(wgpuFormat, vkFormat) \
+    case vkFormat:              \
+        return wgpuFormat;
+        SIMPLE_FORMAT_MAPPING(X)
+#undef X
+        case VK_FORMAT_S8_UINT:
+            if (device->IsToggleEnabled(Toggle::VulkanUseS8)) {
+                return wgpu::TextureFormat::Stencil8;
+            }
+            break;
+
+        case VK_FORMAT_D24_UNORM_S8_UINT:
+            if (!device->IsToggleEnabled(Toggle::VulkanUseD32S8)) {
+                return wgpu::TextureFormat::Depth24PlusStencil8;
+            }
+            break;
+        default:
+            break;
+    }
+    return DAWN_VALIDATION_ERROR("Unsupported VkFormat %x", vkFormat);
+}
+
+#undef SIMPLE_FORMAT_MAPPING
 
 // Converts the Dawn usage flags to Vulkan usage flags. Also needs the format to choose
 // between color and depth attachment usages.
@@ -668,8 +657,12 @@ VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage) 
         case kReadOnlyRenderAttachment:
             return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
-        case kPresentTextureUsage:
+        case kPresentReleaseTextureUsage:
             return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        case kPresentAcquireTextureUsage:
+            // We always consider images being acquired from the swapchain as uninitialized,
+            // so we can use the UNDEFINED Vulkan image layout.
+            return VK_IMAGE_LAYOUT_UNDEFINED;
 
         case wgpu::TextureUsage::TransientAttachment:
             // Will be covered by RenderAttachment above, as specification of
@@ -715,7 +708,8 @@ VkSampleCountFlagBits VulkanSampleCount(uint32_t sampleCount) {
     DAWN_UNREACHABLE();
 }
 
-MaybeError ValidateVulkanImageCanBeWrapped(const DeviceBase*, const TextureDescriptor* descriptor) {
+MaybeError ValidateVulkanImageCanBeWrapped(const DeviceBase*,
+                                           const UnpackedPtr<TextureDescriptor>& descriptor) {
     DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D,
                     "Texture dimension (%s) is not %s.", descriptor->dimension,
                     wgpu::TextureDimension::e2D);
@@ -751,7 +745,7 @@ bool IsSampleCountSupported(const dawn::native::vulkan::Device* device,
 
 // static
 ResultOrError<Ref<Texture>> Texture::Create(Device* device,
-                                            const TextureDescriptor* descriptor,
+                                            const UnpackedPtr<TextureDescriptor>& descriptor,
                                             VkImageUsageFlags extraUsages) {
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     DAWN_TRY(texture->InitializeAsInternalTexture(extraUsages));
@@ -759,20 +753,20 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device,
 }
 
 // static
-ResultOrError<Texture*> Texture::CreateFromExternal(
+ResultOrError<Ref<Texture>> Texture::CreateFromExternal(
     Device* device,
     const ExternalImageDescriptorVk* descriptor,
-    const TextureDescriptor* textureDescriptor,
+    const UnpackedPtr<TextureDescriptor>& textureDescriptor,
     external_memory::Service* externalMemoryService) {
     Ref<Texture> texture = AcquireRef(new Texture(device, textureDescriptor));
     DAWN_TRY(texture->InitializeFromExternal(descriptor, externalMemoryService));
-    return texture.Detach();
+    return texture;
 }
 
 // static
 ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
     SharedTextureMemory* memory,
-    const TextureDescriptor* textureDescriptor) {
+    const UnpackedPtr<TextureDescriptor>& textureDescriptor) {
     Ref<Texture> texture =
         AcquireRef(new Texture(ToBackend(memory->GetDevice()), textureDescriptor));
     texture->mSharedTextureMemoryContents = memory->GetContents();
@@ -785,14 +779,14 @@ ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
 
 // static
 Ref<Texture> Texture::CreateForSwapChain(Device* device,
-                                         const TextureDescriptor* descriptor,
+                                         const UnpackedPtr<TextureDescriptor>& descriptor,
                                          VkImage nativeImage) {
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     texture->InitializeForSwapChain(nativeImage);
     return texture;
 }
 
-Texture::Texture(Device* device, const TextureDescriptor* descriptor)
+Texture::Texture(Device* device, const UnpackedPtr<TextureDescriptor>& descriptor)
     : TextureBase(device, descriptor),
       mCombinedAspect(ComputeCombinedAspect(device, GetFormat())),
       // A usage of none will make sure the texture is transitioned before its first use as
@@ -849,25 +843,31 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
         createInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
     }
 
-    if (requiresViewFormatsList) {
-        if (device->GetDeviceInfo().HasExt(DeviceExt::ImageFormatList)) {
-            createInfoChain.Add(&imageFormatListInfo,
-                                VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
-            viewFormats.push_back(VulkanImageFormat(device, GetFormat().format));
-            for (FormatIndex i : IterateBitSet(GetViewFormats())) {
-                const Format& viewFormat = device->GetValidInternalFormat(i);
-                viewFormats.push_back(VulkanImageFormat(device, viewFormat.format));
-            }
-
-            imageFormatListInfo.viewFormatCount = viewFormats.size();
-            imageFormatListInfo.pViewFormats = viewFormats.data();
+    // Add the view format list only when the usage does not have storage. Otherwise, the VVL will
+    // say creation of the texture is invalid.
+    // See https://github.com/gpuweb/gpuweb/issues/4426.
+    if (requiresViewFormatsList && device->GetDeviceInfo().HasExt(DeviceExt::ImageFormatList) &&
+        !(createInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+        createInfoChain.Add(&imageFormatListInfo, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
+        viewFormats.push_back(VulkanImageFormat(device, GetFormat().format));
+        for (FormatIndex i : IterateBitSet(GetViewFormats())) {
+            const Format& viewFormat = device->GetValidInternalFormat(i);
+            viewFormats.push_back(VulkanImageFormat(device, viewFormat.format));
         }
+
+        imageFormatListInfo.viewFormatCount = viewFormats.size();
+        imageFormatListInfo.pViewFormats = viewFormats.data();
     }
 
     DAWN_ASSERT(IsSampleCountSupported(device, createInfo));
 
     if (GetArrayLayers() >= 6 && GetBaseSize().width == GetBaseSize().height) {
         createInfo.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    }
+
+    if (createInfo.imageType == VK_IMAGE_TYPE_3D &&
+        createInfo.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
+        createInfo.flags |= VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
     }
 
     // We always set VK_IMAGE_USAGE_TRANSFER_DST_BIT unconditionally beause the Vulkan images
@@ -916,13 +916,13 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
         textureIsBuggy &= GetDimension() == wgpu::TextureDimension::e2D;
         textureIsBuggy &= IsPowerOfTwo(GetBaseSize().width) && IsPowerOfTwo(GetBaseSize().height);
         if (textureIsBuggy) {
-            DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
+            DAWN_TRY(ClearTexture(ToBackend(GetDevice()->GetQueue())->GetPendingRecordingContext(),
                                   GetAllSubresources(), TextureBase::ClearValue::Zero));
         }
     }
 
     if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-        DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
+        DAWN_TRY(ClearTexture(ToBackend(GetDevice()->GetQueue())->GetPendingRecordingContext(),
                               GetAllSubresources(), TextureBase::ClearValue::NonZero));
     }
 
@@ -999,6 +999,7 @@ MaybeError Texture::InitializeFromExternal(const ExternalImageDescriptorVk* desc
 
 void Texture::InitializeForSwapChain(VkImage nativeImage) {
     mHandle = nativeImage;
+    mSubresourceLastSyncInfos.Fill({kPresentAcquireTextureUsage, wgpu::ShaderStage::None});
     SetLabelHelper("Dawn_SwapChainTexture");
 }
 
@@ -1102,10 +1103,10 @@ MaybeError Texture::EndAccess(ExternalSemaphoreHandle* handle,
     if (mExternalSemaphoreHandle == kNullExternalSemaphoreHandle || targetLayout != currentLayout) {
         mDesiredExportLayout = targetLayout;
 
-        Device* device = ToBackend(GetDevice());
-        CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
+        Queue* queue = ToBackend(GetDevice()->GetQueue());
+        CommandRecordingContext* recordingContext = queue->GetPendingRecordingContext();
         recordingContext->externalTexturesForEagerTransition.insert(this);
-        DAWN_TRY(device->SubmitPendingCommands());
+        DAWN_TRY(queue->SubmitPendingCommands());
 
         currentLayout = targetLayout;
     }
@@ -1360,45 +1361,45 @@ void Texture::TransitionUsageForPassImpl(
     wgpu::ShaderStage allNewShaderStages = wgpu::ShaderStage::None;
     wgpu::ShaderStage allLastShaderStages = wgpu::ShaderStage::None;
 
-    mSubresourceLastSyncInfos.Merge(
-        subresourceSyncInfos, [&](const SubresourceRange& range, TextureSyncInfo* lastSyncInfo,
-                                  const TextureSyncInfo& newSyncInfo) {
-            if (newSyncInfo.usage == wgpu::TextureUsage::None ||
-                CanReuseWithoutBarrier(lastSyncInfo->usage, newSyncInfo.usage,
-                                       lastSyncInfo->shaderStages, newSyncInfo.shaderStages)) {
-                return;
-            }
+    mSubresourceLastSyncInfos.Merge(subresourceSyncInfos, [&](const SubresourceRange& range,
+                                                              TextureSyncInfo* lastSyncInfo,
+                                                              const TextureSyncInfo& newSyncInfo) {
+        wgpu::TextureUsage newUsage = newSyncInfo.usage;
+        if (newSyncInfo.shaderStages == wgpu::ShaderStage::None) {
+            // If the image isn't used in any shader stages, ignore shader usages. Eg. ignore a
+            // texture binding that isn't actually sampled in any shader.
+            newUsage &= ~kShaderTextureUsages;
+        }
 
-            imageBarriers->push_back(
-                BuildMemoryBarrier(this, lastSyncInfo->usage, newSyncInfo.usage, range));
+        if (newUsage == wgpu::TextureUsage::None ||
+            CanReuseWithoutBarrier(lastSyncInfo->usage, newUsage, lastSyncInfo->shaderStages,
+                                   newSyncInfo.shaderStages)) {
+            return;
+        }
 
-            allLastUsages |= lastSyncInfo->usage;
-            allNewUsages |= newSyncInfo.usage;
+        imageBarriers->push_back(BuildMemoryBarrier(this, lastSyncInfo->usage, newUsage, range));
 
-            allLastShaderStages |= lastSyncInfo->shaderStages;
-            allNewShaderStages |= newSyncInfo.shaderStages;
+        allLastUsages |= lastSyncInfo->usage;
+        allNewUsages |= newUsage;
 
-            if (lastSyncInfo->usage == newSyncInfo.usage &&
-                IsSubset(lastSyncInfo->usage, kReadOnlyTextureUsages)) {
-                // Read only usage and no layout transition. We can keep previous shader stages so
-                // future uses in those stages don't insert barriers.
-                lastSyncInfo->shaderStages |= newSyncInfo.shaderStages;
-            } else {
-                // Image was altered by write or layout transition. We need to clear previous shader
-                // stages so future uses in those stages will insert barriers.
-                lastSyncInfo->shaderStages = newSyncInfo.shaderStages;
-            }
-            lastSyncInfo->usage = newSyncInfo.usage;
-        });
+        allLastShaderStages |= lastSyncInfo->shaderStages;
+        allNewShaderStages |= newSyncInfo.shaderStages;
+
+        if (lastSyncInfo->usage == newUsage &&
+            IsSubset(lastSyncInfo->usage, kReadOnlyTextureUsages)) {
+            // Read only usage and no layout transition. We can keep previous shader stages so
+            // future uses in those stages don't insert barriers.
+            lastSyncInfo->shaderStages |= newSyncInfo.shaderStages;
+        } else {
+            // Image was altered by write or layout transition. We need to clear previous shader
+            // stages so future uses in those stages will insert barriers.
+            lastSyncInfo->shaderStages = newSyncInfo.shaderStages;
+        }
+        lastSyncInfo->usage = newUsage;
+    });
 
     if (mExternalState != ExternalState::InternalOnly) {
         TweakTransitionForExternalUsage(recordingContext, imageBarriers, transitionBarrierStart);
-    }
-
-    if (allNewShaderStages == wgpu::ShaderStage::None) {
-        // If the image isn't used in any shader stages, ignore shader usages. Eg. ignore a texture
-        // binding that isn't actually sampled in any shader.
-        allNewUsages &= ~kShaderTextureUsages;
     }
 
     // Skip adding pipeline stages if no barrier was needed to avoid putting TOP_OF_PIPE in the
@@ -1503,20 +1504,116 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
 
     const bool isZero = clearValue == TextureBase::ClearValue::Zero;
     uint32_t uClearColor = isZero ? 0 : 1;
-    int32_t sClearColor = isZero ? 0 : 1;
     float fClearColor = isZero ? 0.f : 1.f;
-
-    TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, wgpu::ShaderStage::None,
-                       range);
 
     VkImageSubresourceRange imageRange = {};
     imageRange.levelCount = 1;
     imageRange.layerCount = 1;
 
-    if (GetFormat().isCompressed || GetFormat().IsMultiPlanar()) {
+    if ((GetInternalUsage() & wgpu::TextureUsage::RenderAttachment) && GetFormat().IsColor() &&
+        !GetFormat().IsMultiPlanar()) {
+        TransitionUsageNow(recordingContext, wgpu::TextureUsage::RenderAttachment,
+                           wgpu::ShaderStage::None, range);
+
+        for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
+             ++level) {
+            for (uint32_t layer = range.baseArrayLayer;
+                 layer < range.baseArrayLayer + range.layerCount; ++layer) {
+                Aspect aspects = Aspect::None;
+                for (Aspect aspect : IterateEnumMask(range.aspects)) {
+                    if (clearValue == TextureBase::ClearValue::Zero &&
+                        IsSubresourceContentInitialized(
+                            SubresourceRange::SingleMipAndLayer(level, layer, aspect))) {
+                        // Skip lazy clears if already initialized.
+                        continue;
+                    }
+                    aspects |= aspect;
+                }
+
+                if (aspects == Aspect::None) {
+                    continue;
+                }
+
+                Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(level, aspects);
+                BeginRenderPassCmd beginCmd{};
+                beginCmd.width = mipSize.width;
+                beginCmd.height = mipSize.height;
+
+                TextureViewDescriptor viewDesc = {};
+                viewDesc.format = GetFormat().format;
+                viewDesc.dimension = wgpu::TextureViewDimension::e2D;
+                viewDesc.baseMipLevel = level;
+                viewDesc.mipLevelCount = 1u;
+                viewDesc.baseArrayLayer = layer;
+                viewDesc.arrayLayerCount = 1u;
+
+                ColorAttachmentIndex ca0(uint8_t(0));
+                DAWN_TRY_ASSIGN(beginCmd.colorAttachments[ca0].view,
+                                TextureView::Create(this, &viewDesc));
+
+                RenderPassColorAttachment colorAttachment{};
+                colorAttachment.view = beginCmd.colorAttachments[ca0].view.Get();
+                beginCmd.colorAttachments[ca0].clearColor = colorAttachment.clearValue = {
+                    fClearColor, fClearColor, fClearColor, fClearColor};
+                beginCmd.colorAttachments[ca0].loadOp = colorAttachment.loadOp =
+                    wgpu::LoadOp::Clear;
+                beginCmd.colorAttachments[ca0].storeOp = colorAttachment.storeOp =
+                    wgpu::StoreOp::Store;
+
+                RenderPassDescriptor passDesc{};
+                passDesc.colorAttachmentCount = 1u;
+                passDesc.colorAttachments = &colorAttachment;
+                beginCmd.attachmentState = device->GetOrCreateAttachmentState(Unpack(&passDesc));
+
+                DAWN_TRY(
+                    RecordBeginRenderPass(recordingContext, ToBackend(GetDevice()), &beginCmd));
+                ToBackend(GetDevice())->fn.CmdEndRenderPass(recordingContext->commandBuffer);
+            }
+        }
+    } else if (GetFormat().HasDepthOrStencil()) {
+        TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, wgpu::ShaderStage::None,
+                           range);
+
+        for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
+             ++level) {
+            imageRange.baseMipLevel = level;
+            for (uint32_t layer = range.baseArrayLayer;
+                 layer < range.baseArrayLayer + range.layerCount; ++layer) {
+                Aspect aspects = Aspect::None;
+                for (Aspect aspect : IterateEnumMask(range.aspects)) {
+                    if (clearValue == TextureBase::ClearValue::Zero &&
+                        IsSubresourceContentInitialized(
+                            SubresourceRange::SingleMipAndLayer(level, layer, aspect))) {
+                        // Skip lazy clears if already initialized.
+                        continue;
+                    }
+                    aspects |= aspect;
+                }
+
+                if (aspects == Aspect::None) {
+                    continue;
+                }
+
+                imageRange.aspectMask = VulkanAspectMask(aspects);
+                imageRange.baseMipLevel = level;
+                imageRange.baseArrayLayer = layer;
+
+                VkClearDepthStencilValue clearDepthStencilValue[1];
+                clearDepthStencilValue[0].depth = fClearColor;
+                clearDepthStencilValue[0].stencil = uClearColor;
+                device->fn.CmdClearDepthStencilImage(recordingContext->commandBuffer, GetHandle(),
+                                                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                                     clearDepthStencilValue, 1, &imageRange);
+            }
+        }
+    } else {
         if (range.aspects == Aspect::None) {
             return {};
         }
+
+        TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, wgpu::ShaderStage::None,
+                           range);
+
         // need to clear the texture with a copy from buffer
         DAWN_ASSERT(range.aspects == Aspect::Color || range.aspects == Aspect::Plane0 ||
                     range.aspects == Aspect::Plane1 || range.aspects == Aspect::Plane2);
@@ -1531,9 +1628,9 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                               largestMipSize.depthOrArrayLayers;
         DynamicUploader* uploader = device->GetDynamicUploader();
         UploadHandle uploadHandle;
-        DAWN_TRY_ASSIGN(
-            uploadHandle,
-            uploader->Allocate(bufferSize, device->GetPendingCommandSerial(), blockInfo.byteSize));
+        DAWN_TRY_ASSIGN(uploadHandle, uploader->Allocate(
+                                          bufferSize, device->GetQueue()->GetPendingCommandSerial(),
+                                          blockInfo.byteSize));
         memset(uploadHandle.mappedBuffer, uClearColor, bufferSize);
 
         std::vector<VkBufferImageCopy> regions;
@@ -1566,67 +1663,6 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
         device->fn.CmdCopyBufferToImage(
             recordingContext->commandBuffer, ToBackend(uploadHandle.stagingBuffer)->GetHandle(),
             GetHandle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regions.size(), regions.data());
-    } else {
-        for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
-             ++level) {
-            imageRange.baseMipLevel = level;
-            for (uint32_t layer = range.baseArrayLayer;
-                 layer < range.baseArrayLayer + range.layerCount; ++layer) {
-                Aspect aspects = Aspect::None;
-                for (Aspect aspect : IterateEnumMask(range.aspects)) {
-                    if (clearValue == TextureBase::ClearValue::Zero &&
-                        IsSubresourceContentInitialized(
-                            SubresourceRange::SingleMipAndLayer(level, layer, aspect))) {
-                        // Skip lazy clears if already initialized.
-                        continue;
-                    }
-                    aspects |= aspect;
-                }
-
-                if (aspects == Aspect::None) {
-                    continue;
-                }
-
-                imageRange.aspectMask = VulkanAspectMask(aspects);
-                imageRange.baseArrayLayer = layer;
-
-                if (aspects & (Aspect::Depth | Aspect::Stencil | Aspect::CombinedDepthStencil)) {
-                    VkClearDepthStencilValue clearDepthStencilValue[1];
-                    clearDepthStencilValue[0].depth = fClearColor;
-                    clearDepthStencilValue[0].stencil = uClearColor;
-                    device->fn.CmdClearDepthStencilImage(recordingContext->commandBuffer,
-                                                         GetHandle(),
-                                                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                                         clearDepthStencilValue, 1, &imageRange);
-                } else {
-                    DAWN_ASSERT(aspects == Aspect::Color);
-                    VkClearColorValue clearColorValue;
-                    switch (GetFormat().GetAspectInfo(Aspect::Color).baseType) {
-                        case TextureComponentType::Float:
-                            clearColorValue.float32[0] = fClearColor;
-                            clearColorValue.float32[1] = fClearColor;
-                            clearColorValue.float32[2] = fClearColor;
-                            clearColorValue.float32[3] = fClearColor;
-                            break;
-                        case TextureComponentType::Sint:
-                            clearColorValue.int32[0] = sClearColor;
-                            clearColorValue.int32[1] = sClearColor;
-                            clearColorValue.int32[2] = sClearColor;
-                            clearColorValue.int32[3] = sClearColor;
-                            break;
-                        case TextureComponentType::Uint:
-                            clearColorValue.uint32[0] = uClearColor;
-                            clearColorValue.uint32[1] = uClearColor;
-                            clearColorValue.uint32[2] = uClearColor;
-                            clearColorValue.uint32[3] = uClearColor;
-                            break;
-                    }
-                    device->fn.CmdClearColorImage(recordingContext->commandBuffer, GetHandle(),
-                                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                                  &clearColorValue, 1, &imageRange);
-                }
-            }
-        }
     }
 
     if (clearValue == TextureBase::ClearValue::Zero) {
@@ -1697,36 +1733,18 @@ MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {
     }
 
     Device* device = ToBackend(GetTexture()->GetDevice());
+    VkImageViewCreateInfo createInfo = GetCreateInfo(descriptor->format, descriptor->dimension);
 
-    VkImageViewCreateInfo createInfo;
-    createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    createInfo.pNext = nullptr;
-    createInfo.flags = 0;
-    createInfo.image = ToBackend(GetTexture())->GetHandle();
-    createInfo.viewType = VulkanImageViewType(descriptor->dimension);
-
-    const Format& textureFormat = GetTexture()->GetFormat();
-    if (textureFormat.HasStencil() &&
-        (textureFormat.HasDepth() || !device->IsToggleEnabled(Toggle::VulkanUseS8))) {
-        // Unlike multi-planar formats, depth-stencil formats have multiple aspects but are not
-        // created with VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT.
-        // https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkImageViewCreateInfo.html#VUID-VkImageViewCreateInfo-image-01762
-        // Without, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT, the view format must match the texture
-        // format.
-        createInfo.format = VulkanImageFormat(device, textureFormat.format);
-    } else {
-        createInfo.format = VulkanImageFormat(device, descriptor->format);
+    // Remove StorageBinding usage if the format doesn't support it.
+    wgpu::TextureUsage usage = GetTexture()->GetInternalUsage();
+    if (!GetFormat().supportsStorageUsage) {
+        usage &= ~wgpu::TextureUsage::StorageBinding;
     }
 
-    createInfo.components = VkComponentMapping{VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G,
-                                               VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A};
-
-    const SubresourceRange& subresources = GetSubresourceRange();
-    createInfo.subresourceRange.baseMipLevel = subresources.baseMipLevel;
-    createInfo.subresourceRange.levelCount = subresources.levelCount;
-    createInfo.subresourceRange.baseArrayLayer = subresources.baseArrayLayer;
-    createInfo.subresourceRange.layerCount = subresources.layerCount;
-    createInfo.subresourceRange.aspectMask = VulkanAspectMask(subresources.aspects);
+    VkImageViewUsageCreateInfo usageInfo = {};
+    usageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO;
+    usageInfo.usage = VulkanImageUsage(usage, GetFormat());
+    createInfo.pNext = &usageInfo;
 
     DAWN_TRY(CheckVkSuccess(
         device->fn.CreateImageView(device->GetVkDevice(), &createInfo, nullptr, &*mHandle),
@@ -1761,6 +1779,13 @@ void TextureView::DestroyImpl() {
         device->GetFencedDeleter()->DeleteWhenUnused(mHandleForBGRA8UnormStorage);
         mHandleForBGRA8UnormStorage = VK_NULL_HANDLE;
     }
+
+    for (auto& handle : mHandlesFor2DViewOn3D) {
+        if (handle != VK_NULL_HANDLE) {
+            device->GetFencedDeleter()->DeleteWhenUnused(handle);
+            handle = VK_NULL_HANDLE;
+        }
+    }
 }
 
 VkImageView TextureView::GetHandle() const {
@@ -1769,6 +1794,70 @@ VkImageView TextureView::GetHandle() const {
 
 VkImageView TextureView::GetHandleForBGRA8UnormStorage() const {
     return mHandleForBGRA8UnormStorage;
+}
+
+VkImageViewCreateInfo TextureView::GetCreateInfo(wgpu::TextureFormat format,
+                                                 wgpu::TextureViewDimension dimension,
+                                                 uint32_t depthSlice) const {
+    Device* device = ToBackend(GetTexture()->GetDevice());
+
+    VkImageViewCreateInfo createInfo;
+    createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    createInfo.pNext = nullptr;
+    createInfo.flags = 0;
+    createInfo.image = ToBackend(GetTexture())->GetHandle();
+    createInfo.viewType = VulkanImageViewType(dimension);
+
+    const Format& textureFormat = GetTexture()->GetFormat();
+    if (textureFormat.HasStencil() &&
+        (textureFormat.HasDepth() || !device->IsToggleEnabled(Toggle::VulkanUseS8))) {
+        // Unlike multi-planar formats, depth-stencil formats have multiple aspects but are not
+        // created with VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT.
+        // https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkImageViewCreateInfo.html#VUID-VkImageViewCreateInfo-image-01762
+        // Without, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT, the view format must match the texture
+        // format.
+        createInfo.format = VulkanImageFormat(device, textureFormat.format);
+    } else {
+        createInfo.format = VulkanImageFormat(device, format);
+    }
+
+    createInfo.components = VkComponentMapping{VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G,
+                                               VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A};
+
+    const SubresourceRange& subresources = GetSubresourceRange();
+    createInfo.subresourceRange.baseMipLevel = subresources.baseMipLevel;
+    createInfo.subresourceRange.levelCount = subresources.levelCount;
+    createInfo.subresourceRange.baseArrayLayer = subresources.baseArrayLayer + depthSlice;
+    createInfo.subresourceRange.layerCount = subresources.layerCount;
+    createInfo.subresourceRange.aspectMask = VulkanAspectMask(subresources.aspects);
+
+    return createInfo;
+}
+
+ResultOrError<VkImageView> TextureView::GetOrCreate2DViewOn3D(uint32_t depthSlice) {
+    DAWN_ASSERT(GetTexture()->GetDimension() == wgpu::TextureDimension::e3D);
+    DAWN_ASSERT(depthSlice < GetSingleSubresourceVirtualSize().depthOrArrayLayers);
+
+    if (mHandlesFor2DViewOn3D.empty()) {
+        mHandlesFor2DViewOn3D.resize(GetSingleSubresourceVirtualSize().depthOrArrayLayers);
+    }
+
+    if (mHandlesFor2DViewOn3D[depthSlice] != VK_NULL_HANDLE) {
+        return static_cast<VkImageView>(mHandlesFor2DViewOn3D[depthSlice]);
+    }
+
+    Device* device = ToBackend(GetTexture()->GetDevice());
+    VkImageViewCreateInfo createInfo =
+        GetCreateInfo(GetFormat().format, wgpu::TextureViewDimension::e2D, depthSlice);
+
+    VkImageView view;
+    DAWN_TRY(CheckVkSuccess(
+        device->fn.CreateImageView(device->GetVkDevice(), &createInfo, nullptr, &*view),
+        "CreateImageView for 2D view on 3D image"));
+
+    mHandlesFor2DViewOn3D[depthSlice] = view;
+
+    return view;
 }
 
 void TextureView::SetLabelImpl() {

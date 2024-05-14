@@ -41,6 +41,9 @@ See:
 {{-   $permutation := printf "%v_%v" $builtin $overload.Hash -}}
 {{-   $args        := Map -}}
 
+{{- /* Generate the optional flag on HLSL shader model */ -}}
+{{- template "HLSLShaderModel" $overload -}}
+
 {{- /* Generate enable directives */ -}}
 {{- template "EnableDirectives" $overload -}}
 
@@ -142,7 +145,7 @@ fn {{$permutation}}() {
 {{-   if $overload.ReturnType -}}
   var res{{if IsDeclarable $overload.ReturnType}}: {{template "Type" $overload.ReturnType}}{{end}} = {{/* preserve space after = */ -}}
 {{-   end -}}
-  {{$builtin}}(
+  {{$builtin}}{{Eval "TemplateArguments" $overload.ExplicitTemplateArgs}}(
 {{-   range $i, $p := $overload.Parameters -}}
 {{-     if $i -}}, {{end}}{{$args.Get $i -}}
 {{-   end -}}
@@ -189,6 +192,31 @@ fn compute_main() {
 
 {{- end -}}
 
+
+{{- /* ------------------------------------------------------------------ */ -}}
+{{-                        define "HLSLShaderModel"                          -}}
+{{- /* Emits the optional HLSL shader model for a given overload          */ -}}
+{{- /* ------------------------------------------------------------------ */ -}}
+{{-   $permutation  := . -}}
+{{-   $overload := $permutation.Overload -}}
+{{-   $builtin_name := $permutation.Intrinsic.Name -}}
+
+{{- /* Check and emit dot4I8Packed and dot4U8Packed */ -}}
+{{-   if or (eq "pack4xI8" $builtin_name) (eq "pack4xU8" $builtin_name) (eq "pack4xI8Clamp" $builtin_name) (eq "unpack4xI8" $builtin_name) (eq "unpack4xU8" $builtin_name)}}
+// [hlsl-dxc] flags: --hlsl_shader_model 66
+
+{{-   else if or (eq "dot4I8Packed" $builtin_name) (eq "dot4U8Packed" $builtin_name)}}
+// [hlsl-dxc] flags: --hlsl_shader_model 64
+
+{{- /* Check and emit f16 */ -}}
+{{-   else if OverloadUsesType $overload "f16"}}
+// flags: --hlsl_shader_model 62
+
+{{    end -}}
+
+{{- end -}}
+
+
 {{- /* ------------------------------------------------------------------ */ -}}
 {{-                        define "EnableDirectives"                         -}}
 {{- /* Emits the required enable directives for a given overload          */ -}}
@@ -197,19 +225,19 @@ fn compute_main() {
 {{-   $overload := $permutation.Overload -}}
 {{-   $builtin_name := $permutation.Intrinsic.Name -}}
 
-{{- /* Check and emit chromium_experimental_dp4a */ -}}
-{{-   if or (eq "dot4I8Packed" $builtin_name) (eq "dot4U8Packed" $builtin_name)}}
-enable chromium_experimental_dp4a;
-{{    end -}}
-
-{{- /* Check and emit chromium_experimental_subgroups */ -}}
+{{- /* Emit 'enable chromium_experimental_subgroups' if required */ -}}
 {{-   if or (eq "subgroupBallot" $builtin_name) (eq "subgroupBroadcast" $builtin_name)}}
 enable chromium_experimental_subgroups;
 {{    end -}}
 
-{{- /* Check and emit f16 */ -}}
-{{-   if OverloadUsesF16 $overload}}
+{{- /* Emit 'enable f16' if required */ -}}
+{{-   if OverloadUsesType $overload "f16"}}
 enable f16;
+{{    end -}}
+
+{{- /* Emit 'enable chromium_internal_graphite' if required */ -}}
+{{-   if OverloadUsesType $overload "r8unorm"}}
+enable chromium_internal_graphite;
 {{    end -}}
 
 {{- end -}}
@@ -335,8 +363,8 @@ enable f16;
 {{-     else if eq .Target.Name "mat"        -}}mat{{index .TemplateArguments 0}}x{{index .TemplateArguments 1}}<{{template "Type" (ElementType .)}}>
 {{-     else if HasPrefix .Target.Name "vec" -}}{{.Target.Name}}<{{template "Type" (ElementType .)}}>
 {{-     else if HasPrefix .Target.Name "mat" -}}{{.Target.Name}}<{{template "Type" (ElementType .)}}>
-{{-     else                             -}}{{.Target.Name}}{{template "TemplateArguments" .TemplateArguments}}
-{{-     end                              -}}
+{{-     else                                 -}}{{.Target.Name}}{{template "TemplateArguments" .TemplateArguments}}
+{{-     end                                  -}}
 {{-   else if IsEnumEntry   .Target -}}{{.Target.Name}}
 {{-   else if IsEnumMatcher .Target -}}{{(index .Target.Options 0).Name}}
 {{-   else                          -}}<unhandled-fully-qualified-name-target={{- printf "%T" .Target -}}>

@@ -41,7 +41,6 @@
 #include "src/tint/lang/spirv/writer/common/function.h"
 #include "src/tint/lang/spirv/writer/common/module.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
-#include "src/tint/lang/wgsl/ast/bitcast_expression.h"
 #include "src/tint/lang/wgsl/ast/break_statement.h"
 #include "src/tint/lang/wgsl/ast/continue_statement.h"
 #include "src/tint/lang/wgsl/ast/discard_statement.h"
@@ -98,13 +97,9 @@ class Builder {
     /// @param experimental_require_subgroup_uniform_control_flow `true` to require
     /// `SPV_KHR_subgroup_uniform_control_flow` extension and `SubgroupUniformControlFlowKHR`
     /// execution mode for compute stage entry points.
-    /// @param polyfill_dot_4x8_packed `true` to require `SPV_KHR_integer_dot_product` extension
-    /// and `SpvCapabilityDotProductKHR` and `SpvCapabilityDotProductInput4x8BitPackedKHR`
-    /// capabilities.
     explicit Builder(const Program& program,
                      bool zero_initialize_workgroup_memory = false,
-                     bool experimental_require_subgroup_uniform_control_flow = false,
-                     bool polyfill_dot_4x8_packed = false);
+                     bool experimental_require_subgroup_uniform_control_flow = false);
     ~Builder();
 
     /// Generates the SPIR-V instructions for the given program
@@ -115,7 +110,7 @@ class Builder {
     const diag::List& Diagnostics() const { return builder_.Diagnostics(); }
 
     /// @returns true if the builder encountered an error
-    bool has_error() const { return Diagnostics().contains_errors(); }
+    bool has_error() const { return Diagnostics().ContainsErrors(); }
 
     /// @returns the module that this builder has produced
     writer::Module& Module() { return module_; }
@@ -295,7 +290,7 @@ class Builder {
     /// Generates a bitcast expression
     /// @param expr the expression to generate
     /// @returns the expression ID on success or 0 otherwise
-    uint32_t GenerateBitcastExpression(const ast::BitcastExpression* expr);
+    uint32_t GenerateBitcastExpression(const ast::CallExpression* expr);
     /// Generates a short circuting binary expression
     /// @param expr the expression to generate
     /// @returns teh expression ID on success or 0 otherwise
@@ -532,6 +527,10 @@ class Builder {
     /// Pops the top-most scope
     void PopScope();
 
+    /// Declare all the extensions and capabilities required by `OpSDot` and `OpUDot` using 4x8
+    // packed integer vectors as input.
+    void DeclarePacked4x8IntegerDotProductCapabilitiesAndExtensions();
+
     ProgramBuilder builder_;
     writer::Module module_;
     Function current_function_;
@@ -549,7 +548,7 @@ class Builder {
     std::unordered_map<uint32_t, const sem::Variable*> id_to_var_;
     std::unordered_map<std::string, uint32_t> import_name_to_id_;
     std::unordered_map<Symbol, uint32_t> func_symbol_to_id_;
-    std::unordered_map<sem::CallTargetSignature, uint32_t> func_sig_to_id_;
+    Hashmap<sem::CallTargetSignature, uint32_t, 4> func_sig_to_id_;
     std::unordered_map<const core::type::Type*, uint32_t> type_to_id_;
     std::unordered_map<ScalarConstant, uint32_t> const_to_id_;
     std::unordered_map<const core::type::Type*, uint32_t> const_null_to_id_;
@@ -560,7 +559,6 @@ class Builder {
     std::vector<uint32_t> continue_stack_;
     bool zero_initialize_workgroup_memory_ = false;
     bool experimental_require_subgroup_uniform_control_flow_ = false;
-    bool polyfill_dot_4x8_packed_ = false;
 
     struct ContinuingInfo {
         ContinuingInfo(const ast::Statement* last_statement,

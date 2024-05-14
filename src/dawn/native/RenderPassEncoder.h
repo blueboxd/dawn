@@ -41,7 +41,7 @@ class RenderBundleBase;
 class RenderPassEncoder final : public RenderEncoderBase {
   public:
     static Ref<RenderPassEncoder> Create(DeviceBase* device,
-                                         const RenderPassDescriptor* descriptor,
+                                         const UnpackedPtr<RenderPassDescriptor>& descriptor,
                                          CommandEncoder* commandEncoder,
                                          EncodingContext* encodingContext,
                                          RenderPassResourceUsageTracker usageTracker,
@@ -55,6 +55,8 @@ class RenderPassEncoder final : public RenderEncoderBase {
                                             CommandEncoder* commandEncoder,
                                             EncodingContext* encodingContext,
                                             const char* label);
+
+    ~RenderPassEncoder() override;
 
     ObjectType GetType() const override;
 
@@ -86,7 +88,7 @@ class RenderPassEncoder final : public RenderEncoderBase {
 
   protected:
     RenderPassEncoder(DeviceBase* device,
-                      const RenderPassDescriptor* descriptor,
+                      const UnpackedPtr<RenderPassDescriptor>& descriptor,
                       CommandEncoder* commandEncoder,
                       EncodingContext* encodingContext,
                       RenderPassResourceUsageTracker usageTracker,

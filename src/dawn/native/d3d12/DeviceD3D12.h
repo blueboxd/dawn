@@ -45,7 +45,6 @@ class ExternalImageDXGIImpl;
 
 namespace dawn::native::d3d12 {
 
-class CommandAllocatorManager;
 class PlatformFunctions;
 class ResidencyManager;
 class ResourceAllocatorManager;
@@ -63,11 +62,11 @@ class StagingDescriptorAllocator;
 class Device final : public d3d::Device {
   public:
     static ResultOrError<Ref<Device>> Create(AdapterBase* adapter,
-                                             const DeviceDescriptor* descriptor,
+                                             const UnpackedPtr<DeviceDescriptor>& descriptor,
                                              const TogglesState& deviceToggles);
     ~Device() override;
 
-    MaybeError Initialize(const DeviceDescriptor* descriptor);
+    MaybeError Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor);
 
     ResultOrError<Ref<CommandBufferBase>> CreateCommandBuffer(
         CommandEncoder* encoder,
@@ -76,21 +75,14 @@ class Device final : public d3d::Device {
     MaybeError TickImpl() override;
 
     ID3D12Device* GetD3D12Device() const;
-    ID3D12Fence* GetD3D12Fence() const;
-    ComPtr<ID3D12CommandQueue> GetCommandQueue() const;
-    ID3D12SharingContract* GetSharingContract() const;
 
     ComPtr<ID3D12CommandSignature> GetDispatchIndirectSignature() const;
     ComPtr<ID3D12CommandSignature> GetDrawIndirectSignature() const;
     ComPtr<ID3D12CommandSignature> GetDrawIndexedIndirectSignature() const;
 
-    CommandAllocatorManager* GetCommandAllocatorManager() const;
     MutexProtected<ResidencyManager>& GetResidencyManager() const;
 
     const PlatformFunctions* GetFunctions() const;
-
-    ResultOrError<CommandRecordingContext*> GetPendingCommandContext(
-        Device::SubmitMode submitMode = Device::SubmitMode::Normal);
 
     MaybeError ClearBufferToZero(CommandRecordingContext* commandContext,
                                  BufferBase* destination,
@@ -99,12 +91,7 @@ class Device final : public d3d::Device {
 
     const D3D12DeviceInfo& GetDeviceInfo() const;
 
-    MaybeError NextSerial();
-    MaybeError WaitForSerial(ExecutionSerial serial);
-
     void ReferenceUntilUnused(ComPtr<IUnknown> object);
-
-    MaybeError ExecutePendingCommandContext();
 
     MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
                                            uint64_t sourceOffset,
@@ -151,16 +138,25 @@ class Device final : public d3d::Device {
 
     MutexProtected<StagingDescriptorAllocator>& GetDepthStencilViewAllocator() const;
 
-    ResultOrError<Ref<d3d::Fence>> CreateFence(
+    ResultOrError<FenceAndSignalValue> CreateFence(
         const d3d::ExternalImageDXGIFenceDescriptor* descriptor) override;
+
     ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> CreateExternalImageDXGIImplImpl(
         const ExternalImageDescriptor* descriptor) override;
 
-    Ref<TextureBase> CreateD3DExternalTexture(const TextureDescriptor* descriptor,
+    Ref<TextureBase> CreateD3DExternalTexture(const UnpackedPtr<TextureDescriptor>& descriptor,
                                               ComPtr<IUnknown> d3dTexture,
-                                              std::vector<Ref<d3d::Fence>> waitFences,
+                                              Ref<d3d::KeyedMutex> keyedMutex,
+                                              std::vector<FenceAndSignalValue> waitFences,
                                               bool isSwapChainTexture,
                                               bool isInitialized) override;
+
+    void DisposeKeyedMutex(ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex) override;
+
+    MaybeError ImportSharedHandleResource(HANDLE handle,
+                                          bool useKeyedMutex,
+                                          ComPtr<ID3D12Resource>& d3d12Resource,
+                                          Ref<d3d::KeyedMutex>& dxgiKeyedMutex);
 
     uint32_t GetOptimalBytesPerRowAlignment() const override;
     uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const override;
@@ -180,49 +176,47 @@ class Device final : public d3d::Device {
     // Dawn APIs
     void SetLabelImpl() override;
 
-    // TODO(dawn:1413) move these methods to the d3d12::Queue.
-    void ForceEventualFlushOfCommands();
-    bool HasPendingCommands() const;
-    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials();
-    MaybeError WaitForIdleForDestruction();
-
     // Those DXC methods are needed by d3d12::ShaderModule
     ComPtr<IDxcLibrary> GetDxcLibrary() const;
     ComPtr<IDxcCompiler3> GetDxcCompiler() const;
+
+    const PerStage<std::wstring>& GetDxcShaderProfiles() const;
 
   private:
     using Base = d3d::Device;
 
     Device(AdapterBase* adapter,
-           const DeviceDescriptor* descriptor,
+           const UnpackedPtr<DeviceDescriptor>& descriptor,
            const TogglesState& deviceToggles);
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) override;
     ResultOrError<Ref<BindGroupLayoutInternalBase>> CreateBindGroupLayoutImpl(
         const BindGroupLayoutDescriptor* descriptor) override;
-    ResultOrError<Ref<BufferBase>> CreateBufferImpl(const BufferDescriptor* descriptor) override;
+    ResultOrError<Ref<BufferBase>> CreateBufferImpl(
+        const UnpackedPtr<BufferDescriptor>& descriptor) override;
     ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayoutImpl(
-        const PipelineLayoutDescriptor* descriptor) override;
+        const UnpackedPtr<PipelineLayoutDescriptor>& descriptor) override;
     ResultOrError<Ref<QuerySetBase>> CreateQuerySetImpl(
         const QuerySetDescriptor* descriptor) override;
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
-        const ShaderModuleDescriptor* descriptor,
+        const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
         ShaderModuleParseResult* parseResult,
         OwnedCompilationMessages* compilationMessages) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
         SwapChainBase* previousSwapChain,
         const SwapChainDescriptor* descriptor) override;
-    ResultOrError<Ref<TextureBase>> CreateTextureImpl(const TextureDescriptor* descriptor) override;
+    ResultOrError<Ref<TextureBase>> CreateTextureImpl(
+        const UnpackedPtr<TextureDescriptor>& descriptor) override;
     ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
         TextureBase* texture,
         const TextureViewDescriptor* descriptor) override;
     Ref<ComputePipelineBase> CreateUninitializedComputePipelineImpl(
-        const ComputePipelineDescriptor* descriptor) override;
+        const UnpackedPtr<ComputePipelineDescriptor>& descriptor) override;
     Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
-        const RenderPipelineDescriptor* descriptor) override;
+        const UnpackedPtr<RenderPipelineDescriptor>& descriptor) override;
     void InitializeComputePipelineAsyncImpl(Ref<ComputePipelineBase> computePipeline,
                                             WGPUCreateComputePipelineAsyncCallback callback,
                                             void* userdata) override;
@@ -230,6 +224,8 @@ class Device final : public d3d::Device {
                                            WGPUCreateRenderPipelineAsyncCallback callback,
                                            void* userdata) override;
 
+    ResultOrError<Ref<SharedBufferMemoryBase>> ImportSharedBufferMemoryImpl(
+        const SharedBufferMemoryDescriptor* descriptor) override;
     ResultOrError<Ref<SharedTextureMemoryBase>> ImportSharedTextureMemoryImpl(
         const SharedTextureMemoryDescriptor* descriptor) override;
     ResultOrError<Ref<SharedFenceBase>> ImportSharedFenceImpl(
@@ -241,26 +237,24 @@ class Device final : public d3d::Device {
     void AppendDebugLayerMessages(ErrorData* error) override;
     void AppendDeviceLostMessage(ErrorData* error) override;
 
+    ResultOrError<ComPtr<ID3D11On12Device>> GetOrCreateD3D11on12Device();
+    void Flush11On12DeviceToAvoidLeaks();
+
     MaybeError EnsureDXCIfRequired();
 
     MaybeError CreateZeroBuffer();
 
-    ComPtr<ID3D12Fence> mFence;
-    HANDLE mFenceEvent = nullptr;
-
     ComPtr<ID3D12Device> mD3d12Device;  // Device is owned by adapter and will not be outlived.
-    ComPtr<ID3D12CommandQueue> mCommandQueue;
-    ComPtr<ID3D12SharingContract> mD3d12SharingContract;
+
+    // 11on12 device corresponding to queue's mCommandQueue.
+    ComPtr<ID3D11On12Device> mD3d11On12Device;
 
     ComPtr<ID3D12CommandSignature> mDispatchIndirectSignature;
     ComPtr<ID3D12CommandSignature> mDrawIndirectSignature;
     ComPtr<ID3D12CommandSignature> mDrawIndexedIndirectSignature;
 
-    CommandRecordingContext mPendingCommands;
-
     MutexProtected<SerialQueue<ExecutionSerial, ComPtr<IUnknown>>> mUsedComObjectRefs;
 
-    std::unique_ptr<CommandAllocatorManager> mCommandAllocatorManager;
     std::unique_ptr<MutexProtected<ResourceAllocatorManager>> mResourceAllocatorManager;
     std::unique_ptr<MutexProtected<ResidencyManager>> mResidencyManager;
 
@@ -305,6 +299,9 @@ class Device final : public d3d::Device {
 
     // The number of nanoseconds required for a timestamp query to be incremented by 1
     float mTimestampPeriod = 1.0f;
+
+    // Shader profiles used for compiling shader with DXC
+    PerStage<std::wstring> mDxcShaderProfiles;
 };
 
 }  // namespace dawn::native::d3d12

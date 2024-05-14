@@ -30,7 +30,7 @@
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Enumerator.h"
 #include "dawn/common/ityp_span.h"
-#include "dawn/native/ChainUtils_autogen.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ObjectContentHasher.h"
 #include "dawn/native/PipelineLayout.h"
@@ -60,12 +60,12 @@ AttachmentState::AttachmentState(DeviceBase* device,
 }
 
 AttachmentState::AttachmentState(DeviceBase* device,
-                                 const RenderPipelineDescriptor* descriptor,
+                                 const UnpackedPtr<RenderPipelineDescriptor>& descriptor,
                                  const PipelineLayoutBase* layout)
     : ObjectBase(device), mSampleCount(descriptor->multisample.count) {
-    const DawnMultisampleStateRenderToSingleSampled* msaaRenderToSingleSampledDesc = nullptr;
-    FindInChain(descriptor->multisample.nextInChain, &msaaRenderToSingleSampledDesc);
-    if (msaaRenderToSingleSampledDesc != nullptr) {
+    UnpackedPtr<MultisampleState> unpackedMultisampleState = Unpack(&descriptor->multisample);
+    if (auto* msaaRenderToSingleSampledDesc =
+            unpackedMultisampleState.Get<DawnMultisampleStateRenderToSingleSampled>()) {
         mIsMSAARenderToSingleSampledEnabled = msaaRenderToSingleSampledDesc->enabled;
     }
 
@@ -92,7 +92,8 @@ AttachmentState::AttachmentState(DeviceBase* device,
     SetContentHash(ComputeContentHash());
 }
 
-AttachmentState::AttachmentState(DeviceBase* device, const RenderPassDescriptor* descriptor)
+AttachmentState::AttachmentState(DeviceBase* device,
+                                 const UnpackedPtr<RenderPassDescriptor>& descriptor)
     : ObjectBase(device) {
     auto colorAttachments = ityp::SpanFromUntyped<ColorAttachmentIndex>(
         descriptor->colorAttachments, descriptor->colorAttachmentCount);
@@ -104,9 +105,9 @@ AttachmentState::AttachmentState(DeviceBase* device, const RenderPassDescriptor*
         mColorAttachmentsSet.set(i);
         mColorFormats[i] = attachment->GetFormat().format;
 
-        const DawnRenderPassColorAttachmentRenderToSingleSampled* msaaRenderToSingleSampledDesc =
-            nullptr;
-        FindInChain(colorAttachment.nextInChain, &msaaRenderToSingleSampledDesc);
+        UnpackedPtr<RenderPassColorAttachment> unpackedColorAttachment = Unpack(&colorAttachment);
+        auto* msaaRenderToSingleSampledDesc =
+            unpackedColorAttachment.Get<DawnRenderPassColorAttachmentRenderToSingleSampled>();
         uint32_t attachmentSampleCount;
         if (msaaRenderToSingleSampledDesc != nullptr &&
             msaaRenderToSingleSampledDesc->implicitSampleCount > 1) {
@@ -135,9 +136,7 @@ AttachmentState::AttachmentState(DeviceBase* device, const RenderPassDescriptor*
     }
 
     // Gather the PLS information.
-    const RenderPassPixelLocalStorage* pls = nullptr;
-    FindInChain(descriptor->nextInChain, &pls);
-    if (pls != nullptr) {
+    if (auto* pls = descriptor.Get<RenderPassPixelLocalStorage>()) {
         mHasPLS = true;
         mStorageAttachmentSlots = std::vector<wgpu::TextureFormat>(
             pls->totalPixelLocalStorageSize / kPLSSlotByteSize, wgpu::TextureFormat::Undefined);
@@ -247,8 +246,7 @@ size_t AttachmentState::ComputeContentHash() {
     return hash;
 }
 
-ityp::bitset<ColorAttachmentIndex, kMaxColorAttachments> AttachmentState::GetColorAttachmentsMask()
-    const {
+ColorAttachmentMask AttachmentState::GetColorAttachmentsMask() const {
     return mColorAttachmentsSet;
 }
 
@@ -287,8 +285,8 @@ AttachmentState::ComputeStorageAttachmentPackingInColorAttachments() const {
     // TODO(dawn:1704): Consider caching this on AttachmentState creation, but does it become part
     // of the hashing and comparison operators? Fill with garbage data to more easily detect cases
     // where an incorrect slot is accessed.
-    std::vector<ColorAttachmentIndex> result(
-        mStorageAttachmentSlots.size(), ColorAttachmentIndex(uint8_t(kMaxColorAttachments + 1)));
+    std::vector<ColorAttachmentIndex> result(mStorageAttachmentSlots.size(),
+                                             ityp::PlusOne(kMaxColorAttachmentsTyped));
 
     // Iterate over the empty bits of mColorAttachmentsSet to pack storage attachment in them.
     auto availableSlots = ~mColorAttachmentsSet;

@@ -28,9 +28,10 @@
 #include "dawn/native/Pipeline.h"
 
 #include <algorithm>
-#include <unordered_set>
 #include <utility>
 
+#include "absl/container/flat_hash_set.h"
+#include "dawn/common/Enumerator.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ObjectBase.h"
@@ -68,8 +69,9 @@ ResultOrError<ShaderModuleEntryPoint> ValidateProgrammableStage(DeviceBase* devi
                 stage, module);
         } else if (entryPointCount > 1) {
             return DAWN_VALIDATION_ERROR(
-                "Multiple entry points for stage (%s) exist in the shader module %s.", stage,
-                module);
+                "The entry-point is defaulted but multiple entry points for stage (%s) exist in "
+                "the shader module %s.",
+                stage, module);
         }
     }
 
@@ -96,7 +98,7 @@ ResultOrError<ShaderModuleEntryPoint> ValidateProgrammableStage(DeviceBase* devi
     // pipelineBase is not yet constructed at this moment so iterate constants from descriptor
     size_t numUninitializedConstants = metadata.uninitializedOverrides.size();
     // Keep an initialized constants sets to handle duplicate initialization cases
-    std::unordered_set<std::string> stageInitializedConstantIdentifiers;
+    absl::flat_hash_set<std::string> stageInitializedConstantIdentifiers;
     for (uint32_t i = 0; i < constantCount; i++) {
         DAWN_INVALID_IF(metadata.overrides.count(constants[i].key) == 0,
                         "Pipeline overridable constant \"%s\" not found in %s.", constants[i].key,
@@ -141,8 +143,8 @@ ResultOrError<ShaderModuleEntryPoint> ValidateProgrammableStage(DeviceBase* devi
                 DAWN_UNREACHABLE();
         }
 
-        if (stageInitializedConstantIdentifiers.count(constants[i].key) == 0) {
-            if (metadata.uninitializedOverrides.count(constants[i].key) > 0) {
+        if (!stageInitializedConstantIdentifiers.contains(constants[i].key)) {
+            if (metadata.uninitializedOverrides.contains(constants[i].key)) {
                 numUninitializedConstants--;
             }
             stageInitializedConstantIdentifiers.insert(constants[i].key);
@@ -158,7 +160,7 @@ ResultOrError<ShaderModuleEntryPoint> ValidateProgrammableStage(DeviceBase* devi
         std::string uninitializedConstantsArray;
         bool isFirst = true;
         for (std::string identifier : metadata.uninitializedOverrides) {
-            if (stageInitializedConstantIdentifiers.count(identifier) > 0) {
+            if (stageInitializedConstantIdentifiers.contains(identifier)) {
                 continue;
             }
 
@@ -230,12 +232,11 @@ PipelineBase::PipelineBase(DeviceBase* device,
         if (isFirstStage) {
             mMinBufferSizes = std::move(stageMinBufferSizes);
         } else {
-            for (BindGroupIndex group(0); group < mMinBufferSizes.size(); ++group) {
-                DAWN_ASSERT(stageMinBufferSizes[group].size() == mMinBufferSizes[group].size());
+            for (auto [group, minBufferSize] : Enumerate(mMinBufferSizes)) {
+                DAWN_ASSERT(stageMinBufferSizes[group].size() == minBufferSize.size());
 
                 for (size_t i = 0; i < stageMinBufferSizes[group].size(); ++i) {
-                    mMinBufferSizes[group][i] =
-                        std::max(mMinBufferSizes[group][i], stageMinBufferSizes[group][i]);
+                    minBufferSize[i] = std::max(minBufferSize[i], stageMinBufferSizes[group][i]);
                 }
             }
         }
@@ -305,9 +306,9 @@ BindGroupLayoutBase* PipelineBase::APIGetBindGroupLayout(uint32_t groupIndexIn) 
     if (GetDevice()->ConsumedError(GetBindGroupLayout(groupIndexIn), &result,
                                    "Validating GetBindGroupLayout (%u) on %s", groupIndexIn,
                                    this)) {
-        return BindGroupLayoutBase::MakeError(GetDevice());
+        result = BindGroupLayoutBase::MakeError(GetDevice());
     }
-    return result.Detach();
+    return ReturnToAPI(std::move(result));
 }
 
 size_t PipelineBase::ComputeContentHash() {
@@ -347,6 +348,27 @@ bool PipelineBase::EqualForCache(const PipelineBase* a, const PipelineBase* b) {
     }
 
     return true;
+}
+
+PipelineBase::ScopedUseShaderPrograms PipelineBase::UseShaderPrograms() {
+    ScopedUseShaderPrograms programs;
+    for (SingleShaderStage shaderStage :
+         {SingleShaderStage::Vertex, SingleShaderStage::Fragment, SingleShaderStage::Compute}) {
+        auto& module = mStages[shaderStage].module;
+        if (module.Get()) {
+            // Hold an external API reference of ShaderModuleBase to keep mTintProgram in
+            // ShaderModuleBase alive.
+            programs[shaderStage] = module->UseTintProgram();
+        }
+    }
+    return programs;
+}
+
+MaybeError PipelineBase::Initialize(std::optional<ScopedUseShaderPrograms> scopedUsePrograms) {
+    if (!scopedUsePrograms) {
+        scopedUsePrograms = UseShaderPrograms();
+    }
+    return InitializeImpl();
 }
 
 }  // namespace dawn::native

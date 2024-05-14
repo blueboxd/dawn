@@ -26,6 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "gmock/gmock.h"
+#include "src/tint/lang/core/builtin_fn.h"
 #include "src/tint/lang/core/constant/scalar.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/block.h"
@@ -73,7 +74,7 @@ TEST_F(IR_FromProgramTest, Func) {
     Func("f", tint::Empty, ty.void_(), tint::Empty);
 
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     ASSERT_EQ(1u, m->functions.Length());
 
@@ -94,7 +95,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam) {
     Func("f", Vector{Param("a", ty.u32())}, ty.u32(), Vector{Return("a")});
 
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     ASSERT_EQ(1u, m->functions.Length());
 
@@ -116,7 +117,7 @@ TEST_F(IR_FromProgramTest, Func_WithMultipleParam) {
          ty.void_(), tint::Empty);
 
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     ASSERT_EQ(1u, m->functions.Length());
 
@@ -137,7 +138,7 @@ TEST_F(IR_FromProgramTest, EntryPoint) {
     Func("f", tint::Empty, ty.void_(), tint::Empty, Vector{Stage(ast::PipelineStage::kFragment)});
 
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     EXPECT_EQ(m->functions[0]->Stage(), core::ir::Function::PipelineStage::kFragment);
 }
@@ -147,7 +148,7 @@ TEST_F(IR_FromProgramTest, IfStatement) {
     WrapInFunction(ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
 
@@ -175,7 +176,7 @@ TEST_F(IR_FromProgramTest, IfStatement_TrueReturns) {
     WrapInFunction(ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
 
@@ -200,7 +201,7 @@ TEST_F(IR_FromProgramTest, IfStatement_FalseReturns) {
     WrapInFunction(ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
 
@@ -228,7 +229,7 @@ TEST_F(IR_FromProgramTest, IfStatement_BothReturn) {
     WrapInFunction(ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
 
@@ -257,7 +258,7 @@ TEST_F(IR_FromProgramTest, IfStatement_JumpChainToMerge) {
     WrapInFunction(ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
 
@@ -266,12 +267,9 @@ TEST_F(IR_FromProgramTest, IfStatement_JumpChainToMerge) {
   %b1 = block {
     if true [t: %b2] {  # if_1
       %b2 = block {  # true
-        loop [b: %b3, c: %b4] {  # loop_1
+        loop [b: %b3] {  # loop_1
           %b3 = block {  # body
             exit_loop  # loop_1
-          }
-          %b4 = block {  # continuing
-            next_iteration %b3
           }
         }
         exit_if  # if_1
@@ -288,25 +286,22 @@ TEST_F(IR_FromProgramTest, Loop_WithBreak) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
-    EXPECT_EQ(1u, loop->Body()->InboundSiblingBranches().Length());
+    EXPECT_EQ(0u, loop->Body()->InboundSiblingBranches().Length());
     EXPECT_EQ(0u, loop->Continuing()->InboundSiblingBranches().Length());
 
     EXPECT_EQ(Disassemble(m),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
   %b1 = block {
-    loop [b: %b2, c: %b3] {  # loop_1
+    loop [b: %b2] {  # loop_1
       %b2 = block {  # body
         exit_loop  # loop_1
-      }
-      %b3 = block {  # continuing
-        next_iteration %b2
       }
     }
     ret
@@ -321,7 +316,7 @@ TEST_F(IR_FromProgramTest, Loop_WithContinue) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -359,7 +354,7 @@ TEST_F(IR_FromProgramTest, Loop_WithContinuing_BreakIf) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -393,7 +388,7 @@ TEST_F(IR_FromProgramTest, Loop_Continuing_Body_Scope) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     EXPECT_EQ(Disassemble(m),
@@ -420,7 +415,7 @@ TEST_F(IR_FromProgramTest, Loop_WithReturn) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -457,25 +452,22 @@ TEST_F(IR_FromProgramTest, Loop_WithOnlyReturn) {
     WrapInFunction(ast_loop, If(true, Block(Return())));
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
-    EXPECT_EQ(1u, loop->Body()->InboundSiblingBranches().Length());
+    EXPECT_EQ(0u, loop->Body()->InboundSiblingBranches().Length());
     EXPECT_EQ(0u, loop->Continuing()->InboundSiblingBranches().Length());
 
     EXPECT_EQ(Disassemble(m),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
   %b1 = block {
-    loop [b: %b2, c: %b3] {  # loop_1
+    loop [b: %b2] {  # loop_1
       %b2 = block {  # body
         ret
-      }
-      %b3 = block {  # continuing
-        next_iteration %b2
       }
     }
     unreachable
@@ -498,29 +490,26 @@ TEST_F(IR_FromProgramTest, Loop_WithOnlyReturn_ContinuingBreakIf) {
     WrapInFunction(Block(ast_loop, ast_if));
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
-    EXPECT_EQ(1u, loop->Body()->InboundSiblingBranches().Length());
+    EXPECT_EQ(0u, loop->Body()->InboundSiblingBranches().Length());
     EXPECT_EQ(0u, loop->Continuing()->InboundSiblingBranches().Length());
 
     EXPECT_EQ(Disassemble(m),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
   %b1 = block {
-    loop [b: %b2, c: %b3] {  # loop_1
+    loop [b: %b2] {  # loop_1
       %b2 = block {  # body
         ret
       }
-      %b3 = block {  # continuing
-        break_if true %b2
-      }
     }
-    if true [t: %b4] {  # if_1
-      %b4 = block {  # true
+    if true [t: %b3] {  # if_1
+      %b3 = block {  # true
         ret
       }
     }
@@ -536,33 +525,30 @@ TEST_F(IR_FromProgramTest, Loop_WithIf_BothBranchesBreak) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
 
     ASSERT_EQ(1u, m.functions.Length());
 
-    EXPECT_EQ(1u, loop->Body()->InboundSiblingBranches().Length());
-    EXPECT_EQ(1u, loop->Continuing()->InboundSiblingBranches().Length());
+    EXPECT_EQ(0u, loop->Body()->InboundSiblingBranches().Length());
+    EXPECT_EQ(0u, loop->Continuing()->InboundSiblingBranches().Length());
 
     EXPECT_EQ(Disassemble(m),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
   %b1 = block {
-    loop [b: %b2, c: %b3] {  # loop_1
+    loop [b: %b2] {  # loop_1
       %b2 = block {  # body
-        if true [t: %b4, f: %b5] {  # if_1
-          %b4 = block {  # true
+        if true [t: %b3, f: %b4] {  # if_1
+          %b3 = block {  # true
             exit_loop  # loop_1
           }
-          %b5 = block {  # false
+          %b4 = block {  # false
             exit_loop  # loop_1
           }
         }
-        continue %b3
-      }
-      %b3 = block {  # continuing
-        next_iteration %b2
+        unreachable
       }
     }
     ret
@@ -586,7 +572,7 @@ TEST_F(IR_FromProgramTest, Loop_Nested) {
     WrapInFunction(ast_loop_a);
 
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
@@ -608,27 +594,24 @@ TEST_F(IR_FromProgramTest, Loop_Nested) {
             continue %b5
           }
           %b5 = block {  # continuing
-            loop [b: %b8, c: %b9] {  # loop_3
+            loop [b: %b8] {  # loop_3
               %b8 = block {  # body
                 exit_loop  # loop_3
               }
-              %b9 = block {  # continuing
-                next_iteration %b8
-              }
             }
-            loop [b: %b10, c: %b11] {  # loop_4
-              %b10 = block {  # body
-                continue %b11
+            loop [b: %b9, c: %b10] {  # loop_4
+              %b9 = block {  # body
+                continue %b10
               }
-              %b11 = block {  # continuing
-                break_if true %b10
+              %b10 = block {  # continuing
+                break_if true %b9
               }
             }
             next_iteration %b4
           }
         }
-        if true [t: %b12] {  # if_3
-          %b12 = block {  # true
+        if true [t: %b11] {  # if_3
+          %b11 = block {  # true
             exit_loop  # loop_1
           }
         }
@@ -649,7 +632,7 @@ TEST_F(IR_FromProgramTest, While) {
     WrapInFunction(ast_while);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -689,7 +672,7 @@ TEST_F(IR_FromProgramTest, While_Return) {
     WrapInFunction(ast_while);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -729,7 +712,7 @@ TEST_F(IR_FromProgramTest, For) {
     WrapInFunction(ast_for);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -778,7 +761,7 @@ TEST_F(IR_FromProgramTest, For_Init_NoCondOrContinuing) {
     WrapInFunction(ast_for);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -811,7 +794,7 @@ TEST_F(IR_FromProgramTest, For_NoInitCondOrContinuing) {
     WrapInFunction(ast_for);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -843,7 +826,7 @@ TEST_F(IR_FromProgramTest, Switch) {
     WrapInFunction(ast_switch);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
@@ -894,7 +877,7 @@ TEST_F(IR_FromProgramTest, Switch_MultiSelector) {
     WrapInFunction(ast_switch);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
@@ -933,7 +916,7 @@ TEST_F(IR_FromProgramTest, Switch_OnlyDefault) {
     WrapInFunction(ast_switch);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
@@ -966,7 +949,7 @@ TEST_F(IR_FromProgramTest, Switch_WithBreak) {
     WrapInFunction(ast_switch);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
     auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
@@ -1009,7 +992,7 @@ TEST_F(IR_FromProgramTest, Switch_AllReturn) {
     WrapInFunction(ast_switch, ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
+    ASSERT_EQ(res, Success);
 
     auto m = res.Move();
 
@@ -1049,7 +1032,7 @@ TEST_F(IR_FromProgramTest, Emit_Phony) {
     WrapInFunction(Ignore(Call("b")));
 
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%b = func():i32 -> %b1 {
@@ -1073,7 +1056,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam_WithAttribute_Invariant) {
          ty.vec4<f32>(), Vector{Return("a")}, Vector{Stage(ast::PipelineStage::kFragment)},
          Vector{Location(1_i)});
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     EXPECT_EQ(
         Disassemble(m.Get()),
@@ -1090,7 +1073,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam_WithAttribute_Location) {
          Vector{Stage(ast::PipelineStage::kFragment)}, Vector{Location(1_i)});
 
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%f = @fragment func(%a:f32 [@location(2)]):f32 [@location(1)] -> %b1 {
@@ -1110,7 +1093,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam_WithAttribute_Location_WithInterpolati
          Vector{Location(1_i)});
 
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     EXPECT_EQ(
         Disassemble(m.Get()),
@@ -1130,7 +1113,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam_WithAttribute_Location_WithInterpolati
          Vector{Location(1_i)});
 
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     EXPECT_EQ(
         Disassemble(m.Get()),
@@ -1147,7 +1130,7 @@ TEST_F(IR_FromProgramTest, Requires) {
     Func("f", tint::Empty, ty.void_(), tint::Empty);
 
     auto m = Build();
-    ASSERT_TRUE(m) << m;
+    ASSERT_EQ(m, Success);
 
     ASSERT_EQ(1u, m->functions.Length());
 
@@ -1157,6 +1140,28 @@ TEST_F(IR_FromProgramTest, Requires) {
     EXPECT_EQ(m->functions[0]->Stage(), core::ir::Function::PipelineStage::kUndefined);
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%f = func():void -> %b1 {
+  %b1 = block {
+    ret
+  }
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Bugs
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IR_FromProgramTest, BugChromium324466107) {
+    Func("f", Empty, ty.void_(),
+         Vector{
+             // Abstract type on the RHS - cannot be emitted.
+             Assign(Phony(), Call(core::BuiltinFn::kFrexp, Call(ty.vec2<Infer>(), 2.0_a))),
+         });
+
+    auto m = Build();
+    ASSERT_EQ(m, Success);
+
+    EXPECT_EQ(Disassemble(m.Get()),
+              R"(%f = func():void -> %b1 {
   %b1 = block {
     ret
   }

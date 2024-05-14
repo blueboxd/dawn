@@ -47,6 +47,10 @@ class PhysicalDevice : public d3d::PhysicalDevice {
     bool SupportsExternalImages() const override;
     bool SupportsFeatureLevel(FeatureLevel featureLevel) const override;
 
+    // Get the applied shader model version under the given adapter or device toggle state, which
+    // may be lower than the shader model reported in mDeviceInfo.
+    uint32_t GetAppliedShaderModelUnderToggles(const TogglesState& toggles) const;
+
     const D3D12DeviceInfo& GetDeviceInfo() const;
     Backend* GetBackend() const;
     ComPtr<ID3D12Device> GetDevice() const;
@@ -58,7 +62,7 @@ class PhysicalDevice : public d3d::PhysicalDevice {
     void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override;
 
     ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(AdapterBase* adapter,
-                                                    const DeviceDescriptor* descriptor,
+                                                    const UnpackedPtr<DeviceDescriptor>& descriptor,
                                                     const TogglesState& deviceToggles) override;
 
     MaybeError ResetInternalDeviceForTestingImpl() override;
@@ -76,7 +80,7 @@ class PhysicalDevice : public d3d::PhysicalDevice {
     MaybeError InitializeDebugLayerFilters();
     void CleanUpDebugLayerFilters();
 
-    void PopulateMemoryHeapInfo(AdapterPropertiesMemoryHeaps* memoryHeapProperties) const override;
+    void PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const override;
 
     ComPtr<ID3D12Device> mD3d12Device;
 

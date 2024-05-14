@@ -63,8 +63,11 @@ static constexpr Case kValidCases[] = {
      LanguageFeature::kChromiumTestingShippedWithKillswitch},
     {"chromium_testing_unimplemented", LanguageFeature::kChromiumTestingUnimplemented},
     {"chromium_testing_unsafe_experimental", LanguageFeature::kChromiumTestingUnsafeExperimental},
+    {"packed_4x8_integer_dot_product", LanguageFeature::kPacked4X8IntegerDotProduct},
+    {"pointer_composite_access", LanguageFeature::kPointerCompositeAccess},
     {"readonly_and_readwrite_storage_textures",
      LanguageFeature::kReadonlyAndReadwriteStorageTextures},
+    {"unrestricted_pointer_parameters", LanguageFeature::kUnrestrictedPointerParameters},
 };
 
 static constexpr Case kInvalidCases[] = {
@@ -83,9 +86,18 @@ static constexpr Case kInvalidCases[] = {
     {"chXggmium_testing_unsafe_expermental", LanguageFeature::kUndefined},
     {"Xhomiuu_testng_unsafe_experimental", LanguageFeature::kUndefined},
     {"chromium_3esting_unsafe_experimental", LanguageFeature::kUndefined},
-    {"readonly_and_readwrite_stErage_textures", LanguageFeature::kUndefined},
-    {"readoTTly_and_readwrite_strage_tPPxtures", LanguageFeature::kUndefined},
-    {"readoly_and_redddwrite_storaxxe_textures", LanguageFeature::kUndefined},
+    {"packed_4x8_integer_Eot_product", LanguageFeature::kUndefined},
+    {"paked_4x8_integePP_dTTt_product", LanguageFeature::kUndefined},
+    {"packed_4x8_integxxrdot_pddoduct", LanguageFeature::kUndefined},
+    {"44ointer_composite_access", LanguageFeature::kUndefined},
+    {"VVSSinter_composite_access", LanguageFeature::kUndefined},
+    {"poinR2er_compRsite_acess", LanguageFeature::kUndefined},
+    {"readonlF_and_readwrite_st9rage_textues", LanguageFeature::kUndefined},
+    {"readonly_and_radwrite_storage_textures", LanguageFeature::kUndefined},
+    {"readonly_and_readwrite_sOOrage_tVxRRures", LanguageFeature::kUndefined},
+    {"unrestrictd_pointer_payameters", LanguageFeature::kUndefined},
+    {"unrerrt77iGted_poillter_paramenners", LanguageFeature::kUndefined},
+    {"unrestricted4point00r_parameters", LanguageFeature::kUndefined},
 };
 
 using LanguageFeatureParseTest = testing::TestWithParam<Case>;

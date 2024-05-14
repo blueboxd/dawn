@@ -221,7 +221,7 @@ DxcVersionInfo Backend::GetDxcVersion() const {
     return DxcVersionInfo(std::get<DxcVersionInfo>(mDxcVersionInfo));
 }
 
-// Return true if and only if DXC binary is avaliable, and the DXC version is validated to
+// Return true if and only if DXC binary is available, and the DXC version is validated to
 // be no older than a pre-defined minimum version.
 bool Backend::IsDXCAvailable() const {
     // mDxcVersionInfo hold DxcVersionInfo instead of DxcUnavailable if and only if DXC binaries and
@@ -289,7 +289,7 @@ ResultOrError<Ref<PhysicalDeviceBase>> Backend::GetOrCreatePhysicalDeviceFromIDX
 }
 
 std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
-    const RequestAdapterOptions* options) {
+    const UnpackedPtr<RequestAdapterOptions>& options) {
     if (options->forceFallbackAdapter) {
         return {};
     }
@@ -297,11 +297,8 @@ std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
     FeatureLevel featureLevel =
         options->compatibilityMode ? FeatureLevel::Compatibility : FeatureLevel::Core;
 
-    const RequestAdapterOptionsLUID* luidOptions = nullptr;
-    FindInChain(options->nextInChain, &luidOptions);
-
     // Get or create just the physical device matching the dxgi adapter.
-    if (luidOptions != nullptr) {
+    if (auto* luidOptions = options.Get<RequestAdapterOptionsLUID>()) {
         Ref<PhysicalDeviceBase> physicalDevice;
         if (GetInstance()->ConsumedErrorAndWarnOnce(
                 GetOrCreatePhysicalDeviceFromLUID(luidOptions->adapterLUID), &physicalDevice) ||

@@ -263,14 +263,12 @@ Builder::AccessorInfo::~AccessorInfo() {}
 
 Builder::Builder(const Program& program,
                  bool zero_initialize_workgroup_memory,
-                 bool experimental_require_subgroup_uniform_control_flow,
-                 bool polyfill_dot_4x8_packed)
+                 bool experimental_require_subgroup_uniform_control_flow)
     : builder_(ProgramBuilder::Wrap(program)),
       scope_stack_{Scope{}},
       zero_initialize_workgroup_memory_(zero_initialize_workgroup_memory),
       experimental_require_subgroup_uniform_control_flow_(
-          experimental_require_subgroup_uniform_control_flow),
-      polyfill_dot_4x8_packed_(polyfill_dot_4x8_packed) {}
+          experimental_require_subgroup_uniform_control_flow) {}
 
 Builder::~Builder() = default;
 
@@ -279,12 +277,11 @@ bool Builder::Build() {
             "SPIR-V", builder_.AST(), builder_.Diagnostics(),
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
-                wgsl::Extension::kChromiumExperimentalDp4A,
-                wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
-                wgsl::Extension::kF16,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
+                wgsl::Extension::kChromiumInternalGraphite,
+                wgsl::Extension::kF16,
             })) {
         return false;
     }
@@ -350,18 +347,10 @@ Operand Builder::result_op() {
 
 bool Builder::GenerateExtension(wgsl::Extension extension) {
     switch (extension) {
-        case wgsl::Extension::kChromiumExperimentalDp4A:
-            if (!polyfill_dot_4x8_packed_) {
-                module_.PushExtension("SPV_KHR_integer_dot_product");
-                module_.PushCapability(SpvCapabilityDotProductKHR);
-                module_.PushCapability(SpvCapabilityDotProductInput4x8BitPackedKHR);
-            }
-            break;
         case wgsl::Extension::kF16:
             module_.PushCapability(SpvCapabilityFloat16);
             module_.PushCapability(SpvCapabilityUniformAndStorageBuffer16BitAccess);
             module_.PushCapability(SpvCapabilityStorageBuffer16BitAccess);
-            module_.PushCapability(SpvCapabilityStorageInputOutput16);
             break;
         default:
             return false;
@@ -540,7 +529,6 @@ uint32_t Builder::GenerateExpression(const sem::Expression* expr) {
         expr->Declaration(),  //
         [&](const ast::AccessorExpression* a) { return GenerateAccessorExpression(a); },
         [&](const ast::BinaryExpression* b) { return GenerateBinaryExpression(b); },
-        [&](const ast::BitcastExpression* b) { return GenerateBitcastExpression(b); },
         [&](const ast::CallExpression* c) { return GenerateCallExpression(c); },
         [&](const ast::IdentifierExpression* i) { return GenerateIdentifierExpression(i); },
         [&](const ast::LiteralExpression* l) { return GenerateLiteralIfNeeded(l); },
@@ -633,7 +621,7 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
 }
 
 uint32_t Builder::GenerateFunctionTypeIfNeeded(const sem::Function* func) {
-    return tint::GetOrCreate(func_sig_to_id_, func->Signature(), [&]() -> uint32_t {
+    return func_sig_to_id_.GetOrAdd(func->Signature(), [&]() -> uint32_t {
         auto func_op = result_op();
         auto func_type_id = std::get<uint32_t>(func_op);
 
@@ -750,6 +738,13 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
         return false;
     }
 
+    // Emit the StorageInputOutput16 capability if needed.
+    if (sc == core::AddressSpace::kIn || sc == core::AddressSpace::kOut) {
+        if (type->DeepestElement()->Is<core::type::F16>()) {
+            module_.PushCapability(SpvCapabilityStorageInputOutput16);
+        }
+    }
+
     module_.PushDebug(spv::Op::OpName, {Operand(var_id), Operand(v->name->symbol.Name())});
 
     OperandList ops = {Operand(type_id), result, U32Operand(ConvertAddressSpace(sc))};
@@ -812,7 +807,7 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
                                    Operand(sem->Attributes().location.value())});
                 return true;
             },
-            [&](const ast::IndexAttribute*) {
+            [&](const ast::BlendSrcAttribute*) {
                 module_.PushAnnot(spv::Op::OpDecorate,
                                   {Operand(var_id), U32Operand(SpvDecorationIndex),
                                    Operand(sem->Attributes().index.value())});
@@ -876,12 +871,14 @@ bool Builder::GenerateIndexAccessor(const ast::IndexAccessorExpression* expr, Ac
     }
 
     // If the source is a reference, we access chain into it.
-    // In the future, pointers may support access-chaining.
-    // See https://github.com/gpuweb/gpuweb/pull/1580
     if (info->source_type->Is<core::type::Reference>()) {
         info->access_chain_indices.push_back(idx_id);
         info->source_type = builder_.Sem().Get(expr)->UnwrapLoad()->Type();
         return true;
+    } else if (TINT_UNLIKELY(info->source_type->Is<core::type::Pointer>())) {
+        TINT_ICE() << "lhs of index accesor expression should not be a pointer. These should have "
+                      "been removed by the SimplifyPointers transform";
+        return false;
     }
 
     auto result_type_id = GenerateTypeIfNeeded(TypeOf(expr));
@@ -1409,7 +1406,7 @@ uint32_t Builder::GenerateValueConstructorOrConversion(const sem::Call* call,
                       ? scope_stack_[0]       // Global scope
                       : scope_stack_.back();  // Lexical scope
 
-    return tint::GetOrCreate(stack.type_init_to_id_, OperandListKey{ops}, [&]() -> uint32_t {
+    return tint::GetOrAdd(stack.type_init_to_id_, OperandListKey{ops}, [&]() -> uint32_t {
         auto result = result_op();
         ops[kOpsResultIdx] = result;
 
@@ -1649,13 +1646,13 @@ uint32_t Builder::GenerateConstantIfNeeded(const core::constant::Value* constant
         }
 
         auto& global_scope = scope_stack_[0];
-        return tint::GetOrCreate(global_scope.type_init_to_id_, OperandListKey{ops},
-                                 [&]() -> uint32_t {
-                                     auto result = result_op();
-                                     ops[kOpsResultIdx] = result;
-                                     module_.PushType(spv::Op::OpConstantComposite, std::move(ops));
-                                     return std::get<uint32_t>(result);
-                                 });
+        return tint::GetOrAdd(global_scope.type_init_to_id_, OperandListKey{ops},
+                              [&]() -> uint32_t {
+                                  auto result = result_op();
+                                  ops[kOpsResultIdx] = result;
+                                  module_.PushType(spv::Op::OpConstantComposite, std::move(ops));
+                                  return std::get<uint32_t>(result);
+                              });
     };
 
     return Switch(
@@ -1774,7 +1771,7 @@ uint32_t Builder::GenerateConstantNullIfNeeded(const core::type::Type* type) {
         return 0;
     }
 
-    return tint::GetOrCreate(const_null_to_id_, type, [&] {
+    return tint::GetOrAdd(const_null_to_id_, type, [&] {
         auto result = result_op();
 
         module_.PushType(spv::Op::OpConstantNull, {Operand(type_id), result});
@@ -1791,7 +1788,7 @@ uint32_t Builder::GenerateConstantVectorSplatIfNeeded(const core::type::Vector* 
     }
 
     uint64_t key = (static_cast<uint64_t>(type->Width()) << 32) + value_id;
-    return tint::GetOrCreate(const_splat_to_id_, key, [&] {
+    return tint::GetOrAdd(const_splat_to_id_, key, [&] {
         auto result = result_op();
         auto result_id = std::get<uint32_t>(result);
 
@@ -2261,6 +2258,10 @@ uint32_t Builder::GenerateFunctionCall(const sem::Call* call, const sem::Functio
 }
 
 uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinFn* builtin) {
+    if (builtin->Fn() == wgsl::BuiltinFn::kBitcast) {
+        return GenerateBitcastExpression(call->Declaration());
+    }
+
     auto result = result_op();
     auto result_id = std::get<uint32_t>(result);
 
@@ -2538,6 +2539,7 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinF
             }
             break;
         case wgsl::BuiltinFn::kDot4I8Packed: {
+            DeclarePacked4x8IntegerDotProductCapabilitiesAndExtensions();
             auto first_param_id = get_arg_as_value_id(0);
             auto second_param_id = get_arg_as_value_id(1);
             if (!push_function_inst(spv::Op::OpSDotKHR,
@@ -2550,6 +2552,7 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinF
             return result_id;
         }
         case wgsl::BuiltinFn::kDot4U8Packed: {
+            DeclarePacked4x8IntegerDotProductCapabilitiesAndExtensions();
             auto first_param_id = get_arg_as_value_id(0);
             auto second_param_id = get_arg_as_value_id(1);
             if (!push_function_inst(spv::Op::OpUDotKHR,
@@ -3005,8 +3008,10 @@ bool Builder::GenerateTextureBuiltin(const sem::Call* call,
     }
 
     if (!image_operands.empty()) {
-        std::sort(image_operands.begin(), image_operands.end(),
-                  [](auto& a, auto& b) { return a.mask < b.mask; });
+        // Use a stable sort to preserve the order of the Grad dpdx and dpdy
+        // operands.
+        std::stable_sort(image_operands.begin(), image_operands.end(),
+                         [](auto& a, auto& b) { return a.mask < b.mask; });
         uint32_t mask = 0;
         for (auto& image_operand : image_operands) {
             mask |= image_operand.mask;
@@ -3291,7 +3296,7 @@ uint32_t Builder::GenerateSampledImage(const core::type::Type* texture_type,
     }
 
     uint32_t sampled_image_type_id =
-        tint::GetOrCreate(texture_type_to_sampled_image_type_id_, texture_type, [&] {
+        tint::GetOrAdd(texture_type_to_sampled_image_type_id_, texture_type, [&] {
             // We need to create the sampled image type and cache the result.
             auto sampled_image_type = result_op();
             auto texture_type_id = GenerateTypeIfNeeded(texture_type);
@@ -3309,24 +3314,26 @@ uint32_t Builder::GenerateSampledImage(const core::type::Type* texture_type,
     return std::get<uint32_t>(sampled_image);
 }
 
-uint32_t Builder::GenerateBitcastExpression(const ast::BitcastExpression* expr) {
+uint32_t Builder::GenerateBitcastExpression(const ast::CallExpression* call) {
     auto result = result_op();
     auto result_id = std::get<uint32_t>(result);
 
-    auto result_type_id = GenerateTypeIfNeeded(TypeOf(expr));
+    auto* arg = call->args[0];
+    auto* src_type = TypeOf(arg)->UnwrapRef();
+    auto* dst_type = TypeOf(call);
+
+    auto result_type_id = GenerateTypeIfNeeded(dst_type);
     if (result_type_id == 0) {
         return 0;
     }
 
-    auto val_id = GenerateExpression(expr->expr);
+    auto val_id = GenerateExpression(arg);
     if (val_id == 0) {
         return 0;
     }
 
     // Bitcast does not allow same types, just emit a CopyObject
-    auto* to_type = TypeOf(expr)->UnwrapRef();
-    auto* from_type = TypeOf(expr->expr)->UnwrapRef();
-    if (to_type == from_type) {
+    if (src_type == dst_type) {
         if (!push_function_inst(spv::Op::OpCopyObject,
                                 {Operand(result_type_id), result, Operand(val_id)})) {
             return 0;
@@ -3672,7 +3679,7 @@ uint32_t Builder::GenerateTypeIfNeeded(const core::type::Type* type) {
                                                     core::Access::kReadWrite);
     }
 
-    return tint::GetOrCreate(type_to_id_, type, [&]() -> uint32_t {
+    return tint::GetOrAdd(type_to_id_, type, [&]() -> uint32_t {
         auto result = result_op();
         auto id = std::get<uint32_t>(result);
         bool ok = Switch(
@@ -4103,6 +4110,9 @@ SpvImageFormat Builder::convert_texel_format_to_spv(const core::TexelFormat form
         case core::TexelFormat::kBgra8Unorm:
             TINT_ICE() << "bgra8unorm should have been polyfilled to rgba8unorm";
             return SpvImageFormatUnknown;
+        case core::TexelFormat::kR8Unorm:
+            module_.PushCapability(SpvCapabilityStorageImageExtendedFormats);
+            return SpvImageFormatR8;
         case core::TexelFormat::kR32Uint:
             return SpvImageFormatR32ui;
         case core::TexelFormat::kR32Sint:
@@ -4182,6 +4192,12 @@ bool Builder::InsideBasicBlock() const {
             break;
     }
     return true;
+}
+
+void Builder::DeclarePacked4x8IntegerDotProductCapabilitiesAndExtensions() {
+    module_.PushExtension("SPV_KHR_integer_dot_product");
+    module_.PushCapability(SpvCapabilityDotProductKHR);
+    module_.PushCapability(SpvCapabilityDotProductInput4x8BitPackedKHR);
 }
 
 Builder::ContinuingInfo::ContinuingInfo(const ast::Statement* the_last_statement,

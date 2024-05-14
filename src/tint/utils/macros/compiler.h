@@ -88,8 +88,9 @@
 #define TINT_DISABLE_WARNING_DEPRECATED /* currently no-op */
 #define TINT_DISABLE_WARNING_RESERVED_IDENTIFIER \
     _Pragma("clang diagnostic ignored \"-Wreserved-identifier\"")
-#define TINT_DISABLE_WARNING_RESERVED_MACRO_IDENTIFIER \
-    _Pragma("clang diagnostic ignored \"-Wreserved-macro-identifier\"")
+#define TINT_DISABLE_WARNING_RESERVED_MACRO_IDENTIFIER                  \
+    _Pragma("clang diagnostic ignored \"-Wreserved-macro-identifier\"") \
+        _Pragma("clang diagnostic ignored \"-Wreserved-id-macro\"")
 #define TINT_DISABLE_WARNING_UNUSED_VALUE _Pragma("clang diagnostic ignored \"-Wunused-value\"")
 #define TINT_DISABLE_WARNING_UNUSED_PARAMETER \
     _Pragma("clang diagnostic ignored \"-Wunused-parameter\"")
@@ -99,8 +100,8 @@
     _Pragma("clang diagnostic ignored \"-Wextra-semi-stmt\"")
 #define TINT_DISABLE_WARNING_ZERO_AS_NULLPTR \
     _Pragma("clang diagnostic ignored \"-Wzero-as-null-pointer-constant\"")
-#define TINT_DISABLE_WARNING_MISSING_DESTRUCTOR_OVERRIDE                                   \
-    _Pragma("clang diagnostic ignored \"-Wsuggest-destructor-override\"")                  \
+#define TINT_DISABLE_WARNING_MISSING_DESTRUCTOR_OVERRIDE                  \
+    _Pragma("clang diagnostic ignored \"-Wsuggest-destructor-override\"") \
         _Pragma("clang diagnostic ignored \"-Winconsistent-missing-destructor-override\"")
 
 // clang-format off

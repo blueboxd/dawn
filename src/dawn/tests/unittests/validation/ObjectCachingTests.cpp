@@ -172,7 +172,6 @@ TEST_F(ObjectCachingTest, ComputePipelineDeduplicationOnShaderModule) {
     wgpu::PipelineLayout layout = utils::MakeBasicPipelineLayout(device, nullptr);
 
     wgpu::ComputePipelineDescriptor desc;
-    desc.compute.entryPoint = "main";
     desc.layout = layout;
 
     desc.compute.module = module;
@@ -200,7 +199,6 @@ TEST_F(ObjectCachingTest, ComputePipelineDeduplicationOnOverrides) {
     wgpu::PipelineLayout layout = utils::MakeBasicPipelineLayout(device, nullptr);
 
     wgpu::ComputePipelineDescriptor desc;
-    desc.compute.entryPoint = "main";
     desc.layout = layout;
     desc.compute.module = module;
 
@@ -243,7 +241,6 @@ TEST_F(ObjectCachingTest, ComputePipelineDeduplicationOnLayout) {
     EXPECT_EQ(pl.Get(), samePl.Get());
 
     wgpu::ComputePipelineDescriptor desc;
-    desc.compute.entryPoint = "main";
     desc.compute.module = utils::CreateShaderModule(device, R"(
             var<workgroup> i : u32;
             @compute @workgroup_size(1) fn main() {
@@ -319,6 +316,7 @@ TEST_F(ObjectCachingTest, RenderPipelineDeduplicationOnVertexModule) {
     EXPECT_EQ(module.Get(), sameModule.Get());
 
     utils::ComboRenderPipelineDescriptor desc;
+    desc.layout = utils::MakeBasicPipelineLayout(device, nullptr);
     desc.cTargets[0].writeMask = wgpu::ColorWriteMask::None;
     desc.cFragment.module = utils::CreateShaderModule(device, R"(
             @fragment fn main() {
@@ -354,6 +352,7 @@ TEST_F(ObjectCachingTest, RenderPipelineDeduplicationOnFragmentModule) {
     EXPECT_EQ(module.Get(), sameModule.Get());
 
     utils::ComboRenderPipelineDescriptor desc;
+    desc.layout = utils::MakeBasicPipelineLayout(device, nullptr);
     desc.vertex.module = utils::CreateShaderModule(device, R"(
         @vertex fn main() -> @builtin(position) vec4f {
             return vec4f(0.0, 0.0, 0.0, 0.0);
@@ -385,10 +384,9 @@ TEST_F(ObjectCachingTest, RenderPipelineDeduplicationOnOverrides) {
         })");
 
     utils::ComboRenderPipelineDescriptor desc;
+    desc.layout = utils::MakeBasicPipelineLayout(device, nullptr);
     desc.vertex.module = module;
-    desc.vertex.entryPoint = "vertexMain";
     desc.cFragment.module = module;
-    desc.cFragment.entryPoint = "fragmentMain";
     desc.cTargets[0].writeMask = wgpu::ColorWriteMask::None;
 
     std::vector<wgpu::ConstantEntry> constants{{nullptr, "a", 0.5}};

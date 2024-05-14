@@ -25,18 +25,22 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/tests/DawnTest.h"
+#include <memory>
 
+#include "GLFW/glfw3.h"
 #include "dawn/common/Constants.h"
 #include "dawn/common/Log.h"
+#include "dawn/tests/DawnTest.h"
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 #include "webgpu/webgpu_glfw.h"
 
-#include "GLFW/glfw3.h"
-
 namespace dawn {
 namespace {
+
+struct GLFWindowDestroyer {
+    void operator()(GLFWwindow* ptr) { glfwDestroyWindow(ptr); }
+};
 
 class SwapChainValidationTests : public DawnTest {
   public:
@@ -52,9 +56,10 @@ class SwapChainValidationTests : public DawnTest {
 
         // Set GLFW_NO_API to avoid GLFW bringing up a GL context that we won't use.
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window = glfwCreateWindow(400, 400, "SwapChainValidationTests window", nullptr, nullptr);
+        window.reset(
+            glfwCreateWindow(400, 400, "SwapChainValidationTests window", nullptr, nullptr));
 
-        surface = wgpu::glfw::CreateSurfaceForWindow(GetInstance(), window);
+        surface = wgpu::glfw::CreateSurfaceForWindow(GetInstance(), window.get());
         ASSERT_NE(surface, nullptr);
 
         goodDescriptor.width = 1;
@@ -70,14 +75,12 @@ class SwapChainValidationTests : public DawnTest {
     void TearDown() override {
         // Destroy the surface before the window as required by webgpu-native.
         surface = wgpu::Surface();
-        if (window != nullptr) {
-            glfwDestroyWindow(window);
-        }
+        window.reset();
         DawnTest::TearDown();
     }
 
   protected:
-    GLFWwindow* window = nullptr;
+    std::unique_ptr<GLFWwindow, GLFWindowDestroyer> window = nullptr;
     wgpu::Surface surface;
     wgpu::SwapChainDescriptor goodDescriptor;
     wgpu::SwapChainDescriptor badDescriptor;
@@ -377,13 +380,13 @@ TEST_P(SwapChainValidationTests, SwapChainIsInvalidAfterSurfaceDestruction_After
     ASSERT_DEVICE_ERROR(replacedSwapChain.Present());
 }
 
-// Test that new swap chain present fails after device is lost
-TEST_P(SwapChainValidationTests, SwapChainPresentFailsAfterDeviceLost) {
+// Test that new swap chain present after device is lost
+TEST_P(SwapChainValidationTests, SwapChainPresentAfterDeviceLost) {
     wgpu::SwapChain swapchain = device.CreateSwapChain(surface, &goodDescriptor);
     swapchain.GetCurrentTexture();
 
     LoseDeviceForTesting();
-    ASSERT_DEVICE_ERROR(swapchain.Present());
+    swapchain.Present();
 }
 
 // Test that new swap chain get current texture fails after device is lost
@@ -391,13 +394,14 @@ TEST_P(SwapChainValidationTests, SwapChainGetCurrentTextureFailsAfterDevLost) {
     wgpu::SwapChain swapchain = device.CreateSwapChain(surface, &goodDescriptor);
 
     LoseDeviceForTesting();
-    ASSERT_DEVICE_ERROR(swapchain.GetCurrentTexture());
+    EXPECT_TRUE(dawn::native::CheckIsErrorForTesting(swapchain.GetCurrentTexture().Get()));
 }
 
 // Test that creation of a new swapchain fails after device is lost
 TEST_P(SwapChainValidationTests, CreateSwapChainFailsAfterDevLost) {
     LoseDeviceForTesting();
-    ASSERT_DEVICE_ERROR(device.CreateSwapChain(surface, &goodDescriptor));
+    EXPECT_TRUE(dawn::native::CheckIsErrorForTesting(
+        device.CreateSwapChain(surface, &goodDescriptor).Get()));
 }
 
 DAWN_INSTANTIATE_TEST(SwapChainValidationTests, MetalBackend(), NullBackend());

@@ -34,7 +34,7 @@ namespace dawn::native::opengl {
 // static
 Ref<ComputePipeline> ComputePipeline::CreateUninitialized(
     Device* device,
-    const ComputePipelineDescriptor* descriptor) {
+    const UnpackedPtr<ComputePipelineDescriptor>& descriptor) {
     return AcquireRef(new ComputePipeline(device, descriptor));
 }
 
@@ -45,9 +45,9 @@ void ComputePipeline::DestroyImpl() {
     DeleteProgram(ToBackend(GetDevice())->GetGL());
 }
 
-MaybeError ComputePipeline::Initialize() {
-    DAWN_TRY(
-        InitializeBase(ToBackend(GetDevice())->GetGL(), ToBackend(GetLayout()), GetAllStages()));
+MaybeError ComputePipeline::InitializeImpl() {
+    DAWN_TRY(InitializeBase(ToBackend(GetDevice())->GetGL(), ToBackend(GetLayout()), GetAllStages(),
+                            /* usesInstanceIndex */ false, /* usesFragDepth */ false));
     return {};
 }
 

@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "dawn/common/WindowsUtils.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/CommandEncoder.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Commands.h"
@@ -49,9 +50,9 @@
 #include "dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "dawn/native/d3d11/QuerySetD3D11.h"
 #include "dawn/native/d3d11/RenderPipelineD3D11.h"
-#include "dawn/native/d3d11/SharedFenceD3D11.h"
 #include "dawn/native/d3d11/TextureD3D11.h"
 #include "dawn/native/d3d11/UtilsD3D11.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native::d3d11 {
 namespace {
@@ -91,8 +92,7 @@ class VertexBufferTracker {
         // If the vertex state has changed, we need to update the strides.
         if (mLastAppliedRenderPipeline != renderPipeline) {
             mLastAppliedRenderPipeline = renderPipeline;
-            for (VertexBufferSlot slot :
-                 IterateBitSet(renderPipeline->GetVertexBufferSlotsUsed())) {
+            for (VertexBufferSlot slot : IterateBitSet(renderPipeline->GetVertexBuffersUsed())) {
                 mStrides[slot] = renderPipeline->GetVertexBuffer(slot).arrayStride;
             }
         }
@@ -102,50 +102,12 @@ class VertexBufferTracker {
     }
 
   private:
-    const ScopedSwapStateCommandRecordingContext* mCommandContext;
-    const RenderPipeline* mLastAppliedRenderPipeline = nullptr;
-    ityp::array<VertexBufferSlot, ID3D11Buffer*, kMaxVertexBuffers> mD3D11Buffers = {};
-    ityp::array<VertexBufferSlot, UINT, kMaxVertexBuffers> mStrides = {};
-    ityp::array<VertexBufferSlot, UINT, kMaxVertexBuffers> mOffsets = {};
+    raw_ptr<const ScopedSwapStateCommandRecordingContext> mCommandContext;
+    raw_ptr<const RenderPipeline> mLastAppliedRenderPipeline = nullptr;
+    PerVertexBuffer<ID3D11Buffer*> mD3D11Buffers = {};
+    PerVertexBuffer<UINT> mStrides = {};
+    PerVertexBuffer<UINT> mOffsets = {};
 };
-
-MaybeError SynchronizeTextureBeforeUse(
-    Texture* texture,
-    const ScopedSwapStateCommandRecordingContext* commandContext) {
-    SharedTextureMemoryBase::PendingFenceList fences;
-    SharedTextureMemoryContents* contents = texture->GetSharedTextureMemoryContents();
-    if (contents == nullptr) {
-        return {};
-    }
-
-    contents->AcquirePendingFences(&fences);
-    contents->SetLastUsageSerial(texture->GetDevice()->GetPendingCommandSerial());
-
-    for (auto& fence : fences) {
-        DAWN_TRY(CheckHRESULT(commandContext->GetD3D11DeviceContext4()->Wait(
-                                  ToBackend(fence.object)->GetD3DFence(), fence.signaledValue),
-                              "ID3D11DeviceContext4::Wait"));
-    }
-    return {};
-}
-
-// Create a texture as an implicit pixel local attachment of the render pass.
-ResultOrError<Ref<TextureViewBase>> CreateImplicitPixelLocalAttachment(
-    DeviceBase* device,
-    const BeginRenderPassCmd* renderPass) {
-    TextureDescriptor desc;
-    desc.dimension = wgpu::TextureDimension::e2D;
-    desc.format = RenderPipelineBase::kImplicitPLSSlotFormat;
-    desc.usage = wgpu::TextureUsage::StorageAttachment;
-    desc.size = {renderPass->width, renderPass->height, 1};
-    Ref<TextureBase> texture;
-    DAWN_TRY_ASSIGN(texture, device->CreateTexture(&desc));
-
-    Ref<TextureViewBase> textureView;
-    DAWN_TRY_ASSIGN(textureView, texture->CreateView());
-
-    return textureView;
-}
 
 // Handle pixel local storage attachments and return a vector of all pixel local storage UAVs.
 // - For implicit attachments, create the texture and clear it to 0.
@@ -161,21 +123,23 @@ HandlePixelLocalStorageAndGetPixelLocalStorageUAVs(
 
     const std::vector<wgpu::TextureFormat>& storageAttachmentSlots =
         renderPass->attachmentState->GetStorageAttachmentSlots();
+    uint32_t nextImplicitAttachmentIndex = 0;
     for (size_t attachment = 0; attachment < storageAttachmentSlots.size(); attachment++) {
         ComPtr<ID3D11UnorderedAccessView> pixelLocalStorageUAV;
         if (storageAttachmentSlots[attachment] == wgpu::TextureFormat::Undefined) {
-            // Create the texture as implicit pixel local storage attachment
-            // TODO(dawn:1704): Optimize this by creating a single 2D array texture and reusing it
-            // across different render passes.
-            Ref<TextureViewBase> implicitPixelLocalStorageTextureView;
-            DAWN_TRY_ASSIGN(implicitPixelLocalStorageTextureView,
-                            CreateImplicitPixelLocalAttachment(device, renderPass));
+            // Get implicit pixel local storage attachment
+            TextureViewBase* implicitPixelLocalStorageTextureView = nullptr;
+            DAWN_TRY_ASSIGN(
+                implicitPixelLocalStorageTextureView,
+                ToBackend(device)->GetOrCreateCachedImplicitPixelLocalStorageAttachment(
+                    renderPass->width, renderPass->height, nextImplicitAttachmentIndex));
+            ++nextImplicitAttachmentIndex;
 
             // Get and clear the UAV of the implicit pixel local storage attachment
-            DAWN_TRY_ASSIGN(pixelLocalStorageUAV,
-                            ToBackend(implicitPixelLocalStorageTextureView.Get())
-                                ->GetOrCreateD3D11UnorderedAccessView());
+            DAWN_TRY_ASSIGN(pixelLocalStorageUAV, ToBackend(implicitPixelLocalStorageTextureView)
+                                                      ->GetOrCreateD3D11UnorderedAccessView());
 
+            // TODO(dawn:1704): investigate if we can only clear it when necessary.
             uint32_t clearValue[4] = {0, 0, 0, 0};
             d3d11DeviceContext->ClearUnorderedAccessViewUint(pixelLocalStorageUAV.Get(),
                                                              clearValue);
@@ -277,10 +241,13 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 mCommands.NextCommand<BeginComputePassCmd>();
                 for (TextureBase* texture :
                      GetResourceUsages().computePasses[nextComputePassNumber].referencedTextures) {
-                    DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(texture), commandContext));
+                    DAWN_TRY(ToBackend(texture)->SynchronizeTextureBeforeUse(commandContext));
                 }
                 for (const SyncScopeResourceUsage& scope :
                      GetResourceUsages().computePasses[nextComputePassNumber].dispatchUsages) {
+                    for (TextureBase* texture : scope.textures) {
+                        DAWN_TRY(ToBackend(texture)->SynchronizeTextureBeforeUse(commandContext));
+                    }
                     DAWN_TRY(LazyClearSyncScope(scope));
                 }
                 DAWN_TRY(ExecuteComputePass(commandContext));
@@ -293,14 +260,14 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 auto* cmd = mCommands.NextCommand<BeginRenderPassCmd>();
                 for (TextureBase* texture :
                      GetResourceUsages().renderPasses[nextRenderPassNumber].textures) {
-                    DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(texture), commandContext));
+                    DAWN_TRY(ToBackend(texture)->SynchronizeTextureBeforeUse(commandContext));
                 }
                 for (ExternalTextureBase* externalTexture :
                      GetResourceUsages().renderPasses[nextRenderPassNumber].externalTextures) {
                     for (auto& view : externalTexture->GetTextureViews()) {
                         if (view.Get()) {
-                            DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(view->GetTexture()),
-                                                                 commandContext));
+                            DAWN_TRY(ToBackend(view->GetTexture())
+                                         ->SynchronizeTextureBeforeUse(commandContext));
                         }
                     }
                 }
@@ -356,8 +323,8 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                                     ComputeRequiredBytesInCopy(blockInfo, copy->copySize,
                                                                src.bytesPerRow, src.rowsPerImage));
                     desc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
-                    DAWN_TRY_ASSIGN(stagingBuffer,
-                                    Buffer::Create(ToBackend(GetDevice()), &desc, commandContext));
+                    DAWN_TRY_ASSIGN(stagingBuffer, Buffer::Create(ToBackend(GetDevice()),
+                                                                  Unpack(&desc), commandContext));
 
                     DAWN_TRY(Buffer::Copy(commandContext, buffer, src.offset,
                                           stagingBuffer->GetSize(), ToBackend(stagingBuffer.Get()),
@@ -371,7 +338,7 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 DAWN_TRY(buffer->EnsureDataInitialized(commandContext));
 
                 Texture* texture = ToBackend(dst.texture.Get());
-                DAWN_TRY(SynchronizeTextureBeforeUse(texture, commandContext));
+                DAWN_TRY(texture->SynchronizeTextureBeforeUse(commandContext));
                 SubresourceRange subresources = GetSubresourcesAffectedByCopy(dst, copy->copySize);
 
                 DAWN_ASSERT(scopedMap.GetMappedData());
@@ -396,7 +363,7 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
 
                 SubresourceRange subresources = GetSubresourcesAffectedByCopy(src, copy->copySize);
                 Texture* texture = ToBackend(src.texture.Get());
-                DAWN_TRY(SynchronizeTextureBeforeUse(texture, commandContext));
+                DAWN_TRY(texture->SynchronizeTextureBeforeUse(commandContext));
                 DAWN_TRY(
                     texture->EnsureSubresourceContentInitialized(commandContext, subresources));
 
@@ -429,10 +396,10 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                     continue;
                 }
 
-                DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(copy->source.texture.Get()),
-                                                     commandContext));
-                DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(copy->destination.texture.Get()),
-                                                     commandContext));
+                DAWN_TRY(ToBackend(copy->source.texture.Get())
+                             ->SynchronizeTextureBeforeUse(commandContext));
+                DAWN_TRY(ToBackend(copy->destination.texture.Get())
+                             ->SynchronizeTextureBeforeUse(commandContext));
                 DAWN_TRY(Texture::Copy(commandContext, copy));
                 break;
             }
@@ -590,14 +557,14 @@ MaybeError CommandBuffer::ExecuteRenderPass(
     auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
 
     // Hold ID3D11RenderTargetView ComPtr to make attachments alive.
-    ityp::array<ColorAttachmentIndex, ID3D11RenderTargetView*, kMaxColorAttachments>
-        d3d11RenderTargetViews = {};
+    PerColorAttachment<ID3D11RenderTargetView*> d3d11RenderTargetViews = {};
     ColorAttachmentIndex attachmentCount{};
     // TODO(dawn:1815): Shrink the sparse attachments to accommodate more UAVs.
     for (auto i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         TextureView* colorTextureView = ToBackend(renderPass->colorAttachments[i].view.Get());
         DAWN_TRY_ASSIGN(d3d11RenderTargetViews[i],
-                        colorTextureView->GetOrCreateD3D11RenderTargetView());
+                        colorTextureView->GetOrCreateD3D11RenderTargetView(
+                            renderPass->colorAttachments[i].depthSlice));
         if (renderPass->colorAttachments[i].loadOp == wgpu::LoadOp::Clear) {
             std::array<float, 4> clearColor =
                 ConvertToFloatColor(renderPass->colorAttachments[i].clearColor);

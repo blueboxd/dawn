@@ -134,15 +134,28 @@ class ValidationError : public interop::GPUValidationError {
     std::string message_;
 };
 
+class InternalError : public interop::GPUInternalError {
+  public:
+    explicit InternalError(std::string message) : message_(std::move(message)) {}
+
+    std::string getMessage(Napi::Env) override { return message_; };
+
+  private:
+    std::string message_;
+};
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // wgpu::bindings::GPUDevice
 ////////////////////////////////////////////////////////////////////////////////
-GPUDevice::GPUDevice(Napi::Env env, const wgpu::DeviceDescriptor& desc, wgpu::Device device)
+GPUDevice::GPUDevice(Napi::Env env,
+                     const wgpu::DeviceDescriptor& desc,
+                     wgpu::Device device,
+                     std::shared_ptr<AsyncRunner> async)
     : env_(env),
       device_(device),
-      async_(std::make_shared<AsyncRunner>(env, device)),
+      async_(async),
       lost_promise_(env, PROMISE_INFO),
       label_(desc.label ? desc.label : "") {
     device_.SetLoggingCallback(
@@ -189,6 +202,14 @@ GPUDevice::~GPUDevice() {
         device_.Destroy();
         destroyed_ = true;
     }
+}
+
+void GPUDevice::ForceLoss(interop::GPUDeviceLostReason reason, const char* message) {
+    if (lost_promise_.GetState() == interop::PromiseState::Pending) {
+        lost_promise_.Resolve(
+            interop::GPUDeviceLostInfo::Create<DeviceLostInfo>(env_, reason, message));
+    }
+    device_.InjectError(wgpu::ErrorType::DeviceLost, message);
 }
 
 interop::Interface<interop::GPUSupportedFeatures> GPUDevice::getFeatures(Napi::Env env) {
@@ -351,6 +372,16 @@ interop::Interface<interop::GPUShaderModule> GPUDevice::createShaderModule(
     }
     sm_desc.nextInChain = &wgsl_desc;
 
+    // Special case for a source containing a \0. This should be an error instead of just truncating
+    // the source.
+    if (descriptor.code.find('\0') != std::string::npos) {
+        return interop::GPUShaderModule::Create<GPUShaderModule>(
+            env, sm_desc,
+            device_.CreateErrorShaderModule(&sm_desc,
+                                            "The WGSL shader contains an illegal character '\\0'"),
+            async_);
+    }
+
     return interop::GPUShaderModule::Create<GPUShaderModule>(
         env, sm_desc, device_.CreateShaderModule(&sm_desc), async_);
 }
@@ -401,7 +432,7 @@ GPUDevice::createComputePipelineAsync(Napi::Env env,
         AsyncTask task;
         std::string label;
     };
-    auto ctx = new Context{env, Promise(env, PROMISE_INFO), AsyncTask(async_),
+    auto ctx = new Context{env, Promise(env, PROMISE_INFO), AsyncTask(env, async_),
                            desc.label ? desc.label : ""};
     auto promise = ctx->promise;
 
@@ -444,7 +475,7 @@ GPUDevice::createRenderPipelineAsync(Napi::Env env,
         AsyncTask task;
         std::string label;
     };
-    auto ctx = new Context{env, Promise(env, PROMISE_INFO), AsyncTask(async_),
+    auto ctx = new Context{env, Promise(env, PROMISE_INFO), AsyncTask(env, async_),
                            desc.label ? desc.label : ""};
     auto promise = ctx->promise;
 
@@ -545,7 +576,7 @@ interop::Promise<std::optional<interop::Interface<interop::GPUError>>> GPUDevice
         Promise promise;
         AsyncTask task;
     };
-    auto* ctx = new Context{env, Promise(env, PROMISE_INFO), AsyncTask(async_)};
+    auto* ctx = new Context{env, Promise(env, PROMISE_INFO), AsyncTask(env, async_)};
     auto promise = ctx->promise;
 
     device_.PopErrorScope(
@@ -568,12 +599,18 @@ interop::Promise<std::optional<interop::Interface<interop::GPUError>>> GPUDevice
                     c->promise.Resolve(err);
                     break;
                 }
+                case WGPUErrorType::WGPUErrorType_Internal: {
+                    interop::Interface<interop::GPUError> err{
+                        interop::GPUInternalError::Create<InternalError>(env, message)};
+                    c->promise.Resolve(err);
+                    break;
+                }
                 case WGPUErrorType::WGPUErrorType_Unknown:
                 case WGPUErrorType::WGPUErrorType_DeviceLost:
                     c->promise.Reject(Errors::OperationError(env, message));
                     break;
                 default:
-                    c->promise.Reject("unhandled error type");
+                    c->promise.Reject("unhandled error type (" + std::to_string(type) + ")");
                     break;
             }
         },

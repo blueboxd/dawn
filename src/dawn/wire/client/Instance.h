@@ -28,33 +28,31 @@
 #ifndef SRC_DAWN_WIRE_CLIENT_INSTANCE_H_
 #define SRC_DAWN_WIRE_CLIENT_INSTANCE_H_
 
+#include "absl/container/flat_hash_set.h"
 #include "dawn/webgpu.h"
 #include "dawn/wire/WireClient.h"
 #include "dawn/wire/WireCmd_autogen.h"
 #include "dawn/wire/client/ObjectBase.h"
-#include "dawn/wire/client/RequestTracker.h"
 
 namespace dawn::wire::client {
 
 WGPUBool ClientGetInstanceFeatures(WGPUInstanceFeatures* features);
 WGPUInstance ClientCreateInstance(WGPUInstanceDescriptor const* descriptor);
 
-class Instance final : public ObjectBase {
+class Instance final : public ObjectWithEventsBase {
   public:
-    using ObjectBase::ObjectBase;
+    explicit Instance(const ObjectBaseParams& params);
+    ~Instance() override;
+
+    ObjectType GetObjectType() const override;
+
+    WireResult Initialize(const WGPUInstanceDescriptor* descriptor);
 
     void RequestAdapter(const WGPURequestAdapterOptions* options,
                         WGPURequestAdapterCallback callback,
                         void* userdata);
     WGPUFuture RequestAdapterF(const WGPURequestAdapterOptions* options,
                                const WGPURequestAdapterCallbackInfo& callbackInfo);
-    bool OnRequestAdapterCallback(WGPUFuture future,
-                                  WGPURequestAdapterStatus status,
-                                  const char* message,
-                                  const WGPUAdapterProperties* properties,
-                                  const WGPUSupportedLimits* limits,
-                                  uint32_t featuresCount,
-                                  const WGPUFeatureName* features);
 
     void ProcessEvents();
     WGPUWaitStatus WaitAny(size_t count, WGPUFutureWaitInfo* infos, uint64_t timeoutNS);
@@ -63,6 +61,12 @@ class Instance final : public ObjectBase {
     // Always writes the full list when features is not nullptr.
     // TODO(https://github.com/webgpu-native/webgpu-headers/issues/252): Add a count argument.
     size_t EnumerateWGSLLanguageFeatures(WGPUWGSLFeatureName* features) const;
+
+  private:
+    void GatherWGSLFeatures(const WGPUDawnWireWGSLControl* wgslControl,
+                            const WGPUDawnWGSLBlocklist* wgslBlocklist);
+
+    absl::flat_hash_set<WGPUWGSLFeatureName> mWGSLFeatures;
 };
 
 }  // namespace dawn::wire::client

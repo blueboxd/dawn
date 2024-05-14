@@ -31,11 +31,16 @@
 #include <string>
 
 #include "dawn/common/GPUInfo.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/Limits.h"
 #include "dawn/native/vulkan/BackendVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/platform/DawnPlatform.h"
+
+#if DAWN_PLATFORM_IS(ANDROID)
+#include "dawn/native/AHBFunctions.h"
+#endif  // DAWN_PLATFORM_IS(ANDROID)
 
 namespace dawn::native::vulkan {
 
@@ -204,7 +209,6 @@ MaybeError PhysicalDevice::InitializeImpl() {
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::AdapterPropertiesMemoryHeaps);
-    EnableFeature(Feature::ChromiumExperimentalDp4a);
 
     // Initialize supported extensions
     if (mDeviceInfo.features.textureCompressionBC == VK_TRUE) {
@@ -236,13 +240,19 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::DualSourceBlending);
     }
 
+    if (mDeviceInfo.features.shaderStorageImageExtendedFormats == VK_TRUE) {
+        EnableFeature(Feature::R8UnormStorage);
+    }
+
     if (mDeviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
         mDeviceInfo.HasExt(DeviceExt::_16BitStorage) &&
         mDeviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
         mDeviceInfo._16BitStorageFeatures.storageBuffer16BitAccess == VK_TRUE &&
-        mDeviceInfo._16BitStorageFeatures.storageInputOutput16 == VK_TRUE &&
         mDeviceInfo._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess == VK_TRUE) {
-        EnableFeature(Feature::ShaderF16);
+        // TODO(crbug.com/tint/2164): Investigate crashes in f16 CTS tests to enable on NVIDIA.
+        if (!gpu_info::IsNvidia(GetVendorId())) {
+            EnableFeature(Feature::ShaderF16);
+        }
     }
 
     // unclippedDepth=true translates to depthClamp=true, which implicitly disables clipping.
@@ -329,6 +339,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::TransientAttachments);
+    EnableFeature(Feature::AdapterPropertiesVk);
 
     // Enable ChromiumExperimentalSubgroups feature if:
     // 1. Vulkan API version is 1.1 or later, and
@@ -367,6 +378,14 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     if (mDeviceInfo.HasExt(DeviceExt::ExternalMemoryFD)) {
         EnableFeature(Feature::SharedTextureMemoryOpaqueFD);
     }
+
+#if DAWN_PLATFORM_IS(ANDROID)
+    if (mDeviceInfo.HasExt(DeviceExt::ExternalMemoryAndroidHardwareBuffer)) {
+        if (GetInstance()->GetOrLoadAHBFunctions()->IsValid()) {
+            EnableFeature(Feature::SharedTextureMemoryAHardwareBuffer);
+        }
+    }
+#endif  // DAWN_PLATFORM_IS(ANDROID)
 
     if (CheckSemaphoreSupport(DeviceExt::ExternalSemaphoreZirconHandle,
                               VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_ZIRCON_EVENT_BIT_FUCHSIA)) {
@@ -486,8 +505,11 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
         vkLimits.maxVertexInputAttributeOffset < baseLimits.v1.maxVertexBufferArrayStride - 1) {
         return DAWN_INTERNAL_ERROR("Insufficient Vulkan limits for maxVertexBufferArrayStride");
     }
+    // Note that some drivers have UINT32_MAX as maxVertexInputAttributeOffset so we do that +1 only
+    // after the std::min.
     limits->v1.maxVertexBufferArrayStride =
-        std::min(vkLimits.maxVertexInputBindingStride, vkLimits.maxVertexInputAttributeOffset + 1);
+        std::min(vkLimits.maxVertexInputBindingStride - 1, vkLimits.maxVertexInputAttributeOffset) +
+        1;
 
     if (vkLimits.maxVertexOutputComponents < baseLimits.v1.maxInterStageShaderComponents ||
         vkLimits.maxFragmentInputComponents < baseLimits.v1.maxInterStageShaderComponents) {
@@ -675,6 +697,14 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // extension VK_KHR_zero_initialize_workgroup_memory.
     deviceToggles->Default(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, true);
 
+    // The environment can only request to use StorageInputOutput16 when the capability is
+    // available.
+    if (GetDeviceInfo()._16BitStorageFeatures.storageInputOutput16 == VK_FALSE) {
+        deviceToggles->ForceSet(Toggle::VulkanUseStorageInputOutput16, false);
+    }
+    // By default try to use the StorageInputOutput16 capability.
+    deviceToggles->Default(Toggle::VulkanUseStorageInputOutput16, true);
+
     // Inject fragment shaders in all vertex-only pipelines.
     // TODO(crbug.com/dawn/1698): relax this requirement where the Vulkan spec allows.
     // In particular, enable rasterizer discard if the depth-stencil stage is a no-op, and skip
@@ -708,9 +738,10 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     }
 }
 
-ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,
-                                                                const DeviceDescriptor* descriptor,
-                                                                const TogglesState& deviceToggles) {
+ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
+    AdapterBase* adapter,
+    const UnpackedPtr<DeviceDescriptor>& descriptor,
+    const TogglesState& deviceToggles) {
     return Device::Create(adapter, descriptor, deviceToggles);
 }
 
@@ -799,32 +830,36 @@ uint32_t PhysicalDevice::GetDefaultComputeSubgroupSize() const {
     return mDefaultComputeSubgroupSize;
 }
 
-void PhysicalDevice::PopulateMemoryHeapInfo(
-    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
-    size_t count = mDeviceInfo.memoryHeaps.size();
-    auto* heapInfo = new MemoryHeapInfo[count];
-    memoryHeapProperties->heapCount = count;
-    memoryHeapProperties->heapInfo = heapInfo;
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const {
+    if (auto* memoryHeapProperties = properties.Get<AdapterPropertiesMemoryHeaps>()) {
+        size_t count = mDeviceInfo.memoryHeaps.size();
+        auto* heapInfo = new MemoryHeapInfo[count];
+        memoryHeapProperties->heapCount = count;
+        memoryHeapProperties->heapInfo = heapInfo;
 
-    for (size_t i = 0; i < count; ++i) {
-        heapInfo[i].size = mDeviceInfo.memoryHeaps[i].size;
-        heapInfo[i].properties = {};
-        if (mDeviceInfo.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
-            heapInfo[i].properties |= wgpu::HeapProperty::DeviceLocal;
+        for (size_t i = 0; i < count; ++i) {
+            heapInfo[i].size = mDeviceInfo.memoryHeaps[i].size;
+            heapInfo[i].properties = {};
+            if (mDeviceInfo.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+                heapInfo[i].properties |= wgpu::HeapProperty::DeviceLocal;
+            }
+        }
+        for (const auto& memoryType : mDeviceInfo.memoryTypes) {
+            if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostVisible;
+            }
+            if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
+                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCoherent;
+            }
+            if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
+                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCached;
+            } else {
+                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostUncached;
+            }
         }
     }
-    for (const auto& memoryType : mDeviceInfo.memoryTypes) {
-        if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostVisible;
-        }
-        if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
-            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCoherent;
-        }
-        if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
-            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCached;
-        } else {
-            heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostUncached;
-        }
+    if (auto* vkProperties = properties.Get<AdapterPropertiesVk>()) {
+        vkProperties->driverVersion = mDeviceInfo.properties.driverVersion;
     }
 }
 

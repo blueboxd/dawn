@@ -43,6 +43,7 @@ struct CopyTextureToTextureCmd;
 
 namespace dawn::native::d3d {
 class Fence;
+class KeyedMutex;
 }  // namespace dawn::native::d3d
 
 namespace dawn::native::d3d11 {
@@ -53,29 +54,35 @@ class ScopedCommandRecordingContext;
 class SharedTextureMemory;
 
 MaybeError ValidateTextureCanBeWrapped(ID3D11Resource* d3d11Resource,
-                                       const TextureDescriptor* descriptor);
+                                       const UnpackedPtr<TextureDescriptor>& descriptor);
 MaybeError ValidateVideoTextureCanBeShared(Device* device, DXGI_FORMAT textureFormat);
 
 class Texture final : public d3d::Texture {
   public:
-    static ResultOrError<Ref<Texture>> Create(Device* device, const TextureDescriptor* descriptor);
     static ResultOrError<Ref<Texture>> Create(Device* device,
-                                              const TextureDescriptor* descriptor,
+                                              const UnpackedPtr<TextureDescriptor>& descriptor);
+    static ResultOrError<Ref<Texture>> Create(Device* device,
+                                              const UnpackedPtr<TextureDescriptor>& descriptor,
                                               ComPtr<ID3D11Resource> d3d11Texture);
-    static ResultOrError<Ref<Texture>> CreateExternalImage(Device* device,
-                                                           const TextureDescriptor* descriptor,
-                                                           ComPtr<IUnknown> d3dTexture,
-                                                           std::vector<Ref<d3d::Fence>> waitFences,
-                                                           bool isSwapChainTexture,
-                                                           bool isInitialized);
+    static ResultOrError<Ref<Texture>> CreateExternalImage(
+        Device* device,
+        const UnpackedPtr<TextureDescriptor>& descriptor,
+        ComPtr<IUnknown> d3dTexture,
+        Ref<d3d::KeyedMutex> keyedMutex,
+        std::vector<FenceAndSignalValue> waitFences,
+        bool isSwapChainTexture,
+        bool isInitialized);
     static ResultOrError<Ref<Texture>> CreateFromSharedTextureMemory(
         SharedTextureMemory* memory,
-        const TextureDescriptor* descriptor);
+        const UnpackedPtr<TextureDescriptor>& descriptor);
     ID3D11Resource* GetD3D11Resource() const;
 
     ResultOrError<ComPtr<ID3D11RenderTargetView>> CreateD3D11RenderTargetView(
-        const Format& format,
-        const SubresourceRange& singleLevelRange) const;
+        wgpu::TextureFormat format,
+        uint32_t mipLevel,
+        uint32_t baseSlice,
+        uint32_t sliceCount,
+        uint32_t planeSlice) const;
     ResultOrError<ComPtr<ID3D11DepthStencilView>> CreateD3D11DepthStencilView(
         const SubresourceRange& singleLevelRange,
         bool depthReadOnly,
@@ -83,6 +90,8 @@ class Texture final : public d3d::Texture {
     MaybeError EnsureSubresourceContentInitialized(
         const ScopedCommandRecordingContext* commandContext,
         const SubresourceRange& range);
+
+    MaybeError SynchronizeTextureBeforeUse(const ScopedCommandRecordingContext* commandContext);
 
     MaybeError Write(const ScopedCommandRecordingContext* commandContext,
                      const SubresourceRange& subresources,
@@ -122,11 +131,10 @@ class Texture final : public d3d::Texture {
         uint8_t stencil;
     };
 
-    static ResultOrError<Ref<Texture>> CreateInternal(Device* device,
-                                                      const TextureDescriptor* descriptor,
-                                                      Kind kind);
+    static ResultOrError<Ref<Texture>>
+    CreateInternal(Device* device, const UnpackedPtr<TextureDescriptor>& descriptor, Kind kind);
 
-    Texture(Device* device, const TextureDescriptor* descriptor, Kind kind);
+    Texture(Device* device, const UnpackedPtr<TextureDescriptor>& descriptor, Kind kind);
     ~Texture() override;
 
     template <typename T>
@@ -135,8 +143,7 @@ class Texture final : public d3d::Texture {
     MaybeError InitializeAsInternalTexture();
     MaybeError InitializeAsSwapChainTexture(ComPtr<ID3D11Resource> d3d11Texture);
     MaybeError InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
-                                           std::vector<Ref<d3d::Fence>> waitFences,
-                                           bool isSwapChainTexture);
+                                           Ref<d3d::KeyedMutex> keyedMutex);
     void SetLabelHelper(const char* prefix);
 
     // Dawn API
@@ -189,6 +196,11 @@ class Texture final : public d3d::Texture {
 
     const Kind mKind = Kind::Normal;
     ComPtr<ID3D11Resource> mD3d11Resource;
+    Ref<d3d::KeyedMutex> mKeyedMutex;
+
+    // TODO(crbug.com/1515640): Remove this once Chromium has migrated to SharedTextureMemory.
+    std::optional<ExecutionSerial> mLastUsageSerial;
+
     // The internal 'R8Uint' texture for sampling stencil from depth-stencil textures.
     Ref<Texture> mTextureForStencilSampling;
 };
@@ -198,7 +210,8 @@ class TextureView final : public TextureViewBase {
     static Ref<TextureView> Create(TextureBase* texture, const TextureViewDescriptor* descriptor);
 
     ResultOrError<ID3D11ShaderResourceView*> GetOrCreateD3D11ShaderResourceView();
-    ResultOrError<ID3D11RenderTargetView*> GetOrCreateD3D11RenderTargetView();
+    ResultOrError<ID3D11RenderTargetView*> GetOrCreateD3D11RenderTargetView(
+        uint32_t depthSlice = 0u);
     ResultOrError<ID3D11DepthStencilView*> GetOrCreateD3D11DepthStencilView(bool depthReadOnly,
                                                                             bool stencilReadOnly);
     ResultOrError<ID3D11UnorderedAccessView*> GetOrCreateD3D11UnorderedAccessView();
@@ -207,10 +220,11 @@ class TextureView final : public TextureViewBase {
     using TextureViewBase::TextureViewBase;
 
     ~TextureView() override;
+    void DestroyImpl() override;
 
     ComPtr<ID3D11ShaderResourceView> mD3d11SharedResourceView;
 
-    ComPtr<ID3D11RenderTargetView> mD3d11RenderTargetView;
+    std::vector<ComPtr<ID3D11RenderTargetView>> mD3d11RenderTargetViews;
 
     bool mD3d11DepthStencilViewDepthReadOnly = false;
     bool mD3d11DepthStencilViewStencilReadOnly = false;

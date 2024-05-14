@@ -133,17 +133,14 @@ class TextureViewSamplingTest : public TextureViewTestBase {
 
         mRenderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
 
-        wgpu::FilterMode kFilterMode = wgpu::FilterMode::Nearest;
-        wgpu::MipmapFilterMode kMipmapFilterMode = wgpu::MipmapFilterMode::Nearest;
-        wgpu::AddressMode kAddressMode = wgpu::AddressMode::ClampToEdge;
-
         wgpu::SamplerDescriptor samplerDescriptor = {};
-        samplerDescriptor.minFilter = kFilterMode;
-        samplerDescriptor.magFilter = kFilterMode;
-        samplerDescriptor.mipmapFilter = kMipmapFilterMode;
-        samplerDescriptor.addressModeU = kAddressMode;
-        samplerDescriptor.addressModeV = kAddressMode;
-        samplerDescriptor.addressModeW = kAddressMode;
+        // (Off-topic) spot-test for defaulting of these six fields.
+        samplerDescriptor.minFilter = wgpu::FilterMode::Undefined;
+        samplerDescriptor.magFilter = wgpu::FilterMode::Undefined;
+        samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Undefined;
+        samplerDescriptor.addressModeU = wgpu::AddressMode::Undefined;
+        samplerDescriptor.addressModeV = wgpu::AddressMode::Undefined;
+        samplerDescriptor.addressModeW = wgpu::AddressMode::Undefined;
         mSampler = device.CreateSampler(&samplerDescriptor);
 
         mVSModule = CreateDefaultVertexShaderModule(device);
@@ -393,6 +390,8 @@ TEST_P(TextureViewSamplingTest, Default2DArrayTexture) {
     InitTexture(kLayers, kMipLevels);
 
     wgpu::TextureViewDescriptor descriptor;
+    // (Off-topic) spot-test for defaulting of .aspect.
+    descriptor.aspect = wgpu::TextureAspect::Undefined;
     descriptor.dimension = wgpu::TextureViewDimension::e2DArray;
     wgpu::TextureView textureView = mTexture.CreateView(&descriptor);
 
@@ -415,6 +414,7 @@ TEST_P(TextureViewSamplingTest, Default2DArrayTexture) {
 
 // Test sampling from a 2D texture view created on a 2D array texture.
 TEST_P(TextureViewSamplingTest, Texture2DViewOn2DArrayTexture) {
+    DAWN_TEST_UNSUPPORTED_IF(IsCompatibilityMode());
     Texture2DViewTest(6, 1, 4, 0);
 }
 
@@ -434,6 +434,8 @@ TEST_P(TextureViewSamplingTest, Texture2DArrayViewOnSingleLayer2DTexture) {
     descriptor.arrayLayerCount = 1;
     descriptor.baseMipLevel = 0;
     descriptor.mipLevelCount = 1;
+    // (Off-topic) spot-test for defaulting of .aspect.
+    descriptor.aspect = wgpu::TextureAspect::Undefined;
     wgpu::TextureView textureView = mTexture.CreateView(&descriptor);
 
     const char* fragmentShader = R"(
@@ -457,11 +459,13 @@ TEST_P(TextureViewSamplingTest, Texture2DViewOnOneLevelOf2DTexture) {
 
 // Test sampling from a 2D texture view created on a mipmap level of a 2D array texture layer.
 TEST_P(TextureViewSamplingTest, Texture2DViewOnOneLevelOf2DArrayTexture) {
+    DAWN_TEST_UNSUPPORTED_IF(IsCompatibilityMode());
     Texture2DViewTest(6, 6, 3, 4);
 }
 
 // Test sampling from a 2D array texture view created on a mipmap level of a 2D array texture.
 TEST_P(TextureViewSamplingTest, Texture2DArrayViewOnOneLevelOf2DArrayTexture) {
+    DAWN_TEST_UNSUPPORTED_IF(IsCompatibilityMode());
     Texture2DArrayViewTest(6, 6, 2, 4);
 }
 
@@ -565,6 +569,7 @@ TEST_P(TextureViewSamplingTest, TextureCubeMapOnWholeTexture) {
 
 // Test sampling from a cube map texture view that covers a sub part of a 2D array texture.
 TEST_P(TextureViewSamplingTest, TextureCubeMapViewOnPartOfTexture) {
+    DAWN_TEST_UNSUPPORTED_IF(IsCompatibilityMode());
     // TODO(dawn:1935): Total layers have to be at least 12 on Intel D3D11 Gen12.
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntelGen12());
 
@@ -573,6 +578,8 @@ TEST_P(TextureViewSamplingTest, TextureCubeMapViewOnPartOfTexture) {
 
 // Test sampling from a cube map texture view that covers the last layer of a 2D array texture.
 TEST_P(TextureViewSamplingTest, TextureCubeMapViewCoveringLastLayer) {
+    DAWN_TEST_UNSUPPORTED_IF(IsCompatibilityMode());
+
     // TODO(dawn:1812): the test fails with DXGI_ERROR_DEVICE_HUNG on Intel D3D11 driver.
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntel());
 
@@ -621,8 +628,10 @@ class TextureViewRenderingTest : public TextureViewTestBase {
 
         constexpr wgpu::TextureUsage kUsage =
             wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
-        wgpu::Texture texture = Create2DTexture(textureWidthLevel0, textureHeightLevel0, layerCount,
-                                                levelCount, kUsage, dimension);
+        wgpu::Texture texture =
+            Create2DTexture(textureWidthLevel0, textureHeightLevel0, layerCount, levelCount, kUsage,
+                            layerCount > 1 ? wgpu::TextureViewDimension::e2DArray
+                                           : wgpu::TextureViewDimension::e2D);
 
         wgpu::TextureViewDescriptor descriptor;
         descriptor.format = kDefaultFormat;
@@ -1130,9 +1139,7 @@ TEST_P(TextureView1DTest, Sampling) {
     )");
     utils::ComboRenderPipelineDescriptor pDesc;
     pDesc.vertex.module = module;
-    pDesc.vertex.entryPoint = "vs";
     pDesc.cFragment.module = module;
-    pDesc.cFragment.entryPoint = "fs";
     pDesc.cTargets[0].format = wgpu::TextureFormat::RGBA8Unorm;
     wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&pDesc);
 

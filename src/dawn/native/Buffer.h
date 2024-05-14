@@ -31,12 +31,15 @@
 #include <functional>
 #include <memory>
 
+#include "dawn/common/FutureUtils.h"
 #include "dawn/common/NonCopyable.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 #include "dawn/native/Error.h"
 #include "dawn/native/Forward.h"
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/ObjectBase.h"
+#include "dawn/native/SharedBufferMemory.h"
 #include "dawn/native/UsageValidationMode.h"
 
 #include "dawn/native/dawn_platform.h"
@@ -47,7 +50,9 @@ struct CopyTextureToBufferCmd;
 
 enum class MapType : uint32_t;
 
-MaybeError ValidateBufferDescriptor(DeviceBase* device, const BufferDescriptor* descriptor);
+ResultOrError<UnpackedPtr<BufferDescriptor>> ValidateBufferDescriptor(
+    DeviceBase* device,
+    const BufferDescriptor* descriptor);
 
 static constexpr wgpu::BufferUsage kReadOnlyBufferUsages =
     wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::Index |
@@ -72,9 +77,10 @@ class BufferBase : public ApiObjectBase {
         Mapped,
         MappedAtCreation,
         HostMappedPersistent,
+        SharedMemoryNoAccess,
         Destroyed,
     };
-    static BufferBase* MakeError(DeviceBase* device, const BufferDescriptor* descriptor);
+    static Ref<BufferBase> MakeError(DeviceBase* device, const BufferDescriptor* descriptor);
 
     ObjectType GetType() const override;
 
@@ -97,6 +103,9 @@ class BufferBase : public ApiObjectBase {
     bool IsDataInitialized() const;
     void SetIsDataInitialized();
     void MarkUsedInPendingCommands();
+
+    // SetHasAccess determines Dawn's ability to access SharedBufferMemory.
+    void SetHasAccess(bool hasAccess);
 
     virtual void* GetMappedPointer() = 0;
     void* GetMappedRange(size_t offset, size_t size, bool writable = true);
@@ -121,7 +130,7 @@ class BufferBase : public ApiObjectBase {
     uint64_t APIGetSize() const;
 
   protected:
-    BufferBase(DeviceBase* device, const BufferDescriptor* descriptor);
+    BufferBase(DeviceBase* device, const UnpackedPtr<BufferDescriptor>& descriptor);
     BufferBase(DeviceBase* device, const BufferDescriptor* descriptor, ObjectBase::ErrorTag tag);
 
     void DestroyImpl() override;
@@ -133,6 +142,9 @@ class BufferBase : public ApiObjectBase {
     uint64_t mAllocatedSize = 0;
 
     ExecutionSerial mLastUsageSerial = ExecutionSerial(0);
+
+    // The shared buffer memory state the buffer was created from. May be null.
+    Ref<SharedBufferMemoryContents> mSharedBufferMemoryContents;
 
   private:
     std::function<void()> PrepareMappingCallback(MapRequestID mapID,
@@ -153,8 +165,8 @@ class BufferBase : public ApiObjectBase {
     bool CanGetMappedRange(bool writable, size_t offset, size_t size) const;
     void UnmapInternal(WGPUBufferMapAsyncStatus callbackStatus);
 
-    uint64_t mSize = 0;
-    wgpu::BufferUsage mUsage = wgpu::BufferUsage::None;
+    const uint64_t mSize = 0;
+    const wgpu::BufferUsage mUsage = wgpu::BufferUsage::None;
     BufferState mState;
     bool mIsDataInitialized = false;
 
@@ -167,13 +179,15 @@ class BufferBase : public ApiObjectBase {
     Ref<BufferBase> mStagingBuffer;
 
     WGPUBufferMapCallback mMapCallback = nullptr;
-    void* mMapUserdata = nullptr;
+    // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
+    raw_ptr<void, DanglingUntriaged> mMapUserdata = nullptr;
     MapRequestID mLastMapID = MapRequestID(0);
     wgpu::MapMode mMapMode = wgpu::MapMode::None;
     size_t mMapOffset = 0;
     size_t mMapSize = 0;
 
     struct MapAsyncEvent;
+    FutureID mPendingMapFutureID = kNullFutureID;
     Ref<MapAsyncEvent> mPendingMapEvent;
 };
 

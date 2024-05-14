@@ -63,6 +63,7 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_SharedFenceVkSemaphoreZirconHandle:
         case WGPUFeatureName_SharedFenceDXGISharedHandle:
         case WGPUFeatureName_SharedFenceMTLSharedEvent:
+        case WGPUFeatureName_SharedBufferMemoryD3D12Resource:
 
         case WGPUFeatureName_Depth32FloatStencil8:
         case WGPUFeatureName_TimestampQuery:
@@ -78,7 +79,6 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_MultiPlanarFormatP010:
         case WGPUFeatureName_MultiPlanarFormatNv12a:
         case WGPUFeatureName_MultiPlanarRenderTargets:
-        case WGPUFeatureName_ChromiumExperimentalDp4a:
         case WGPUFeatureName_ShaderF16:
         case WGPUFeatureName_RG11B10UfloatRenderable:
         case WGPUFeatureName_BGRA8UnormStorage:
@@ -94,6 +94,9 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_Norm16TextureFormats:
         case WGPUFeatureName_FramebufferFetch:
         case WGPUFeatureName_AdapterPropertiesMemoryHeaps:
+        case WGPUFeatureName_AdapterPropertiesD3D:
+        case WGPUFeatureName_AdapterPropertiesVk:
+        case WGPUFeatureName_R8UnormStorage:
             return true;
     }
 

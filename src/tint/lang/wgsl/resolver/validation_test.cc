@@ -33,7 +33,6 @@
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
-#include "src/tint/lang/wgsl/ast/bitcast_expression.h"
 #include "src/tint/lang/wgsl/ast/break_statement.h"
 #include "src/tint/lang/wgsl/ast/builtin_texture_helper_test.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
@@ -316,7 +315,7 @@ TEST_F(ResolverValidationTest, AddressSpace_SamplerExplicitAddressSpace) {
     EXPECT_FALSE(r()->Resolve());
 
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: variables of type 'sampler' must not specifiy an address space)");
+              R"(12:34 error: variables of type 'sampler' must not specify an address space)");
 }
 
 TEST_F(ResolverValidationTest, AddressSpace_TextureExplicitAddressSpace) {
@@ -327,7 +326,7 @@ TEST_F(ResolverValidationTest, AddressSpace_TextureExplicitAddressSpace) {
 
     EXPECT_EQ(
         r()->error(),
-        R"(12:34 error: variables of type 'texture_1d<f32>' must not specifiy an address space)");
+        R"(12:34 error: variables of type 'texture_1d<f32>' must not specify an address space)");
 }
 
 TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_BadChar) {
@@ -383,12 +382,10 @@ TEST_F(ResolverValidationTest, Expr_MemberAccessor_BadParent) {
     WrapInFunction(Decl(param), Decl(ret));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: invalid member accessor expression. Expected vector or struct, got "
-              "'ptr<function, vec4<f32>, read_write>'");
+    EXPECT_EQ(r()->error(), "error: cannot dereference expression of type 'f32'");
 }
 
-TEST_F(ResolverValidationTest, EXpr_MemberAccessor_FuncGoodParent) {
+TEST_F(ResolverValidationTest, Expr_MemberAccessor_FuncGoodParent) {
     // fn func(p: ptr<function, vec4<f32>>) -> f32 {
     //     let x: f32 = (*p).z;
     //     return x;
@@ -405,7 +402,7 @@ TEST_F(ResolverValidationTest, EXpr_MemberAccessor_FuncGoodParent) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
-TEST_F(ResolverValidationTest, EXpr_MemberAccessor_FuncBadParent) {
+TEST_F(ResolverValidationTest, Expr_MemberAccessor_FuncBadParent) {
     // fn func(p: ptr<function, vec4<f32>>) -> f32 {
     //     let x: f32 = *p.z;
     //     return x;
@@ -421,9 +418,7 @@ TEST_F(ResolverValidationTest, EXpr_MemberAccessor_FuncBadParent) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: invalid member accessor expression. Expected vector or struct, got "
-              "'ptr<function, vec4<f32>, read_write>'");
+    EXPECT_EQ(r()->error(), "error: cannot dereference expression of type 'f32'");
 }
 
 TEST_F(ResolverValidationTest,
@@ -998,6 +993,22 @@ TEST_F(ResolverValidationTest, Stmt_BreakInSwitch) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
+TEST_F(ResolverValidationTest, Stmt_BreakInSwitchInContinuing) {
+    // loop {
+    //   continuing {
+    //     switch(1) {
+    //       default:
+    //         break;
+    //     }
+    //   }
+    // }
+
+    auto* cont = Block(Switch(1_i, DefaultCase(Block(Break()))));
+
+    WrapInFunction(Loop(Block(Break()), cont));
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
 TEST_F(ResolverValidationTest, Stmt_BreakInIfTrueInContinuing) {
     auto* cont = Block(                           // continuing {
         If(true, Block(                           //   if(true) {
@@ -1006,9 +1017,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfTrueInContinuing) {
                                                   // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: `break` must not be used to exit from a continuing block. "
-              "Use `break-if` instead.");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'break' must not be used to exit from a continuing block. Use 'break if' instead.)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInIfElseInContinuing) {
@@ -1020,9 +1031,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfElseInContinuing) {
                                              // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: `break` must not be used to exit from a continuing block. "
-              "Use `break-if` instead.");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'break' must not be used to exit from a continuing block. Use 'break if' instead.)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInContinuing) {
@@ -1031,9 +1042,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInContinuing) {
                                           // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: `break` must not be used to exit from a continuing block. "
-              "Use `break-if` instead.");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'break' must not be used to exit from a continuing block. Use 'break if' instead.)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInIfInIfInContinuing) {
@@ -1046,9 +1057,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfInIfInContinuing) {
                                                              // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: `break` must not be used to exit from a continuing block. "
-              "Use `break-if` instead.");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'break' must not be used to exit from a continuing block. Use 'break if' instead.)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInIfTrueMultipleStmtsInContinuing) {
@@ -1060,9 +1071,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfTrueMultipleStmtsInContinuing) {
                                                     // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: `break` must not be used to exit from a continuing block. "
-              "Use `break-if` instead.");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'break' must not be used to exit from a continuing block. Use 'break if' instead.)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInIfElseMultipleStmtsInContinuing) {
@@ -1075,9 +1086,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfElseMultipleStmtsInContinuing) {
                                                     // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: `break` must not be used to exit from a continuing block. "
-              "Use `break-if` instead.");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'break' must not be used to exit from a continuing block. Use 'break if' instead.)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInIfElseIfInContinuing) {
@@ -1089,9 +1100,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfElseIfInContinuing) {
                                                         // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: `break` must not be used to exit from a continuing block. "
-              "Use `break-if` instead.");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'break' must not be used to exit from a continuing block. Use 'break if' instead.)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInIfNonEmptyElseInContinuing) {
@@ -1104,9 +1115,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfNonEmptyElseInContinuing) {
                                                  // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: `break` must not be used to exit from a continuing block. "
-              "Use `break-if` instead.");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'break' must not be used to exit from a continuing block. Use 'break if' instead.)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInIfElseNonEmptyTrueInContinuing) {
@@ -1119,9 +1130,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfElseNonEmptyTrueInContinuing) {
                                                            // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: `break` must not be used to exit from a continuing block. "
-              "Use `break-if` instead.");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'break' must not be used to exit from a continuing block. Use 'break if' instead.)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInIfInContinuingNotLast) {
@@ -1133,9 +1144,9 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfInContinuingNotLast) {
                                              // }
     WrapInFunction(Loop(Block(), cont));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: `break` must not be used to exit from a continuing block. "
-              "Use `break-if` instead.");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'break' must not be used to exit from a continuing block. Use 'break if' instead.)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakNotInLoopOrSwitch) {
@@ -1183,7 +1194,7 @@ TEST_F(ResolverValidationTest, NegativeStructMemberAlignAttribute) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: @align value must be a positive, power-of-two integer)");
+              R"(12:34 error: '@align' value must be a positive, power-of-two integer)");
 }
 
 TEST_F(ResolverValidationTest, NonPOTStructMemberAlignAttribute) {
@@ -1193,7 +1204,7 @@ TEST_F(ResolverValidationTest, NonPOTStructMemberAlignAttribute) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: @align value must be a positive, power-of-two integer)");
+              R"(12:34 error: '@align' value must be a positive, power-of-two integer)");
 }
 
 TEST_F(ResolverValidationTest, ZeroStructMemberAlignAttribute) {
@@ -1203,7 +1214,7 @@ TEST_F(ResolverValidationTest, ZeroStructMemberAlignAttribute) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: @align value must be a positive, power-of-two integer)");
+              R"(12:34 error: '@align' value must be a positive, power-of-two integer)");
 }
 
 TEST_F(ResolverValidationTest, ZeroStructMemberSizeAttribute) {
@@ -1212,7 +1223,8 @@ TEST_F(ResolverValidationTest, ZeroStructMemberSizeAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: @size must be at least as big as the type's size (4))");
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: '@size' must be at least as big as the type's size (4))");
 }
 
 TEST_F(ResolverValidationTest, OffsetAndSizeAttribute) {
@@ -1222,7 +1234,7 @@ TEST_F(ResolverValidationTest, OffsetAndSizeAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: @offset cannot be used with @align or @size)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: '@offset' cannot be used with '@align' or '@size')");
 }
 
 TEST_F(ResolverValidationTest, OffsetAndAlignAttribute) {
@@ -1232,7 +1244,7 @@ TEST_F(ResolverValidationTest, OffsetAndAlignAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: @offset cannot be used with @align or @size)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: '@offset' cannot be used with '@align' or '@size')");
 }
 
 TEST_F(ResolverValidationTest, OffsetAndAlignAndSizeAttribute) {
@@ -1242,7 +1254,7 @@ TEST_F(ResolverValidationTest, OffsetAndAlignAndSizeAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: @offset cannot be used with @align or @size)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: '@offset' cannot be used with '@align' or '@size')");
 }
 
 TEST_F(ResolverTest, Expr_Initializer_Cast_Pointer) {
@@ -1274,24 +1286,6 @@ TEST_F(ResolverTest, U32_Overflow) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), R"(12:24 error: value 4294967296 cannot be represented as 'u32')");
-}
-
-//    var a: array<i32,2>;
-//    *&a[0] = 1;
-TEST_F(ResolverTest, PointerIndexing_Fail) {
-    // var a: array<i32,2>;
-    // let p = &a;
-    // *p[0] = 0;
-
-    auto* a = Var("a", ty.array<i32, 2>());
-    auto* p = AddressOf("a");
-    auto* idx = Assign(Deref(IndexAccessor(p, 0_u)), 0_u);
-
-    WrapInFunction(a, idx);
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(error: cannot index type 'ptr<function, array<i32, 2>, read_write>')");
 }
 
 }  // namespace

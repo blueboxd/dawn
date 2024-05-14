@@ -33,6 +33,7 @@
 #include "dawn/common/NSRef.h"
 #include "dawn/common/Platform.h"
 #include "dawn/common/SystemUtils.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/MetalBackend.h"
 #include "dawn/native/metal/BufferMTL.h"
@@ -297,15 +298,15 @@ class PhysicalDevice : public PhysicalDeviceBase {
 
     // PhysicalDeviceBase Implementation
     bool SupportsExternalImages() const override {
-        // Via dawn::native::metal::WrapIOSurface
-        return true;
+        // SharedTextureMemory is the supported means of importing IOSurfaces.
+        return false;
     }
 
     bool SupportsFeatureLevel(FeatureLevel) const override { return true; }
 
   private:
     ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(AdapterBase* adapter,
-                                                    const DeviceDescriptor* descriptor,
+                                                    const UnpackedPtr<DeviceDescriptor>& descriptor,
                                                     const TogglesState& deviceToggles) override {
         return Device::Create(adapter, mDevice, descriptor, deviceToggles);
     }
@@ -319,20 +320,27 @@ class PhysicalDevice : public PhysicalDeviceBase {
             haveStoreAndMSAAResolve =
                 [*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v2];
 #elif DAWN_PLATFORM_IS(IOS)
+#if !defined(__IPHONE_16_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_16_0
             haveStoreAndMSAAResolve = [*mDevice supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v2];
+#else
+            // iOS 16 is A11 Bionic and later.
+            haveStoreAndMSAAResolve = true;
+#endif
 #endif
             // On tvOS, we would need MTLFeatureSet_tvOS_GPUFamily2_v1.
             deviceToggles->Default(Toggle::EmulateStoreAndMSAAResolve, !haveStoreAndMSAAResolve);
 
             bool haveSamplerCompare = true;
-#if DAWN_PLATFORM_IS(IOS)
+#if DAWN_PLATFORM_IS(IOS) && \
+    (!defined(__IPHONE_16_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_16_0)
             haveSamplerCompare = [*mDevice supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v1];
 #endif
             // TODO(crbug.com/dawn/342): Investigate emulation -- possibly expensive.
             deviceToggles->Default(Toggle::MetalDisableSamplerCompare, !haveSamplerCompare);
 
             bool haveBaseVertexBaseInstance = true;
-#if DAWN_PLATFORM_IS(IOS)
+#if DAWN_PLATFORM_IS(IOS) && \
+    (!defined(__IPHONE_16_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_16_0)
             haveBaseVertexBaseInstance =
                 [*mDevice supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v1];
 #endif
@@ -447,18 +455,42 @@ class PhysicalDevice : public PhysicalDeviceBase {
     MaybeError InitializeImpl() override { return {}; }
 
     void InitializeSupportedFeaturesImpl() override {
-        // Check texture formats with deprecated MTLFeatureSet way.
-#if DAWN_PLATFORM_IS(MACOS)
-        if ([*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v1]) {
-            EnableFeature(Feature::TextureCompressionBC);
+#if (defined(__MAC_11_0) && __MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_11_0) || \
+    (defined(__IPHONE_14_0) && __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_14_0)
+        if ([*mDevice supports32BitFloatFiltering]) {
+            EnableFeature(Feature::Float32Filterable);
         }
-        if (@available(macOS 10.14, *)) {
+#elif DAWN_PLATFORM_IS(MACOS)
+        if (@available(macOS 10.15, *)) {
+            if ([*mDevice supportsFamily:MTLGPUFamilyMac2]) {
+                EnableFeature(Feature::Float32Filterable);
+            }
+        } else if (@available(macOS 10.14, *)) {
             if ([*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily2_v1]) {
                 EnableFeature(Feature::Float32Filterable);
             }
         }
 #endif
-#if DAWN_PLATFORM_IS(IOS)
+
+#if (defined(__MAC_11_0) && __MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_11_0) || \
+    (defined(__IPHONE_16_4) && __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_16_4)
+        if ([*mDevice supportsBCTextureCompression]) {
+            EnableFeature(Feature::TextureCompressionBC);
+        }
+#elif DAWN_PLATFORM_IS(MACOS)
+        if (@available(macOS 10.15, *)) {
+            if ([*mDevice supportsFamily:MTLGPUFamilyMac1]) {
+                EnableFeature(Feature::TextureCompressionBC);
+            }
+        } else {
+            if ([*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v1]) {
+                EnableFeature(Feature::TextureCompressionBC);
+            }
+        }
+#endif
+
+#if DAWN_PLATFORM_IS(IOS) && \
+    (!defined(__IPHONE_16_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_16_0)
         if ([*mDevice supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily1_v1]) {
             EnableFeature(Feature::TextureCompressionETC2);
         }
@@ -469,12 +501,6 @@ class PhysicalDevice : public PhysicalDeviceBase {
 
         // Check texture formats with MTLGPUFamily
         if (@available(macOS 10.15, iOS 13.0, *)) {
-            if ([*mDevice supportsFamily:MTLGPUFamilyMac1]) {
-                EnableFeature(Feature::TextureCompressionBC);
-            }
-            if ([*mDevice supportsFamily:MTLGPUFamilyMac2]) {
-                EnableFeature(Feature::Float32Filterable);
-            }
             if ([*mDevice supportsFamily:MTLGPUFamilyApple2]) {
                 EnableFeature(Feature::TextureCompressionETC2);
             }
@@ -590,7 +616,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         EnableFeature(Feature::SurfaceCapabilities);
         EnableFeature(Feature::MSAARenderToSingleSampled);
         EnableFeature(Feature::DualSourceBlending);
-        EnableFeature(Feature::ChromiumExperimentalDp4a);
+        EnableFeature(Feature::R8UnormStorage);
 
         // SIMD-scoped permute operations is supported by GPU family Metal3, Apple6, Apple7, Apple8,
         // and Mac2.
@@ -670,12 +696,14 @@ class PhysicalDevice : public PhysicalDeviceBase {
         // https://developer.apple.com/documentation/metal/mtldevice/detecting_gpu_features_and_metal_software_versions?language=objc
 
         if (@available(macOS 10.15, iOS 10.13, *)) {
+#if !DAWN_PLATFORM_IS(IOS)
             if ([*mDevice supportsFamily:MTLGPUFamilyMac2]) {
                 return MTLGPUFamily::Mac2;
             }
             if ([*mDevice supportsFamily:MTLGPUFamilyMac1]) {
                 return MTLGPUFamily::Mac1;
             }
+#endif
             if ([*mDevice supportsFamily:MTLGPUFamilyApple7]) {
                 return MTLGPUFamily::Apple7;
             }
@@ -708,7 +736,8 @@ class PhysicalDevice : public PhysicalDeviceBase {
         if ([*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v1]) {
             return MTLGPUFamily::Mac1;
         }
-#elif DAWN_PLATFORM_IS(IOS)
+#elif DAWN_PLATFORM_IS(IOS) && \
+    (!defined(__IPHONE_16_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_16_0)
         if (@available(iOS 10.11, *)) {
             if ([*mDevice supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily4_v1]) {
                 return MTLGPUFamily::Apple4;
@@ -891,49 +920,51 @@ class PhysicalDevice : public PhysicalDeviceBase {
         return {};
     }
 
-    void PopulateMemoryHeapInfo(AdapterPropertiesMemoryHeaps* memoryHeapProperties) const override {
-        if ((@available(macOS 10.15, iOS 13.0, *)) && [*mDevice hasUnifiedMemory]) {
-            auto* heapInfo = new MemoryHeapInfo[1];
-            memoryHeapProperties->heapCount = 1;
-            memoryHeapProperties->heapInfo = heapInfo;
+    void PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const override {
+        if (auto* memoryHeapProperties = properties.Get<AdapterPropertiesMemoryHeaps>()) {
+            if ((@available(macOS 10.15, iOS 13.0, *)) && [*mDevice hasUnifiedMemory]) {
+                auto* heapInfo = new MemoryHeapInfo[1];
+                memoryHeapProperties->heapCount = 1;
+                memoryHeapProperties->heapInfo = heapInfo;
 
-            heapInfo[0].properties =
-                wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
-                wgpu::HeapProperty::HostCoherent | wgpu::HeapProperty::HostCached;
+                heapInfo[0].properties =
+                    wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                    wgpu::HeapProperty::HostCoherent | wgpu::HeapProperty::HostCached;
 // TODO(dawn:2249): Enable on iOS. Some XCode or SDK versions seem to not match the docs.
 #if DAWN_PLATFORM_IS(MACOS)
-            if (@available(macOS 10.12, iOS 16.0, *)) {
-                heapInfo[0].size = [*mDevice recommendedMaxWorkingSetSize];
-            } else
+                if (@available(macOS 10.12, iOS 16.0, *)) {
+                    heapInfo[0].size = [*mDevice recommendedMaxWorkingSetSize];
+                } else
 #endif
-            {
-                // Since AdapterPropertiesMemoryHeaps is already gated on the
-                // availability and #ifdef above, we should never reach this case, however
-                // excluding the conditional causes build errors.
-                DAWN_UNREACHABLE();
-            }
-        } else {
+                {
+                    // Since AdapterPropertiesMemoryHeaps is already gated on the
+                    // availability and #ifdef above, we should never reach this case, however
+                    // excluding the conditional causes build errors.
+                    DAWN_UNREACHABLE();
+                }
+            } else {
 #if DAWN_PLATFORM_IS(MACOS)
-            auto* heapInfo = new MemoryHeapInfo[2];
-            memoryHeapProperties->heapCount = 2;
-            memoryHeapProperties->heapInfo = heapInfo;
+                auto* heapInfo = new MemoryHeapInfo[2];
+                memoryHeapProperties->heapCount = 2;
+                memoryHeapProperties->heapInfo = heapInfo;
 
-            heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
-            heapInfo[0].size = [*mDevice recommendedMaxWorkingSetSize];
+                heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
+                heapInfo[0].size = [*mDevice recommendedMaxWorkingSetSize];
 
-            mach_msg_type_number_t hostBasicInfoMsg = HOST_BASIC_INFO_COUNT;
-            host_basic_info_data_t hostInfo{};
-            DAWN_CHECK(host_info(mach_host_self(), HOST_BASIC_INFO,
-                                 reinterpret_cast<host_info_t>(&hostInfo),
-                                 &hostBasicInfoMsg) == KERN_SUCCESS);
+                mach_msg_type_number_t hostBasicInfoMsg = HOST_BASIC_INFO_COUNT;
+                host_basic_info_data_t hostInfo{};
+                DAWN_CHECK(host_info(mach_host_self(), HOST_BASIC_INFO,
+                                     reinterpret_cast<host_info_t>(&hostInfo),
+                                     &hostBasicInfoMsg) == KERN_SUCCESS);
 
-            heapInfo[1].properties = wgpu::HeapProperty::HostVisible |
-                                     wgpu::HeapProperty::HostCoherent |
-                                     wgpu::HeapProperty::HostCached;
-            heapInfo[1].size = hostInfo.max_mem;
+                heapInfo[1].properties = wgpu::HeapProperty::HostVisible |
+                                         wgpu::HeapProperty::HostCoherent |
+                                         wgpu::HeapProperty::HostCached;
+                heapInfo[1].size = hostInfo.max_mem;
 #else
-            DAWN_UNREACHABLE();
+                DAWN_UNREACHABLE();
 #endif
+            }
         }
     }
 
@@ -956,7 +987,7 @@ Backend::Backend(InstanceBase* instance) : BackendConnection(instance, wgpu::Bac
 Backend::~Backend() = default;
 
 std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
-    const RequestAdapterOptions* options) {
+    const UnpackedPtr<RequestAdapterOptions>& options) {
     if (options->forceFallbackAdapter) {
         return {};
     }

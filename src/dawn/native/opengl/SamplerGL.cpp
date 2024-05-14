@@ -27,6 +27,9 @@
 
 #include "dawn/native/opengl/SamplerGL.h"
 
+#include <algorithm>
+#include <cstdint>
+
 #include "dawn/common/Assert.h"
 #include "dawn/native/opengl/DeviceGL.h"
 #include "dawn/native/opengl/UtilsGL.h"
@@ -40,6 +43,8 @@ GLenum MagFilterMode(wgpu::FilterMode filter) {
             return GL_NEAREST;
         case wgpu::FilterMode::Linear:
             return GL_LINEAR;
+        case wgpu::FilterMode::Undefined:
+            break;
     }
     DAWN_UNREACHABLE();
 }
@@ -52,6 +57,8 @@ GLenum MinFilterMode(wgpu::FilterMode minFilter, wgpu::MipmapFilterMode mipMapFi
                     return GL_NEAREST_MIPMAP_NEAREST;
                 case wgpu::MipmapFilterMode::Linear:
                     return GL_NEAREST_MIPMAP_LINEAR;
+                case wgpu::MipmapFilterMode::Undefined:
+                    DAWN_UNREACHABLE();
             }
         case wgpu::FilterMode::Linear:
             switch (mipMapFilter) {
@@ -59,7 +66,11 @@ GLenum MinFilterMode(wgpu::FilterMode minFilter, wgpu::MipmapFilterMode mipMapFi
                     return GL_LINEAR_MIPMAP_NEAREST;
                 case wgpu::MipmapFilterMode::Linear:
                     return GL_LINEAR_MIPMAP_LINEAR;
+                case wgpu::MipmapFilterMode::Undefined:
+                    DAWN_UNREACHABLE();
             }
+        case wgpu::FilterMode::Undefined:
+            DAWN_UNREACHABLE();
     }
     DAWN_UNREACHABLE();
 }
@@ -72,6 +83,8 @@ GLenum WrapMode(wgpu::AddressMode mode) {
             return GL_MIRRORED_REPEAT;
         case wgpu::AddressMode::ClampToEdge:
             return GL_CLAMP_TO_EDGE;
+        case wgpu::AddressMode::Undefined:
+            break;
     }
     DAWN_UNREACHABLE();
 }
@@ -125,8 +138,10 @@ void Sampler::SetupGLSampler(GLuint sampler,
                              ToOpenGLCompareFunction(descriptor->compare));
     }
 
-    if (gl.IsAtLeastGL(4, 6) || gl.IsGLExtensionSupported("GL_EXT_texture_filter_anisotropic")) {
-        gl.SamplerParameterf(sampler, GL_TEXTURE_MAX_ANISOTROPY, GetMaxAnisotropy());
+    if (HasAnisotropicFiltering(gl)) {
+        uint16_t value =
+            std::min<uint16_t>(GetMaxAnisotropy(), device->GetMaxTextureMaxAnisotropy());
+        gl.SamplerParameteri(sampler, GL_TEXTURE_MAX_ANISOTROPY, value);
     }
 }
 

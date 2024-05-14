@@ -113,15 +113,26 @@ namespace wgpu::binding {
 // wgpu::bindings::GPU
 ////////////////////////////////////////////////////////////////////////////////
 GPU::GPU(Flags flags) : flags_(std::move(flags)) {
-    if (auto validate = flags_.Get("validate"); validate == "1" || validate == "true") {
-        instance_.EnableBackendValidation(true);
-        instance_.SetBackendValidationLevel(dawn::native::BackendValidationLevel::Full);
-    }
-
     // Setting the DllDir changes where we load adapter DLLs from (e.g. d3dcompiler_47.dll)
     if (auto dir = flags_.Get("dlldir")) {
         SetDllDir(dir->c_str());
     }
+
+    // Set up the chained descriptor for the various instance extensions.
+    dawn::native::DawnInstanceDescriptor dawnDesc;
+    if (auto validate = flags_.Get("validate"); validate == "1" || validate == "true") {
+        dawnDesc.backendValidationLevel = dawn::native::BackendValidationLevel::Full;
+    }
+
+    TogglesLoader togglesLoader(flags_);
+    DawnTogglesDescriptor togglesDesc = togglesLoader.GetDescriptor();
+    togglesDesc.nextInChain = &dawnDesc;
+
+    wgpu::InstanceDescriptor desc;
+    desc.nextInChain = &togglesDesc;
+    instance_ = std::make_unique<dawn::native::Instance>(
+        reinterpret_cast<const WGPUInstanceDescriptor*>(&desc));
+    async_ = std::make_shared<AsyncRunner>(instance_.get());
 }
 
 interop::Promise<std::optional<interop::Interface<interop::GPUAdapter>>> GPU::requestAdapter(
@@ -192,7 +203,7 @@ interop::Promise<std::optional<interop::Interface<interop::GPUAdapter>>> GPU::re
     DawnTogglesDescriptor togglesDescriptor = togglesLoader.GetDescriptor();
     nativeOptions.nextInChain = &togglesDescriptor;
 
-    auto adapters = instance_.EnumerateAdapters(&nativeOptions);
+    auto adapters = instance_->EnumerateAdapters(&nativeOptions);
     if (adapters.empty()) {
         promise.Resolve({});
         return promise;
@@ -250,7 +261,7 @@ interop::Promise<std::optional<interop::Interface<interop::GPUAdapter>>> GPU::re
         printf("using GPU adapter: %s\n", props.name);
     }
 
-    auto gpuAdapter = GPUAdapter::Create<GPUAdapter>(env, *adapter, flags_);
+    auto gpuAdapter = GPUAdapter::Create<GPUAdapter>(env, *adapter, flags_, async_);
     promise.Resolve(std::optional<interop::Interface<interop::GPUAdapter>>(gpuAdapter));
     return promise;
 }
@@ -285,11 +296,12 @@ interop::Interface<interop::WGSLLanguageFeatures> GPU::getWgslLanguageFeatures(N
             }
             return out;
         }
+        size_t getSize(Napi::Env env) { return features_.size(); }
 
         InteropWGSLFeatureSet features_;
     };
 
-    wgpu::Instance instance = instance_.Get();
+    wgpu::Instance instance = instance_->Get();
     size_t count = instance.EnumerateWGSLLanguageFeatures(nullptr);
 
     std::vector<wgpu::WGSLFeatureName> features(count);

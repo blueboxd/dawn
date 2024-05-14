@@ -33,7 +33,6 @@
 #include <string>
 #include <vector>
 
-#include "dawn/common/Constants.h"
 #include "dawn/common/ContentLessObjectCacheable.h"
 #include "dawn/common/ityp_array.h"
 #include "dawn/common/ityp_bitset.h"
@@ -41,19 +40,18 @@
 #include "dawn/native/CachedObject.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/Forward.h"
+#include "dawn/native/IntegerTypes.h"
 #include "dawn/native/ObjectBase.h"
-
 #include "dawn/native/dawn_platform.h"
+#include "partition_alloc/pointers/raw_ptr.h"
+#include "partition_alloc/pointers/raw_ptr_exclusion.h"
 
 namespace dawn::native {
 
-MaybeError ValidatePipelineLayoutDescriptor(
+ResultOrError<UnpackedPtr<PipelineLayoutDescriptor>> ValidatePipelineLayoutDescriptor(
     DeviceBase*,
     const PipelineLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken = PipelineCompatibilityToken(0));
-
-using BindGroupLayoutArray = ityp::array<BindGroupIndex, Ref<BindGroupLayoutBase>, kMaxBindGroups>;
-using BindGroupLayoutMask = ityp::bitset<BindGroupIndex, kMaxBindGroups>;
+    PipelineCompatibilityToken pipelineCompatibilityToken = kExplicitPCT);
 
 struct StageAndDescriptor {
     StageAndDescriptor(SingleShaderStage shaderStage,
@@ -63,10 +61,13 @@ struct StageAndDescriptor {
                        ConstantEntry const* constants);
 
     SingleShaderStage shaderStage;
-    ShaderModuleBase* module;
+    raw_ptr<ShaderModuleBase> module;
     std::string entryPoint;
     size_t constantCount = 0u;
-    ConstantEntry const* constants = nullptr;
+
+    // TODO(https://crbug.com/chromium/1521372): Investigate why this is assigned a dangling
+    // pointer. Then rewrite it as a raw_ptr<T, AllowPtrArithmetic>.
+    RAW_PTR_EXCLUSION ConstantEntry const* constants = nullptr;
 };
 
 class PipelineLayoutBase : public ApiObjectBase,
@@ -74,12 +75,12 @@ class PipelineLayoutBase : public ApiObjectBase,
                            public ContentLessObjectCacheable<PipelineLayoutBase> {
   public:
     PipelineLayoutBase(DeviceBase* device,
-                       const PipelineLayoutDescriptor* descriptor,
+                       const UnpackedPtr<PipelineLayoutDescriptor>& descriptor,
                        ApiObjectBase::UntrackedByDeviceTag tag);
-    PipelineLayoutBase(DeviceBase* device, const PipelineLayoutDescriptor* descriptor);
+    PipelineLayoutBase(DeviceBase* device, const UnpackedPtr<PipelineLayoutDescriptor>& descriptor);
     ~PipelineLayoutBase() override;
 
-    static PipelineLayoutBase* MakeError(DeviceBase* device, const char* label);
+    static Ref<PipelineLayoutBase> MakeError(DeviceBase* device, const char* label);
     static ResultOrError<Ref<PipelineLayoutBase>> CreateDefault(
         DeviceBase* device,
         std::vector<StageAndDescriptor> stages);
@@ -90,14 +91,14 @@ class PipelineLayoutBase : public ApiObjectBase,
     BindGroupLayoutBase* GetFrontendBindGroupLayout(BindGroupIndex group);
     const BindGroupLayoutInternalBase* GetBindGroupLayout(BindGroupIndex group) const;
     BindGroupLayoutInternalBase* GetBindGroupLayout(BindGroupIndex group);
-    const BindGroupLayoutMask& GetBindGroupLayoutsMask() const;
+    const BindGroupMask& GetBindGroupLayoutsMask() const;
     bool HasPixelLocalStorage() const;
     const std::vector<wgpu::TextureFormat>& GetStorageAttachmentSlots() const;
     bool HasAnyStorageAttachments() const;
 
     // Utility functions to compute inherited bind groups.
     // Returns the inherited bind groups as a mask.
-    BindGroupLayoutMask InheritedGroupsMask(const PipelineLayoutBase* other) const;
+    BindGroupMask InheritedGroupsMask(const PipelineLayoutBase* other) const;
 
     // Returns the index of the first incompatible bind group in the range
     // [0, kMaxBindGroups]
@@ -114,8 +115,8 @@ class PipelineLayoutBase : public ApiObjectBase,
     PipelineLayoutBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label);
     void DestroyImpl() override;
 
-    BindGroupLayoutArray mBindGroupLayouts;
-    BindGroupLayoutMask mMask;
+    PerBindGroup<Ref<BindGroupLayoutBase>> mBindGroupLayouts;
+    BindGroupMask mMask;
     bool mHasPLS = false;
     std::vector<wgpu::TextureFormat> mStorageAttachmentSlots;
 };

@@ -68,10 +68,14 @@ tint_add_target(tint_lang_core_type lib
   lang/core/type/f32.h
   lang/core/type/i32.cc
   lang/core/type/i32.h
+  lang/core/type/invalid.cc
+  lang/core/type/invalid.h
   lang/core/type/manager.cc
   lang/core/type/manager.h
   lang/core/type/matrix.cc
   lang/core/type/matrix.h
+  lang/core/type/memory_view.cc
+  lang/core/type/memory_view.h
   lang/core/type/multisampled_texture.cc
   lang/core/type/multisampled_texture.h
   lang/core/type/node.cc
@@ -119,6 +123,7 @@ tint_target_add_dependencies(tint_lang_core_type lib
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
+  tint_utils_reflection
   tint_utils_result
   tint_utils_rtti
   tint_utils_symbol

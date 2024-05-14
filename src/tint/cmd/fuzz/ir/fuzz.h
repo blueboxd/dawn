@@ -53,8 +53,12 @@ struct IRFuzzer {
     static IRFuzzer Create(std::string_view name, void (*fn)(core::ir::Module&, ARGS...)) {
         if constexpr (sizeof...(ARGS) > 0) {
             auto fn_with_decode = [fn](core::ir::Module& module, Slice<const std::byte> data) {
-                bytes::Reader reader{data};
-                if (auto data_args = bytes::Decode<std::tuple<std::decay_t<ARGS>...>>(reader)) {
+                if (!data.data) {
+                    return;
+                }
+                bytes::BufferReader reader{data};
+                auto data_args = bytes::Decode<std::tuple<std::decay_t<ARGS>...>>(reader);
+                if (data_args == Success) {
                     auto all_args =
                         std::tuple_cat(std::tuple<core::ir::Module&>{module}, data_args.Get());
                     std::apply(*fn, all_args);
@@ -77,7 +81,7 @@ struct IRFuzzer {
 
 /// Registers the fuzzer function with the IR fuzzer executable.
 /// @param fuzzer the fuzzer
-void Register(const IRFuzzer& fuzzer);
+void Register([[maybe_unused]] const IRFuzzer& fuzzer);
 
 /// TINT_IR_MODULE_FUZZER registers the fuzzer function.
 #define TINT_IR_MODULE_FUZZER(FUNCTION) \

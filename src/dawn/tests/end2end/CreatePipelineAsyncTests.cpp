@@ -153,7 +153,6 @@ TEST_P(CreatePipelineAsyncTest, BasicUseOfCreateComputePipelineAsync) {
         @compute @workgroup_size(1) fn main() {
             ssbo.value = 1u;
         })");
-    csDesc.compute.entryPoint = "main";
 
     device.CreateComputePipelineAsync(
         &csDesc,
@@ -382,7 +381,6 @@ TEST_P(CreatePipelineAsyncTest, ReleaseDeviceBeforeCallbackOfCreateComputePipeli
     csDesc.compute.module = utils::CreateShaderModule(device, R"(
         @compute @workgroup_size(1) fn main() {
         })");
-    csDesc.compute.entryPoint = "main";
 
     device.CreateComputePipelineAsync(
         &csDesc,
@@ -446,7 +444,6 @@ TEST_P(CreatePipelineAsyncTest, DestroyDeviceBeforeCallbackOfCreateComputePipeli
     csDesc.compute.module = utils::CreateShaderModule(device, R"(
         @compute @workgroup_size(1) fn main() {
         })");
-    csDesc.compute.entryPoint = "main";
 
     device.CreateComputePipelineAsync(
         &csDesc,
@@ -516,7 +513,6 @@ TEST_P(CreatePipelineAsyncTest, CreateSameComputePipelineTwice) {
         @compute @workgroup_size(1) fn main() {
             ssbo.value = 1u;
         })");
-    csDesc.compute.entryPoint = "main";
 
     auto callback = [](WGPUCreatePipelineAsyncStatus status, WGPUComputePipeline returnPipeline,
                        const char* message, void* userdata) {
@@ -575,7 +571,6 @@ TEST_P(CreatePipelineAsyncTest, CreateSameComputePipelineTwiceAtSameTime) {
         @compute @workgroup_size(1) fn main() {
             ssbo.value = 1u;
         })");
-    csDesc.compute.entryPoint = "main";
 
     auto callback = [](WGPUCreatePipelineAsyncStatus status, WGPUComputePipeline returnPipeline,
                        const char* message, void* userdata) {
@@ -616,6 +611,7 @@ TEST_P(CreatePipelineAsyncTest, CreateSameRenderPipelineTwiceAtSameTime) {
         @fragment fn main() -> @location(0) vec4f {
             return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
+    renderPipelineDescriptor.layout = utils::MakeBasicPipelineLayout(device, nullptr);
     renderPipelineDescriptor.vertex.module = vsModule;
     renderPipelineDescriptor.cFragment.module = fsModule;
     renderPipelineDescriptor.cTargets[0].format = kRenderAttachmentFormat;
@@ -879,6 +875,9 @@ TEST_P(CreatePipelineAsyncTest, CreateRenderPipelineWithMultisampleState) {
 // Verify calling CreateRenderPipelineAsync() with valid BlendState works on all backends.
 TEST_P(CreatePipelineAsyncTest, CreateRenderPipelineAsyncWithBlendState) {
     DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("disable_indexed_draw_buffers"));
+
+    // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 4 OpenGLES
+    DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
 
     std::array<wgpu::Texture, 2> renderTargets;
     std::array<wgpu::TextureView, 2> renderTargetViews;

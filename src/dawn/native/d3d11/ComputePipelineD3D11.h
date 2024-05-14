@@ -39,15 +39,16 @@ class ScopedSwapStateCommandRecordingContext;
 
 class ComputePipeline final : public ComputePipelineBase {
   public:
-    static Ref<ComputePipeline> CreateUninitialized(Device* device,
-                                                    const ComputePipelineDescriptor* descriptor);
+    static Ref<ComputePipeline> CreateUninitialized(
+        Device* device,
+        const UnpackedPtr<ComputePipelineDescriptor>& descriptor);
     static void InitializeAsync(Ref<ComputePipelineBase> computePipeline,
                                 WGPUCreateComputePipelineAsyncCallback callback,
                                 void* userdata);
 
     void ApplyNow(const ScopedSwapStateCommandRecordingContext* commandContext);
 
-    MaybeError Initialize() override;
+    MaybeError InitializeImpl() override;
 
     bool UsesNumWorkgroups() const;
 

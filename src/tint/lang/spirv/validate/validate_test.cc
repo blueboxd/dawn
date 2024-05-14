@@ -48,8 +48,8 @@ TEST(SpirvValidateTest, Valid) {
         0x0000000e, 0x00000002, 0x0000000b, 0x0004003d, 0x00000006, 0x0000000f, 0x0000000e,
         0x00050051, 0x00000005, 0x00000010, 0x0000000f, 0x00000001, 0x000100fd, 0x00010038,
     };
-    auto res = Validate(spirv);
-    EXPECT_TRUE(res) << res;
+    auto res = Validate(spirv, SPV_ENV_VULKAN_1_3);
+    EXPECT_EQ(res, Success);
 }
 
 TEST(SpirvValidateTest, Invalid) {
@@ -68,9 +68,9 @@ TEST(SpirvValidateTest, Invalid) {
         0x0000000e, 0x00000002, 0x0000000b, 0x0004003d, 0x00000006, 0x0000000f, 0x0000000e,
         0x00050051, 0x00000005, 0x00000010, 0x0000000f, 0x00000001, 0x000100fd, 0x00010038,
     };
-    auto res = Validate(spirv);
-    ASSERT_FALSE(res);
-    EXPECT_EQ(res.Failure().reason.str(), R"(spirv error: SPIR-V failed validation.
+    auto res = Validate(spirv, SPV_ENV_VULKAN_1_3);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(), R"(spirv error: SPIR-V failed validation.
 
 Disassembly:
 ; SPIR-V

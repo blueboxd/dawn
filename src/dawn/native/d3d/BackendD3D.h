@@ -30,11 +30,11 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "dawn/common/TypedInteger.h"
 #include "dawn/native/BackendConnection.h"
 
@@ -52,7 +52,7 @@ struct DxcVersionInfo {
     uint64_t DxcValidatorVersion;
 };
 
-// If DXC version information is not avaliable due to no DXC binary or error occurs when acquiring
+// If DXC version information is not available due to no DXC binary or error occurs when acquiring
 // version, DxcUnavailable indicates the version information being unavailable and holds the
 // detailed error information.
 struct DxcUnavailable {
@@ -74,8 +74,8 @@ class Backend : public BackendConnection {
     ComPtr<IDxcCompiler3> GetDxcCompiler() const;
     ComPtr<IDxcValidator> GetDxcValidator() const;
 
-    // Return true if and only if DXC binary is avaliable, and the DXC compiler and validator
-    // version are validated to be no older than a specific minimium version, currently 1.6.
+    // Return true if and only if DXC binary is available, and the DXC compiler and validator
+    // version are validated to be no older than a specific minimum version, currently 1.6.
     bool IsDXCAvailable() const;
 
     // Return true if and only if mIsDXCAvailable is true, and the DXC compiler and validator
@@ -92,7 +92,7 @@ class Backend : public BackendConnection {
     const PlatformFunctions* GetFunctions() const;
 
     std::vector<Ref<PhysicalDeviceBase>> DiscoverPhysicalDevices(
-        const RequestAdapterOptions* options) override;
+        const UnpackedPtr<RequestAdapterOptions>& options) override;
     void ClearPhysicalDevices() override;
     size_t GetPhysicalDeviceCountForTesting() const override;
 
@@ -137,7 +137,8 @@ class Backend : public BackendConnection {
     // Map of LUID to physical device.
     // The LUID is guaranteed to be uniquely identify an adapter on the local
     // machine until restart.
-    std::unordered_map<LUID, Ref<PhysicalDeviceBase>, LUIDHashFunc, LUIDEqualFunc> mPhysicalDevices;
+    absl::flat_hash_map<LUID, Ref<PhysicalDeviceBase>, LUIDHashFunc, LUIDEqualFunc>
+        mPhysicalDevices;
 };
 
 }  // namespace dawn::native::d3d

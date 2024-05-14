@@ -34,12 +34,10 @@
 #include <unordered_set>
 #include <vector>
 
-#include "src/tint/api/options/array_length_from_uniform.h"
 #include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/msl/writer/common/options.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
 #include "src/tint/lang/wgsl/ast/binary_expression.h"
-#include "src/tint/lang/wgsl/ast/bitcast_expression.h"
 #include "src/tint/lang/wgsl/ast/break_statement.h"
 #include "src/tint/lang/wgsl/ast/continue_statement.h"
 #include "src/tint/lang/wgsl/ast/discard_statement.h"
@@ -134,7 +132,7 @@ class ASTPrinter : public tint::TextGenerator {
     /// @param out the output of the expression stream
     /// @param expr the bitcast expression
     /// @returns true if the bitcast was emitted
-    bool EmitBitcast(StringStream& out, const ast::BitcastExpression* expr);
+    bool EmitBitcastCall(StringStream& out, const ast::CallExpression* expr);
     /// Handles a block statement
     /// @param stmt the statement to emit
     /// @returns true if the statement was emitted successfully
@@ -378,6 +376,11 @@ class ASTPrinter : public tint::TextGenerator {
                               const ast::CallExpression* expr,
                               const sem::BuiltinFn* builtin);
 
+    /// Lazilly generates the TINT_ISOLATE_UB macro, used to prevent UB statements from affecting
+    /// later logic.
+    /// @return the MSL to call the TINT_ISOLATE_UB macro.
+    std::string IsolateUB();
+
     /// Handles generating a builtin name
     /// @param builtin the semantic info for the builtin
     /// @returns the name or "" if not valid
@@ -432,6 +435,10 @@ class ASTPrinter : public tint::TextGenerator {
     std::unordered_map<const core::type::Struct*, std::string> builtin_struct_names_;
 
     std::function<bool()> emit_continuing_;
+
+    /// The name of the macro used to prevent UB affecting later control flow.
+    /// Do not use this directly, instead call IsolateUB().
+    std::string isolate_ub_macro_name_;
 
     /// Name of atomicCompareExchangeWeak() helper for the given pointer storage
     /// class and struct return type

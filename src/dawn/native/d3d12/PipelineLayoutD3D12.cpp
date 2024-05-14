@@ -156,7 +156,7 @@ HRESULT SerializeRootParameter1_0(Device* device,
 
 ResultOrError<Ref<PipelineLayout>> PipelineLayout::Create(
     Device* device,
-    const PipelineLayoutDescriptor* descriptor) {
+    const UnpackedPtr<PipelineLayoutDescriptor>& descriptor) {
     Ref<PipelineLayout> layout = AcquireRef(new PipelineLayout(device, descriptor));
     DAWN_TRY(layout->Initialize());
     return layout;
@@ -249,7 +249,8 @@ MaybeError PipelineLayout::Initialize() {
             mDynamicRootParameterIndices[group][dynamicBindingIndex] = rootParameters.size();
 
             // Set parameter types according to bind group layout descriptor.
-            rootParameter.ParameterType = RootParameterType(bindingInfo.buffer.type);
+            rootParameter.ParameterType =
+                RootParameterType(std::get<BufferBindingLayout>(bindingInfo.bindingLayout).type);
 
             // Set visibilities according to bind group layout descriptor.
             rootParameter.ShaderVisibility = ShaderVisibilityType(bindingInfo.visibility);
@@ -339,27 +340,36 @@ MaybeError PipelineLayout::Initialize() {
     versionedRootSignatureDescriptor.Desc_1_1.Flags =
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-    ComPtr<ID3DBlob> error;
-    HRESULT hr;
-    if (device->IsToggleEnabled(Toggle::D3D12UseRootSignatureVersion1_1)) {
-        hr = device->GetFunctions()->d3d12SerializeVersionedRootSignature(
-            &versionedRootSignatureDescriptor, &mRootSignatureBlob, &error);
-    } else {
-        hr = SerializeRootParameter1_0(device, versionedRootSignatureDescriptor,
-                                       &mRootSignatureBlob, &error);
-    }
-    if (DAWN_UNLIKELY(FAILED(hr))) {
+    DAWN_TRY([&]() -> MaybeError {
+        ComPtr<ID3DBlob> error;
+        if (device->IsToggleEnabled(Toggle::D3D12UseRootSignatureVersion1_1) &&
+            DAWN_LIKELY(SUCCEEDED(device->GetFunctions()->d3d12SerializeVersionedRootSignature(
+                &versionedRootSignatureDescriptor, &mRootSignatureBlob, &error)))) {
+            return {};
+        }
+        // If using root signature version 1.1 failed, try again with root signature version 1.0.
+        // Some drivers appear to run an outdated version of the DXIL validator and can't support
+        // 1.1.
+        // Note that retrying again is OK because whether we use version 1.0 or 1.1 doesn't
+        // affect anything else except pipeline layout creation. Nothing else in Dawn cares
+        // what decision we made here.
+        // TODO(crbug.com/1512318): Add some telemetry so we log how often/when this happens.
         std::ostringstream messageStream;
         if (error) {
-            messageStream << static_cast<const char*>(error->GetBufferPointer());
-
-            // |error| is observed to always end with a \n, but is not
-            // specified to do so, so we add an extra newline just in case.
-            messageStream << std::endl;
+            messageStream << static_cast<const char*>(error->GetBufferPointer()) << std::endl;
+        }
+        HRESULT hr = SerializeRootParameter1_0(device, versionedRootSignatureDescriptor,
+                                               &mRootSignatureBlob, &error);
+        if (DAWN_LIKELY(SUCCEEDED(hr))) {
+            return {};
+        }
+        if (error) {
+            messageStream << static_cast<const char*>(error->GetBufferPointer()) << std::endl;
         }
         messageStream << "D3D12 serialize root signature";
         DAWN_TRY(CheckHRESULT(hr, messageStream.str().c_str()));
-    }
+        return {};
+    }());
     DAWN_TRY(CheckHRESULT(device->GetD3D12Device()->CreateRootSignature(
                               0, mRootSignatureBlob->GetBufferPointer(),
                               mRootSignatureBlob->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)),
@@ -415,7 +425,9 @@ PipelineLayout::GetDynamicStorageBufferLengthInfo() const {
 uint32_t PipelineLayout::GetDynamicRootParameterIndex(BindGroupIndex group,
                                                       BindingIndex bindingIndex) const {
     DAWN_ASSERT(group < kMaxBindGroupsTyped);
-    DAWN_ASSERT(GetBindGroupLayout(group)->GetBindingInfo(bindingIndex).buffer.hasDynamicOffset);
+    DAWN_ASSERT(std::get<BufferBindingLayout>(
+                    GetBindGroupLayout(group)->GetBindingInfo(bindingIndex).bindingLayout)
+                    .hasDynamicOffset);
     DAWN_ASSERT(GetBindGroupLayout(group)->GetBindingInfo(bindingIndex).visibility !=
                 wgpu::ShaderStage::None);
     return mDynamicRootParameterIndices[group][bindingIndex];

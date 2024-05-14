@@ -43,25 +43,27 @@
 #include "src/tint/lang/msl/writer/common/option_helpers.h"
 #include "src/tint/lang/msl/writer/raise/builtin_polyfill.h"
 
-namespace tint::msl::writer::raise {
+namespace tint::msl::writer {
 
 Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 #define RUN_TRANSFORM(name, ...)                   \
     do {                                           \
         auto result = name(module, ##__VA_ARGS__); \
-        if (!result) {                             \
+        if (result != Success) {                   \
             return result;                         \
         }                                          \
     } while (false)
 
     ExternalTextureOptions external_texture_options{};
     RemapperData remapper_data{};
-    PopulateRemapperAndMultiplanarOptions(options, remapper_data, external_texture_options);
+    ArrayLengthFromUniformOptions array_length_from_uniform_options{};
+    PopulateBindingRelatedOptions(options, remapper_data, external_texture_options,
+                                  array_length_from_uniform_options);
     RUN_TRANSFORM(core::ir::transform::BindingRemapper, remapper_data);
 
     {
         core::ir::transform::BinaryPolyfillConfig binary_polyfills{};
-        binary_polyfills.int_div_mod = true;
+        binary_polyfills.int_div_mod = !options.disable_polyfill_integer_div_mod;
         binary_polyfills.bitshift_modulo = true;  // crbug.com/tint/1543
         RUN_TRANSFORM(core::ir::transform::BinaryPolyfill, binary_polyfills);
     }
@@ -103,9 +105,9 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     RUN_TRANSFORM(core::ir::transform::DemoteToHelper);
 
     RUN_TRANSFORM(core::ir::transform::ValueToLet);
-    RUN_TRANSFORM(BuiltinPolyfill);
+    RUN_TRANSFORM(raise::BuiltinPolyfill);
 
     return Success;
 }
 
-}  // namespace tint::msl::writer::raise
+}  // namespace tint::msl::writer

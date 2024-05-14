@@ -33,11 +33,22 @@ namespace tint::wgsl {
 
 FeatureStatus GetLanguageFeatureStatus(LanguageFeature f) {
     switch (f) {
-        case LanguageFeature::kReadonlyAndReadwriteStorageTextures:
-            return FeatureStatus::kExperimental;
-        case LanguageFeature::kUndefined:
-            return FeatureStatus::kUnknown;
+            ////////////////////////////////////////////////////////////////////
+            // Experimental features
+            ///////////////////////////////////////////////////////////////////
 
+            ////////////////////////////////////////////////////////////////////
+            // Enabled features
+            ////////////////////////////////////////////////////////////////////
+        case LanguageFeature::kPacked4X8IntegerDotProduct:
+        case LanguageFeature::kPointerCompositeAccess:
+        case LanguageFeature::kUnrestrictedPointerParameters:
+        case LanguageFeature::kReadonlyAndReadwriteStorageTextures:
+            return FeatureStatus::kShippedWithKillswitch;
+
+            ////////////////////////////////////////////////////////////////////
+            // Testing / special cases
+            ////////////////////////////////////////////////////////////////////
         case LanguageFeature::kChromiumTestingUnimplemented:
             return FeatureStatus::kUnimplemented;
         case LanguageFeature::kChromiumTestingUnsafeExperimental:
@@ -48,6 +59,8 @@ FeatureStatus GetLanguageFeatureStatus(LanguageFeature f) {
             return FeatureStatus::kShippedWithKillswitch;
         case LanguageFeature::kChromiumTestingShipped:
             return FeatureStatus::kShipped;
+        case LanguageFeature::kUndefined:
+            return FeatureStatus::kUnknown;
     }
 
     return FeatureStatus::kUnknown;

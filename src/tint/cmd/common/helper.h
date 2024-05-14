@@ -79,8 +79,11 @@ struct LoadProgramOptions {
     std::string filename;
 #if TINT_BUILD_SPV_READER
     /// Spirv-reader options
+    bool use_ir = false;
     tint::spirv::reader::Options spirv_reader_options;
 #endif
+    /// The text printer to use for output
+    StyledTextPrinter* printer = nullptr;
 };
 
 /// Loads the source and program information for the given file.

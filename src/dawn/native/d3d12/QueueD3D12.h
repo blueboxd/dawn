@@ -28,8 +28,12 @@
 #ifndef SRC_DAWN_NATIVE_D3D12_QUEUED3D12_H_
 #define SRC_DAWN_NATIVE_D3D12_QUEUED3D12_H_
 
+#include <array>
+#include <bitset>
+#include <memory>
+
 #include "dawn/common/MutexProtected.h"
-#include "dawn/common/SerialMap.h"
+#include "dawn/common/SerialQueue.h"
 #include "dawn/native/SystemEvent.h"
 #include "dawn/native/d3d/QueueD3D.h"
 #include "dawn/native/d3d12/CommandRecordingContext.h"
@@ -38,26 +42,65 @@
 namespace dawn::native::d3d12 {
 
 class Device;
+class SharedFence;
 
 class Queue final : public d3d::Queue {
   public:
-    static Ref<Queue> Create(Device* device, const QueueDescriptor* descriptor);
+    static ResultOrError<Ref<Queue>> Create(Device* device, const QueueDescriptor* descriptor);
+
+    MaybeError NextSerial();
+    MaybeError WaitForSerial(ExecutionSerial serial);
+    CommandRecordingContext* GetPendingCommandContext(SubmitMode submitMode = SubmitMode::Normal);
+    ID3D12CommandQueue* GetCommandQueue() const;
+    ID3D12SharingContract* GetSharingContract() const;
+    MaybeError SubmitPendingCommands() override;
 
   private:
     using d3d::Queue::Queue;
+    ~Queue() override;
 
-    void Initialize();
+    MaybeError Initialize();
 
+    void DestroyImpl() override;
     MaybeError SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) override;
     bool HasPendingCommands() const override;
     ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
     void ForceEventualFlushOfCommands() override;
     MaybeError WaitForIdleForDestruction() override;
 
+    ResultOrError<Ref<d3d::SharedFence>> GetOrCreateSharedFence() override;
     void SetEventOnCompletion(ExecutionSerial serial, HANDLE event) override;
+
+    MaybeError OpenPendingCommands();
+    void RecycleLastCommandListAfter(ExecutionSerial serial);
+    MaybeError RecycleUnusedCommandLists();
 
     // Dawn API
     void SetLabelImpl() override;
+
+    ComPtr<ID3D12Fence> mFence;
+    HANDLE mFenceEvent = nullptr;
+    Ref<SharedFence> mSharedFence;
+
+    CommandRecordingContext mPendingCommands;
+    ComPtr<ID3D12CommandQueue> mCommandQueue;
+    ComPtr<ID3D12SharingContract> mD3d12SharingContract;
+
+    // Use a maximum number of command allocators to try to mitigate the memory cost used in total
+    // by allocators. Allocators are created lazily and then recycled when their commands are done
+    // executing.
+    static constexpr uint32_t kMaxCommandAllocators = 32;
+    static constexpr uint32_t kNoCommandAllocator = kMaxCommandAllocators;
+    uint32_t mAllocatorCount = 0;
+    struct AllocatorAndList {
+        ComPtr<ID3D12CommandAllocator> allocator;
+        ComPtr<ID3D12GraphicsCommandList> list;
+    };
+
+    std::array<AllocatorAndList, kMaxCommandAllocators> mCommandAllocators;
+    std::bitset<kMaxCommandAllocators> mFreeAllocators;
+    uint32_t mLastAllocatorUsed = kNoCommandAllocator;
+    SerialQueue<ExecutionSerial, uint32_t> mInFlightCommandAllocators;
 };
 
 }  // namespace dawn::native::d3d12

@@ -31,6 +31,7 @@
 #include <limits>
 #include <utility>
 
+#include "dawn/native/Queue.h"
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/HeapAllocatorD3D12.h"
@@ -377,6 +378,11 @@ ResourceAllocatorManager::~ResourceAllocatorManager() {
     // Ensure any remaining objects go through the same shutdown path as normal usage.
     // Placed resources must be released before any heaps they reside in.
     Tick(std::numeric_limits<ExecutionSerial>::max());
+
+    for (uint32_t i = 0; i < ResourceHeapKind::EnumCount; i++) {
+        mSubAllocatedResourceAllocators[i] = nullptr;
+    }
+
     DestroyPool();
 
     DAWN_ASSERT(mAllocationsToDelete.Empty());
@@ -457,7 +463,7 @@ void ResourceAllocatorManager::DeallocateMemory(ResourceHeapAllocation& allocati
         return;
     }
 
-    mAllocationsToDelete.Enqueue(allocation, mDevice->GetPendingCommandSerial());
+    mAllocationsToDelete.Enqueue(allocation, mDevice->GetQueue()->GetPendingCommandSerial());
 
     // Directly allocated ResourceHeapAllocations are created with a heap object that must be
     // manually deleted upon deallocation. See ResourceAllocatorManager::CreateCommittedResource
@@ -466,7 +472,7 @@ void ResourceAllocatorManager::DeallocateMemory(ResourceHeapAllocation& allocati
     // pending commands.
     if (allocation.GetInfo().mMethod == AllocationMethod::kDirect) {
         mHeapsToDelete.Enqueue(std::unique_ptr<ResourceHeapBase>(allocation.GetResourceHeap()),
-                               mDevice->GetPendingCommandSerial());
+                               mDevice->GetQueue()->GetPendingCommandSerial());
     }
 
     // Invalidate the allocation immediately in case one accidentally

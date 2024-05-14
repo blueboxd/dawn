@@ -42,16 +42,17 @@ namespace dawn::native::metal {
 // static
 Ref<ComputePipeline> ComputePipeline::CreateUninitialized(
     Device* device,
-    const ComputePipelineDescriptor* descriptor) {
+    const UnpackedPtr<ComputePipelineDescriptor>& descriptor) {
     return AcquireRef(new ComputePipeline(device, descriptor));
 }
 
-ComputePipeline::ComputePipeline(DeviceBase* dev, const ComputePipelineDescriptor* desc)
+ComputePipeline::ComputePipeline(DeviceBase* dev,
+                                 const UnpackedPtr<ComputePipelineDescriptor>& desc)
     : ComputePipelineBase(dev, desc) {}
 
 ComputePipeline::~ComputePipeline() = default;
 
-MaybeError ComputePipeline::Initialize() {
+MaybeError ComputePipeline::InitializeImpl() {
     auto mtlDevice = ToBackend(GetDevice())->GetMTLDevice();
 
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);

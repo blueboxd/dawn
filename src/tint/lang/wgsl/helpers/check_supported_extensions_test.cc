@@ -42,7 +42,7 @@ TEST_F(CheckSupportedExtensionsTest, Supported) {
     ASSERT_TRUE(CheckSupportedExtensions("writer", AST(), Diagnostics(),
                                          Vector{
                                              wgsl::Extension::kF16,
-                                             wgsl::Extension::kChromiumExperimentalDp4A,
+                                             wgsl::Extension::kChromiumExperimentalSubgroups,
                                          }));
 }
 
@@ -51,9 +51,9 @@ TEST_F(CheckSupportedExtensionsTest, Unsupported) {
 
     ASSERT_FALSE(CheckSupportedExtensions("writer", AST(), Diagnostics(),
                                           Vector{
-                                              wgsl::Extension::kChromiumExperimentalDp4A,
+                                              wgsl::Extension::kChromiumExperimentalSubgroups,
                                           }));
-    EXPECT_EQ(Diagnostics().str(), "12:34 error: writer backend does not support extension 'f16'");
+    EXPECT_EQ(Diagnostics().Str(), "12:34 error: writer backend does not support extension 'f16'");
 }
 
 }  // namespace

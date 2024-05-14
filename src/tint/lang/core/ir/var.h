@@ -42,8 +42,8 @@ namespace tint::core::ir {
 struct IOAttributes {
     /// The value of a `@location` attribute.
     std::optional<uint32_t> location;
-    /// The value of a `@index` attribute.
-    std::optional<uint32_t> index;
+    /// The value of a `@blend_src` attribute.
+    std::optional<uint32_t> blend_src;
     /// The value of a `@builtin` attribute.
     std::optional<core::BuiltinValue> builtin;
     /// The values of a `@interpolate` attribute.
@@ -57,6 +57,9 @@ class Var final : public Castable<Var, OperandInstruction<1, 1>> {
   public:
     /// The offset in Operands() for the initializer
     static constexpr size_t kInitializerOperandOffset = 0;
+
+    /// Constructor (no results, no operands)
+    Var();
 
     /// Constructor
     /// @param result the result value

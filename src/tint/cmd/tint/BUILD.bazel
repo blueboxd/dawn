@@ -51,7 +51,7 @@ cc_binary(
     "//src/tint/lang/core/ir",
     "//src/tint/lang/core/type",
     "//src/tint/lang/hlsl/writer/common",
-    "//src/tint/lang/spirv/reader/common",
+    "//src/tint/lang/hlsl/writer/helpers",
     "//src/tint/lang/wgsl",
     "//src/tint/lang/wgsl/ast",
     "//src/tint/lang/wgsl/ast/transform",
@@ -61,6 +61,7 @@ cc_binary(
     "//src/tint/lang/wgsl/inspector",
     "//src/tint/lang/wgsl/program",
     "//src/tint/lang/wgsl/sem",
+    "//src/tint/lang/wgsl/writer/ir_to_program",
     "//src/tint/utils/cli",
     "//src/tint/utils/command",
     "//src/tint/utils/containers",
@@ -75,6 +76,7 @@ cc_binary(
     "//src/tint/utils/rtti",
     "//src/tint/utils/strconv",
     "//src/tint/utils/symbol",
+    "//src/tint/utils/system",
     "//src/tint/utils/text",
     "//src/tint/utils/traits",
   ] + select({
@@ -100,6 +102,11 @@ cc_binary(
       "//src/tint/lang/msl/writer",
       "//src/tint/lang/msl/writer/common",
       "//src/tint/lang/msl/writer/helpers",
+    ],
+    "//conditions:default": [],
+  }) + select({
+    ":tint_build_spv_reader": [
+      "//src/tint/lang/spirv/reader/common",
     ],
     "//conditions:default": [],
   }) + select({

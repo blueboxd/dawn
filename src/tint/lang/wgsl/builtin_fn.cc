@@ -72,6 +72,9 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     if (name == "atanh") {
         return BuiltinFn::kAtanh;
     }
+    if (name == "bitcast") {
+        return BuiltinFn::kBitcast;
+    }
     if (name == "ceil") {
         return BuiltinFn::kCeil;
     }
@@ -219,6 +222,18 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     if (name == "pack4x8unorm") {
         return BuiltinFn::kPack4X8Unorm;
     }
+    if (name == "pack4xI8") {
+        return BuiltinFn::kPack4XI8;
+    }
+    if (name == "pack4xU8") {
+        return BuiltinFn::kPack4XU8;
+    }
+    if (name == "pack4xI8Clamp") {
+        return BuiltinFn::kPack4XI8Clamp;
+    }
+    if (name == "pack4xU8Clamp") {
+        return BuiltinFn::kPack4XU8Clamp;
+    }
     if (name == "pow") {
         return BuiltinFn::kPow;
     }
@@ -293,6 +308,12 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     }
     if (name == "unpack4x8unorm") {
         return BuiltinFn::kUnpack4X8Unorm;
+    }
+    if (name == "unpack4xI8") {
+        return BuiltinFn::kUnpack4XI8;
+    }
+    if (name == "unpack4xU8") {
+        return BuiltinFn::kUnpack4XU8;
     }
     if (name == "workgroupBarrier") {
         return BuiltinFn::kWorkgroupBarrier;
@@ -387,7 +408,7 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     if (name == "subgroupBroadcast") {
         return BuiltinFn::kSubgroupBroadcast;
     }
-    if (name == "_tint_materialize") {
+    if (name == "__tint_materialize") {
         return BuiltinFn::kTintMaterialize;
     }
     return BuiltinFn::kNone;
@@ -419,6 +440,8 @@ const char* str(BuiltinFn i) {
             return "atan2";
         case BuiltinFn::kAtanh:
             return "atanh";
+        case BuiltinFn::kBitcast:
+            return "bitcast";
         case BuiltinFn::kCeil:
             return "ceil";
         case BuiltinFn::kClamp:
@@ -517,6 +540,14 @@ const char* str(BuiltinFn i) {
             return "pack4x8snorm";
         case BuiltinFn::kPack4X8Unorm:
             return "pack4x8unorm";
+        case BuiltinFn::kPack4XI8:
+            return "pack4xI8";
+        case BuiltinFn::kPack4XU8:
+            return "pack4xU8";
+        case BuiltinFn::kPack4XI8Clamp:
+            return "pack4xI8Clamp";
+        case BuiltinFn::kPack4XU8Clamp:
+            return "pack4xU8Clamp";
         case BuiltinFn::kPow:
             return "pow";
         case BuiltinFn::kQuantizeToF16:
@@ -567,6 +598,10 @@ const char* str(BuiltinFn i) {
             return "unpack4x8snorm";
         case BuiltinFn::kUnpack4X8Unorm:
             return "unpack4x8unorm";
+        case BuiltinFn::kUnpack4XI8:
+            return "unpack4xI8";
+        case BuiltinFn::kUnpack4XU8:
+            return "unpack4xU8";
         case BuiltinFn::kWorkgroupBarrier:
             return "workgroupBarrier";
         case BuiltinFn::kWorkgroupUniformLoad:
@@ -630,7 +665,7 @@ const char* str(BuiltinFn i) {
         case BuiltinFn::kSubgroupBroadcast:
             return "subgroupBroadcast";
         case BuiltinFn::kTintMaterialize:
-            return "_tint_materialize";
+            return "__tint_materialize";
     }
     return "<unknown>";
 }
@@ -694,8 +729,11 @@ bool IsAtomic(BuiltinFn f) {
            f == BuiltinFn::kAtomicCompareExchangeWeak;
 }
 
-bool IsDP4a(BuiltinFn f) {
-    return f == BuiltinFn::kDot4I8Packed || f == BuiltinFn::kDot4U8Packed;
+bool IsPacked4x8IntegerDotProductBuiltin(BuiltinFn f) {
+    return f == BuiltinFn::kDot4I8Packed || f == BuiltinFn::kDot4U8Packed ||
+           f == BuiltinFn::kPack4XI8 || f == BuiltinFn::kPack4XU8 ||
+           f == BuiltinFn::kPack4XI8Clamp || f == BuiltinFn::kPack4XU8Clamp ||
+           f == BuiltinFn::kUnpack4XI8 || f == BuiltinFn::kUnpack4XU8;
 }
 
 bool IsSubgroup(BuiltinFn f) {
@@ -714,6 +752,18 @@ bool HasSideEffects(BuiltinFn f) {
         case BuiltinFn::kAtomicStore:
         case BuiltinFn::kAtomicSub:
         case BuiltinFn::kAtomicXor:
+        case BuiltinFn::kDpdx:
+        case BuiltinFn::kDpdxCoarse:
+        case BuiltinFn::kDpdxFine:
+        case BuiltinFn::kDpdy:
+        case BuiltinFn::kDpdyCoarse:
+        case BuiltinFn::kDpdyFine:
+        case BuiltinFn::kFwidth:
+        case BuiltinFn::kFwidthCoarse:
+        case BuiltinFn::kFwidthFine:
+        case BuiltinFn::kTextureSample:
+        case BuiltinFn::kTextureSampleBias:
+        case BuiltinFn::kTextureSampleCompare:
         case BuiltinFn::kTextureStore:
         case BuiltinFn::kWorkgroupUniformLoad:
             return true;

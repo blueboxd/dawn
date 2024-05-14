@@ -86,6 +86,10 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
         // featureOptions4.MSAA64KBAlignedTextureSupported indicates whether 64KB-aligned MSAA
         // textures are supported.
         info.use64KBAlignedMSAATexture = featureOptions4.MSAA64KBAlignedTextureSupported;
+
+        // To support shader f16 feature, both featureOptions4.Native16BitShaderOpsSupported and
+        // using shader model version >= 6.2 are required.
+        info.supportsNative16BitShaderOps = featureOptions4.Native16BitShaderOpsSupported;
     }
 
     // Windows builds 1809 and above can use the D3D12 render pass API. If we query
@@ -132,8 +136,9 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
     }
 
     D3D12_FEATURE_DATA_SHADER_MODEL knownShaderModels[] = {
-        {D3D_SHADER_MODEL_6_4}, {D3D_SHADER_MODEL_6_3}, {D3D_SHADER_MODEL_6_2},
-        {D3D_SHADER_MODEL_6_1}, {D3D_SHADER_MODEL_6_0}, {D3D_SHADER_MODEL_5_1}};
+        {D3D_SHADER_MODEL_6_6}, {D3D_SHADER_MODEL_6_5}, {D3D_SHADER_MODEL_6_4},
+        {D3D_SHADER_MODEL_6_3}, {D3D_SHADER_MODEL_6_2}, {D3D_SHADER_MODEL_6_1},
+        {D3D_SHADER_MODEL_6_0}, {D3D_SHADER_MODEL_5_1}};
     uint32_t driverShaderModel = 0;
     for (D3D12_FEATURE_DATA_SHADER_MODEL shaderModel : knownShaderModels) {
         if (SUCCEEDED(physicalDevice.GetDevice()->CheckFeatureSupport(
@@ -154,22 +159,7 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
 
     DAWN_ASSERT(shaderModelMajor < 10);
     DAWN_ASSERT(shaderModelMinor < 10);
-    info.shaderModel = 10 * shaderModelMajor + shaderModelMinor;
-
-    // Profiles are always <stage>s_<minor>_<major> so we build the s_<minor>_major and add
-    // it to each of the stage's suffix.
-    std::wstring profileSuffix = L"s_M_n";
-    profileSuffix[2] = wchar_t('0' + shaderModelMajor);
-    profileSuffix[4] = wchar_t('0' + shaderModelMinor);
-
-    info.shaderProfiles[SingleShaderStage::Vertex] = L"v" + profileSuffix;
-    info.shaderProfiles[SingleShaderStage::Fragment] = L"p" + profileSuffix;
-    info.shaderProfiles[SingleShaderStage::Compute] = L"c" + profileSuffix;
-
-    info.supportsShaderF16 =
-        driverShaderModel >= D3D_SHADER_MODEL_6_2 && featureOptions4.Native16BitShaderOpsSupported;
-
-    info.supportsDP4a = driverShaderModel >= D3D_SHADER_MODEL_6_4;
+    info.highestSupportedShaderModel = 10 * shaderModelMajor + shaderModelMinor;
 
     // Device support wave intrinsics if shader model >= SM6.0 and capabilities flag WaveOps is set.
     // https://github.com/Microsoft/DirectXShaderCompiler/wiki/Wave-Intrinsics

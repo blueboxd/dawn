@@ -27,11 +27,13 @@
 
 #include "dawn/native/metal/CommandBufferMTL.h"
 
+#include "dawn/common/MatchVariant.h"
 #include "dawn/native/BindGroupTracker.h"
 #include "dawn/native/CommandEncoder.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/ExternalTexture.h"
+#include "dawn/native/Queue.h"
 #include "dawn/native/RenderBundle.h"
 #include "dawn/native/metal/BindGroupMTL.h"
 #include "dawn/native/metal/BufferMTL.h"
@@ -43,6 +45,7 @@
 #include "dawn/native/metal/SamplerMTL.h"
 #include "dawn/native/metal/TextureMTL.h"
 #include "dawn/native/metal/UtilsMetal.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 #include <tint/tint.h>
 
@@ -204,6 +207,8 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
         descriptor.colorAttachments[i].texture = colorAttachment.texture.Get();
         descriptor.colorAttachments[i].level = colorAttachment.baseMipLevel;
         descriptor.colorAttachments[i].slice = colorAttachment.baseArrayLayer;
+        // We'd validated that depthSlice must be undefined and set to 0 for 2d texture views.
+        descriptor.colorAttachments[i].depthPlane = attachmentInfo.depthSlice;
 
         bool hasResolveTarget = attachmentInfo.resolveTarget != nullptr;
         if (hasResolveTarget) {
@@ -566,8 +571,9 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                     SingleShaderStage::Compute)[index][bindingIndex];
             }
 
-            switch (bindingInfo.bindingType) {
-                case BindingInfoType::Buffer: {
+            MatchVariant(
+                bindingInfo.bindingLayout,
+                [&](const BufferBindingLayout& layout) {
                     const BufferBinding& binding = group->GetBindingAsBufferBinding(bindingIndex);
                     ToBackend(binding.buffer)->TrackUsage();
                     const id<MTLBuffer> buffer = ToBackend(binding.buffer)->GetMTLBuffer();
@@ -575,7 +581,7 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
 
                     // TODO(crbug.com/dawn/854): Record bound buffer status to use
                     // setBufferOffset to achieve better performance.
-                    if (bindingInfo.buffer.hasDynamicOffset) {
+                    if (layout.hasDynamicOffset) {
                         // Dynamic buffers are packed at the front of BindingIndices.
                         offset += dynamicOffsets[bindingIndex];
                     }
@@ -602,11 +608,8 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                                     offsets:&offset
                                   withRange:NSMakeRange(computeIndex, 1)];
                     }
-
-                    break;
-                }
-
-                case BindingInfoType::Sampler: {
+                },
+                [&](const SamplerBindingLayout&) {
                     auto sampler = ToBackend(group->GetBindingAsSampler(bindingIndex));
                     if (hasVertStage) {
                         [render setVertexSamplerState:sampler->GetMTLSamplerState()
@@ -620,11 +623,8 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                         [compute setSamplerState:sampler->GetMTLSamplerState()
                                          atIndex:computeIndex];
                     }
-                    break;
-                }
-
-                case BindingInfoType::Texture:
-                case BindingInfoType::StorageTexture: {
+                },
+                [&](const TextureBindingLayout&) {
                     auto textureView = ToBackend(group->GetBindingAsTextureView(bindingIndex));
                     if (hasVertStage) {
                         [render setVertexTexture:textureView->GetMTLTexture() atIndex:vertIndex];
@@ -635,12 +635,19 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                     if (hasComputeStage) {
                         [compute setTexture:textureView->GetMTLTexture() atIndex:computeIndex];
                     }
-                    break;
-                }
-
-                case BindingInfoType::ExternalTexture:
-                    DAWN_UNREACHABLE();
-            }
+                },
+                [&](const StorageTextureBindingLayout&) {
+                    auto textureView = ToBackend(group->GetBindingAsTextureView(bindingIndex));
+                    if (hasVertStage) {
+                        [render setVertexTexture:textureView->GetMTLTexture() atIndex:vertIndex];
+                    }
+                    if (hasFragStage) {
+                        [render setFragmentTexture:textureView->GetMTLTexture() atIndex:fragIndex];
+                    }
+                    if (hasComputeStage) {
+                        [compute setTexture:textureView->GetMTLTexture() atIndex:computeIndex];
+                    }
+                });
         }
     }
 
@@ -654,7 +661,7 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
         ApplyBindGroupImpl(nullptr, encoder, std::forward<Args&&>(args)...);
     }
 
-    StorageBufferLengthTracker* mLengthTracker;
+    raw_ptr<StorageBufferLengthTracker> mLengthTracker;
 };
 
 // Keeps track of the dirty vertex buffer values so they can be lazily applied when we know
@@ -683,14 +690,13 @@ class VertexBufferTracker {
         // When a new pipeline is bound we must set all the vertex buffers again because
         // they might have been offset by the pipeline layout, and they might be packed
         // differently from the previous pipeline.
-        mDirtyVertexBuffers |= pipeline->GetVertexBufferSlotsUsed();
+        mDirtyVertexBuffers |= pipeline->GetVertexBuffersUsed();
     }
 
     void Apply(id<MTLRenderCommandEncoder> encoder,
                RenderPipeline* pipeline,
                bool enableVertexPulling) {
-        const auto& vertexBuffersToApply =
-            mDirtyVertexBuffers & pipeline->GetVertexBufferSlotsUsed();
+        const auto& vertexBuffersToApply = mDirtyVertexBuffers & pipeline->GetVertexBuffersUsed();
 
         for (VertexBufferSlot slot : IterateBitSet(vertexBuffersToApply)) {
             uint32_t metalIndex = pipeline->GetMtlVertexBufferIndex(slot);
@@ -712,12 +718,12 @@ class VertexBufferTracker {
 
   private:
     // All the indices in these arrays are Dawn vertex buffer indices
-    ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> mDirtyVertexBuffers;
-    ityp::array<VertexBufferSlot, id<MTLBuffer>, kMaxVertexBuffers> mVertexBuffers;
-    ityp::array<VertexBufferSlot, NSUInteger, kMaxVertexBuffers> mVertexBufferOffsets;
-    ityp::array<VertexBufferSlot, uint32_t, kMaxVertexBuffers> mVertexBufferBindingSizes;
+    VertexBufferMask mDirtyVertexBuffers;
+    PerVertexBuffer<id<MTLBuffer>> mVertexBuffers;
+    PerVertexBuffer<NSUInteger> mVertexBufferOffsets;
+    PerVertexBuffer<uint32_t> mVertexBufferBindingSizes;
 
-    StorageBufferLengthTracker* mLengthTracker;
+    raw_ptr<StorageBufferLengthTracker> mLengthTracker;
 };
 
 }  // anonymous namespace
@@ -741,6 +747,8 @@ void RecordCopyBufferToTexture(CommandRecordingContext* commandContext,
     for (const auto& copyInfo : splitCopies) {
         uint64_t bufferOffset = copyInfo.bufferOffset;
         switch (texture->GetDimension()) {
+            case wgpu::TextureDimension::Undefined:
+                DAWN_UNREACHABLE();
             case wgpu::TextureDimension::e1D: {
                 [commandContext->EnsureBlit()
                          copyFromBuffer:mtlBuffer
@@ -995,6 +1003,8 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                     uint64_t bufferOffset = copyInfo.bufferOffset;
 
                     switch (texture->GetDimension()) {
+                        case wgpu::TextureDimension::Undefined:
+                            DAWN_UNREACHABLE();
                         case wgpu::TextureDimension::e1D: {
                             [commandContext->EnsureBlit()
                                          copyFromTexture:texture->GetMTLTexture(src.aspect)
@@ -1241,9 +1251,10 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 Device* device = ToBackend(GetDevice());
 
                 UploadHandle uploadHandle;
-                DAWN_TRY_ASSIGN(uploadHandle, device->GetDynamicUploader()->Allocate(
-                                                  size, device->GetPendingCommandSerial(),
-                                                  kCopyBufferToBufferOffsetAlignment));
+                DAWN_TRY_ASSIGN(uploadHandle,
+                                device->GetDynamicUploader()->Allocate(
+                                    size, device->GetQueue()->GetPendingCommandSerial(),
+                                    kCopyBufferToBufferOffsetAlignment));
                 DAWN_ASSERT(uploadHandle.mappedBuffer != nullptr);
                 memcpy(uploadHandle.mappedBuffer, data, size);
 

@@ -64,7 +64,7 @@ MaybeError ValidateQueryIndexOverwrite(QuerySetBase* querySet,
 // BeginRenderPassCmd. If we had RenderPassEncoder responsible for recording the
 // command, then this wouldn't be necessary.
 RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
-                                     const RenderPassDescriptor* descriptor,
+                                     const UnpackedPtr<RenderPassDescriptor>& descriptor,
                                      CommandEncoder* commandEncoder,
                                      EncodingContext* encodingContext,
                                      RenderPassResourceUsageTracker usageTracker,
@@ -86,26 +86,25 @@ RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
       mOcclusionQuerySet(descriptor->occlusionQuerySet),
       mEndCallback(std::move(endCallback)) {
     mUsageTracker = std::move(usageTracker);
-    const RenderPassDescriptorMaxDrawCount* maxDrawCountInfo = nullptr;
-    FindInChain(descriptor->nextInChain, &maxDrawCountInfo);
-    if (maxDrawCountInfo) {
+    if (auto* maxDrawCountInfo = descriptor.Get<RenderPassDescriptorMaxDrawCount>()) {
         mMaxDrawCount = maxDrawCountInfo->maxDrawCount;
     }
     GetObjectTrackingList()->Track(this);
 }
 
 // static
-Ref<RenderPassEncoder> RenderPassEncoder::Create(DeviceBase* device,
-                                                 const RenderPassDescriptor* descriptor,
-                                                 CommandEncoder* commandEncoder,
-                                                 EncodingContext* encodingContext,
-                                                 RenderPassResourceUsageTracker usageTracker,
-                                                 Ref<AttachmentState> attachmentState,
-                                                 uint32_t renderTargetWidth,
-                                                 uint32_t renderTargetHeight,
-                                                 bool depthReadOnly,
-                                                 bool stencilReadOnly,
-                                                 std::function<void()> endCallback) {
+Ref<RenderPassEncoder> RenderPassEncoder::Create(
+    DeviceBase* device,
+    const UnpackedPtr<RenderPassDescriptor>& descriptor,
+    CommandEncoder* commandEncoder,
+    EncodingContext* encodingContext,
+    RenderPassResourceUsageTracker usageTracker,
+    Ref<AttachmentState> attachmentState,
+    uint32_t renderTargetWidth,
+    uint32_t renderTargetHeight,
+    bool depthReadOnly,
+    bool stencilReadOnly,
+    std::function<void()> endCallback) {
     return AcquireRef(new RenderPassEncoder(device, descriptor, commandEncoder, encodingContext,
                                             std::move(usageTracker), std::move(attachmentState),
                                             renderTargetWidth, renderTargetHeight, depthReadOnly,
@@ -129,7 +128,13 @@ Ref<RenderPassEncoder> RenderPassEncoder::MakeError(DeviceBase* device,
         new RenderPassEncoder(device, commandEncoder, encodingContext, ObjectBase::kError, label));
 }
 
+RenderPassEncoder::~RenderPassEncoder() {
+    mEncodingContext = nullptr;
+}
+
 void RenderPassEncoder::DestroyImpl() {
+    mCommandBufferState.End();
+
     RenderEncoderBase::DestroyImpl();
     // Ensure that the pass has exited. This is done for passes only since validation requires
     // they exit before destruction while bundles do not.
@@ -159,6 +164,8 @@ void RenderPassEncoder::APIEnd() {
 
 void RenderPassEncoder::End() {
     DAWN_ASSERT(GetDevice()->IsLockedByCurrentThreadIfNeeded());
+
+    mCommandBufferState.End();
 
     if (mEnded && IsValidationEnabled()) {
         GetDevice()->HandleError(DAWN_VALIDATION_ERROR("%s was already ended.", this));

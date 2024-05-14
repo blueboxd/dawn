@@ -27,19 +27,32 @@
 
 #include "dawn/native/BindingInfo.h"
 
+#include "dawn/common/MatchVariant.h"
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/Limits.h"
 
 namespace dawn::native {
 
-void IncrementBindingCounts(BindingCounts* bindingCounts, const BindGroupLayoutEntry& entry) {
+BindingInfoType GetBindingInfoType(const BindingInfo& info) {
+    return MatchVariant(
+        info.bindingLayout,
+        [](const BufferBindingLayout&) -> BindingInfoType { return BindingInfoType::Buffer; },
+        [](const SamplerBindingLayout&) -> BindingInfoType { return BindingInfoType::Sampler; },
+        [](const TextureBindingLayout&) -> BindingInfoType { return BindingInfoType::Texture; },
+        [](const StorageTextureBindingLayout&) -> BindingInfoType {
+            return BindingInfoType::StorageTexture;
+        });
+}
+
+void IncrementBindingCounts(BindingCounts* bindingCounts,
+                            const UnpackedPtr<BindGroupLayoutEntry>& entry) {
     bindingCounts->totalCount += 1;
 
     uint32_t PerStageBindingCounts::*perStageBindingCountMember = nullptr;
 
-    if (entry.buffer.type != wgpu::BufferBindingType::Undefined) {
+    if (entry->buffer.type != wgpu::BufferBindingType::Undefined) {
         ++bindingCounts->bufferCount;
-        const BufferBindingLayout& buffer = entry.buffer;
+        const BufferBindingLayout& buffer = entry->buffer;
 
         if (buffer.minBindingSize == 0) {
             ++bindingCounts->unverifiedBufferCount;
@@ -67,22 +80,20 @@ void IncrementBindingCounts(BindingCounts* bindingCounts, const BindGroupLayoutE
                 DAWN_UNREACHABLE();
                 break;
         }
-    } else if (entry.sampler.type != wgpu::SamplerBindingType::Undefined) {
+    } else if (entry->sampler.type != wgpu::SamplerBindingType::Undefined) {
         perStageBindingCountMember = &PerStageBindingCounts::samplerCount;
-    } else if (entry.texture.sampleType != wgpu::TextureSampleType::Undefined) {
+    } else if (entry->texture.sampleType != wgpu::TextureSampleType::Undefined) {
         perStageBindingCountMember = &PerStageBindingCounts::sampledTextureCount;
-    } else if (entry.storageTexture.access != wgpu::StorageTextureAccess::Undefined) {
+    } else if (entry->storageTexture.access != wgpu::StorageTextureAccess::Undefined) {
         perStageBindingCountMember = &PerStageBindingCounts::storageTextureCount;
     } else {
-        const ExternalTextureBindingLayout* externalTextureBindingLayout;
-        FindInChain(entry.nextInChain, &externalTextureBindingLayout);
-        if (externalTextureBindingLayout != nullptr) {
+        if (auto* externalTextureBindingLayout = entry.Get<ExternalTextureBindingLayout>()) {
             perStageBindingCountMember = &PerStageBindingCounts::externalTextureCount;
         }
     }
 
     DAWN_ASSERT(perStageBindingCountMember != nullptr);
-    for (SingleShaderStage stage : IterateStages(entry.visibility)) {
+    for (SingleShaderStage stage : IterateStages(entry->visibility)) {
         ++(bindingCounts->perStage[stage].*perStageBindingCountMember);
     }
 }

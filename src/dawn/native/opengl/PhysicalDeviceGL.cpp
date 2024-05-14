@@ -34,6 +34,7 @@
 #include <utility>
 
 #include "dawn/common/GPUInfo.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/opengl/ContextEGL.h"
 #include "dawn/native/opengl/DeviceGL.h"
@@ -143,6 +144,15 @@ bool PhysicalDevice::SupportsExternalImages() const {
 MaybeError PhysicalDevice::InitializeImpl() {
     if (mFunctions.GetVersion().IsES()) {
         DAWN_ASSERT(GetBackendType() == wgpu::BackendType::OpenGLES);
+
+        // WebGPU requires being able to render to f16 and being able to blend f16
+        // which EXT_color_buffer_half_float provides.
+        DAWN_INVALID_IF(!mFunctions.IsGLExtensionSupported("GL_EXT_color_buffer_half_float"),
+                        "GL_EXT_color_buffer_half_float is required");
+
+        // WebGPU requires being able to render to f32 but does not require being able to blend f32
+        DAWN_INVALID_IF(!mFunctions.IsGLExtensionSupported("GL_EXT_color_buffer_float"),
+                        "GL_EXT_color_buffer_float is required");
     } else {
         DAWN_ASSERT(GetBackendType() == wgpu::BackendType::OpenGL);
     }
@@ -236,8 +246,6 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     if (mFunctions.IsGLExtensionSupported("GL_EXT_texture_norm16")) {
         EnableFeature(Feature::Norm16TextureFormats);
     }
-
-    EnableFeature(Feature::ChromiumExperimentalDp4a);
 }
 
 namespace {
@@ -284,8 +292,12 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     limits->v1.minStorageBufferOffsetAlignment = Get(gl, GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
     limits->v1.maxVertexBuffers = Get(gl, GL_MAX_VERTEX_ATTRIB_BINDINGS);
     limits->v1.maxBufferSize = kAssumedMaxBufferSize;
-    GLint maxVertexAttribs = Get(gl, GL_MAX_VERTEX_ATTRIBS);
-    limits->v1.maxVertexAttributes = limits->v1.maxVertexBuffers * maxVertexAttribs;
+    // The code that handles adding the index buffer offset to first_index
+    // used in drawIndexedIndirect can not handle a max buffer size larger than 4gig.
+    // See IndirectDrawValidationEncoder.cpp
+    static_assert(kAssumedMaxBufferSize < 0x100000000u);
+
+    limits->v1.maxVertexAttributes = Get(gl, GL_MAX_VERTEX_ATTRIBS);
     limits->v1.maxVertexBufferArrayStride = Get(gl, GL_MAX_VERTEX_ATTRIB_STRIDE);
     limits->v1.maxInterStageShaderComponents = Get(gl, GL_MAX_VARYING_COMPONENTS);
     limits->v1.maxInterStageShaderVariables = Get(gl, GL_MAX_VARYING_VECTORS);
@@ -345,6 +357,10 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     bool supportsSampleVariables = gl.IsAtLeastGL(4, 0) || gl.IsAtLeastGLES(3, 2) ||
                                    gl.IsGLExtensionSupported("GL_OES_sample_variables");
 
+    // Decide whether glTexSubImage2D/3D accepts GL_STENCIL_INDEX or not.
+    bool supportsStencilWriteTexture =
+        gl.GetVersion().IsDesktop() || gl.IsGLExtensionSupported("GL_OES_texture_stencil8");
+
     // TODO(crbug.com/dawn/343): We can support the extension variants, but need to load the EXT
     // procs without the extension suffix.
     // We'll also need emulation of shader builtins gl_BaseVertex and gl_BaseInstance.
@@ -399,11 +415,18 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
 
     // Use a blit to emulate stencil-only buffer-to-texture copies.
     deviceToggles->Default(Toggle::UseBlitForBufferToStencilTextureCopy, true);
+
+    // Use a blit to emulate write to stencil textures.
+    deviceToggles->Default(Toggle::UseBlitForStencilTextureWrite, !supportsStencilWriteTexture);
+
+    // Use T2B and B2T copies to emulate a T2T copy between sRGB and non-sRGB textures.
+    deviceToggles->Default(Toggle::UseT2B2TForSRGBTextureCopy, true);
 }
 
-ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,
-                                                                const DeviceDescriptor* descriptor,
-                                                                const TogglesState& deviceToggles) {
+ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
+    AdapterBase* adapter,
+    const UnpackedPtr<DeviceDescriptor>& descriptor,
+    const TogglesState& deviceToggles) {
     EGLenum api =
         GetBackendType() == wgpu::BackendType::OpenGL ? EGL_OPENGL_API : EGL_OPENGL_ES_API;
     std::unique_ptr<Device::Context> context;
@@ -429,9 +452,6 @@ FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     return {};
 }
 
-void PhysicalDevice::PopulateMemoryHeapInfo(
-    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
-    DAWN_UNREACHABLE();
-}
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const {}
 
 }  // namespace dawn::native::opengl

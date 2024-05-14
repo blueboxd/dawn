@@ -39,7 +39,6 @@ namespace {
 // The compute shader workgroup size is settled at compute pipeline creation time.
 // The validation code in dawn is in each backend (not including Null backend) thus this test needs
 // to be as part of a dawn_end2end_tests instead of the dawn_unittests
-// TODO(dawn:1504): Add support for GL backend.
 class WorkgroupSizeValidationTest : public DawnTest {
   public:
     wgpu::ShaderModule SetUpShaderWithValidDefaultValueConstants() {
@@ -87,7 +86,6 @@ override x: u32;
     void TestCreatePipeline(const wgpu::ShaderModule& module) {
         wgpu::ComputePipelineDescriptor csDesc;
         csDesc.compute.module = module;
-        csDesc.compute.entryPoint = "main";
         csDesc.compute.constants = nullptr;
         csDesc.compute.constantCount = 0;
         wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&csDesc);
@@ -97,7 +95,6 @@ override x: u32;
                             const std::vector<wgpu::ConstantEntry>& constants) {
         wgpu::ComputePipelineDescriptor csDesc;
         csDesc.compute.module = module;
-        csDesc.compute.entryPoint = "main";
         csDesc.compute.constants = constants.data();
         csDesc.compute.constantCount = constants.size();
         wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&csDesc);
@@ -139,7 +136,6 @@ TEST_P(WorkgroupSizeValidationTest, WithFixedValues) {
         ss << "@compute @workgroup_size(" << x << "," << y << "," << z << ") fn main() {}";
 
         wgpu::ComputePipelineDescriptor desc;
-        desc.compute.entryPoint = "main";
         desc.compute.module = utils::CreateShaderModule(device, ss.str().c_str());
 
         if (success) {
@@ -195,7 +191,6 @@ TEST_P(WorkgroupSizeValidationTest, WithFixedValuesStorageSizeLimits) {
         ss << "@compute @workgroup_size(1) fn main() { " << body.str() << " }";
 
         wgpu::ComputePipelineDescriptor desc;
-        desc.compute.entryPoint = "main";
         desc.compute.module = utils::CreateShaderModule(device, ss.str().c_str());
 
         if (success) {
@@ -374,7 +369,6 @@ TEST_P(WorkgroupSizeValidationTest, ValidationAfterOverrideStorageSize) {
         ss << "@compute @workgroup_size(1) fn main() { " << body.str() << " }";
 
         wgpu::ComputePipelineDescriptor desc;
-        desc.compute.entryPoint = "main";
         desc.compute.module = utils::CreateShaderModule(device, ss.str().c_str());
         desc.compute.constants = constants.data();
         desc.compute.constantCount = constants.size();

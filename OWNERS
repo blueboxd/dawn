@@ -7,9 +7,6 @@ dsinclair@chromium.org
 enga@chromium.org
 jiawei.shao@intel.com
 
-# TODO(crbug.com/dawn/1339): Move dawn.json into src/dawn.
-per-file dawn.json=file://src/dawn/OWNERS
-
 per-file DEPS=*
 per-file .gitignore=*
 per-file README.md=file://docs/OWNERS
@@ -22,6 +19,7 @@ per-file third_party/abseil-cpp=*
 per-file third_party/angle=*
 per-file third_party/catapult=*
 per-file third_party/clang-format/script=*
+per-file third_party/depot_tools=*
 per-file third_party/dxc=*
 per-file third_party/dxheaders=*
 per-file third_party/glfw=*

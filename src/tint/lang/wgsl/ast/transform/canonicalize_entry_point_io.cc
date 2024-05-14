@@ -102,13 +102,14 @@ uint32_t BuiltinOrder(core::BuiltinValue builtin) {
         default:
             break;
     }
+    TINT_UNREACHABLE();
     return 0;
 }
 
 // Returns true if `attr` is a shader IO attribute.
 bool IsShaderIOAttribute(const Attribute* attr) {
     return attr->IsAnyOf<BuiltinAttribute, InterpolateAttribute, InvariantAttribute,
-                         LocationAttribute, ColorAttribute, IndexAttribute>();
+                         LocationAttribute, ColorAttribute, BlendSrcAttribute>();
 }
 
 }  // namespace
@@ -127,8 +128,8 @@ struct CanonicalizeEntryPointIO::State {
         const Expression* value;
         /// The output location.
         std::optional<uint32_t> location;
-        /// The output index.
-        std::optional<uint32_t> index;
+        /// The output blend_src.
+        std::optional<uint32_t> blend_src;
     };
 
     /// The clone context.
@@ -264,7 +265,7 @@ struct CanonicalizeEntryPointIO::State {
 
         // Get or create the intrinsic function.
         auto builtin = BuiltinOf(attrs);
-        auto intrinsic = wave_intrinsics.GetOrCreate(builtin, [&] {
+        auto intrinsic = wave_intrinsics.GetOrAdd(builtin, [&] {
             if (builtin == core::BuiltinValue::kSubgroupInvocationId) {
                 return make_intrinsic("__WaveGetLaneIndex",
                                       HLSLWaveIntrinsic::Op::kWaveGetLaneIndex);
@@ -338,6 +339,17 @@ struct CanonicalizeEntryPointIO::State {
                     value = b.IndexAccessor(value, 0_i);
                 }
             }
+
+            // Replace f16 types with f32 types if necessary.
+            if (cfg.polyfill_f16_io && type->DeepestElement()->Is<core::type::F16>()) {
+                value = b.Call(ast_type, value);
+
+                ast_type = b.ty.f32();
+                if (auto* vec = type->As<core::type::Vector>()) {
+                    ast_type = b.ty.vec(ast_type, vec->Width());
+                }
+            }
+
             b.GlobalVar(symbol, ast_type, core::AddressSpace::kIn, std::move(attrs));
             return value;
         } else if (cfg.shader_style == ShaderStyle::kMsl &&
@@ -354,7 +366,18 @@ struct CanonicalizeEntryPointIO::State {
                                                              : b.Symbols().New(name);
             wrapper_struct_param_members.Push({b.Member(symbol, ast_type, std::move(attrs)),
                                                location, /* index */ std::nullopt, color});
-            return b.MemberAccessor(InputStructSymbol(), symbol);
+            const Expression* expr = b.MemberAccessor(InputStructSymbol(), symbol);
+
+            // If this is a fragment position builtin and we're targeting D3D, we need to invert the
+            // 'w' component of the vector.
+            if (cfg.shader_style == ShaderStyle::kHlsl &&
+                builtin_attr == core::BuiltinValue::kPosition) {
+                auto* xyz = b.MemberAccessor(expr, "xyz");
+                auto* w = b.MemberAccessor(b.MemberAccessor(InputStructSymbol(), symbol), "w");
+                expr = b.Call<vec4<f32>>(xyz, b.Div(1_a, w));
+            }
+
+            return expr;
         }
     }
 
@@ -362,13 +385,13 @@ struct CanonicalizeEntryPointIO::State {
     /// @param name the name of the shader output
     /// @param type the type of the shader output
     /// @param location the location if provided
-    /// @param index the index if provided
+    /// @param blend_src the blend_src if provided
     /// @param attrs the attributes to apply to the shader output
     /// @param value the value of the shader output
     void AddOutput(std::string name,
                    const core::type::Type* type,
                    std::optional<uint32_t> location,
-                   std::optional<uint32_t> index,
+                   std::optional<uint32_t> blend_src,
                    tint::Vector<const Attribute*, 8> attrs,
                    const Expression* value) {
         auto builtin_attr = BuiltinOf(attrs);
@@ -394,13 +417,31 @@ struct CanonicalizeEntryPointIO::State {
             }
         }
 
+        ast::Type ast_type;
+
+        // Replace f16 types with f32 types if necessary.
+        if (cfg.shader_style == ShaderStyle::kSpirv && cfg.polyfill_f16_io &&
+            type->DeepestElement()->Is<core::type::F16>()) {
+            auto make_ast_type = [&] {
+                auto ty = b.ty.f32();
+                if (auto* vec = type->As<core::type::Vector>()) {
+                    ty = b.ty.vec(ty, vec->Width());
+                }
+                return ty;
+            };
+            ast_type = make_ast_type();
+            value = b.Call(make_ast_type(), value);
+        } else {
+            ast_type = CreateASTTypeFor(ctx, type);
+        }
+
         OutputValue output;
         output.name = name;
-        output.type = CreateASTTypeFor(ctx, type);
+        output.type = ast_type;
         output.attributes = std::move(attrs);
         output.value = value;
         output.location = location;
-        output.index = index;
+        output.blend_src = blend_src;
         wrapper_output_values.Push(output);
     }
 
@@ -498,7 +539,7 @@ struct CanonicalizeEntryPointIO::State {
 
                 // Extract the original structure member.
                 AddOutput(name, member->Type(), member->Attributes().location,
-                          member->Attributes().index, std::move(attributes),
+                          member->Attributes().blend_src, std::move(attributes),
                           b.MemberAccessor(original_result, name));
             }
         } else if (!inner_ret_type->Is<core::type::Void>()) {
@@ -552,27 +593,34 @@ struct CanonicalizeEntryPointIO::State {
 
     /// Comparison function used to reorder struct members such that all members with
     /// color attributes appear first (ordered by color slot), then location attributes (ordered by
-    /// location slot), followed by those with builtin attributes (ordered by BuiltinOrder).
+    /// location slot), then index attributes (ordered by index slot), followed by those with
+    /// builtin attributes (ordered by BuiltinOrder).
     /// @param x a struct member
     /// @param y another struct member
     /// @returns true if a comes before b
     bool StructMemberComparator(const MemberInfo& x, const MemberInfo& y) {
-        if (x.color.has_value() && y.color.has_value()) {
+        if (x.color.has_value() && y.color.has_value() && x.color != y.color) {
             // Both have color attributes: smallest goes first.
             return x.color < y.color;
-        }
-        if (x.color.has_value() != y.color.has_value()) {
+        } else if (x.color.has_value() != y.color.has_value()) {
             // The member with the color goes first
             return x.color.has_value();
         }
 
-        if (x.location.has_value() && y.location.has_value()) {
+        if (x.location.has_value() && y.location.has_value() && x.location != y.location) {
             // Both have location attributes: smallest goes first.
             return x.location < y.location;
-        }
-        if (x.location.has_value() != y.location.has_value()) {
+        } else if (x.location.has_value() != y.location.has_value()) {
             // The member with the location goes first
             return x.location.has_value();
+        }
+
+        if (x.index.has_value() && y.index.has_value() && x.index != y.index) {
+            // Both have index attributes: smallest goes first.
+            return x.index < y.index;
+        } else if (x.index.has_value() != y.index.has_value()) {
+            // The member with the index goes first
+            return x.index.has_value();
         }
 
         {
@@ -582,15 +630,19 @@ struct CanonicalizeEntryPointIO::State {
                 // Both are builtins: order matters for FXC.
                 auto builtin_a = BuiltinOf(x_blt);
                 auto builtin_b = BuiltinOf(y_blt);
-                return BuiltinOrder(builtin_a) < BuiltinOrder(builtin_b);
-            }
-            if ((x_blt != nullptr) != (y_blt != nullptr)) {
+                auto order_a = BuiltinOrder(builtin_a);
+                auto order_b = BuiltinOrder(builtin_b);
+                if (order_a != order_b) {
+                    return order_a < order_b;
+                }
+            } else if ((x_blt != nullptr) != (y_blt != nullptr)) {
                 // The member with the builtin goes first
                 return x_blt != nullptr;
             }
         }
 
-        TINT_UNREACHABLE();
+        // Control flow reaches here if x is the same as y.
+        // Sort algorithms sometimes do that.
         return false;
     }
 
@@ -635,8 +687,8 @@ struct CanonicalizeEntryPointIO::State {
             wrapper_struct_output_members.Push({
                 /* member */ b.Member(name, outval.type, std::move(outval.attributes)),
                 /* location */ outval.location,
+                /* blend_src */ outval.blend_src,
                 /* color */ std::nullopt,
-                /* index */ std::nullopt,
             });
             assignments.Push(b.Assign(b.MemberAccessor(wrapper_result, name), outval.value));
         }
@@ -927,8 +979,8 @@ Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program& src,
 
     auto* cfg = inputs.Get<Config>();
     if (cfg == nullptr) {
-        b.Diagnostics().add_error(diag::System::Transform,
-                                  "missing transform data for " + std::string(TypeInfo().name));
+        b.Diagnostics().AddError(diag::System::Transform, Source{})
+            << "missing transform data for " << TypeInfo().name;
         return resolver::Resolve(b);
     }
 
@@ -961,10 +1013,12 @@ Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program& src,
 
 CanonicalizeEntryPointIO::Config::Config(ShaderStyle style,
                                          uint32_t sample_mask,
-                                         bool emit_point_size)
+                                         bool emit_point_size,
+                                         bool polyfill_f16)
     : shader_style(style),
       fixed_sample_mask(sample_mask),
-      emit_vertex_point_size(emit_point_size) {}
+      emit_vertex_point_size(emit_point_size),
+      polyfill_f16_io(polyfill_f16) {}
 
 CanonicalizeEntryPointIO::Config::Config(const Config&) = default;
 CanonicalizeEntryPointIO::Config::~Config() = default;

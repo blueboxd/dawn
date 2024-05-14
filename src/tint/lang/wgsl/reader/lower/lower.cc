@@ -105,6 +105,10 @@ core::BuiltinFn Convert(wgsl::BuiltinFn fn) {
         CASE(kPack2X16Unorm)
         CASE(kPack4X8Snorm)
         CASE(kPack4X8Unorm)
+        CASE(kPack4XI8)
+        CASE(kPack4XU8)
+        CASE(kPack4XI8Clamp)
+        CASE(kPack4XU8Clamp)
         CASE(kPow)
         CASE(kQuantizeToF16)
         CASE(kRadians)
@@ -130,6 +134,8 @@ core::BuiltinFn Convert(wgsl::BuiltinFn fn) {
         CASE(kUnpack2X16Unorm)
         CASE(kUnpack4X8Snorm)
         CASE(kUnpack4X8Unorm)
+        CASE(kUnpack4XI8)
+        CASE(kUnpack4XU8)
         CASE(kWorkgroupBarrier)
         CASE(kTextureBarrier)
         CASE(kTextureDimensions)
@@ -169,7 +175,7 @@ core::BuiltinFn Convert(wgsl::BuiltinFn fn) {
 }  // namespace
 
 Result<SuccessType> Lower(core::ir::Module& mod) {
-    if (auto res = core::ir::ValidateAndDumpIfNeeded(mod, "lowering from WGSL"); !res) {
+    if (auto res = core::ir::ValidateAndDumpIfNeeded(mod, "lowering from WGSL"); res != Success) {
         return res.Failure();
     }
 

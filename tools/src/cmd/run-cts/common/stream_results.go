@@ -33,13 +33,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
+	"dawn.googlesource.com/dawn/tools/src/browser"
 	"dawn.googlesource.com/dawn/tools/src/cov"
 	"dawn.googlesource.com/dawn/tools/src/fileutils"
 	"dawn.googlesource.com/dawn/tools/src/git"
@@ -96,7 +95,6 @@ func StreamResults(
 	}
 
 	stdout := state.Stdout
-
 	results := Results{}
 
 	// Total number of tests, test counts binned by status
@@ -127,7 +125,7 @@ func StreamResults(
 	start := time.Now()
 	for res := range stream {
 		state.Log.logResults(res)
-		results[res.TestCase] = res.Status
+		results[res.TestCase] = res
 		expected := state.Expectations[res.TestCase]
 		exStatus := expectedStatus{
 			status:   res.Status,
@@ -250,7 +248,7 @@ func StreamResults(
 			err := cov.StartServer(ctx, port, covData.Bytes(), func() error {
 				fmt.Fprintln(stdout)
 				fmt.Fprintln(stdout, term.Blue+"Serving coverage view at "+url+term.Reset)
-				return launchBrowser(url)
+				return browser.Open(url)
 			})
 			if err != nil {
 				return nil, err
@@ -360,18 +358,4 @@ func splitCTSQuery(testcase TestCase) cov.Path {
 		out = append(out, string(end))
 	}
 	return out
-}
-
-// launchBrowser launches a browser to open the given url
-func launchBrowser(url string) error {
-	switch runtime.GOOS {
-	case "linux":
-		return exec.Command("xdg-open", url).Start()
-	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
-	case "darwin":
-		return exec.Command("open", url).Start()
-	default:
-		return fmt.Errorf("unsupported platform")
-	}
 }
