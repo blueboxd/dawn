@@ -61,6 +61,7 @@ class Device final : public ObjectWithEventsBase {
     void InjectError(WGPUErrorType type, const char* message);
     void PopErrorScope(WGPUErrorCallback callback, void* userdata);
     WGPUFuture PopErrorScopeF(const WGPUPopErrorScopeCallbackInfo& callbackInfo);
+    WGPUFuture PopErrorScope2(const WGPUPopErrorScopeCallbackInfo2& callbackInfo);
     WGPUBuffer CreateBuffer(const WGPUBufferDescriptor* descriptor);
     void CreateComputePipelineAsync(WGPUComputePipelineDescriptor const* descriptor,
                                     WGPUCreateComputePipelineAsyncCallback callback,
@@ -79,7 +80,7 @@ class Device final : public ObjectWithEventsBase {
     void HandleLogging(WGPULoggingType loggingType, const char* message);
     void HandleDeviceLost(WGPUDeviceLostReason reason, const char* message);
 
-    bool GetLimits(WGPUSupportedLimits* limits) const;
+    WGPUStatus GetLimits(WGPUSupportedLimits* limits) const;
     bool HasFeature(WGPUFeatureName feature) const;
     size_t EnumerateFeatures(WGPUFeatureName* features) const;
     void SetLimits(const WGPUSupportedLimits* limits);

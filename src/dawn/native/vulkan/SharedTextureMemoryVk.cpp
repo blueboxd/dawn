@@ -386,8 +386,7 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     // Don't add the view format if backend validation is enabled, otherwise most image creations
     // will fail with VVL. This view format is only needed for sRGB reinterpretation.
     // TODO(crbug.com/dawn/2304): Investigate if this is a bug in VVL.
-    if (addViewFormats &&
-        !device->GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled()) {
+    if (addViewFormats && !device->GetAdapter()->GetInstance()->IsBackendValidationEnabled()) {
         DAWN_ASSERT(compatibleViewFormats.size() == 1u);
         viewFormats[imageFormatListInfo.viewFormatCount++] =
             VulkanImageFormat(device, compatibleViewFormats[0]->format);
@@ -487,7 +486,8 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     const char* label,
     const SharedTextureMemoryAHardwareBufferDescriptor* descriptor) {
 #if DAWN_PLATFORM_IS(ANDROID)
-    const auto* ahbFunctions = device->GetInstance()->GetOrLoadAHBFunctions();
+    const auto* ahbFunctions =
+        ToBackend(device->GetAdapter()->GetPhysicalDevice())->GetOrLoadAHBFunctions();
     VkDevice vkDevice = device->GetVkDevice();
 
     auto* aHardwareBuffer = static_cast<struct AHardwareBuffer*>(descriptor->handle);
@@ -511,6 +511,7 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     }
 
     VkFormat vkFormat;
+    YCbCrVkDescriptor yCbCrAHBInfo;
     VkAndroidHardwareBufferPropertiesANDROID bufferProperties = {
         .sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID,
     };
@@ -529,13 +530,30 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
 
         vkFormat = bufferFormatProperties.format;
 
-        // TODO(dawn:1745): Support external formats.
-        // https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#memory-external-android-hardware-buffer-external-formats
-        DAWN_INVALID_IF(vkFormat == VK_FORMAT_UNDEFINED,
-                        "AHardwareBuffer did not have a supported format. External format (%u) "
-                        "requires YCbCr conversion and is "
-                        "not supported yet.",
-                        bufferFormatProperties.externalFormat);
+        // Populate the YCbCr info.
+        yCbCrAHBInfo.externalFormat = bufferFormatProperties.externalFormat;
+        yCbCrAHBInfo.vkFormat = bufferFormatProperties.format;
+        yCbCrAHBInfo.vkYCbCrModel = bufferFormatProperties.suggestedYcbcrModel;
+        yCbCrAHBInfo.vkYCbCrRange = bufferFormatProperties.suggestedYcbcrRange;
+        yCbCrAHBInfo.vkComponentSwizzleRed =
+            bufferFormatProperties.samplerYcbcrConversionComponents.r;
+        yCbCrAHBInfo.vkComponentSwizzleGreen =
+            bufferFormatProperties.samplerYcbcrConversionComponents.g;
+        yCbCrAHBInfo.vkComponentSwizzleBlue =
+            bufferFormatProperties.samplerYcbcrConversionComponents.b;
+        yCbCrAHBInfo.vkComponentSwizzleAlpha =
+            bufferFormatProperties.samplerYcbcrConversionComponents.a;
+        yCbCrAHBInfo.vkXChromaOffset = bufferFormatProperties.suggestedXChromaOffset;
+        yCbCrAHBInfo.vkYChromaOffset = bufferFormatProperties.suggestedYChromaOffset;
+
+        uint32_t formatFeatures = bufferFormatProperties.formatFeatures;
+        yCbCrAHBInfo.vkChromaFilter =
+            (formatFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT)
+                ? wgpu::FilterMode::Linear
+                : wgpu::FilterMode::Nearest;
+        yCbCrAHBInfo.forceExplicitReconstruction =
+            formatFeatures &
+            VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_CHROMA_RECONSTRUCTION_EXPLICIT_BIT;
     }
     DAWN_TRY_ASSIGN(properties.format, FormatFromVkFormat(device, vkFormat));
 
@@ -548,6 +566,8 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     // Create the SharedTextureMemory object.
     Ref<SharedTextureMemory> sharedTextureMemory =
         SharedTextureMemory::Create(device, label, properties, VK_QUEUE_FAMILY_FOREIGN_EXT);
+
+    sharedTextureMemory->mYCbCrAHBInfo = yCbCrAHBInfo;
 
     // Reflect properties to reify them.
     sharedTextureMemory->APIGetProperties(&properties);
@@ -971,6 +991,7 @@ MaybeError SharedTextureMemory::BeginAccessImpl(
 #if DAWN_PLATFORM_IS(FUCHSIA) || DAWN_PLATFORM_IS(LINUX)
 ResultOrError<FenceAndSignalValue> SharedTextureMemory::EndAccessImpl(
     TextureBase* texture,
+    ExecutionSerial lastUsageSerial,
     UnpackedPtr<EndAccessState>& state) {
     wgpu::SType type;
     DAWN_TRY_ASSIGN(type,
@@ -1042,10 +1063,30 @@ ResultOrError<FenceAndSignalValue> SharedTextureMemory::EndAccessImpl(
 
 ResultOrError<FenceAndSignalValue> SharedTextureMemory::EndAccessImpl(
     TextureBase* texture,
+    ExecutionSerial lastUsageSerial,
     UnpackedPtr<EndAccessState>& state) {
     return DAWN_VALIDATION_ERROR("No shared fence features supported.");
 }
 
 #endif  // DAWN_PLATFORM_IS(FUCHSIA) || DAWN_PLATFORM_IS(LINUX)
+
+MaybeError SharedTextureMemory::GetChainedProperties(
+    UnpackedPtr<SharedTextureMemoryProperties>& properties) const {
+    auto ahbProperties = properties.Get<SharedTextureMemoryAHardwareBufferProperties>();
+
+    if (!ahbProperties) {
+        return {};
+    }
+
+    if (ahbProperties->yCbCrInfo.nextInChain) {
+        return DAWN_VALIDATION_ERROR(
+            "yCBCrInfo field of SharedTextureMemoryAHardwareBufferProperties has a chained "
+            "struct.");
+    }
+
+    ahbProperties->yCbCrInfo = mYCbCrAHBInfo;
+
+    return {};
+}
 
 }  // namespace dawn::native::vulkan

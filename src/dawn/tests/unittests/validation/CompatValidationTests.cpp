@@ -1135,6 +1135,46 @@ TEST_F(CompatValidationTest, CanNotCopyMultisampleTextureToTexture) {
                         testing::HasSubstr("cannot be copied in compatibility mode"));
 }
 
+// Regression test for crbug.com/339704108
+// Error texture should not resolve mCompatibilityTextureBindingViewDimension,
+// as dimension could be in bad form.
+TEST_F(CompatValidationTest, DoNotResolveDefaultTextureBindingViewDimensionOnErrorTexture) {
+    // Set incompatible texture format and view format.
+    // This validation happens before texture dimension validation and binding view dimension
+    // resolving and shall return an error texture.
+    constexpr wgpu::TextureFormat format = wgpu::TextureFormat::BGRA8Unorm;
+    constexpr wgpu::TextureFormat viewFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
+
+    wgpu::TextureDescriptor descriptor;
+    descriptor.size = {1, 1, 1};
+    descriptor.dimension = wgpu::TextureDimension::Undefined;
+    descriptor.format = format;
+    descriptor.usage = wgpu::TextureUsage::TextureBinding;
+    descriptor.viewFormatCount = 1;
+    descriptor.viewFormats = &viewFormat;
+
+    ASSERT_DEVICE_ERROR(device.CreateTexture(&descriptor));
+}
+
+// Regression test for crbug.com/341167195
+// Resolved default compatibility textureBindingViewDimension should be validated as it may come
+// from the TextureBindingViewDimensionDescriptor
+TEST_F(CompatValidationTest, InvalidTextureBindingViewDimensionDescriptorDescriptor) {
+    wgpu::TextureDescriptor descriptor;
+    descriptor.size = {1, 1, 1};
+    descriptor.dimension = wgpu::TextureDimension::Undefined;
+    descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    descriptor.usage = wgpu::TextureUsage::TextureBinding;
+
+    wgpu::TextureBindingViewDimensionDescriptor textureBindingViewDimensionDesc;
+    descriptor.nextInChain = &textureBindingViewDimensionDesc;
+    // Forcefully set an invalid view dimension.
+    textureBindingViewDimensionDesc.textureBindingViewDimension =
+        static_cast<wgpu::TextureViewDimension>(99);
+
+    ASSERT_DEVICE_ERROR(device.CreateTexture(&descriptor));
+}
+
 class CompatTextureViewDimensionValidationTests : public CompatValidationTest {
   protected:
     void TestBindingTextureViewDimensions(
@@ -1320,18 +1360,14 @@ TEST_F(CompatTextureViewDimensionValidationTests, CubeTextureViewDimensionCanNot
 
 class CompatCompressedCopyT2BAndCopyT2TValidationTests : public CompatValidationTest {
   protected:
-    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
-                                wgpu::DeviceDescriptor descriptor) override {
+    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
         std::vector<wgpu::FeatureName> requiredFeatures;
         for (TextureInfo textureInfo : textureInfos) {
             if (adapter.HasFeature(textureInfo.feature)) {
                 requiredFeatures.push_back(textureInfo.feature);
             }
         }
-
-        descriptor.requiredFeatures = requiredFeatures.data();
-        descriptor.requiredFeatureCount = requiredFeatures.size();
-        return dawnAdapter.CreateDevice(&descriptor);
+        return requiredFeatures;
     }
 
     struct TextureInfo {

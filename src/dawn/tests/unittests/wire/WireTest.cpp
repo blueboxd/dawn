@@ -105,12 +105,13 @@ void WireTest::SetUp() {
                 properties->architecture = "";
                 properties->name = "";
                 properties->driverDescription = "";
+                return WGPUStatus_Success;
             })));
 
         EXPECT_CALL(api, AdapterGetLimits(apiAdapter, NotNull()))
             .WillOnce(WithArg<1>(Invoke([&](WGPUSupportedLimits* limits) {
                 *limits = {};
-                return true;
+                return WGPUStatus_Success;
             })));
 
         EXPECT_CALL(api, AdapterEnumerateFeatures(apiAdapter, nullptr))
@@ -138,18 +139,19 @@ void WireTest::SetUp() {
     EXPECT_CALL(deviceLostCallback, Call).Times(AtMost(1));
     deviceDesc.uncapturedErrorCallbackInfo.callback = uncapturedErrorCallback.Callback();
     deviceDesc.uncapturedErrorCallbackInfo.userdata = uncapturedErrorCallback.MakeUserdata(this);
-    MockCallback<WGPURequestDeviceCallback> deviceCb;
-    wgpuAdapterRequestDevice(adapter.Get(), &deviceDesc, deviceCb.Callback(),
-                             deviceCb.MakeUserdata(this));
-    EXPECT_CALL(api, OnAdapterRequestDevice(apiAdapter, NotNull(), _))
+    MockCallback<WGPURequestDeviceCallback2> deviceCb;
+    wgpuAdapterRequestDevice2(adapter.Get(), &deviceDesc,
+                              {nullptr, WGPUCallbackMode_AllowSpontaneous, deviceCb.Callback(),
+                               nullptr, deviceCb.MakeUserdata(this)});
+    EXPECT_CALL(api, OnAdapterRequestDevice2(apiAdapter, NotNull(), _))
         .WillOnce(WithArg<1>([&](const WGPUDeviceDescriptor* desc) {
             // Set on device creation to forward callbacks to the client.
             EXPECT_CALL(api, OnDeviceSetUncapturedErrorCallback(apiDevice, NotNull(), NotNull()))
                 .Times(1);
             EXPECT_CALL(api, OnDeviceSetLoggingCallback(apiDevice, NotNull(), NotNull())).Times(1);
 
-            // The mock objects currently require us to manually set the callbacks because we are no
-            // longer explicitly calling SetDeviceLostCallback anymore.
+            // The mock objects currently require us to manually set the callbacks because we
+            // are no longer explicitly calling SetDeviceLostCallback anymore.
             ProcTableAsClass::Object* object =
                 reinterpret_cast<ProcTableAsClass::Object*>(apiDevice);
             object->mDeviceLostCallback = desc->deviceLostCallbackInfo.callback;
@@ -158,18 +160,18 @@ void WireTest::SetUp() {
             EXPECT_CALL(api, DeviceGetLimits(apiDevice, NotNull()))
                 .WillOnce(WithArg<1>(Invoke([&](WGPUSupportedLimits* limits) {
                     *limits = {};
-                    return true;
+                    return WGPUStatus_Success;
                 })));
 
             EXPECT_CALL(api, DeviceEnumerateFeatures(apiDevice, nullptr))
                 .WillOnce(Return(0))
                 .WillOnce(Return(0));
 
-            api.CallAdapterRequestDeviceCallback(apiAdapter, WGPURequestDeviceStatus_Success,
-                                                 apiDevice, nullptr);
+            api.CallAdapterRequestDevice2Callback(apiAdapter, WGPURequestDeviceStatus_Success,
+                                                  apiDevice, nullptr);
         }));
     FlushClient();
-    EXPECT_CALL(deviceCb, Call(WGPURequestDeviceStatus_Success, NotNull(), nullptr, this))
+    EXPECT_CALL(deviceCb, Call(WGPURequestDeviceStatus_Success, NotNull(), nullptr, nullptr, this))
         .WillOnce(SaveArg<1>(&device));
     FlushServer();
     EXPECT_NE(device, nullptr);

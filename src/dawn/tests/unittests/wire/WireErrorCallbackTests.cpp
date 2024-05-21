@@ -187,11 +187,11 @@ TEST_F(WireErrorCallbackTests, DeviceLostCallback) {
 
     // Calling the callback on the server side will result in the callback being called on the
     // client side
-    api.CallDeviceSetDeviceLostCallbackCallback(apiDevice, WGPUDeviceLostReason_Undefined,
+    api.CallDeviceSetDeviceLostCallbackCallback(apiDevice, WGPUDeviceLostReason_Unknown,
                                                 "Some error message");
 
     EXPECT_CALL(*mockDeviceLostCallback,
-                Call(WGPUDeviceLostReason_Undefined, StrEq("Some error message"), this))
+                Call(WGPUDeviceLostReason_Unknown, StrEq("Some error message"), this))
         .Times(1);
 
     FlushServer();
@@ -211,17 +211,6 @@ class WirePopErrorScopeCallbackTests : public WireFutureTestWithParamsBase<> {
             callbackInfo.userdata = mMockCb.MakeUserdata(userdata);
             this->mFutureIDs.push_back(wgpuDevicePopErrorScopeF(d, callbackInfo).id);
         }
-    }
-
-    // Overridden version of api.CallDevicePopErrorScopeCallback to defer to the correct callback
-    // depending on the test callback mode. Note that currently, the ServerDevice calls the native
-    // procs using the old-non-future signature. Once that changes, we can probably just inline
-    // api.CallDevicePopErrorScopeCallback calls in place of this function.
-    void CallDevicePopErrorScopeCallback(WGPUDevice d,
-                                         WGPUPopErrorScopeStatus status,
-                                         WGPUErrorType type,
-                                         char const* message) {
-        api.CallDevicePopErrorScopeOldCallback(d, type, message);
     }
 
     void PushErrorScope(WGPUErrorFilter filter) {
@@ -259,9 +248,9 @@ TEST_P(WirePopErrorScopeCallbackTests, TypeAndFilters) {
         PushErrorScope(filter);
 
         DevicePopErrorScope(device, this);
-        EXPECT_CALL(api, OnDevicePopErrorScope(apiDevice, _)).WillOnce([&] {
-            CallDevicePopErrorScopeCallback(apiDevice, WGPUPopErrorScopeStatus_Success, type,
-                                            "Some error message");
+        EXPECT_CALL(api, OnDevicePopErrorScope2(apiDevice, _)).WillOnce([&] {
+            api.CallDevicePopErrorScope2Callback(apiDevice, WGPUPopErrorScopeStatus_Success, type,
+                                                 "Some error message");
         });
 
         FlushClient();
@@ -288,7 +277,7 @@ TEST_P(WirePopErrorScopeCallbackTests, DisconnectBeforeServerReply) {
     PushErrorScope(WGPUErrorFilter_Validation);
 
     DevicePopErrorScope(device, this);
-    EXPECT_CALL(api, OnDevicePopErrorScope(apiDevice, _)).Times(1);
+    EXPECT_CALL(api, OnDevicePopErrorScope2(apiDevice, _)).Times(1);
 
     FlushClient();
     FlushFutures();
@@ -316,9 +305,9 @@ TEST_P(WirePopErrorScopeCallbackTests, DisconnectAfterServerReply) {
     PushErrorScope(WGPUErrorFilter_Validation);
 
     DevicePopErrorScope(device, this);
-    EXPECT_CALL(api, OnDevicePopErrorScope(apiDevice, _)).WillOnce(InvokeWithoutArgs([&] {
-        CallDevicePopErrorScopeCallback(apiDevice, WGPUPopErrorScopeStatus_Success,
-                                        WGPUErrorType_Validation, "Some error message");
+    EXPECT_CALL(api, OnDevicePopErrorScope2(apiDevice, _)).WillOnce(InvokeWithoutArgs([&] {
+        api.CallDevicePopErrorScope2Callback(apiDevice, WGPUPopErrorScopeStatus_Success,
+                                             WGPUErrorType_Validation, "Some error message");
     }));
 
     FlushClient();
@@ -341,9 +330,9 @@ TEST_P(WirePopErrorScopeCallbackTests, DisconnectAfterServerReply) {
 // Empty stack (We are emulating the errors that would be callback-ed from native).
 TEST_P(WirePopErrorScopeCallbackTests, EmptyStack) {
     DevicePopErrorScope(device, this);
-    EXPECT_CALL(api, OnDevicePopErrorScope(apiDevice, _)).WillOnce(InvokeWithoutArgs([&] {
-        CallDevicePopErrorScopeCallback(apiDevice, WGPUPopErrorScopeStatus_Success,
-                                        WGPUErrorType_Validation, "No error scopes to pop");
+    EXPECT_CALL(api, OnDevicePopErrorScope2(apiDevice, _)).WillOnce(InvokeWithoutArgs([&] {
+        api.CallDevicePopErrorScope2Callback(apiDevice, WGPUPopErrorScopeStatus_Success,
+                                             WGPUErrorType_Validation, "No error scopes to pop");
     }));
 
     FlushClient();

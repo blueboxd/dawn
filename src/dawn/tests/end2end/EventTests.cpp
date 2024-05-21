@@ -152,9 +152,9 @@ class EventCompletionTests : public DawnTestWithParams<EventCompletionTestParams
 
     void LoseTestDevice() {
         EXPECT_CALL(mDeviceLostCallback,
-                    Call(testing::_, WGPUDeviceLostReason_Undefined, testing::_, testing::_))
+                    Call(testing::_, WGPUDeviceLostReason_Unknown, testing::_, testing::_))
             .Times(1);
-        testDevice.ForceLoss(wgpu::DeviceLostReason::Undefined, "Device lost for testing");
+        testDevice.ForceLoss(wgpu::DeviceLostReason::Unknown, "Device lost for testing");
         testInstance.ProcessEvents();
     }
 
@@ -647,9 +647,8 @@ TEST_P(FutureTests, MixedSourcePolling) {
 
     // PopErrorScope is implemented via a signal.
     device.PushErrorScope(wgpu::ErrorFilter::Validation);
-    device.PopErrorScope({nullptr, wgpu::CallbackMode::AllowProcessEvents,
-                          [](WGPUPopErrorScopeStatus, WGPUErrorType, char const*, void*) {},
-                          nullptr, nullptr});
+    device.PopErrorScope(wgpu::CallbackMode::AllowProcessEvents,
+                         [](wgpu::PopErrorScopeStatus, wgpu::ErrorType, const char*) {});
 
     instance.ProcessEvents();
 }

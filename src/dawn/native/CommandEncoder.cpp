@@ -397,6 +397,11 @@ MaybeError ValidateResolveTarget(const DeviceBase* device,
                     "Cannot use %s as resolve target. Sample count (%u) is greater than 1.",
                     resolveTarget, resolveTarget->GetTexture()->GetSampleCount());
 
+    DAWN_INVALID_IF(resolveTarget->GetDimension() != wgpu::TextureViewDimension::e2D &&
+                        resolveTarget->GetDimension() != wgpu::TextureViewDimension::e2DArray,
+                    "The dimension (%s) of resolve target %s is not 2D or 2DArray.",
+                    resolveTarget->GetDimension(), resolveTarget);
+
     DAWN_INVALID_IF(resolveTarget->GetLayerCount() > 1,
                     "The resolve target %s array layer count (%u) is not 1.", resolveTarget,
                     resolveTarget->GetLayerCount());
@@ -808,12 +813,6 @@ ResultOrError<UnpackedPtr<RenderPassDescriptor>> ValidateRenderPassDescriptor(
     }
 
     if (validationState->WillExpandResolveTexture()) {
-        // TODO(dawn:1710): support multiple attachments.
-        DAWN_INVALID_IF(
-            descriptor->colorAttachmentCount != 1,
-            "colorAttachmentCount (%u) is not supported when the render pass has one attachment "
-            "with %s. (Currently) colorAttachmentCount = 1 is supported.",
-            descriptor->colorAttachmentCount, wgpu::LoadOp::ExpandResolveTexture);
         // TODO(dawn:1704): Consider supporting ExpandResolveTexture + PLS
         DAWN_INVALID_IF(pls != nullptr, "For now pixel local storage is invalid to use with %s.",
                         wgpu::LoadOp::ExpandResolveTexture);
@@ -930,12 +929,6 @@ MaybeError EncodeTimestampsToNanosecondsConversion(CommandEncoder* encoder,
 MaybeError ApplyExpandResolveTextureLoadOp(DeviceBase* device,
                                            RenderPassEncoder* renderPassEncoder,
                                            const RenderPassDescriptor* renderPassDescriptor) {
-    // TODO(dawn:1710): support multiple attachments.
-    DAWN_ASSERT(renderPassDescriptor->colorAttachmentCount == 1);
-    if (renderPassDescriptor->colorAttachments[0].loadOp != wgpu::LoadOp::ExpandResolveTexture) {
-        return {};
-    }
-
     // TODO(dawn:1710): support loading resolve texture on platforms that don't support reading
     // it in fragment shader such as vulkan.
     DAWN_ASSERT(device->IsResolveTextureBlitWithDrawSupported());

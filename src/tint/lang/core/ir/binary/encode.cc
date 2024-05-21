@@ -27,6 +27,7 @@
 
 #include "src/tint/lang/core/ir/binary/encode.h"
 
+#include <string>
 #include <utility>
 
 #include "src/tint/lang/core/builtin_fn.h"
@@ -253,7 +254,10 @@ struct Encoder {
 
     void InstructionBitcast(pb::InstructionBitcast&, const ir::Bitcast*) {}
 
-    void InstructionBreakIf(pb::InstructionBreakIf&, const ir::BreakIf*) {}
+    void InstructionBreakIf(pb::InstructionBreakIf& breakif_out, const ir::BreakIf* breakif_in) {
+        auto num_next_iter_values = static_cast<uint32_t>(breakif_in->NextIterValues().Length());
+        breakif_out.set_num_next_iter_values(num_next_iter_values);
+    }
 
     void InstructionBuiltinCall(pb::InstructionBuiltinCall& call_out,
                                 const ir::CoreBuiltinCall* call_in) {
@@ -1148,6 +1152,15 @@ Result<Vector<std::byte, 0>> Encode(const Module& mod_in) {
         }
     }
     return buffer;
+}
+
+Result<std::string> EncodeDebug(const Module& mod_in) {
+    GOOGLE_PROTOBUF_VERIFY_VERSION;
+
+    pb::Module mod_out;
+    Encoder{mod_in, mod_out}.Encode();
+
+    return mod_out.DebugString();
 }
 
 }  // namespace tint::core::ir::binary

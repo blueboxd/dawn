@@ -275,7 +275,8 @@ class AdapterSurfaceCapCache {
     MaybeError WithAdapterCapabilities(AdapterBase* adapter, const Surface* surface, F f) {
         if (mCachedCapabilitiesAdapter.Promote().Get() != adapter) {
             const PhysicalDeviceBase* physicalDevice = adapter->GetPhysicalDevice();
-            DAWN_TRY_ASSIGN(mCachedCapabilities, physicalDevice->GetSurfaceCapabilities(surface));
+            DAWN_TRY_ASSIGN(mCachedCapabilities, physicalDevice->GetSurfaceCapabilities(
+                                                     adapter->GetInstance(), surface));
             mCachedCapabilitiesAdapter = GetWeakRef(adapter);
         }
         return f(mCachedCapabilities);
@@ -606,13 +607,17 @@ void Surface::APIConfigure(const SurfaceConfiguration* config) {
     }
 }
 
-void Surface::APIGetCapabilities(AdapterBase* adapter, SurfaceCapabilities* capabilities) const {
+wgpu::Status Surface::APIGetCapabilities(AdapterBase* adapter,
+                                         SurfaceCapabilities* capabilities) const {
     MaybeError maybeError = GetCapabilities(adapter, capabilities);
     if (!GetCurrentDevice()) {
         [[maybe_unused]] bool error = mInstance->ConsumedError(std::move(maybeError));
+        return wgpu::Status::Error;
     } else {
-        [[maybe_unused]] bool error = GetCurrentDevice()->ConsumedError(
-            std::move(maybeError), "calling %s.Configure().", this);
+        return GetCurrentDevice()->ConsumedError(std::move(maybeError), "calling %s.Configure().",
+                                                 this)
+                   ? wgpu::Status::Error
+                   : wgpu::Status::Success;
     }
 }
 

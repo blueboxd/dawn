@@ -226,40 +226,6 @@ ResultOrError<Ref<Texture>> Texture::CreateInternal(
 }
 
 // static
-ResultOrError<Ref<Texture>> Texture::CreateExternalImage(
-    Device* device,
-    const UnpackedPtr<TextureDescriptor>& descriptor,
-    ComPtr<IUnknown> d3dTexture,
-    Ref<d3d::KeyedMutex> keyedMutex,
-    std::vector<FenceAndSignalValue> waitFences,
-    bool isSwapChainTexture,
-    bool isInitialized) {
-    Ref<Texture> dawnTexture = AcquireRef(new Texture(device, descriptor, Kind::Normal));
-    DAWN_TRY(
-        dawnTexture->InitializeAsExternalTexture(std::move(d3dTexture), std::move(keyedMutex)));
-
-    auto commandContext =
-        ToBackend(device->GetQueue())
-            ->GetScopedPendingCommandContext(ExecutionQueueBase::SubmitMode::Normal);
-    for (const auto& fence : waitFences) {
-        DAWN_TRY(CheckHRESULT(
-            commandContext.Wait(ToBackend(fence.object)->GetD3DFence(), fence.signaledValue),
-            "ID3D11DeviceContext4::Wait"));
-    }
-
-    // Importing a multi-planar format must be initialized. This is required because
-    // a shared multi-planar format cannot be initialized by Dawn.
-    DAWN_INVALID_IF(
-        !isInitialized && dawnTexture->GetFormat().IsMultiPlanar(),
-        "Cannot create a texture with a multi-planar format (%s) with uninitialized data.",
-        dawnTexture->GetFormat().format);
-
-    dawnTexture->SetIsSubresourceContentInitialized(isInitialized,
-                                                    dawnTexture->GetAllSubresources());
-    return std::move(dawnTexture);
-}
-
-// static
 ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
     SharedTextureMemory* memory,
     const UnpackedPtr<TextureDescriptor>& descriptor) {
@@ -403,6 +369,8 @@ void Texture::DestroyImpl() {
     //   other threads using the texture since there are no other live refs.
     TextureBase::DestroyImpl();
     mD3d11Resource = nullptr;
+    mKeyedMutex = nullptr;
+    mTextureForStencilSampling = nullptr;
 }
 
 ID3D11Resource* Texture::GetD3D11Resource() const {
@@ -505,7 +473,6 @@ MaybeError Texture::SynchronizeTextureBeforeUse(
     if (auto* contents = GetSharedResourceMemoryContents()) {
         SharedTextureMemoryBase::PendingFenceList fences;
         contents->AcquirePendingFences(&fences);
-        contents->SetLastUsageSerial(GetDevice()->GetQueue()->GetPendingCommandSerial());
         for (const auto& fence : fences) {
             DAWN_TRY(CheckHRESULT(
                 commandContext->Wait(ToBackend(fence.object)->GetD3DFence(), fence.signaledValue),
@@ -516,7 +483,7 @@ MaybeError Texture::SynchronizeTextureBeforeUse(
     if (mKeyedMutex != nullptr) {
         DAWN_TRY(commandContext->AcquireKeyedMutex(mKeyedMutex));
     }
-    mLastUsageSerial = GetDevice()->GetQueue()->GetPendingCommandSerial();
+    mLastSharedTextureMemoryUsageSerial = GetDevice()->GetQueue()->GetPendingCommandSerial();
     return {};
 }
 
@@ -1144,13 +1111,14 @@ MaybeError Texture::CopyInternal(const ScopedCommandRecordingContext* commandCon
 
 ResultOrError<ExecutionSerial> Texture::EndAccess() {
     // TODO(dawn:1705): submit pending commands if deferred context is used.
-    if (mLastUsageSerial) {
+    if (mLastSharedTextureMemoryUsageSerial != kBeginningOfGPUTime) {
         // Make the queue signal the fence in finite time.
-        DAWN_TRY(GetDevice()->GetQueue()->EnsureCommandsFlushed(*mLastUsageSerial));
+        DAWN_TRY(
+            GetDevice()->GetQueue()->EnsureCommandsFlushed(mLastSharedTextureMemoryUsageSerial));
     }
-    // Explicitly call reset() since std::move() on optional doesn't make it std::nullopt.
-    mLastUsageSerial.reset();
-    return GetDevice()->GetQueue()->GetLastSubmittedCommandSerial();
+    ExecutionSerial ret = mLastSharedTextureMemoryUsageSerial;
+    mLastSharedTextureMemoryUsageSerial = kBeginningOfGPUTime;
+    return ret;
 }
 
 ResultOrError<ComPtr<ID3D11ShaderResourceView>> Texture::GetStencilSRV(
@@ -1237,7 +1205,10 @@ TextureView::~TextureView() = default;
 
 void TextureView::DestroyImpl() {
     TextureViewBase::DestroyImpl();
+    mD3d11SharedResourceView = nullptr;
     mD3d11RenderTargetViews.clear();
+    mD3d11DepthStencilView = nullptr;
+    mD3d11UnorderedAccessView = nullptr;
 }
 
 ResultOrError<ID3D11ShaderResourceView*> TextureView::GetOrCreateD3D11ShaderResourceView() {

@@ -97,7 +97,7 @@ deps = {
   },
 
   'third_party/depot_tools': {
-    'url': '{chromium_git}/chromium/tools/depot_tools.git@6e32e926e9de76137e2c60821bd2755924c65cf2',
+    'url': '{chromium_git}/chromium/tools/depot_tools.git@b4fbce4794de1b135797bcdcfcc7be5900c3d109',
     'condition': 'dawn_standalone',
   },
 
@@ -262,7 +262,7 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@8d23fa3f92ed6a40ee1950aea9e0f300caeebe31',
+    'url': '{chromium_git}/angle/angle@6f8b736e8a3a19387aa65211866fbeeb367432a0',
     'condition': 'dawn_standalone',
   },
 
@@ -272,7 +272,7 @@ deps = {
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@4a16c52263574aabe420ba7c87b772c70027386b',
+    'url': '{chromium_git}/vulkan-deps@e25f9bb7a149c87b9dc58e5fc8510198a8972ae9',
     'condition': 'dawn_standalone',
   },
 
@@ -282,12 +282,12 @@ deps = {
   },
 
   'third_party/abseil-cpp': {
-    'url': '{chromium_git}/chromium/src/third_party/abseil-cpp@1cd1f16ff8f7fb5402aeda870c82652edf8f663a',
+    'url': '{chromium_git}/chromium/src/third_party/abseil-cpp@f81f6c011baf9b0132a5594c034fe0060820711d',
     'condition': 'dawn_standalone',
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@8e9cefa1d5074142a05641f694e58b68812b35a0',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@1658b068b50012e41eaf012db0761edbee76a1ea',
   },
 
   'third_party/dxheaders': {
@@ -316,11 +316,11 @@ deps = {
 
   # Dependencies required to build / run Dawn NodeJS bindings
   'third_party/node-api-headers': {
-    'url': '{github_git}/nodejs/node-api-headers.git@d68505e4055ecb630e14c26c32e5c2c65e179bba',
+    'url': '{github_git}/nodejs/node-api-headers.git@d5cfe19da8b974ca35764dd1c73b91d57cd3c4ce',
     'condition': 'dawn_node',
   },
   'third_party/node-addon-api': {
-    'url': '{github_git}/nodejs/node-addon-api.git@4a3de56c3e4ed0031635a2f642b27efeeed00add',
+    'url': '{github_git}/nodejs/node-addon-api.git@1e26dcb52829a74260ec262edb41fc22998669b6',
     'condition': 'dawn_node',
   },
   'third_party/gpuweb': {
@@ -385,7 +385,7 @@ deps = {
   },
 
   'third_party/langsvr': {
-    'url': '{github_git}/google/langsvr.git@a79fcb7068cb9c75ad77df9abe16d726402477aa',
+    'url': '{github_git}/google/langsvr.git@303c526231a90049a3e384549720f3fbd453cf66',
     'condition': 'dawn_standalone',
   },
 

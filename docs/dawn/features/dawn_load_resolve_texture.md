@@ -4,6 +4,7 @@ The `dawn-load-resolve-texture` feature allows a render pass to expand a resolve
 
 Additional functionalities:
  - Adds `wgpu::LoadOp::ExpandResolveTexture` enum value to specify that the MSAA attachment will load the pixels from its corresponding resolve texture. This is cheaper than `wgpu::LoadOp::Load` which will load the existing pixels of the MSAA attachment itself.
+ - Adds `wgpu::ColorTargetStateExpandResolveTextureDawn` as chained struct for `wgpu::RenderPipelineDescriptor::FragmentState::ColorTargetState`. It has `enabled` flag to indicate that the render pipeline is going to be used in a render pass with `ExpandResolveTexture` load op in the respective color attachment.
 
 Example Usage:
 ```
@@ -33,6 +34,16 @@ auto renderPassEncoder = encoder.BeginRenderPass(&renderPassDesc);
 renderPassEncoder.Draw(3);
 renderPassEncoder.End();
 
+// Create a render pipeline with wgpu::ColorTargetStateExpandResolveTextureDawn.
+wgpu::ColorTargetStateExpandResolveTextureDawn pipelineExpandResolveTextureState;
+pipelineExpandResolveTextureState.enabled = true;
+
+wgpu::RenderPipelineDescriptor pipelineDesc = ...;
+pipelineDesc.multisample.count = 4;
+
+pipelineDesc->fragment->targets[0].nextInChain = &pipelineExpandResolveTextureState;
+
+auto pipeline = device.CreateRenderPipeline(&pipelineDesc);
 
 // Create another render pass with "ExpandResolveTexture" LoadOp.
 // Even though we discard the previous content of the MSAA texture,
@@ -46,6 +57,7 @@ renderPassDesc2.colorAttachments[0].loadOp
  = wgpu::LoadOp::ExpandResolveTexture;
 
 auto renderPassEncoder2 = encoder.BeginRenderPass(&renderPassDesc2);
+renderPassEncoder2.SetPipeline(pipeline);
 renderPassEncoder2.Draw(3);
 renderPassEncoder2.End();
 
@@ -53,5 +65,7 @@ renderPassEncoder2.End();
 
 Notes:
  - If a resolve texture is used in a `wgpu::LoadOp::ExpandResolveTexture` operation, it must have `wgpu::TextureUsage::TextureBinding` usage.
- - Currently only one color attachment is supported and the `ExpandResolveTexture` LoadOp only works on color attachment, this could be changed in future.
+ - If `wgpu::ColorTargetStateExpandResolveTextureDawn` chained struct is not included in a `wgpu::RenderPipelineDescriptor::FragmentState::ColorTargetState`  or if it is included but `enabled` boolean flag is false, then the result render pipeline cannot be used in a render pass using `ExpandResolveTexture` load op for that respective color attachment.
+   - Similarly, a render pipeline created with `wgpu::ColorTargetStateExpandResolveTextureDawn`'s `enabled` flag = `true` won't be able to be used in render passes that don't use `ExpandResolveTexture` load op for the respective color attachment.
+ - Currently the `ExpandResolveTexture` LoadOp only works on color attachment, this could be changed in future.
  - The texture is not supported if it is not resolvable by WebGPU standard. This means this feature currently doesn't work with integer textures.

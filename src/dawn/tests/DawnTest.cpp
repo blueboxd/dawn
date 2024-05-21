@@ -719,6 +719,7 @@ const std::vector<std::string>& DawnTestEnvironment::GetDisabledToggles() const 
 
 DawnTestBase::DawnTestBase(const AdapterTestParam& param) : mParam(param) {
     gCurrentTest = this;
+    mLastWarningCount = GetDeprecationWarningCountForTesting();
 
     DawnProcTable procs = native::GetProcs();
     // Override procs to provide harness-specific behavior to always select the adapter required in
@@ -770,9 +771,10 @@ DawnTestBase::DawnTestBase(const AdapterTestParam& param) : mParam(param) {
         return {0};
     };
 
-    procs.adapterRequestDevice = [](WGPUAdapter cAdapter, const WGPUDeviceDescriptor* descriptor,
-                                    WGPURequestDeviceCallback callback, void* userdata) {
+    procs.adapterRequestDevice2 = [](WGPUAdapter cAdapter, const WGPUDeviceDescriptor* descriptor,
+                                     WGPURequestDeviceCallbackInfo2 callbackInfo) -> WGPUFuture {
         DAWN_ASSERT(gCurrentTest);
+        DAWN_ASSERT(callbackInfo.mode == WGPUCallbackMode_AllowSpontaneous);
 
         // Isolation keys may be enqueued by CreateDevice(std::string isolationKey).
         // CreateDevice calls requestAdapter, so consume them there and forward them
@@ -786,7 +788,11 @@ DawnTestBase::DawnTestBase(const AdapterTestParam& param) : mParam(param) {
         DAWN_ASSERT(cDevice != nullptr);
 
         gCurrentTest->mLastCreatedBackendDevice = cDevice;
-        callback(WGPURequestDeviceStatus_Success, cDevice, nullptr, userdata);
+        callbackInfo.callback(WGPURequestDeviceStatus_Success, cDevice, nullptr,
+                              callbackInfo.userdata1, callbackInfo.userdata2);
+
+        // Returning a placeholder future that we should never be waiting on.
+        return {0};
     };
 
     mWireHelper = utils::CreateWireHelper(procs, gTestEnv->UsesWire(), gTestEnv->GetWireTraceDir());
@@ -1080,6 +1086,10 @@ bool DawnTestBase::SupportsFeatures(const std::vector<wgpu::FeatureName>& featur
     return true;
 }
 
+uint64_t DawnTestBase::GetDeprecationWarningCountForTesting() const {
+    return gTestEnv->GetInstance()->GetDeprecationWarningCountForTesting();
+}
+
 void* DawnTestBase::GetUniqueUserdata() {
     return reinterpret_cast<void*>(++mNextUniqueUserdata);
 }
@@ -1134,12 +1144,9 @@ wgpu::Device DawnTestBase::CreateDevice(std::string isolationKey) {
     // RequestDevice is overriden by CreateDeviceImpl and device descriptor is ignored by it.
     wgpu::DeviceDescriptor deviceDesc = {};
 
-    adapter.RequestDevice(
-        &deviceDesc,
-        [](WGPURequestDeviceStatus, WGPUDevice cDevice, const char*, void* userdata) {
-            *static_cast<wgpu::Device*>(userdata) = wgpu::Device::Acquire(cDevice);
-        },
-        &apiDevice);
+    adapter.RequestDevice(&deviceDesc, wgpu::CallbackMode::AllowSpontaneous,
+                          [&apiDevice](wgpu::RequestDeviceStatus, wgpu::Device result,
+                                       const char*) { apiDevice = std::move(result); });
     FlushWire();
     DAWN_ASSERT(apiDevice);
 
@@ -1212,8 +1219,8 @@ void DawnTestBase::SetUp() {
 void DawnTestBase::TearDown() {
     ResolveDeferredExpectationsNow();
 
-    if (!UsesWire() && device) {
-        EXPECT_EQ(mLastWarningCount, native::GetDeprecationWarningCountForTesting(device.Get()));
+    if (!UsesWire()) {
+        EXPECT_EQ(mLastWarningCount, GetDeprecationWarningCountForTesting());
     }
 }
 
@@ -1234,8 +1241,8 @@ void DawnTestBase::LoseDeviceForTesting(wgpu::Device deviceToLose) {
         resolvedDevice = device;
     }
 
-    EXPECT_CALL(mDeviceLostCallback, Call(_, WGPUDeviceLostReason_Undefined, _, _)).Times(1);
-    resolvedDevice.ForceLoss(wgpu::DeviceLostReason::Undefined, "Device lost for testing");
+    EXPECT_CALL(mDeviceLostCallback, Call(_, WGPUDeviceLostReason_Unknown, _, _)).Times(1);
+    resolvedDevice.ForceLoss(wgpu::DeviceLostReason::Unknown, "Device lost for testing");
     resolvedDevice.Tick();
 }
 

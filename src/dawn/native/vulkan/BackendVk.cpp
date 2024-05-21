@@ -485,8 +485,7 @@ ResultOrError<VulkanGlobalKnobs> VulkanInstance::CreateVkInstance(const Instance
     // (validation or other).
     if (usedKnobs.HasExt(InstanceExt::DebugUtils)) {
         utilsMessengerCreateInfo.flags = 0;
-        utilsMessengerCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
-                                                   VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
+        utilsMessengerCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
         utilsMessengerCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
                                                VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
         utilsMessengerCreateInfo.pfnUserCallback = OnInstanceCreationDebugUtilsCallback;
@@ -589,8 +588,8 @@ std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
             const std::vector<VkPhysicalDevice>& vkPhysicalDevices =
                 mVulkanInstances[icd]->GetVkPhysicalDevices();
             for (VkPhysicalDevice vkPhysicalDevice : vkPhysicalDevices) {
-                Ref<PhysicalDevice> physicalDevice = AcquireRef(
-                    new PhysicalDevice(instance, mVulkanInstances[icd].Get(), vkPhysicalDevice));
+                Ref<PhysicalDevice> physicalDevice =
+                    AcquireRef(new PhysicalDevice(mVulkanInstances[icd].Get(), vkPhysicalDevice));
                 if (instance->ConsumedErrorAndWarnOnce(physicalDevice->Initialize())) {
                     continue;
                 }
@@ -601,20 +600,6 @@ std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
                                mPhysicalDevices[icd].end());
     }
     return physicalDevices;
-}
-
-void Backend::ClearPhysicalDevices() {
-    for (ICD icd : kICDs) {
-        mPhysicalDevices[icd].clear();
-    }
-}
-
-size_t Backend::GetPhysicalDeviceCountForTesting() const {
-    size_t count = 0;
-    for (ICD icd : kICDs) {
-        count += mPhysicalDevices[icd].size();
-    }
-    return count;
 }
 
 BackendConnection* Connect(InstanceBase* instance) {

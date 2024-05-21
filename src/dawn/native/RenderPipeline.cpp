@@ -273,6 +273,26 @@ MaybeError ValidatePrimitiveState(const DeviceBase* device, const PrimitiveState
     return {};
 }
 
+MaybeError ValidateStencilFaceUnused(StencilFaceState face) {
+    DAWN_INVALID_IF((face.compare != wgpu::CompareFunction::Always) &&
+                        (face.compare != wgpu::CompareFunction::Undefined),
+                    "compare (%s) is defined and not %s.", face.compare,
+                    wgpu::CompareFunction::Always);
+    DAWN_INVALID_IF((face.failOp != wgpu::StencilOperation::Keep) &&
+                        (face.failOp != wgpu::StencilOperation::Undefined),
+                    "failOp (%s) is defined and not %s.", face.failOp,
+                    wgpu::StencilOperation::Keep);
+    DAWN_INVALID_IF((face.depthFailOp != wgpu::StencilOperation::Keep) &&
+                        (face.depthFailOp != wgpu::StencilOperation::Undefined),
+                    "depthFailOp (%s) is defined and not %s.", face.depthFailOp,
+                    wgpu::StencilOperation::Keep);
+    DAWN_INVALID_IF((face.passOp != wgpu::StencilOperation::Keep) &&
+                        (face.passOp != wgpu::StencilOperation::Undefined),
+                    "passOp (%s) is defined and not %s.", face.passOp,
+                    wgpu::StencilOperation::Keep);
+    return {};
+}
+
 MaybeError ValidateDepthStencilState(const DeviceBase* device,
                                      const DepthStencilState* descriptor) {
     DAWN_TRY_CONTEXT(ValidateCompareFunction(descriptor->depthCompare),
@@ -342,28 +362,21 @@ MaybeError ValidateDepthStencilState(const DeviceBase* device,
         "Depth stencil format (%s) doesn't have depth aspect while depthWriteEnabled (%u) is true.",
         descriptor->format, descriptor->depthWriteEnabled);
 
-    DAWN_INVALID_IF(!format->HasStencil() && StencilTestEnabled(descriptor),
-                    "Depth stencil format (%s) doesn't have stencil aspect while stencil "
-                    "test or stencil write is enabled.",
-                    descriptor->format);
+    if (!format->HasStencil()) {
+        DAWN_TRY_CONTEXT(ValidateStencilFaceUnused(descriptor->stencilFront),
+                         "validating that stencilFront doesn't use stencil when the depth-stencil "
+                         "format (%s) doesn't have a stencil aspect.",
+                         descriptor->format);
+        DAWN_TRY_CONTEXT(ValidateStencilFaceUnused(descriptor->stencilBack),
+                         "validating that stencilBack doesn't use stencil when the depth-stencil "
+                         "format (%s) doesn't have a stencil aspect.",
+                         descriptor->format);
+    }
 
     return {};
 }
 
 MaybeError ValidateMultisampleState(const DeviceBase* device, const MultisampleState* descriptor) {
-    UnpackedPtr<MultisampleState> unpacked;
-    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
-    if (unpacked.Get<DawnMultisampleStateRenderToSingleSampled>()) {
-        DAWN_INVALID_IF(!device->HasFeature(Feature::MSAARenderToSingleSampled),
-                        "The msaaRenderToSingleSampledDesc is not empty while the "
-                        "msaa-render-to-single-sampled feature is not enabled.");
-
-        DAWN_INVALID_IF(descriptor->count <= 1,
-                        "The msaaRenderToSingleSampledDesc is not empty while multisample count "
-                        "(%u) is not > 1.",
-                        descriptor->count);
-    }
-
     DAWN_INVALID_IF(!IsValidSampleCount(descriptor->count),
                     "Multisample count (%u) is not supported.", descriptor->count);
 
@@ -434,8 +447,22 @@ MaybeError ValidateColorTargetState(
     const ColorTargetState& descriptor,
     const Format* format,
     bool fragmentWritten,
-    const EntryPointMetadata::FragmentRenderAttachmentInfo& fragmentOutputVariable) {
-    DAWN_INVALID_IF(descriptor.nextInChain != nullptr, "nextInChain must be nullptr.");
+    const EntryPointMetadata::FragmentRenderAttachmentInfo& fragmentOutputVariable,
+    const MultisampleState& multisample) {
+    UnpackedPtr<ColorTargetState> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(&descriptor));
+    if (unpacked.Get<ColorTargetStateExpandResolveTextureDawn>()) {
+        DAWN_INVALID_IF(!device->HasFeature(Feature::DawnLoadResolveTexture),
+                        "The ColorTargetStateExpandResolveTextureDawn struct is used while the "
+                        "%s feature is not enabled.",
+                        ToAPI(Feature::DawnLoadResolveTexture));
+
+        DAWN_INVALID_IF(
+            multisample.count <= 1,
+            "The ColorTargetStateExpandResolveTextureDawn struct is used while multisample count "
+            "(%u) is not > 1.",
+            multisample.count);
+    }
 
     if (descriptor.blend) {
         DAWN_TRY_CONTEXT(ValidateBlendState(device, descriptor.blend), "validating blend state.");
@@ -607,9 +634,9 @@ ResultOrError<ShaderModuleEntryPoint> ValidateFragmentState(DeviceBase* device,
         const Format* format;
         DAWN_TRY_ASSIGN(format, device->GetInternalFormat(targets[i].format));
 
-        DAWN_TRY_CONTEXT(ValidateColorTargetState(device, targets[i], format,
-                                                  fragmentMetadata.fragmentOutputMask[i],
-                                                  fragmentMetadata.fragmentOutputVariables[i]),
+        DAWN_TRY_CONTEXT(ValidateColorTargetState(
+                             device, targets[i], format, fragmentMetadata.fragmentOutputMask[i],
+                             fragmentMetadata.fragmentOutputVariables[i], multisample),
                          "validating targets[%u] framebuffer output.", i);
         colorAttachmentFormats.push_back(&device->GetValidInternalFormat(targets[i].format));
 
@@ -838,17 +865,6 @@ std::vector<StageAndDescriptor> GetRenderStagesAndSetPlaceholderShader(
     return stages;
 }
 
-bool StencilTestEnabled(const DepthStencilState* depthStencil) {
-    return depthStencil->stencilBack.compare != wgpu::CompareFunction::Always ||
-           depthStencil->stencilBack.failOp != wgpu::StencilOperation::Keep ||
-           depthStencil->stencilBack.depthFailOp != wgpu::StencilOperation::Keep ||
-           depthStencil->stencilBack.passOp != wgpu::StencilOperation::Keep ||
-           depthStencil->stencilFront.compare != wgpu::CompareFunction::Always ||
-           depthStencil->stencilFront.failOp != wgpu::StencilOperation::Keep ||
-           depthStencil->stencilFront.depthFailOp != wgpu::StencilOperation::Keep ||
-           depthStencil->stencilFront.passOp != wgpu::StencilOperation::Keep;
-}
-
 // RenderPipelineBase
 
 RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
@@ -1074,6 +1090,17 @@ const ColorTargetState* RenderPipelineBase::GetColorTargetState(
 const DepthStencilState* RenderPipelineBase::GetDepthStencilState() const {
     DAWN_ASSERT(!IsError());
     return &mDepthStencil;
+}
+
+bool RenderPipelineBase::UsesStencil() const {
+    return mDepthStencil.stencilBack.compare != wgpu::CompareFunction::Always ||
+           mDepthStencil.stencilBack.failOp != wgpu::StencilOperation::Keep ||
+           mDepthStencil.stencilBack.depthFailOp != wgpu::StencilOperation::Keep ||
+           mDepthStencil.stencilBack.passOp != wgpu::StencilOperation::Keep ||
+           mDepthStencil.stencilFront.compare != wgpu::CompareFunction::Always ||
+           mDepthStencil.stencilFront.failOp != wgpu::StencilOperation::Keep ||
+           mDepthStencil.stencilFront.depthFailOp != wgpu::StencilOperation::Keep ||
+           mDepthStencil.stencilFront.passOp != wgpu::StencilOperation::Keep;
 }
 
 wgpu::PrimitiveTopology RenderPipelineBase::GetPrimitiveTopology() const {

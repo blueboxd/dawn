@@ -126,7 +126,7 @@ class DeviceBase : public ErrorSink, public RefCountedWithExternalCount {
     // users as the respective error rather than causing a device loss instead.
     void HandleError(std::unique_ptr<ErrorData> error,
                      InternalErrorType additionalAllowedErrors = InternalErrorType::None,
-                     WGPUDeviceLostReason lost_reason = WGPUDeviceLostReason_Undefined);
+                     WGPUDeviceLostReason lost_reason = WGPUDeviceLostReason_Unknown);
 
     MaybeError ValidateObject(const ApiObjectBase* object) const;
 
@@ -288,7 +288,7 @@ class DeviceBase : public ErrorSink, public RefCountedWithExternalCount {
     AdapterBase* APIGetAdapter();
     QueueBase* APIGetQueue();
 
-    bool APIGetLimits(SupportedLimits* limits) const;
+    wgpu::Status APIGetLimits(SupportedLimits* limits) const;
     bool APIHasFeature(wgpu::FeatureName feature) const;
     size_t APIEnumerateFeatures(wgpu::FeatureName* features) const;
     void APIInjectError(wgpu::ErrorType type, const char* message);
@@ -301,6 +301,7 @@ class DeviceBase : public ErrorSink, public RefCountedWithExternalCount {
     void APIPushErrorScope(wgpu::ErrorFilter filter);
     void APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata);
     Future APIPopErrorScopeF(const PopErrorScopeCallbackInfo& callbackInfo);
+    Future APIPopErrorScope2(const WGPUPopErrorScopeCallbackInfo2& callbackInfo);
 
     MaybeError ValidateIsAlive() const;
 
@@ -356,8 +357,6 @@ class DeviceBase : public ErrorSink, public RefCountedWithExternalCount {
 
     size_t GetLazyClearCountForTesting();
     void IncrementLazyClearCountForTesting();
-    size_t GetDeprecationWarningCountForTesting();
-    void EmitDeprecationWarning(const std::string& warning);
     void EmitWarningOnce(const std::string& message);
     void EmitLog(const char* message);
     void EmitLog(WGPULoggingType loggingType, const char* message);
@@ -571,8 +570,6 @@ class DeviceBase : public ErrorSink, public RefCountedWithExternalCount {
     std::unique_ptr<DynamicUploader> mDynamicUploader;
     Ref<QueueBase> mQueue;
 
-    struct DeprecationWarnings;
-    std::unique_ptr<DeprecationWarnings> mDeprecationWarnings;
     std::atomic<uint32_t> mEmittedCompilationLogCount = 0;
 
     absl::flat_hash_set<std::string> mWarnings;

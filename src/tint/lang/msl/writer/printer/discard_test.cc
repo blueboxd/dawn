@@ -43,24 +43,27 @@ TEST_F(MslPrinterTest, Discard) {
         b.Return(func);
     });
 
-    auto* ep = b.Function("main", ty.void_());
-    ep->SetStage(core::ir::Function::PipelineStage::kFragment);
+    auto* ep = b.Function("frag_main", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(ep->Block(), [&] {
         b.Call(func);
         b.Return(ep);
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_;
-    EXPECT_EQ(output_, MetalHeader() + R"(
-thread bool continue_execution = true;
-void foo() {
+    EXPECT_EQ(output_, MetalHeader() + R"(struct tint_module_vars_struct {
+  thread bool* continue_execution;
+};
+
+void foo(tint_module_vars_struct tint_module_vars) {
   if (true) {
-    continue_execution = false;
+    (*tint_module_vars.continue_execution) = false;
   }
 }
-fragment void main() {
-  foo();
-  if (!(continue_execution)) {
+fragment void frag_main() {
+  thread bool continue_execution = true;
+  tint_module_vars_struct const tint_module_vars = tint_module_vars_struct{.continue_execution=(&continue_execution)};
+  foo(tint_module_vars);
+  if (!((*tint_module_vars.continue_execution))) {
     discard_fragment();
   }
 }

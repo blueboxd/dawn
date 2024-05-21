@@ -81,10 +81,8 @@ gpu_info::DriverVersion DecodeVulkanDriverVersion(uint32_t vendorID, uint32_t ve
 
 }  // anonymous namespace
 
-PhysicalDevice::PhysicalDevice(InstanceBase* instance,
-                               VulkanInstance* vulkanInstance,
-                               VkPhysicalDevice physicalDevice)
-    : PhysicalDeviceBase(instance, wgpu::BackendType::Vulkan),
+PhysicalDevice::PhysicalDevice(VulkanInstance* vulkanInstance, VkPhysicalDevice physicalDevice)
+    : PhysicalDeviceBase(wgpu::BackendType::Vulkan),
       mVkPhysicalDevice(physicalDevice),
       mVulkanInstance(vulkanInstance) {}
 
@@ -412,7 +410,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 
 #if DAWN_PLATFORM_IS(ANDROID)
     if (mDeviceInfo.HasExt(DeviceExt::ExternalMemoryAndroidHardwareBuffer)) {
-        if (GetInstance()->GetOrLoadAHBFunctions()->IsValid()) {
+        if (GetOrLoadAHBFunctions()->IsValid()) {
             EnableFeature(Feature::SharedTextureMemoryAHardwareBuffer);
         }
     }
@@ -625,9 +623,11 @@ bool PhysicalDevice::SupportsFeatureLevel(FeatureLevel) const {
     return true;
 }
 
-void PhysicalDevice::SetupBackendAdapterToggles(TogglesState* adpterToggles) const {}
+void PhysicalDevice::SetupBackendAdapterToggles(dawn::platform::Platform* platform,
+                                                TogglesState* adapterToggles) const {}
 
-void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
+void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platform,
+                                               TogglesState* deviceToggles) const {
     // TODO(crbug.com/dawn/857): tighten this workaround when this issue is fixed in both
     // Vulkan SPEC and drivers.
     deviceToggles->Default(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
@@ -637,8 +637,8 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     deviceToggles->Default(Toggle::UseTintIR, true);
 #else
     // All other platforms default to the value corresponding to the feature flag.
-    deviceToggles->Default(Toggle::UseTintIR, GetInstance()->GetPlatform()->IsFeatureEnabled(
-                                                  platform::Features::kWebGPUUseTintIR));
+    deviceToggles->Default(Toggle::UseTintIR,
+                           platform->IsFeatureEnabled(platform::Features::kWebGPUUseTintIR));
 #endif
 
     if (IsAndroidQualcomm()) {
@@ -867,58 +867,73 @@ uint32_t PhysicalDevice::GetDefaultComputeSubgroupSize() const {
 }
 
 ResultOrError<PhysicalDeviceSurfaceCapabilities> PhysicalDevice::GetSurfaceCapabilities(
+    InstanceBase* instance,
     const Surface* surface) const {
+    // Gather the Vulkan surface capabilities.
+    VulkanSurfaceInfo vkCaps;
+    {
+        const VulkanFunctions& fn = GetVulkanInstance()->GetFunctions();
+        VkInstance vkInstance = GetVulkanInstance()->GetVkInstance();
+
+        VkSurfaceKHR vkSurface;
+        DAWN_TRY_ASSIGN(vkSurface, CreateVulkanSurface(instance, this, surface));
+        DAWN_TRY_ASSIGN_WITH_CLEANUP(vkCaps, GatherSurfaceInfo(*this, vkSurface),
+                                     { fn.DestroySurfaceKHR(vkInstance, vkSurface, nullptr); });
+
+        fn.DestroySurfaceKHR(vkInstance, vkSurface, nullptr);
+    }
+
     PhysicalDeviceSurfaceCapabilities capabilities;
 
-    // Formats
-
-    // This is the only supported format in native mode (see crbug.com/dawn/160).
-#if DAWN_PLATFORM_IS(ANDROID)
-    capabilities.formats.push_back(wgpu::TextureFormat::RGBA8Unorm);
-#else
-    capabilities.formats.push_back(wgpu::TextureFormat::BGRA8Unorm);
-#endif  // !DAWN_PLATFORM_IS(ANDROID)
-
-    // Present Modes
-
-    // TODO(dawn:2320): Other present modes than Mailbox do not pass tests on Intel Graphics. Once
-    // 'surface' will actually contain a vkSurface we'll be able to test
-    // vkGetPhysicalDeviceSurfaceSupportKHR to avoid this #if.
-#if DAWN_PLATFORM_IS(LINUX)
-    capabilities.presentModes = {
-        wgpu::PresentMode::Mailbox,
+    // Convert known swapchain formats
+    auto ToWGPUSwapChainFormat = [](VkFormat format) -> wgpu::TextureFormat {
+        switch (format) {
+            case VK_FORMAT_R8G8B8A8_UNORM:
+                return wgpu::TextureFormat::RGBA8Unorm;
+            case VK_FORMAT_R8G8B8A8_SRGB:
+                return wgpu::TextureFormat::RGBA8UnormSrgb;
+            case VK_FORMAT_B8G8R8A8_UNORM:
+                return wgpu::TextureFormat::BGRA8Unorm;
+            case VK_FORMAT_B8G8R8A8_SRGB:
+                return wgpu::TextureFormat::BGRA8UnormSrgb;
+            case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+                return wgpu::TextureFormat::RGB10A2Unorm;
+            case VK_FORMAT_R16G16B16A16_SFLOAT:
+                return wgpu::TextureFormat::RGBA16Float;
+            default:
+                return wgpu::TextureFormat::Undefined;
+        }
     };
-#else
-    capabilities.presentModes = {
-        wgpu::PresentMode::Fifo,
-        wgpu::PresentMode::Immediate,
-        wgpu::PresentMode::Mailbox,
+    for (VkSurfaceFormatKHR surfaceFormat : vkCaps.formats) {
+        wgpu::TextureFormat format = ToWGPUSwapChainFormat(surfaceFormat.format);
+        if (format != wgpu::TextureFormat::Undefined) {
+            capabilities.formats.push_back(format);
+        }
+    }
+
+    // Convert known present modes
+    auto ToWGPUPresentMode = [](VkPresentModeKHR mode) -> std::optional<wgpu::PresentMode> {
+        switch (mode) {
+            case VK_PRESENT_MODE_FIFO_KHR:
+                return wgpu::PresentMode::Fifo;
+            case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+                return wgpu::PresentMode::FifoRelaxed;
+            case VK_PRESENT_MODE_MAILBOX_KHR:
+                return wgpu::PresentMode::Mailbox;
+            case VK_PRESENT_MODE_IMMEDIATE_KHR:
+                return wgpu::PresentMode::Immediate;
+            default:
+                return {};
+        }
     };
-#endif  // !DAWN_PLATFORM_IS(LINUX)
+    for (VkPresentModeKHR vkMode : vkCaps.presentModes) {
+        std::optional<wgpu::PresentMode> wgpuMode = ToWGPUPresentMode(vkMode);
+        if (wgpuMode) {
+            capabilities.presentModes.push_back(*wgpuMode);
+        }
+    }
 
-    // Alpha Modes
-
-#if !DAWN_PLATFORM_IS(ANDROID)
-    capabilities.alphaModes.push_back(wgpu::CompositeAlphaMode::Opaque);
-#else
-    VkSurfaceKHR vkSurface;
-    DAWN_TRY_ASSIGN(vkSurface, CreateVulkanSurface(this, surface));
-
-    VkPhysicalDevice vkPhysicalDevice = GetVkPhysicalDevice();
-    const VulkanFunctions& fn = GetVulkanInstance()->GetFunctions();
-    VkInstance vkInstance = GetVulkanInstance()->GetVkInstance();
-    const VulkanFunctions& vkFunctions = GetVulkanInstance()->GetFunctions();
-
-    // Get the surface capabilities
-    VkSurfaceCapabilitiesKHR vkCapabilities;
-    DAWN_TRY_WITH_CLEANUP(CheckVkSuccess(vkFunctions.GetPhysicalDeviceSurfaceCapabilitiesKHR(
-                                             vkPhysicalDevice, vkSurface, &vkCapabilities),
-                                         "vkGetPhysicalDeviceSurfaceCapabilitiesKHR"),
-                          { fn.DestroySurfaceKHR(vkInstance, vkSurface, nullptr); });
-
-    fn.DestroySurfaceKHR(vkInstance, vkSurface, nullptr);
-
-    // TODO(dawn:286): investigate composite alpha for WebGPU native
+    // Compute supported alpha modes
     struct AlphaModePairs {
         VkCompositeAlphaFlagBitsKHR vkBit;
         wgpu::CompositeAlphaMode webgpuEnum;
@@ -930,15 +945,25 @@ ResultOrError<PhysicalDeviceSurfaceCapabilities> PhysicalDevice::GetSurfaceCapab
         {VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR, wgpu::CompositeAlphaMode::Inherit},
     };
 
+    capabilities.alphaModes.push_back(wgpu::CompositeAlphaMode::Auto);
     for (auto mode : alphaModePairs) {
-        if (vkCapabilities.supportedCompositeAlpha & mode.vkBit) {
+        if (vkCaps.capabilities.supportedCompositeAlpha & mode.vkBit) {
             capabilities.alphaModes.push_back(mode.webgpuEnum);
         }
     }
-#endif  // #if !DAWN_PLATFORM_IS(ANDROID)
-    capabilities.alphaModes.push_back(wgpu::CompositeAlphaMode::Auto);
 
     return capabilities;
+}
+
+const AHBFunctions* PhysicalDevice::GetOrLoadAHBFunctions() {
+#if DAWN_PLATFORM_IS(ANDROID)
+    if (mAHBFunctions == nullptr) {
+        mAHBFunctions = std::make_unique<AHBFunctions>();
+    }
+    return mAHBFunctions.get();
+#else
+    DAWN_UNREACHABLE();
+#endif  // DAWN_PLATFORM_IS(ANDROID)
 }
 
 void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const {

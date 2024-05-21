@@ -89,11 +89,11 @@ class DAWN_NATIVE_EXPORT Adapter {
 
     // Essentially webgpu.h's wgpuAdapterGetProperties while we don't have WGPUAdapter in
     // dawn.json
-    void GetProperties(wgpu::AdapterProperties* properties) const;
-    void GetProperties(WGPUAdapterProperties* properties) const;
+    wgpu::Status GetProperties(wgpu::AdapterProperties* properties) const;
+    wgpu::Status GetProperties(WGPUAdapterProperties* properties) const;
 
     std::vector<const char*> GetSupportedFeatures() const;
-    bool GetLimits(WGPUSupportedLimits* limits) const;
+    wgpu::ConvertibleStatus GetLimits(WGPUSupportedLimits* limits) const;
 
     void SetUseTieredLimits(bool useTieredLimits);
 
@@ -180,6 +180,8 @@ class DAWN_NATIVE_EXPORT Instance {
     void EnableBeginCaptureOnStartup(bool beginCaptureOnStartup);
 
     uint64_t GetDeviceCountForTesting() const;
+    // Backdoor to get the number of deprecation warnings for testing
+    uint64_t GetDeprecationWarningCountForTesting() const;
 
     // Returns the underlying WGPUInstance object.
     WGPUInstance Get() const;
@@ -199,12 +201,6 @@ DAWN_NATIVE_EXPORT std::vector<const char*> GetTogglesUsed(WGPUDevice device);
 
 // Backdoor to get the number of lazy clears for testing
 DAWN_NATIVE_EXPORT size_t GetLazyClearCountForTesting(WGPUDevice device);
-
-// Backdoor to get the number of deprecation warnings for testing
-DAWN_NATIVE_EXPORT size_t GetDeprecationWarningCountForTesting(WGPUDevice device);
-
-// Backdoor to get the number of physical devices an instance knows about for testing
-DAWN_NATIVE_EXPORT size_t GetPhysicalDeviceCountForTesting(WGPUInstance instance);
 
 //  Query if texture has been initialized
 DAWN_NATIVE_EXPORT bool IsTextureSubresourceInitialized(
@@ -234,8 +230,6 @@ enum ExternalImageType {
     OpaqueFD,
     DmaBuf,
     IOSurface,
-    DXGISharedHandle,
-    D3D11Texture,
     EGLImage,
     GLTexture,
     AHardwareBuffer,

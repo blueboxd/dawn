@@ -89,12 +89,12 @@ Adapter& Adapter::operator=(const Adapter& other) {
     return *this;
 }
 
-void Adapter::GetProperties(wgpu::AdapterProperties* properties) const {
-    GetProperties(reinterpret_cast<WGPUAdapterProperties*>(properties));
+wgpu::Status Adapter::GetProperties(wgpu::AdapterProperties* properties) const {
+    return GetProperties(reinterpret_cast<WGPUAdapterProperties*>(properties));
 }
 
-void Adapter::GetProperties(WGPUAdapterProperties* properties) const {
-    mImpl->APIGetProperties(FromAPI(properties));
+wgpu::Status Adapter::GetProperties(WGPUAdapterProperties* properties) const {
+    return mImpl->APIGetProperties(FromAPI(properties));
 }
 
 WGPUAdapter Adapter::Get() const {
@@ -106,7 +106,7 @@ std::vector<const char*> Adapter::GetSupportedFeatures() const {
     return supportedFeaturesSet.GetEnabledFeatureNames();
 }
 
-bool Adapter::GetLimits(WGPUSupportedLimits* limits) const {
+wgpu::ConvertibleStatus Adapter::GetLimits(WGPUSupportedLimits* limits) const {
     return mImpl->APIGetLimits(FromAPI(limits));
 }
 
@@ -145,7 +145,8 @@ void Adapter::RequestDevice(const WGPUDeviceDescriptor* descriptor,
 }
 
 void Adapter::ResetInternalDeviceForTesting() {
-    mImpl->GetPhysicalDevice()->ResetInternalDeviceForTesting();
+    [[maybe_unused]] bool hadError = mImpl->GetInstance()->ConsumedError(
+        mImpl->GetPhysicalDevice()->ResetInternalDeviceForTesting());
 }
 
 // DawnInstanceDescriptor
@@ -211,6 +212,10 @@ uint64_t Instance::GetDeviceCountForTesting() const {
     return mImpl->GetDeviceCountForTesting();
 }
 
+uint64_t Instance::GetDeprecationWarningCountForTesting() const {
+    return mImpl->GetDeprecationWarningCountForTesting();
+}
+
 WGPUInstance Instance::Get() const {
     return ToAPI(mImpl);
 }
@@ -221,14 +226,6 @@ void Instance::DisconnectDawnPlatform() {
 
 size_t GetLazyClearCountForTesting(WGPUDevice device) {
     return FromAPI(device)->GetLazyClearCountForTesting();
-}
-
-size_t GetDeprecationWarningCountForTesting(WGPUDevice device) {
-    return FromAPI(device)->GetDeprecationWarningCountForTesting();
-}
-
-size_t GetPhysicalDeviceCountForTesting(WGPUInstance instance) {
-    return FromAPI(instance)->GetPhysicalDeviceCountForTesting();
 }
 
 bool IsTextureSubresourceInitialized(WGPUTexture texture,

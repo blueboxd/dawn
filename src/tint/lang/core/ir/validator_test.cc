@@ -1114,6 +1114,25 @@ TEST_F(IR_ValidatorTest, Access_IndexVector_ViaMatrix) {
     ASSERT_EQ(res, Success);
 }
 
+TEST_F(IR_ValidatorTest, Access_ExtractPointerFromStruct) {
+    auto* ptr = ty.ptr<private_, i32>();
+    Vector<type::Manager::StructMemberDesc, 1> members{
+        type::Manager::StructMemberDesc{mod.symbols.New("a"), ptr},
+    };
+    auto* str = ty.Struct(mod.symbols.New("MyStruct"), std::move(members));
+    auto* f = b.Function("my_func", ty.void_());
+    auto* obj = b.FunctionParam("obj", str);
+    f->SetParams({obj});
+
+    b.Append(f->Block(), [&] {
+        b.Access(ptr, obj, 0_u);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
 TEST_F(IR_ValidatorTest, Block_TerminatorInMiddle) {
     auto* f = b.Function("my_func", ty.void_());
 
@@ -2595,6 +2614,298 @@ note: # Disassembly
           }
         }
         exit_switch  # switch_1
+      }
+    }
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, ContinueOutsideOfLoop) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Body(), [&] { b.ExitLoop(loop); });
+        b.Continue(loop);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:8:5 error: continue: called outside of associated loop
+    continue  # -> $B3
+    ^^^^^^^^
+
+:2:3 note: in block
+  $B1: {
+  ^^^
+
+note: # Disassembly
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2] {  # loop_1
+      $B2: {  # body
+        exit_loop  # loop_1
+      }
+    }
+    continue  # -> $B3
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, ContinueInLoopInit) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] { b.Continue(loop); });
+        b.Append(loop->Body(), [&] { b.ExitLoop(loop); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:5:9 error: continue: must only be called from loop body
+        continue  # -> $B4
+        ^^^^^^^^
+
+:4:7 note: in block
+      $B2: {  # initializer
+      ^^^
+
+note: # Disassembly
+%my_func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3] {  # loop_1
+      $B2: {  # initializer
+        continue  # -> $B4
+      }
+      $B3: {  # body
+        exit_loop  # loop_1
+      }
+    }
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, ContinueInLoopBody) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Body(), [&] { b.Continue(loop); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, ContinueInLoopContinuing) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Body(), [&] { b.ExitLoop(loop); });
+        b.Append(loop->Continuing(), [&] { b.Continue(loop); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:8:9 error: continue: must only be called from loop body
+        continue  # -> $B3
+        ^^^^^^^^
+
+:7:7 note: in block
+      $B3: {  # continuing
+      ^^^
+
+note: # Disassembly
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
+        exit_loop  # loop_1
+      }
+      $B3: {  # continuing
+        continue  # -> $B3
+      }
+    }
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, NextIterationOutsideOfLoop) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Body(), [&] { b.ExitLoop(loop); });
+        b.NextIteration(loop);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:8:5 error: next_iteration: called outside of associated loop
+    next_iteration  # -> $B2
+    ^^^^^^^^^^^^^^
+
+:2:3 note: in block
+  $B1: {
+  ^^^
+
+note: # Disassembly
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2] {  # loop_1
+      $B2: {  # body
+        exit_loop  # loop_1
+      }
+    }
+    next_iteration  # -> $B2
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, NextIterationInLoopInit) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Initializer(), [&] { b.NextIteration(loop); });
+        b.Append(loop->Body(), [&] { b.ExitLoop(loop); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, NextIterationInLoopBody) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Body(), [&] { b.NextIteration(loop); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:5:9 error: next_iteration: must only be called from loop initializer or continuing
+        next_iteration  # -> $B2
+        ^^^^^^^^^^^^^^
+
+:4:7 note: in block
+      $B2: {  # body
+      ^^^
+
+note: # Disassembly
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2] {  # loop_1
+      $B2: {  # body
+        next_iteration  # -> $B2
+      }
+    }
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, NextIterationInLoopContinuing) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Body(), [&] { b.ExitLoop(loop); });
+        b.Append(loop->Continuing(), [&] { b.NextIteration(loop); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, ContinuingUseValueBeforeContinue) {
+    auto* f = b.Function("my_func", ty.void_());
+    auto* value = b.Let("value", 1_i);
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Body(), [&] {
+            b.Append(value);
+            b.Append(b.If(true)->True(), [&] { b.Continue(loop); });
+            b.ExitLoop(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            b.Let("use", value);
+            b.NextIteration(loop);
+        });
+        b.Return(f);
+    });
+
+    ASSERT_EQ(ir::Validate(mod), Success);
+}
+
+TEST_F(IR_ValidatorTest, ContinuingUseValueAfterContinue) {
+    auto* f = b.Function("my_func", ty.void_());
+    auto* value = b.Let("value", 1_i);
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Body(), [&] {
+            b.Append(b.If(true)->True(), [&] { b.Continue(loop); });
+            b.Append(value);
+            b.ExitLoop(loop);
+        });
+        b.Append(loop->Continuing(), [&] {
+            b.Let("use", value);
+            b.NextIteration(loop);
+        });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(
+        res.Failure().reason.Str(),
+        R"(:14:24 error: let: %value cannot be used in continuing block as it is declared after the first 'continue' in the loop's body
+        %use:i32 = let %value
+                       ^^^^^^
+
+:4:7 note: in block
+      $B2: {  # body
+      ^^^
+
+:10:9 note: %value declared here
+        %value:i32 = let 1i
+        ^^^^^^^^^^
+
+:7:13 note: loop body's first 'continue'
+            continue  # -> $B3
+            ^^^^^^^^
+
+note: # Disassembly
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
+        if true [t: $B4] {  # if_1
+          $B4: {  # true
+            continue  # -> $B3
+          }
+        }
+        %value:i32 = let 1i
+        exit_loop  # loop_1
+      }
+      $B3: {  # continuing
+        %use:i32 = let %value
+        next_iteration  # -> $B2
       }
     }
     ret

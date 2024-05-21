@@ -496,8 +496,6 @@ wgpu::TextureViewDimension ResolveDefaultCompatiblityTextureBindingViewDimension
     }
 
     switch (descriptor->dimension) {
-        case wgpu::TextureDimension::Undefined:
-            DAWN_UNREACHABLE();
         case wgpu::TextureDimension::e1D:
             return wgpu::TextureViewDimension::e1D;
         case wgpu::TextureDimension::e2D:
@@ -505,6 +503,9 @@ wgpu::TextureViewDimension ResolveDefaultCompatiblityTextureBindingViewDimension
                                                             : wgpu::TextureViewDimension::e2DArray;
         case wgpu::TextureDimension::e3D:
             return wgpu::TextureViewDimension::e3D;
+        case wgpu::TextureDimension::Undefined:
+        default:
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -531,6 +532,12 @@ MaybeError ValidateTextureDescriptor(
         switch (allowMultiPlanar) {
             case AllowMultiPlanarTextureFormat::Yes:
                 DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D ||
+                                    descriptor->mipLevelCount != 1,
+                                "Multiplanar texture must be non-mipmapped & 2D in order to be "
+                                "created directly.");
+                break;
+            case AllowMultiPlanarTextureFormat::SingleLayerOnly:
+                DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D ||
                                     descriptor->mipLevelCount != 1 ||
                                     descriptor->size.depthOrArrayLayers != 1,
                                 "Multiplanar texture must be non-mipmapped & 2D in order to be "
@@ -555,6 +562,8 @@ MaybeError ValidateTextureDescriptor(
     if (device->IsCompatibilityMode()) {
         const auto textureBindingViewDimension =
             ResolveDefaultCompatiblityTextureBindingViewDimension(device, descriptor);
+        DAWN_TRY_CONTEXT(ValidateTextureViewDimension(textureBindingViewDimension),
+                         "validating resolved compatibility textureBindingViewDimension");
 
         DAWN_INVALID_IF(
             !IsTextureViewDimensionCompatibleWithTextureDimension(textureBindingViewDimension,
@@ -799,8 +808,6 @@ TextureBase::TextureBase(DeviceBase* device,
                          ObjectBase::ErrorTag tag)
     : SharedResource(device, tag, descriptor->label),
       mDimension(descriptor->dimension),
-      mCompatibilityTextureBindingViewDimension(
-          ResolveDefaultCompatiblityTextureBindingViewDimension(device, Unpack(descriptor))),
       mFormat(kUnusedFormat),
       mBaseSize(descriptor->size),
       mMipLevelCount(descriptor->mipLevelCount),
@@ -996,9 +1003,15 @@ void TextureBase::SetInitialized(bool initialized) {
     SetIsSubresourceContentInitialized(initialized, GetAllSubresources());
 }
 
-void TextureBase::SetHasAccess(bool hasAccess) {
-    DAWN_ASSERT(!IsError());
-    mState.hasAccess = hasAccess;
+ExecutionSerial TextureBase::OnEndAccess() {
+    mState.hasAccess = false;
+    ExecutionSerial lastUsageSerial = mLastSharedTextureMemoryUsageSerial;
+    mLastSharedTextureMemoryUsageSerial = kBeginningOfGPUTime;
+    return lastUsageSerial;
+}
+
+void TextureBase::OnBeginAccess() {
+    mState.hasAccess = true;
 }
 
 bool TextureBase::HasAccess() const {
