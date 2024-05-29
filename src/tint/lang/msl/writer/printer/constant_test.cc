@@ -134,7 +134,7 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Vector_Splat) {
-    auto* c = b.Splat(ty.vec3<f32>(), 1.5_f, 3);
+    auto* c = b.Splat<vec3<f32>>(1.5_f);
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -150,7 +150,7 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Vector_Composite) {
-    auto* c = b.Composite(ty.vec3<f32>(), 1.5_f, 1.0_f, 1.5_f);
+    auto* c = b.Composite<vec3<f32>>(1.5_f, 1.0_f, 1.5_f);
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -166,7 +166,7 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Vector_Composite_AnyZero) {
-    auto* c = b.Composite(ty.vec3<f32>(), 1.0_f, 0.0_f, 1.5_f);
+    auto* c = b.Composite<vec3<f32>>(1.0_f, 0.0_f, 1.5_f);
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -182,7 +182,7 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Vector_Composite_AllZero) {
-    auto* c = b.Composite(ty.vec3<f32>(), 0.0_f, 0.0_f, 0.0_f);
+    auto* c = b.Composite<vec3<f32>>(0.0_f, 0.0_f, 0.0_f);
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -198,7 +198,7 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Matrix_Splat) {
-    auto* c = b.Splat(ty.mat3x2<f32>(), 1.5_f, 3);
+    auto* c = b.Splat<mat3x2<f32>>(b.Splat<vec2<f32>>(1.5_f));
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -208,16 +208,16 @@ TEST_F(MslPrinterTest, Constant_Matrix_Splat) {
     ASSERT_TRUE(Generate()) << err_ << output_;
     EXPECT_EQ(output_, MetalHeader() + R"(
 void foo() {
-  float3x2 const a = float3x2(1.5f, 1.5f, 1.5f);
+  float3x2 const a = float3x2(float2(1.5f), float2(1.5f), float2(1.5f));
 }
 )");
 }
 
 TEST_F(MslPrinterTest, Constant_Matrix_Composite) {
-    auto* c = b.Composite(ty.mat3x2<f32>(),                           //
-                          b.Composite(ty.vec2<f32>(), 1.5_f, 1.0_f),  //
-                          b.Composite(ty.vec2<f32>(), 1.5_f, 2.0_f),  //
-                          b.Composite(ty.vec2<f32>(), 2.5_f, 3.5_f));
+    auto* c = b.Composite<mat3x2<f32>>(        //
+        b.Composite<vec2<f32>>(1.5_f, 1.0_f),  //
+        b.Composite<vec2<f32>>(1.5_f, 2.0_f),  //
+        b.Composite<vec2<f32>>(2.5_f, 3.5_f));
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -233,9 +233,9 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Matrix_Composite_AnyZero) {
-    auto* c = b.Composite(ty.mat2x2<f32>(),                           //
-                          b.Composite(ty.vec2<f32>(), 1.0_f, 0.0_f),  //
-                          b.Composite(ty.vec2<f32>(), 1.5_f, 2.5_f));
+    auto* c = b.Composite<mat2x2<f32>>(        //
+        b.Composite<vec2<f32>>(1.0_f, 0.0_f),  //
+        b.Composite<vec2<f32>>(1.5_f, 2.5_f));
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -251,10 +251,10 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Matrix_Composite_AllZero) {
-    auto* c = b.Composite(ty.mat3x2<f32>(),                           //
-                          b.Composite(ty.vec2<f32>(), 0.0_f, 0.0_f),  //
-                          b.Composite(ty.vec2<f32>(), 0.0_f, 0.0_f),  //
-                          b.Composite(ty.vec2<f32>(), 0.0_f, 0.0_f));
+    auto* c = b.Composite<mat3x2<f32>>(        //
+        b.Composite<vec2<f32>>(0.0_f, 0.0_f),  //
+        b.Composite<vec2<f32>>(0.0_f, 0.0_f),  //
+        b.Composite<vec2<f32>>(0.0_f, 0.0_f));
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -270,7 +270,7 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Array_Splat) {
-    auto* c = b.Splat(ty.array<f32, 3>(), 1.5_f, 3);
+    auto* c = b.Splat<array<f32, 3>>(1.5_f);
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -286,7 +286,7 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Array_Composite) {
-    auto* c = b.Composite(ty.array<f32, 3>(), 1.5_f, 1.0_f, 2.0_f);
+    auto* c = b.Composite<array<f32, 3>>(1.5_f, 1.0_f, 2.0_f);
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -302,7 +302,7 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Array_Composite_AnyZero) {
-    auto* c = b.Composite(ty.array<f32, 2>(), 1.0_f, 0.0_f);
+    auto* c = b.Composite<array<f32, 2>>(1.0_f, 0.0_f);
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -318,7 +318,7 @@ void foo() {
 }
 
 TEST_F(MslPrinterTest, Constant_Array_Composite_AllZero) {
-    auto* c = b.Composite(ty.array<f32, 3>(), 0.0_f, 0.0_f, 0.0_f);
+    auto* c = b.Composite<array<f32, 3>>(0.0_f, 0.0_f, 0.0_f);
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);
@@ -338,7 +338,7 @@ TEST_F(MslPrinterTest, Constant_Struct_Splat) {
                                                   {mod.symbols.Register("a"), ty.f32()},
                                                   {mod.symbols.Register("b"), ty.f32()},
                                               });
-    auto* c = b.Splat(s, 1.5_f, 2);
+    auto* c = b.Splat(s, 1.5_f);
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         b.Let("a", c);

@@ -254,11 +254,17 @@ class DeviceBase : public ErrorSink, public RefCountedWithExternalCount {
     Future APICreateComputePipelineAsyncF(
         const ComputePipelineDescriptor* descriptor,
         const CreateComputePipelineAsyncCallbackInfo& callbackInfo);
+    Future APICreateComputePipelineAsync2(
+        const ComputePipelineDescriptor* descriptor,
+        const WGPUCreateComputePipelineAsyncCallbackInfo2& callbackInfo);
     void APICreateRenderPipelineAsync(const RenderPipelineDescriptor* descriptor,
                                       WGPUCreateRenderPipelineAsyncCallback callback,
                                       void* userdata);
     Future APICreateRenderPipelineAsyncF(const RenderPipelineDescriptor* descriptor,
                                          const CreateRenderPipelineAsyncCallbackInfo& callbackInfo);
+    Future APICreateRenderPipelineAsync2(
+        const RenderPipelineDescriptor* descriptor,
+        const WGPUCreateRenderPipelineAsyncCallbackInfo2& callbackInfo);
     RenderBundleEncoder* APICreateRenderBundleEncoder(
         const RenderBundleEncoderDescriptor* descriptor);
     RenderPipelineBase* APICreateRenderPipeline(const RenderPipelineDescriptor* descriptor);
@@ -446,6 +452,8 @@ class DeviceBase : public ErrorSink, public RefCountedWithExternalCount {
 
     void DumpMemoryStatistics(dawn::native::MemoryDump* dump) const;
 
+    ResultOrError<Ref<BufferBase>> GetOrCreateTemporaryUniformBuffer(size_t size);
+
   protected:
     // Constructor used only for mocking and testing.
     DeviceBase();
@@ -590,6 +598,7 @@ class DeviceBase : public ErrorSink, public RefCountedWithExternalCount {
     tint::wgsl::AllowedFeatures mWGSLAllowedFeatures;
 
     std::unique_ptr<InternalPipelineStore> mInternalPipelineStore;
+    Ref<BufferBase> mTemporaryUniformBuffer;
 
     Ref<CallbackTaskManager> mCallbackTaskManager;
     std::unique_ptr<dawn::platform::WorkerTaskPool> mWorkerTaskPool;

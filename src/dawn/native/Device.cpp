@@ -644,6 +644,7 @@ void DeviceBase::Destroy() {
     mEmptyPipelineLayout = nullptr;
     mInternalPipelineStore = nullptr;
     mExternalTexturePlaceholderView = nullptr;
+    mTemporaryUniformBuffer = nullptr;
 
     // Note: mQueue is not released here since the application may still get it after calling
     // Destroy() via APIGetQueue.
@@ -1314,18 +1315,42 @@ ComputePipelineBase* DeviceBase::APICreateComputePipeline(
 void DeviceBase::APICreateComputePipelineAsync(const ComputePipelineDescriptor* descriptor,
                                                WGPUCreateComputePipelineAsyncCallback callback,
                                                void* userdata) {
-    TRACE_EVENT1(GetPlatform(), General, "DeviceBase::APICreateComputePipelineAsync", "label",
-                 utils::GetLabelForTrace(descriptor->label));
+    GetInstance()->EmitDeprecationWarning(
+        "Old CreateComputePipelineAsync APIs are deprecated. If using C please pass a CallbackInfo "
+        "struct that has two userdatas. Otherwise, if using C++, please use templated helpers.");
 
-    CreateComputePipelineAsyncCallbackInfo callbackInfo = {};
-    callbackInfo.mode = wgpu::CallbackMode::AllowProcessEvents;
-    callbackInfo.callback = callback;
-    callbackInfo.userdata = userdata;
-    APICreateComputePipelineAsyncF(descriptor, callbackInfo);
+    APICreateComputePipelineAsync2(
+        descriptor, {nullptr, WGPUCallbackMode_AllowProcessEvents,
+                     [](WGPUCreatePipelineAsyncStatus status, WGPUComputePipeline pipeline,
+                        char const* message, void* callback, void* userdata) {
+                         auto cb =
+                             reinterpret_cast<WGPUCreateComputePipelineAsyncCallback>(callback);
+                         cb(status, pipeline, message, userdata);
+                     },
+                     reinterpret_cast<void*>(callback), userdata});
 }
 Future DeviceBase::APICreateComputePipelineAsyncF(
     const ComputePipelineDescriptor* descriptor,
     const CreateComputePipelineAsyncCallbackInfo& callbackInfo) {
+    GetInstance()->EmitDeprecationWarning(
+        "Old CreateComputePipelineAsync APIs are deprecated. If using C please pass a CallbackInfo "
+        "struct that has two userdatas. Otherwise, if using C++, please use templated helpers.");
+    return APICreateComputePipelineAsync2(
+        descriptor, {ToAPI(callbackInfo.nextInChain), ToAPI(callbackInfo.mode),
+                     [](WGPUCreatePipelineAsyncStatus status, WGPUComputePipeline pipeline,
+                        char const* message, void* callback, void* userdata) {
+                         auto cb =
+                             reinterpret_cast<WGPUCreateComputePipelineAsyncCallback>(callback);
+                         cb(status, pipeline, message, userdata);
+                     },
+                     reinterpret_cast<void*>(callbackInfo.callback), callbackInfo.userdata});
+}
+Future DeviceBase::APICreateComputePipelineAsync2(
+    const ComputePipelineDescriptor* descriptor,
+    const WGPUCreateComputePipelineAsyncCallbackInfo2& callbackInfo) {
+    TRACE_EVENT1(GetPlatform(), General, "DeviceBase::APICreateComputePipelineAsync", "label",
+                 utils::GetLabelForTrace(descriptor->label));
+
     EventManager* manager = GetInstance()->GetEventManager();
 
     auto GetFuture = [&](Ref<EventManager::TrackedEvent>&& event) {
@@ -1391,18 +1416,42 @@ SamplerBase* DeviceBase::APICreateSampler(const SamplerDescriptor* descriptor) {
 void DeviceBase::APICreateRenderPipelineAsync(const RenderPipelineDescriptor* descriptor,
                                               WGPUCreateRenderPipelineAsyncCallback callback,
                                               void* userdata) {
-    TRACE_EVENT1(GetPlatform(), General, "DeviceBase::APICreateRenderPipelineAsync", "label",
-                 utils::GetLabelForTrace(descriptor->label));
+    GetInstance()->EmitDeprecationWarning(
+        "Old CreateRenderPipelineAsync APIs are deprecated. If using C please pass a CallbackInfo "
+        "struct that has two userdatas. Otherwise, if using C++, please use templated helpers.");
 
-    CreateRenderPipelineAsyncCallbackInfo callbackInfo = {};
-    callbackInfo.mode = wgpu::CallbackMode::AllowProcessEvents;
-    callbackInfo.callback = callback;
-    callbackInfo.userdata = userdata;
-    APICreateRenderPipelineAsyncF(descriptor, callbackInfo);
+    APICreateRenderPipelineAsync2(
+        descriptor, {nullptr, WGPUCallbackMode_AllowProcessEvents,
+                     [](WGPUCreatePipelineAsyncStatus status, WGPURenderPipeline pipeline,
+                        char const* message, void* callback, void* userdata) {
+                         auto cb =
+                             reinterpret_cast<WGPUCreateRenderPipelineAsyncCallback>(callback);
+                         cb(status, pipeline, message, userdata);
+                     },
+                     reinterpret_cast<void*>(callback), userdata});
 }
 Future DeviceBase::APICreateRenderPipelineAsyncF(
     const RenderPipelineDescriptor* descriptor,
     const CreateRenderPipelineAsyncCallbackInfo& callbackInfo) {
+    GetInstance()->EmitDeprecationWarning(
+        "Old CreateRenderPipelineAsync APIs are deprecated. If using C please pass a CallbackInfo "
+        "struct that has two userdatas. Otherwise, if using C++, please use templated helpers.");
+    return APICreateRenderPipelineAsync2(
+        descriptor, {ToAPI(callbackInfo.nextInChain), ToAPI(callbackInfo.mode),
+                     [](WGPUCreatePipelineAsyncStatus status, WGPURenderPipeline pipeline,
+                        char const* message, void* callback, void* userdata) {
+                         auto cb =
+                             reinterpret_cast<WGPUCreateRenderPipelineAsyncCallback>(callback);
+                         cb(status, pipeline, message, userdata);
+                     },
+                     reinterpret_cast<void*>(callbackInfo.callback), callbackInfo.userdata});
+}
+Future DeviceBase::APICreateRenderPipelineAsync2(
+    const RenderPipelineDescriptor* descriptor,
+    const WGPUCreateRenderPipelineAsyncCallbackInfo2& callbackInfo) {
+    TRACE_EVENT1(GetPlatform(), General, "DeviceBase::APICreateRenderPipelineAsync", "label",
+                 utils::GetLabelForTrace(descriptor->label));
+
     EventManager* manager = GetInstance()->GetEventManager();
 
     auto GetFuture = [&](Ref<EventManager::TrackedEvent>&& event) {
@@ -2457,6 +2506,18 @@ void DeviceBase::DumpMemoryStatistics(dawn::native::MemoryDump* dump) const {
     GetObjectTrackingList(ObjectType::Buffer)->ForEach([&](const ApiObjectBase* buffer) {
         static_cast<const BufferBase*>(buffer)->DumpMemoryStatistics(dump, prefix.c_str());
     });
+}
+
+ResultOrError<Ref<BufferBase>> DeviceBase::GetOrCreateTemporaryUniformBuffer(size_t size) {
+    if (!mTemporaryUniformBuffer || mTemporaryUniformBuffer->GetSize() != size) {
+        BufferDescriptor desc;
+        desc.label = "Internal_TemporaryUniform";
+        desc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Uniform;
+        desc.size = size;
+        DAWN_TRY_ASSIGN(mTemporaryUniformBuffer, CreateBuffer(&desc));
+    }
+
+    return mTemporaryUniformBuffer;
 }
 
 IgnoreLazyClearCountScope::IgnoreLazyClearCountScope(DeviceBase* device)

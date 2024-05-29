@@ -361,6 +361,10 @@ class Builder {
         return Constant(ConstantValue(v));
     }
 
+    /// Creates a new invalid ir::Constant
+    /// @returns the new constant
+    ir::Constant* InvalidConstant() { return Constant(ir.constant_values.Invalid()); }
+
     /// Retrieves the inner constant from an ir::Constant
     /// @param constant the ir constant
     /// @returns the core::constant::Value inside the constant
@@ -397,23 +401,20 @@ class Builder {
     /// Creates a new ir::Constant
     /// @param ty the splat type
     /// @param value the splat value
-    /// @param size the number of items
     /// @returns the new constant
     template <typename ARG>
-    ir::Constant* Splat(const core::type::Type* ty, ARG&& value, size_t size) {
-        return Constant(
-            ir.constant_values.Splat(ty, ConstantValue(std::forward<ARG>(value)), size));
+    ir::Constant* Splat(const core::type::Type* ty, ARG&& value) {
+        return Constant(ir.constant_values.Splat(ty, ConstantValue(std::forward<ARG>(value))));
     }
 
     /// Creates a new ir::Constant
     /// @tparam TYPE the splat type
     /// @param value the splat value
-    /// @param size the number of items
     /// @returns the new constant
     template <typename TYPE, typename ARG>
-    ir::Constant* Splat(ARG&& value, size_t size) {
+    ir::Constant* Splat(ARG&& value) {
         auto* type = ir.Types().Get<TYPE>();
-        return Splat(type, std::forward<ARG>(value), size);
+        return Splat(type, std::forward<ARG>(value));
     }
 
     /// Creates a new ir::Constant
@@ -918,7 +919,7 @@ class Builder {
     template <typename VAL>
     ir::CoreBinary* Not(const core::type::Type* type, VAL&& val) {
         if (auto* vec = type->As<core::type::Vector>()) {
-            return Equal(type, std::forward<VAL>(val), Splat(vec, false, vec->Width()));
+            return Equal(type, std::forward<VAL>(val), Splat(vec, false));
         } else {
             return Equal(type, std::forward<VAL>(val), Constant(false));
         }
@@ -1404,6 +1405,15 @@ class Builder {
     ir::BlockParam* BlockParam(std::string_view name) {
         auto* type = ir.Types().Get<TYPE>();
         return BlockParam(name, type);
+    }
+
+    /// Creates a new `BlockParam`
+    /// @tparam TYPE the parameter type
+    /// @returns the value
+    template <typename TYPE>
+    ir::BlockParam* BlockParam() {
+        auto* type = ir.Types().Get<TYPE>();
+        return BlockParam(type);
     }
 
     /// Creates a new `FunctionParam`

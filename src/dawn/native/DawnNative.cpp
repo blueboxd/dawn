@@ -170,6 +170,13 @@ Instance::Instance(const WGPUInstanceDescriptor* desc)
     tint::Initialize();
 }
 
+Instance::Instance(InstanceBase* impl) : mImpl(impl) {
+    if (mImpl != nullptr) {
+        mImpl->APIAddRef();
+    }
+    tint::Initialize();
+}
+
 Instance::~Instance() {
     if (mImpl != nullptr) {
         mImpl->APIRelease();
@@ -194,18 +201,8 @@ const ToggleInfo* Instance::GetToggleInfo(const char* toggleName) {
     return mImpl->GetToggleInfo(toggleName);
 }
 
-void Instance::EnableBackendValidation(bool enableBackendValidation) {
-    if (enableBackendValidation) {
-        mImpl->SetBackendValidationLevel(BackendValidationLevel::Full);
-    }
-}
-
 void Instance::SetBackendValidationLevel(BackendValidationLevel level) {
     mImpl->SetBackendValidationLevel(level);
-}
-
-void Instance::EnableBeginCaptureOnStartup(bool beginCaptureOnStartup) {
-    mImpl->EnableBeginCaptureOnStartup(beginCaptureOnStartup);
 }
 
 uint64_t Instance::GetDeviceCountForTesting() const {

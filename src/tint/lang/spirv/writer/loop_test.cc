@@ -212,7 +212,7 @@ TEST_F(SpirvWriterTest, Loop_UseResultFromBodyInContinuing) {
         auto* loop = b.Loop();
         b.Append(loop->Body(), [&] {
             auto* result = b.Equal(ty.bool_(), 1_i, 2_i);
-            b.Continue(loop, result);
+            b.Continue(loop);
 
             b.Append(loop->Continuing(), [&] {  //
                 b.BreakIf(loop, result);
@@ -410,7 +410,7 @@ TEST_F(SpirvWriterTest, Loop_Phi_MultipleValue) {
         b.Append(loop->Continuing(), [&] {
             auto* cmp = b.GreaterThan(ty.bool_(), cont_param_a, 5_i);
             auto* not_b = b.Not(ty.bool_(), cont_param_b);
-            b.BreakIf(loop, cmp, cont_param_a, not_b);
+            b.BreakIf(loop, cmp, b.Values(cont_param_a, not_b), Empty);
         });
 
         b.Return(func);

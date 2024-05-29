@@ -223,6 +223,9 @@ class Resolver {
     core::type::StorageTexture* StorageTexture(const ast::Identifier* ident,
                                                core::type::TextureDimension dim);
 
+    /// @returns an input attachment resolved from the templated identifier @p ident
+    core::type::InputAttachment* InputAttachment(const ast::Identifier* ident);
+
     /// @returns a packed vec3 resolved from the templated identifier @p ident.
     core::type::Vector* PackedVec3T(const ast::Identifier* ident);
 
@@ -438,6 +441,11 @@ class Resolver {
     /// Resolves the `@group` attribute @p attr
     /// @returns the group value on success.
     tint::Result<uint32_t> GroupAttribute(const ast::GroupAttribute* attr);
+
+    /// Resolves the `@input_attachment_index` attribute @p attr
+    /// @returns the index value on success.
+    tint::Result<uint32_t> InputAttachmentIndexAttribute(
+        const ast::InputAttachmentIndexAttribute* attr);
 
     /// Resolves the `@workgroup_size` attribute @p attr
     /// @returns the workgroup size on success.

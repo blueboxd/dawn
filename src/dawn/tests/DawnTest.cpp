@@ -805,6 +805,15 @@ DawnTestBase::~DawnTestBase() {
     adapter = nullptr;
     instance = nullptr;
 
+    // Since the native instance is a global, we can't rely on it's destruction to clean up all
+    // callbacks. Instead, for each test, we make sure to clear all events. Note that we use a
+    // do-while loop here because we need to flush the wire via WaitABit before we start processing
+    // the native events to ensure that any remaining client side commands, i.e. destructions, are
+    // flushed to the server.
+    do {
+        WaitABit();
+    } while (dawn::native::InstanceProcessEvents(gTestEnv->GetInstance()->Get()));
+
     // D3D11 and D3D12's GPU-based validation will accumulate objects over time if the backend
     // device is not destroyed and recreated, so we reset it here.
     if ((IsD3D11() || IsD3D12()) && IsBackendValidationEnabled()) {
@@ -950,6 +959,14 @@ bool DawnTestBase::IsMacOS(int32_t majorVersion, int32_t minorVersion) const {
 
 bool DawnTestBase::IsAndroid() const {
 #if DAWN_PLATFORM_IS(ANDROID)
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool DawnTestBase::IsChromeOS() const {
+#if DAWN_PLATFORM_IS(CHROMEOS)
     return true;
 #else
     return false;

@@ -111,20 +111,51 @@ int DawnWireServerFuzzer::Run(const uint8_t* data,
     DawnProcTable procs = dawn::native::GetProcs();
 
     // Override requestAdapter to find an adapter that the fuzzer supports.
-    procs.instanceRequestAdapter = [](WGPUInstance cInstance,
-                                      const WGPURequestAdapterOptions* options,
-                                      WGPURequestAdapterCallback callback, void* userdata) {
+    // TODO: crbug.com/42241461 - Remove overrides once older entry points are deprecated.
+    static constexpr auto RequestAdapter = [](WGPUInstance cInstance,
+                                              WGPURequestAdapterCallback2 callback, void* userdata1,
+                                              void* userdata2) -> WGPUFuture {
         std::vector<dawn::native::Adapter> adapters =
-            reinterpret_cast<dawn::native::Instance*>(cInstance)->EnumerateAdapters();
+            dawn::native::Instance(reinterpret_cast<dawn::native::InstanceBase*>(cInstance))
+                .EnumerateAdapters();
         for (dawn::native::Adapter adapter : adapters) {
             if (sAdapterSupported(adapter)) {
                 WGPUAdapter cAdapter = adapter.Get();
                 dawn::native::GetProcs().adapterAddRef(cAdapter);
-                callback(WGPURequestAdapterStatus_Success, cAdapter, nullptr, userdata);
-                return;
+                callback(WGPURequestAdapterStatus_Success, cAdapter, nullptr, userdata1, userdata2);
+                return {};
             }
         }
-        callback(WGPURequestAdapterStatus_Unavailable, nullptr, "No supported adapter.", userdata);
+        callback(WGPURequestAdapterStatus_Unavailable, nullptr, "No supported adapter.", userdata1,
+                 userdata2);
+        return {};
+    };
+    procs.instanceRequestAdapter = [](WGPUInstance cInstance, const WGPURequestAdapterOptions*,
+                                      WGPURequestAdapterCallback callback, void* userdata) {
+        RequestAdapter(
+            cInstance,
+            [](WGPURequestAdapterStatus status, WGPUAdapter adapter, const char* message,
+               void* callback, void* userdata) {
+                auto cb = reinterpret_cast<WGPURequestAdapterCallback>(callback);
+                cb(status, adapter, message, userdata);
+            },
+            reinterpret_cast<void*>(callback), userdata);
+    };
+    procs.instanceRequestAdapterF = [](WGPUInstance cInstance, const WGPURequestAdapterOptions*,
+                                       WGPURequestAdapterCallbackInfo callbackInfo) -> WGPUFuture {
+        return RequestAdapter(
+            cInstance,
+            [](WGPURequestAdapterStatus status, WGPUAdapter adapter, const char* message,
+               void* callback, void* userdata) {
+                auto cb = reinterpret_cast<WGPURequestAdapterCallback>(callback);
+                cb(status, adapter, message, userdata);
+            },
+            reinterpret_cast<void*>(callbackInfo.callback), callbackInfo.userdata);
+    };
+    procs.instanceRequestAdapter2 = [](WGPUInstance cInstance, const WGPURequestAdapterOptions*,
+                                       WGPURequestAdapterCallbackInfo2 callbackInfo) -> WGPUFuture {
+        return RequestAdapter(cInstance, callbackInfo.callback, callbackInfo.userdata1,
+                              callbackInfo.userdata2);
     };
 
     dawnProcSetProcs(&procs);
@@ -137,14 +168,5 @@ int DawnWireServerFuzzer::Run(const uint8_t* data,
     std::unique_ptr<dawn::wire::WireServer> wireServer(new dawn::wire::WireServer(serverDesc));
     wireServer->InjectInstance(instance->Get(), {1, 0});
     wireServer->HandleCommands(reinterpret_cast<const char*>(data), size);
-
-    // Flush remaining callbacks to avoid memory leaks.
-    // TODO(crbug.com/dawn/1712): DeviceNull's APITick() will always return true so cannot
-    // do a polling loop here.
-    dawn::native::InstanceProcessEvents(instance->Get());
-
-    // Note: Deleting the server will release all created objects.
-    // Deleted devices will wait for idle on destruction.
-    wireServer = nullptr;
     return 0;
 }

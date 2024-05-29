@@ -97,7 +97,7 @@ deps = {
   },
 
   'third_party/depot_tools': {
-    'url': '{chromium_git}/chromium/tools/depot_tools.git@b4fbce4794de1b135797bcdcfcc7be5900c3d109',
+    'url': '{chromium_git}/chromium/tools/depot_tools.git@09c232e7c0d5670695d1f8f70d05ed1a215e438c',
     'condition': 'dawn_standalone',
   },
 
@@ -253,7 +253,7 @@ deps = {
 
   # GLFW for tests and samples
   'third_party/glfw': {
-    'url': '{chromium_git}/external/github.com/glfw/glfw@62e175ef9fae75335575964c845a302447c012c7',
+    'url': '{chromium_git}/external/github.com/glfw/glfw@b35641f4a3c62aa86a0b3c983d163bc0fe36026d',
   },
 
   'third_party/vulkan_memory_allocator': {
@@ -262,17 +262,62 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@6f8b736e8a3a19387aa65211866fbeeb367432a0',
+    'url': '{chromium_git}/angle/angle@ad46d67dbcd556c951a94e3201c2c150858429e5',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@da334852e70510d259bfa8cbaa7c5412966b2f41',
+    'url': '{swiftshader_git}/SwiftShader@ec5dbd2dfb4623f5b2721a77bb5388d79fafc506',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@e25f9bb7a149c87b9dc58e5fc8510198a8972ae9',
+    'url': '{chromium_git}/vulkan-deps@48e47a7bb90cb077cff5cc39ee4165d47fb5593e',
+    'condition': 'dawn_standalone',
+  },
+
+  'third_party/glslang/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/glslang@af0641aa09f2e63da2423fd652d2cd57497c5b48',
+    'condition': 'dawn_standalone',
+  },
+
+  'third_party/spirv-cross/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/SPIRV-Cross@b8fcf307f1f347089e3c46eb4451d27f32ebc8d3',
+    'condition': 'dawn_standalone',
+  },
+
+  'third_party/spirv-headers/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/SPIRV-Headers@49a1fceb9b1d087f3c25ad5ec077bb0e46231297',
+    'condition': 'dawn_standalone',
+  },
+
+  'third_party/spirv-tools/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/SPIRV-Tools@ccf3e3c1035189bbb50793d1e249a2c0ba3388a3',
+    'condition': 'dawn_standalone',
+  },
+
+  'third_party/vulkan-headers/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/Vulkan-Headers@5677bafb820e476441e9e1f745371b72133407d3',
+    'condition': 'dawn_standalone',
+  },
+
+  'third_party/vulkan-loader/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/Vulkan-Loader@1e8781effc88d0cea1a443ea3e0023726fd58eb4',
+    'condition': 'dawn_standalone',
+  },
+
+  'third_party/vulkan-tools/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/Vulkan-Tools@d67a9d3a394e11c1c4c0f480124f5b7925cb1b4d',
+    'condition': 'dawn_standalone',
+  },
+
+  'third_party/vulkan-utility-libraries/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/Vulkan-Utility-Libraries@777358fdad21132866be4a835327fbc28eabc1a4',
+    'condition': 'dawn_standalone',
+  },
+
+  'third_party/vulkan-validation-layers/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/Vulkan-ValidationLayers@f244736ca190fd50c46507ed50c3615fd7a23189',
     'condition': 'dawn_standalone',
   },
 
@@ -287,7 +332,7 @@ deps = {
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@1658b068b50012e41eaf012db0761edbee76a1ea',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@cdc56031b562359967ea440060a110a388d8f782',
   },
 
   'third_party/dxheaders': {
@@ -297,7 +342,7 @@ deps = {
   },
 
   'third_party/webgpu-headers': {
-    'url': '{chromium_git}/external/github.com/webgpu-native/webgpu-headers@aef5e428a1fdab2ea770581ae7c95d8779984e0a',
+    'url': '{chromium_git}/external/github.com/webgpu-native/webgpu-headers@8049c324dc7b3c09dc96ea04cb02860f272c8686',
   },
 
   'third_party/khronos/OpenGL-Registry': {
@@ -670,8 +715,4 @@ hooks = [
               '--quiet',
               ],
  },
-]
-
-recursedeps = [
-  'third_party/vulkan-deps',
 ]

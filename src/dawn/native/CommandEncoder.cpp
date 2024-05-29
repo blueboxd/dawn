@@ -497,20 +497,16 @@ MaybeError ValidateExpandResolveTextureLoadOp(const DeviceBase* device,
                     "The color attachment %s's sample count (%u) is not supported by %s.",
                     colorAttachment.view, textureSampleCount, wgpu::LoadOp::ExpandResolveTexture);
 
-    DAWN_INVALID_IF(colorAttachment.resolveTarget == nullptr, "%s is used without resolve target.",
-                    wgpu::LoadOp::ExpandResolveTexture);
+    // These should already be validated before entering this function.
+    DAWN_ASSERT(colorAttachment.resolveTarget != nullptr &&
+                !colorAttachment.resolveTarget->IsError());
+    DAWN_ASSERT(colorAttachment.view->GetFormat().supportsResolveTarget);
 
     DAWN_INVALID_IF((colorAttachment.resolveTarget->GetTexture()->GetUsage() &
                      wgpu::TextureUsage::TextureBinding) == 0,
                     "Resolve target %s was not created with %s usage, which is required for "
                     "%s.",
                     colorAttachment.resolveTarget, wgpu::TextureUsage::TextureBinding,
-                    wgpu::LoadOp::ExpandResolveTexture);
-
-    DAWN_INVALID_IF(!colorAttachment.view->GetFormat().supportsResolveTarget,
-                    "The color attachment %s format (%s) does not support being used with "
-                    "%s. The format does not support resolve.",
-                    colorAttachment.view, colorAttachment.view->GetFormat().format,
                     wgpu::LoadOp::ExpandResolveTexture);
 
     validationState->SetWillExpandResolveTexture(true);
@@ -527,6 +523,10 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
         return {};
     }
 
+    DAWN_TRY(device->ValidateObject(attachment));
+    DAWN_TRY(ValidateCanUseAs(attachment->GetTexture(), wgpu::TextureUsage::RenderAttachment,
+                              usageValidationMode));
+
     UnpackedPtr<RenderPassColorAttachment> unpacked;
     DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(&colorAttachment));
 
@@ -540,10 +540,6 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
         // are the same. That already is done by indirectly comparing the sample count in
         // ValidateOrSetColorAttachmentSampleCount.
     }
-
-    DAWN_TRY(device->ValidateObject(attachment));
-    DAWN_TRY(ValidateCanUseAs(attachment->GetTexture(), wgpu::TextureUsage::RenderAttachment,
-                              usageValidationMode));
 
     // Plane0, Plane1, and Plane2 aspects for multiplanar texture views should be allowed as color
     // attachments.
@@ -575,7 +571,8 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
                             std::isnan(clearValue.b) || std::isnan(clearValue.a),
                         "Color clear value (%s) contains a NaN.", &clearValue);
     } else if (colorAttachment.loadOp == wgpu::LoadOp::ExpandResolveTexture) {
-        DAWN_TRY(ValidateExpandResolveTextureLoadOp(device, colorAttachment, validationState));
+        DAWN_INVALID_IF(colorAttachment.resolveTarget == nullptr,
+                        "%s is used without resolve target.", wgpu::LoadOp::ExpandResolveTexture);
     }
 
     DAWN_TRY(ValidateColorAttachmentDepthSlice(attachment, colorAttachment.depthSlice));
@@ -588,6 +585,10 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
         // This step is skipped if implicitSampleCount > 1, because in that case, there shoudn't be
         // any explicit resolveTarget specified.
         DAWN_TRY(ValidateResolveTarget(device, colorAttachment, usageValidationMode));
+
+        if (colorAttachment.loadOp == wgpu::LoadOp::ExpandResolveTexture) {
+            DAWN_TRY(ValidateExpandResolveTextureLoadOp(device, colorAttachment, validationState));
+        }
         // Add resolve target after adding color attachment to make sure there is already a color
         // attachment for the comparation of with and height.
         DAWN_TRY(validationState->AddAttachment(colorAttachment.resolveTarget,
@@ -1205,6 +1206,7 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
     };
 
     UnpackedPtr<RenderPassDescriptor> descriptor;
+    ClearWithDrawHelper clearWithDrawHelper;
     bool success = mEncodingContext.TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
@@ -1213,6 +1215,8 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
                                                          mUsageValidationMode, &validationState));
 
             DAWN_ASSERT(validationState.IsValidState());
+
+            DAWN_TRY(clearWithDrawHelper.Initialize(this, *descriptor));
 
             mEncodingContext.WillBeginRenderPass();
             BeginRenderPassCmd* cmd =
@@ -1406,10 +1410,10 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
             if (validationState.WillExpandResolveTexture()) {
                 DAWN_TRY(ApplyExpandResolveTextureLoadOp(device, passEncoder.Get(), *descriptor));
             }
-            // ApplyClearWithDraw() applies clear with draw if clear_color_with_draw or
+            // clearWithDrawHelper.Apply() applies clear with draw if clear_color_with_draw or
             // apply_clear_big_integer_color_value_with_draw toggle is enabled, and the render pass
             // attachments need to be cleared.
-            DAWN_TRY(ApplyClearWithDraw(passEncoder.Get(), *descriptor));
+            DAWN_TRY(clearWithDrawHelper.Apply(passEncoder.Get()));
 
             return {};
         }();

@@ -396,32 +396,34 @@ TEST_F(IRBinaryRoundtripTest, Return_vec3f_Composite) {
 
 TEST_F(IRBinaryRoundtripTest, Return_vec3f_Splat) {
     auto* fn = b.Function("Function", ty.vec3<f32>());
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Splat<vec3<f32>>(1_f, 3)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Splat<vec3<f32>>(1_f)); });
     RUN_TEST();
 }
 
 TEST_F(IRBinaryRoundtripTest, Return_mat2x3f_Composite) {
     auto* fn = b.Function("Function", ty.mat2x3<f32>());
-    b.Append(fn->Block(),
-             [&] { b.Return(fn, b.Composite<mat2x3<f32>>(1_f, 2_f, 3_f, 4_f, 5_f, 6_f)); });
+    b.Append(fn->Block(), [&] {
+        b.Return(fn, b.Composite<mat2x3<f32>>(b.Composite<vec3<f32>>(1_f, 2_f, 3_f),
+                                              b.Composite<vec3<f32>>(4_f, 5_f, 6_f)));
+    });
     RUN_TEST();
 }
 
 TEST_F(IRBinaryRoundtripTest, Return_mat2x3f_Splat) {
     auto* fn = b.Function("Function", ty.mat2x3<f32>());
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Splat<mat2x3<f32>>(1_f, 6)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Splat<mat2x3<f32>>(b.Splat<vec3<f32>>(1_f))); });
     RUN_TEST();
 }
 
 TEST_F(IRBinaryRoundtripTest, Return_array_f32_Composite) {
     auto* fn = b.Function("Function", ty.array<f32, 3>());
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Composite<array<f32, 3>>(1_i, 2_i, 3_i)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Composite<array<f32, 3>>(1_f, 2_f, 3_f)); });
     RUN_TEST();
 }
 
 TEST_F(IRBinaryRoundtripTest, Return_array_f32_Splat) {
     auto* fn = b.Function("Function", ty.array<f32, 3>());
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Splat<array<f32, 3>>(1_i, 3)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Splat<array<f32, 3>>(1_f)); });
     RUN_TEST();
 }
 
