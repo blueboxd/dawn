@@ -224,10 +224,10 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         data.Add<ast::transform::Robustness::Config>(config);
     }
 
-    ExternalTextureOptions external_texture_options{};
+    tint::transform::multiplanar::BindingsMap multiplanar_map{};
     RemapperData remapper_data{};
     ArrayLengthFromUniformOptions array_length_from_uniform_options{};
-    PopulateBindingRelatedOptions(options, remapper_data, external_texture_options,
+    PopulateBindingRelatedOptions(options, remapper_data, multiplanar_map,
                                   array_length_from_uniform_options);
 
     manager.Add<ast::transform::BindingRemapper>();
@@ -239,8 +239,8 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
 
     // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
     // MultiplanarExternalTexture must come after BindingRemapper
-    data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(
-        external_texture_options.bindings_map, /* may_collide */ true);
+    data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(multiplanar_map,
+                                                                           /* may_collide */ true);
     manager.Add<ast::transform::MultiplanarExternalTexture>();
 
     {  // Builtin polyfills
@@ -285,10 +285,10 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
 
     {
         PixelLocal::Config cfg;
-        for (auto it : options.pixel_local_options.attachments) {
+        for (auto it : options.pixel_local.attachments) {
             cfg.pls_member_to_rov_reg.Add(it.first, it.second);
         }
-        for (auto it : options.pixel_local_options.attachment_formats) {
+        for (auto it : options.pixel_local.attachment_formats) {
             core::TexelFormat format = core::TexelFormat::kUndefined;
             switch (it.second) {
                 case PixelLocalOptions::TexelFormat::kR32Sint:
@@ -305,7 +305,7 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
             }
             cfg.pls_member_to_rov_format.Add(it.first, format);
         }
-        cfg.rov_group_index = options.pixel_local_options.pixel_local_group_index;
+        cfg.rov_group_index = options.pixel_local.group_index;
         data.Add<PixelLocal::Config>(cfg);
         manager.Add<PixelLocal>();
     }
@@ -396,9 +396,11 @@ bool ASTPrinter::Generate() {
                 wgsl::Extension::kChromiumExperimentalPixelLocal,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
-                wgsl::Extension::kChromiumInternalDualSourceBlending,
                 wgsl::Extension::kChromiumInternalGraphite,
                 wgsl::Extension::kF16,
+                wgsl::Extension::kDualSourceBlending,
+                wgsl::Extension::kSubgroups,
+                wgsl::Extension::kSubgroupsF16,
             })) {
         return false;
     }
@@ -1255,12 +1257,10 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
     if (builtin->IsPacked4x8IntegerDotProductBuiltin()) {
         return EmitPacked4x8IntegerDotProductBuiltinCall(out, expr, builtin);
     }
-    if (builtin->IsSubgroup()) {
-        if (builtin->Fn() == wgsl::BuiltinFn::kSubgroupBroadcast) {
-            // Fall through the regular path.
-        } else {
-            return EmitSubgroupCall(out, expr, builtin);
-        }
+    if (type == wgsl::BuiltinFn::kSubgroupShuffleXor ||
+        type == wgsl::BuiltinFn::kSubgroupShuffleUp ||
+        type == wgsl::BuiltinFn::kSubgroupShuffleDown) {
+        return EmitSubgroupShuffleBuiltinCall(out, expr, builtin);
     }
 
     auto name = generate_builtin_name(builtin);
@@ -1268,12 +1268,36 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
         return false;
     }
 
-    // Handle single argument builtins that only accept and return uint (not int overload). We need
-    // to explicitly cast the return value (we also cast the arg for good measure). See
-    // crbug.com/tint/1550
-    if (type == wgsl::BuiltinFn::kCountOneBits || type == wgsl::BuiltinFn::kReverseBits) {
+    // Handle single argument builtins that only accept and return uint (not int overload).
+    // For count bits and reverse bits, we need to explicitly cast the return value (we also cast
+    // the arg for good measure). See crbug.com/tint/1550.
+    // For the following subgroup builtins, the lack of support may be a bug in DXC. See
+    // github.com/microsoft/DirectXShaderCompiler/issues/6850.
+    if (type == wgsl::BuiltinFn::kCountOneBits || type == wgsl::BuiltinFn::kReverseBits ||
+        type == wgsl::BuiltinFn::kSubgroupAnd || type == wgsl::BuiltinFn::kSubgroupOr ||
+        type == wgsl::BuiltinFn::kSubgroupXor) {
         auto* arg = call->Arguments()[0];
-        if (arg->Type()->UnwrapRef()->is_signed_integer_scalar_or_vector()) {
+        auto* argType = arg->Type()->UnwrapRef();
+        if (argType->is_signed_integer_scalar_or_vector()) {
+            // Bitcast of literal int vectors fails in DXC so extract arg to a var. See
+            // github.com/microsoft/DirectXShaderCompiler/issues/6851.
+            if (argType->is_signed_integer_vector() &&
+                arg->Stage() == core::EvaluationStage::kConstant) {
+                auto varName = UniqueIdentifier(kTempNamePrefix);
+                auto pre = Line();
+                if (!EmitTypeAndName(pre, argType, core::AddressSpace::kUndefined,
+                                     core::Access::kUndefined, varName)) {
+                    return false;
+                }
+                pre << " = ";
+                if (!EmitExpression(pre, arg->Declaration())) {
+                    return false;
+                }
+                pre << ";";
+                out << "asint(" << name << "(asuint(" << varName << ")))";
+                return true;
+            }
+
             out << "asint(" << name << "(asuint(";
             if (!EmitExpression(out, arg->Declaration())) {
                 return false;
@@ -2366,8 +2390,7 @@ bool ASTPrinter::EmitQuantizeToF16Call(StringStream& out,
     if (auto* vec = builtin->ReturnType()->As<core::type::Vector>()) {
         width = std::to_string(vec->Width());
     }
-    out << "f16tof32(f32tof16"
-        << "(";
+    out << "f16tof32(f32tof16(";
     if (!EmitExpression(out, expr->args[0])) {
         return false;
     }
@@ -2600,18 +2623,6 @@ bool ASTPrinter::EmitBarrierCall(StringStream& out, const sem::BuiltinFn* builti
         out << "DeviceMemoryBarrierWithGroupSync()";
     } else {
         TINT_UNREACHABLE() << "unexpected barrier builtin type " << builtin->Fn();
-    }
-    return true;
-}
-
-bool ASTPrinter::EmitSubgroupCall(StringStream& out,
-                                  [[maybe_unused]] const ast::CallExpression* expr,
-                                  const sem::BuiltinFn* builtin) {
-    if (builtin->Fn() == wgsl::BuiltinFn::kSubgroupBallot) {
-        out << "WaveActiveBallot(true)";
-    } else {
-        // subgroupBroadcast is already handled in the regular builtin flow.
-        TINT_UNREACHABLE() << "unexpected subgroup builtin type " << builtin->Fn();
     }
     return true;
 }
@@ -3014,6 +3025,47 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
     return true;
 }
 
+// The following subgroup builtin functions are translated to HLSL as follows:
+// +---------------------+----------------------------------------------------------------+
+// |        WGSL         |                              HLSL                              |
+// +---------------------+----------------------------------------------------------------+
+// | subgroupShuffleXor  | WaveReadLaneAt with index equal subgroup_invocation_id ^ mask  |
+// | subgroupShuffleUp   | WaveReadLaneAt with index equal subgroup_invocation_id - delta |
+// | subgroupShuffleDown | WaveReadLaneAt with index equal subgroup_invocation_id + delta |
+// +---------------------+----------------------------------------------------------------+
+bool ASTPrinter::EmitSubgroupShuffleBuiltinCall(StringStream& out,
+                                                const ast::CallExpression* expr,
+                                                const sem::BuiltinFn* builtin) {
+    out << "WaveReadLaneAt(";
+
+    if (!EmitExpression(out, expr->args[0])) {
+        return false;
+    }
+
+    out << ", (WaveGetLaneIndex() ";
+
+    switch (builtin->Fn()) {
+        case wgsl::BuiltinFn::kSubgroupShuffleXor:
+            out << "^ ";
+            break;
+        case wgsl::BuiltinFn::kSubgroupShuffleUp:
+            out << "- ";
+            break;
+        case wgsl::BuiltinFn::kSubgroupShuffleDown:
+            out << "+ ";
+            break;
+        default:
+            TINT_UNREACHABLE();
+    }
+
+    if (!EmitExpression(out, expr->args[1])) {
+        return false;
+    }
+    out << "))";
+
+    return true;
+}
+
 std::string ASTPrinter::generate_builtin_name(const sem::BuiltinFn* builtin) {
     switch (builtin->Fn()) {
         case wgsl::BuiltinFn::kAbs:
@@ -3088,8 +3140,38 @@ std::string ASTPrinter::generate_builtin_name(const sem::BuiltinFn* builtin) {
             return "reversebits";
         case wgsl::BuiltinFn::kSmoothstep:
             return "smoothstep";
+        case wgsl::BuiltinFn::kSubgroupBallot:
+            return "WaveActiveBallot";
+        case wgsl::BuiltinFn::kSubgroupElect:
+            return "WaveIsFirstLane";
         case wgsl::BuiltinFn::kSubgroupBroadcast:
             return "WaveReadLaneAt";
+        case wgsl::BuiltinFn::kSubgroupBroadcastFirst:
+            return "WaveReadLaneFirst";
+        case wgsl::BuiltinFn::kSubgroupShuffle:
+            return "WaveReadLaneAt";
+        case wgsl::BuiltinFn::kSubgroupAdd:
+            return "WaveActiveSum";
+        case wgsl::BuiltinFn::kSubgroupExclusiveAdd:
+            return "WavePrefixSum";
+        case wgsl::BuiltinFn::kSubgroupMul:
+            return "WaveActiveProduct";
+        case wgsl::BuiltinFn::kSubgroupExclusiveMul:
+            return "WavePrefixProduct";
+        case wgsl::BuiltinFn::kSubgroupAnd:
+            return "WaveActiveBitAnd";
+        case wgsl::BuiltinFn::kSubgroupOr:
+            return "WaveActiveBitOr";
+        case wgsl::BuiltinFn::kSubgroupXor:
+            return "WaveActiveBitXor";
+        case wgsl::BuiltinFn::kSubgroupMin:
+            return "WaveActiveMin";
+        case wgsl::BuiltinFn::kSubgroupMax:
+            return "WaveActiveMax";
+        case wgsl::BuiltinFn::kSubgroupAll:
+            return "WaveActiveAllTrue";
+        case wgsl::BuiltinFn::kSubgroupAny:
+            return "WaveActiveAnyTrue";
         default:
             diagnostics_.AddError(Source{}) << "Unknown builtin method: " << builtin->str();
     }
@@ -3575,6 +3657,8 @@ std::string ASTPrinter::interpolation_to_modifiers(core::InterpolationType type,
             modifiers += "sample ";
             break;
         case core::InterpolationSampling::kCenter:
+        case core::InterpolationSampling::kFirst:
+        case core::InterpolationSampling::kEither:
         case core::InterpolationSampling::kUndefined:
             break;
     }
@@ -3602,7 +3686,7 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
                 }
                 out << std::to_string(wgsize[i].value());
             }
-            out << ")]" << std::endl;
+            out << ")]\n";
         }
 
         if (!EmitTypeAndName(out, func_sem->ReturnType(), core::AddressSpace::kUndefined,

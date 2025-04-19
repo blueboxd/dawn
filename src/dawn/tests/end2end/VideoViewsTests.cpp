@@ -1479,8 +1479,9 @@ TEST_P(VideoViewsValidationTests, SamplingMultiPlanarTexture) {
 // Tests creating a texture with a multi-plane format.
 TEST_P(VideoViewsValidationTests, RenderAttachmentInvalid) {
     // "Invalid Texture" error is expected if failed to create the video texture.
-    EXPECT_CALL(mDeviceErrorCallback, Call(testing::Ne(WGPUErrorType_NoError),
-                                           testing::HasSubstr("Invalid Texture"), device.Get()))
+    EXPECT_CALL(mDeviceErrorCallback,
+                Call(CHandleIs(device.Get()), testing::Ne(wgpu::ErrorType::NoError),
+                     testing::HasSubstr("Invalid Texture")))
         .Times(testing::AnyNumber());
 
     // multi-planar formats are NOT allowed to be renderable by default and require
@@ -1650,11 +1651,11 @@ class VideoViewsRenderTargetTests : public VideoViewsValidationTests {
             std::string outputStruct;
             {
                 std::ostringstream result;
-                result << "struct Output {" << std::endl;
+                result << "struct Output {\n";
                 for (size_t i = 0; i < destVideoWGPUTextures.size(); ++i) {
-                    result << "    @location(" << i << ") color" << i << " : vec4f," << std::endl;
+                    result << "    @location(" << i << ") color" << i << " : vec4f,\n";
                 }
-                result << "};" << std::endl;
+                result << "};\n";
                 outputStruct = std::move(result).str();
             }
 
@@ -1662,24 +1663,23 @@ class VideoViewsRenderTargetTests : public VideoViewsValidationTests {
             std::string returnOutput;
             {
                 std::ostringstream result;
-                result << "    var output : Output;" << std::endl;
+                result << "    var output : Output;\n";
                 for (size_t i = 0; i < destVideoWGPUTextures.size(); ++i) {
-                    result << "    output.color" << i << " = outputColor;" << std::endl;
+                    result << "    output.color" << i << " = outputColor;\n";
                 }
-                result << "    return output;" << std::endl;
+                result << "    return output;\n";
                 returnOutput = std::move(result).str();
             }
 
             std::ostringstream fsSource;
-            fsSource << "@group(0) @binding(0) var sampler0 : sampler;" << std::endl;
-            fsSource << "@group(0) @binding(1) var texture : texture_2d<f32>;" << std::endl;
-            fsSource << outputStruct << std::endl;
-            fsSource << "@fragment" << std::endl;
-            fsSource << "fn main(@location(0) texCoord : vec2f) -> Output {" << std::endl;
-            fsSource << "    let outputColor = textureSample(texture, sampler0, texCoord);"
-                     << std::endl;
-            fsSource << returnOutput << std::endl;
-            fsSource << "}" << std::endl;
+            fsSource << "@group(0) @binding(0) var sampler0 : sampler;\n";
+            fsSource << "@group(0) @binding(1) var texture : texture_2d<f32>;\n";
+            fsSource << outputStruct << "\n";
+            fsSource << "@fragment\n";
+            fsSource << "fn main(@location(0) texCoord : vec2f) -> Output {\n";
+            fsSource << "    let outputColor = textureSample(texture, sampler0, texCoord);\n";
+            fsSource << returnOutput << "\n";
+            fsSource << "}\n";
 
             auto fsModule = utils::CreateShaderModule(device, std::move(fsSource).str());
 

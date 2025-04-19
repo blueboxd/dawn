@@ -37,6 +37,7 @@
 #include "src/tint/lang/core/type/builtin_structs.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
+#include "src/tint/lang/core/type/input_attachment.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
@@ -87,6 +88,8 @@ struct State {
                     case core::BuiltinFn::kDot4I8Packed:
                     case core::BuiltinFn::kDot4U8Packed:
                     case core::BuiltinFn::kSelect:
+                    case core::BuiltinFn::kSubgroupBroadcast:
+                    case core::BuiltinFn::kSubgroupShuffle:
                     case core::BuiltinFn::kTextureDimensions:
                     case core::BuiltinFn::kTextureGather:
                     case core::BuiltinFn::kTextureGatherCompare:
@@ -99,6 +102,7 @@ struct State {
                     case core::BuiltinFn::kTextureSampleGrad:
                     case core::BuiltinFn::kTextureSampleLevel:
                     case core::BuiltinFn::kTextureStore:
+                    case core::BuiltinFn::kInputAttachmentLoad:
                         worklist.Push(builtin);
                         break;
                     case core::BuiltinFn::kQuantizeToF16:
@@ -141,6 +145,12 @@ struct State {
                 case core::BuiltinFn::kSelect:
                     Select(builtin);
                     break;
+                case core::BuiltinFn::kSubgroupBroadcast:
+                    SubgroupBroadcast(builtin);
+                    break;
+                case core::BuiltinFn::kSubgroupShuffle:
+                    SubgroupShuffle(builtin);
+                    break;
                 case core::BuiltinFn::kTextureDimensions:
                     TextureDimensions(builtin);
                     break;
@@ -167,6 +177,9 @@ struct State {
                     break;
                 case core::BuiltinFn::kQuantizeToF16:
                     QuantizeToF16Vec(builtin);
+                    break;
+                case core::BuiltinFn::kInputAttachmentLoad:
+                    InputAttachmentLoad(builtin);
                     break;
                 default:
                     break;
@@ -852,6 +865,61 @@ struct State {
         auto* construct = b.ConstructWithResult(builtin->DetachResult(), std::move(args));
         construct->InsertBefore(builtin);
         builtin->Destroy();
+    }
+
+    /// Handle an inputAttachmentLoad() builtin.
+    /// @param builtin the builtin call instruction
+    void InputAttachmentLoad(core::ir::CoreBuiltinCall* builtin) {
+        TINT_ASSERT(builtin->Args().Length() == 1);
+
+        auto* texture = builtin->Args()[0];
+        // coords for input_attachment are always (0, 0)
+        auto* coords = b.Composite(ty.vec2<i32>(), 0_i, 0_i);
+
+        // Start building the argument list for the builtin.
+        // The first two operands are always the texture and then the coordinates.
+        Vector<core::ir::Value*, 8> builtin_args;
+        builtin_args.Push(texture);
+        builtin_args.Push(coords);
+
+        // Call the builtin.
+        // The result is always a vec4 in SPIR-V.
+        auto* result_ty = builtin->Result(0)->Type();
+        TINT_ASSERT(result_ty->Is<core::type::Vector>());
+
+        core::ir::Instruction* result = b.Call<spirv::ir::BuiltinCall>(
+            result_ty, spirv::BuiltinFn::kImageRead, std::move(builtin_args));
+        result->InsertBefore(builtin);
+
+        result->SetResults(Vector{builtin->DetachResult()});
+        builtin->Destroy();
+    }
+
+    /// Handle a SubgroupShuffle() builtin.
+    /// @param builtin the builtin call instruction
+    void SubgroupShuffle(core::ir::CoreBuiltinCall* builtin) {
+        TINT_ASSERT(builtin->Args().Length() == 2);
+        auto* id = builtin->Args()[1];
+
+        // Id must be an unsigned integer scalar, so bitcast if necessary.
+        if (id->Type()->is_signed_integer_scalar()) {
+            auto* cast = b.Bitcast(ty.u32(), id);
+            cast->InsertBefore(builtin);
+            builtin->SetArg(1, cast->Result(0));
+        }
+    }
+
+    /// Handle a SubgroupBroadcast() builtin.
+    /// @param builtin the builtin call instruction
+    void SubgroupBroadcast(core::ir::CoreBuiltinCall* builtin) {
+        TINT_ASSERT(builtin->Args().Length() == 2);
+        auto* id = builtin->Args()[1];
+        TINT_ASSERT(id->Is<core::ir::Constant>());
+
+        // For const signed int IDs, compile-time convert to u32 to maintain constness.
+        if (id->Type()->is_signed_integer_scalar()) {
+            builtin->SetArg(1, b.Constant(id->As<core::ir::Constant>()->Value()->ValueAs<u32>()));
+        }
     }
 };
 

@@ -190,7 +190,7 @@ MaybeError GetDevicePCIInfo(id<MTLDevice>, PCIIDs* ids) {
 
 bool IsGPUCounterSupported(id<MTLDevice> device,
                            MTLCommonCounterSet counterSetName,
-                           std::vector<MTLCommonCounter> counterNames)
+                           std::vector<NSString*> counterNames)
     API_AVAILABLE(macos(10.15), ios(14.0)) {
     id<MTLCounterSet> counterSet = nil;
     for (id<MTLCounterSet> set in [device counterSets]) {
@@ -364,7 +364,9 @@ ResultOrError<PhysicalDeviceSurfaceCapabilities> PhysicalDevice::GetSurfaceCapab
     const Surface*) const {
     PhysicalDeviceSurfaceCapabilities capabilities;
 
-    // Formats
+    capabilities.usages = wgpu::TextureUsage::RenderAttachment |
+                          wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc |
+                          wgpu::TextureUsage::CopyDst;
 
     capabilities.formats = {
         wgpu::TextureFormat::BGRA8Unorm,
@@ -375,20 +377,15 @@ ResultOrError<PhysicalDeviceSurfaceCapabilities> PhysicalDevice::GetSurfaceCapab
     capabilities.formats.push_back(wgpu::TextureFormat::RGB10A2Unorm);
 #endif  // DAWN_PLATFORM_IS(MACOS)
 
-    // Present Modes
-
     capabilities.presentModes = {
         wgpu::PresentMode::Fifo,
         wgpu::PresentMode::Immediate,
         wgpu::PresentMode::Mailbox,
     };
 
-    // Alpha Modes
-
     capabilities.alphaModes = {
         wgpu::CompositeAlphaMode::Opaque,
         wgpu::CompositeAlphaMode::Premultiplied,
-        wgpu::CompositeAlphaMode::Auto,
     };
 
     return capabilities;
@@ -493,6 +490,16 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::MetalUseMockBlitEncoderForWriteTimestamp, true);
     }
 
+    // On macOS 15.0+, we can use sampleTimestamps:gpuTimestamp: from MTLDevice to capture CPU and
+    // GPU timestamps to estimate GPU timestamp period at device creation, but this API call will
+    // cause GPU overheating on Intel Iris Plus Graphics 655 due to driver bug. Skip the
+    // timestamp sampling on the specific device as workaround. See https://crbug.com/342701242 for
+    // more details.
+    if (@available(macos 15.0, iOS 14.0, *)) {
+        deviceToggles->Default(Toggle::MetalDisableTimestampPeriodEstimation,
+                               gpu_info::IsIrisPlus655(deviceId));
+    }
+
 #if DAWN_PLATFORM_IS(MACOS)
     if (gpu_info::IsIntel(vendorId)) {
         deviceToggles->Default(
@@ -539,6 +546,14 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     if (isLessThanAMDGN4OrMac13Dot1) {
         deviceToggles->Default(
             Toggle::MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats, true);
+    }
+
+    // Packed 4x8 integer dot products fail on Macbook Pro 16" with AMD Radeon Pro 5300M,
+    // which are the RDNA1 architecture.
+    // Conservatively, polyfill these functions on RDNA1 and RDNA2.
+    // crbug.com/355485146
+    if (gpu_info::IsAMDRDNA1(vendorId, deviceId) || gpu_info::IsAMDRDNA2(vendorId, deviceId)) {
+        deviceToggles->Default(Toggle::PolyFillPacked4x8DotProduct, true);
     }
 #endif
 }
@@ -719,6 +734,9 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     if (@available(macOS 10.15, iOS 13.0, *)) {
         if ([*mDevice supportsFamily:MTLGPUFamilyApple6] ||
             [*mDevice supportsFamily:MTLGPUFamilyMac2]) {
+            EnableFeature(Feature::Subgroups);
+            EnableFeature(Feature::SubgroupsF16);
+            // TODO(349125474): Remove deprecated ChromiumExperimentalSubgroups.
             EnableFeature(Feature::ChromiumExperimentalSubgroups);
         }
     }

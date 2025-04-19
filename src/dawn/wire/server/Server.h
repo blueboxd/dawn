@@ -128,7 +128,8 @@ struct MapUserdata : CallbackUserdata {
     WGPUFuture future;
     uint64_t offset;
     uint64_t size;
-    WGPUMapModeFlags mode;
+    WGPUMapMode mode;
+    uint8_t userdataCount;
 };
 
 struct ErrorScopeUserdata : CallbackUserdata {
@@ -202,6 +203,9 @@ class Server : public ServerBase {
     WireResult InjectSwapChain(WGPUSwapChain swapchain,
                                const Handle& handle,
                                const Handle& deviceHandle);
+    WireResult InjectSurface(WGPUSurface surface,
+                             const Handle& handle,
+                             const Handle& instanceHandle);
     WireResult InjectInstance(WGPUInstance instance, const Handle& handle);
 
     WGPUDevice GetDevice(uint32_t id, uint32_t generation);
@@ -254,6 +258,9 @@ class Server : public ServerBase {
                                WGPUErrorType type,
                                const char* message);
     void OnBufferMapAsyncCallback(MapUserdata* userdata, WGPUBufferMapAsyncStatus status);
+    void OnBufferMapAsyncCallback2(MapUserdata* userdata,
+                                   WGPUMapAsyncStatus status,
+                                   const char* message);
     void OnQueueWorkDone(QueueWorkDoneUserdata* userdata, WGPUQueueWorkDoneStatus status);
     void OnCreateComputePipelineAsyncCallback(CreatePipelineAsyncUserData* userdata,
                                               WGPUCreatePipelineAsyncStatus status,

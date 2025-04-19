@@ -28,8 +28,13 @@
 #ifndef INCLUDE_DAWN_NATIVE_METALBACKEND_H_
 #define INCLUDE_DAWN_NATIVE_METALBACKEND_H_
 
+#include <webgpu/webgpu.h>
+
 #include "dawn/native/dawn_native_export.h"
-#include "dawn/webgpu.h"
+
+#if defined(__OBJC__)
+#import <Metal/Metal.h>
+#endif
 
 namespace dawn::native::metal {
 
@@ -39,6 +44,11 @@ namespace dawn::native::metal {
 // when they are "scheduled". Submitting other operations before the command buffer is
 // scheduled could lead to races in who gets scheduled first and incorrect rendering.
 DAWN_NATIVE_EXPORT void WaitForCommandsToBeScheduled(WGPUDevice device);
+
+#if defined(__OBJC__)
+// Return the MTLDevice corresponding to the WGPUDevice.
+DAWN_NATIVE_EXPORT id<MTLDevice> GetMTLDevice(WGPUDevice device);
+#endif
 
 }  // namespace dawn::native::metal
 

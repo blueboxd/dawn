@@ -168,10 +168,10 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         manager.Add<ast::transform::Robustness>();
     }
 
-    ExternalTextureOptions external_texture_options{};
+    tint::transform::multiplanar::BindingsMap multiplanar_map{};
     RemapperData remapper_data{};
     ArrayLengthFromUniformOptions array_length_from_uniform_options{};
-    PopulateBindingRelatedOptions(options, remapper_data, external_texture_options,
+    PopulateBindingRelatedOptions(options, remapper_data, multiplanar_map,
                                   array_length_from_uniform_options);
 
     manager.Add<ast::transform::BindingRemapper>();
@@ -182,7 +182,7 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
     // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
     // MultiplanarExternalTexture must come after BindingRemapper
     data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(
-        external_texture_options.bindings_map, /* allow_collisions */ true);
+        multiplanar_map, /* allow_collisions */ true);
     manager.Add<ast::transform::MultiplanarExternalTexture>();
 
     {  // Builtin polyfills
@@ -201,6 +201,7 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         polyfills.sign_int = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
+        polyfills.dot_4x8_packed = options.polyfill_dot_4x8_packed;
         polyfills.pack_unpack_4x8 = true;
         polyfills.pack_4xu8_clamp = true;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
@@ -215,7 +216,7 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
 
     {
         PixelLocal::Config cfg;
-        for (auto it : options.pixel_local_options.attachments) {
+        for (auto it : options.pixel_local_attachments) {
             cfg.attachments.Add(it.first, it.second);
         }
         data.Add<PixelLocal::Config>(cfg);
@@ -284,10 +285,12 @@ bool ASTPrinter::Generate() {
                 wgsl::Extension::kChromiumExperimentalFramebufferFetch,
                 wgsl::Extension::kChromiumExperimentalPixelLocal,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
-                wgsl::Extension::kChromiumInternalDualSourceBlending,
                 wgsl::Extension::kChromiumInternalGraphite,
                 wgsl::Extension::kChromiumInternalRelaxedUniformLayout,
                 wgsl::Extension::kF16,
+                wgsl::Extension::kDualSourceBlending,
+                wgsl::Extension::kSubgroups,
+                wgsl::Extension::kSubgroupsF16,
             })) {
         return false;
     }
@@ -664,9 +667,12 @@ bool ASTPrinter::EmitCall(StringStream& out, const ast::CallExpression* expr) {
 bool ASTPrinter::EmitFunctionCall(StringStream& out,
                                   const sem::Call* call,
                                   const sem::Function* fn) {
-    if (ast::GetAttribute<SubgroupBallot::SimdActiveThreadsMask>(fn->Declaration()->attributes) !=
-        nullptr) {
-        out << "as_type<uint2>((ulong)simd_active_threads_mask())";
+    if (ast::GetAttribute<SubgroupBallot::SimdBallot>(fn->Declaration()->attributes) != nullptr) {
+        out << "as_type<uint2>((ulong)simd_ballot(";
+        if (!EmitExpression(out, call->Arguments()[0]->Declaration())) {
+            return false;
+        }
+        out << "))";
         return true;
     }
 
@@ -786,6 +792,11 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
             break;
         }
 
+        case wgsl::BuiltinFn::kSubgroupElect: {
+            out << "simd_is_first()";
+            return true;
+        }
+
         case wgsl::BuiltinFn::kSubgroupBroadcast: {
             // The lane argument is ushort.
             out << "simd_broadcast(";
@@ -797,6 +808,166 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
                 return false;
             }
             out << "))";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupBroadcastFirst: {
+            out << "simd_broadcast_first(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupShuffle: {
+            out << "simd_shuffle(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ",";
+            if (!EmitExpression(out, expr->args[1])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupShuffleXor: {
+            out << "simd_shuffle_xor(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ",";
+            if (!EmitExpression(out, expr->args[1])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupShuffleUp: {
+            out << "simd_shuffle_up(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ",";
+            if (!EmitExpression(out, expr->args[1])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupShuffleDown: {
+            out << "simd_shuffle_down(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ",";
+            if (!EmitExpression(out, expr->args[1])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupAdd: {
+            out << "simd_sum(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupExclusiveAdd: {
+            out << "simd_prefix_exclusive_sum(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupMul: {
+            out << "simd_product(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupExclusiveMul: {
+            out << "simd_prefix_exclusive_product(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupAnd: {
+            out << "simd_and(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupOr: {
+            out << "simd_or(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupXor: {
+            out << "simd_xor(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupMin: {
+            out << "simd_min(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupMax: {
+            out << "simd_max(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupAll: {
+            out << "simd_all(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
+            return true;
+        }
+
+        case wgsl::BuiltinFn::kSubgroupAny: {
+            out << "simd_any(";
+            if (!EmitExpression(out, expr->args[0])) {
+                return false;
+            }
+            out << ")";
             return true;
         }
 
@@ -1515,7 +1686,6 @@ std::string ASTPrinter::generate_builtin_name(const sem::BuiltinFn* builtin) {
         case wgsl::BuiltinFn::kMix:
         case wgsl::BuiltinFn::kModf:
         case wgsl::BuiltinFn::kNormalize:
-        case wgsl::BuiltinFn::kPow:
         case wgsl::BuiltinFn::kReflect:
         case wgsl::BuiltinFn::kRefract:
         case wgsl::BuiltinFn::kSaturate:
@@ -1531,6 +1701,9 @@ std::string ASTPrinter::generate_builtin_name(const sem::BuiltinFn* builtin) {
         case wgsl::BuiltinFn::kSign:
         case wgsl::BuiltinFn::kClamp:
             out += builtin->str();
+            break;
+        case wgsl::BuiltinFn::kPow:
+            out += "powr";
             break;
         case wgsl::BuiltinFn::kAbs:
             if (builtin->ReturnType()->is_float_scalar_or_vector()) {
@@ -2059,11 +2232,10 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
                         if (!builtin_attr) {
                             continue;
                         }
-                        auto builtin = builder_.Sem().Get(builtin_attr)->Value();
 
                         builtin_found = true;
 
-                        auto name = BuiltinToAttribute(builtin);
+                        auto name = BuiltinToAttribute(builtin_attr->builtin);
                         if (name.empty()) {
                             diagnostics_.AddError(Source{}) << "unknown builtin";
                             return false;

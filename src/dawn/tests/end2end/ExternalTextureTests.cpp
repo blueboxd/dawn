@@ -1332,6 +1332,54 @@ TEST_P(ExternalTextureTests, RemappingBugDawn2472) {
     ASSERT_NE(pipeline.Get(), nullptr);
 }
 
+// Regression test for issue 346174896.
+TEST_P(ExternalTextureTests, Regression346174896) {
+    auto wgslModule = utils::CreateShaderModule(device, R"(
+        @vertex fn vertexMain() -> @builtin(position) vec4f {
+            return vec4f(1);
+        }
+
+        @group(0) @binding(1) var<storage, read_write> dimension : vec2u;
+        @group(0) @binding(0) var t : texture_external;
+
+        @fragment fn main(@builtin(position) FragCoord : vec4f) -> @location(0) vec4f {
+            _ = dimension;
+            return textureLoad(t, vec2u(0, 0));
+        })");
+
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = wgslModule;
+    descriptor.cFragment.module = wgslModule;
+    wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&descriptor);
+
+    ASSERT_NE(pipeline.Get(), nullptr);
+}
+
+TEST_P(ExternalTextureTests, MultipleBindings) {
+    auto wgslModule = utils::CreateShaderModule(device, R"(
+    @vertex
+    fn vertexMain() -> @builtin(position) vec4f {
+      return vec4f(1);
+    }
+
+    @group(0) @binding(0) var<uniform> u : f32;
+    @group(0) @binding(1) var s : sampler;
+    @group(0) @binding(2) var et : texture_external;
+
+    @fragment
+    fn main() -> @location(0) vec4f {
+      return textureSampleBaseClampToEdge(et, s, vec2f(u));
+    })");
+
+    // Pipeline Creation
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = wgslModule;
+    descriptor.cFragment.module = wgslModule;
+    wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&descriptor);
+
+    ASSERT_NE(pipeline.Get(), nullptr);
+}
+
 DAWN_INSTANTIATE_TEST(ExternalTextureTests,
                       D3D11Backend(),
                       D3D12Backend(),

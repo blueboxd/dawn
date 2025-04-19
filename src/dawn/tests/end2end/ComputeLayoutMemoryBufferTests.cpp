@@ -697,8 +697,7 @@ fn main() {
     RunComputeShaderWithBuffers(device, queue, shader, {inputBuf, outputBuf, statusBuf});
 
     // Check the status
-    EXPECT_BUFFER_U32_EQ(kStatusOk, statusBuf, 0) << "status code error" << std::endl
-                                                  << "Shader: " << shader;
+    EXPECT_BUFFER_U32_EQ(kStatusOk, statusBuf, 0) << "status code error\nShader: " << shader;
 
     // Check the data. Note that MemoryDataBuilder avoid generating NaN and Inf floating point data,
     // whose bit pattern will not get preserved when reading from buffer (arbitrary NaNs may be
@@ -716,8 +715,6 @@ TEST_P(ComputeLayoutMemoryBufferTests, NonStructMember) {
     // TODO(crbug.com/dawn/1606): find out why these tests fail on Windows for OpenGL.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES() && IsWindows());
     DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
-    // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 6 OpenGLES
-    DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsARM());
 
     const bool isUniform = GetParam().mAddressSpace == AddressSpace::Uniform;
 

@@ -33,7 +33,6 @@ namespace dawn::wire {
 // of limit structs on Adapter/Device initialization.
 bool IsFeatureSupported(WGPUFeatureName feature) {
     switch (feature) {
-        case WGPUFeatureName_Undefined:
         case WGPUFeatureName_Force32:
         case WGPUFeatureName_DawnNative:
         case WGPUFeatureName_ImplicitDeviceSynchronization:
@@ -77,6 +76,7 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_DepthClipControl:
         case WGPUFeatureName_DawnInternalUsages:
         case WGPUFeatureName_DawnMultiPlanarFormats:
+        case WGPUFeatureName_MultiDrawIndirect:
         case WGPUFeatureName_MultiPlanarFormatExtendedUsages:
         case WGPUFeatureName_MultiPlanarFormatP010:
         case WGPUFeatureName_MultiPlanarFormatP210:
@@ -109,6 +109,9 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_YCbCrVulkanSamplers:
         case WGPUFeatureName_ShaderModuleCompilationOptions:
         case WGPUFeatureName_DawnLoadResolveTexture:
+        case WGPUFeatureName_DawnPartialLoadResolveTexture:
+        case WGPUFeatureName_Subgroups:
+        case WGPUFeatureName_SubgroupsF16:
             return true;
     }
 

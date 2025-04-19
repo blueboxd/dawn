@@ -56,10 +56,14 @@ Result<SuccessType> ValidateBindingOptions(const Options& options) {
         return false;
     };
 
-    auto spirv_seen = [&diagnostics, &seen_spirv_bindings](const binding::BindingInfo& src,
-                                                           const tint::BindingPoint& dst) -> bool {
+    const auto& statically_paired_texture_binding_points =
+        options.statically_paired_texture_binding_points;
+    auto spirv_seen = [&diagnostics, &seen_spirv_bindings,
+                       &statically_paired_texture_binding_points](
+                          const binding::BindingInfo& src, const tint::BindingPoint& dst) -> bool {
         if (auto binding = seen_spirv_bindings.Get(src)) {
-            if (*binding != dst) {
+            if (*binding != dst && !statically_paired_texture_binding_points.count(*binding) &&
+                !statically_paired_texture_binding_points.count(dst)) {
                 diagnostics.AddError(Source{})
                     << "found duplicate SPIR-V binding point: [group: " << src.group
                     << ", binding: " << src.binding << "]";
@@ -104,6 +108,10 @@ Result<SuccessType> ValidateBindingOptions(const Options& options) {
     }
     if (!valid(options.bindings.sampler)) {
         diagnostics.AddNote(Source{}) << "when processing sampler";
+        return Failure{std::move(diagnostics)};
+    }
+    if (!valid(options.bindings.input_attachment)) {
+        diagnostics.AddNote(Source{}) << "when processing input_attachment";
         return Failure{std::move(diagnostics)};
     }
 
@@ -177,9 +185,10 @@ Result<SuccessType> ValidateBindingOptions(const Options& options) {
 // # Status
 // The below method assumes we run binding remapper first. So it will setup the binding data and
 // switch the value used by the multiplanar.
-void PopulateRemapperAndMultiplanarOptions(const Options& options,
-                                           RemapperData& remapper_data,
-                                           ExternalTextureOptions& external_texture) {
+void PopulateRemapperAndMultiplanarOptions(
+    const Options& options,
+    RemapperData& remapper_data,
+    tint::transform::multiplanar::BindingsMap& multiplanar_map) {
     auto create_remappings = [&remapper_data](const auto& hsh) {
         for (const auto& it : hsh) {
             const BindingPoint& src_binding_point = it.first;
@@ -201,6 +210,7 @@ void PopulateRemapperAndMultiplanarOptions(const Options& options,
     create_remappings(options.bindings.texture);
     create_remappings(options.bindings.storage_texture);
     create_remappings(options.bindings.sampler);
+    create_remappings(options.bindings.input_attachment);
 
     // External textures are re-bound to their plane0 location
     for (const auto& it : options.bindings.external_texture) {
@@ -209,14 +219,14 @@ void PopulateRemapperAndMultiplanarOptions(const Options& options,
         const binding::BindingInfo& plane1 = it.second.plane1;
         const binding::BindingInfo& metadata = it.second.metadata;
 
-        BindingPoint plane0_binding_point{plane0.group, plane0.binding};
-        BindingPoint plane1_binding_point{plane1.group, plane1.binding};
-        BindingPoint metadata_binding_point{metadata.group, metadata.binding};
+        const BindingPoint plane0_binding_point{plane0.group, plane0.binding};
+        const BindingPoint plane1_binding_point{plane1.group, plane1.binding};
+        const BindingPoint metadata_binding_point{metadata.group, metadata.binding};
 
         // Use the re-bound spir-v plane0 value for the lookup key.
-        external_texture.bindings_map.emplace(
-            plane0_binding_point,
-            ExternalTextureOptions::BindingPoints{plane1_binding_point, metadata_binding_point});
+        multiplanar_map.emplace(plane0_binding_point,
+                                tint::transform::multiplanar::BindingPoints{
+                                    plane1_binding_point, metadata_binding_point});
 
         // Bindings which go to the same slot in SPIR-V do not need to be re-bound.
         if (src_binding_point.group == plane0.group &&

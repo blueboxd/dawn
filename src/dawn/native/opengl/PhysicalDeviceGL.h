@@ -28,19 +28,24 @@
 #ifndef SRC_DAWN_NATIVE_OPENGL_PHYSICALDEVICEGL_H_
 #define SRC_DAWN_NATIVE_OPENGL_PHYSICALDEVICEGL_H_
 
+#include <memory>
+
 #include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/opengl/EGLFunctions.h"
 #include "dawn/native/opengl/OpenGLFunctions.h"
 
 namespace dawn::native::opengl {
 
+class DisplayEGL;
+
 class PhysicalDevice : public PhysicalDeviceBase {
   public:
     static ResultOrError<Ref<PhysicalDevice>> Create(wgpu::BackendType backendType,
-                                                     void* (*getProc)(const char*),
-                                                     EGLDisplay display);
+                                                     Ref<DisplayEGL> display);
 
     ~PhysicalDevice() override = default;
+
+    DisplayEGL* GetDisplay() const;
 
     // PhysicalDeviceBase Implementation
     bool SupportsExternalImages() const override;
@@ -50,8 +55,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         const Surface* surface) const override;
 
   private:
-    PhysicalDevice(wgpu::BackendType backendType, EGLDisplay display);
-    MaybeError InitializeGLFunctions(void* (*getProc)(const char*));
+    PhysicalDevice(wgpu::BackendType backendType, Ref<DisplayEGL> display);
 
     MaybeError InitializeImpl() override;
     void InitializeSupportedFeaturesImpl() override;
@@ -74,8 +78,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
     void PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const override;
 
     OpenGLFunctions mFunctions;
-    EGLDisplay mDisplay;
-    EGLFunctions mEGLFunctions;
+    Ref<DisplayEGL> mDisplay;
 };
 
 }  // namespace dawn::native::opengl

@@ -25,12 +25,13 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <webgpu/webgpu.h>
+
 #include "dawn/fuzzers/lpmfuzz/DawnLPMConstants_autogen.h"
 #include "dawn/fuzzers/lpmfuzz/DawnLPMFuzzer.h"
 #include "dawn/fuzzers/lpmfuzz/DawnLPMObjectStore.h"
 #include "dawn/fuzzers/lpmfuzz/DawnLPMSerializer_autogen.h"
 #include "dawn/fuzzers/lpmfuzz/DawnLPMSerializerCustom.h"
-#include "dawn/webgpu.h"
 #include "dawn/wire/BufferConsumer_impl.h"
 #include "dawn/wire/ObjectHandle.h"
 #include "dawn/wire/Wire.h"
@@ -56,9 +57,33 @@ namespace dawn::wire {
     {{as_cType(member.type.name)}}
 {%- endmacro %}
 
+//* Converts an existing proto string to StringView.
+{% macro convert_string(member) %}
+    {{ assert(member.type.name.get() == "string view" or member.type.name.get() == "nullable string view" ) }}
+    {% set memberName = as_varName(member.name) %}
+    {% set protoMember = as_protobufMemberName(member.name) %}
+    {% if member.type.name.get() == "nullable string view" %}
+        if (!proto_record.has_{{protoMember}}()) {
+            mutable_record->{{ memberName }}.data = nullptr;
+            mutable_record->{{ memberName }}.length = SIZE_MAX;
+        } else
+    {% endif %}
+        {
+            auto memberLength = static_cast<unsigned int>({{member_length(member, "proto_record." + protoMember)}});
+            char* memberBuffer;
+            WIRE_TRY(serializeBuffer->NextN(memberLength, &memberBuffer));
+            memcpy(memberBuffer, proto_record.{{protoMember}}().c_str(), memberLength);
+            mutable_record->{{ memberName }}.data = memberBuffer;
+            mutable_record->{{ memberName }}.length = memberLength;
+        }
+{% endmacro %}
+
 //* Outputs the conversion code to put `in` in `out`
 {% macro convert_member(member, in, out, in_access="") %}
-    {% if member.type in by_category["structure"] %}
+    {% if member.type.name.get() == "string view" or member.type.name.get() == "nullable string view" %}
+        //* Custom conversion for string view types.
+        {{ convert_string(member) }}
+    {% elif member.type.category == "structure" or member.type.category == "callback info" %}
         {{ convert_structure(member, in, out, in_access) }}
     {% elif member.type in by_category["bitmask"] %}
         {{ convert_bitmask(member, in, out, in_access) }}
@@ -160,6 +185,7 @@ namespace dawn::wire {
                     mutable_record->{{ memberName }} =
                         {{- overrides[overrides_key][member.name.canonical_case()] }};
                 {%- elif member.type.category == "function pointer" or
+                    member.type.category == "callback function" or
                     member.type.name.get() == "void *" -%}
                     mutable_record->{{ memberName }} = nullptr;
                 {% else %}
@@ -248,10 +274,12 @@ namespace dawn::wire {
 {% endmacro %}
 
 //* Output structure conversion first because it is used by commands.
-{% for type in by_category["structure"] %}
-    {% set name = as_cType(type.name) %}
-    {% if type.name.CamelCase() not in client_side_structures %}
-        {{ write_record_conversion_helpers(type, name, type.members, False) }}
+{% for type in by_category["callback info"] + by_category["structure"] %}
+    {% if type.name.get() != "string view" and type.name.get() != "nullable string view" %}
+        {% set name = as_cType(type.name) %}
+        {% if type.name.CamelCase() not in client_side_structures %}
+            {{ write_record_conversion_helpers(type, name, type.members, False) }}
+        {% endif %}
     {% endif %}
 {% endfor %}
 

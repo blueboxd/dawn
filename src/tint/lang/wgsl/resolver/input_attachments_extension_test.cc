@@ -25,6 +25,9 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "gmock/gmock.h"
+#include "src/tint/lang/core/number.h"
+#include "src/tint/lang/wgsl/extension.h"
 #include "src/tint/lang/wgsl/resolver/resolver.h"
 #include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 
@@ -160,6 +163,31 @@ TEST_F(InputAttachmenExtensionTest, InputAttachmentIndexInvalidType) {
         r()->error(),
         R"(error: cannot apply '@input_attachment_index' to declaration of type 'texture_2d<f32>'
 note: '@input_attachment_index' must only be applied to declarations of 'input_attachment' type)");
+}
+
+// Test that inputAttachmentLoad cannot be used in vertex shader
+TEST_F(InputAttachmenExtensionTest, InputAttachmentLoadInVertexStageError) {
+    // enable chromium_internal_input_attachments;
+    // @group(0) @binding(0) @input_attachment_index(3)
+    // var input_tex : input_attachment<f32>;
+    // @vertex fn f() -> @builtin(position) vec4f {
+    //    return inputAttachmentLoad(input_tex);
+    // }
+
+    Enable(Source{{12, 34}}, wgsl::Extension::kChromiumInternalInputAttachments);
+
+    GlobalVar("input_tex", ty.input_attachment(ty.Of<f32>()),
+              Vector{Binding(0_u), Group(0_u), InputAttachmentIndex(3_u)});
+
+    Func("f", Empty, ty.vec4<f32>(),
+         Vector{
+             Return(Call("inputAttachmentLoad", "input_tex")),
+         },
+         Vector{Stage(ast::PipelineStage::kVertex)},
+         Vector{Builtin(core::BuiltinValue::kPosition)});
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_NE(r()->error().find(R"(cannot be used by vertex pipeline stage)"), std::string::npos);
 }
 
 }  // namespace

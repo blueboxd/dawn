@@ -93,7 +93,7 @@ struct State {
         for (auto& var : module_vars) {
             Vector<core::ir::Instruction*, 16> to_destroy;
             auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
-            var->Result(0)->ForEachUse([&](core::ir::Usage use) {  //
+            var->Result(0)->ForEachUseUnsorted([&](core::ir::Usage use) {  //
                 auto* extracted_variable = GetVariableFromStruct(var, use.instruction, index);
 
                 // We drop the pointer from handle variables and store them in the struct by value
@@ -174,14 +174,17 @@ struct State {
         core::ir::Function* func,
         const core::ir::ReferencedModuleVars::VarSet& referenced_vars) {
         core::ir::Value* module_var_struct = nullptr;
+        core::ir::FunctionParam* workgroup_allocation_param = nullptr;
+        Vector<core::type::Manager::StructMemberDesc, 4> workgroup_struct_members;
+
         // Add parameters and insert instruction at the top of the entry point to set up the
         // module-scope variables structure.
         b.InsertBefore(func->Block()->Front(), [&] {  //
             Vector<core::ir::Value*, 8> construct_args;
             for (auto var : module_vars) {
                 if (!referenced_vars.Contains(var)) {
-                    // The variable isn't used by this entry point, so set the member to undef.
-                    construct_args.Push(nullptr);
+                    // The variable isn't used by this entry point, so set the member to unused.
+                    construct_args.Push(b.Unused());
                     continue;
                 }
 
@@ -204,6 +207,24 @@ struct State {
                         param->SetBindingPoint(var->BindingPoint());
                         func->AppendParam(param);
                         decl = param;
+                        break;
+                    }
+                    case core::AddressSpace::kWorkgroup: {
+                        // Workgroup variables are received as a function parameter (to workaround
+                        // an MSL compiler bug with threadgroup matrices), and we aggregate all
+                        // workgroup variables into a structure to avoid hitting MSL's limit for
+                        // threadgroup memory arguments.
+                        if (!workgroup_allocation_param) {
+                            workgroup_allocation_param = b.FunctionParam(nullptr);
+                            func->AppendParam(workgroup_allocation_param);
+                        }
+                        decl = b.Access(ptr, workgroup_allocation_param,
+                                        u32(workgroup_struct_members.Length()))
+                                   ->Result(0);
+                        workgroup_struct_members.Push(core::type::Manager::StructMemberDesc{
+                            ir.symbols.New(),
+                            ptr->StoreType(),
+                        });
                         break;
                     }
                     case core::AddressSpace::kHandle: {
@@ -230,6 +251,14 @@ struct State {
             auto* construct = b.Construct(struct_type, std::move(construct_args));
             module_var_struct = b.Let(kModuleVarsName, construct)->Result(0);
         });
+
+        // Create the workgroup variable structure if needed.
+        if (!workgroup_struct_members.IsEmpty()) {
+            auto* workgroup_struct =
+                ty.Struct(ir.symbols.New(), std::move(workgroup_struct_members));
+            workgroup_allocation_param->SetType(ty.ptr<workgroup>(workgroup_struct));
+        }
+
         return module_var_struct;
     }
 
@@ -242,7 +271,7 @@ struct State {
         func->AppendParam(param);
 
         // Update all callsites to pass the module-scope variables structure as an argument.
-        func->ForEachUse([&](core::ir::Usage use) {
+        func->ForEachUseUnsorted([&](core::ir::Usage use) {
             if (auto* call = use.instruction->As<core::ir::UserCall>()) {
                 call->AppendArg(*function_to_struct_value.Get(ContainingFunction(call)));
             }

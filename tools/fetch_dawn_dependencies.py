@@ -97,12 +97,17 @@ def main(args):
     # Dependencies of dependencies are prefixed by their ancestors.
     required_submodules = [
         'third_party/abseil-cpp',
+        'third_party/dxc',
+        'third_party/dxheaders',
         'third_party/glfw',
         'third_party/jinja2',
         'third_party/khronos/EGL-Registry',
         'third_party/khronos/OpenGL-Registry',
+        'third_party/libprotobuf-mutator/src',
+        'third_party/protobuf',
         'third_party/markupsafe',
         'third_party/glslang/src',
+        'third_party/google_benchmark/src',
         'third_party/spirv-headers/src',
         'third_party/spirv-tools/src',
         'third_party/vulkan-headers/src',
@@ -140,9 +145,9 @@ def process_dir(args, dir_path, required_submodules):
     variables = ldict.get('vars', {})
 
     if deps is None:
-        log(f"ERROR: DEPS file '{deps_path}' does not define a 'deps' variable"
+        log(f"WARNING: DEPS file '{deps_path}' does not define a 'deps' variable"
             )
-        exit(1)
+        return
 
     for submodule in required_submodules:
         if submodule not in deps:

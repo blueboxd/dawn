@@ -109,7 +109,10 @@ wgpu::WGSLFeatureName ToWGPUFeature(tint::wgsl::LanguageFeature f) {
         return wgpu::WGSLFeatureName::WgpuName;
         DAWN_FOREACH_WGSL_FEATURE(CASE)
 #undef CASE
+        case tint::wgsl::LanguageFeature::kUndefined:
+            DAWN_UNREACHABLE();
     }
+    DAWN_UNREACHABLE();
 }
 
 }  // anonymous namespace
@@ -374,6 +377,14 @@ std::vector<Ref<AdapterBase>> InstanceBase::EnumerateAdapters(
         DAWN_ASSERT(physicalDevice->SupportsFeatureLevel(featureLevel));
         adapters.push_back(
             CreateAdapter(physicalDevice, featureLevel, togglesDesc, unpacked->powerPreference));
+    }
+
+    if (options->backendType == wgpu::BackendType::D3D11 ||
+        options->backendType == wgpu::BackendType::D3D12) {
+        // If a D3D backend was requested, the order of the adapters returned by DXGI should be
+        // preserved instead of sorting by whether they are integrated vs. discrete. DXGI
+        // returns the correct order based on system settings and configuration.
+        return adapters;
     }
     return SortAdapters(std::move(adapters), options);
 }
@@ -651,7 +662,7 @@ void InstanceBase::GatherWGSLFeatures(const DawnWGSLBlocklist* wgslBlocklist) {
                 break;
         }
 
-        if (enable) {
+        if (enable && wgslFeature != tint::wgsl::LanguageFeature::kUndefined) {
             mWGSLFeatures.emplace(ToWGPUFeature(wgslFeature));
             mTintLanguageFeatures.emplace(wgslFeature);
         }
@@ -662,15 +673,12 @@ void InstanceBase::GatherWGSLFeatures(const DawnWGSLBlocklist* wgslBlocklist) {
         for (size_t i = 0; i < wgslBlocklist->blocklistedFeatureCount; i++) {
             const char* name = wgslBlocklist->blocklistedFeatures[i];
             tint::wgsl::LanguageFeature tintFeature = tint::wgsl::ParseLanguageFeature(name);
-            wgpu::WGSLFeatureName feature = ToWGPUFeature(tintFeature);
-
-            // Ignore unknown features in the blocklist.
-            if (feature == wgpu::WGSLFeatureName::Undefined) {
+            if (tintFeature == tint::wgsl::LanguageFeature::kUndefined) {
+                // Ignore unknown features in the blocklist.
                 continue;
             }
-
             mTintLanguageFeatures.erase(tintFeature);
-            mWGSLFeatures.erase(feature);
+            mWGSLFeatures.erase(ToWGPUFeature(tintFeature));
         }
     }
 }

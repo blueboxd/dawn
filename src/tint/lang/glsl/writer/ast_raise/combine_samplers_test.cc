@@ -43,7 +43,8 @@ TEST_F(CombineSamplersTest, EmptyModule) {
     auto* expect = "";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -70,7 +71,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -97,7 +99,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -132,7 +135,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -167,7 +171,8 @@ fn sample(t_s_1 : texture_2d<f32>, coords : vec2<f32>) -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -194,14 +199,15 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    CombinedTextureSamplerInfo map;
+    Bindings binding;
+    binding.placeholder_sampler_bind_point = {1024, 0};
+
     binding::CombinedTextureSamplerPair pair;
     pair.texture = {0, 1};
     pair.sampler = {2, 3};
-    map[pair] = "fuzzy";
+    binding.sampler_texture_to_name[pair] = "fuzzy";
 
-    BindingPoint placeholder{1024, 0};
-    data.Add<CombineSamplersInfo>(map, placeholder);
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -228,14 +234,16 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    CombinedTextureSamplerInfo map;
+
+    Bindings binding;
+    binding.placeholder_sampler_bind_point = {1024, 0};
+
     binding::CombinedTextureSamplerPair pair;
     pair.texture = {3, 2};
     pair.sampler = {1, 0};
-    map[pair] = "fuzzy";
+    binding.sampler_texture_to_name[pair] = "fuzzy";
 
-    BindingPoint placeholder{1024, 0};
-    data.Add<CombineSamplersInfo>(map, placeholder);
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -275,7 +283,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -313,7 +322,8 @@ alias Tex2d = texture_2d<f32>;
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -356,7 +366,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -398,7 +409,8 @@ fn g(t_s_2 : texture_2d<f32>, coords : vec2<f32>) -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -441,7 +453,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -504,7 +517,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -551,7 +565,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -598,7 +613,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -637,7 +653,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -674,7 +691,8 @@ fn f(tex_s1 : texture_2d<f32>, tex_s2 : texture_2d<f32>, coords : vec2<f32>) -> 
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -713,7 +731,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -750,7 +769,8 @@ fn f(t1_samp : texture_2d<f32>, t2_samp : texture_2d<f32>, coords : vec2<f32>) -
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -780,16 +800,17 @@ fn main() -> vec4<f32> {
 }
 )";
 
-    CombinedTextureSamplerInfo map;
+    Bindings binding;
+
     binding::CombinedTextureSamplerPair pair;
     pair.texture = {0, 0};
     pair.sampler = {1024, 0};
-    map[pair] = "fred";
+    binding.sampler_texture_to_name[pair] = "fred";
 
-    BindingPoint placeholder{pair.sampler.group, pair.sampler.binding};
+    binding.placeholder_sampler_bind_point = {pair.sampler.group, pair.sampler.binding};
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(map, placeholder);
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -815,24 +836,26 @@ fn main() -> vec4<f32> {
 }
 )";
 
-    BindingPoint placeholder{1024, 0};
     BindingPoint tex{0, 0};
     BindingPoint samp{0, 1};
 
-    CombinedTextureSamplerInfo map;
+    Bindings binding;
+    binding.placeholder_sampler_bind_point = {1024, 0};
+
     binding::CombinedTextureSamplerPair pair;
     pair.texture = {tex.group, tex.binding};
     pair.sampler = {samp.group, samp.binding};
 
     binding::CombinedTextureSamplerPair placeholder_pair;
     placeholder_pair.texture = {tex.group, tex.binding};
-    placeholder_pair.sampler = {placeholder.group, placeholder.binding};
+    placeholder_pair.sampler = {binding.placeholder_sampler_bind_point.group,
+                                binding.placeholder_sampler_bind_point.binding};
 
-    map[pair] = "barney";
-    map[placeholder_pair] = "fred";
+    binding.sampler_texture_to_name[pair] = "barney";
+    binding.sampler_texture_to_name[placeholder_pair] = "fred";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(map, placeholder);
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -859,7 +882,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -894,7 +918,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -928,7 +953,8 @@ fn f(t_s : texture_depth_2d, coords : vec2<f32>) -> f32 {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -959,7 +985,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -989,7 +1016,8 @@ fn main() -> vec4<f32> {
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -1008,19 +1036,18 @@ fn main() {
 }
 )";
     auto* expect = R"(
-fn f(tex_1 : texture_2d<f32>) -> u32 {
+fn f() -> u32 {
   return 1u;
 }
 
-@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t_1 : texture_2d<f32>;
-
 fn main() {
-  _ = f(t_1);
+  _ = f();
 }
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -1039,19 +1066,18 @@ fn main() {
 }
 )";
     auto* expect = R"(
-fn f(sampler1_1 : sampler) -> u32 {
+fn f() -> u32 {
   return 1u;
 }
 
-@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var s_1 : sampler;
-
 fn main() {
-  _ = f(s_1);
+  _ = f();
 }
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -1072,21 +1098,18 @@ fn main() {
 }
 )";
     auto* expect = R"(
-fn f(sampler1_1 : sampler, tex_1 : texture_2d<f32>) -> u32 {
+fn f() -> u32 {
   return 1u;
 }
 
-@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var s_1 : sampler;
-
-@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t_1 : texture_2d<f32>;
-
 fn main() {
-  _ = f(s_1, t_1);
+  _ = f();
 }
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -1109,23 +1132,20 @@ fn main() {
 }
 )";
     auto* expect = R"(
-fn f(sampler1_1 : sampler, tex3_1 : texture_2d_array<f32>, tex1_1 : texture_2d<f32>) -> u32 {
+fn f(tex3_1 : texture_2d_array<f32>) -> u32 {
   return (1u + textureNumLayers(tex3_1));
 }
 
-@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var s_1 : sampler;
-
 @group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t2_1 : texture_2d_array<f32>;
 
-@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t1_1 : texture_2d<f32>;
-
 fn main() {
-  _ = f(s_1, t2_1, t1_1);
+  _ = f(t2_1);
 }
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -1148,23 +1168,22 @@ fn main() {
 }
 )";
     auto* expect = R"(
-fn f_nested(tex_1 : texture_2d<f32>) -> u32 {
+fn f_nested() -> u32 {
   return 1u;
 }
 
-fn f(tex_2 : texture_2d<f32>) -> u32 {
-  return f_nested(tex_2);
+fn f() -> u32 {
+  return f_nested();
 }
 
-@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t_1 : texture_2d<f32>;
-
 fn main() {
-  _ = f(t_1);
+  _ = f();
 }
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));
@@ -1190,25 +1209,65 @@ fn main() {
 )";
     auto* expect =
         R"(
-fn f_nested(sampler1_1 : sampler, tex_1 : texture_2d<f32>) -> u32 {
+fn f_nested() -> u32 {
   return 1u;
 }
 
-fn f(sampler1_2 : sampler, tex_2 : texture_2d<f32>) -> u32 {
-  return f_nested(sampler1_2, tex_2);
+fn f() -> u32 {
+  return f_nested();
 }
 
-@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var s_1 : sampler;
-
-@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t_1 : texture_2d<f32>;
-
 fn main() {
-  _ = f(s_1, t_1);
+  _ = f();
 }
 )";
 
     ast::transform::DataMap data;
-    data.Add<CombineSamplersInfo>(CombinedTextureSamplerInfo(), BindingPoint());
+    Bindings binding;
+    data.Add<Bindings>(binding);
+    auto got = Run<CombineSamplers>(src, data);
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(CombineSamplersTest, UnusedTextureAndSamplerFunctionParameter_Nested2) {
+    auto* src = R"(
+@group(0) @binding(1) var texture1 : texture_2d<f32>;
+@group(0) @binding(2) var texture2 : texture_2d<f32>;
+@group(0) @binding(3) var sampler1 : sampler;
+
+fn sample(t : texture_2d<f32>, s : sampler, coords : vec2<f32>, unused : texture_2d<f32>) -> vec4<f32> {
+  return textureSample(t, s, coords);
+}
+
+@fragment
+fn main(@location(0) coords : vec2<f32>) -> @location(0) vec4<f32> {
+  var a = sample(texture1, sampler1, coords, texture1);
+  var b = sample(texture1, sampler1, coords, texture2);
+  return a + b;
+}
+)";
+    auto* expect =
+        R"(
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var placeholder_sampler : sampler;
+
+fn sample(t_s : texture_2d<f32>, coords : vec2<f32>) -> vec4<f32> {
+  return textureSample(t_s, placeholder_sampler, coords);
+}
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var texture1_sampler1 : texture_2d<f32>;
+
+@fragment
+fn main(@location(0) coords : vec2<f32>) -> @location(0) vec4<f32> {
+  var a = sample(texture1_sampler1, coords);
+  var b = sample(texture1_sampler1, coords);
+  return (a + b);
+}
+)";
+
+    ast::transform::DataMap data;
+    Bindings binding;
+    data.Add<Bindings>(binding);
     auto got = Run<CombineSamplers>(src, data);
 
     EXPECT_EQ(expect, str(got));

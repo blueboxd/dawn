@@ -52,15 +52,21 @@ struct Options {
     /// If not empty, load DXC from this path when fuzzing HLSL generation, and fail the fuzzer if
     /// not found, or if DXC fails to compile.
     std::string dxc;
+    /// If true, dump shader input/output text to stdout
+    bool dump = false;
 };
 
 /// ProgramProperties is an enumerator of flags used to describe characteristics of the input
 /// program.
 enum class ProgramProperties {
+    /// The program has address spaces which have been shadowed
+    kAddressSpacesShadowed,
     /// The program has builtin functions which have been shadowed
     kBuiltinFnsShadowed,
     /// The program has builtin types which have been shadowed
     kBuiltinTypesShadowed,
+    /// The program has multiple entry points
+    kMultipleEntryPoints,
 };
 
 /// Context holds information about the fuzzer options and the input program.

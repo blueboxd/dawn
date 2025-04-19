@@ -28,12 +28,14 @@
 #ifndef INCLUDE_DAWN_NATIVE_DAWNNATIVE_H_
 #define INCLUDE_DAWN_NATIVE_DAWNNATIVE_H_
 
+#include <webgpu/webgpu_cpp.h>
+
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "dawn/dawn_proc_table.h"
 #include "dawn/native/dawn_native_export.h"
-#include "dawn/webgpu_cpp.h"
 
 namespace dawn::platform {
 class Platform;
@@ -87,11 +89,12 @@ class DAWN_NATIVE_EXPORT Adapter {
     Adapter(const Adapter& other);
     Adapter& operator=(const Adapter& other);
 
-    // Essentially webgpu.h's wgpuAdapterGetProperties while we don't have WGPUAdapter in
-    // dawn.json
+    // TODO(crbug.com/347047627): These methods are historical duplicates of
+    // those in webgpu_cpp.h. Update uses of these methods and remove them.
+    wgpu::Status GetInfo(wgpu::AdapterInfo* info) const;
+    wgpu::Status GetInfo(WGPUAdapterInfo* info) const;
     wgpu::Status GetProperties(wgpu::AdapterProperties* properties) const;
     wgpu::Status GetProperties(WGPUAdapterProperties* properties) const;
-
     std::vector<const char*> GetSupportedFeatures() const;
     wgpu::ConvertibleStatus GetLimits(WGPUSupportedLimits* limits) const;
 
@@ -209,7 +212,7 @@ DAWN_NATIVE_EXPORT bool IsTextureSubresourceInitialized(
     WGPUTextureAspect aspect = WGPUTextureAspect_All);
 
 // Backdoor to get the order of the ProcMap for testing
-DAWN_NATIVE_EXPORT std::vector<const char*> GetProcMapNamesForTesting();
+DAWN_NATIVE_EXPORT std::vector<std::string_view> GetProcMapNamesForTesting();
 
 DAWN_NATIVE_EXPORT bool DeviceTick(WGPUDevice device);
 
@@ -294,6 +297,10 @@ class DAWN_NATIVE_EXPORT MemoryDump {
     virtual ~MemoryDump() = default;
 };
 DAWN_NATIVE_EXPORT void DumpMemoryStatistics(WGPUDevice device, MemoryDump* dump);
+
+// Unlike memory dumps which include detailed information about allocations, this only returns the
+// total estimated memory usage, and is intended for background tracing for UMA.
+DAWN_NATIVE_EXPORT uint64_t ComputeEstimatedMemoryUsage(WGPUDevice device);
 
 }  // namespace dawn::native
 

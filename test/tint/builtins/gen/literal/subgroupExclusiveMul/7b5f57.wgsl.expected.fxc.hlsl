@@ -1,0 +1,17 @@
+SKIP: FAILED
+
+RWByteAddressBuffer prevent_dce : register(u0);
+
+float4 subgroupExclusiveMul_7b5f57() {
+  float4 res = WavePrefixProduct((1.0f).xxxx);
+  return res;
+}
+
+[numthreads(1, 1, 1)]
+void compute_main() {
+  prevent_dce.Store4(0u, asuint(subgroupExclusiveMul_7b5f57()));
+  return;
+}
+FXC validation failure:
+C:\src\dawn\Shader@0x000001F6384E3DD0(4,16-45): error X3004: undeclared identifier 'WavePrefixProduct'
+

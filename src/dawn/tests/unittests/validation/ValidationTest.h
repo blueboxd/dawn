@@ -28,6 +28,10 @@
 #ifndef SRC_DAWN_TESTS_UNITTESTS_VALIDATION_VALIDATIONTEST_H_
 #define SRC_DAWN_TESTS_UNITTESTS_VALIDATION_VALIDATIONTEST_H_
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+#include <webgpu/webgpu_cpp.h>
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -35,9 +39,6 @@
 #include "dawn/common/Log.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/DawnNative.h"
-#include "dawn/webgpu_cpp.h"
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 
 // Argument helpers to allow macro overriding.
 #define UNIMPLEMENTED_MACRO(...) DAWN_UNREACHABLE()
@@ -144,7 +145,7 @@ class ValidationTest : public testing::Test {
     bool UsesWire() const;
 
     void FlushWire();
-    void WaitForAllOperations(const wgpu::Device& device);
+    void WaitForAllOperations();
 
     // Helper functions to create objects to test validation.
 
@@ -179,12 +180,11 @@ class ValidationTest : public testing::Test {
     void SetUp(const wgpu::InstanceDescriptor* nativeDesc,
                const wgpu::InstanceDescriptor* wireDesc = nullptr);
 
+    // Helps compute expected deprecated warning count for creating device with given descriptor.
+    uint32_t GetDeviceCreationDeprecationWarningExpectation(
+        const wgpu::DeviceDescriptor& descriptor);
+    // Request device and handle deprecation warning emitted during creating device.
     wgpu::Device RequestDeviceSync(const wgpu::DeviceDescriptor& deviceDesc);
-    static void OnDeviceError(WGPUErrorType type, const char* message, void* userdata);
-    static void OnDeviceLost(WGPUDevice const* device,
-                             WGPUDeviceLostReason reason,
-                             const char* message,
-                             void* userdata);
 
     virtual bool UseCompatibilityMode() const;
 

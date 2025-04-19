@@ -32,6 +32,7 @@
 
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Enumerator.h"
+#include "dawn/common/ityp_array.h"
 #include "dawn/common/ityp_span.h"
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/CommandValidation.h"
@@ -44,51 +45,53 @@
 
 namespace dawn::native {
 
-static constexpr std::array<VertexFormatInfo, 32> sVertexFormatTable = {{
-    //
-    {wgpu::VertexFormat::Undefined, 0, 0, VertexFormatBaseType::Float},
+static constexpr ityp::array<wgpu::VertexFormat, VertexFormatInfo, 32> sVertexFormatTable =
+    []() constexpr {
+        ityp::array<wgpu::VertexFormat, VertexFormatInfo, 32> table{};
 
-    {wgpu::VertexFormat::Uint8x2, 2, 2, VertexFormatBaseType::Uint},
-    {wgpu::VertexFormat::Uint8x4, 4, 4, VertexFormatBaseType::Uint},
-    {wgpu::VertexFormat::Sint8x2, 2, 2, VertexFormatBaseType::Sint},
-    {wgpu::VertexFormat::Sint8x4, 4, 4, VertexFormatBaseType::Sint},
-    {wgpu::VertexFormat::Unorm8x2, 2, 2, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Unorm8x4, 4, 4, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Snorm8x2, 2, 2, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Snorm8x4, 4, 4, VertexFormatBaseType::Float},
+        // clang-format off
+        table[wgpu::VertexFormat::Uint8x2        ] = { 2, 2, VertexFormatBaseType::Uint };
+        table[wgpu::VertexFormat::Uint8x4        ] = { 4, 4, VertexFormatBaseType::Uint };
+        table[wgpu::VertexFormat::Sint8x2        ] = { 2, 2, VertexFormatBaseType::Sint };
+        table[wgpu::VertexFormat::Sint8x4        ] = { 4, 4, VertexFormatBaseType::Sint };
+        table[wgpu::VertexFormat::Unorm8x2       ] = { 2, 2, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Unorm8x4       ] = { 4, 4, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Snorm8x2       ] = { 2, 2, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Snorm8x4       ] = { 4, 4, VertexFormatBaseType::Float};
 
-    {wgpu::VertexFormat::Uint16x2, 4, 2, VertexFormatBaseType::Uint},
-    {wgpu::VertexFormat::Uint16x4, 8, 4, VertexFormatBaseType::Uint},
-    {wgpu::VertexFormat::Sint16x2, 4, 2, VertexFormatBaseType::Sint},
-    {wgpu::VertexFormat::Sint16x4, 8, 4, VertexFormatBaseType::Sint},
-    {wgpu::VertexFormat::Unorm16x2, 4, 2, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Unorm16x4, 8, 4, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Snorm16x2, 4, 2, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Snorm16x4, 8, 4, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Float16x2, 4, 2, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Float16x4, 8, 4, VertexFormatBaseType::Float},
+        table[wgpu::VertexFormat::Uint16x2       ] = { 4, 2, VertexFormatBaseType::Uint };
+        table[wgpu::VertexFormat::Uint16x4       ] = { 8, 4, VertexFormatBaseType::Uint };
+        table[wgpu::VertexFormat::Sint16x2       ] = { 4, 2, VertexFormatBaseType::Sint };
+        table[wgpu::VertexFormat::Sint16x4       ] = { 8, 4, VertexFormatBaseType::Sint };
+        table[wgpu::VertexFormat::Unorm16x2      ] = { 4, 2, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Unorm16x4      ] = { 8, 4, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Snorm16x2      ] = { 4, 2, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Snorm16x4      ] = { 8, 4, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Float16x2      ] = { 4, 2, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Float16x4      ] = { 8, 4, VertexFormatBaseType::Float};
 
-    {wgpu::VertexFormat::Float32, 4, 1, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Float32x2, 8, 2, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Float32x3, 12, 3, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Float32x4, 16, 4, VertexFormatBaseType::Float},
-    {wgpu::VertexFormat::Uint32, 4, 1, VertexFormatBaseType::Uint},
-    {wgpu::VertexFormat::Uint32x2, 8, 2, VertexFormatBaseType::Uint},
-    {wgpu::VertexFormat::Uint32x3, 12, 3, VertexFormatBaseType::Uint},
-    {wgpu::VertexFormat::Uint32x4, 16, 4, VertexFormatBaseType::Uint},
-    {wgpu::VertexFormat::Sint32, 4, 1, VertexFormatBaseType::Sint},
-    {wgpu::VertexFormat::Sint32x2, 8, 2, VertexFormatBaseType::Sint},
-    {wgpu::VertexFormat::Sint32x3, 12, 3, VertexFormatBaseType::Sint},
-    {wgpu::VertexFormat::Sint32x4, 16, 4, VertexFormatBaseType::Sint},
-    {wgpu::VertexFormat::Unorm10_10_10_2, 4, 4, VertexFormatBaseType::Float},
-    //
-}};
+        table[wgpu::VertexFormat::Float32        ] = { 4, 1, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Float32x2      ] = { 8, 2, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Float32x3      ] = {12, 3, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Float32x4      ] = {16, 4, VertexFormatBaseType::Float};
+        table[wgpu::VertexFormat::Uint32         ] = { 4, 1, VertexFormatBaseType::Uint };
+        table[wgpu::VertexFormat::Uint32x2       ] = { 8, 2, VertexFormatBaseType::Uint };
+        table[wgpu::VertexFormat::Uint32x3       ] = {12, 3, VertexFormatBaseType::Uint };
+        table[wgpu::VertexFormat::Uint32x4       ] = {16, 4, VertexFormatBaseType::Uint };
+        table[wgpu::VertexFormat::Sint32         ] = { 4, 1, VertexFormatBaseType::Sint };
+        table[wgpu::VertexFormat::Sint32x2       ] = { 8, 2, VertexFormatBaseType::Sint };
+        table[wgpu::VertexFormat::Sint32x3       ] = {12, 3, VertexFormatBaseType::Sint };
+        table[wgpu::VertexFormat::Sint32x4       ] = {16, 4, VertexFormatBaseType::Sint };
+        table[wgpu::VertexFormat::Unorm10_10_10_2] = { 4, 4, VertexFormatBaseType::Float};
+        // clang-format on
+
+        return table;
+    }();
 
 const VertexFormatInfo& GetVertexFormatInfo(wgpu::VertexFormat format) {
-    DAWN_ASSERT(format != wgpu::VertexFormat::Undefined);
-    DAWN_ASSERT(static_cast<uint32_t>(format) < sVertexFormatTable.size());
-    DAWN_ASSERT(sVertexFormatTable[static_cast<uint32_t>(format)].format == format);
-    return sVertexFormatTable[static_cast<uint32_t>(format)];
+    DAWN_ASSERT(static_cast<uint32_t>(format) < static_cast<uint32_t>(sVertexFormatTable.size()));
+    DAWN_ASSERT(static_cast<uint32_t>(format) != 0u);
+    return sVertexFormatTable[format];
 }
 
 // Helper functions
@@ -253,8 +256,7 @@ ResultOrError<ShaderModuleEntryPoint> ValidateVertexState(
 MaybeError ValidatePrimitiveState(const DeviceBase* device, const PrimitiveState* rawDescriptor) {
     UnpackedPtr<PrimitiveState> descriptor;
     DAWN_TRY_ASSIGN(descriptor, ValidateAndUnpack(rawDescriptor));
-    const auto* depthClipControl = descriptor.Get<PrimitiveDepthClipControl>();
-    DAWN_INVALID_IF(depthClipControl && !device->HasFeature(Feature::DepthClipControl),
+    DAWN_INVALID_IF(descriptor->unclippedDepth && !device->HasFeature(Feature::DepthClipControl),
                     "%s is not supported", wgpu::FeatureName::DepthClipControl);
     DAWN_TRY(ValidatePrimitiveTopology(descriptor->topology));
     DAWN_TRY(ValidateIndexFormat(descriptor->stripIndexFormat));
@@ -294,7 +296,8 @@ MaybeError ValidateStencilFaceUnused(StencilFaceState face) {
 }
 
 MaybeError ValidateDepthStencilState(const DeviceBase* device,
-                                     const DepthStencilState* descriptor) {
+                                     const DepthStencilState* descriptor,
+                                     const wgpu::PrimitiveTopology topology) {
     DAWN_TRY_CONTEXT(ValidateCompareFunction(descriptor->depthCompare),
                      "validating depth compare function");
     DAWN_TRY_CONTEXT(ValidateCompareFunction(descriptor->stencilFront.compare),
@@ -373,6 +376,24 @@ MaybeError ValidateDepthStencilState(const DeviceBase* device,
                          descriptor->format);
     }
 
+    switch (topology) {
+        case wgpu::PrimitiveTopology::PointList:
+        case wgpu::PrimitiveTopology::LineList:
+        case wgpu::PrimitiveTopology::LineStrip:
+            DAWN_INVALID_IF(descriptor->depthBias != 0, "depthBias must be 0 when using %s.",
+                            topology);
+            DAWN_INVALID_IF(descriptor->depthBiasSlopeScale != 0,
+                            "depthBiasSlopeScale must be 0 when using %s.", topology);
+            DAWN_INVALID_IF(descriptor->depthBiasClamp != 0,
+                            "depthBiasClamp must be 0 when using using %s.", topology);
+            break;
+        case wgpu::PrimitiveTopology::Undefined:
+            // Default is TriangleList.
+        case wgpu::PrimitiveTopology::TriangleList:
+        case wgpu::PrimitiveTopology::TriangleStrip:
+            break;
+    }
+
     return {};
 }
 
@@ -439,18 +460,16 @@ MaybeError ValidateBlendState(DeviceBase* device, const BlendState* descriptor) 
 bool BlendFactorContainsSrcAlpha(wgpu::BlendFactor blendFactor) {
     return blendFactor == wgpu::BlendFactor::SrcAlpha ||
            blendFactor == wgpu::BlendFactor::OneMinusSrcAlpha ||
-           blendFactor == wgpu::BlendFactor::SrcAlphaSaturated;
-}
-
-bool BlendFactorContainsSrc1Alpha(wgpu::BlendFactor blendFactor) {
-    return blendFactor == wgpu::BlendFactor::Src1Alpha ||
+           blendFactor == wgpu::BlendFactor::SrcAlphaSaturated ||
+           blendFactor == wgpu::BlendFactor::Src1Alpha ||
            blendFactor == wgpu::BlendFactor::OneMinusSrc1Alpha;
 }
 
 bool BlendFactorContainsSrc1(wgpu::BlendFactor blendFactor) {
     return blendFactor == wgpu::BlendFactor::Src1 ||
            blendFactor == wgpu::BlendFactor::OneMinusSrc1 ||
-           BlendFactorContainsSrc1Alpha(blendFactor);
+           blendFactor == wgpu::BlendFactor::Src1Alpha ||
+           blendFactor == wgpu::BlendFactor::OneMinusSrc1Alpha;
 }
 
 bool BlendStateUsesBlendFactorSrc1(const BlendState& blend) {
@@ -458,13 +477,6 @@ bool BlendStateUsesBlendFactorSrc1(const BlendState& blend) {
            BlendFactorContainsSrc1(blend.alpha.dstFactor) ||
            BlendFactorContainsSrc1(blend.color.srcFactor) ||
            BlendFactorContainsSrc1(blend.color.dstFactor);
-}
-
-bool BlendStateUsesBlendFactorSrc1Alpha(const BlendState& blend) {
-    return BlendFactorContainsSrc1Alpha(blend.alpha.srcFactor) ||
-           BlendFactorContainsSrc1Alpha(blend.alpha.dstFactor) ||
-           BlendFactorContainsSrc1Alpha(blend.color.srcFactor) ||
-           BlendFactorContainsSrc1Alpha(blend.color.dstFactor);
 }
 
 MaybeError ValidateColorTargetState(
@@ -655,8 +667,7 @@ ResultOrError<ShaderModuleEntryPoint> ValidateFragmentState(DeviceBase* device,
     }
 
     bool usesSrc1 = false;
-    bool usesSrc1Alpha = false;
-    uint8_t blendSrc1ComponentCount = 0;
+    bool usesBlendSrc1 = false;
     ColorAttachmentFormats colorAttachmentFormats;
     for (auto i : IterateBitSet(targetMask)) {
         const Format* format;
@@ -669,7 +680,7 @@ ResultOrError<ShaderModuleEntryPoint> ValidateFragmentState(DeviceBase* device,
         colorAttachmentFormats.push_back(&device->GetValidInternalFormat(targets[i].format));
 
         if (fragmentMetadata.fragmentOutputVariables[i].blendSrc == 1u) {
-            blendSrc1ComponentCount = fragmentMetadata.fragmentOutputVariables[i].componentCount;
+            usesBlendSrc1 = true;
         }
 
         if (fragmentMetadata.fragmentInputMask[i]) {
@@ -680,19 +691,16 @@ ResultOrError<ShaderModuleEntryPoint> ValidateFragmentState(DeviceBase* device,
 
         if (targets[i].blend != nullptr) {
             usesSrc1 |= BlendStateUsesBlendFactorSrc1(*targets[i].blend);
-            usesSrc1Alpha |= BlendStateUsesBlendFactorSrc1Alpha(*targets[i].blend);
         }
     }
 
     if (usesSrc1) {
-        DAWN_INVALID_IF(blendSrc1ComponentCount == 0,
+        DAWN_INVALID_IF(!usesBlendSrc1,
                         "One of the blend factor uses `blend_src(1)` while `blend_src(1)` is "
                         "missing from the fragment shader outputs.");
-
-        DAWN_INVALID_IF(usesSrc1Alpha && blendSrc1ComponentCount < 4u,
-                        "One of the blend factor is reading the alpha of the fragment shader "
-                        "output with `blend_src(1)` but it is missing from that fragment shader "
-                        "output.");
+        DAWN_INVALID_IF(descriptor->targetCount != 1,
+                        "One of the blend factor uses `blend_src(1)` but the color targets count "
+                        "is not 1.");
     }
 
     auto extraFramebufferInputs = fragmentMetadata.fragmentInputMask & ~targetMask;
@@ -723,16 +731,6 @@ ResultOrError<ShaderModuleEntryPoint> ValidateFragmentState(DeviceBase* device,
     }
 
     if (device->IsCompatibilityMode()) {
-        DAWN_INVALID_IF(
-            fragmentMetadata.usesSampleMaskOutput,
-            "sample_mask is not supported in compatibility mode in the fragment stage (%s, %s)",
-            descriptor->module, &entryPoint);
-
-        DAWN_INVALID_IF(
-            fragmentMetadata.usesSampleIndex,
-            "sample_index is not supported in compatibility mode in the fragment stage (%s, %s)",
-            descriptor->module, &entryPoint);
-
         // Check that all the color target states match.
         ColorAttachmentIndex firstColorTargetIndex{};
         const ColorTargetState* firstColorTargetState = nullptr;
@@ -804,18 +802,6 @@ MaybeError ValidateInterStageMatching(DeviceBase* device,
             "different from the interpolation sampling (%s) of the fragment input at "
             "location %u.",
             vertexOutputInfo.interpolationSampling, i, fragmentInputInfo.interpolationSampling, i);
-
-        DAWN_INVALID_IF(device->IsCompatibilityMode() &&
-                            vertexOutputInfo.interpolationType == InterpolationType::Linear,
-                        "The interpolation type (%s) of the vertex output at location %u is not "
-                        "supported in compatibility mode",
-                        vertexOutputInfo.interpolationType, i);
-
-        DAWN_INVALID_IF(device->IsCompatibilityMode() &&
-                            vertexOutputInfo.interpolationSampling == InterpolationSampling::Sample,
-                        "The interpolation sampling (%s) of the vertex output at location %u is "
-                        "not supported in compatibility mode",
-                        vertexOutputInfo.interpolationSampling, i);
     }
 
     return {};
@@ -859,7 +845,8 @@ MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
                      "validating primitive state.");
 
     if (descriptor->depthStencil) {
-        DAWN_TRY_CONTEXT(ValidateDepthStencilState(device, descriptor->depthStencil),
+        DAWN_TRY_CONTEXT(ValidateDepthStencilState(device, descriptor->depthStencil,
+                                                   descriptor->primitive.topology),
                          "validating depthStencil state.");
     }
 
@@ -980,11 +967,6 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
     }
 
     mPrimitive = descriptor->primitive.WithTrivialFrontendDefaults();
-    UnpackedPtr<PrimitiveState> unpackedPrimitive = Unpack(&mPrimitive);
-    if (auto* depthClipControl = unpackedPrimitive.Get<PrimitiveDepthClipControl>()) {
-        mUnclippedDepth = depthClipControl->unclippedDepth;
-    }
-
     mMultisample = descriptor->multisample;
 
     if (mAttachmentState->HasDepthStencilAttachment()) {
@@ -1193,7 +1175,7 @@ float RenderPipelineBase::GetDepthBiasClamp() const {
 
 bool RenderPipelineBase::HasUnclippedDepth() const {
     DAWN_ASSERT(!IsError());
-    return mUnclippedDepth;
+    return mPrimitive.unclippedDepth;
 }
 
 ColorAttachmentMask RenderPipelineBase::GetColorAttachmentsMask() const {
@@ -1311,7 +1293,7 @@ size_t RenderPipelineBase::ComputeContentHash() {
 
     // Record primitive state
     recorder.Record(mPrimitive.topology, mPrimitive.stripIndexFormat, mPrimitive.frontFace,
-                    mPrimitive.cullMode, mUnclippedDepth);
+                    mPrimitive.cullMode, mPrimitive.unclippedDepth);
 
     // Record multisample state
     // Sample count hashed as part of the attachment state
@@ -1427,7 +1409,7 @@ bool RenderPipelineBase::EqualityFunc::operator()(const RenderPipelineBase* a,
         if (stateA.topology != stateB.topology ||
             stateA.stripIndexFormat != stateB.stripIndexFormat ||
             stateA.frontFace != stateB.frontFace || stateA.cullMode != stateB.cullMode ||
-            a->mUnclippedDepth != b->mUnclippedDepth) {
+            stateA.unclippedDepth != stateB.unclippedDepth) {
             return false;
         }
     }

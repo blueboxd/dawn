@@ -28,13 +28,14 @@
 #ifndef SRC_DAWN_WIRE_CLIENT_CLIENT_H_
 #define SRC_DAWN_WIRE_CLIENT_CLIENT_H_
 
+#include <webgpu/webgpu.h>
+
 #include <memory>
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"
 #include "dawn/common/LinkedList.h"
 #include "dawn/common/NonCopyable.h"
-#include "dawn/webgpu.h"
 #include "dawn/wire/ChunkedCommandSerializer.h"
 #include "dawn/wire/Wire.h"
 #include "dawn/wire/WireClient.h"
@@ -60,22 +61,22 @@ class Client : public ClientBase {
     //
     //   T::T(ObjectBaseParams, arg1, arg2, arg3)
     template <typename T, typename... Args>
-    T* Make(Args&&... args) {
+    Ref<T> Make(Args&&... args) {
         constexpr ObjectType type = ObjectTypeToTypeEnum<T>;
 
-        ObjectBaseParams params = {this, mObjectStores[type].ReserveHandle()};
-        T* object = new T(params, std::forward<Args>(args)...);
+        ObjectBaseParams params = {this, mObjects[type].ReserveHandle()};
+        Ref<T> object = AcquireRef(new T(params, std::forward<Args>(args)...));
 
-        mObjects[type].Append(object);
-        mObjectStores[type].Insert(std::unique_ptr<T>(object));
+        mObjects[type].Insert(object.Get());
+
         return object;
     }
 
-    void Free(ObjectBase* obj, ObjectType type);
+    void Unregister(ObjectBase* obj, ObjectType type);
 
     template <typename T>
     T* Get(ObjectId id) {
-        return static_cast<T*>(mObjectStores[ObjectTypeToTypeEnum<T>].Get(id));
+        return static_cast<T*>(mObjects[ObjectTypeToTypeEnum<T>].Get(id));
     }
 
     // ChunkedCommandHandler implementation
@@ -87,12 +88,14 @@ class Client : public ClientBase {
     ReservedTexture ReserveTexture(WGPUDevice device, const WGPUTextureDescriptor* descriptor);
     ReservedSwapChain ReserveSwapChain(WGPUDevice device,
                                        const WGPUSwapChainDescriptor* descriptor);
+    ReservedSurface ReserveSurface(WGPUInstance instance,
+                                   const WGPUSurfaceCapabilities* capabilities);
     ReservedInstance ReserveInstance(const WGPUInstanceDescriptor* descriptor);
 
     void ReclaimBufferReservation(const ReservedBuffer& reservation);
     void ReclaimTextureReservation(const ReservedTexture& reservation);
     void ReclaimSwapChainReservation(const ReservedSwapChain& reservation);
-    void ReclaimDeviceReservation(const ReservedDevice& reservation);
+    void ReclaimSurfaceReservation(const ReservedSurface& reservation);
     void ReclaimInstanceReservation(const ReservedInstance& reservation);
 
     template <typename Cmd>
@@ -111,21 +114,21 @@ class Client : public ClientBase {
     bool IsDisconnected() const;
 
   private:
-    void DestroyAllObjects();
+    void UnregisterAllObjects();
+    void ReclaimReservation(ObjectBase* obj, ObjectType type);
 
     template <typename T>
-    void Free(T* obj) {
-        Free(obj, ObjectTypeToTypeEnum<T>);
+    void ReclaimReservation(T* obj) {
+        ReclaimReservation(obj, ObjectTypeToTypeEnum<T>);
     }
 
 #include "dawn/wire/client/ClientPrototypes_autogen.inc"
 
     ChunkedCommandSerializer mSerializer;
     WireDeserializeAllocator mWireCommandAllocator;
-    PerObjectType<ObjectStore> mObjectStores;
+    PerObjectType<ObjectStore> mObjects;
     std::unique_ptr<MemoryTransferService> mOwnedMemoryTransferService = nullptr;
     raw_ptr<MemoryTransferService> mMemoryTransferService = nullptr;
-    PerObjectType<LinkedList<ObjectBase>> mObjects;
     // Map of instance object handles to a corresponding event manager. Note that for now because we
     // do not have an internal refcount on the instances, i.e. we don't know when the last object
     // associated with a particular instance is destroyed, this map is not cleaned up until the

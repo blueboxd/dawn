@@ -49,7 +49,6 @@ enum class VertexFormatBaseType {
 };
 
 struct VertexFormatInfo {
-    wgpu::VertexFormat format;
     uint32_t byteSize;
     uint32_t componentCount;
     VertexFormatBaseType baseType;
@@ -174,7 +173,6 @@ class RenderPipelineBase : public PipelineBase,
     PrimitiveState mPrimitive;
     DepthStencilState mDepthStencil;
     MultisampleState mMultisample;
-    bool mUnclippedDepth = false;
     bool mWritesDepth = false;
     bool mWritesStencil = false;
     bool mUsesFragDepth = false;

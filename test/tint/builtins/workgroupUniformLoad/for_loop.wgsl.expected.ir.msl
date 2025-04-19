@@ -1,5 +1,6 @@
 #include <metal_stdlib>
 using namespace metal;
+
 struct tint_module_vars_struct {
   threadgroup int* a;
   threadgroup int* b;
@@ -17,10 +18,12 @@ void foo(tint_module_vars_struct tint_module_vars) {
       } else {
         break;
       }
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      int const v_2 = (*tint_module_vars.b);
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      i = (i + v_2);
+      {
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        int const v_2 = (*tint_module_vars.b);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        i = (i + v_2);
+      }
       continue;
     }
   }

@@ -33,6 +33,7 @@
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
+#include "src/tint/utils/result/result.h"
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -129,11 +130,19 @@ struct State {
             array_param->Function()->AppendParam(length);
 
             // Update callsites of this function to pass the array length to it.
-            array_param->Function()->ForEachUse([&](core::ir::Usage use) {
+            array_param->Function()->ForEachUseUnsorted([&](core::ir::Usage use) {
                 if (auto* call = use.instruction->As<core::ir::UserCall>()) {
                     // Get the length of the array in the calling function and pass that.
                     auto* arg = call->Args()[array_param->Index()];
-                    call->AppendArg(GetComputedLength(arg, call));
+                    auto* len = GetComputedLength(arg, call);
+                    if (!len) {
+                        // The originating variable was not in the bindpoint map, so we need to call
+                        // the original arrayLength builtin as the callee is expecting a value.
+                        b.InsertBefore(call, [&] {
+                            len = b.Call<u32>(BuiltinFn::kArrayLength, arg)->Result(0);
+                        });
+                    }
+                    call->AppendArg(len);
                 }
             });
 
@@ -212,24 +221,31 @@ struct State {
             buffer_sizes_var = b.Var("tint_storage_buffer_sizes",
                                      ty.ptr<uniform>(ty.array(ty.vec4<u32>(), num_elements)));
         });
+        buffer_sizes_var->SetBindingPoint(ubo_binding.group, ubo_binding.binding);
         return buffer_sizes_var->Result(0);
     }
+
+    /// @returns true if the transformed module needs a storage buffer sizes UBO
+    bool NeedsStorageBufferSizes() { return buffer_sizes_var != nullptr; }
 };
 
 }  // namespace
 
-Result<SuccessType> ArrayLengthFromUniform(
+Result<ArrayLengthFromUniformResult> ArrayLengthFromUniform(
     Module& ir,
     BindingPoint ubo_binding,
     const std::unordered_map<BindingPoint, uint32_t>& bindpoint_to_size_index) {
-    auto result = ValidateAndDumpIfNeeded(ir, "ArrayLengthFromUniform transform");
-    if (result != Success) {
-        return result;
+    auto validated = ValidateAndDumpIfNeeded(ir, "ArrayLengthFromUniform transform");
+    if (validated != Success) {
+        return validated.Failure();
     }
 
-    State{ir, ubo_binding, bindpoint_to_size_index}.Process();
+    State state{ir, ubo_binding, bindpoint_to_size_index};
+    state.Process();
 
-    return Success;
+    ArrayLengthFromUniformResult result;
+    result.needs_storage_buffer_sizes = state.NeedsStorageBufferSizes();
+    return result;
 }
 
 }  // namespace tint::core::ir::transform

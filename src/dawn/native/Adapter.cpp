@@ -31,6 +31,7 @@
 #include <memory>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -105,13 +106,15 @@ wgpu::Status AdapterBase::APIGetLimits(SupportedLimits* limits) const {
         limits->limits = mPhysicalDevice->GetLimits().v1;
     }
 
+    // TODO(349125474): Deprecate DawnExperimentalSubgroupLimits.
     if (auto* subgroupLimits = unpacked.Get<DawnExperimentalSubgroupLimits>()) {
-        if (!mTogglesState.IsEnabled(Toggle::AllowUnsafeAPIs)) {
-            // If AllowUnsafeAPIs is not enabled, return the default-initialized
+        if (!mSupportedFeatures.IsEnabled(wgpu::FeatureName::Subgroups)) {
+            // If subgroups features are not supported, return the default-initialized
             // DawnExperimentalSubgroupLimits object, where minSubgroupSize and
             // maxSubgroupSize are WGPU_LIMIT_U32_UNDEFINED.
             *subgroupLimits = DawnExperimentalSubgroupLimits{};
         } else {
+            // If adapter supports subgroups features, always return the valid subgroup limits.
             *subgroupLimits = mPhysicalDevice->GetLimits().experimentalSubgroupLimits;
         }
     }
@@ -119,7 +122,55 @@ wgpu::Status AdapterBase::APIGetLimits(SupportedLimits* limits) const {
     return wgpu::Status::Success;
 }
 
+wgpu::Status AdapterBase::APIGetInfo(AdapterInfo* info) const {
+    DAWN_ASSERT(info != nullptr);
+
+    AdapterProperties properties = {};
+    properties.nextInChain = info->nextInChain;
+    if (GetPropertiesInternal(&properties) == wgpu::Status::Error) {
+        return wgpu::Status::Error;
+    }
+
+    // Get lengths, with null terminators.
+    size_t vendorCLen = mPhysicalDevice->GetVendorName().length() + 1;
+    size_t architectureCLen = mPhysicalDevice->GetArchitectureName().length() + 1;
+    size_t deviceCLen = mPhysicalDevice->GetName().length() + 1;
+    size_t descriptionCLen = mPhysicalDevice->GetDriverDescription().length() + 1;
+
+    // Allocate space for all strings.
+    char* ptr = new char[vendorCLen + architectureCLen + deviceCLen + descriptionCLen];
+
+    info->vendor = ptr;
+    memcpy(ptr, mPhysicalDevice->GetVendorName().c_str(), vendorCLen);
+    ptr += vendorCLen;
+
+    info->architecture = ptr;
+    memcpy(ptr, mPhysicalDevice->GetArchitectureName().c_str(), architectureCLen);
+    ptr += architectureCLen;
+
+    info->device = ptr;
+    memcpy(ptr, mPhysicalDevice->GetName().c_str(), deviceCLen);
+    ptr += deviceCLen;
+
+    info->description = ptr;
+    memcpy(ptr, mPhysicalDevice->GetDriverDescription().c_str(), descriptionCLen);
+    ptr += descriptionCLen;
+
+    info->backendType = mPhysicalDevice->GetBackendType();
+    info->adapterType = mPhysicalDevice->GetAdapterType();
+    info->vendorID = mPhysicalDevice->GetVendorId();
+    info->deviceID = mPhysicalDevice->GetDeviceId();
+    info->compatibilityMode = mFeatureLevel == FeatureLevel::Compatibility;
+
+    return wgpu::Status::Success;
+}
+
 wgpu::Status AdapterBase::APIGetProperties(AdapterProperties* properties) const {
+    mInstance->EmitDeprecationWarning("GetProperties is deprecated, use GetInfo instead.");
+    return GetPropertiesInternal(properties);
+}
+
+wgpu::Status AdapterBase::GetPropertiesInternal(AdapterProperties* properties) const {
     DAWN_ASSERT(properties != nullptr);
     UnpackedPtr<AdapterProperties> unpacked;
     if (mInstance->ConsumedError(ValidateAndUnpack(properties), &unpacked)) {
@@ -186,6 +237,11 @@ wgpu::Status AdapterBase::APIGetProperties(AdapterProperties* properties) const 
     return wgpu::Status::Success;
 }
 
+void APIAdapterInfoFreeMembers(WGPUAdapterInfo info) {
+    // This single delete is enough because everything is a single allocation.
+    delete[] info.vendor;
+}
+
 void APIAdapterPropertiesFreeMembers(WGPUAdapterProperties properties) {
     // This single delete is enough because everything is a single allocation.
     delete[] properties.vendorName;
@@ -248,16 +304,25 @@ ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDeviceInternal(
     // Backend-specific forced and default device toggles
     mPhysicalDevice->SetupBackendDeviceToggles(mInstance->GetPlatform(), &deviceToggles);
 
-    // Validate all required features are supported by the adapter and suitable under device
-    // toggles. Note that certain toggles in device toggles state may be overriden by user and
-    // different from the adapter toggles state, and in this case a device may support features
-    // that not supported by the adapter. We allow such toggles overriding for the convinience e.g.
-    // creating a deivce for internal usage with AllowUnsafeAPI enabled from an adapter that
-    // disabled AllowUnsafeAPIS.
+    std::unordered_set<wgpu::FeatureName> requiredFeatureSet;
     for (uint32_t i = 0; i < descriptor->requiredFeatureCount; ++i) {
-        wgpu::FeatureName feature = descriptor->requiredFeatures[i];
+        requiredFeatureSet.insert(descriptor->requiredFeatures[i]);
+    }
+    // Validate all required features are supported by the adapter and suitable under device
+    // toggles. Note that certain toggles in device toggles state may be overridden by user and
+    // different from the adapter toggles state, and in this case a device may support features
+    // that not supported by the adapter. We allow such toggles overriding for the convenience e.g.
+    // creating a device for internal usage with AllowUnsafeAPI enabled from an adapter that
+    // disabled AllowUnsafeAPIS.
+    for (wgpu::FeatureName requiredFeature : requiredFeatureSet) {
+        // TODO(349125474): Remove deprecated ChromiumExperimentalSubgroups.
+        if (requiredFeature == wgpu::FeatureName::ChromiumExperimentalSubgroups) {
+            GetInstance()->EmitDeprecationWarning(
+                "Feature chromium-experimental-subgroups is deprecated. Use features subgroups and "
+                "subgroups-f16 instead.");
+        }
         FeatureValidationResult result =
-            mPhysicalDevice->ValidateFeatureSupportedWithToggles(feature, deviceToggles);
+            mPhysicalDevice->ValidateFeatureSupportedWithToggles(requiredFeature, deviceToggles);
         DAWN_INVALID_IF(!result.success, "Invalid feature required: %s",
                         result.errorMessage.c_str());
     }

@@ -62,7 +62,7 @@ class LockStep {
 
     void Wait(Step step) {
         std::unique_lock<std::mutex> lg(mMutex);
-        mCv.wait(lg, [=] { return mStep == step; });
+        mCv.wait(lg, [this, step] { return mStep == step; });
     }
 
   private:
@@ -201,26 +201,20 @@ TEST_P(MultithreadTests, Buffers_MapInParallel) {
 
     constexpr uint32_t kSize = static_cast<uint32_t>(kDataSize * sizeof(uint32_t));
 
-    utils::RunInParallel(10, [=, &myData = std::as_const(myData)](uint32_t) {
-        wgpu::Buffer buffer;
-        std::atomic<bool> mapCompleted(false);
-
+    utils::RunInParallel(10, [this, &myData = std::as_const(myData)](uint32_t) {
         // Create buffer and request mapping.
-        buffer = CreateBuffer(kSize, wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc);
-
-        buffer.MapAsync(
-            wgpu::MapMode::Write, 0, kSize,
-            [](WGPUBufferMapAsyncStatus status, void* userdata) {
-                EXPECT_EQ(WGPUBufferMapAsyncStatus_Success, status);
-                (*static_cast<std::atomic<bool>*>(userdata)) = true;
-            },
-            &mapCompleted);
+        wgpu::Buffer buffer =
+            CreateBuffer(kSize, wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc);
 
         // Wait for the mapping to complete
-        while (!mapCompleted.load()) {
-            device.Tick();
-            FlushWire();
-        }
+        ASSERT_EQ(instance.WaitAny(buffer.MapAsync(wgpu::MapMode::Write, 0, kSize,
+                                                   wgpu::CallbackMode::AllowProcessEvents,
+                                                   [](wgpu::MapAsyncStatus status, const char*) {
+                                                       ASSERT_EQ(status,
+                                                                 wgpu::MapAsyncStatus::Success);
+                                                   }),
+                                   UINT64_MAX),
+                  wgpu::WaitStatus::Success);
 
         // Buffer is mapped, write into it and unmap .
         memcpy(buffer.GetMappedRange(0, kSize), myData.data(), kSize);
@@ -260,13 +254,15 @@ TEST_P(MultithreadTests, CreateShaderModuleInParallel) {
     for (uint32_t index = 0; index < shaderModules.size(); ++index) {
         uint32_t sourceIndex = index / kCacheHitFactor;
         shaderModules[index].GetCompilationInfo(
-            [](WGPUCompilationInfoRequestStatus, const WGPUCompilationInfo* info, void* userdata) {
+            wgpu::CallbackMode::AllowProcessEvents,
+            [sourceIndex](wgpu::CompilationInfoRequestStatus status,
+                          const wgpu::CompilationInfo* info) {
+                ASSERT_EQ(wgpu::CompilationInfoRequestStatus::Success, status);
                 for (size_t i = 0; i < info->messageCount; ++i) {
                     EXPECT_THAT(info->messages[i].message, testing::HasSubstr("unreachable"));
-                    EXPECT_EQ(info->messages[i].lineNum, 5u + *static_cast<uint32_t*>(userdata));
+                    EXPECT_EQ(info->messages[i].lineNum, 5u + sourceIndex);
                 }
-            },
-            &sourceIndex);
+            });
     }
 }
 
@@ -722,7 +718,8 @@ TEST_P(MultithreadEncodingTests, RenderPassEncodersInParallel) {
 
     std::vector<wgpu::CommandBuffer> commandBuffers(kNumThreads);
 
-    utils::RunInParallel(kNumThreads, [=, &commandBuffers](uint32_t index) {
+    utils::RunInParallel(kNumThreads, [this, msaaRenderTargetView, resolveTargetView,
+                                       &commandBuffers](uint32_t index) {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
 
         // Clear the renderTarget to red.
@@ -772,7 +769,8 @@ TEST_P(MultithreadEncodingTests, RenderPassEncoders_ResolveToMipLevelOne_InParal
 
     std::vector<wgpu::CommandBuffer> commandBuffers(kNumThreads);
 
-    utils::RunInParallel(kNumThreads, [=, &commandBuffers](uint32_t index) {
+    utils::RunInParallel(kNumThreads, [this, msaaRenderTargetView, resolveTargetView,
+                                       &commandBuffers](uint32_t index) {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
 
         // Clear the renderTarget to red.
@@ -821,7 +819,7 @@ TEST_P(MultithreadEncodingTests, ComputePassEncodersInParallel) {
 
     std::vector<wgpu::CommandBuffer> commandBuffers(kNumThreads);
 
-    utils::RunInParallel(kNumThreads, [=, &commandBuffers](uint32_t index) {
+    utils::RunInParallel(kNumThreads, [this, pipeline, bindGroup, &commandBuffers](uint32_t index) {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
         pass.SetPipeline(pipeline);
@@ -846,10 +844,6 @@ class MultithreadTextureCopyTests : public MultithreadTests {
   protected:
     void SetUp() override {
         MultithreadTests::SetUp();
-
-        // TODO(crbug.com/dawn/1291): These tests are failing on GLES (both native and ANGLE)
-        // when using Tint/GLSL.
-        DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
     }
 
     wgpu::Texture CreateAndWriteTexture(uint32_t width,
@@ -1063,10 +1057,6 @@ TEST_P(MultithreadTextureCopyTests, CopyStencilToStencilNoRace) {
     // combination.
     DAWN_SUPPRESS_TEST_IF(IsANGLE());
 
-    // TODO(crbug.com/dawn/667): Work around the fact that some platforms are unable to read
-    // stencil.
-    DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("disable_depth_stencil_read"));
-
     // TODO(dawn:1924): Intel Gen9 specific.
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntelGen9());
 
@@ -1189,8 +1179,6 @@ TEST_P(MultithreadTextureCopyTests, CopyBufferToStencilNoRace) {
 // This test is needed since CopyTextureForBrowser() command might internally allocate resources and
 // we need to make sure that it won't race with other threads' works.
 TEST_P(MultithreadTextureCopyTests, CopyTextureForBrowserNoRace) {
-    // TODO(crbug.com/dawn/1232): Program link error on OpenGLES backend
-    DAWN_SUPPRESS_TEST_IF(IsOpenGLES());
     DAWN_SUPPRESS_TEST_IF(IsOpenGL() && IsLinux());
 
     enum class Step {
@@ -1258,8 +1246,6 @@ TEST_P(MultithreadTextureCopyTests, CopyTextureForBrowserNoRace) {
 
 // Test that error from CopyTextureForBrowser() won't cause deadlock.
 TEST_P(MultithreadTextureCopyTests, CopyTextureForBrowserErrorNoDeadLock) {
-    // TODO(crbug.com/dawn/1232): Program link error on OpenGLES backend
-    DAWN_SUPPRESS_TEST_IF(IsOpenGLES());
     DAWN_SUPPRESS_TEST_IF(IsOpenGL() && IsLinux());
 
     DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("skip_validation"));
@@ -1452,7 +1438,7 @@ TEST_P(MultithreadDrawIndexedIndirectTests, IndirectOffsetInParallel) {
     utils::RGBA8 filled(0, 255, 0, 255);
     utils::RGBA8 notFilled(0, 0, 0, 0);
 
-    utils::RunInParallel(10, [=](uint32_t) {
+    utils::RunInParallel(10, [this, filled, notFilled](uint32_t) {
         // Test an offset draw call, with indirect buffer containing 2 calls:
         // 1) first 3 indices of the second quad (top right triangle)
         // 2) last 3 indices of the second quad
@@ -1476,7 +1462,7 @@ class TimestampExpectation : public detail::Expectation {
         for (size_t i = 0; i < size / sizeof(uint64_t); i++) {
             if (timestamps[i] == 0) {
                 return testing::AssertionFailure()
-                       << "Expected data[" << i << "] to be greater than 0." << std::endl;
+                       << "Expected data[" << i << "] to be greater than 0.\n";
             }
         }
 

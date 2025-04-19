@@ -65,6 +65,7 @@ libtint_source_set("core") {
     "interpolation_sampling.h",
     "interpolation_type.cc",
     "interpolation_type.h",
+    "io_attributes.h",
     "number.cc",
     "number.h",
     "parameter_usage.cc",
@@ -129,7 +130,7 @@ if (tint_build_unittests) {
   }
 }
 if (tint_build_benchmarks) {
-  tint_unittests_source_set("bench") {
+  tint_benchmarks_source_set("bench") {
     sources = [
       "access_bench.cc",
       "address_space_bench.cc",

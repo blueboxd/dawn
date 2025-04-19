@@ -28,11 +28,11 @@
 #ifndef SRC_DAWN_UTILS_WIREHELPER_H_
 #define SRC_DAWN_UTILS_WIREHELPER_H_
 
+#include <webgpu/webgpu_cpp.h>
+
 #include <cstdint>
 #include <memory>
 #include <utility>
-
-#include "dawn/webgpu_cpp.h"
 
 struct DawnProcTable;
 
@@ -69,6 +69,8 @@ class WireHelper {
 
     virtual bool FlushClient() = 0;
     virtual bool FlushServer() = 0;
+
+    virtual bool IsIdle() = 0;
 };
 
 std::unique_ptr<WireHelper> CreateWireHelper(const DawnProcTable& procs,

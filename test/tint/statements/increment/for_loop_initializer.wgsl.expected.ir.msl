@@ -1,5 +1,6 @@
 #include <metal_stdlib>
 using namespace metal;
+
 struct tint_module_vars_struct {
   device uint* i;
 };
@@ -11,6 +12,8 @@ void tint_symbol(tint_module_vars_struct tint_module_vars) {
       if (((*tint_module_vars.i) < 10u)) {
       } else {
         break;
+      }
+      {
       }
       continue;
     }

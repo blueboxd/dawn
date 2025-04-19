@@ -38,6 +38,7 @@
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/external_texture.h"
+#include "src/tint/lang/core/type/input_attachment.h"
 #include "src/tint/lang/core/type/invalid.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
@@ -52,7 +53,7 @@
 #include "src/tint/utils/text/text_style.h"
 
 TINT_BEGIN_DISABLE_PROTOBUF_WARNINGS();
-#include "src/tint/lang/core/ir/binary/ir.pb.h"
+#include "src/tint/utils/protos/ir/ir.pb.h"
 TINT_END_DISABLE_PROTOBUF_WARNINGS();
 
 using namespace tint::core::fluent_types;  // NOLINT
@@ -259,7 +260,10 @@ struct Decoder {
             }
         }
         if (fn_in.has_return_location()) {
-            fn_out->SetReturnLocation(Location(fn_in.return_location()));
+            fn_out->SetReturnLocation(fn_in.return_location());
+        }
+        if (fn_in.has_return_interpolation()) {
+            fn_out->SetReturnInterpolation(Interpolation(fn_in.return_interpolation()));
         }
         if (fn_in.has_return_builtin()) {
             fn_out->SetReturnBuiltin(BuiltinValue(fn_in.return_builtin()));
@@ -462,89 +466,99 @@ struct Decoder {
     }
 
     ir::Access* CreateInstructionAccess(const pb::InstructionAccess&) {
-        return mod_out_.allocators.instructions.Create<ir::Access>();
+        return mod_out_.allocators.instructions.Create<ir::Access>(mod_out_.NextInstructionId());
     }
 
     ir::CoreBinary* CreateInstructionBinary(const pb::InstructionBinary& binary_in) {
-        auto* binary_out = mod_out_.allocators.instructions.Create<ir::CoreBinary>();
+        auto* binary_out =
+            mod_out_.allocators.instructions.Create<ir::CoreBinary>(mod_out_.NextInstructionId());
         binary_out->SetOp(BinaryOp(binary_in.op()));
         return binary_out;
     }
 
     ir::Bitcast* CreateInstructionBitcast(const pb::InstructionBitcast&) {
-        return mod_out_.allocators.instructions.Create<ir::Bitcast>();
+        return mod_out_.allocators.instructions.Create<ir::Bitcast>(mod_out_.NextInstructionId());
     }
 
     ir::BreakIf* CreateInstructionBreakIf(const pb::InstructionBreakIf&) {
-        auto* break_if_out = mod_out_.allocators.instructions.Create<ir::BreakIf>();
+        auto* break_if_out =
+            mod_out_.allocators.instructions.Create<ir::BreakIf>(mod_out_.NextInstructionId());
         break_ifs_.Push(break_if_out);
         return break_if_out;
     }
 
     ir::CoreBuiltinCall* CreateInstructionBuiltinCall(const pb::InstructionBuiltinCall& call_in) {
-        auto* call_out = mod_out_.allocators.instructions.Create<ir::CoreBuiltinCall>();
+        auto* call_out = mod_out_.allocators.instructions.Create<ir::CoreBuiltinCall>(
+            mod_out_.NextInstructionId());
         call_out->SetFunc(BuiltinFn(call_in.builtin()));
         return call_out;
     }
 
     ir::Construct* CreateInstructionConstruct(const pb::InstructionConstruct&) {
-        return mod_out_.allocators.instructions.Create<ir::Construct>();
+        return mod_out_.allocators.instructions.Create<ir::Construct>(mod_out_.NextInstructionId());
     }
 
     ir::Continue* CreateInstructionContinue(const pb::InstructionContinue&) {
-        auto* continue_ = mod_out_.allocators.instructions.Create<ir::Continue>();
+        auto* continue_ =
+            mod_out_.allocators.instructions.Create<ir::Continue>(mod_out_.NextInstructionId());
         continues_.Push(continue_);
         return continue_;
     }
 
     ir::Convert* CreateInstructionConvert(const pb::InstructionConvert&) {
-        return mod_out_.allocators.instructions.Create<ir::Convert>();
+        return mod_out_.allocators.instructions.Create<ir::Convert>(mod_out_.NextInstructionId());
     }
 
     ir::ExitIf* CreateInstructionExitIf(const pb::InstructionExitIf&) {
-        auto* exit_out = mod_out_.allocators.instructions.Create<ir::ExitIf>();
+        auto* exit_out =
+            mod_out_.allocators.instructions.Create<ir::ExitIf>(mod_out_.NextInstructionId());
         exit_ifs_.Push(exit_out);
         return exit_out;
     }
 
     ir::ExitLoop* CreateInstructionExitLoop(const pb::InstructionExitLoop&) {
-        auto* exit_out = mod_out_.allocators.instructions.Create<ir::ExitLoop>();
+        auto* exit_out =
+            mod_out_.allocators.instructions.Create<ir::ExitLoop>(mod_out_.NextInstructionId());
         exit_loops_.Push(exit_out);
         return exit_out;
     }
 
     ir::ExitSwitch* CreateInstructionExitSwitch(const pb::InstructionExitSwitch&) {
-        auto* exit_out = mod_out_.allocators.instructions.Create<ir::ExitSwitch>();
+        auto* exit_out =
+            mod_out_.allocators.instructions.Create<ir::ExitSwitch>(mod_out_.NextInstructionId());
         exit_switches_.Push(exit_out);
         return exit_out;
     }
 
     ir::Discard* CreateInstructionDiscard(const pb::InstructionDiscard&) {
-        return mod_out_.allocators.instructions.Create<ir::Discard>();
+        return mod_out_.allocators.instructions.Create<ir::Discard>(mod_out_.NextInstructionId());
     }
 
     ir::If* CreateInstructionIf(const pb::InstructionIf& if_in) {
-        auto* if_out = mod_out_.allocators.instructions.Create<ir::If>();
+        auto* if_out =
+            mod_out_.allocators.instructions.Create<ir::If>(mod_out_.NextInstructionId());
         if_out->SetTrue(if_in.has_true_() ? Block(if_in.true_()) : b.Block());
         if_out->SetFalse(if_in.has_false_() ? Block(if_in.false_()) : b.Block());
         return if_out;
     }
 
     ir::Let* CreateInstructionLet(const pb::InstructionLet&) {
-        return mod_out_.allocators.instructions.Create<ir::Let>();
+        return mod_out_.allocators.instructions.Create<ir::Let>(mod_out_.NextInstructionId());
     }
 
     ir::Load* CreateInstructionLoad(const pb::InstructionLoad&) {
-        return mod_out_.allocators.instructions.Create<ir::Load>();
+        return mod_out_.allocators.instructions.Create<ir::Load>(mod_out_.NextInstructionId());
     }
 
     ir::LoadVectorElement* CreateInstructionLoadVectorElement(
         const pb::InstructionLoadVectorElement&) {
-        return mod_out_.allocators.instructions.Create<ir::LoadVectorElement>();
+        return mod_out_.allocators.instructions.Create<ir::LoadVectorElement>(
+            mod_out_.NextInstructionId());
     }
 
     ir::Loop* CreateInstructionLoop(const pb::InstructionLoop& loop_in) {
-        auto* loop_out = mod_out_.allocators.instructions.Create<ir::Loop>();
+        auto* loop_out =
+            mod_out_.allocators.instructions.Create<ir::Loop>(mod_out_.NextInstructionId());
         if (loop_in.has_initializer()) {
             loop_out->SetInitializer(Block(loop_in.initializer()));
         } else {
@@ -560,26 +574,29 @@ struct Decoder {
     }
 
     ir::NextIteration* CreateInstructionNextIteration(const pb::InstructionNextIteration&) {
-        auto* next_it_out = mod_out_.allocators.instructions.Create<ir::NextIteration>();
+        auto* next_it_out = mod_out_.allocators.instructions.Create<ir::NextIteration>(
+            mod_out_.NextInstructionId());
         next_iterations_.Push(next_it_out);
         return next_it_out;
     }
 
     ir::Return* CreateInstructionReturn(const pb::InstructionReturn&) {
-        return mod_out_.allocators.instructions.Create<ir::Return>();
+        return mod_out_.allocators.instructions.Create<ir::Return>(mod_out_.NextInstructionId());
     }
 
     ir::Store* CreateInstructionStore(const pb::InstructionStore&) {
-        return mod_out_.allocators.instructions.Create<ir::Store>();
+        return mod_out_.allocators.instructions.Create<ir::Store>(mod_out_.NextInstructionId());
     }
 
     ir::StoreVectorElement* CreateInstructionStoreVectorElement(
         const pb::InstructionStoreVectorElement&) {
-        return mod_out_.allocators.instructions.Create<ir::StoreVectorElement>();
+        return mod_out_.allocators.instructions.Create<ir::StoreVectorElement>(
+            mod_out_.NextInstructionId());
     }
 
     ir::Swizzle* CreateInstructionSwizzle(const pb::InstructionSwizzle& swizzle_in) {
-        auto* swizzle_out = mod_out_.allocators.instructions.Create<ir::Swizzle>();
+        auto* swizzle_out =
+            mod_out_.allocators.instructions.Create<ir::Swizzle>(mod_out_.NextInstructionId());
         Vector<uint32_t, 4> indices;
         for (auto idx : swizzle_in.indices()) {
             indices.Push(idx);
@@ -589,7 +606,8 @@ struct Decoder {
     }
 
     ir::Switch* CreateInstructionSwitch(const pb::InstructionSwitch& switch_in) {
-        auto* switch_out = mod_out_.allocators.instructions.Create<ir::Switch>();
+        auto* switch_out =
+            mod_out_.allocators.instructions.Create<ir::Switch>(mod_out_.NextInstructionId());
         for (auto& case_in : switch_in.cases()) {
             ir::Switch::Case case_out{};
             case_out.block = Block(case_in.block());
@@ -609,20 +627,25 @@ struct Decoder {
     }
 
     ir::CoreUnary* CreateInstructionUnary(const pb::InstructionUnary& unary_in) {
-        auto* unary_out = mod_out_.allocators.instructions.Create<ir::CoreUnary>();
+        auto* unary_out =
+            mod_out_.allocators.instructions.Create<ir::CoreUnary>(mod_out_.NextInstructionId());
         unary_out->SetOp(UnaryOp(unary_in.op()));
         return unary_out;
     }
 
     ir::UserCall* CreateInstructionUserCall(const pb::InstructionUserCall&) {
-        return mod_out_.allocators.instructions.Create<ir::UserCall>();
+        return mod_out_.allocators.instructions.Create<ir::UserCall>(mod_out_.NextInstructionId());
     }
 
     ir::Var* CreateInstructionVar(const pb::InstructionVar& var_in) {
-        auto* var_out = mod_out_.allocators.instructions.Create<ir::Var>();
+        auto* var_out =
+            mod_out_.allocators.instructions.Create<ir::Var>(mod_out_.NextInstructionId());
         if (var_in.has_binding_point()) {
             auto& bp_in = var_in.binding_point();
             var_out->SetBindingPoint(bp_in.group(), bp_in.binding());
+        }
+        if (var_in.has_input_attachment_index()) {
+            var_out->SetInputAttachmentIndex(var_in.input_attachment_index());
         }
         return var_out;
     }
@@ -664,6 +687,8 @@ struct Decoder {
                 return CreateTypeExternalTexture(type_in.external_texture());
             case pb::Type::KindCase::kSampler:
                 return CreateTypeSampler(type_in.sampler());
+            case pb::Type::KindCase::kInputAttachment:
+                return CreateTypeInputAttachment(type_in.input_attachment());
             case pb::Type::KindCase::KIND_NOT_SET:
                 break;
         }
@@ -757,7 +782,7 @@ struct Decoder {
                 Error() << "struct member must have non-zero size";
                 size = 1;
             }
-            core::type::StructMemberAttributes attributes_out{};
+            core::IOAttributes attributes_out{};
             if (member_in.has_attributes()) {
                 auto& attributes_in = member_in.attributes();
                 if (attributes_in.has_location()) {
@@ -863,6 +888,12 @@ struct Decoder {
         return mod_out_.Types().Get<type::Sampler>(kind);
     }
 
+    const type::InputAttachment* CreateTypeInputAttachment(
+        const pb::TypeInputAttachment& input_in) {
+        auto sub_type = Type(input_in.sub_type());
+        return mod_out_.Types().Get<type::InputAttachment>(sub_type);
+    }
+
     const type::Type* Type(size_t id) {
         if (TINT_UNLIKELY(id >= types_.Length())) {
             Error() << "type id " << id << " out of range";
@@ -927,7 +958,13 @@ struct Decoder {
                 param_out->SetBindingPoint(bp_in.group(), bp_in.binding());
             }
             if (attrs_in.has_location()) {
-                param_out->SetLocation(Location(attrs_in.location()));
+                param_out->SetLocation(attrs_in.location());
+            }
+            if (attrs_in.has_color()) {
+                param_out->SetColor(attrs_in.color());
+            }
+            if (attrs_in.has_interpolation()) {
+                param_out->SetInterpolation(Interpolation(attrs_in.interpolation()));
             }
             if (attrs_in.has_builtin()) {
                 param_out->SetBuiltin(BuiltinValue(attrs_in.builtin()));
@@ -1065,15 +1102,6 @@ struct Decoder {
     ////////////////////////////////////////////////////////////////////////////
     // Attributes
     ////////////////////////////////////////////////////////////////////////////
-    ir::Location Location(const pb::Location& location_in) {
-        core::ir::Location location_out{};
-        location_out.value = location_in.value();
-        if (location_in.has_interpolation()) {
-            location_out.interpolation = Interpolation(location_in.interpolation());
-        }
-        return location_out;
-    }
-
     core::Interpolation Interpolation(const pb::Interpolation& interpolation_in) {
         core::Interpolation interpolation_out{};
         interpolation_out.type = InterpolationType(interpolation_in.type());
@@ -1303,6 +1331,10 @@ struct Decoder {
                 return core::InterpolationSampling::kCentroid;
             case pb::InterpolationSampling::sample:
                 return core::InterpolationSampling::kSample;
+            case pb::InterpolationSampling::first:
+                return core::InterpolationSampling::kFirst;
+            case pb::InterpolationSampling::either:
+                return core::InterpolationSampling::kEither;
 
             case pb::InterpolationSampling::InterpolationSampling_INT_MIN_SENTINEL_DO_NOT_USE_:
             case pb::InterpolationSampling::InterpolationSampling_INT_MAX_SENTINEL_DO_NOT_USE_:
@@ -1593,8 +1625,44 @@ struct Decoder {
                 return core::BuiltinFn::kAtomicCompareExchangeWeak;
             case pb::BuiltinFn::subgroup_ballot:
                 return core::BuiltinFn::kSubgroupBallot;
+            case pb::BuiltinFn::subgroup_elect:
+                return core::BuiltinFn::kSubgroupElect;
             case pb::BuiltinFn::subgroup_broadcast:
                 return core::BuiltinFn::kSubgroupBroadcast;
+            case pb::BuiltinFn::subgroup_broadcast_first:
+                return core::BuiltinFn::kSubgroupBroadcastFirst;
+            case pb::BuiltinFn::subgroup_shuffle:
+                return core::BuiltinFn::kSubgroupShuffle;
+            case pb::BuiltinFn::subgroup_shuffle_xor:
+                return core::BuiltinFn::kSubgroupShuffleXor;
+            case pb::BuiltinFn::subgroup_shuffle_up:
+                return core::BuiltinFn::kSubgroupShuffleUp;
+            case pb::BuiltinFn::subgroup_shuffle_down:
+                return core::BuiltinFn::kSubgroupShuffleDown;
+            case pb::BuiltinFn::input_attachment_load:
+                return core::BuiltinFn::kInputAttachmentLoad;
+            case pb::BuiltinFn::subgroup_add:
+                return core::BuiltinFn::kSubgroupAdd;
+            case pb::BuiltinFn::subgroup_exclusive_add:
+                return core::BuiltinFn::kSubgroupExclusiveAdd;
+            case pb::BuiltinFn::subgroup_mul:
+                return core::BuiltinFn::kSubgroupMul;
+            case pb::BuiltinFn::subgroup_exclusive_mul:
+                return core::BuiltinFn::kSubgroupExclusiveMul;
+            case pb::BuiltinFn::subgroup_and:
+                return core::BuiltinFn::kSubgroupAnd;
+            case pb::BuiltinFn::subgroup_or:
+                return core::BuiltinFn::kSubgroupOr;
+            case pb::BuiltinFn::subgroup_xor:
+                return core::BuiltinFn::kSubgroupXor;
+            case pb::BuiltinFn::subgroup_min:
+                return core::BuiltinFn::kSubgroupMin;
+            case pb::BuiltinFn::subgroup_max:
+                return core::BuiltinFn::kSubgroupMax;
+            case pb::BuiltinFn::subgroup_all:
+                return core::BuiltinFn::kSubgroupAll;
+            case pb::BuiltinFn::subgroup_any:
+                return core::BuiltinFn::kSubgroupAny;
 
             case pb::BuiltinFn::BuiltinFn_INT_MIN_SENTINEL_DO_NOT_USE_:
             case pb::BuiltinFn::BuiltinFn_INT_MAX_SENTINEL_DO_NOT_USE_:

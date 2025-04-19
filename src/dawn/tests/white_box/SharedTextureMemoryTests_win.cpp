@@ -29,7 +29,9 @@
 #include <d3d11_4.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
+#include <webgpu/webgpu_cpp.h>
 #include <wrl/client.h>
+
 #include <string>
 #include <utility>
 #include <vector>
@@ -37,7 +39,6 @@
 #include "dawn/native/D3D11Backend.h"
 #include "dawn/native/D3DBackend.h"
 #include "dawn/tests/white_box/SharedTextureMemoryTests.h"
-#include "dawn/webgpu_cpp.h"
 
 namespace dawn {
 namespace {
@@ -204,7 +205,7 @@ class Backend : public SharedTextureMemoryTestBackend {
 
         struct D3DFormat {
             DXGI_FORMAT format;
-            wgpu::FeatureName requiredFeature = wgpu::FeatureName::Undefined;
+            wgpu::FeatureName requiredFeature = wgpu::FeatureName(0u);
         };
         std::vector<D3DFormat> formats = {{
             {DXGI_FORMAT_R16G16B16A16_FLOAT},
@@ -255,7 +256,7 @@ class Backend : public SharedTextureMemoryTestBackend {
                         desc.nextInChain = &texture2DDesc;
 
                         for (auto& device : devices) {
-                            if (f.requiredFeature != wgpu::FeatureName::Undefined &&
+                            if (f.requiredFeature != wgpu::FeatureName(0u) &&
                                 !device.HasFeature(f.requiredFeature)) {
                                 continue;
                             }
@@ -286,7 +287,7 @@ class Backend : public SharedTextureMemoryTestBackend {
                         desc.label = label.c_str();
 
                         for (auto& device : devices) {
-                            if (f.requiredFeature != wgpu::FeatureName::Undefined &&
+                            if (f.requiredFeature != wgpu::FeatureName(0u) &&
                                 !device.HasFeature(f.requiredFeature)) {
                                 continue;
                             }

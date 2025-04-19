@@ -45,6 +45,9 @@ BindingInfoType GetBindingInfoType(const BindingInfo& info) {
         },
         [](const StaticSamplerBindingInfo&) -> BindingInfoType {
             return BindingInfoType::StaticSampler;
+        },
+        [](const InputAttachmentBindingInfo&) -> BindingInfoType {
+            return BindingInfoType::InputAttachment;
         });
 }
 
@@ -87,7 +90,12 @@ void IncrementBindingCounts(BindingCounts* bindingCounts,
     } else if (entry->sampler.type != wgpu::SamplerBindingType::Undefined) {
         perStageBindingCountMember = &PerStageBindingCounts::samplerCount;
     } else if (entry->texture.sampleType != wgpu::TextureSampleType::Undefined) {
-        perStageBindingCountMember = &PerStageBindingCounts::sampledTextureCount;
+        if (entry->texture.viewDimension == kInternalInputAttachmentDim) {
+            // Internal use only.
+            return;
+        } else {
+            perStageBindingCountMember = &PerStageBindingCounts::sampledTextureCount;
+        }
     } else if (entry->storageTexture.access != wgpu::StorageTextureAccess::Undefined) {
         perStageBindingCountMember = &PerStageBindingCounts::storageTextureCount;
     } else if (entry.Get<ExternalTextureBindingLayout>()) {
@@ -253,6 +261,12 @@ SamplerBindingInfo::SamplerBindingInfo(const SamplerBindingLayout& apiLayout)
     : type(apiLayout.type) {}
 
 StaticSamplerBindingInfo::StaticSamplerBindingInfo(const StaticSamplerBindingLayout& apiLayout)
-    : sampler(apiLayout.sampler) {}
+    : sampler(apiLayout.sampler),
+      sampledTextureBinding(BindingNumber{apiLayout.sampledTextureBinding}),
+      isUsedForSingleTextureBinding(apiLayout.sampledTextureBinding < WGPU_LIMIT_U32_UNDEFINED) {}
+
+InputAttachmentBindingInfo::InputAttachmentBindingInfo() = default;
+InputAttachmentBindingInfo::InputAttachmentBindingInfo(wgpu::TextureSampleType sampleType)
+    : sampleType(sampleType) {}
 
 }  // namespace dawn::native

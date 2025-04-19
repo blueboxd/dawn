@@ -37,6 +37,7 @@ namespace tint::core::ir {
 namespace {
 
 using IR_ConstantTest = IRTestHelper;
+using IR_ConstantDeathTest = IR_ConstantTest;
 
 TEST_F(IR_ConstantTest, f32) {
     StringStream str;
@@ -77,6 +78,21 @@ TEST_F(IR_ConstantTest, i32) {
     EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<bool>>());
 }
 
+TEST_F(IR_ConstantTest, i8) {
+    StringStream str;
+
+    auto* c = b.Constant(i8(1));
+    EXPECT_EQ(i8(1), c->Value()->As<core::constant::Scalar<i8>>()->ValueAs<i8>());
+
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<f32>>());
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<f16>>());
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<i32>>());
+    EXPECT_TRUE(c->Value()->Is<core::constant::Scalar<i8>>());
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<u32>>());
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<u8>>());
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<bool>>());
+}
+
 TEST_F(IR_ConstantTest, u32) {
     StringStream str;
 
@@ -87,6 +103,21 @@ TEST_F(IR_ConstantTest, u32) {
     EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<f16>>());
     EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<i32>>());
     EXPECT_TRUE(c->Value()->Is<core::constant::Scalar<u32>>());
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<bool>>());
+}
+
+TEST_F(IR_ConstantTest, u8) {
+    StringStream str;
+
+    auto* c = b.Constant(u8(2));
+    EXPECT_EQ(u8(2), c->Value()->As<core::constant::Scalar<u8>>()->ValueAs<u8>());
+
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<f32>>());
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<f16>>());
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<i32>>());
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<i8>>());
+    EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<u32>>());
+    EXPECT_TRUE(c->Value()->Is<core::constant::Scalar<u8>>());
     EXPECT_FALSE(c->Value()->Is<core::constant::Scalar<bool>>());
 }
 
@@ -111,18 +142,18 @@ TEST_F(IR_ConstantTest, bool) {
     }
 }
 
-TEST_F(IR_ConstantTest, Fail_NullValue) {
-    EXPECT_DEATH_IF_SUPPORTED({ Constant c(nullptr); }, "");
+TEST_F(IR_ConstantDeathTest, Fail_NullValue) {
+    EXPECT_DEATH_IF_SUPPORTED({ Constant c(nullptr); }, "internal compiler error");
 }
 
-TEST_F(IR_ConstantTest, Fail_Builder_NullValue) {
+TEST_F(IR_ConstantDeathTest, Fail_Builder_NullValue) {
     EXPECT_DEATH_IF_SUPPORTED(
         {
             Module mod;
             Builder b{mod};
             b.Constant(nullptr);
         },
-        "");
+        "internal compiler error");
 }
 
 TEST_F(IR_ConstantTest, Clone) {

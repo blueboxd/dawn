@@ -28,35 +28,18 @@
 #ifndef SRC_TINT_LANG_WGSL_AST_BUILDER_H_
 #define SRC_TINT_LANG_WGSL_AST_BUILDER_H_
 
-#include <string>
-#include <unordered_set>
 #include <utility>
 
 #include "src/tint/api/common/override_id.h"
 
-#include "src/tint/lang/core/constant/manager.h"
 #include "src/tint/lang/core/fluent_types.h"
+#include "src/tint/lang/core/interpolation.h"
 #include "src/tint/lang/core/interpolation_sampling.h"
 #include "src/tint/lang/core/interpolation_type.h"
 #include "src/tint/lang/core/number.h"
-#include "src/tint/lang/core/type/array.h"
-#include "src/tint/lang/core/type/bool.h"
-#include "src/tint/lang/core/type/depth_texture.h"
-#include "src/tint/lang/core/type/external_texture.h"
-#include "src/tint/lang/core/type/f16.h"
-#include "src/tint/lang/core/type/f32.h"
-#include "src/tint/lang/core/type/i32.h"
-#include "src/tint/lang/core/type/input_attachment.h"
-#include "src/tint/lang/core/type/matrix.h"
-#include "src/tint/lang/core/type/multisampled_texture.h"
-#include "src/tint/lang/core/type/pointer.h"
-#include "src/tint/lang/core/type/sampled_texture.h"
+#include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/core/type/sampler_kind.h"
-#include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
-#include "src/tint/lang/core/type/u32.h"
-#include "src/tint/lang/core/type/vector.h"
-#include "src/tint/lang/core/type/void.h"
 #include "src/tint/lang/wgsl/ast/alias.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
 #include "src/tint/lang/wgsl/ast/binary_expression.h"
@@ -118,6 +101,8 @@
 #include "src/tint/lang/wgsl/builtin_fn.h"
 #include "src/tint/lang/wgsl/extension.h"
 #include "src/tint/utils/id/generation_id.h"
+#include "src/tint/utils/memory/block_allocator.h"
+#include "src/tint/utils/symbol/symbol_table.h"
 #include "src/tint/utils/text/string.h"
 
 #ifdef CURRENTLY_IN_TINT_PUBLIC_HEADER
@@ -2144,6 +2129,17 @@ class Builder {
                                              Expr(std::forward<RHS>(rhs)));
     }
 
+    /// @param source the source information
+    /// @param lhs the left hand argument to the bit shift right operation
+    /// @param rhs the right hand argument to the bit shift right operation
+    /// @returns a `ast::BinaryExpression` bit shifting right `lhs` by `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* Shr(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, core::BinaryOp::kShiftRight,
+                                             Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
+    }
+
     /// @param lhs the left hand argument to the bit shift left operation
     /// @param rhs the right hand argument to the bit shift left operation
     /// @returns a `ast::BinaryExpression` bit shifting left `lhs` by `rhs`
@@ -3074,62 +3070,52 @@ class Builder {
     /// @param source the source information
     /// @param builtin the builtin value
     /// @returns the builtin attribute pointer
-    template <typename BUILTIN>
-    const ast::BuiltinAttribute* Builtin(const Source& source, BUILTIN&& builtin) {
-        return create<ast::BuiltinAttribute>(source, Expr(std::forward<BUILTIN>(builtin)));
+    const ast::BuiltinAttribute* Builtin(const Source& source, core::BuiltinValue builtin) {
+        return create<ast::BuiltinAttribute>(source, builtin);
     }
 
     /// Creates an ast::BuiltinAttribute
     /// @param builtin the builtin value
     /// @returns the builtin attribute pointer
-    template <typename BUILTIN>
-    const ast::BuiltinAttribute* Builtin(BUILTIN&& builtin) {
-        return create<ast::BuiltinAttribute>(source_, Expr(std::forward<BUILTIN>(builtin)));
+    const ast::BuiltinAttribute* Builtin(core::BuiltinValue builtin) {
+        return Builtin(source_, builtin);
     }
 
     /// Creates an ast::InterpolateAttribute
     /// @param type the interpolation type
     /// @returns the interpolate attribute pointer
-    template <typename TYPE, typename = DisableIfSource<TYPE>>
-    const ast::InterpolateAttribute* Interpolate(TYPE&& type) {
-        return Interpolate(source_, std::forward<TYPE>(type));
-    }
-
-    /// Creates an ast::InterpolateAttribute
-    /// @param source the source information
-    /// @param type the interpolation type
-    /// @returns the interpolate attribute pointer
-    template <typename TYPE>
-    const ast::InterpolateAttribute* Interpolate(const Source& source, TYPE&& type) {
-        return create<ast::InterpolateAttribute>(source, Expr(std::forward<TYPE>(type)), nullptr);
-    }
-
-    /// Creates an ast::InterpolateAttribute
-    /// @param type the interpolation type
-    /// @param sampling the interpolation sampling
-    /// @returns the interpolate attribute pointer
-    template <typename TYPE, typename SAMPLING, typename = DisableIfSource<TYPE>>
-    const ast::InterpolateAttribute* Interpolate(TYPE&& type, SAMPLING&& sampling) {
-        return Interpolate(source_, std::forward<TYPE>(type), std::forward<SAMPLING>(sampling));
+    const ast::InterpolateAttribute* Interpolate(core::InterpolationType type) {
+        return Interpolate(source_, type);
     }
 
     /// Creates an ast::InterpolateAttribute
     /// @param source the source information
     /// @param type the interpolation type
-    /// @param sampling the interpolation sampling
     /// @returns the interpolate attribute pointer
-    template <typename TYPE, typename SAMPLING>
     const ast::InterpolateAttribute* Interpolate(const Source& source,
-                                                 TYPE&& type,
-                                                 SAMPLING&& sampling) {
-        if constexpr (std::is_same_v<std::decay_t<SAMPLING>, core::InterpolationSampling>) {
-            if (sampling == core::InterpolationSampling::kUndefined) {
-                return create<ast::InterpolateAttribute>(source, Expr(std::forward<TYPE>(type)),
-                                                         nullptr);
-            }
-        }
-        return create<ast::InterpolateAttribute>(source, Expr(std::forward<TYPE>(type)),
-                                                 Expr(std::forward<SAMPLING>(sampling)));
+                                                 core::InterpolationType type) {
+        return Interpolate(source, type, core::InterpolationSampling::kUndefined);
+    }
+
+    /// Creates an ast::InterpolateAttribute
+    /// @param type the interpolation type
+    /// @param sampling the interpolation sampling
+    /// @returns the interpolate attribute pointer
+    const ast::InterpolateAttribute* Interpolate(core::InterpolationType type,
+                                                 core::InterpolationSampling sampling) {
+        return Interpolate(source_, type, sampling);
+    }
+
+    /// Creates an ast::InterpolateAttribute
+    /// @param source the source information
+    /// @param type the interpolation type
+    /// @param sampling the interpolation sampling
+    /// @returns the interpolate attribute pointer
+    const ast::InterpolateAttribute* Interpolate(const Source& source,
+                                                 core::InterpolationType type,
+                                                 core::InterpolationSampling sampling) {
+        core::Interpolation interpolation{type, sampling};
+        return create<ast::InterpolateAttribute>(source, interpolation);
     }
 
     /// Creates an ast::InterpolateAttribute using flat interpolation

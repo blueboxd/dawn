@@ -63,7 +63,9 @@ enum class BindingInfoType {
     Texture,
     StorageTexture,
     ExternalTexture,
-    StaticSampler
+    StaticSampler,
+    // Internal to vulkan only.
+    InputAttachment,
 };
 
 // A mirror of wgpu::BufferBindingLayout for use inside dawn::native.
@@ -115,10 +117,23 @@ struct StaticSamplerBindingInfo {
 
     // Holds a ref instead of an unowned pointer.
     Ref<SamplerBase> sampler;
+    // Holds the BindingNumber of the single texture with which this sampler is
+    // statically paired, if any.
+    BindingNumber sampledTextureBinding;
+    // Whether this instance is statically paired with a single texture.
+    bool isUsedForSingleTextureBinding = false;
 };
 
 // A mirror of wgpu::ExternalTextureBindingLayout for use inside dawn::native.
 struct ExternalTextureBindingInfo {};
+
+// Internal to vulkan only.
+struct InputAttachmentBindingInfo {
+    InputAttachmentBindingInfo();
+    explicit InputAttachmentBindingInfo(wgpu::TextureSampleType sampleType);
+
+    wgpu::TextureSampleType sampleType;
+};
 
 struct BindingInfo {
     BindingNumber binding;
@@ -128,7 +143,8 @@ struct BindingInfo {
                  SamplerBindingInfo,
                  TextureBindingInfo,
                  StorageTextureBindingInfo,
-                 StaticSamplerBindingInfo>
+                 StaticSamplerBindingInfo,
+                 InputAttachmentBindingInfo>
         bindingLayout;
 };
 

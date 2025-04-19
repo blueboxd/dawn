@@ -27,13 +27,14 @@
 
 #include "dawn/tests/AdapterTestConfig.h"
 
+#include <webgpu/webgpu_cpp.h>
+
 #include <initializer_list>
 #include <ostream>
 #include <string>
 #include <vector>
 
 #include "dawn/common/Assert.h"
-#include "dawn/webgpu_cpp.h"
 
 BackendTestConfig::BackendTestConfig(wgpu::BackendType backendType,
                                      std::initializer_list<const char*> forceEnabledWorkarounds,
@@ -84,17 +85,16 @@ BackendTestConfig VulkanBackend(std::initializer_list<const char*> forceEnabledW
                              forceDisabledWorkarounds);
 }
 
-TestAdapterProperties::TestAdapterProperties(const wgpu::AdapterProperties& properties,
-                                             bool selected)
-    : vendorID(properties.vendorID),
-      vendorName(properties.vendorName),
-      architecture(properties.architecture),
-      deviceID(properties.deviceID),
-      name(properties.name),
-      driverDescription(properties.driverDescription),
-      adapterType(properties.adapterType),
-      backendType(properties.backendType),
-      compatibilityMode(properties.compatibilityMode),
+TestAdapterProperties::TestAdapterProperties(const wgpu::AdapterInfo& info, bool selected)
+    : vendorID(info.vendorID),
+      vendorName(info.vendor),
+      architecture(info.architecture),
+      deviceID(info.deviceID),
+      name(info.device),
+      driverDescription(info.description),
+      adapterType(info.adapterType),
+      backendType(info.backendType),
+      compatibilityMode(info.compatibilityMode),
       selected(selected) {}
 
 std::string TestAdapterProperties::ParamName() const {

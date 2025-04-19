@@ -845,7 +845,7 @@ Maybe<Parser::VariableQualifier> Parser::variable_qualifier() {
         if (address_space.errored) {
             return Failure::kErrored;
         }
-        if (match(Token::Type::kComma)) {
+        if (match(Token::Type::kComma) && !peek().Is(Token::Type::kTemplateArgsRight)) {
             auto access = expect_expression("'var' access mode");
             if (access.errored) {
                 return Failure::kErrored;
@@ -3038,6 +3038,50 @@ Maybe<const ast::Attribute*> Parser::attribute() {
             break;
     }
 
+    // builtin_attr :
+    //   '@' 'builtin' '(' builtin_value_name ',' ? ')'
+    if (attr.value == core::Attribute::kBuiltin) {
+        return expect_paren_block(
+            "builtin attribute", [&]() -> Expect<const ast::BuiltinAttribute*> {
+                auto name = expect_enum("builtin value name", core::ParseBuiltinValue,
+                                        core::kBuiltinValueStrings);
+                if (name.errored) {
+                    return Failure::kErrored;
+                }
+                match(Token::Type::kComma);
+
+                return builder_.Builtin(t.source(), name.value);
+            });
+    }
+
+    // interpolate_attr :
+    //   '@' 'interpolate' '(' interpolate_type_name ',' ? ')'
+    // | '@' 'interpolate' '(' interpolate_type_name ',' interpolate_sampling_name ',' ? ')'
+    if (attr.value == core::Attribute::kInterpolate) {
+        return expect_paren_block(
+            "interpolate attribute", [&]() -> Expect<const ast::InterpolateAttribute*> {
+                auto type_name =
+                    expect_enum("interpolation type name", core::ParseInterpolationType,
+                                core::kInterpolationTypeStrings);
+                if (type_name.errored) {
+                    return Failure::kErrored;
+                }
+                if (!match(Token::Type::kComma) || peek().Is(Token::Type::kParenRight)) {
+                    return builder_.Interpolate(t.source(), type_name.value);
+                }
+
+                auto sampling_name =
+                    expect_enum("interpolation sampling name", core::ParseInterpolationSampling,
+                                core::kInterpolationSamplingStrings);
+                if (sampling_name.errored) {
+                    return Failure::kErrored;
+                }
+                match(Token::Type::kComma);
+
+                return builder_.Interpolate(t.source(), type_name.value, sampling_name.value);
+            });
+    }
+
     Vector<const ast::Expression*, 2> args;
 
     // Handle no parameter items which should have no parens
@@ -3089,8 +3133,6 @@ Maybe<const ast::Attribute*> Parser::attribute() {
             return create<ast::BindingAttribute>(t.source(), args[0]);
         case core::Attribute::kBlendSrc:
             return create<ast::BlendSrcAttribute>(t.source(), args[0]);
-        case core::Attribute::kBuiltin:
-            return create<ast::BuiltinAttribute>(t.source(), args[0]);
         case core::Attribute::kColor:
             return create<ast::ColorAttribute>(t.source(), args[0]);
         case core::Attribute::kCompute:
@@ -3103,9 +3145,6 @@ Maybe<const ast::Attribute*> Parser::attribute() {
             return create<ast::IdAttribute>(t.source(), args[0]);
         case core::Attribute::kInputAttachmentIndex:
             return create<ast::InputAttachmentIndexAttribute>(t.source(), args[0]);
-        case core::Attribute::kInterpolate:
-            return create<ast::InterpolateAttribute>(t.source(), args[0],
-                                                     args.Length() == 2 ? args[1] : nullptr);
         case core::Attribute::kInvariant:
             return create<ast::InvariantAttribute>(t.source());
         case core::Attribute::kLocation:

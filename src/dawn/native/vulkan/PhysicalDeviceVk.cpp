@@ -248,6 +248,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::R8UnormStorage);
     }
 
+    bool shaderF16Enabled = false;
     if (mDeviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
         mDeviceInfo.HasExt(DeviceExt::_16BitStorage) &&
         mDeviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
@@ -256,6 +257,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         // TODO(crbug.com/tint/2164): Investigate crashes in f16 CTS tests to enable on NVIDIA.
         if (!gpu_info::IsNvidia(GetVendorId())) {
             EnableFeature(Feature::ShaderF16);
+            shaderF16Enabled = true;
         }
     }
 
@@ -369,20 +371,58 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::TransientAttachments);
     EnableFeature(Feature::AdapterPropertiesVk);
+    EnableFeature(Feature::DawnLoadResolveTexture);
 
+    // TODO(349125474): Remove deprecated ChromiumExperimentalSubgroups.
     // Enable ChromiumExperimentalSubgroups feature if:
     // 1. Vulkan API version is 1.1 or later, and
     // 2. subgroupSupportedStages includes compute stage bit, and
     // 3. subgroupSupportedOperations includes basic and ballot bits, and
     // 4. VK_EXT_subgroup_size_control extension is valid, and both subgroupSizeControl
     //    and computeFullSubgroups is TRUE in VkPhysicalDeviceSubgroupSizeControlFeaturesEXT.
+    // Notes that these requirement doesn't ensure all subgroups features are supported by the
+    // Vulkan backend. For example, currently ChromiumExperimentalSubgroups feature allows using
+    // subgroups functions with f16 types in WGSL, but doesn't ensure that backend supports it.
     if ((mDeviceInfo.properties.apiVersion >= VK_API_VERSION_1_1) &&
         (mDeviceInfo.subgroupProperties.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_BASIC_BIT) &&
         (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT) &&
         (mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) &&
         (mDeviceInfo.subgroupSizeControlFeatures.subgroupSizeControl == VK_TRUE) &&
         (mDeviceInfo.subgroupSizeControlFeatures.computeFullSubgroups == VK_TRUE)) {
         EnableFeature(Feature::ChromiumExperimentalSubgroups);
+    }
+
+    // Enable Subgroups feature if:
+    // 1. Vulkan API version is 1.1 or later, and
+    // 2. subgroupSupportedStages includes compute and fragment stage bit, and
+    // 3. subgroupSupportedOperations includes vote, ballot, shuffle, shuffle relative, arithmetic,
+    //    and quad bits, and
+    // 4. VK_EXT_subgroup_size_control extension is valid, and both subgroupSizeControl
+    //    and computeFullSubgroups is TRUE in VkPhysicalDeviceSubgroupSizeControlFeaturesEXT.
+    if ((mDeviceInfo.properties.apiVersion >= VK_API_VERSION_1_1) &&
+        (mDeviceInfo.subgroupProperties.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedStages & VK_SHADER_STAGE_FRAGMENT_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_BASIC_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_SHUFFLE_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedOperations &
+         VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_ARITHMETIC_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_QUAD_BIT) &&
+        (mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) &&
+        (mDeviceInfo.subgroupSizeControlFeatures.subgroupSizeControl == VK_TRUE) &&
+        (mDeviceInfo.subgroupSizeControlFeatures.computeFullSubgroups == VK_TRUE)) {
+        EnableFeature(Feature::Subgroups);
+        // Enable SubgroupsF16 feature if:
+        // 1. Subgroups feature is enabled, and
+        // 2. ShaderF16 feature is enabled, and
+        // 3. shaderSubgroupExtendedTypes is TRUE in
+        //    VkPhysicalDeviceShaderSubgroupExtendedTypesFeaturesKHR.
+        if (shaderF16Enabled &&
+            mDeviceInfo.shaderSubgroupExtendedTypes.shaderSubgroupExtendedTypes == VK_TRUE) {
+            EnableFeature(Feature::SubgroupsF16);
+        }
     }
     // Enable ChromiumExperimentalSubgroupUniformControlFlow if
     // VK_KHR_shader_subgroup_uniform_control_flow is supported.
@@ -632,15 +672,6 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     // Vulkan SPEC and drivers.
     deviceToggles->Default(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
 
-#if DAWN_PLATFORM_IS(ANDROID)
-    // Default to the IR backend on Android.
-    deviceToggles->Default(Toggle::UseTintIR, true);
-#else
-    // All other platforms default to the value corresponding to the feature flag.
-    deviceToggles->Default(Toggle::UseTintIR,
-                           platform->IsFeatureEnabled(platform::Features::kWebGPUUseTintIR));
-#endif
-
     if (IsAndroidQualcomm()) {
         // dawn:1564, dawn:1897: Recording a compute pass after a render pass in the same command
         // buffer frequently causes a crash on Qualcomm GPUs. To work around that bug, split the
@@ -660,6 +691,10 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         // forced to store the multisampled targets and do the resolves as separate passes injected
         // after the original one.
         deviceToggles->Default(Toggle::ResolveMultipleAttachmentInSeparatePasses, true);
+    }
+
+    if (IsAndroidSamsung() || IsAndroidQualcomm()) {
+        deviceToggles->Default(Toggle::IgnoreImportedAHardwareBufferVulkanImageSize, true);
     }
 
     if (IsIntelMesa() && gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId())) {
@@ -805,6 +840,14 @@ bool PhysicalDevice::IsAndroidARM() const {
 #endif
 }
 
+bool PhysicalDevice::IsAndroidSamsung() const {
+#if DAWN_PLATFORM_IS(ANDROID)
+    return gpu_info::IsSamsung(GetVendorId());
+#else
+    return false;
+#endif
+}
+
 bool PhysicalDevice::IsIntelMesa() const {
     if (mDeviceInfo.HasExt(DeviceExt::DriverProperties)) {
         return mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA_KHR;
@@ -885,6 +928,24 @@ ResultOrError<PhysicalDeviceSurfaceCapabilities> PhysicalDevice::GetSurfaceCapab
 
     PhysicalDeviceSurfaceCapabilities capabilities;
 
+    // Convert the known swapchain usages.
+    capabilities.usages = wgpu::TextureUsage::None;
+    if (vkCaps.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) {
+        capabilities.usages |= wgpu::TextureUsage::CopySrc;
+    }
+    if (vkCaps.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+        capabilities.usages |= wgpu::TextureUsage::CopyDst;
+    }
+    if (vkCaps.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
+        capabilities.usages |= wgpu::TextureUsage::RenderAttachment;
+    }
+    if (vkCaps.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) {
+        capabilities.usages |= wgpu::TextureUsage::TextureBinding;
+    }
+    if (vkCaps.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
+        capabilities.usages |= wgpu::TextureUsage::StorageBinding;
+    }
+
     // Convert known swapchain formats
     auto ToWGPUSwapChainFormat = [](VkFormat format) -> wgpu::TextureFormat {
         switch (format) {
@@ -945,7 +1006,6 @@ ResultOrError<PhysicalDeviceSurfaceCapabilities> PhysicalDevice::GetSurfaceCapab
         {VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR, wgpu::CompositeAlphaMode::Inherit},
     };
 
-    capabilities.alphaModes.push_back(wgpu::CompositeAlphaMode::Auto);
     for (auto mode : alphaModePairs) {
         if (vkCaps.capabilities.supportedCompositeAlpha & mode.vkBit) {
             capabilities.alphaModes.push_back(mode.webgpuEnum);

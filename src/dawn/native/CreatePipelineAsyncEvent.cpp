@@ -27,6 +27,8 @@
 
 #include "dawn/native/CreatePipelineAsyncEvent.h"
 
+#include <webgpu/webgpu.h>
+
 #include <utility>
 
 #include "dawn/common/FutureUtils.h"

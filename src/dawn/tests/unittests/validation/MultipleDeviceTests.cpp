@@ -27,6 +27,7 @@
 
 #include "dawn/tests/unittests/validation/ValidationTest.h"
 
+#include "dawn/native/DawnNative.h"
 #include "dawn/tests/MockCallback.h"
 
 namespace dawn {
@@ -77,7 +78,7 @@ TEST_F(MultipleDeviceTest, ValidatesSameDeviceCreatePipelineAsync) {
                                                      : wgpu::CallbackMode::AllowProcessEvents,
                                           creationCallback.Callback());
 
-        WaitForAllOperations(device);
+        WaitForAllOperations();
     }
 
     // CreateComputePipelineAsync errors if the shader module is created on a different device.
@@ -97,7 +98,7 @@ TEST_F(MultipleDeviceTest, ValidatesSameDeviceCreatePipelineAsync) {
                                                      : wgpu::CallbackMode::AllowProcessEvents,
                                           creationCallback.Callback());
 
-        WaitForAllOperations(device);
+        WaitForAllOperations();
     }
 }
 

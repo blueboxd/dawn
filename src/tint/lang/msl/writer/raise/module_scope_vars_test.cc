@@ -29,6 +29,7 @@
 
 #include <utility>
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/transform/helper_test.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 
@@ -38,7 +39,10 @@ using namespace tint::core::number_suffixes;  // NOLINT
 namespace tint::msl::writer::raise {
 namespace {
 
-using MslWriter_ModuleScopeVarsTest = core::ir::transform::TransformTest;
+class MslWriter_ModuleScopeVarsTest : public core::ir::transform::TransformTest {
+  public:
+    void SetUp() override { capabilities.Add(core::ir::Capability::kAllowPointersInStructures); }
+};
 
 TEST_F(MslWriter_ModuleScopeVarsTest, NoModuleScopeVars) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
@@ -364,6 +368,73 @@ tint_module_vars_struct = struct @align(1) {
     EXPECT_EQ(expect, str());
 }
 
+TEST_F(MslWriter_ModuleScopeVarsTest, Workgroup) {
+    auto* var_a = b.Var("a", ty.ptr<workgroup, i32>());
+    auto* var_b = b.Var("b", ty.ptr<workgroup, i32>());
+    mod.root_block->Append(var_a);
+    mod.root_block->Append(var_b);
+
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute,
+                            std::array<uint32_t, 3>{1u, 1u, 1u});
+    b.Append(func->Block(), [&] {
+        auto* load_a = b.Load(var_a);
+        auto* load_b = b.Load(var_b);
+        b.Store(var_a, b.Add<i32>(load_a, load_b));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %a:ptr<workgroup, i32, read_write> = var
+  %b:ptr<workgroup, i32, read_write> = var
+}
+
+%foo = @compute @workgroup_size(1, 1, 1) func():void {
+  $B2: {
+    %4:i32 = load %a
+    %5:i32 = load %b
+    %6:i32 = add %4, %5
+    store %a, %6
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+tint_module_vars_struct = struct @align(1) {
+  a:ptr<workgroup, i32, read_write> @offset(0)
+  b:ptr<workgroup, i32, read_write> @offset(0)
+}
+
+tint_symbol_2 = struct @align(4) {
+  tint_symbol:i32 @offset(0)
+  tint_symbol_1:i32 @offset(4)
+}
+
+%foo = @compute @workgroup_size(1, 1, 1) func(%2:ptr<workgroup, tint_symbol_2, read_write>):void {
+  $B1: {
+    %a:ptr<workgroup, i32, read_write> = access %2, 0u
+    %b:ptr<workgroup, i32, read_write> = access %2, 1u
+    %5:tint_module_vars_struct = construct %a, %b
+    %tint_module_vars:tint_module_vars_struct = let %5
+    %7:ptr<workgroup, i32, read_write> = access %tint_module_vars, 0u
+    %8:i32 = load %7
+    %9:ptr<workgroup, i32, read_write> = access %tint_module_vars, 1u
+    %10:i32 = load %9
+    %11:i32 = add %8, %10
+    %12:ptr<workgroup, i32, read_write> = access %tint_module_vars, 0u
+    store %12, %11
+    ret
+  }
+}
+)";
+
+    Run(ModuleScopeVars);
+
+    EXPECT_EQ(expect, str());
+}
+
 TEST_F(MslWriter_ModuleScopeVarsTest, MultipleAddressSpaces) {
     auto* var_a = b.Var("a", ty.ptr<uniform, i32, core::Access::kRead>());
     auto* var_b = b.Var("b", ty.ptr<storage, i32, core::Access::kReadWrite>());
@@ -446,8 +517,8 @@ TEST_F(MslWriter_ModuleScopeVarsTest, EntryPointHasExistingParameters) {
 
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     auto* param = b.FunctionParam<i32>("param");
-    param->SetLocation(
-        core::ir::Location{1_u, core::Interpolation{core::InterpolationType::kFlat}});
+    param->SetLocation(1_u);
+    param->SetInterpolation(core::Interpolation{core::InterpolationType::kFlat});
     func->SetParams({param});
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
@@ -1281,7 +1352,7 @@ tint_module_vars_struct = struct @align(1) {
 
 %main_a = @fragment func(%a:ptr<uniform, i32, read> [@binding_point(1, 2)], %b:ptr<storage, i32, read_write> [@binding_point(3, 4)]):void {
   $B1: {
-    %4:tint_module_vars_struct = construct %a, %b, undef
+    %4:tint_module_vars_struct = construct %a, %b, unused
     %tint_module_vars:tint_module_vars_struct = let %4
     %6:ptr<uniform, i32, read> = access %tint_module_vars, 0u
     %7:i32 = load %6
@@ -1296,7 +1367,7 @@ tint_module_vars_struct = struct @align(1) {
 %main_b = @fragment func(%a_1:ptr<uniform, i32, read> [@binding_point(1, 2)]):void {  # %a_1: 'a'
   $B2: {
     %c:ptr<private, i32, read_write> = var
-    %15:tint_module_vars_struct = construct %a_1, undef, %c
+    %15:tint_module_vars_struct = construct %a_1, unused, %c
     %tint_module_vars_1:tint_module_vars_struct = let %15  # %tint_module_vars_1: 'tint_module_vars'
     %17:ptr<uniform, i32, read> = access %tint_module_vars_1, 0u
     %18:i32 = load %17
@@ -1394,7 +1465,7 @@ tint_module_vars_struct = struct @align(1) {
 }
 %main_a = @fragment func(%a:ptr<uniform, i32, read> [@binding_point(1, 2)], %b:ptr<storage, i32, read_write> [@binding_point(3, 4)]):void {
   $B2: {
-    %8:tint_module_vars_struct = construct %a, %b, undef
+    %8:tint_module_vars_struct = construct %a, %b, unused
     %tint_module_vars_1:tint_module_vars_struct = let %8  # %tint_module_vars_1: 'tint_module_vars'
     %10:ptr<storage, i32, read_write> = access %tint_module_vars_1, 1u
     %11:i32 = load %10
@@ -1408,7 +1479,7 @@ tint_module_vars_struct = struct @align(1) {
 %main_b = @fragment func(%a_1:ptr<uniform, i32, read> [@binding_point(1, 2)]):void {  # %a_1: 'a'
   $B3: {
     %c:ptr<private, i32, read_write> = var
-    %18:tint_module_vars_struct = construct %a_1, undef, %c
+    %18:tint_module_vars_struct = construct %a_1, unused, %c
     %tint_module_vars_2:tint_module_vars_struct = let %18  # %tint_module_vars_2: 'tint_module_vars'
     %20:ptr<private, i32, read_write> = access %tint_module_vars_2, 2u
     %21:i32 = load %20

@@ -191,6 +191,7 @@ class Device final : public d3d::Device {
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
+        const std::vector<tint::wgsl::Extension>& internalExtensions,
         ShaderModuleParseResult* parseResult,
         OwnedCompilationMessages* compilationMessages) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
@@ -230,6 +231,7 @@ class Device final : public d3d::Device {
     MaybeError CreateZeroBuffer();
 
     ComPtr<ID3D12Device> mD3d12Device;  // Device is owned by adapter and will not be outlived.
+    bool mIsDebugLayerEnabled = false;
 
     // 11on12 device corresponding to queue's mCommandQueue.
     ComPtr<ID3D11On12Device> mD3d11On12Device;

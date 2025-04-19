@@ -83,8 +83,8 @@ std::string ConstructFragmentShader(DeviceBase* device,
     std::ostringstream clearValueUniformBufferDeclarationStream;
     std::ostringstream assignOutputColorStream;
 
-    outputColorDeclarationStream << "struct OutputColor {" << std::endl;
-    clearValueUniformBufferDeclarationStream << "struct ClearColors {" << std::endl;
+    outputColorDeclarationStream << "struct OutputColor {\n";
+    clearValueUniformBufferDeclarationStream << "struct ClearColors {\n";
 
     // Only generate the assignments we need.
     for (auto i : IterateBitSet(key.colorTargetsToApplyClearColorValue)) {
@@ -100,8 +100,8 @@ std::string ConstructFragmentShader(DeviceBase* device,
         assignOutputColorStream << absl::StrFormat(
             "    outputColor.output%u = clearColors.color%u;\n", i, i);
     }
-    outputColorDeclarationStream << "}" << std::endl;
-    clearValueUniformBufferDeclarationStream << "}" << std::endl;
+    outputColorDeclarationStream << "}\n";
+    clearValueUniformBufferDeclarationStream << "}\n";
 
     std::ostringstream fragmentShaderStream;
     fragmentShaderStream << outputColorDeclarationStream.str()
@@ -255,40 +255,36 @@ bool NeedsBigIntClear(const RenderPassColorAttachment& colorAttachmentInfo) {
             return false;
     }
 
-    // TODO(dawn:537): only check the color channels that are available in the current color format.
     Color clearValue = GetClearColorValue(colorAttachmentInfo);
-    switch (format.GetAspectInfo(Aspect::Color).baseType) {
-        case TextureComponentType::Uint: {
-            constexpr double kMaxUintRepresentableInFloat = 1 << std::numeric_limits<float>::digits;
-            if (clearValue.r <= kMaxUintRepresentableInFloat &&
-                clearValue.g <= kMaxUintRepresentableInFloat &&
-                clearValue.b <= kMaxUintRepresentableInFloat &&
-                clearValue.a <= kMaxUintRepresentableInFloat) {
-                return false;
+    std::array<double, 4> clearValueInArray = {
+        {clearValue.r, clearValue.g, clearValue.b, clearValue.a}};
+    for (uint8_t i = 0; i < format.componentCount; ++i) {
+        double value = clearValueInArray[i];
+        switch (format.GetAspectInfo(Aspect::Color).baseType) {
+            case TextureComponentType::Uint: {
+                constexpr double kMaxUintRepresentableInFloat =
+                    1 << std::numeric_limits<float>::digits;
+                if (value > kMaxUintRepresentableInFloat) {
+                    return true;
+                }
+                break;
             }
-            break;
-        }
-        case TextureComponentType::Sint: {
-            constexpr double kMaxSintRepresentableInFloat = 1 << std::numeric_limits<float>::digits;
-            constexpr double kMinSintRepresentableInFloat = -kMaxSintRepresentableInFloat;
-            if (clearValue.r <= kMaxSintRepresentableInFloat &&
-                clearValue.r >= kMinSintRepresentableInFloat &&
-                clearValue.g <= kMaxSintRepresentableInFloat &&
-                clearValue.g >= kMinSintRepresentableInFloat &&
-                clearValue.b <= kMaxSintRepresentableInFloat &&
-                clearValue.b >= kMinSintRepresentableInFloat &&
-                clearValue.a <= kMaxSintRepresentableInFloat &&
-                clearValue.a >= kMinSintRepresentableInFloat) {
-                return false;
+            case TextureComponentType::Sint: {
+                constexpr double kMaxSintRepresentableInFloat =
+                    1 << std::numeric_limits<float>::digits;
+                constexpr double kMinSintRepresentableInFloat = -kMaxSintRepresentableInFloat;
+                if (value > kMaxSintRepresentableInFloat || value < kMinSintRepresentableInFloat) {
+                    return true;
+                }
+                break;
             }
-            break;
+            case TextureComponentType::Float:
+                DAWN_UNREACHABLE();
+                return false;
         }
-        case TextureComponentType::Float:
-            DAWN_UNREACHABLE();
-            return false;
     }
 
-    return true;
+    return false;
 }
 
 bool GetKeyOfApplyClearColorValueWithDrawPipelines(

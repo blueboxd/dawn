@@ -46,7 +46,7 @@
 #include "src/tint/lang/core/ir/control_instruction.h"
 #include "src/tint/lang/core/ir/convert.h"
 #include "src/tint/lang/core/ir/core_builtin_call.h"
-#include "src/tint/lang/core/ir/disassembly.h"
+#include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/discard.h"
 #include "src/tint/lang/core/ir/exit_if.h"
 #include "src/tint/lang/core/ir/exit_loop.h"
@@ -60,6 +60,7 @@
 #include "src/tint/lang/core/ir/load.h"
 #include "src/tint/lang/core/ir/load_vector_element.h"
 #include "src/tint/lang/core/ir/loop.h"
+#include "src/tint/lang/core/ir/member_builtin_call.h"
 #include "src/tint/lang/core/ir/multi_in_block.h"
 #include "src/tint/lang/core/ir/next_iteration.h"
 #include "src/tint/lang/core/ir/return.h"
@@ -70,13 +71,16 @@
 #include "src/tint/lang/core/ir/terminate_invocation.h"
 #include "src/tint/lang/core/ir/unary.h"
 #include "src/tint/lang/core/ir/unreachable.h"
+#include "src/tint/lang/core/ir/unused.h"
 #include "src/tint/lang/core/ir/user_call.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/core/type/bool.h"
+#include "src/tint/lang/core/type/i8.h"
 #include "src/tint/lang/core/type/memory_view.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/type.h"
+#include "src/tint/lang/core/type/u8.h"
 #include "src/tint/lang/core/type/vector.h"
 #include "src/tint/lang/core/type/void.h"
 #include "src/tint/utils/containers/hashset.h"
@@ -123,40 +127,6 @@ bool TransitivelyHolds(const Block* block, const Instruction* inst) {
     return false;
 }
 
-/// @returns true if the type @p type is of, or indirectly references a type of type `T`.
-template <typename T>
-bool HoldsType(const type::Type* type) {
-    if (!type) {
-        return false;
-    }
-    Vector<const type::Type*, 8> stack{type};
-    Hashset<const type::Type*, 8> seen{type};
-    while (!stack.IsEmpty()) {
-        auto* ty = stack.Pop();
-        if (ty->Is<T>()) {
-            return true;
-        }
-
-        if (auto* view = ty->As<type::MemoryView>(); view && seen.Add(view)) {
-            stack.Push(view);
-            continue;
-        }
-
-        auto type_count = ty->Elements();
-        if (type_count.type && seen.Add(type_count.type)) {
-            stack.Push(type_count.type);
-            continue;
-        }
-
-        for (uint32_t i = 0; i < type_count.count; i++) {
-            if (auto* subtype = ty->Element(i); subtype && seen.Add(subtype)) {
-                stack.Push(subtype);
-            }
-        }
-    }
-    return false;
-}
-
 /// The core IR validator.
 class Validator {
   public:
@@ -173,8 +143,21 @@ class Validator {
     Result<SuccessType> Run();
 
   private:
+    /// Runs validation to confirm the structural soundness of the module.
+    /// Also runs any validation that is not dependent on the entire module being
+    /// sound and sets up data structures for later checks.
+    void RunStructuralSoundnessChecks();
+
+    /// Checks that there are no orphaned instructions
+    /// Depends on CheckStructuralSoundness() having previously been run
+    void CheckForOrphanedInstructions();
+
+    /// Checks that there are no discards called by non-fragment entrypoints
+    /// Depends on CheckStructuralSoundness() having previously been run
+    void CheckForNonFragmentDiscards();
+
     /// @returns the IR disassembly, performing a disassemble if this is the first call.
-    ir::Disassembly& Disassembly();
+    ir::Disassembler& Disassemble();
 
     /// Adds an error for the @p inst and highlights the instruction in the disassembly
     /// @param inst the instruction
@@ -296,19 +279,80 @@ class Validator {
     /// @returns the styled  name for the given block
     StyledText NameOf(const Block* block);
 
+    /// Checks the given result is not null and its type is not null
+    /// @param inst the instruction
+    /// @param idx the result index
+    /// @returns true if the result is not null
+    bool CheckResult(const Instruction* inst, size_t idx);
+
+    /// Checks the results (and their types) for @p inst are not null. If count is specified then
+    /// number of results is checked to be exact.
+    /// @param inst the instruction
+    /// @param count the number of results to check
+    /// @returns true if the results count is as expected and none are null
+    bool CheckResults(const ir::Instruction* inst, std::optional<size_t> count);
+
+    /// Checks the given operand is not null and its type is not null
+    /// @param inst the instruction
+    /// @param idx the operand index
+    /// @returns true if the operand is not null
+    bool CheckOperand(const Instruction* inst, size_t idx);
+
+    /// Checks the number of operands provided to @p inst and that none of them are null. Also
+    /// checks that the types for the operands are not null
+    /// @param inst the instruction
+    /// @param min_count the minimum number of operands to expect
+    /// @param max_count the maximum number of operands to expect, if not set, than only the minimum
+    /// number is checked.
+    /// @returns true if the number of operands is in the expected range and none are null
+    bool CheckOperands(const ir::Instruction* inst,
+                       size_t min_count,
+                       std::optional<size_t> max_count);
+
+    /// Checks the operands (and their types) for @p inst are not null. If count is specified then
+    /// number of operands is checked to be exact.
+    /// @param inst the instruction
+    /// @param count the number of operands to check
+    /// @returns true if the operands count is as expected and none are null
+    bool CheckOperands(const ir::Instruction* inst, std::optional<size_t> count);
+
+    /// Checks the number of results for @p inst are exactly equal to @p num_results and the number
+    /// of operands is correctly. Both results and operands are confirmed to be non-null.
+    /// @param inst the instruction
+    /// @param num_results expected number of results for the instruction
+    /// @param min_operands the minimum number of operands to expect
+    /// @param max_operands the maximum number of operands to expect, if not set, than only the
+    /// minimum number is checked.
+    /// @returns true if the result and operand counts are as expected and none are null
+    bool CheckResultsAndOperandRange(const ir::Instruction* inst,
+                                     size_t num_results,
+                                     size_t min_operands,
+                                     std::optional<size_t> max_operands);
+
+    /// Checks the number of results and operands for @p inst are exactly equal to num_results
+    /// and num_operands, respectively, and that none of them are null.
+    /// @param inst the instruction
+    /// @param num_results expected number of results for the instruction
+    /// @param num_operands expected number of operands for the instruction
+    /// @returns true if the result and operand counts are as expected and none are null
+    bool CheckResultsAndOperands(const ir::Instruction* inst,
+                                 size_t num_results,
+                                 size_t num_operands);
+
     /// Checks the given operand is not null
     /// @param inst the instruction
     /// @param operand the operand
     /// @param idx the operand index
+    // TODO(345196551): Remove this override once it is no longer used.
     void CheckOperandNotNull(const ir::Instruction* inst, const ir::Value* operand, size_t idx);
 
-    /// Checks all operands in the given range (inclusive) for @p inst are not null
-    /// @param inst the instruction
-    /// @param start_operand the first operand to check
-    /// @param end_operand the last operand to check
-    void CheckOperandsNotNull(const ir::Instruction* inst,
-                              size_t start_operand,
-                              size_t end_operand);
+    /// Checks that @p type does not use any types that are prohibited by the target capabilities.
+    /// @param type the type
+    /// @param diag a function that creates an error diagnostic for the source of the type
+    /// @param ignore_caps a set of capabilities to ignore for this check
+    void CheckType(const core::type::Type* type,
+                   std::function<diag::Diagnostic&()> diag,
+                   Capabilities ignore_caps = {});
 
     /// Validates the root block
     /// @param blk the block
@@ -334,9 +378,31 @@ class Validator {
     /// @param call the call to validate
     void CheckCall(const Call* call);
 
+    /// Validates the given bitcast
+    /// @param bitcast the bitcast to validate
+    void CheckBitcast(const Bitcast* bitcast);
+
     /// Validates the given builtin call
     /// @param call the call to validate
     void CheckBuiltinCall(const BuiltinCall* call);
+
+    /// Validates the given member builtin call
+    /// @param call the member call to validate
+    void CheckMemberBuiltinCall(const MemberBuiltinCall* call);
+
+    /// Validates the given construct
+    /// @param construct the construct to validate
+    void CheckConstruct(const Construct* construct);
+
+    /// Validates the given convert
+    /// @param convert the convert to validate
+    void CheckConvert(const Convert* convert);
+
+    /// Validates the given discard
+    /// @note Does not validate that the discard is in a fragment shader, that
+    /// needs to be handled later in the validation.
+    /// @param discard the discard to validate
+    void CheckDiscard(const Discard* discard);
 
     /// Validates the given user call
     /// @param call the call to validate
@@ -361,6 +427,10 @@ class Validator {
     /// Validates the given loop
     /// @param l the loop to validate
     void CheckLoop(const Loop* l);
+
+    /// Validates the loop body block
+    /// @param l the loop to validate
+    void CheckLoopBody(const Loop* l);
 
     /// Validates the loop continuing block
     /// @param l the loop to validate
@@ -466,6 +536,44 @@ class Validator {
     /// values.
     void EndBlock();
 
+    /// Get the function that contains an instruction.
+    /// @param inst the instruction
+    /// @returns the function
+    const ir::Function* ContainingFunction(const ir::Instruction* inst) {
+        return block_to_function_.GetOrAdd(inst->Block(), [&] {  //
+            return ContainingFunction(inst->Block()->Parent());
+        });
+    }
+
+    /// Get any endpoints that call a function.
+    /// @param f the function
+    /// @returns all end points that call the function
+    Hashset<const ir::Function*, 4> ContainingEndPoints(const ir::Function* f) {
+        Hashset<const ir::Function*, 4> result{};
+        Hashset<const ir::Function*, 4> visited{f};
+
+        auto call_sites = user_func_calls_.GetOr(f, Hashset<const ir::UserCall*, 4>()).Vector();
+        while (!call_sites.IsEmpty()) {
+            auto call_site = call_sites.Pop();
+            auto calling_function = ContainingFunction(call_site);
+            if (visited.Contains(calling_function)) {
+                continue;
+            }
+            visited.Add(calling_function);
+
+            if (calling_function->Stage() != Function::PipelineStage::kUndefined) {
+                result.Add(calling_function);
+            }
+
+            for (auto new_call_sites :
+                 user_func_calls_.GetOr(f, Hashset<const ir::UserCall*, 4>())) {
+                call_sites.Push(new_call_sites);
+            }
+        }
+
+        return result;
+    }
+
     /// ScopeStack holds a stack of values that are currently in scope
     struct ScopeStack {
         void Push() { stack_.Push({}); }
@@ -482,7 +590,7 @@ class Validator {
 
     const Module& mod_;
     Capabilities capabilities_;
-    std::optional<ir::Disassembly> disassembly_;  // Use Disassembly()
+    std::optional<ir::Disassembler> disassembler_;  // Use Disassemble()
     diag::List diagnostics_;
     Hashset<const Function*, 4> all_functions_;
     Hashset<const Instruction*, 4> visited_instructions_;
@@ -493,6 +601,9 @@ class Validator {
     Vector<std::function<void()>, 16> tasks_;
     SymbolTable symbols_ = SymbolTable::Wrap(mod_.symbols);
     type::Manager type_mgr_ = type::Manager::Wrap(mod_.Types());
+    Hashmap<const ir::Block*, const ir::Function*, 64> block_to_function_{};
+    Hashmap<const ir::Function*, Hashset<const ir::UserCall*, 4>, 4> user_func_calls_;
+    Hashset<const ir::Discard*, 4> discards_;
 };
 
 Validator::Validator(const Module& mod, Capabilities capabilities)
@@ -500,14 +611,56 @@ Validator::Validator(const Module& mod, Capabilities capabilities)
 
 Validator::~Validator() = default;
 
-Disassembly& Validator::Disassembly() {
-    if (!disassembly_) {
-        disassembly_.emplace(Disassemble(mod_));
+Disassembler& Validator::Disassemble() {
+    if (!disassembler_) {
+        disassembler_.emplace(ir::Disassembler(mod_));
     }
-    return *disassembly_;
+    return *disassembler_;
 }
 
 Result<SuccessType> Validator::Run() {
+    RunStructuralSoundnessChecks();
+
+    CheckForOrphanedInstructions();
+    CheckForNonFragmentDiscards();
+
+    if (diagnostics_.ContainsErrors()) {
+        diagnostics_.AddNote(Source{}) << "# Disassembly\n" << Disassemble().Text();
+        return Failure{std::move(diagnostics_)};
+    }
+    return Success;
+}
+
+void Validator::CheckForOrphanedInstructions() {
+    if (diagnostics_.ContainsErrors()) {
+        return;
+    }
+
+    // Check for orphaned instructions.
+    for (auto* inst : mod_.Instructions()) {
+        if (!visited_instructions_.Contains(inst)) {
+            AddError(inst) << "orphaned instruction: " << inst->FriendlyName();
+        }
+    }
+}
+
+void Validator::CheckForNonFragmentDiscards() {
+    if (diagnostics_.ContainsErrors()) {
+        return;
+    }
+
+    // Check for discards in non-fragments
+    for (const auto& d : discards_) {
+        const auto* f = ContainingFunction(d);
+        for (const Function* ep : ContainingEndPoints(f)) {
+            if (ep->Stage() != Function::PipelineStage::kFragment) {
+                AddError(d) << "cannot be called in non-fragment end point";
+            }
+        }
+    }
+}
+
+void Validator::RunStructuralSoundnessChecks() {
     scope_stack_.Push();
     TINT_DEFER({
         scope_stack_.Pop();
@@ -527,28 +680,14 @@ Result<SuccessType> Validator::Run() {
     }
 
     for (auto& func : mod_.functions) {
+        block_to_function_.Add(func->Block(), func);
         CheckFunction(func);
     }
-
-    if (!diagnostics_.ContainsErrors()) {
-        // Check for orphaned instructions.
-        for (auto* inst : mod_.Instructions()) {
-            if (!visited_instructions_.Contains(inst)) {
-                AddError(inst) << "orphaned instruction: " << inst->FriendlyName();
-            }
-        }
-    }
-
-    if (diagnostics_.ContainsErrors()) {
-        diagnostics_.AddNote(Source{}) << "# Disassembly\n" << Disassembly().Text();
-        return Failure{std::move(diagnostics_)};
-    }
-    return Success;
 }
 
 diag::Diagnostic& Validator::AddError(const Instruction* inst) {
     diagnostics_.ReserveAdditional(2);  // Ensure diagnostics don't resize alive after AddNote()
-    auto src = Disassembly().InstructionSource(inst);
+    auto src = Disassemble().InstructionSource(inst);
     auto& diag = AddError(src) << inst->FriendlyName() << ": ";
 
     if (!block_stack_.IsEmpty()) {
@@ -560,7 +699,7 @@ diag::Diagnostic& Validator::AddError(const Instruction* inst) {
 diag::Diagnostic& Validator::AddError(const Instruction* inst, size_t idx) {
     diagnostics_.ReserveAdditional(2);  // Ensure diagnostics don't resize alive after AddNote()
     auto src =
-        Disassembly().OperandSource(Disassembly::IndexedValue{inst, static_cast<uint32_t>(idx)});
+        Disassemble().OperandSource(Disassembler::IndexedValue{inst, static_cast<uint32_t>(idx)});
     auto& diag = AddError(src) << inst->FriendlyName() << ": ";
 
     if (!block_stack_.IsEmpty()) {
@@ -572,7 +711,7 @@ diag::Diagnostic& Validator::AddError(const Instruction* inst, size_t idx) {
 diag::Diagnostic& Validator::AddResultError(const Instruction* inst, size_t idx) {
     diagnostics_.ReserveAdditional(2);  // Ensure diagnostics don't resize alive after AddNote()
     auto src =
-        Disassembly().ResultSource(Disassembly::IndexedValue{inst, static_cast<uint32_t>(idx)});
+        Disassemble().ResultSource(Disassembler::IndexedValue{inst, static_cast<uint32_t>(idx)});
     auto& diag = AddError(src) << inst->FriendlyName() << ": ";
 
     if (!block_stack_.IsEmpty()) {
@@ -582,61 +721,61 @@ diag::Diagnostic& Validator::AddResultError(const Instruction* inst, size_t idx)
 }
 
 diag::Diagnostic& Validator::AddError(const Block* blk) {
-    auto src = Disassembly().BlockSource(blk);
+    auto src = Disassemble().BlockSource(blk);
     return AddError(src);
 }
 
 diag::Diagnostic& Validator::AddError(const BlockParam* param) {
-    auto src = Disassembly().BlockParamSource(param);
+    auto src = Disassemble().BlockParamSource(param);
     return AddError(src);
 }
 
 diag::Diagnostic& Validator::AddError(const Function* func) {
-    auto src = Disassembly().FunctionSource(func);
+    auto src = Disassemble().FunctionSource(func);
     return AddError(src);
 }
 
 diag::Diagnostic& Validator::AddError(const FunctionParam* param) {
-    auto src = Disassembly().FunctionParamSource(param);
+    auto src = Disassemble().FunctionParamSource(param);
     return AddError(src);
 }
 
 diag::Diagnostic& Validator::AddNote(const Instruction* inst) {
-    auto src = Disassembly().InstructionSource(inst);
+    auto src = Disassemble().InstructionSource(inst);
     return AddNote(src);
 }
 
 diag::Diagnostic& Validator::AddNote(const Function* func) {
-    auto src = Disassembly().FunctionSource(func);
+    auto src = Disassemble().FunctionSource(func);
     return AddNote(src);
 }
 
 diag::Diagnostic& Validator::AddOperandNote(const Instruction* inst, size_t idx) {
     auto src =
-        Disassembly().OperandSource(Disassembly::IndexedValue{inst, static_cast<uint32_t>(idx)});
+        Disassemble().OperandSource(Disassembler::IndexedValue{inst, static_cast<uint32_t>(idx)});
     return AddNote(src);
 }
 
 diag::Diagnostic& Validator::AddResultNote(const Instruction* inst, size_t idx) {
     auto src =
-        Disassembly().ResultSource(Disassembly::IndexedValue{inst, static_cast<uint32_t>(idx)});
+        Disassemble().ResultSource(Disassembler::IndexedValue{inst, static_cast<uint32_t>(idx)});
     return AddNote(src);
 }
 
 diag::Diagnostic& Validator::AddNote(const Block* blk) {
-    auto src = Disassembly().BlockSource(blk);
+    auto src = Disassemble().BlockSource(blk);
     return AddNote(src);
 }
 
 diag::Diagnostic& Validator::AddError(Source src) {
     auto& diag = diagnostics_.AddError(src);
-    diag.owned_file = Disassembly().File();
+    diag.owned_file = Disassemble().File();
     return diag;
 }
 
 diag::Diagnostic& Validator::AddNote(Source src) {
     auto& diag = diagnostics_.AddNote(src);
-    diag.owned_file = Disassembly().File();
+    diag.owned_file = Disassemble().File();
     return diag;
 }
 
@@ -652,14 +791,14 @@ void Validator::AddDeclarationNote(const CastableBase* decl) {
 }
 
 void Validator::AddDeclarationNote(const Block* block) {
-    auto src = Disassembly().BlockSource(block);
+    auto src = Disassemble().BlockSource(block);
     if (src.file) {
         AddNote(src) << NameOf(block) << " declared here";
     }
 }
 
 void Validator::AddDeclarationNote(const BlockParam* param) {
-    auto src = Disassembly().BlockParamSource(param);
+    auto src = Disassemble().BlockParamSource(param);
     if (src.file) {
         AddNote(src) << NameOf(param) << " declared here";
     }
@@ -670,14 +809,14 @@ void Validator::AddDeclarationNote(const Function* fn) {
 }
 
 void Validator::AddDeclarationNote(const FunctionParam* param) {
-    auto src = Disassembly().FunctionParamSource(param);
+    auto src = Disassemble().FunctionParamSource(param);
     if (src.file) {
         AddNote(src) << NameOf(param) << " declared here";
     }
 }
 
 void Validator::AddDeclarationNote(const Instruction* inst) {
-    auto src = Disassembly().InstructionSource(inst);
+    auto src = Disassemble().InstructionSource(inst);
     if (src.file) {
         AddNote(src) << NameOf(inst) << " declared here";
     }
@@ -705,7 +844,7 @@ StyledText Validator::NameOf(const CastableBase* decl) {
 }
 
 StyledText Validator::NameOf(const Value* value) {
-    return Disassembly().NameOf(value);
+    return Disassemble().NameOf(value);
 }
 
 StyledText Validator::NameOf(const Instruction* inst) {
@@ -714,21 +853,214 @@ StyledText Validator::NameOf(const Instruction* inst) {
 
 StyledText Validator::NameOf(const Block* block) {
     return StyledText{} << style::Instruction(block->Parent()->FriendlyName()) << " block "
-                        << Disassembly().NameOf(block);
+                        << Disassemble().NameOf(block);
 }
 
+bool Validator::CheckResult(const Instruction* inst, size_t idx) {
+    auto* result = inst->Result(idx);
+    if (TINT_UNLIKELY(result == nullptr)) {
+        AddResultError(inst, idx) << "result is undefined";
+        return false;
+    }
+
+    if (TINT_UNLIKELY(result->Type() == nullptr)) {
+        AddResultError(inst, idx) << "result type is undefined";
+        return false;
+    }
+
+    return true;
+}
+
+bool Validator::CheckResults(const ir::Instruction* inst, std::optional<size_t> count = {}) {
+    if (count.has_value()) {
+        if (TINT_UNLIKELY(inst->Results().Length() != count.value())) {
+            AddError(inst) << "expected exactly " << count.value() << " results, got "
+                           << inst->Results().Length();
+            return false;
+        }
+    }
+
+    bool passed = true;
+    for (size_t i = 0; i < inst->Results().Length(); i++) {
+        if (TINT_UNLIKELY(!CheckResult(inst, i))) {
+            passed = false;
+        }
+    }
+    return passed;
+}
+
+bool Validator::CheckOperand(const Instruction* inst, size_t idx) {
+    auto* operand = inst->Operand(idx);
+    if (TINT_UNLIKELY(operand == nullptr)) {
+        AddError(inst, idx) << "operand is undefined";
+        return false;
+    }
+
+    // ir::Unused is a internal value used by some transforms to track unused entries, and is
+    // removed as part of generating an output shader.
+    if (TINT_UNLIKELY(operand->Is<ir::Unused>())) {
+        return true;
+    }
+
+    // ir::Function does not have a meaningful type, so does not override the default Type()
+    // behaviour.
+    if (TINT_UNLIKELY(!operand->Is<ir::Function>() && operand->Type() == nullptr)) {
+        AddError(inst, idx) << "operand type is undefined";
+        return false;
+    }
+
+    return true;
+}
+
+bool Validator::CheckOperands(const ir::Instruction* inst,
+                              size_t min_count,
+                              std::optional<size_t> max_count) {
+    if (TINT_UNLIKELY(inst->Operands().Length() < min_count)) {
+        if (max_count.has_value()) {
+            AddError(inst) << "expected between " << min_count << " and " << max_count.value()
+                           << " operands, got " << inst->Operands().Length();
+        } else {
+            AddError(inst) << "expected at least " << min_count << " operands, got "
+                           << inst->Operands().Length();
+        }
+        return false;
+    }
+
+    if (TINT_UNLIKELY(max_count.has_value() && inst->Operands().Length() > max_count.value())) {
+        AddError(inst) << "expected between " << min_count << " and " << max_count.value()
+                       << " operands, got " << inst->Operands().Length();
+        return false;
+    }
+
+    bool passed = true;
+    for (size_t i = 0; i < inst->Operands().Length(); i++) {
+        if (TINT_UNLIKELY(!CheckOperand(inst, i))) {
+            passed = false;
+        }
+    }
+    return passed;
+}
+
+bool Validator::CheckOperands(const ir::Instruction* inst, std::optional<size_t> count = {}) {
+    if (count.has_value()) {
+        if (TINT_UNLIKELY(inst->Operands().Length() != count.value())) {
+            AddError(inst) << "expected exactly " << count.value() << " operands, got "
+                           << inst->Operands().Length();
+            return false;
+        }
+    }
+
+    bool passed = true;
+    for (size_t i = 0; i < inst->Operands().Length(); i++) {
+        if (TINT_UNLIKELY(!CheckOperand(inst, i))) {
+            passed = false;
+        }
+    }
+    return passed;
+}
+
+bool Validator::CheckResultsAndOperandRange(const ir::Instruction* inst,
+                                            size_t num_results,
+                                            size_t min_operands,
+                                            std::optional<size_t> max_operands = {}) {
+    // Intentionally avoiding short-circuiting here
+    bool results_passed = CheckResults(inst, num_results);
+    bool operands_passed = CheckOperands(inst, min_operands, max_operands);
+    return results_passed && operands_passed;
+}
+
+bool Validator::CheckResultsAndOperands(const ir::Instruction* inst,
+                                        size_t num_results,
+                                        size_t num_operands) {
+    // Intentionally avoiding short-circuiting here
+    bool results_passed = CheckResults(inst, num_results);
+    bool operands_passed = CheckOperands(inst, num_operands);
+    return results_passed && operands_passed;
+}
+
+// TODO(353498500): Remove this function once it is no longer used.
 void Validator::CheckOperandNotNull(const Instruction* inst, const ir::Value* operand, size_t idx) {
     if (operand == nullptr) {
         AddError(inst, idx) << "operand is undefined";
     }
 }
 
-void Validator::CheckOperandsNotNull(const Instruction* inst,
-                                     size_t start_operand,
-                                     size_t end_operand) {
-    auto operands = inst->Operands();
-    for (size_t i = start_operand; i <= end_operand; i++) {
-        CheckOperandNotNull(inst, operands[i], i);
+void Validator::CheckType(const core::type::Type* root,
+                          std::function<diag::Diagnostic&()> diag,
+                          Capabilities ignore_caps) {
+    auto visit = [&](const type::Type* type) {
+        return tint::Switch(
+            type,
+            [&](const type::Reference*) {
+                // Reference types are guarded by the AllowRefTypes capability.
+                if (!capabilities_.Contains(Capability::kAllowRefTypes) ||
+                    ignore_caps.Contains(Capability::kAllowRefTypes)) {
+                    diag() << "reference types are not permitted here";
+                    return false;
+                } else if (type != root) {
+                    // If they are allowed, reference types still cannot be nested.
+                    diag() << "nested reference types are not permitted";
+                    return false;
+                }
+                return true;
+            },
+            [&](const type::Pointer*) {
+                if (type != root) {
+                    // Nesting pointer types inside structures is guarded by a capability.
+                    if (!(root->Is<type::Struct>() &&
+                          capabilities_.Contains(Capability::kAllowPointersInStructures))) {
+                        diag() << "nested pointer types are not permitted";
+                        return false;
+                    }
+                }
+                return true;
+            },
+            [&](const type::I8*) {
+                // i8 types are guarded by the Allow8BitIntegers capability.
+                if (!capabilities_.Contains(Capability::kAllow8BitIntegers)) {
+                    diag() << "8-bit integer types are not permitted";
+                    return false;
+                }
+                return true;
+            },
+            [&](const type::U8*) {
+                // u8 types are guarded by the Allow8BitIntegers capability.
+                if (!capabilities_.Contains(Capability::kAllow8BitIntegers)) {
+                    diag() << "8-bit integer types are not permitted";
+                    return false;
+                }
+                return true;
+            },
+            [](Default) { return true; });
+    };
+
+    Vector<const type::Type*, 8> stack{root};
+    Hashset<const type::Type*, 8> seen{};
+    while (!stack.IsEmpty()) {
+        auto* ty = stack.Pop();
+        if (!ty) {
+            continue;
+        }
+        if (!visit(ty)) {
+            return;
+        }
+
+        if (auto* view = ty->As<type::MemoryView>(); view && seen.Add(view)) {
+            stack.Push(view->StoreType());
+            continue;
+        }
+
+        auto type_count = ty->Elements();
+        if (type_count.type && seen.Add(type_count.type)) {
+            stack.Push(type_count.type);
+            continue;
+        }
+
+        for (uint32_t i = 0; i < type_count.count; i++) {
+            if (auto* subtype = ty->Element(i); subtype && seen.Add(subtype)) {
+                stack.Push(subtype);
+            }
+        }
     }
 }
 
@@ -741,12 +1073,27 @@ void Validator::CheckRootBlock(const Block* blk) {
             AddError(inst) << "instruction in root block does not have root block as parent";
             continue;
         }
-        auto* var = inst->As<ir::Var>();
-        if (!var) {
-            AddError(inst) << "root block: invalid instruction: " << inst->TypeInfo().name;
-            continue;
-        }
-        CheckInstruction(var);
+
+        tint::Switch(
+            inst,  //
+            [&](const core::ir::Var* var) { CheckInstruction(var); },
+            [&](const core::ir::Let* let) {
+                if (capabilities_.Contains(Capability::kAllowModuleScopeLets)) {
+                    CheckInstruction(let);
+                } else {
+                    AddError(inst) << "root block: invalid instruction: " << inst->TypeInfo().name;
+                }
+            },
+            [&](const core::ir::Construct* c) {
+                if (capabilities_.Contains(Capability::kAllowModuleScopeLets)) {
+                    CheckInstruction(c);
+                } else {
+                    AddError(inst) << "root block: invalid instruction: " << inst->TypeInfo().name;
+                }
+            },
+            [&](Default) {
+                AddError(inst) << "root block: invalid instruction: " << inst->TypeInfo().name;
+            });
     }
 }
 
@@ -774,15 +1121,43 @@ void Validator::CheckFunction(const Function* func) {
             return;
         }
 
-        // References not allowed on function signatures even with Capability::kAllowRefTypes
-        if (HoldsType<type::Reference>(param->Type())) {
-            AddError(param) << "references are not permitted as parameter types";
-        }
+        // References not allowed on function signatures even with Capability::kAllowRefTypes.
+        CheckType(
+            param->Type(), [&]() -> diag::Diagnostic& { return AddError(param); },
+            Capabilities{Capability::kAllowRefTypes});
 
         scope_stack_.Add(param);
     }
-    if (HoldsType<type::Reference>(func->ReturnType())) {
-        AddError(func) << "references are not permitted as return types";
+
+    if (func->Stage() == Function::PipelineStage::kCompute) {
+        if (TINT_UNLIKELY(!func->WorkgroupSize().has_value())) {
+            AddError(func) << "compute entry point requires workgroup size attribute";
+        }
+    }
+
+    // References not allowed on function signatures even with Capability::kAllowRefTypes.
+    CheckType(
+        func->ReturnType(), [&]() -> diag::Diagnostic& { return AddError(func); },
+        Capabilities{Capability::kAllowRefTypes});
+
+    if (func->Stage() != Function::PipelineStage::kUndefined) {
+        if (TINT_UNLIKELY(mod_.NameOf(func).Name().empty())) {
+            AddError(func) << "entry points must have names";
+        }
+    }
+
+    // void needs to be filtered out, since it isn't constructible, but used in the IR when no
+    // return is specified.
+    if (TINT_UNLIKELY(!func->ReturnType()->Is<core::type::Void>() &&
+                      !func->ReturnType()->IsConstructible())) {
+        AddError(func) << "function return type must be constructible";
+    }
+
+    if (func->Stage() != Function::PipelineStage::kFragment) {
+        if (TINT_UNLIKELY(func->ReturnBuiltin().has_value() &&
+                          func->ReturnBuiltin().value() == BuiltinValue::kFragDepth)) {
+            AddError(func) << "frag_depth can only be declared for fragment entry points";
+        }
     }
 
     QueueBlock(func->Block());
@@ -818,6 +1193,12 @@ void Validator::BeginBlock(const Block* blk) {
                 AddNote(param->Block()) << "parent block declared here";
                 return;
             }
+
+            // References not allowed on block parameters even with Capability::kAllowRefTypes.
+            CheckType(
+                param->Type(), [&]() -> diag::Diagnostic& { return AddError(param); },
+                Capabilities{Capability::kAllowRefTypes});
+
             scope_stack_.Add(param);
         }
     }
@@ -860,6 +1241,9 @@ void Validator::CheckInstruction(const Instruction* inst) {
         AddError(inst) << "destroyed instruction found in instruction list";
         return;
     }
+    // TODO(353475590): Once all instruction types have been updated to using new checking code,
+    //                  remove the duplicate reporting of results being null, see
+    //                  Validator::CheckResults
     auto results = inst->Results();
     for (size_t i = 0; i < results.Length(); ++i) {
         auto* res = results[i];
@@ -874,11 +1258,7 @@ void Validator::CheckInstruction(const Instruction* inst) {
             AddResultError(inst, i) << "instruction of result is a different instruction";
         }
 
-        if (!capabilities_.Contains(Capability::kAllowRefTypes)) {
-            if (HoldsType<type::Reference>(res->Type())) {
-                AddResultError(inst, i) << "reference type is not permitted";
-            }
-        }
+        CheckType(res->Type(), [&]() -> diag::Diagnostic& { return AddResultError(inst, i); });
     }
 
     auto ops = inst->Operands();
@@ -896,16 +1276,12 @@ void Validator::CheckInstruction(const Instruction* inst) {
             AddError(inst, i) << "operand missing usage";
         } else if (auto fn = op->As<Function>(); fn && !all_functions_.Contains(fn)) {
             AddError(inst, i) << NameOf(op) << " is not part of the module";
-        } else if (!op->Is<Constant>() && !scope_stack_.Contains(op)) {
+        } else if (!op->Is<ir::Unused>() && !op->Is<Constant>() && !scope_stack_.Contains(op)) {
             AddError(inst, i) << NameOf(op) << " is not in scope";
             AddDeclarationNote(op);
         }
 
-        if (!capabilities_.Contains(Capability::kAllowRefTypes)) {
-            if (HoldsType<type::Reference>(op->Type())) {
-                AddError(inst, i) << "reference type is not permitted";
-            }
-        }
+        CheckType(op->Type(), [&]() -> diag::Diagnostic& { return AddError(inst, i); });
     }
 
     tint::Switch(
@@ -933,13 +1309,55 @@ void Validator::CheckInstruction(const Instruction* inst) {
 }
 
 void Validator::CheckVar(const Var* var) {
-    if (var->Result(0) && var->Initializer()) {
+    // Intentionally not checking operands, since Var may have a null operand
+    if (!CheckResults(var, Var::kNumResults)) {
+        return;
+    }
+
+    // Check that initializer and result type match
+    if (var->Initializer()) {
+        if (!CheckOperand(var, ir::Var::kInitializerOperandOffset)) {
+            return;
+        }
+
         if (var->Initializer()->Type() != var->Result(0)->Type()->UnwrapPtrOrRef()) {
             AddError(var) << "initializer type "
                           << style::Type(var->Initializer()->Type()->FriendlyName())
                           << " does not match store type "
                           << style::Type(var->Result(0)->Type()->UnwrapPtrOrRef()->FriendlyName());
+            return;
         }
+    }
+
+    auto* result_type = var->Result(0)->Type();
+    if (result_type == nullptr) {
+        AddError(var) << "result type is undefined";
+        return;
+    }
+
+    auto* mv = result_type->As<type::MemoryView>();
+    if (!mv) {
+        AddError(var) << "result type must be a pointer or a reference";
+        return;
+    }
+
+    // Check that only resource variables have @group and @binding set
+    switch (mv->AddressSpace()) {
+        case AddressSpace::kHandle:
+        case AddressSpace::kStorage:
+        case AddressSpace::kUniform:
+            if (!var->BindingPoint().has_value()) {
+                AddError(var) << "resource variable missing binding points";
+            }
+            break;
+        default:
+            break;
+    }
+
+    // Check that non-handle variables don't have @input_attachment_index set
+    if (var->InputAttachmentIndex().has_value() && mv->AddressSpace() != AddressSpace::kHandle) {
+        AddError(var) << "'@input_attachment_index' is not valid for non-handle var";
+        return;
     }
 }
 
@@ -957,39 +1375,144 @@ void Validator::CheckLet(const Let* let) {
 
 void Validator::CheckCall(const Call* call) {
     tint::Switch(
-        call,                                                //
-        [&](const Bitcast*) {},                              //
-        [&](const BuiltinCall* c) { CheckBuiltinCall(c); },  //
-        [&](const Construct*) {},                            //
-        [&](const Convert*) {},                              //
-        [&](const Discard*) {},                              //
-        [&](const UserCall* c) { CheckUserCall(c); },        //
+        call,                                                                   //
+        [&](const Bitcast* b) { CheckBitcast(b); },                             //
+        [&](const BuiltinCall* c) { CheckBuiltinCall(c); },                     //
+        [&](const MemberBuiltinCall* c) { CheckMemberBuiltinCall(c); },         //
+        [&](const Construct* c) { CheckConstruct(c); },                         //
+        [&](const Convert* c) { CheckConvert(c); },                             //
+        [&](const Discard* d) {                                                 //
+            discards_.Add(d);                                                   //
+            CheckDiscard(d);                                                    //
+        },                                                                      //
+        [&](const UserCall* c) {                                                //
+            if (c->Target()) {                                                  //
+                auto calls =                                                    //
+                    user_func_calls_.GetOr(c->Target(),                         //
+                                           Hashset<const ir::UserCall*, 4>{});  //
+                calls.Add(c);                                                   //
+                user_func_calls_.Replace(c->Target(), calls);                   //
+            }                                                                   //
+            CheckUserCall(c);                                                   //
+        },                                                                      //
         [&](Default) {
             // Validation of custom IR instructions
         });
 }
 
+void Validator::CheckBitcast(const Bitcast* bitcast) {
+    CheckResultsAndOperands(bitcast, Bitcast::kNumResults, Bitcast::kNumOperands);
+}
+
 void Validator::CheckBuiltinCall(const BuiltinCall* call) {
-    auto args = Transform<8>(call->Args(), [&](const ir::Value* v) { return v->Type(); });
+    auto args =
+        Transform<8>(call->Args(), [&](const ir::Value* v) { return v ? v->Type() : nullptr; });
+    if (args.Any([&](const type::Type* ty) { return ty == nullptr; })) {
+        AddError(call) << "argument to builtin has undefined type";
+        return;
+    }
+
     intrinsic::Context context{
         call->TableData(),
         type_mgr_,
         symbols_,
     };
 
-    auto result = core::intrinsic::LookupFn(context, call->FriendlyName().c_str(), call->FuncId(),
-                                            Empty, args, core::EvaluationStage::kRuntime);
+    auto builtin = core::intrinsic::LookupFn(context, call->FriendlyName().c_str(), call->FuncId(),
+                                             Empty, args, core::EvaluationStage::kRuntime);
+    if (builtin != Success) {
+        AddError(call) << builtin.Failure();
+        return;
+    }
+
+    TINT_ASSERT(builtin->return_type);
+
+    if (call->Result(0) == nullptr) {
+        AddError(call) << "call to builtin does not have a return type";
+        return;
+    }
+
+    if (builtin->return_type != call->Result(0)->Type()) {
+        AddError(call) << "call result type does not match builtin return type";
+        return;
+    }
+}
+
+void Validator::CheckMemberBuiltinCall(const MemberBuiltinCall* call) {
+    auto args = Vector<const type::Type*, 8>({call->Object()->Type()});
+    for (auto* arg : call->Args()) {
+        args.Push(arg->Type());
+    }
+    intrinsic::Context context{
+        call->TableData(),
+        type_mgr_,
+        symbols_,
+    };
+
+    auto result =
+        core::intrinsic::LookupMemberFn(context, call->FriendlyName().c_str(), call->FuncId(),
+                                        Empty, std::move(args), core::EvaluationStage::kRuntime);
     if (result != Success) {
         AddError(call) << result.Failure();
         return;
     }
 
     if (result->return_type != call->Result(0)->Type()) {
-        AddError(call) << "call result type does not match builtin return type";
+        AddError(call) << "member call result type does not match builtin return type";
     }
 }
 
+void Validator::CheckConstruct(const Construct* construct) {
+    if (!CheckResultsAndOperandRange(construct, Construct::kNumResults, Construct::kMinOperands)) {
+        return;
+    }
+
+    auto args = construct->Args();
+    if (args.IsEmpty()) {
+        // Zero-value constructors are valid for all constructible types.
+        return;
+    }
+
+    if (auto* str = As<type::Struct>(construct->Result(0)->Type())) {
+        auto members = str->Members();
+        if (args.Length() != str->Members().Length()) {
+            AddError(construct) << "structure has " << members.Length()
+                                << " members, but construct provides " << args.Length()
+                                << " arguments";
+            return;
+        }
+        for (size_t i = 0; i < args.Length(); i++) {
+            if (args[i]->Is<ir::Unused>()) {
+                continue;
+            }
+            if (args[i]->Type() != members[i]->Type()) {
+                AddError(construct, Construct::kArgsOperandOffset + i)
+                    << "structure member " << i << " is of type "
+                    << style::Type(members[i]->Type()->FriendlyName())
+                    << ", but argument is of type " << style::Type(args[i]->Type()->FriendlyName());
+            }
+        }
+    }
+}
+
+void Validator::CheckConvert(const Convert* convert) {
+    CheckResultsAndOperands(convert, Convert::kNumResults, Convert::kNumOperands);
+}
+
+void Validator::CheckDiscard(const tint::core::ir::Discard* discard) {
+    CheckResultsAndOperands(discard, Discard::kNumResults, Discard::kNumOperands);
+}
+
 void Validator::CheckUserCall(const UserCall* call) {
+    if (!CheckResultsAndOperandRange(call, UserCall::kNumResults, UserCall::kMinOperands)) {
+        return;
+    }
+
+    if (!call->Target()) {
+        AddError(call, UserCall::kFunctionOperandOffset) << "target not defined or not a function";
+        return;
+    }
+
     if (call->Target()->Stage() != Function::PipelineStage::kUndefined) {
         AddError(call, UserCall::kFunctionOperandOffset)
             << "call target must not have a pipeline stage";
@@ -1015,9 +1538,15 @@ void Validator::CheckUserCall(const UserCall* call) {
 }
 
 void Validator::CheckAccess(const Access* a) {
+    if (!CheckResultsAndOperandRange(a, Access::kNumResults, Access::kMinNumOperands)) {
+        return;
+    }
+
     auto* obj_view = a->Object()->Type()->As<core::type::MemoryView>();
     auto* ty = obj_view ? obj_view->StoreType() : a->Object()->Type();
-    enum Kind { kPtr, kRef, kValue };
+
+    enum Kind : uint8_t { kPtr, kRef, kValue };
+
     auto kind_of = [&](const core::type::Type* type) {
         return tint::Switch(
             type,                                                //
@@ -1025,6 +1554,7 @@ void Validator::CheckAccess(const Access* a) {
             [&](const core::type::Reference*) { return kRef; },  //
             [&](Default) { return kValue; });
     };
+
     const Kind in_kind = kind_of(a->Object()->Type());
     auto desc_of = [&](Kind kind, const core::type::Type* type) {
         switch (kind) {
@@ -1120,7 +1650,10 @@ void Validator::CheckAccess(const Access* a) {
 }
 
 void Validator::CheckBinary(const Binary* b) {
-    CheckOperandsNotNull(b, Binary::kLhsOperandOffset, Binary::kRhsOperandOffset);
+    if (!CheckResultsAndOperandRange(b, Binary::kNumResults, Binary::kNumOperands)) {
+        return;
+    }
+
     if (b->LHS() && b->RHS()) {
         intrinsic::Context context{b->TableData(), type_mgr_, symbols_};
 
@@ -1136,7 +1669,7 @@ void Validator::CheckBinary(const Binary* b) {
             if (overload->return_type != result->Type()) {
                 AddError(b) << "result value type " << style::Type(result->Type()->FriendlyName())
                             << " does not match "
-                            << style::Instruction(Disassembly().NameOf(b->Op())) << " result type "
+                            << style::Instruction(Disassemble().NameOf(b->Op())) << " result type "
                             << style::Type(overload->return_type->FriendlyName());
             }
         }
@@ -1144,7 +1677,10 @@ void Validator::CheckBinary(const Binary* b) {
 }
 
 void Validator::CheckUnary(const Unary* u) {
-    CheckOperandNotNull(u, u->Val(), Unary::kValueOperandOffset);
+    if (!CheckResultsAndOperandRange(u, Unary::kNumResults, Unary::kNumOperands)) {
+        return;
+    }
+
     if (u->Val()) {
         intrinsic::Context context{u->TableData(), type_mgr_, symbols_};
 
@@ -1159,7 +1695,7 @@ void Validator::CheckUnary(const Unary* u) {
             if (overload->return_type != result->Type()) {
                 AddError(u) << "result value type " << style::Type(result->Type()->FriendlyName())
                             << " does not match "
-                            << style::Instruction(Disassembly().NameOf(u->Op())) << " result type "
+                            << style::Instruction(Disassemble().NameOf(u->Op())) << " result type "
                             << style::Type(overload->return_type->FriendlyName());
             }
         }
@@ -1210,11 +1746,23 @@ void Validator::CheckLoop(const Loop* l) {
         });
     }
 
-    tasks_.Push([this, l] { BeginBlock(l->Body()); });
+    tasks_.Push([this, l] {
+        CheckLoopBody(l);
+        BeginBlock(l->Body());
+    });
     if (!l->Initializer()->IsEmpty()) {
         tasks_.Push([this, l] { BeginBlock(l->Initializer()); });
     }
     tasks_.Push([this, l] { control_stack_.Push(l); });
+}
+
+void Validator::CheckLoopBody(const Loop* loop) {
+    // If the body block has parameters, there must be an initializer block.
+    if (!loop->Body()->Params().IsEmpty()) {
+        if (!loop->HasInitializer()) {
+            AddError(loop) << "loop with body block parameters must have an initializer";
+        }
+    }
 }
 
 void Validator::CheckLoopContinuing(const Loop* loop) {
@@ -1235,7 +1783,7 @@ void Validator::CheckLoopContinuing(const Loop* loop) {
         // Check that all subsequent instruction values are not used in the continuing block.
         for (auto* inst = holds_continue; inst; inst = inst->next) {
             for (auto* result : inst->Results()) {
-                result->ForEachUse([&](Usage use) {
+                result->ForEachUseUnsorted([&](Usage use) {
                     if (TransitivelyHolds(loop->Continuing(), use.instruction)) {
                         AddError(use.instruction, use.operand_index)
                             << NameOf(result)
@@ -1253,10 +1801,27 @@ void Validator::CheckLoopContinuing(const Loop* loop) {
 }
 
 void Validator::CheckSwitch(const Switch* s) {
+    CheckOperandNotNull(s, s->Condition(), If::kConditionOperandOffset);
+
+    if (s->Condition() && !s->Condition()->Type()->is_integer_scalar()) {
+        AddError(s, Switch::kConditionOperandOffset) << "condition type must be an integer scalar";
+    }
+
     tasks_.Push([this] { control_stack_.Pop(); });
 
+    bool found_default = false;
     for (auto& cse : s->Cases()) {
         QueueBlock(cse.block);
+
+        for (const auto& sel : cse.selectors) {
+            if (sel.IsDefault()) {
+                found_default = true;
+            }
+        }
+    }
+
+    if (!found_default) {
+        AddError(s) << "missing default case for switch";
     }
 
     tasks_.Push([this, s] { control_stack_.Push(s); });
@@ -1448,7 +2013,9 @@ void Validator::CheckExitLoop(const ExitLoop* l) {
 }
 
 void Validator::CheckLoad(const Load* l) {
-    CheckOperandNotNull(l, l->From(), Load::kFromOperandOffset);
+    if (!CheckResultsAndOperands(l, Load::kNumResults, Load::kNumOperands)) {
+        return;
+    }
 
     if (auto* from = l->From()) {
         auto* mv = from->Type()->As<core::type::MemoryView>();
@@ -1466,14 +2033,15 @@ void Validator::CheckLoad(const Load* l) {
 }
 
 void Validator::CheckStore(const Store* s) {
-    CheckOperandsNotNull(s, Store::kToOperandOffset, Store::kFromOperandOffset);
+    if (!CheckResultsAndOperands(s, Store::kNumResults, Store::kNumOperands)) {
+        return;
+    }
 
     if (auto* from = s->From()) {
         if (auto* to = s->To()) {
-            auto* mv = to->Type()->As<core::type::MemoryView>();
+            auto* mv = As<core::type::MemoryView>(to->Type());
             if (!mv) {
-                AddError(s, Store::kFromOperandOffset)
-                    << "store target operand is not a memory view";
+                AddError(s, Store::kToOperandOffset) << "store target operand is not a memory view";
                 return;
             }
             auto* value_type = from->Type();
@@ -1488,9 +2056,10 @@ void Validator::CheckStore(const Store* s) {
 }
 
 void Validator::CheckLoadVectorElement(const LoadVectorElement* l) {
-    CheckOperandsNotNull(l,  //
-                         LoadVectorElement::kFromOperandOffset,
-                         LoadVectorElement::kIndexOperandOffset);
+    if (!CheckResultsAndOperands(l, LoadVectorElement::kNumResults,
+                                 LoadVectorElement::kNumOperands)) {
+        return;
+    }
 
     if (auto* res = l->Result(0)) {
         if (auto* el_ty = GetVectorPtrElementType(l, LoadVectorElement::kFromOperandOffset)) {
@@ -1504,9 +2073,10 @@ void Validator::CheckLoadVectorElement(const LoadVectorElement* l) {
 }
 
 void Validator::CheckStoreVectorElement(const StoreVectorElement* s) {
-    CheckOperandsNotNull(s,  //
-                         StoreVectorElement::kToOperandOffset,
-                         StoreVectorElement::kValueOperandOffset);
+    if (!CheckResultsAndOperands(s, StoreVectorElement::kNumResults,
+                                 StoreVectorElement::kNumOperands)) {
+        return;
+    }
 
     if (auto* value = s->Value()) {
         if (auto* el_ty = GetVectorPtrElementType(s, StoreVectorElement::kToOperandOffset)) {
@@ -1587,10 +2157,10 @@ Result<SuccessType> ValidateAndDumpIfNeeded([[maybe_unused]] const Module& ir,
                                             [[maybe_unused]] Capabilities capabilities) {
 #if TINT_DUMP_IR_WHEN_VALIDATING
     auto printer = StyledTextPrinter::Create(stdout);
-    std::cout << "=========================================================" << std::endl;
-    std::cout << "== IR dump before " << msg << ":" << std::endl;
-    std::cout << "=========================================================" << std::endl;
-    printer->Print(Disassemble(ir).Text());
+    std::cout << "=========================================================\n";
+    std::cout << "== IR dump before " << msg << ":\n";
+    std::cout << "=========================================================\n";
+    printer->Print(Disassembler(ir).Text());
 #endif
 
 #ifndef NDEBUG

@@ -1,6 +1,6 @@
 ; SPIR-V
 ; Version: 1.3
-; Generator: Google Tint Compiler; 0
+; Generator: Google Tint Compiler; 1
 ; Bound: 104
 ; Schema: 0
                OpCapability Shader
@@ -23,7 +23,7 @@
                OpName %i "i"
                OpName %i_0 "i"
        %void = OpTypeVoid
-          %1 = OpTypeFunction %void
+          %3 = OpTypeFunction %void
       %float = OpTypeFloat 32
     %v2float = OpTypeVector %float 2
 %_ptr_Function_v2float = OpTypePointer Function %v2float
@@ -64,8 +64,8 @@
      %v4bool = OpTypeVector %bool 4
 %_ptr_Function_v4bool = OpTypePointer Function %v4bool
          %56 = OpConstantNull %v4bool
-         %57 = OpConstantNull %int
 %_ptr_Function_int = OpTypePointer Function %int
+      %int_0 = OpConstant %int 0
       %int_2 = OpConstant %int 2
 %_ptr_Function_float = OpTypePointer Function %float
     %float_1 = OpConstant %float 1
@@ -74,7 +74,7 @@
      %uint_1 = OpConstant %uint 1
 %_ptr_Function_bool = OpTypePointer Function %bool
        %true = OpConstantTrue %bool
-       %main = OpFunction %void None %1
+       %main = OpFunction %void None %3
           %4 = OpLabel
         %v2f = OpVariable %_ptr_Function_v2float Function %9
         %v3f = OpVariable %_ptr_Function_v3float Function %13
@@ -88,42 +88,43 @@
         %v2b = OpVariable %_ptr_Function_v2bool Function %48
         %v3b = OpVariable %_ptr_Function_v3bool Function %52
         %v4b = OpVariable %_ptr_Function_v4bool Function %56
-          %i = OpVariable %_ptr_Function_int Function %57
-        %i_0 = OpVariable %_ptr_Function_int Function %57
-               OpStore %i %57
+          %i = OpVariable %_ptr_Function_int Function
+        %i_0 = OpVariable %_ptr_Function_int Function
+               OpBranch %57
+         %57 = OpLabel
+               OpStore %i %int_0
                OpBranch %60
          %60 = OpLabel
-               OpLoopMerge %61 %62 None
-               OpBranch %63
-         %63 = OpLabel
+               OpLoopMerge %61 %59 None
+               OpBranch %58
+         %58 = OpLabel
          %65 = OpLoad %int %i
-         %67 = OpSLessThan %bool %65 %int_2
-         %64 = OpLogicalNot %bool %67
+         %66 = OpSLessThan %bool %65 %int_2
                OpSelectionMerge %68 None
-               OpBranchConditional %64 %69 %68
+               OpBranchConditional %66 %68 %69
          %69 = OpLabel
                OpBranch %61
          %68 = OpLabel
          %70 = OpLoad %int %i
-         %72 = OpAccessChain %_ptr_Function_float %v2f %70
-               OpStore %72 %float_1
+         %71 = OpAccessChain %_ptr_Function_float %v2f %70
+               OpStore %71 %float_1
          %74 = OpLoad %int %i
          %75 = OpAccessChain %_ptr_Function_int %v2i %74
                OpStore %75 %int_1
          %77 = OpLoad %int %i
-         %79 = OpAccessChain %_ptr_Function_uint %v2u %77
-               OpStore %79 %uint_1
+         %78 = OpAccessChain %_ptr_Function_uint %v2u %77
+               OpStore %78 %uint_1
          %81 = OpLoad %int %i
-         %83 = OpAccessChain %_ptr_Function_bool %v2b %81
-               OpStore %83 %true
-               OpBranch %62
-         %62 = OpLabel
+         %82 = OpAccessChain %_ptr_Function_bool %v2b %81
+               OpStore %82 %true
+               OpBranch %59
+         %59 = OpLabel
          %85 = OpLoad %int %i
          %86 = OpIAdd %int %85 %int_1
                OpStore %i %86
                OpBranch %60
          %61 = OpLabel
-               OpStore %i_0 %57
+               OpStore %i_0 %int_0
          %88 = OpLoad %int %i_0
          %89 = OpAccessChain %_ptr_Function_float %v3f %88
                OpStore %89 %float_1

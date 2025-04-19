@@ -109,7 +109,7 @@ struct State {
             }
 
             // Transform instructions that accessed the variable to use the decomposed var.
-            old_var->Result(0)->ForEachUse(
+            old_var->Result(0)->ForEachUseSorted(
                 [&](Usage use) { Replace(use.instruction, new_var->Result(0)); });
 
             // Replace the original variable with the new variable.
@@ -164,7 +164,7 @@ struct State {
                                 ss << member->Name().Name() << "_col" << std::to_string(i);
                                 new_members.Push(ty.Get<core::type::StructMember>(
                                     sym.New(ss.str()), col, member_index, offset, col->Align(),
-                                    col->Size(), core::type::StructMemberAttributes{}));
+                                    col->Size(), core::IOAttributes{}));
                                 offset += col->Align();
                                 member_index++;
                             }
@@ -174,8 +174,7 @@ struct State {
                             auto* new_member_ty = RewriteType(member->Type());
                             new_members.Push(ty.Get<core::type::StructMember>(
                                 member->Name(), new_member_ty, member_index, member->Offset(),
-                                member->Align(), member->Size(),
-                                core::type::StructMemberAttributes{}));
+                                member->Align(), member->Size(), core::IOAttributes{}));
                             member_index_map.Add(member, member_index);
                             member_index++;
                             if (new_member_ty != member->Type()) {
@@ -214,7 +213,7 @@ struct State {
                         ss << "col" << std::to_string(i);
                         members.Push(ty.Get<core::type::StructMember>(
                             sym.New(ss.str()), col, i, offset, col->Align(), col->Size(),
-                            core::type::StructMemberAttributes{}));
+                            core::IOAttributes{}));
                         offset += col->Align();
                     }
 
@@ -239,9 +238,9 @@ struct State {
     Value* RebuildMatrix(const core::type::Matrix* mat, Value* root, VectorRef<Value*> indices) {
         // Recombine each column vector from the struct and reconstruct the original matrix type.
         bool is_ptr = root->Type()->Is<core::type::Pointer>();
+        auto first_column = indices.Back()->As<Constant>()->Value()->ValueAs<uint32_t>();
         Vector<Value*, 4> column_indices(std::move(indices));
         Vector<Value*, 4> args;
-        auto first_column = indices.Back()->As<Constant>()->Value()->ValueAs<uint32_t>();
         for (uint32_t i = 0; i < mat->columns(); i++) {
             column_indices.Back() = b.Constant(u32(first_column + i));
             if (is_ptr) {
@@ -341,7 +340,8 @@ struct State {
                         access->SetOperand(Access::kObjectOperandOffset, replacement);
                         auto* result = access->Result(0);
                         result->SetType(result->Type()->UnwrapPtrOrRef());
-                        result->ForEachUse([&](Usage use) { Replace(use.instruction, result); });
+                        result->ForEachUseSorted(
+                            [&](Usage use) { Replace(use.instruction, result); });
                         return;
                     }
 
@@ -409,7 +409,7 @@ struct State {
                     }
 
                     // Replace every instruction that uses the original access instruction.
-                    access->Result(0)->ForEachUse(
+                    access->Result(0)->ForEachUseSorted(
                         [&](Usage use) { Replace(use.instruction, replacement); });
                     access->Destroy();
                 },
@@ -439,7 +439,7 @@ struct State {
                 },
                 [&](Let* let) {
                     // Let instructions just fold away.
-                    let->Result(0)->ForEachUse(
+                    let->Result(0)->ForEachUseSorted(
                         [&](Usage use) { Replace(use.instruction, replacement); });
                     let->Destroy();
                 });

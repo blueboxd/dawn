@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -78,13 +79,16 @@ bool TransformedShaderModuleCacheKey::operator==(
     if (maxSubgroupSizeForFullSubgroups != other.maxSubgroupSizeForFullSubgroups) {
         return false;
     }
+    if (emitPointSize != other.emitPointSize) {
+        return false;
+    }
     return true;
 }
 
 size_t TransformedShaderModuleCacheKeyHashFunc::operator()(
     const TransformedShaderModuleCacheKey& key) const {
     size_t hash = 0;
-    HashCombine(&hash, key.layoutPtr, key.entryPoint);
+    HashCombine(&hash, key.layoutPtr, key.entryPoint, key.emitPointSize);
     for (const auto& entry : key.constants) {
         HashCombine(&hash, entry.first, entry.second);
     }
@@ -114,7 +118,8 @@ class ShaderModule::ConcurrentTransformedShaderModuleCache {
     }
     ModuleAndSpirv AddOrGet(const TransformedShaderModuleCacheKey& key,
                             VkShaderModule module,
-                            CompiledSpirv compilation) {
+                            CompiledSpirv compilation,
+                            bool hasInputAttachment) {
         DAWN_ASSERT(module != VK_NULL_HANDLE);
         std::lock_guard<std::mutex> lock(mMutex);
 
@@ -123,7 +128,7 @@ class ShaderModule::ConcurrentTransformedShaderModuleCache {
             bool added = false;
             std::tie(iter, added) = mTransformedShaderModuleCache.emplace(
                 key, Entry{module, std::move(compilation.spirv),
-                           std::move(compilation.remappedEntryPoint)});
+                           std::move(compilation.remappedEntryPoint), hasInputAttachment});
             DAWN_ASSERT(added);
         } else {
             // No need to use FencedDeleter since this shader module was just created and does
@@ -139,13 +144,12 @@ class ShaderModule::ConcurrentTransformedShaderModuleCache {
         VkShaderModule vkModule;
         std::vector<uint32_t> spirv;
         std::string remappedEntryPoint;
+        bool hasInputAttachment;
 
         ModuleAndSpirv AsRefs() const {
             return {
-                vkModule,
-                spirv.data(),
-                spirv.size(),
-                remappedEntryPoint.c_str(),
+                vkModule,           spirv.data(), spirv.size(), remappedEntryPoint.c_str(),
+                hasInputAttachment,
             };
         }
     };
@@ -162,15 +166,18 @@ class ShaderModule::ConcurrentTransformedShaderModuleCache {
 ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     Device* device,
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
+    const std::vector<tint::wgsl::Extension>& internalExtensions,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
-    Ref<ShaderModule> module = AcquireRef(new ShaderModule(device, descriptor));
+    Ref<ShaderModule> module = AcquireRef(new ShaderModule(device, descriptor, internalExtensions));
     DAWN_TRY(module->Initialize(parseResult, compilationMessages));
     return module;
 }
 
-ShaderModule::ShaderModule(Device* device, const UnpackedPtr<ShaderModuleDescriptor>& descriptor)
-    : ShaderModuleBase(device, descriptor),
+ShaderModule::ShaderModule(Device* device,
+                           const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
+                           std::vector<tint::wgsl::Extension> internalExtensions)
+    : ShaderModuleBase(device, descriptor, std::move(internalExtensions)),
       mTransformedShaderModuleCache(
           std::make_unique<ConcurrentTransformedShaderModuleCache>(device)) {}
 
@@ -198,7 +205,6 @@ ShaderModule::~ShaderModule() = default;
     X(std::string_view, entryPointName)                                                          \
     X(bool, disableSymbolRenaming)                                                               \
     X(tint::spirv::writer::Options, tintOptions)                                                 \
-    X(bool, use_tint_ir)                                                                         \
     X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, platform)                         \
     X(std::optional<uint32_t>, maxSubgroupSizeForFullSubgroups)
 
@@ -218,10 +224,13 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
 
     ScopedTintICEHandler scopedICEHandler(GetDevice());
 
-    // Check to see if we have the handle and spirv cached already.
+    // Check to see if we have the handle and spirv cached already
+    // TODO(chromium:345359083): Improve the computation of the cache key. For example, it isn't
+    // ideal to use `reinterpret_cast<uintptr_t>(layout)` as the layout may be freed and
+    // reallocated during the runtime.
     auto cacheKey = TransformedShaderModuleCacheKey{
         reinterpret_cast<uintptr_t>(layout), programmableStage.entryPoint.c_str(),
-        programmableStage.constants, maxSubgroupSizeForFullSubgroups};
+        programmableStage.constants, maxSubgroupSizeForFullSubgroups, emitPointSize};
     auto handleAndSpirv = mTransformedShaderModuleCache->Find(cacheKey);
     if (handleAndSpirv.has_value()) {
         return std::move(*handleAndSpirv);
@@ -231,6 +240,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     // Creation of module and spirv is deferred to this point when using tint generator
 
     tint::spirv::writer::Bindings bindings;
+    std::unordered_set<tint::BindingPoint> statically_paired_texture_binding_points;
 
     const BindingInfoArray& moduleBindingInfo =
         GetEntryPoint(programmableStage.entryPoint.c_str()).bindings;
@@ -279,6 +289,11 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
                                                  dstBindingPoint.group, dstBindingPoint.binding});
                 },
                 [&](const TextureBindingInfo& bindingInfo) {
+                    if (auto samplerIndex = bgl->GetStaticSamplerIndexForTexture(
+                            BindingIndex{dstBindingPoint.binding})) {
+                        dstBindingPoint.binding = static_cast<uint32_t>(samplerIndex.value());
+                        statically_paired_texture_binding_points.insert(srcBindingPoint);
+                    }
                     bindings.texture.emplace(srcBindingPoint,
                                              tint::spirv::writer::binding::Texture{
                                                  dstBindingPoint.group, dstBindingPoint.binding});
@@ -307,9 +322,16 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
                     bindings.external_texture.emplace(
                         srcBindingPoint,
                         tint::spirv::writer::binding::ExternalTexture{metadata, plane0, plane1});
+                },
+                [&](const InputAttachmentBindingInfo& bindingInfo) {
+                    bindings.input_attachment.emplace(
+                        srcBindingPoint, tint::spirv::writer::binding::InputAttachment{
+                                             dstBindingPoint.group, dstBindingPoint.binding});
                 });
         }
     }
+
+    const bool hasInputAttachment = !bindings.input_attachment.empty();
 
     std::optional<tint::ast::transform::SubstituteOverride::Config> substituteOverrideConfig;
     if (!programmableStage.metadata->overrides.empty()) {
@@ -325,7 +347,8 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     req.platform = UnsafeUnkeyedValue(GetDevice()->GetPlatform());
     req.substituteOverrideConfig = std::move(substituteOverrideConfig);
     req.maxSubgroupSizeForFullSubgroups = maxSubgroupSizeForFullSubgroups;
-
+    req.tintOptions.statically_paired_texture_binding_points =
+        std::move(statically_paired_texture_binding_points);
     req.tintOptions.clamp_frag_depth = clampFragDepth;
     req.tintOptions.disable_robustness = !GetDevice()->IsRobustnessEnabled();
     req.tintOptions.emit_vertex_point_size = emitPointSize;
@@ -344,7 +367,6 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
         GetDevice()->IsToggleEnabled(Toggle::VulkanUseBufferRobustAccess2);
     req.tintOptions.polyfill_dot_4x8_packed =
         GetDevice()->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
-    req.use_tint_ir = GetDevice()->IsToggleEnabled(Toggle::UseTintIR);
     req.tintOptions.disable_polyfill_integer_div_mod =
         GetDevice()->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
 
@@ -423,18 +445,14 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             }
 
             TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "tint::spirv::writer::Generate()");
-            tint::Result<tint::spirv::writer::Output> tintResult;
-            if (r.use_tint_ir) {
-                // Convert the AST program to an IR module.
-                auto ir = tint::wgsl::reader::ProgramToLoweredIR(program);
-                DAWN_INVALID_IF(ir != tint::Success,
-                                "An error occurred while generating Tint IR\n%s",
-                                ir.Failure().reason.Str());
 
-                tintResult = tint::spirv::writer::Generate(ir.Get(), r.tintOptions);
-            } else {
-                tintResult = tint::spirv::writer::Generate(program, r.tintOptions);
-            }
+            // Convert the AST program to an IR module.
+            auto ir = tint::wgsl::reader::ProgramToLoweredIR(program);
+            DAWN_INVALID_IF(ir != tint::Success, "An error occurred while generating Tint IR\n%s",
+                            ir.Failure().reason.Str());
+
+            // Generate SPIR-V from Tint IR.
+            auto tintResult = tint::spirv::writer::Generate(ir.Get(), r.tintOptions);
             DAWN_INVALID_IF(tintResult != tint::Success,
                             "An error occurred while generating SPIR-V\n%s",
                             tintResult.Failure().reason.Str());
@@ -475,8 +493,8 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
         // Set the label on `newHandle` now, and not on `moduleAndSpirv.module` later
         // since `moduleAndSpirv.module` may be in use by multiple threads.
         SetDebugName(ToBackend(GetDevice()), newHandle, "Dawn_ShaderModule", GetLabel());
-        moduleAndSpirv =
-            mTransformedShaderModuleCache->AddOrGet(cacheKey, newHandle, compilation.Acquire());
+        moduleAndSpirv = mTransformedShaderModuleCache->AddOrGet(
+            cacheKey, newHandle, compilation.Acquire(), hasInputAttachment);
     }
 
     return std::move(moduleAndSpirv);

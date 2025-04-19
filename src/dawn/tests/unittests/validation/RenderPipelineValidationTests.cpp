@@ -136,6 +136,80 @@ TEST_F(RenderPipelineValidationTest, DepthBiasParameterNotBeNaN) {
     }
 }
 
+/// Tests that depthBias can't be used with point or line topologies.
+TEST_F(RenderPipelineValidationTest, DepthBiasNotWithPointLine) {
+    constexpr std::array<wgpu::PrimitiveTopology, 2> kValidTopologyTypes = {
+        {wgpu::PrimitiveTopology::TriangleList, wgpu::PrimitiveTopology::TriangleStrip}};
+
+    constexpr std::array<wgpu::PrimitiveTopology, 3> kInvalidTopologyTypes = {
+        {wgpu::PrimitiveTopology::PointList, wgpu::PrimitiveTopology::LineList,
+         wgpu::PrimitiveTopology::LineStrip}};
+
+    // Depth bias parameters can be used with triangle topologies
+    for (wgpu::PrimitiveTopology primitiveTopology : kValidTopologyTypes) {
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsModule;
+
+        descriptor.primitive.topology = primitiveTopology;
+        if (primitiveTopology == wgpu::PrimitiveTopology::TriangleStrip) {
+            descriptor.primitive.stripIndexFormat = wgpu::IndexFormat::Uint32;
+        }
+
+        wgpu::DepthStencilState* depthStencil = descriptor.EnableDepthStencil();
+        depthStencil->depthBias = 1;
+        depthStencil->depthBiasSlopeScale = 1;
+        depthStencil->depthBiasClamp = 1;
+
+        device.CreateRenderPipeline(&descriptor);
+    }
+
+    for (wgpu::PrimitiveTopology primitiveTopology : kInvalidTopologyTypes) {
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsModule;
+
+        descriptor.primitive.topology = primitiveTopology;
+        if (primitiveTopology == wgpu::PrimitiveTopology::LineStrip) {
+            descriptor.primitive.stripIndexFormat = wgpu::IndexFormat::Uint32;
+        }
+
+        wgpu::DepthStencilState* depthStencil = descriptor.EnableDepthStencil();
+
+        // Depth bias parameters of zero are valid with point or line topologies
+        {
+            depthStencil->depthBias = 0;
+            depthStencil->depthBiasSlopeScale = 0;
+            depthStencil->depthBiasClamp = 0;
+            device.CreateRenderPipeline(&descriptor);
+        }
+
+        // Non-zero depthBias cannot be used with point or line topologies
+        {
+            depthStencil->depthBias = 1;
+            depthStencil->depthBiasSlopeScale = 0;
+            depthStencil->depthBiasClamp = 0;
+            ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+        }
+
+        // Non-zero depthBiasSlopeScale cannot be used with point or line topologies
+        {
+            depthStencil->depthBias = 0;
+            depthStencil->depthBiasSlopeScale = 1;
+            depthStencil->depthBiasClamp = 0;
+            ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+        }
+
+        // Non-zero depthBiasClamp cannot be used with point or line topologies
+        {
+            depthStencil->depthBias = 0;
+            depthStencil->depthBiasSlopeScale = 0;
+            depthStencil->depthBiasClamp = 1;
+            ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+        }
+    }
+}
+
 // Tests that depth or stencil aspect is required if we enable depth or stencil test.
 TEST_F(RenderPipelineValidationTest, DepthStencilAspectRequirement) {
     // Control case, stencil aspect is required if stencil test or stencil write is enabled
@@ -1203,9 +1277,9 @@ TEST_F(RenderPipelineValidationTest, StorageBufferInVertexShaderNoLayout) {
         struct Dst {
             data : array<u32, 100>
         }
-        @group(0) @binding(0) var<storage, read_write> dst : Dst;
+        @group(0) @binding(0) var<storage, read> dst : Dst;
         @vertex fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
-            dst.data[VertexIndex] = 0x1234u;
+            var val = dst.data[VertexIndex];
             return vec4f();
         })");
 
@@ -1213,7 +1287,7 @@ TEST_F(RenderPipelineValidationTest, StorageBufferInVertexShaderNoLayout) {
     descriptor.layout = nullptr;
     descriptor.vertex.module = vsModuleWithStorageBuffer;
     descriptor.cFragment.module = fsModule;
-    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    device.CreateRenderPipeline(&descriptor);
 }
 
 // Tests that only strip primitive topologies allow an index format
@@ -1264,49 +1338,20 @@ TEST_F(RenderPipelineValidationTest, StripIndexFormatAllowed) {
     }
 }
 
-// Test that specifying a unclippedDepth value is an error if the feature is not enabled.
+// Test that setting unclippedDepth to true is an error if the feature is not enabled.
 TEST_F(RenderPipelineValidationTest, UnclippedDepthWithoutFeature) {
     {
         utils::ComboRenderPipelineDescriptor descriptor;
         descriptor.vertex.module = vsModule;
         descriptor.cFragment.module = fsModule;
-        wgpu::PrimitiveDepthClipControl depthClipControl;
-        depthClipControl.unclippedDepth = true;
-        descriptor.primitive.nextInChain = &depthClipControl;
-        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor),
-                            testing::HasSubstr("not supported"));
+        descriptor.primitive.unclippedDepth = false;
+        device.CreateRenderPipeline(&descriptor);
     }
     {
         utils::ComboRenderPipelineDescriptor descriptor;
         descriptor.vertex.module = vsModule;
         descriptor.cFragment.module = fsModule;
-        wgpu::PrimitiveDepthClipControl depthClipControl;
-        depthClipControl.unclippedDepth = false;
-        descriptor.primitive.nextInChain = &depthClipControl;
-        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor),
-                            testing::HasSubstr("not supported"));
-    }
-}
-
-// Test that specifying an unclippedDepth value is an error if the feature is not enabled.
-TEST_F(RenderPipelineValidationTest, DepthClipControlWithoutFeature) {
-    {
-        utils::ComboRenderPipelineDescriptor descriptor;
-        descriptor.vertex.module = vsModule;
-        descriptor.cFragment.module = fsModule;
-        wgpu::PrimitiveDepthClipControl depthClipControl;
-        depthClipControl.unclippedDepth = true;
-        descriptor.primitive.nextInChain = &depthClipControl;
-        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor),
-                            testing::HasSubstr("not supported"));
-    }
-    {
-        utils::ComboRenderPipelineDescriptor descriptor;
-        descriptor.vertex.module = vsModule;
-        descriptor.cFragment.module = fsModule;
-        wgpu::PrimitiveDepthClipControl depthClipControl;
-        depthClipControl.unclippedDepth = false;
-        descriptor.primitive.nextInChain = &depthClipControl;
+        descriptor.primitive.unclippedDepth = true;
         ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor),
                             testing::HasSubstr("not supported"));
     }
@@ -1913,6 +1958,26 @@ TEST_F(RenderPipelineValidationTest, LoadResolveTextureOnUnsupportedDevice) {
                         testing::HasSubstr("feature is not enabled"));
 }
 
+/// Tests that depthBias can't be used with point or line topologies.
+TEST_F(RenderPipelineValidationTest, PointLineDepthBias) {
+    {
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsModule;
+
+        device.CreateRenderPipeline(&descriptor);
+    }
+
+    {
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsModule;
+        descriptor.multisample.count = 3;
+
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    }
+}
+
 class DepthClipControlValidationTest : public RenderPipelineValidationTest {
   protected:
     std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
@@ -1926,18 +1991,14 @@ TEST_F(DepthClipControlValidationTest, Success) {
         utils::ComboRenderPipelineDescriptor descriptor;
         descriptor.vertex.module = vsModule;
         descriptor.cFragment.module = fsModule;
-        wgpu::PrimitiveDepthClipControl depthClipControl;
-        depthClipControl.unclippedDepth = true;
-        descriptor.primitive.nextInChain = &depthClipControl;
+        descriptor.primitive.unclippedDepth = true;
         device.CreateRenderPipeline(&descriptor);
     }
     {
         utils::ComboRenderPipelineDescriptor descriptor;
         descriptor.vertex.module = vsModule;
         descriptor.cFragment.module = fsModule;
-        wgpu::PrimitiveDepthClipControl depthClipControl;
-        depthClipControl.unclippedDepth = false;
-        descriptor.primitive.nextInChain = &depthClipControl;
+        descriptor.primitive.unclippedDepth = false;
         device.CreateRenderPipeline(&descriptor);
     }
 }
@@ -2028,8 +2089,8 @@ TEST_F(InterStageVariableMatchingValidationTest, DifferentTypeAtSameLocation) {
         std::string interfaceDeclaration;
         {
             std::ostringstream sstream;
-            sstream << "struct A { @location(0) @interpolate(flat) a: " << kTypes[i] << ","
-                    << std::endl;
+            sstream << "struct A { @location(0) @interpolate(flat, either) a: " << kTypes[i]
+                    << ",\n";
             interfaceDeclaration = sstream.str();
         }
 
@@ -2085,22 +2146,25 @@ TEST_F(InterStageVariableMatchingValidationTest, DifferentInterpolationAttribute
         Center,
         Centroid,
         Sample,
+        First,
+        Either,
         Count,
     };
     constexpr std::array<const char*, static_cast<size_t>(InterpolationType::Count)>
         kInterpolationTypeString = {{"", "perspective", "linear", "flat"}};
     constexpr std::array<const char*, static_cast<size_t>(InterpolationSampling::Count)>
-        kInterpolationSamplingString = {{"", "center", "centroid", "sample"}};
+        kInterpolationSamplingString = {{"", "center", "centroid", "sample", "first", "either"}};
 
     struct InterpolationAttribute {
         InterpolationType interpolationType;
         InterpolationSampling interpolationSampling;
     };
 
-    // Interpolation sampling is not used with flat interpolation.
-    constexpr std::array<InterpolationAttribute, 10> validInterpolationAttributes = {{
+    constexpr std::array<InterpolationAttribute, 12> validInterpolationAttributes = {{
         {InterpolationType::None, InterpolationSampling::None},
         {InterpolationType::Flat, InterpolationSampling::None},
+        {InterpolationType::Flat, InterpolationSampling::First},
+        {InterpolationType::Flat, InterpolationSampling::Either},
         {InterpolationType::Linear, InterpolationSampling::None},
         {InterpolationType::Linear, InterpolationSampling::Center},
         {InterpolationType::Linear, InterpolationSampling::Centroid},
@@ -2130,7 +2194,7 @@ TEST_F(InterStageVariableMatchingValidationTest, DifferentInterpolationAttribute
                 }
                 sstream << ")";
             }
-            sstream << " a : vec4f," << std::endl;
+            sstream << " a : vec4f,\n";
             interfaceDeclaration = sstream.str();
         }
         {
@@ -2177,6 +2241,9 @@ TEST_F(InterStageVariableMatchingValidationTest, DifferentInterpolationAttribute
                 break;
 
             case InterpolationType::Flat:
+                if (appliedAttribute.interpolationSampling == InterpolationSampling::None) {
+                    appliedAttribute.interpolationSampling = InterpolationSampling::First;
+                }
                 break;
             default:
                 DAWN_UNREACHABLE();
@@ -2329,6 +2396,19 @@ class LoadResolveTexturePipelineDescriptorValidationTest : public RenderPipeline
             @fragment fn main() -> @location(1) vec4f {
                 return textureLoad(src_tex, vec2u(0, 0), 0);
             })");
+
+        fs2TargetsModule = utils::CreateShaderModule(device, R"(
+            struct FragmentOut {
+                @location(0) color0 : vec4f,
+                @location(1) color1 : vec4f,
+            }
+
+            @fragment fn main() -> FragmentOut {
+                var output : FragmentOut;
+                output.color0 = vec4f(0.85);
+                output.color1 = output.color0 * 0.5;
+                return output;
+            })");
     }
 
     std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
@@ -2349,6 +2429,7 @@ class LoadResolveTexturePipelineDescriptorValidationTest : public RenderPipeline
 
     wgpu::ShaderModule fsWithTextureModule;
     wgpu::ShaderModule fsWithTextureToTarget1Module;
+    wgpu::ShaderModule fs2TargetsModule;
 };
 
 // Test that creating and using a render pipeline with ColorTargetStateExpandResolveTextureDawn
@@ -2529,6 +2610,172 @@ TEST_F(LoadResolveTexturePipelineDescriptorValidationTest,
     ASSERT_DEVICE_ERROR(encoder.Finish());
 }
 
+// Test that the following scenario works:
+// - Render pipeline and render pass both have two color outputs with resolve targets.
+// - Only second output uses ExpandResolveTexture.
+TEST_F(LoadResolveTexturePipelineDescriptorValidationTest,
+       RenderPipelineAndRenderPassTwoOuputsLoadColor1) {
+    constexpr uint32_t kSampleCount = 4;
+
+    auto msaaTexture1 = CreateTexture(wgpu::TextureUsage::RenderAttachment, kSampleCount);
+    auto msaaTexture2 = CreateTexture(wgpu::TextureUsage::RenderAttachment, kSampleCount);
+
+    // Create single sampled textures.
+    auto texture1 =
+        CreateTexture(wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding, 1);
+    auto texture2 =
+        CreateTexture(wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding, 1);
+
+    // Create render pass with two outputs. Second one uses ExpandResolveTexture.
+    utils::ComboRenderPassDescriptor renderPassDescriptor(
+        {msaaTexture1.CreateView(), msaaTexture2.CreateView()});
+    renderPassDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Load;
+    renderPassDescriptor.cColorAttachments[0].resolveTarget = texture1.CreateView();
+    renderPassDescriptor.cColorAttachments[1].loadOp = wgpu::LoadOp::ExpandResolveTexture;
+    renderPassDescriptor.cColorAttachments[1].resolveTarget = texture2.CreateView();
+
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::RenderPassEncoder renderPass = encoder.BeginRenderPass(&renderPassDescriptor);
+
+    // Create render pipeline with two chained ColorTargetStateExpandResolveTextureDawn.
+    // The first one's enabled flag = true.
+    utils::ComboRenderPipelineDescriptor pipelineDescriptor;
+    pipelineDescriptor.vertex.module = vsModule;
+    pipelineDescriptor.cFragment.module = fs2TargetsModule;
+    pipelineDescriptor.multisample.count = kSampleCount;
+
+    wgpu::ColorTargetStateExpandResolveTextureDawn pipelineMSAAExpandResolveDesc[2];
+    pipelineMSAAExpandResolveDesc[0].enabled = false;
+    pipelineDescriptor.cTargets[0].format = kColorFormat;
+    pipelineDescriptor.cTargets[0].nextInChain = &pipelineMSAAExpandResolveDesc[0];
+    pipelineMSAAExpandResolveDesc[1].enabled = true;
+    pipelineDescriptor.cTargets[1].format = kColorFormat;
+    pipelineDescriptor.cTargets[1].nextInChain = &pipelineMSAAExpandResolveDesc[1];
+    pipelineDescriptor.cFragment.targetCount = 2;
+
+    wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&pipelineDescriptor);
+    renderPass.SetPipeline(pipeline);
+    renderPass.End();
+
+    encoder.Finish();
+}
+
+// Test that the following render pipeline and render pass are incompatible.
+// - Render pass:
+//   - colorAttachments[0]
+//     - has resolveTarget.
+//     - loadOp = ExpandResolveTexture.
+//   - colorAttachments[1]
+//     - has resolveTarget.
+//     - loadOp = Load.
+// - Render pipeline:
+//   - colorTargets[0].nextInChain contains ColorTargetStateExpandResolveTextureDawn.
+//     - ColorTargetStateExpandResolveTextureDawn.enabled = true.
+//   - colorTargets[1].nextInChain = null.
+// They are incompatible by spec's requirements.
+TEST_F(LoadResolveTexturePipelineDescriptorValidationTest,
+       RenderPipelineAndRenderPassMismatchResolveTargetsError) {
+    constexpr uint32_t kSampleCount = 4;
+
+    auto msaaTexture1 = CreateTexture(wgpu::TextureUsage::RenderAttachment, kSampleCount);
+    auto msaaTexture2 = CreateTexture(wgpu::TextureUsage::RenderAttachment, kSampleCount);
+
+    // Create single sampled textures.
+    auto texture1 =
+        CreateTexture(wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding, 1);
+    auto texture2 =
+        CreateTexture(wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding, 1);
+
+    // Create render pass with two resolve targets. First one uses ExpandResolveTexture.
+    utils::ComboRenderPassDescriptor renderPassDescriptor(
+        {msaaTexture1.CreateView(), msaaTexture2.CreateView()});
+    renderPassDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::ExpandResolveTexture;
+    renderPassDescriptor.cColorAttachments[0].resolveTarget = texture1.CreateView();
+    renderPassDescriptor.cColorAttachments[1].loadOp = wgpu::LoadOp::Load;
+    renderPassDescriptor.cColorAttachments[1].resolveTarget = texture2.CreateView();
+
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::RenderPassEncoder renderPass = encoder.BeginRenderPass(&renderPassDescriptor);
+
+    // Create render pipeline (without ColorTargetStateExpandResolveTextureDawn chained to
+    // colorTargets[1])
+    utils::ComboRenderPipelineDescriptor pipelineDescriptor;
+    pipelineDescriptor.vertex.module = vsModule;
+    pipelineDescriptor.cFragment.module = fs2TargetsModule;
+    pipelineDescriptor.multisample.count = kSampleCount;
+
+    wgpu::ColorTargetStateExpandResolveTextureDawn pipelineMSAAExpandResolveDesc;
+    pipelineMSAAExpandResolveDesc.enabled = true;
+    pipelineDescriptor.cTargets[0].format = kColorFormat;
+    pipelineDescriptor.cTargets[0].nextInChain = &pipelineMSAAExpandResolveDesc;
+    pipelineDescriptor.cTargets[1].format = kColorFormat;
+    pipelineDescriptor.cFragment.targetCount = 2;
+
+    wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&pipelineDescriptor);
+    renderPass.SetPipeline(pipeline);
+    renderPass.End();
+
+    ASSERT_DEVICE_ERROR(encoder.Finish(), testing::HasSubstr("not compatible"));
+}
+
+// Test that the following render pipeline and render pass are incompatible.
+// - Render pass:
+//   - colorAttachments[0]
+//     - has resolveTarget.
+//     - loadOp = ExpandResolveTexture.
+//   - colorAttachments[1]
+//     - has **no** resolveTarget.
+// - Render pipeline:
+//   - colorTargets[0].nextInChain = ColorTargetStateExpandResolveTextureDawn.
+//     - ColorTargetStateExpandResolveTextureDawn.enabled = true.
+//   - colorTargets[1].nextInChain = ColorTargetStateExpandResolveTextureDawn.
+//     - ColorTargetStateExpandResolveTextureDawn.enabled = false.
+// They are incompatible by spec's requirements.
+TEST_F(LoadResolveTexturePipelineDescriptorValidationTest,
+       RenderPipelineAndRenderPassMismatchResolveTargetsError2) {
+    constexpr uint32_t kSampleCount = 4;
+
+    auto msaaTexture1 = CreateTexture(wgpu::TextureUsage::RenderAttachment, kSampleCount);
+    auto msaaTexture2 = CreateTexture(wgpu::TextureUsage::RenderAttachment, kSampleCount);
+
+    // Create single sampled textures.
+    auto texture1 =
+        CreateTexture(wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding, 1);
+
+    // Create render pass with two outputs but one resolve target. First one uses
+    // ExpandResolveTexture.
+    utils::ComboRenderPassDescriptor renderPassDescriptor(
+        {msaaTexture1.CreateView(), msaaTexture2.CreateView()});
+    renderPassDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::ExpandResolveTexture;
+    renderPassDescriptor.cColorAttachments[0].resolveTarget = texture1.CreateView();
+    renderPassDescriptor.cColorAttachments[1].loadOp = wgpu::LoadOp::Load;
+
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::RenderPassEncoder renderPass = encoder.BeginRenderPass(&renderPassDescriptor);
+
+    // Create render pipeline with two chained ColorTargetStateExpandResolveTextureDawn.
+    // The first one's enabled flag = true.
+    utils::ComboRenderPipelineDescriptor pipelineDescriptor;
+    pipelineDescriptor.vertex.module = vsModule;
+    pipelineDescriptor.cFragment.module = fs2TargetsModule;
+    pipelineDescriptor.multisample.count = kSampleCount;
+
+    wgpu::ColorTargetStateExpandResolveTextureDawn pipelineMSAAExpandResolveDesc[2];
+    pipelineMSAAExpandResolveDesc[0].enabled = true;
+    pipelineDescriptor.cTargets[0].format = kColorFormat;
+    pipelineDescriptor.cTargets[0].nextInChain = &pipelineMSAAExpandResolveDesc[0];
+    pipelineMSAAExpandResolveDesc[1].enabled = false;
+    pipelineDescriptor.cTargets[1].format = kColorFormat;
+    pipelineDescriptor.cTargets[1].nextInChain = &pipelineMSAAExpandResolveDesc[1];
+    pipelineDescriptor.cFragment.targetCount = 2;
+
+    wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&pipelineDescriptor);
+    renderPass.SetPipeline(pipeline);
+    renderPass.End();
+
+    ASSERT_DEVICE_ERROR(encoder.Finish(), testing::HasSubstr("not compatible"));
+}
+
 // Bind resolve attachment in a ExpandResolveTexture render pass as texture should result
 // in error.
 TEST_F(LoadResolveTexturePipelineDescriptorValidationTest, BindColorAttachmentAsTextureError) {
@@ -2582,7 +2829,7 @@ class DualSourceBlendingFeatureTest : public RenderPipelineValidationTest {
         RenderPipelineValidationTest::SetUp();
 
         fsModuleWithBlendSrc1 = utils::CreateShaderModule(device, R"(
-        enable chromium_internal_dual_source_blending;
+        enable dual_source_blending;
         struct FragOut {
             @location(0) @blend_src(0) color : vec4f,
             @location(0) @blend_src(1) blend : vec4f,
@@ -2671,7 +2918,7 @@ TEST_F(DualSourceBlendingFeatureTest, MultipleRenderTargetsNotAllowed) {
     for (uint32_t location = 1; location < limits.limits.maxColorAttachments; location++) {
         std::ostringstream sstream;
         sstream << R"(
-                enable chromium_internal_dual_source_blending;
+                enable dual_source_blending;
 
                 struct TestData {
                     color : vec4f,
@@ -2767,15 +3014,15 @@ TEST_F(DualSourceBlendingFeatureTest, BlendFactorSrc1RequiresBlendSrc1InWGSL) {
     }
 }
 
-// Test that when any blend factor uses the alpha channel of `src1` the fragment shader output with
-// `@blend_src(1)` must have an alpha channel.
-TEST_F(DualSourceBlendingFeatureTest, BlendFactorSrc1AlphaRequiresBlendSrc1AlphaInWGSL) {
+// Test that when any color blend factor uses the alpha channel of `src1` the fragment shader output
+// with `@blend_src(1)` must have an alpha channel.
+TEST_F(DualSourceBlendingFeatureTest, ColorBlendFactorSrc1AlphaRequiresBlendSrc1AlphaInWGSL) {
     constexpr std::array kBlendFactors = {wgpu::BlendFactor::Src1, wgpu::BlendFactor::OneMinusSrc1,
                                           wgpu::BlendFactor::Src1Alpha,
                                           wgpu::BlendFactor::OneMinusSrc1Alpha};
 
     wgpu::ShaderModule fsModuleWithBlendSrc1NoAlpha = utils::CreateShaderModule(device, R"(
-        enable chromium_internal_dual_source_blending;
+        enable dual_source_blending;
         struct FragOut {
             @location(0) @blend_src(0) color : vec2f,
             @location(0) @blend_src(1) blend : vec2f,
@@ -2788,7 +3035,11 @@ TEST_F(DualSourceBlendingFeatureTest, BlendFactorSrc1AlphaRequiresBlendSrc1Alpha
         })");
 
     auto CheckBlendFactorSrc1Alpha = [&](const wgpu::RenderPipelineDescriptor* descriptor,
-                                         wgpu::BlendFactor blendFactor) {
+                                         wgpu::BlendFactor blendFactor, bool isColorBlendFactor) {
+        if (!isColorBlendFactor) {
+            device.CreateRenderPipeline(descriptor);
+            return;
+        }
         switch (blendFactor) {
             case wgpu::BlendFactor::Src1:
             case wgpu::BlendFactor::OneMinusSrc1:
@@ -2814,7 +3065,8 @@ TEST_F(DualSourceBlendingFeatureTest, BlendFactorSrc1AlphaRequiresBlendSrc1Alpha
         descriptor.cBlends[0].color.dstFactor = wgpu::BlendFactor::Src;
         descriptor.cBlends[0].color.operation = wgpu::BlendOperation::Add;
 
-        CheckBlendFactorSrc1Alpha(&descriptor, blendFactor);
+        constexpr bool kIsColorBlendFactor = true;
+        CheckBlendFactorSrc1Alpha(&descriptor, blendFactor, kIsColorBlendFactor);
     }
 
     // Test color dstFactor
@@ -2828,7 +3080,8 @@ TEST_F(DualSourceBlendingFeatureTest, BlendFactorSrc1AlphaRequiresBlendSrc1Alpha
         descriptor.cBlends[0].color.dstFactor = blendFactor;
         descriptor.cBlends[0].color.operation = wgpu::BlendOperation::Add;
 
-        CheckBlendFactorSrc1Alpha(&descriptor, blendFactor);
+        constexpr bool kIsColorBlendFactor = true;
+        CheckBlendFactorSrc1Alpha(&descriptor, blendFactor, kIsColorBlendFactor);
     }
 
     // Test alpha srcFactor
@@ -2842,7 +3095,8 @@ TEST_F(DualSourceBlendingFeatureTest, BlendFactorSrc1AlphaRequiresBlendSrc1Alpha
         descriptor.cBlends[0].alpha.dstFactor = wgpu::BlendFactor::SrcAlpha;
         descriptor.cBlends[0].alpha.operation = wgpu::BlendOperation::Add;
 
-        CheckBlendFactorSrc1Alpha(&descriptor, blendFactor);
+        constexpr bool kIsColorBlendFactor = false;
+        CheckBlendFactorSrc1Alpha(&descriptor, blendFactor, kIsColorBlendFactor);
     }
 
     // Test alpha dstFactor
@@ -2856,7 +3110,99 @@ TEST_F(DualSourceBlendingFeatureTest, BlendFactorSrc1AlphaRequiresBlendSrc1Alpha
         descriptor.cBlends[0].alpha.dstFactor = blendFactor;
         descriptor.cBlends[0].alpha.operation = wgpu::BlendOperation::Add;
 
-        CheckBlendFactorSrc1Alpha(&descriptor, blendFactor);
+        constexpr bool kIsColorBlendFactor = false;
+        CheckBlendFactorSrc1Alpha(&descriptor, blendFactor, kIsColorBlendFactor);
+    }
+}
+
+// Test that it is valid to declare `@blend_src(1)` before `@blend_src(0)`.
+TEST_F(DualSourceBlendingFeatureTest, BlendSrc1BeforeBlendSrc0) {
+    wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
+        enable dual_source_blending;
+        struct FragOut {
+            @location(0) @blend_src(1) blend : vec4f,
+            @location(0) @blend_src(0) color : vec4f,
+        }
+        @fragment fn main() -> FragOut {
+            var output : FragOut;
+            output.color = vec4f(0.0, 1.0, 0.0, 1.0);
+            output.blend = vec4f(0.0, 1.0, 0.0, 1.0);
+            return output;
+        })");
+
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = vsModule;
+    descriptor.cFragment.module = fsModule;
+    descriptor.cTargets[0].format = wgpu::TextureFormat::RGBA8Unorm;
+    descriptor.cTargets[0].blend = &descriptor.cBlends[0];
+    descriptor.cBlends[0].color.srcFactor = wgpu::BlendFactor::Src1;
+    descriptor.cBlends[0].color.dstFactor = wgpu::BlendFactor::Src;
+    descriptor.cBlends[0].color.operation = wgpu::BlendOperation::Add;
+    device.CreateRenderPipeline(&descriptor);
+}
+
+// Test that it is valid to use a constant expression as `@blend_src` attribute.
+TEST_F(DualSourceBlendingFeatureTest, ConstValueAsBlendSrc) {
+    wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
+        enable dual_source_blending;
+        const a = 1;
+        const b = 2;
+        struct FragOut {
+            @location(0) @blend_src(0) color : vec4f,
+            @location(0) @blend_src(b - a) blend : vec4f,
+        }
+        @fragment fn main() -> FragOut {
+            var output : FragOut;
+            output.color = vec4f(0.0, 1.0, 0.0, 1.0);
+            output.blend = vec4f(0.0, 1.0, 0.0, 1.0);
+            return output;
+        })");
+
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = vsModule;
+    descriptor.cFragment.module = fsModule;
+    descriptor.cTargets[0].format = wgpu::TextureFormat::RGBA8Unorm;
+    descriptor.cTargets[0].blend = &descriptor.cBlends[0];
+    descriptor.cBlends[0].color.srcFactor = wgpu::BlendFactor::Src1;
+    descriptor.cBlends[0].color.dstFactor = wgpu::BlendFactor::Src;
+    descriptor.cBlends[0].color.operation = wgpu::BlendOperation::Add;
+    device.CreateRenderPipeline(&descriptor);
+}
+
+// Test that when `Src` is used in the blend factor, it is not allowed to have multiple color
+// targets, even when all the color targets whose index is non-zero have a color mask equal to None.
+TEST_F(DualSourceBlendingFeatureTest, MultipleColorTargets) {
+    wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
+        enable dual_source_blending;
+        struct FragOut {
+            @location(0) @blend_src(0) color : vec4f,
+            @location(0) @blend_src(1) blend : vec4f,
+        }
+        @fragment fn main() -> FragOut {
+            var output : FragOut;
+            output.color = vec4f(0.0, 1.0, 0.0, 1.0);
+            output.blend = vec4f(0.0, 1.0, 0.0, 1.0);
+            return output;
+        })");
+
+    constexpr std::array<wgpu::ColorWriteMask, 2> kColorWriteMasks = {
+        {wgpu::ColorWriteMask::All, wgpu::ColorWriteMask::None}};
+
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = vsModule;
+    descriptor.cFragment.module = fsModule;
+    descriptor.cFragment.targetCount = 2;
+    descriptor.cTargets[0].format = wgpu::TextureFormat::RGBA8Unorm;
+    descriptor.cTargets[0].blend = &descriptor.cBlends[0];
+    descriptor.cBlends[0].color.srcFactor = wgpu::BlendFactor::Src1;
+    descriptor.cBlends[0].color.dstFactor = wgpu::BlendFactor::Src;
+    descriptor.cBlends[0].color.operation = wgpu::BlendOperation::Add;
+    descriptor.cTargets[1] = descriptor.cTargets[0];
+    descriptor.cTargets[1].blend = nullptr;
+
+    for (wgpu::ColorWriteMask writeMask : kColorWriteMasks) {
+        descriptor.cTargets[1].writeMask = writeMask;
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
     }
 }
 

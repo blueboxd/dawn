@@ -91,6 +91,8 @@ class BufferBase : public SharedResource {
     // |GetUsageExternalOnly| returns the usage with which the buffer was created using the
     // base WebGPU API. Additional usages may be added for internal state tracking. |GetUsage|
     // returns the union of base usage and the usages added internally.
+    // TODO(chromium:350497225): Rename |GetUsage| to |GetInternalUsage| to align with the same
+    // function in `TextureBase`.
     wgpu::BufferUsage GetUsage() const;
     wgpu::BufferUsage GetUsageExternalOnly() const;
 
@@ -128,6 +130,10 @@ class BufferBase : public SharedResource {
                         size_t offset,
                         size_t size,
                         const BufferMapCallbackInfo& callbackInfo);
+    Future APIMapAsync2(wgpu::MapMode mode,
+                        size_t offset,
+                        size_t size,
+                        const WGPUBufferMapCallbackInfo2& callbackInfo);
     void* APIGetMappedRange(size_t offset, size_t size);
     const void* APIGetConstMappedRange(size_t offset, size_t size);
     void APIUnmap();
@@ -171,6 +177,7 @@ class BufferBase : public SharedResource {
 
     const uint64_t mSize = 0;
     const wgpu::BufferUsage mUsage = wgpu::BufferUsage::None;
+    const wgpu::BufferUsage mInternalUsage = wgpu::BufferUsage::None;
     BufferState mState;
     bool mIsDataInitialized = false;
 
@@ -190,6 +197,8 @@ class BufferBase : public SharedResource {
     size_t mMapSize = 0;
 
     struct MapAsyncEvent;
+    struct MapAsyncEvent1;
+    struct MapAsyncEvent2;
     Ref<MapAsyncEvent> mPendingMapEvent;
 };
 

@@ -31,6 +31,9 @@
 enum GPUFeatureName {
     "chromium-experimental-subgroups",
     "chromium-experimental-subgroup-uniform-control-flow",
+    // subgroups and subgroups-f16 features are not in webgpu.idl yet.
+    "subgroups",
+    "subgroups-f16",
 };
 
 dictionary GPURequestAdapterOptions {
@@ -54,4 +57,9 @@ enum WGSLFeatureName {
     "packed_4x8_integer_dot_product",
     "unrestricted_pointer_parameters",
     "pointer_composite_access",
+};
+
+interface GPUSupportedLimits {
+    readonly attribute (unsigned long or undefined) minSubgroupSize;
+    readonly attribute (unsigned long or undefined) maxSubgroupSize;
 };

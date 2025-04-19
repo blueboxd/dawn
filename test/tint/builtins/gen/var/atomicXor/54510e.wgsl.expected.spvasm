@@ -1,6 +1,6 @@
 ; SPIR-V
 ; Version: 1.3
-; Generator: Google Tint Compiler; 0
+; Generator: Google Tint Compiler; 1
 ; Bound: 33
 ; Schema: 0
                OpCapability Shader
@@ -9,65 +9,65 @@
                OpEntryPoint GLCompute %compute_main "compute_main"
                OpExecutionMode %fragment_main OriginUpperLeft
                OpExecutionMode %compute_main LocalSize 1 1 1
-               OpName %sb_rw_block "sb_rw_block"
-               OpMemberName %sb_rw_block 0 "inner"
-               OpName %SB_RW "SB_RW"
+               OpMemberName %tint_symbol_1 0 "tint_symbol"
+               OpName %tint_symbol_1 "tint_symbol_1"
                OpMemberName %SB_RW 0 "arg_0"
-               OpName %sb_rw "sb_rw"
-               OpName %prevent_dce_block "prevent_dce_block"
-               OpMemberName %prevent_dce_block 0 "inner"
-               OpName %prevent_dce "prevent_dce"
+               OpName %SB_RW "SB_RW"
+               OpMemberName %tint_symbol_3 0 "tint_symbol_2"
+               OpName %tint_symbol_3 "tint_symbol_3"
                OpName %atomicXor_54510e "atomicXor_54510e"
                OpName %arg_1 "arg_1"
                OpName %res "res"
                OpName %fragment_main "fragment_main"
                OpName %compute_main "compute_main"
-               OpDecorate %sb_rw_block Block
-               OpMemberDecorate %sb_rw_block 0 Offset 0
+               OpMemberDecorate %tint_symbol_1 0 Offset 0
+               OpDecorate %tint_symbol_1 Block
+               OpDecorate %1 DescriptorSet 0
+               OpDecorate %1 Binding 0
                OpMemberDecorate %SB_RW 0 Offset 0
-               OpDecorate %sb_rw DescriptorSet 0
-               OpDecorate %sb_rw Binding 0
-               OpDecorate %prevent_dce_block Block
-               OpMemberDecorate %prevent_dce_block 0 Offset 0
-               OpDecorate %prevent_dce DescriptorSet 2
-               OpDecorate %prevent_dce Binding 0
+               OpMemberDecorate %tint_symbol_3 0 Offset 0
+               OpDecorate %tint_symbol_3 Block
+               OpDecorate %5 DescriptorSet 0
+               OpDecorate %5 Binding 1
        %uint = OpTypeInt 32 0
+%tint_symbol_1 = OpTypeStruct %uint
+%_ptr_StorageBuffer_tint_symbol_1 = OpTypePointer StorageBuffer %tint_symbol_1
+          %1 = OpVariable %_ptr_StorageBuffer_tint_symbol_1 StorageBuffer
       %SB_RW = OpTypeStruct %uint
-%sb_rw_block = OpTypeStruct %SB_RW
-%_ptr_StorageBuffer_sb_rw_block = OpTypePointer StorageBuffer %sb_rw_block
-      %sb_rw = OpVariable %_ptr_StorageBuffer_sb_rw_block StorageBuffer
-%prevent_dce_block = OpTypeStruct %uint
-%_ptr_StorageBuffer_prevent_dce_block = OpTypePointer StorageBuffer %prevent_dce_block
-%prevent_dce = OpVariable %_ptr_StorageBuffer_prevent_dce_block StorageBuffer
-       %void = OpTypeVoid
-          %9 = OpTypeFunction %void
-     %uint_1 = OpConstant %uint 1
+%tint_symbol_3 = OpTypeStruct %SB_RW
+%_ptr_StorageBuffer_tint_symbol_3 = OpTypePointer StorageBuffer %tint_symbol_3
+          %5 = OpVariable %_ptr_StorageBuffer_tint_symbol_3 StorageBuffer
+         %10 = OpTypeFunction %uint
 %_ptr_Function_uint = OpTypePointer Function %uint
-         %16 = OpConstantNull %uint
-     %uint_0 = OpConstant %uint 0
+     %uint_1 = OpConstant %uint 1
 %_ptr_StorageBuffer_uint = OpTypePointer StorageBuffer %uint
+     %uint_0 = OpConstant %uint 0
+       %void = OpTypeVoid
+         %24 = OpTypeFunction %void
 %_ptr_StorageBuffer_uint_0 = OpTypePointer StorageBuffer %uint
-%atomicXor_54510e = OpFunction %void None %9
-         %12 = OpLabel
-      %arg_1 = OpVariable %_ptr_Function_uint Function %16
-        %res = OpVariable %_ptr_Function_uint Function %16
+%atomicXor_54510e = OpFunction %uint None %10
+         %11 = OpLabel
+      %arg_1 = OpVariable %_ptr_Function_uint Function
+        %res = OpVariable %_ptr_Function_uint Function
                OpStore %arg_1 %uint_1
-         %21 = OpAccessChain %_ptr_StorageBuffer_uint %sb_rw %uint_0 %uint_0
-         %22 = OpLoad %uint %arg_1
-         %17 = OpAtomicXor %uint %21 %uint_1 %uint_0 %22
-               OpStore %res %17
-         %25 = OpAccessChain %_ptr_StorageBuffer_uint_0 %prevent_dce %uint_0
-         %26 = OpLoad %uint %res
-               OpStore %25 %26
+         %15 = OpAccessChain %_ptr_StorageBuffer_uint %5 %uint_0 %uint_0
+         %18 = OpLoad %uint %arg_1
+         %19 = OpAtomicXor %uint %15 %uint_1 %uint_0 %18
+               OpStore %res %19
+         %21 = OpLoad %uint %res
+               OpReturnValue %21
+               OpFunctionEnd
+%fragment_main = OpFunction %void None %24
+         %25 = OpLabel
+         %26 = OpFunctionCall %uint %atomicXor_54510e
+         %27 = OpAccessChain %_ptr_StorageBuffer_uint_0 %1 %uint_0
+               OpStore %27 %26
                OpReturn
                OpFunctionEnd
-%fragment_main = OpFunction %void None %9
-         %28 = OpLabel
-         %29 = OpFunctionCall %void %atomicXor_54510e
-               OpReturn
-               OpFunctionEnd
-%compute_main = OpFunction %void None %9
-         %31 = OpLabel
-         %32 = OpFunctionCall %void %atomicXor_54510e
+%compute_main = OpFunction %void None %24
+         %30 = OpLabel
+         %31 = OpFunctionCall %uint %atomicXor_54510e
+         %32 = OpAccessChain %_ptr_StorageBuffer_uint_0 %1 %uint_0
+               OpStore %32 %31
                OpReturn
                OpFunctionEnd

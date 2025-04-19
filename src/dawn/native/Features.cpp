@@ -95,9 +95,12 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Allows textures with formats \"r32float\" \"rg32float\" and \"rgba32float\" to be filtered.",
       "https://gpuweb.github.io/gpuweb/#float32-filterable", FeatureInfo::FeatureState::Stable}},
     {Feature::ChromiumExperimentalSubgroups,
-     {"Experimental, allows using subgroup and supports the \"enable "
+     {"DEPRECATED, use subgroups and subgroups-f16 features instead. "
+      "Experimental, allows using subgroup and supports the \"enable "
       "chromium_experimental_subgroups\" directive in WGSL. Only used to investigate the semantic "
-      "of subgroups and should not be relied upon.",
+      "of subgroups and should not be relied upon. Note that currently \"enable "
+      "chromium_experimental_subgroups\" feature allows using subgroups functions with f16 types "
+      "within WGSL, but doesn't ensure that backend supports it.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shader_features.md",
       FeatureInfo::FeatureState::Experimental}},
     {Feature::ChromiumExperimentalSubgroupUniformControlFlow,
@@ -371,6 +374,26 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
       "dawn_load_resolve_texture.md",
       FeatureInfo::FeatureState::Stable}},
+    {Feature::DawnPartialLoadResolveTexture,
+     {"Support RenderPassDescriptorExpandResolveRect as chained struct into RenderPassDescriptor "
+      "for a render pass. This will expand and resolve the texels within the rect of texture.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "dawn_partial_load_resolve_texture.md",
+      FeatureInfo::FeatureState::Stable}},
+    {Feature::Subgroups,
+     {"Supports the \"enable subgroups;\" directive in WGSL.",
+      "https://github.com/gpuweb/gpuweb/blob/main/proposals/subgroups.md",
+      FeatureInfo::FeatureState::Stable}},
+    {Feature::SubgroupsF16,
+     {"Supports the \"enable subgroups_f16;\" directive in WGSL.",
+      "https://github.com/gpuweb/gpuweb/blob/main/proposals/subgroups.md",
+      FeatureInfo::FeatureState::Stable}},
+    {Feature::MultiDrawIndirect,
+     {"Support MultiDrawIndirect and MultiDrawIndexedIndirect. Allows batching multiple indirect "
+      "calls with one command",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "multi_draw_indirect.md",
+      FeatureInfo::FeatureState::Experimental}},
 };
 
 }  // anonymous namespace

@@ -35,6 +35,7 @@
 #include "dawn/common/Constants.h"
 #include "dawn/common/Math.h"
 #include "dawn/native/Adapter.h"
+#include "dawn/native/BlitTextureToBuffer.h"
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Device.h"
@@ -475,6 +476,12 @@ bool CopySrcNeedsInternalTextureBindingUsage(const DeviceBase* device, const For
         device->IsToggleEnabled(Toggle::UseBlitForStencilTextureToBufferCopy)) {
         return true;
     }
+
+    if (device->IsToggleEnabled(Toggle::UseBlitForT2B) &&
+        IsFormatSupportedByTextureToBufferBlit(format.format)) {
+        return true;
+    }
+
     return false;
 }
 
@@ -604,7 +611,6 @@ MaybeError ValidateTextureViewDescriptor(const DeviceBase* device,
     DAWN_ASSERT(!texture->IsError());
 
     DAWN_TRY(ValidateTextureViewDimension(descriptor->dimension));
-    // TODO(crbug.com/dawn/2476): Add necessary validation for TextureFormat::External.
     DAWN_TRY(ValidateTextureFormat(descriptor->format));
     DAWN_TRY(ValidateTextureAspect(descriptor->aspect));
 
@@ -635,15 +641,19 @@ MaybeError ValidateTextureViewDescriptor(const DeviceBase* device,
         "texture's mip level count (%u).",
         descriptor->baseMipLevel, descriptor->mipLevelCount, texture->GetNumMipLevels());
 
-    // TODO(crbug.com/dawn/2476): Add necessary validations to CanViewTextureAs for
-    // TextureFormat::External.
-    DAWN_TRY(ValidateCanViewTextureAs(device, texture, *viewFormat, descriptor->aspect));
-    DAWN_TRY(ValidateTextureViewDimensionCompatibility(device, texture, descriptor));
-
     if (descriptor.Get<YCbCrVkDescriptor>()) {
         DAWN_INVALID_IF(!device->HasFeature(Feature::YCbCrVulkanSamplers), "%s is not enabled.",
                         wgpu::FeatureName::YCbCrVulkanSamplers);
+        DAWN_INVALID_IF(format.format != wgpu::TextureFormat::External,
+                        "Texture format (%s) is not (%s).", format.format,
+                        wgpu::TextureFormat::External);
+    } else if (format.format == wgpu::TextureFormat::External) {
+        return DAWN_VALIDATION_ERROR("Invalid TextureViewDescriptor with Texture format (%s).",
+                                     wgpu::TextureFormat::External);
     }
+
+    DAWN_TRY(ValidateCanViewTextureAs(device, texture, *viewFormat, descriptor->aspect));
+    DAWN_TRY(ValidateTextureViewDimensionCompatibility(device, texture, descriptor));
 
     return {};
 }
@@ -683,7 +693,6 @@ ResultOrError<TextureViewDescriptor> GetTextureViewDescriptorWithDefaults(
         }
     }
 
-    // TODO(crbug.com/dawn/2476): Add TextureFormat::External validation.
     if (desc.format == wgpu::TextureFormat::Undefined) {
         const Format& format = texture->GetFormat();
 
@@ -774,14 +783,14 @@ TextureBase::TextureBase(DeviceBase* device, const UnpackedPtr<TextureDescriptor
     GetObjectTrackingList()->Track(this);
 
     // dawn:1569: If a texture with multiple array layers or mip levels is specified as a
-    // texture attachment when this toggle is active, it needs to be given CopyDst usage
+    // texture attachment when this toggle is active, it needs to be given CopySrc | CopyDst usage
     // internally.
     bool applyAlwaysResolveIntoZeroLevelAndLayerToggle =
         device->IsToggleEnabled(Toggle::AlwaysResolveIntoZeroLevelAndLayer) &&
         (GetArrayLayers() > 1 || GetNumMipLevels() > 1) &&
         (GetInternalUsage() & wgpu::TextureUsage::RenderAttachment);
     if (applyAlwaysResolveIntoZeroLevelAndLayerToggle) {
-        AddInternalUsage(wgpu::TextureUsage::CopyDst);
+        AddInternalUsage(wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst);
     }
 
     if (mInternalUsage & wgpu::TextureUsage::CopyDst) {
@@ -796,6 +805,13 @@ TextureBase::TextureBase(DeviceBase* device, const UnpackedPtr<TextureDescriptor
     }
     if (mInternalUsage & wgpu::TextureUsage::StorageBinding) {
         AddInternalUsage(kReadOnlyStorageTexture | kWriteOnlyStorageTexture);
+    }
+
+    bool supportsMSAAPartialResolve = device->HasFeature(Feature::DawnPartialLoadResolveTexture) &&
+                                      GetSampleCount() > 1 &&
+                                      (GetUsage() & wgpu::TextureUsage::RenderAttachment);
+    if (supportsMSAAPartialResolve) {
+        AddInternalUsage(wgpu::TextureUsage::TextureBinding);
     }
 }
 
@@ -1209,22 +1225,25 @@ void TextureBase::SetSharedResourceMemoryContentsForTesting(
 }
 
 void TextureBase::DumpMemoryStatistics(dawn::native::MemoryDump* dump, const char* prefix) const {
-    // Do not emit for destroyed textures or textures that wrap external shared texture memory.
-    if (!IsAlive() || GetSharedResourceMemoryContents() != nullptr) {
-        return;
-    }
     std::string name = absl::StrFormat("%s/texture_%p", prefix, static_cast<const void*>(this));
     dump->AddScalar(name.c_str(), MemoryDump::kNameSize, MemoryDump::kUnitsBytes,
                     ComputeEstimatedByteSize());
     dump->AddString(name.c_str(), "label", GetLabel());
     dump->AddString(name.c_str(), "dimensions", GetSizeLabel());
     dump->AddString(name.c_str(), "format", absl::StrFormat("%s", GetFormat().format));
+    dump->AddString(name.c_str(), "sample_count", absl::StrFormat("%u", GetSampleCount()));
     dump->AddString(name.c_str(), "usage", absl::StrFormat("%s", GetUsage()));
     dump->AddString(name.c_str(), "internal_usage", absl::StrFormat("%s", GetInternalUsage()));
 }
 
 uint64_t TextureBase::ComputeEstimatedByteSize() const {
-    DAWN_ASSERT(!IsError());
+    DAWN_ASSERT(IsAlive() && !IsError());
+    // Do not emit a non-zero size for textures that wrap external shared texture memory, or
+    // textures used as transient (memoryless) attachments.
+    if (GetSharedResourceMemoryContents() != nullptr ||
+        (GetInternalUsage() & wgpu::TextureUsage::TransientAttachment) != 0) {
+        return 0;
+    }
     uint64_t byteSize = 0;
     for (Aspect aspect : IterateEnumMask(SelectFormatAspects(*mFormat, wgpu::TextureAspect::All))) {
         const AspectInfo& info = mFormat->GetAspectInfo(aspect);

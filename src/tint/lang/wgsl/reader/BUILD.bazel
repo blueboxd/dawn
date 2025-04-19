@@ -121,7 +121,6 @@ cc_library(
   ],
   deps = [
     "//src/tint/api/common",
-    "//src/tint/cmd/bench:bench",
     "//src/tint/lang/core",
     "//src/tint/lang/core/constant",
     "//src/tint/lang/core/ir",
@@ -148,6 +147,7 @@ cc_library(
     "@benchmark",
   ] + select({
     ":tint_build_wgsl_reader": [
+      "//src/tint/cmd/bench:bench",
       "//src/tint/lang/wgsl/reader",
     ],
     "//conditions:default": [],

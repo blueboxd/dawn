@@ -35,12 +35,12 @@
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/number.h"
 #include "src/tint/lang/core/type/atomic.h"
+#include "src/tint/lang/core/type/external_texture.h"
 #include "src/tint/lang/core/type/sampler.h"
 #include "src/tint/lang/core/type/struct.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/lang/core/type/unique_node.h"
 #include "src/tint/utils/containers/unique_allocator.h"
-#include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/symbol/symbol.h"
 
 // Forward declarations
@@ -51,11 +51,13 @@ class Array;
 class Bool;
 class F16;
 class F32;
+class I8;
 class I32;
 class Invalid;
 class Matrix;
 class Pointer;
 class Reference;
+class U8;
 class U32;
 class Vector;
 class Void;
@@ -136,8 +138,12 @@ class Manager final {
             return Get<core::type::AbstractInt>(std::forward<ARGS>(args)...);
         } else if constexpr (std::is_same_v<T, tint::core::AFloat>) {
             return Get<core::type::AbstractFloat>(std::forward<ARGS>(args)...);
+        } else if constexpr (std::is_same_v<T, tint::core::i8>) {
+            return Get<core::type::I8>(std::forward<ARGS>(args)...);
         } else if constexpr (std::is_same_v<T, tint::core::i32>) {
             return Get<core::type::I32>(std::forward<ARGS>(args)...);
+        } else if constexpr (std::is_same_v<T, tint::core::u8>) {
+            return Get<core::type::U8>(std::forward<ARGS>(args)...);
         } else if constexpr (std::is_same_v<T, tint::core::u32>) {
             return Get<core::type::U32>(std::forward<ARGS>(args)...);
         } else if constexpr (std::is_same_v<T, tint::core::f32>) {
@@ -186,8 +192,14 @@ class Manager final {
     /// @returns a bool type
     const core::type::Bool* bool_();
 
+    /// @returns an i8 type
+    const core::type::I8* i8();
+
     /// @returns an i32 type
     const core::type::I32* i32();
+
+    /// @returns a u8 type
+    const core::type::U8* u8();
 
     /// @returns a u32 type
     const core::type::U32* u32();
@@ -236,6 +248,14 @@ class Manager final {
     /// @param inner the inner type
     /// @returns a vec4 type with the element type @p inner
     const core::type::Vector* vec4(const core::type::Type* inner);
+
+    /// Return a type with element type `type` that has the same number of vector components as
+    /// `match`. If `match` is scalar just return `type`.
+    /// @param el_ty the type to extend
+    /// @param match the type to match the component count of
+    /// @returns a type with the same number of vector components as `match`
+    const core::type::Type* match_width(const core::type::Type* el_ty,
+                                        const core::type::Type* match);
 
     /// @tparam T the element type
     /// @tparam N the vector width
@@ -500,7 +520,7 @@ class Manager final {
         /// The type of the struct member.
         const core::type::Type* type = nullptr;
         /// The optional struct member attributes.
-        core::type::StructMemberAttributes attributes = {};
+        core::IOAttributes attributes = {};
     };
 
     /// Create a new structure declaration.
@@ -525,6 +545,9 @@ class Manager final {
     core::type::Struct* Struct(Symbol name, std::initializer_list<StructMemberDesc> members) {
         return Struct(name, tint::Vector<StructMemberDesc, 4>(members));
     }
+
+    /// @returns the external texture type
+    core::type::ExternalTexture* external_texture() { return Get<core::type::ExternalTexture>(); }
 
     /// @returns an iterator to the beginning of the types
     TypeIterator begin() const { return types_.begin(); }

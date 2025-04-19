@@ -138,7 +138,7 @@ class Device final : public DeviceBase {
 
     float GetTimestampPeriodInNS() const override;
 
-    bool IsResolveTextureBlitWithDrawSupported() const override;
+    bool CanTextureLoadResolveTargetInTheSameRenderpass() const override;
 
   private:
     using DeviceBase::DeviceBase;
@@ -160,6 +160,7 @@ class Device final : public DeviceBase {
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
+        const std::vector<tint::wgsl::Extension>& internalExtensions,
         ShaderModuleParseResult* parseResult,
         OwnedCompilationMessages* compilationMessages) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
@@ -171,9 +172,6 @@ class Device final : public DeviceBase {
     ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
         TextureBase* texture,
         const UnpackedPtr<TextureViewDescriptor>& descriptor) override;
-
-    ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsageImpl(
-        const Surface* surface) const override;
 
     void DestroyImpl() override;
 

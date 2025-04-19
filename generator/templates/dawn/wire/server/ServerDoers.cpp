@@ -52,6 +52,17 @@ namespace dawn::wire::server {
                         {%- if not loop.last -%}, {% endif %}
                     {%- endfor -%}
                 ) {
+                    //* Some arguments need to be sanitized so do that now.
+                    {% for member in command.members %}
+                        {% set MemberName = as_varName(member.name) %}
+                        {% if member.type.name.get() == "string view" %}
+                            // String views must not be nullable.
+                            if ({{MemberName}}.data == nullptr && {{MemberName}}.length == SIZE_MAX) {
+                                return WireResult::FatalError;
+                            }
+                        {% endif %}
+                    {% endfor %}
+
                     {% set ret = command.members|selectattr("is_return_value")|list %}
                     //* If there is a return value, assign it.
                     {% if ret|length == 1 %}
@@ -77,7 +88,7 @@ namespace dawn::wire::server {
         {% endif %}
     {% endfor %}
 
-    WireResult Server::DoDestroyObject(ObjectType objectType, ObjectId objectId) {
+    WireResult Server::DoUnregisterObject(ObjectType objectType, ObjectId objectId) {
         switch(objectType) {
             {% for type in by_category["object"] %}
                 {% set cType = as_cType(type.name) %}

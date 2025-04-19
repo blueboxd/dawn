@@ -25,13 +25,14 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <webgpu/webgpu.h>
+
 #include <algorithm>
 
 #include "dawn/fuzzers/lpmfuzz/DawnLPMConstants_autogen.h"
 #include "dawn/fuzzers/lpmfuzz/DawnLPMObjectStore.h"
 #include "dawn/fuzzers/lpmfuzz/DawnLPMSerializerCustom.h"
 #include "dawn/fuzzers/lpmfuzz/DawnLPMSerializer_autogen.h"
-#include "dawn/webgpu.h"
 #include "dawn/wire/ChunkedCommandSerializer.h"
 #include "dawn/wire/ObjectType_autogen.h"
 
@@ -88,15 +89,15 @@ void GetCustomSerializedData(const fuzzing::Command& command,
             serializer.SerializeCommand(cmd, provider);
             break;
         }
-        case fuzzing::Command::kDestroyObject: {
-            DestroyObjectCmd cmd;
-            memset(&cmd, 0, sizeof(DestroyObjectCmd));
+        case fuzzing::Command::kUnregisterObject: {
+            UnregisterObjectCmd cmd;
+            memset(&cmd, 0, sizeof(UnregisterObjectCmd));
 
             cmd.objectType =
-                static_cast<ObjectType>(command.destroyobject().objecttype() % kObjectTypes);
+                static_cast<ObjectType>(command.unregisterobject().objecttype() % kObjectTypes);
 
             cmd.objectId = objectStores[static_cast<ObjectType>(cmd.objectType)].Lookup(
-                command.destroyobject().objectid());
+                command.unregisterobject().objectid());
 
             if (cmd.objectId == static_cast<ObjectId>(DawnLPMFuzzer::kInvalidObjectId)) {
                 break;

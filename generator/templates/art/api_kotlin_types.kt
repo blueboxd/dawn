@@ -25,100 +25,104 @@
 //* OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 //* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//* Outputs a declaration for an argument (type RecordMember), including a default defintion if
-//* required.
-{%- macro kotlin_declaration(arg) -%}
+{%- macro declaration_with_defaults(arg, emit_defaults) -%}
     {%- set type = arg.type %}
     {%- set optional = arg.optional %}
     {%- set default_value = arg.default_value %}
-    {%- set no_default = arg.json_data is defined and arg.json_data.get('no_default', false) %}
     {%- if arg.length == 'strlen' -%}
         String{{ '?' if optional or default_value == 'nullptr' }}
-        {%- if default_value or optional -%}
-            = null
+        {%- if emit_defaults and (default_value or optional) -%}
+            {{ ' ' }}= null
         {%- endif %}
-    {%- elif arg.length and arg.constant_length != 1 %}
-        {%- if type.category in ['function pointer', 'structure'] -%}
-            Array<{{ type.name.CamelCase() }}> = arrayOf()
-        {%- elif type.category == 'object' -%}
-            Array<Any> = arrayOf()
-        {%- elif type.category in ['bitmask', 'enum'] -%}
-            IntArray = intArrayOf()
-        {%- elif type.name.get() == 'bool' -%}
-            BooleanArray = booleanArrayOf()
-        {%- elif type.name.get() == 'float' -%}
-            FloatArray = floatArrayOf()
-        {%- elif type.name.get() == 'double' -%}
-            DoubleArray = doubleArrayOf()
-        {%- elif type.name.get() in ['int8_t', 'uint8_t', 'void'] -%}
-            ByteArray = byteArrayOf()
-        {%- elif type.name.get() in ['int16_t', 'uint16_t'] -%}
-            ShortArray = shortArrayOf()
+    {% elif type.name.get() == 'void' %}
+        {%- if arg.length and arg.constant_length != 1 -%}  {# void with length is binary data #}
+            java.nio.ByteBuffer{{ ' = java.nio.ByteBuffer.allocateDirect(0)' if emit_defaults }}
+        {%- else -%}
+            Unit  {# raw void is C type for no return type; Kotlin equivalent is Unit #}
+        {%- endif -%}
+    {%- elif arg.length and arg.length != 'constant' %}
+        {# * annotation can mean an array, e.g. an output argument #}
+        {%- if type.category in ['bitmask', 'enum', 'function pointer', 'object', 'structure'] -%}
+            Array<{{ type.name.CamelCase() }}>{{ ' = arrayOf()' if emit_defaults }}
         {%- elif type.name.get() in ['int', 'int32_t', 'uint32_t'] -%}
-            IntArray = intArrayOf()
-        {%- elif type.name.get() in ['int64_t', 'uint64_t', 'size_t'] -%}
-            LongArray = longArrayOf()
+            IntArray{{ ' = intArrayOf()' if emit_defaults }}
         {%- else -%}
             {{ unreachable_code() }}
         {% endif %}
     {%- elif type.category in ['function pointer', 'object'] %}
-        Any
-        {%- if optional or default_value %}? = null{% endif %}
-    {%- elif type.category == 'structure' %}
+        {{- type.name.CamelCase() }}
+        {%- if optional or default_value %}?{{ ' = null' if emit_defaults }}{% endif %}
+    {%- elif type.category == 'structure' or type.category == 'callback info' %}
         {{- type.name.CamelCase() }}{{ '?' if optional }}
-        {%- if type.has_basic_constructor and not no_default -%}
-            = {{ type.name.CamelCase() }}()
-        {%- elif optional -%}
-            = null
+        {%- if emit_defaults -%}
+            {%- if type.has_basic_constructor -%}
+                {{ ' ' }}= {{ type.name.CamelCase() }}()
+            {%- elif optional -%}
+                {{ ' ' }}= null
+            {%- endif %}
         {%- endif %}
     {%- elif type.category in ['bitmask', 'enum'] -%}
         {{ type.name.CamelCase() }}
         {%- if default_value %}
-            {%- for value in type.values if value.name.name == default_value %}
-                = {{ type.name.CamelCase() }}.{{ as_ktName(value.name.CamelCase()) }}
+            {%- for value in type.values if value.name.name == default_value -%}
+                {{ ' ' }}= {{ type.name.CamelCase() }}.{{ as_ktName(value.name.CamelCase()) }}
             {%- endfor %}
         {%- endif %}
     {%- elif type.name.get() == 'bool' -%}
         Boolean{{ '?' if optional }}{% if default_value %} = {{ default_value }}{% endif %}
     {%- elif type.name.get() == 'float' -%}
-        Float{{ '?' if optional }}{% if default_value %} =
-        {{ 'Float.NaN' if default_value == 'NAN' else default_value or '0.0f' }}{% endif %}
+        Float{{ '?' if optional }}{% if default_value %} ={{ ' ' }}
+        {{- 'Float.NaN' if default_value == 'NAN' else default_value or '0.0f' }}{% endif %}
     {%- elif type.name.get() == 'double' -%}
-        Double{{ '?' if optional }}{% if default_value %} =
-        {{ 'Double.NaN' if default_value == 'NAN' else default_value or '0.0' }}{% endif %}
+        Double{{ '?' if optional }}{% if default_value %} ={{ ' ' }}
+        {{- 'Double.NaN' if default_value == 'NAN' else default_value or '0.0' }}{% endif %}
     {%- elif type.name.get() in ['int8_t', 'uint8_t'] -%}
         Byte{{ '?' if optional }}{% if default_value %} = {{ default_value }}{% endif %}
     {%- elif type.name.get() in ['int16_t', 'uint16_t'] -%}
         Short{{ '?' if optional }}{% if default_value %} = {{ default_value }}{% endif %}
     {%- elif type.name.get() in ['int', 'int32_t', 'uint32_t'] -%}
         Int
-        {%- if default_value -%}
+        {%- if default_value not in [None, undefined] -%}
             {%- if default_value is string and default_value.startswith('WGPU_') -%}
-                = {{ 'Constants.' + default_value | replace('WGPU_', '') }}
+                {{ ' ' }}= {{ 'Constants.' + default_value | replace('WGPU_', '') }}
             {%- elif default_value == 'nullptr' -%}
                 ? = null
             {%- elif default_value == '0xFFFFFFFF' -%}
-                = -0x7FFFFFFF
+                {{ ' ' }}= -0x7FFFFFFF
             {%- else -%}
-                = {{ default_value }}
+                {{ ' ' }}= {{ default_value }}
             {%- endif %}
         {% endif %}
     {%- elif type.name.get() in ['int64_t', 'uint64_t', 'size_t'] -%}
         Long
-        {%- if default_value %}
+        {%- if default_value not in [None, undefined] %}
             {%- if default_value is string and default_value.startswith('WGPU_') -%}
-                = {{ 'Constants.' + default_value | replace('WGPU_', '') }}
+                {{ ' ' }}= {{ 'Constants.' + default_value | replace('WGPU_', '') }}
             {%- elif default_value == 'nullptr' -%}
                 ? = null
             {%- elif default_value == '0xFFFFFFFFFFFFFFFF' -%}
-                = -0x7FFFFFFFFFFFFFFF
+                {{ ' ' }}= -0x7FFFFFFFFFFFFFFF
             {%- else -%}
-                = {{ default_value }}
+                {{ ' ' }}= {{ default_value }}
             {%- endif %}
         {% endif %}
-    {%- elif type.name.get() == 'void' %}
-        {{- 'Long' if arg.annotation == '*' else 'Unit' }}
+    {%- elif type.name.get() in ['void *', 'void const *'] %}
+        //* Hack: void* for a return value is a ByteBuffer.
+        {% if not arg.name %}
+            ByteBuffer
+        {% else %}
+            Long
+        {% endif %}
     {%- else -%}
-        {{ unreachable_code() }}
+        {{ unreachable_code('Unsupported type: ' + type.name.get()) }}
     {%- endif %}
 {% endmacro %}
+
+{% macro kotlin_definition(arg) -%}
+    {{ declaration_with_defaults(arg, true) }}
+{%- endmacro %}
+
+{% macro kotlin_declaration(arg) -%}
+    {{ declaration_with_defaults(arg, false) }}
+{%- endmacro %}
+

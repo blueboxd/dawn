@@ -69,9 +69,10 @@ ResultOrError<PhysicalDeviceSurfaceCapabilities> PhysicalDevice::GetSurfaceCapab
     InstanceBase* instance,
     const Surface* surface) const {
     PhysicalDeviceSurfaceCapabilities capabilities;
+    capabilities.usages = wgpu::TextureUsage::RenderAttachment;
     capabilities.formats = {wgpu::TextureFormat::BGRA8Unorm};
     capabilities.presentModes = {wgpu::PresentMode::Fifo};
-    capabilities.alphaModes = {wgpu::CompositeAlphaMode::Auto};
+    capabilities.alphaModes = {wgpu::CompositeAlphaMode::Opaque};
     return capabilities;
 }
 
@@ -226,9 +227,10 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 }
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
+    const std::vector<tint::wgsl::Extension>& internalExtensions,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
-    Ref<ShaderModule> module = AcquireRef(new ShaderModule(this, descriptor));
+    Ref<ShaderModule> module = AcquireRef(new ShaderModule(this, descriptor, internalExtensions));
     DAWN_TRY(module->Initialize(parseResult, compilationMessages));
     return module;
 }
@@ -245,11 +247,6 @@ ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     TextureBase* texture,
     const UnpackedPtr<TextureViewDescriptor>& descriptor) {
     return AcquireRef(new TextureView(texture, descriptor));
-}
-
-ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
-    const Surface* surface) const {
-    return wgpu::TextureUsage::RenderAttachment;
 }
 
 void Device::DestroyImpl() {
@@ -329,7 +326,6 @@ MaybeError Device::SubmitPendingOperations() {
     mPendingOperations.clear();
 
     DAWN_TRY(GetQueue()->CheckPassedSerials());
-    GetQueue()->IncrementLastSubmittedCommandSerial();
 
     return {};
 }
@@ -389,6 +385,7 @@ void Buffer::DoWriteBuffer(uint64_t bufferOffset, const void* data, size_t size)
 }
 
 MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
+    GetDevice()->GetQueue()->IncrementLastSubmittedCommandSerial();
     return {};
 }
 
@@ -430,6 +427,7 @@ MaybeError Queue::SubmitImpl(uint32_t, CommandBufferBase* const*) {
     Device* device = ToBackend(GetDevice());
 
     DAWN_TRY(device->SubmitPendingOperations());
+    IncrementLastSubmittedCommandSerial();
 
     return {};
 }
@@ -577,7 +575,7 @@ float Device::GetTimestampPeriodInNS() const {
     return 1.0f;
 }
 
-bool Device::IsResolveTextureBlitWithDrawSupported() const {
+bool Device::CanTextureLoadResolveTargetInTheSameRenderpass() const {
     return true;
 }
 

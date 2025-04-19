@@ -40,7 +40,9 @@
 #include "src/tint/lang/core/constant/eval.h"
 #include "src/tint/lang/core/constant/value.h"
 #include "src/tint/lang/core/intrinsic/table.h"
+#include "src/tint/lang/core/type/input_attachment.h"
 #include "src/tint/lang/wgsl/common/allowed_features.h"
+#include "src/tint/lang/wgsl/common/validation_mode.h"
 #include "src/tint/lang/wgsl/intrinsic/dialect.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/dependency_graph.h"
@@ -99,7 +101,10 @@ class Resolver {
     /// Constructor
     /// @param builder the program builder
     /// @param allowed_features the extensions and features that are allowed to be used
-    explicit Resolver(ProgramBuilder* builder, const wgsl::AllowedFeatures& allowed_features);
+    /// @param mode the validation mode to use
+    Resolver(ProgramBuilder* builder,
+             const wgsl::AllowedFeatures& allowed_features,
+             wgsl::ValidationMode mode = wgsl::ValidationMode::kFull);
 
     /// Destructor
     ~Resolver();
@@ -249,13 +254,6 @@ class Resolver {
         const ast::Expression* expr);
 
     /// @returns the call of Expression() cast to a
-    /// sem::BuiltinEnumExpression<core::BuiltinValue>. If the sem::Expression is not a
-    /// sem::BuiltinEnumExpression<core::BuiltinValue>, then an error diagnostic is raised and
-    /// nullptr is returned.
-    sem::BuiltinEnumExpression<core::BuiltinValue>* BuiltinValueExpression(
-        const ast::Expression* expr);
-
-    /// @returns the call of Expression() cast to a
     /// sem::BuiltinEnumExpression<core::type::TexelFormat>. If the sem::Expression is not a
     /// sem::BuiltinEnumExpression<core::type::TexelFormat>, then an error diagnostic is raised and
     /// nullptr is returned.
@@ -266,20 +264,6 @@ class Resolver {
     /// If the sem::Expression is not a sem::BuiltinEnumExpression<core::Access>*, then an error
     /// diagnostic is raised and nullptr is returned.
     sem::BuiltinEnumExpression<core::Access>* AccessExpression(const ast::Expression* expr);
-
-    /// @returns the call of Expression() cast to a
-    /// sem::BuiltinEnumExpression<core::InterpolationSampling>*. If the sem::Expression is not a
-    /// sem::BuiltinEnumExpression<core::InterpolationSampling>*, then an error diagnostic is
-    /// raised and nullptr is returned.
-    sem::BuiltinEnumExpression<core::InterpolationSampling>* InterpolationSampling(
-        const ast::Expression* expr);
-
-    /// @returns the call of Expression() cast to a
-    /// sem::BuiltinEnumExpression<core::InterpolationType>*. If the sem::Expression is not a
-    /// sem::BuiltinEnumExpression<core::InterpolationType>*, then an error diagnostic is raised
-    /// and nullptr is returned.
-    sem::BuiltinEnumExpression<core::InterpolationType>* InterpolationType(
-        const ast::Expression* expr);
 
     /// Expression traverses the graph of expressions starting at `expr`, building a post-ordered
     /// list (leaf-first) of all the expression nodes. Each of the expressions are then resolved by
@@ -418,10 +402,6 @@ class Resolver {
     /// current_function_
     bool WorkgroupSize(const ast::Function*);
 
-    /// Resolves the `@builtin` attribute @p attr
-    /// @returns the builtin value on success
-    tint::Result<tint::core::BuiltinValue> BuiltinAttribute(const ast::BuiltinAttribute* attr);
-
     /// Resolves the `@location` attribute @p attr
     /// @returns the location value on success.
     tint::Result<uint32_t> LocationAttribute(const ast::LocationAttribute* attr);
@@ -470,10 +450,6 @@ class Resolver {
     /// Resolves the `@stride` attribute @p attr
     /// @returns true on success, false on failure
     bool StrideAttribute(const ast::StrideAttribute*);
-
-    /// Resolves the `@interpolate` attribute @p attr
-    /// @returns true on success, false on failure
-    tint::Result<core::Interpolation> InterpolateAttribute(const ast::InterpolateAttribute* attr);
 
     /// Resolves the internal attribute @p attr
     /// @returns true on success, false on failure
@@ -721,7 +697,7 @@ class Resolver {
     uint32_t current_scoping_depth_ = 0;
     Hashset<TypeAndAddressSpace, 8> valid_type_storage_layouts_;
     Hashmap<const ast::Expression*, const ast::BinaryExpression*, 8> logical_binary_lhs_to_parent_;
-    Hashset<const ast::Expression*, 8> skip_const_eval_;
+    Hashset<const ast::Expression*, 8> not_evaluated_;
     Hashmap<const core::type::Type*, size_t, 8> nest_depth_;
     Hashmap<std::pair<core::intrinsic::Overload, wgsl::BuiltinFn>, sem::BuiltinFn*, 64> builtins_;
     Hashmap<core::intrinsic::Overload, sem::ValueConstructor*, 16> constructors_;

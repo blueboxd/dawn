@@ -132,6 +132,85 @@ luci.binding(
     groups = "flex-try-led-users",
 )
 
+# Shadow buckets for LED jobs.
+luci.bucket(
+    name = "ci.shadow",
+    shadows = "ci",
+    constraints = luci.bucket_constraints(
+        pools = ["luci.flex.ci"],
+    ),
+    bindings = [
+        luci.binding(
+            roles = "role/buildbucket.creator",
+            groups = [
+                "mdb/chrome-build-access-sphinx",
+                "mdb/chrome-troopers",
+                "chromium-led-users",
+                "flex-ci-led-users",
+            ],
+            users = [
+                "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+            ],
+        ),
+        luci.binding(
+            roles = "role/buildbucket.triggerer",
+            users = [
+                "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+            ],
+        ),
+        # Allow ci builders to create invocations in their own builds.
+        luci.binding(
+            roles = "role/resultdb.invocationCreator",
+            users = [
+                "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+            ],
+        ),
+    ],
+    dynamic = True,
+)
+
+luci.bucket(
+    name = "try.shadow",
+    shadows = "try",
+    constraints = luci.bucket_constraints(
+        pools = ["luci.flex.try"],
+        service_accounts = [
+            "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+        ],
+    ),
+    bindings = [
+        luci.binding(
+            roles = "role/buildbucket.creator",
+            groups = [
+                "mdb/chrome-build-access-sphinx",
+                "mdb/chrome-troopers",
+                "chromium-led-users",
+                "flex-ci-led-users",
+            ],
+            users = [
+                "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+            ],
+        ),
+        luci.binding(
+            roles = "role/buildbucket.triggerer",
+            users = [
+                "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+            ],
+        ),
+        # Allow try builders to create invocations in their own builds.
+        luci.binding(
+            roles = "role/resultdb.invocationCreator",
+            groups = [
+                "project-dawn-tryjob-access",
+            ],
+            users = [
+                "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+            ],
+        ),
+    ],
+    dynamic = True,
+)
+
 os_category = struct(
     LINUX = "Linux",
     MAC = "Mac",
@@ -185,6 +264,11 @@ cmake_msvc_file_exclusions = [
     # Tools written in Go.
     cq.location_filter(
         path_regexp = "tools/src/.+",
+        exclude = True,
+    ),
+    # Go dependencies.
+    cq.location_filter(
+        path_regexp = "go\\.(mod|sum)",
         exclude = True,
     ),
 ]
@@ -351,6 +435,7 @@ def add_ci_builder(name, os, properties):
         caches = get_default_caches(os, clang),
         notifies = ["gardener-notifier"],
         service_account = "dawn-ci-builder@chops-service-accounts.iam.gserviceaccount.com",
+        shadow_service_account = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
     )
 
 def add_try_builder(name, os, properties):
@@ -372,9 +457,6 @@ def add_try_builder(name, os, properties):
         reclient.jobs.LOW_JOBS_FOR_CQ,
     )
     properties_try.update(properties)
-    properties_try["$depot_tools/bot_update"] = {
-        "apply_patch_on_gclient": True,
-    }
     luci.builder(
         name = name,
         bucket = "try",
@@ -541,18 +623,20 @@ def dawn_cmake_standalone_builder(name, clang, debug, cpu, asan, ubsan, experime
         builder = "try/" + name,
     )
 
-    luci.cq_tryjob_verifier(
-        experiment_percentage = 100 if experimental else None,
-        cq_group = "Dawn-CQ",
-        builder = "dawn:try/" + name,
-        location_filters = [
-            cq.location_filter(path_regexp = ".*"),
-            cq.location_filter(
-                path_regexp = "\\.github/.+",
-                exclude = True,
-            ),
-        ] + cmake_msvc_file_exclusions,
-    )
+    # Only add CQ verifiers for non-ASAN and non-UBSAN bots to minimize CQ load.
+    if not asan and not ubsan:
+        luci.cq_tryjob_verifier(
+            experiment_percentage = 100 if experimental else None,
+            cq_group = "Dawn-CQ",
+            builder = "dawn:try/" + name,
+            location_filters = [
+                cq.location_filter(path_regexp = ".*"),
+                cq.location_filter(
+                    path_regexp = "\\.github/.+",
+                    exclude = True,
+                ),
+            ] + cmake_msvc_file_exclusions,
+        )
 
     # These builders run fine unbranched on branch CLs, so add them to the
     # branch groups as well.
@@ -709,9 +793,6 @@ luci.builder(
     properties = {
         "repo_name": "dawn",
         "runhooks": True,
-        "$depot_tools/bot_update": {
-            "apply_patch_on_gclient": True,
-        },
     },
     service_account = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
 )
@@ -787,6 +868,18 @@ chromium_dawn_tryjob("android", "arm")
 chromium_dawn_tryjob("android", "arm64")
 
 tricium_dawn_tryjob()
+
+luci.cq_tryjob_verifier(
+    cq_group = "Dawn-CQ",
+    builder = "chromium:try/dawn-try-linux-x64-intel-uhd770-rel",
+    includable_only = True,
+)
+
+luci.cq_tryjob_verifier(
+    cq_group = "Dawn-CQ",
+    builder = "chromium:try/dawn-try-win-x64-intel-uhd770-rel",
+    includable_only = True,
+)
 
 luci.cq_tryjob_verifier(
     cq_group = "Dawn-CQ",
@@ -895,6 +988,10 @@ def _create_dawn_cq_group(name, refs, refs_exclude = None):
             failure_weight = 1,
             transient_failure_weight = 1,
             timeout_weight = 2,
+        ),
+        user_limit_default = cq.user_limit(
+            name = "default-limit",
+            run = cq.run_limits(max_active = 4),
         ),
     )
 

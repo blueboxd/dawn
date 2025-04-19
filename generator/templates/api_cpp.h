@@ -24,22 +24,32 @@
 // CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+{% from 'dawn/cpp_macros.tmpl' import wgpu_string_constructors with context %}
+
 {% set API = metadata.api.upper() %}
 {% set api = API.lower() %}
+{% set CAPI = metadata.c_prefix %}
+
 {% if 'dawn' in enabled_tags %}
     #ifdef __EMSCRIPTEN__
     #error "Do not include this header. Emscripten already provides headers needed for {{metadata.api}}."
     #endif
 {% endif %}
+
 {% set PREFIX = "" if not c_namespace else c_namespace.SNAKE_CASE() + "_" %}
 #ifndef {{PREFIX}}{{API}}_CPP_H_
 #define {{PREFIX}}{{API}}_CPP_H_
 
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <functional>
+#include <string_view>
+#include <type_traits>
+#include <utility>
 
 #include "{{c_header}}"
 #include "{{api}}/{{api}}_cpp_chained_struct.h"
@@ -105,8 +115,8 @@ static T& AsNonConstReference(const T& value) {
 
 {% for type in by_category["bitmask"] %}
     {% set CppType = as_cppType(type.name) %}
-    {% set CType = as_cType(type.name) + "Flags" %}
-    enum class {{CppType}} : uint32_t {
+    {% set CType = as_cType(type.name) %}
+    enum class {{CppType}} : uint64_t {
         {% for value in type.values %}
             {{as_cppEnum(value.name)}} = {{as_cEnum(type.name, value.name)}},
         {% endfor %}
@@ -116,6 +126,10 @@ static T& AsNonConstReference(const T& value) {
 
 {% endfor %}
 
+// TODO(crbug.com/42241461): Update these to not be using the C callback types, and instead be
+// defined using C++ types instead. Note that when we remove these, the C++ callback info types
+// should also all be removed as they will no longer be necessary given the C++ templated
+// functions calls and setter utilities.
 {% for type in by_category["function pointer"] %}
     using {{as_cppType(type.name)}} = {{as_cType(type.name)}};
 {% endfor %}
@@ -243,6 +257,8 @@ class ObjectBase {
         {{" "}}= {{member.default_value}}
     {%- elif member.default_value != None -%}
         {{" "}}= {{member.default_value}}
+    {%- elif member.type.category == "structure" and member.annotation == "value" and is_struct -%}
+        {{" "}}= {}
     {%- else -%}
         {{assert(member.default_value == None)}}
         {%- if force_default -%}
@@ -260,7 +276,7 @@ class ObjectBase {
     //* Stripping the 2 at the end of the callback functions for now until we can deprecate old ones.
     //* TODO: crbug.com/dawn/2509 - Remove name handling once old APIs are deprecated.
     {% set CallbackInfoType = (method.arguments|last).type %}
-    {% set CallbackType = (CallbackInfoType.members|first).type %}
+    {% set CallbackType = find_by_name(CallbackInfoType.members, "callback").type %}
     {% set SfinaeArg = " = std::enable_if_t<std::is_convertible_v<F, Cb*>>" if not dfn else "" %}
     template <typename F, typename T,
               typename Cb
@@ -280,7 +296,7 @@ class ObjectBase {
                 {{as_annotated_cppType(arg)}}{{ ", "}}
             {%- endif -%}
         {%- endfor -%}
-    {{as_cppType(types["callback mode"].name)}} mode, F callback, T userdata) const
+    {{as_cppType(types["callback mode"].name)}} callbackMode, F callback, T userdata) const
 {%- endmacro %}
 
 //* This rendering macro should ONLY be used for callback info type functions.
@@ -292,7 +308,7 @@ class ObjectBase {
     //* Stripping the 2 at the end of the callback functions for now until we can deprecate old ones.
     //* TODO: crbug.com/dawn/2509 - Remove name handling once old APIs are deprecated.
     {% set CallbackInfoType = (method.arguments|last).type %}
-    {% set CallbackType = (CallbackInfoType.members|first).type %}
+    {% set CallbackType = find_by_name(CallbackInfoType.members, "callback").type %}
     {% set SfinaeArg = " = std::enable_if_t<std::is_convertible_v<L, Cb>>" if not dfn else "" %}
     template <typename L,
               typename Cb
@@ -313,14 +329,14 @@ class ObjectBase {
                 {{as_annotated_cppType(arg)}}{{ ", "}}
             {%- endif -%}
         {%- endfor -%}
-    {{as_cppType(types["callback mode"].name)}} mode, L callback) const
+    {{as_cppType(types["callback mode"].name)}} callbackMode, L callback) const
 {%- endmacro %}
 
 //* This rendering macro should NOT be used for callback info type functions.
 {% macro render_cpp_method_declaration(type, method, dfn=False) %}
     {% set CppType = as_cppType(type.name) %}
     {% set OriginalMethodName = method.name.CamelCase() %}
-    {% set MethodName = OriginalMethodName[:-1] if method.name.chunks[-1] == "f" else OriginalMethodName %}
+    {% set MethodName = OriginalMethodName[:-1] if method.name.chunks[-1] == "f" or method.name.chunks[-1] == "2" else OriginalMethodName %}
     {% set MethodName = CppType + "::" + MethodName if dfn else MethodName %}
     {{"ConvertibleStatus" if method.return_type.name.get() == "status" else as_cppType(method.return_type.name)}} {{MethodName}}(
         {%- for arg in method.arguments -%}
@@ -364,9 +380,9 @@ class ObjectBase {
 {% macro render_cpp_callback_info_template_method_impl(type, method) %}
     {{render_cpp_callback_info_template_method_declaration(type, method, dfn=True)}} {
         {% set CallbackInfoType = (method.arguments|last).type %}
-        {% set CallbackType = (CallbackInfoType.members|first).type %}
+        {% set CallbackType = find_by_name(CallbackInfoType.members, "callback").type %}
         {{as_cType(CallbackInfoType.name)}} callbackInfo = {};
-        callbackInfo.mode = static_cast<{{as_cType(types["callback mode"].name)}}>(mode);
+        callbackInfo.mode = static_cast<{{as_cType(types["callback mode"].name)}}>(callbackMode);
         callbackInfo.callback = [](
             {%- for arg in CallbackType.arguments -%}
                 {{as_annotated_cType(arg)}}{{", "}}
@@ -393,7 +409,7 @@ class ObjectBase {
 {% macro render_cpp_callback_info_lambda_method_impl(type, method) %}
     {{render_cpp_callback_info_lambda_method_declaration(type, method, dfn=True)}} {
         {% set CallbackInfoType = (method.arguments|last).type %}
-        {% set CallbackType = (CallbackInfoType.members|first).type %}
+        {% set CallbackType = find_by_name(CallbackInfoType.members, "callback").type %}
         using F = void (
             {%- for arg in CallbackType.arguments -%}
                 {%- if not loop.first %}, {% endif -%}
@@ -402,7 +418,7 @@ class ObjectBase {
         );
 
         {{as_cType(CallbackInfoType.name)}} callbackInfo = {};
-        callbackInfo.mode = static_cast<{{as_cType(types["callback mode"].name)}}>(mode);
+        callbackInfo.mode = static_cast<{{as_cType(types["callback mode"].name)}}>(callbackMode);
         if constexpr (std::is_convertible_v<L, F*>) {
             callbackInfo.callback = [](
             {%- for arg in CallbackType.arguments -%}
@@ -425,7 +441,7 @@ class ObjectBase {
             callbackInfo);
             return {{convert_cType_to_cppType(method.return_type, 'value', 'result') | indent(8)}};
         } else {
-            auto* lambda = new L(callback);
+            auto* lambda = new L(std::move(callback));
             callbackInfo.callback = [](
                 {%- for arg in CallbackType.arguments -%}
                     {{as_annotated_cType(arg)}}{{", "}}
@@ -481,6 +497,10 @@ class ObjectBase {
             {% endif %}
         {% endfor %}
 
+        {% if CppType == "Instance" %}
+            inline WaitStatus WaitAny(Future f, uint64_t timeout);
+        {% endif %}
+
       private:
         friend ObjectBase<{{CppType}}, {{CType}}>;
         static inline void {{c_prefix}}AddRef({{CType}} handle);
@@ -500,7 +520,10 @@ static_assert(offsetof(ChainedStruct, nextInChain) == offsetof({{c_prefix}}Chain
 static_assert(offsetof(ChainedStruct, sType) == offsetof({{c_prefix}}ChainedStruct, sType),
     "offsetof mismatch for ChainedStruct::sType");
 
-{% for type in by_category["structure"] %}
+//* Special structures that require some custom code generation.
+{% set SpecialStructures = ["device descriptor"] %}
+
+{% for type in by_category["structure"] if type.name.get() not in SpecialStructures %}
     {% set Out = "Out" if type.output else "" %}
     {% set const = "const" if not type.output else "" %}
     {% if type.chained %}
@@ -541,21 +564,84 @@ static_assert(offsetof(ChainedStruct, sType) == offsetof({{c_prefix}}ChainedStru
                 {{member_declaration}};
             {% endif %}
         {% endfor %}
+
+        //* Custom string constructors
+        {% if type.name.get() == "string view" %}
+            {{wgpu_string_constructors(as_cppType(type.name), false) | indent(4)}}
+        {% elif type.name.get() == "nullable string view" %}
+            {{wgpu_string_constructors(as_cppType(type.name), true) | indent(4)}}
+        {% endif %}
+
         {% if type.has_free_members_function %}
 
           private:
+        {% if type.has_free_members_function %}
+                inline void FreeMembers();
+        {% endif %}
             static inline void Reset({{as_cppType(type.name)}}& value);
         {% endif %}
     };
 
 {% endfor %}
 
+//* Device descriptor is specially implemented in C++ in order to hide callback info. Note that
+//* this is placed at the end of the structs and works for the device descriptor because no other
+//* structs include it as a member. In the future for these special structs, we may need to add
+//* a way to order the definitions w.r.t the topology of the structs.
+{% set type = types["device descriptor"] %}
+{% set CppType = as_cppType(type.name) %}
+namespace detail {
+struct {{CppType}} {
+    ChainedStruct const * nextInChain = nullptr;
+    {% for member in type.members %}
+        {% if member.type.category != "callback info" %}
+            {{as_annotated_cppType(member, type.has_free_members_function) + render_cpp_default_value(member, True, type.has_free_members_function)}};
+        {% else %}
+            {{as_annotated_cType(member)}} = {{CAPI}}_{{member.name.SNAKE_CASE()}}_INIT;
+        {% endif %}
+    {% endfor %}
+};
+}  // namespace detail
+struct {{CppType}} : protected detail::{{CppType}} {
+    inline operator const {{as_cType(type.name)}}&() const noexcept;
+
+    using detail::{{CppType}}::nextInChain;
+    {% for member in type.members %}
+        {% if member.type.category != "callback info" %}
+            using detail::{{CppType}}::{{as_varName(member.name)}};
+        {% endif %}
+    {% endfor %}
+
+    inline {{CppType}}();
+    struct Init;
+    inline {{CppType}}(Init&& init);
+
+    template <typename F, typename T,
+              typename Cb = void (const Device& device, DeviceLostReason reason, const char * message, T userdata),
+              typename = std::enable_if_t<std::is_convertible_v<F, Cb*>>>
+    void SetDeviceLostCallback(CallbackMode callbackMode, F callback, T userdata);
+    template <typename L,
+              typename Cb = std::function<void(const Device& device, DeviceLostReason reason, const char * message)>,
+              typename = std::enable_if_t<std::is_convertible_v<L, Cb>>>
+    void SetDeviceLostCallback(CallbackMode callbackMode, L callback);
+
+    template <typename F, typename T,
+              typename Cb = void (const Device& device, ErrorType type, const char * message, T userdata),
+              typename = std::enable_if_t<std::is_convertible_v<F, Cb*>>>
+    void SetUncapturedErrorCallback(F callback, T userdata);
+    template <typename L,
+              typename Cb = std::function<void(const Device& device, ErrorType type, const char * message)>,
+              typename = std::enable_if_t<std::is_convertible_v<L, Cb>>>
+    void SetUncapturedErrorCallback(L callback);
+};
+
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 // error: 'offsetof' within non-standard-layout type '{{metadata.namespace}}::XXX' is conditionally-supported
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
-{% for type in by_category["structure"] %}
+
+{% for type in by_category["structure"] if type.name.get() not in SpecialStructures %}
     {% set CppType = as_cppType(type.name) %}
     {% set CType = as_cType(type.name) %}
     // {{CppType}} implementation
@@ -582,15 +668,7 @@ static_assert(offsetof(ChainedStruct, sType) == offsetof({{c_prefix}}ChainedStru
     {% endif %}
     {% if type.has_free_members_function %}
         {{CppType}}::~{{CppType}}() {
-            if (
-                {%- for member in type.members if member.annotation != 'value' %}
-                    {% if not loop.first %} || {% endif -%}
-                    this->{{member.name.camelCase()}} != nullptr
-                {%- endfor -%}
-            ) {
-                {{as_cMethodNamespaced(type.name, Name("free members"), c_namespace)}}(
-                    *reinterpret_cast<{{as_cType(type.name)}}*>(this));
-            }
+            FreeMembers();
         }
 
         {{CppType}}::{{CppType}}({{CppType}}&& rhs)
@@ -606,25 +684,39 @@ static_assert(offsetof(ChainedStruct, sType) == offsetof({{c_prefix}}ChainedStru
             if (&rhs == this) {
                 return *this;
             }
-            this->~{{CppType}}();
+            FreeMembers();
             {% for member in type.members %}
-                detail::AsNonConstReference(this->{{member.name.camelCase()}}) = std::move(rhs.{{member.name.camelCase()}});
+                ::{{metadata.namespace}}::detail::AsNonConstReference(this->{{member.name.camelCase()}}) = std::move(rhs.{{member.name.camelCase()}});
             {% endfor %}
             Reset(rhs);
             return *this;
         }
 
-            // static
+        {% if type.has_free_members_function %}
+            void {{CppType}}::FreeMembers() {
+                if (
+                    {%- for member in type.members if member.annotation != 'value' %}
+                        {% if not loop.first %} || {% endif -%}
+                        this->{{member.name.camelCase()}} != nullptr
+                    {%- endfor -%}
+                ) {
+                    {{as_cMethodNamespaced(type.name, Name("free members"), c_namespace)}}(
+                        *reinterpret_cast<{{CType}}*>(this));
+                }
+            }
+        {% endif %}
+
+        // static
         void {{CppType}}::Reset({{CppType}}& value) {
             {{CppType}} defaultValue{};
             {% for member in type.members %}
-                detail::AsNonConstReference(value.{{member.name.camelCase()}}) = defaultValue.{{member.name.camelCase()}};
+                ::{{metadata.namespace}}::detail::AsNonConstReference(value.{{member.name.camelCase()}}) = defaultValue.{{member.name.camelCase()}};
             {% endfor %}
         }
     {% endif %}
 
-    {{CppType}}::operator const {{as_cType(type.name)}}&() const noexcept {
-        return *reinterpret_cast<const {{as_cType(type.name)}}*>(this);
+    {{CppType}}::operator const {{CType}}&() const noexcept {
+        return *reinterpret_cast<const {{CType}}*>(this);
     }
 
     static_assert(sizeof({{CppType}}) == sizeof({{CType}}), "sizeof mismatch for {{CppType}}");
@@ -640,6 +732,119 @@ static_assert(offsetof(ChainedStruct, sType) == offsetof({{c_prefix}}ChainedStru
     {% endfor %}
 
 {% endfor %}
+//* Special implementation for device descriptor.
+{% set type = types["device descriptor"] %}
+{% set CppType = as_cppType(type.name) %}
+{% set CType = as_cType(type.name) %}
+// {{CppType}} implementation
+
+{{CppType}}::operator const {{CType}}&() const noexcept {
+    return *reinterpret_cast<const {{CType}}*>(this);
+}
+
+{{CppType}}::{{CppType}}() : detail::{{CppType}} {} {
+    static_assert(offsetof({{CppType}}, nextInChain) == offsetof({{CType}}, nextInChain),
+                "offsetof mismatch for {{CppType}}::nextInChain");
+    {% for member in type.members %}
+        {% set memberName = member.name.camelCase() %}
+        static_assert(offsetof({{CppType}}, {{memberName}}) == offsetof({{CType}}, {{memberName}}),
+                "offsetof mismatch for {{CppType}}::{{memberName}}");
+    {% endfor %}
+}
+
+struct {{CppType}}::Init {
+    ChainedStruct const * nextInChain;
+    {% for member in type.members if member.type.category != "callback info" %}
+        {% set member_declaration = as_annotated_cppType(member, type.has_free_members_function) + render_cpp_default_value(member, True, type.has_free_members_function) %}
+        {{member_declaration}};
+    {% endfor %}
+};
+
+{{CppType}}::{{CppType}}({{CppType}}::Init&& init) : detail::{{CppType}} {
+    init.nextInChain
+    {%- for member in type.members if member.type.category != "callback info" -%},{{" "}}
+        std::move(init.{{as_varName(member.name)}})
+    {%- endfor -%}
+} {}
+
+static_assert(sizeof({{CppType}}) == sizeof({{CType}}), "sizeof mismatch for {{CppType}}");
+static_assert(alignof({{CppType}}) == alignof({{CType}}), "alignof mismatch for {{CppType}}");
+
+template <typename F, typename T, typename Cb, typename>
+void {{CppType}}::SetDeviceLostCallback(CallbackMode callbackMode, F callback, T userdata) {
+    assert(deviceLostCallbackInfo2.callback == nullptr);
+
+    deviceLostCallbackInfo2.mode = static_cast<WGPUCallbackMode>(callbackMode);
+    deviceLostCallbackInfo2.callback = [](WGPUDevice const * device, WGPUDeviceLostReason reason, char const * message, void* callback, void* userdata) {
+        auto cb = reinterpret_cast<Cb*>(callback);
+        // We manually acquire and release the device to avoid changing any ref counts.
+        auto apiDevice = Device::Acquire(*device);
+        (*cb)(apiDevice, static_cast<DeviceLostReason>(reason), message, static_cast<T>(userdata));
+        apiDevice.MoveToCHandle();
+    };
+    deviceLostCallbackInfo2.userdata1 = reinterpret_cast<void*>(+callback);
+    deviceLostCallbackInfo2.userdata2 = reinterpret_cast<void*>(userdata);
+}
+
+template <typename L, typename Cb, typename>
+void {{CppType}}::SetDeviceLostCallback(CallbackMode callbackMode, L callback) {
+    assert(deviceLostCallbackInfo2.callback == nullptr);
+    using F = void (const Device& device, DeviceLostReason reason, const char * message);
+
+    deviceLostCallbackInfo2.mode = static_cast<WGPUCallbackMode>(callbackMode);
+    if constexpr (std::is_convertible_v<L, F*>) {
+        deviceLostCallbackInfo2.callback = [](WGPUDevice const * device, WGPUDeviceLostReason reason, char const * message, void* callback, void*) {
+            auto cb = reinterpret_cast<F*>(callback);
+            // We manually acquire and release the device to avoid changing any ref counts.
+            auto apiDevice = Device::Acquire(*device);
+            (*cb)(apiDevice, static_cast<DeviceLostReason>(reason), message);
+            apiDevice.MoveToCHandle();
+        };
+        deviceLostCallbackInfo2.userdata1 = reinterpret_cast<void*>(+callback);
+        deviceLostCallbackInfo2.userdata2 = nullptr;
+    } else {
+        auto* lambda = new L(std::move(callback));
+        deviceLostCallbackInfo2.callback = [](WGPUDevice const * device, WGPUDeviceLostReason reason, char const * message, void* callback, void*) {
+            std::unique_ptr<L> lambda(reinterpret_cast<L*>(callback));
+            // We manually acquire and release the device to avoid changing any ref counts.
+            auto apiDevice = Device::Acquire(*device);
+            (*lambda)(apiDevice, static_cast<DeviceLostReason>(reason), message);
+            apiDevice.MoveToCHandle();
+        };
+        deviceLostCallbackInfo2.userdata1 = reinterpret_cast<void*>(lambda);
+        deviceLostCallbackInfo2.userdata2 = nullptr;
+    }
+}
+
+template <typename F, typename T, typename Cb, typename>
+void {{CppType}}::SetUncapturedErrorCallback(F callback, T userdata) {
+    uncapturedErrorCallbackInfo2.callback = [](WGPUDevice const * device, WGPUErrorType type, char const * message, void* callback, void* userdata) {
+        auto cb = reinterpret_cast<Cb*>(callback);
+        // We manually acquire and release the device to avoid changing any ref counts.
+        auto apiDevice = Device::Acquire(*device);
+        (*cb)(apiDevice, static_cast<ErrorType>(type), message, static_cast<T>(userdata));
+        apiDevice.MoveToCHandle();
+    };
+    uncapturedErrorCallbackInfo2.userdata1 = reinterpret_cast<void*>(+callback);
+    uncapturedErrorCallbackInfo2.userdata2 = reinterpret_cast<void*>(userdata);
+}
+
+template <typename L, typename Cb, typename>
+void {{CppType}}::SetUncapturedErrorCallback(L callback) {
+    using F = void (const Device& device, ErrorType type, const char * message);
+    static_assert(std::is_convertible_v<L, F*>, "Uncaptured error callback cannot be a binding lambda");
+
+    uncapturedErrorCallbackInfo2.callback = [](WGPUDevice const * device, WGPUErrorType type, char const * message, void* callback, void*) {
+        auto cb = reinterpret_cast<F*>(callback);
+        // We manually acquire and release the device to avoid changing any ref counts.
+        auto apiDevice = Device::Acquire(*device);
+        (*cb)(apiDevice, static_cast<ErrorType>(type), message);
+        apiDevice.MoveToCHandle();
+    };
+    uncapturedErrorCallbackInfo2.userdata1 = reinterpret_cast<void*>(+callback);
+    uncapturedErrorCallbackInfo2.userdata2 = nullptr;
+}
+
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
@@ -657,6 +862,14 @@ static_assert(offsetof(ChainedStruct, sType) == offsetof({{c_prefix}}ChainedStru
             {{render_cpp_method_impl(type, method)}}
         {% endif %}
     {% endfor %}
+
+    {% if CppType == "Instance" %}
+        WaitStatus Instance::WaitAny(Future f, uint64_t timeout) {
+            FutureWaitInfo waitInfo { f };
+            return WaitAny(1, &waitInfo, timeout);
+        }
+    {% endif %}
+
     void {{CppType}}::{{c_prefix}}AddRef({{CType}} handle) {
         if (handle != nullptr) {
             {{as_cMethodNamespaced(type.name, Name("add ref"), c_namespace)}}(handle);
@@ -692,10 +905,21 @@ static_assert(offsetof(ChainedStruct, sType) == offsetof({{c_prefix}}ChainedStru
 
 // Free Functions
 {% for function in by_category["function"] if not function.no_cpp %}
-    static inline {{as_cppType(function.return_type.name)}} {{as_cppType(function.name)}}(
+    //* TODO(crbug.com/42241188): Remove "2" suffix when WGPUStringView changes complete.
+    {% set OriginalFunctionName = as_cppType(function.name) %}
+    {% set FunctionName = OriginalFunctionName[:-1] if function.name.chunks[-1] == "2" else OriginalFunctionName %}
+    static inline {{as_cppType(function.return_type.name)}} {{FunctionName}}(
         {%- for arg in function.arguments -%}
             {%- if not loop.first %}, {% endif -%}
-            {{as_annotated_cppType(arg)}}{{render_cpp_default_value(arg, False)}}
+            {%- if arg.type.name.get() == "string" and arg.annotation == "value" -%}
+                {%- if arg.optional -%}
+                    std::optional<std::string_view> {{as_varName(arg.name)}}{{render_cpp_default_value(arg, False)}}
+                {%- else -%}
+                    std::string_view {{as_varName(arg.name)}}{{render_cpp_default_value(arg, False)}}
+                {%- endif -%}
+            {%- else -%}
+                {{as_annotated_cppType(arg)}}{{render_cpp_default_value(arg, False)}}
+            {%- endif -%}
         {%- endfor -%}
     ) {
         {% if function.return_type.name.concatcase() == "void" %}

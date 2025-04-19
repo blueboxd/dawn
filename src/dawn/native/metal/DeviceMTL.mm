@@ -171,17 +171,20 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
         // an accurate value by the following calculations.
         mTimestampPeriod = gpu_info::IsIntel(GetPhysicalDevice()->GetVendorId()) ? 83.333f : 1.0f;
 
-        // Initialize kalman filter parameters
-        mKalmanInfo = std::make_unique<KalmanInfo>();
-        mKalmanInfo->filterValue = 0.0f;
-        mKalmanInfo->kalmanGain = 0.5f;
-        mKalmanInfo->R = 0.0001f;  // The smaller this value is, the smaller the error of measured
-                                   // value is, the more we can trust the measured value.
-        mKalmanInfo->P = 1.0f;
-
         if (@available(macOS 10.15, iOS 14.0, *)) {
-            // Sample CPU timestamp and GPU timestamp for first time at device creation
-            [*mMtlDevice sampleTimestamps:&mCpuTimestamp gpuTimestamp:&mGpuTimestamp];
+            if (!IsToggleEnabled(Toggle::MetalDisableTimestampPeriodEstimation)) {
+                // Initialize kalman filter parameters
+                mKalmanInfo = std::make_unique<KalmanInfo>();
+                mKalmanInfo->filterValue = 0.0f;
+                mKalmanInfo->kalmanGain = 0.5f;
+                mKalmanInfo->R =
+                    0.0001f;  // The smaller this value is, the smaller the error of measured
+                              // value is, the more we can trust the measured value.
+                mKalmanInfo->P = 1.0f;
+
+                // Sample CPU timestamp and GPU timestamp for first time at device creation
+                [*mMtlDevice sampleTimestamps:&mCpuTimestamp gpuTimestamp:&mGpuTimestamp];
+            }
         }
     }
 
@@ -225,9 +228,11 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 }
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
+    const std::vector<tint::wgsl::Extension>& internalExtensions,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
-    return ShaderModule::Create(this, descriptor, parseResult, compilationMessages);
+    return ShaderModule::Create(this, descriptor, internalExtensions, parseResult,
+                                compilationMessages);
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
                                                               SwapChainBase* previousSwapChain,
@@ -262,14 +267,6 @@ void Device::InitializeRenderPipelineAsyncImpl(Ref<CreateRenderPipelineAsyncEven
     }
 
     event->InitializeAsync();
-}
-
-ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
-    const Surface* surface) const {
-    wgpu::TextureUsage usages = wgpu::TextureUsage::RenderAttachment |
-                                wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc |
-                                wgpu::TextureUsage::CopyDst;
-    return usages;
 }
 
 ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImpl(
@@ -313,9 +310,10 @@ ResultOrError<Ref<SharedFenceBase>> Device::ImportSharedFenceImpl(
 MaybeError Device::TickImpl() {
     DAWN_TRY(ToBackend(GetQueue())->SubmitPendingCommandBuffer());
 
-    // Just run timestamp period calculation when timestamp feature is enabled and timestamp
-    // conversion is not disabled.
-    if (mIsTimestampQueryEnabled && !IsToggleEnabled(Toggle::DisableTimestampQueryConversion)) {
+    // Just run timestamp period estimation when timestamp feature is enabled and timestamp
+    // conversion is not disabled and the estimation is not disabled.
+    if (mIsTimestampQueryEnabled && !IsToggleEnabled(Toggle::DisableTimestampQueryConversion) &&
+        !IsToggleEnabled(Toggle::MetalDisableTimestampPeriodEstimation)) {
         if (@available(macOS 10.15, iOS 14.0, *)) {
             UpdateTimestampPeriod(GetMTLDevice(), mKalmanInfo.get(), &mCpuTimestamp, &mGpuTimestamp,
                                   &mTimestampPeriod);
@@ -401,7 +399,7 @@ float Device::GetTimestampPeriodInNS() const {
     return mTimestampPeriod;
 }
 
-bool Device::IsResolveTextureBlitWithDrawSupported() const {
+bool Device::CanTextureLoadResolveTargetInTheSameRenderpass() const {
     return true;
 }
 

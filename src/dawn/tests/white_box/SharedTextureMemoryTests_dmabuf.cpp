@@ -29,13 +29,14 @@
 #include <gbm.h>
 #include <unistd.h>
 #include <vulkan/vulkan.h>
+#include <webgpu/webgpu_cpp.h>
+
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "dawn/tests/white_box/SharedTextureMemoryTests.h"
-#include "dawn/webgpu_cpp.h"
 
 namespace dawn {
 namespace {
@@ -146,11 +147,6 @@ class Backend : public SharedTextureMemoryTestVulkanBackend {
                      GBM_BO_USE_RENDERING,
                      gbm_bo_flags(GBM_BO_USE_RENDERING | GBM_BO_USE_LINEAR),
                  }) {
-                if (format == GBM_FORMAT_NV12 && (usage & GBM_BO_USE_LINEAR)) {
-                    // TODO(crbug.com/dawn/1548): Linear multiplanar formats require disjoint
-                    // planes which are not supported yet.
-                    continue;
-                }
                 if (!gbm_device_is_format_supported(mGbmDevice, format, usage)) {
                     continue;
                 }

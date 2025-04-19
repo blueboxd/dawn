@@ -29,6 +29,7 @@
 #define SRC_TINT_LANG_SPIRV_WRITER_COMMON_OPTIONS_H_
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/utils/reflection/reflection.h"
@@ -66,6 +67,7 @@ using Storage = BindingInfo;
 using Texture = BindingInfo;
 using StorageTexture = BindingInfo;
 using Sampler = BindingInfo;
+using InputAttachment = BindingInfo;
 
 /// An external texture
 struct ExternalTexture {
@@ -94,6 +96,8 @@ using StorageTextureBindings = std::unordered_map<BindingPoint, binding::Storage
 using SamplerBindings = std::unordered_map<BindingPoint, binding::Sampler>;
 // Maps the WGSL binding point to the plane0, plane1, and metadata information for external textures
 using ExternalTextureBindings = std::unordered_map<BindingPoint, binding::ExternalTexture>;
+// Maps the WGSL binding point to the SPIR-V group,binding for input attachments
+using InputAttachmentBindings = std::unordered_map<BindingPoint, binding::InputAttachment>;
 
 /// Binding information
 struct Bindings {
@@ -109,15 +113,30 @@ struct Bindings {
     SamplerBindings sampler{};
     /// External bindings
     ExternalTextureBindings external_texture{};
+    /// Input attachment bindings
+    InputAttachmentBindings input_attachment{};
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
-    TINT_REFLECT(Bindings, uniform, storage, texture, storage_texture, sampler, external_texture);
+    TINT_REFLECT(Bindings,
+                 uniform,
+                 storage,
+                 texture,
+                 storage_texture,
+                 sampler,
+                 external_texture,
+                 input_attachment);
 };
 
 /// Configuration options used for generating SPIR-V.
 struct Options {
     /// The bindings
     Bindings bindings;
+
+    // BindingPoints for textures that are paired with static samplers in the
+    // BGL. These BindingPoints are the only ones that are allowed to map to
+    // duplicate spir-v bindings, since they must map to the spir-v bindings of
+    // the samplers with which they are paired.
+    std::unordered_set<BindingPoint> statically_paired_texture_binding_points = {};
 
     /// Set to `true` to disable software robustness that prevents out-of-bounds accesses.
     bool disable_robustness = false;
@@ -162,6 +181,7 @@ struct Options {
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(Options,
                  bindings,
+                 statically_paired_texture_binding_points,
                  disable_robustness,
                  disable_image_robustness,
                  disable_runtime_sized_array_index_clamping,

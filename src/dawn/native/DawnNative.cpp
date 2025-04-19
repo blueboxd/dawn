@@ -89,6 +89,14 @@ Adapter& Adapter::operator=(const Adapter& other) {
     return *this;
 }
 
+wgpu::Status Adapter::GetInfo(wgpu::AdapterInfo* info) const {
+    return GetInfo(reinterpret_cast<WGPUAdapterInfo*>(info));
+}
+
+wgpu::Status Adapter::GetInfo(WGPUAdapterInfo* info) const {
+    return mImpl->APIGetInfo(FromAPI(info));
+}
+
 wgpu::Status Adapter::GetProperties(wgpu::AdapterProperties* properties) const {
     return GetProperties(reinterpret_cast<WGPUAdapterProperties*>(properties));
 }
@@ -242,9 +250,9 @@ bool IsTextureSubresourceInitialized(WGPUTexture texture,
     return textureBase->IsSubresourceContentInitialized(range);
 }
 
-std::vector<const char*> GetProcMapNamesForTestingInternal();
+std::vector<std::string_view> GetProcMapNamesForTestingInternal();
 
-std::vector<const char*> GetProcMapNamesForTesting() {
+std::vector<std::string_view> GetProcMapNamesForTesting() {
     return GetProcMapNamesForTestingInternal();
 }
 
@@ -299,6 +307,10 @@ const FeatureInfo* GetFeatureInfo(wgpu::FeatureName feature) {
 
 void DumpMemoryStatistics(WGPUDevice device, MemoryDump* dump) {
     FromAPI(device)->DumpMemoryStatistics(dump);
+}
+
+uint64_t ComputeEstimatedMemoryUsage(WGPUDevice device) {
+    return FromAPI(device)->ComputeEstimatedMemoryUsage();
 }
 
 }  // namespace dawn::native

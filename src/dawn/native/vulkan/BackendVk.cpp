@@ -136,6 +136,14 @@ constexpr SkippedMessage kSkippedMessages[] = {
     {"SYNC-HAZARD-WRITE-AFTER-WRITE",
      "Access info (usage: SYNC_IMAGE_LAYOUT_TRANSITION, prior_usage: SYNC_COPY_TRANSFER_WRITE, "
      "write_barriers: 0, command: vkCmdCopyBufferToImage"},
+    {"SYNC-HAZARD-WRITE-AFTER-WRITE",
+     "Access info (usage: SYNC_ACCESS_INDEX_NONE, prior_usage: SYNC_CLEAR_TRANSFER_WRITE, "
+     "write_barriers: "
+     "SYNC_VERTEX_SHADER_SHADER_BINDING_TABLE_READ|SYNC_VERTEX_SHADER_SHADER_SAMPLED_READ|SYNC_"
+     "VERTEX_SHADER_SHADER_STORAGE_READ|SYNC_FRAGMENT_SHADER_SHADER_BINDING_TABLE_READ|SYNC_"
+     "FRAGMENT_SHADER_SHADER_SAMPLED_READ|SYNC_FRAGMENT_SHADER_SHADER_STORAGE_READ|SYNC_COMPUTE_"
+     "SHADER_SHADER_BINDING_TABLE_READ|SYNC_COMPUTE_SHADER_SHADER_SAMPLED_READ|SYNC_COMPUTE_SHADER_"
+     "SHADER_STORAGE_READ, command: vkCmdFillBuffer"},
 
     // http://anglebug.com/7513
     {"VUID-VkGraphicsPipelineCreateInfo-pStages-06896",
@@ -387,14 +395,11 @@ MaybeError VulkanInstance::Initialize(const InstanceBase* instance, ICD icd) {
     DAWN_TRY(mFunctions.LoadGlobalProcs(mVulkanLib));
 
     DAWN_TRY_ASSIGN(mGlobalInfo, GatherGlobalInfo(mFunctions));
-#if DAWN_PLATFORM_IS(WINDOWS)
     if (icd != ICD::SwiftShader && mGlobalInfo.apiVersion < VK_MAKE_API_VERSION(0, 1, 1, 0)) {
-        // See crbug.com/850881, crbug.com/863086, crbug.com/1465064
+        // See crbug.com/850881, crbug.com/863086, crbug.com/1465064, crbug.com/346990068
         return DAWN_INTERNAL_ERROR(
-            "Windows Vulkan 1.0 driver is unsupported. At least Vulkan 1.1 is required on "
-            "Windows.");
+            "Vulkan 1.0 driver is unsupported. At least Vulkan 1.1 is required.");
     }
-#endif
 
     VulkanGlobalKnobs usedGlobalKnobs = {};
     DAWN_TRY_ASSIGN(usedGlobalKnobs, CreateVkInstance(instance));
@@ -511,6 +516,7 @@ ResultOrError<VulkanGlobalKnobs> VulkanInstance::CreateVkInstance(const Instance
 
     DAWN_TRY(CheckVkSuccess(mFunctions.CreateInstance(&createInfo, nullptr, &mInstance),
                             "vkCreateInstance"));
+    DAWN_INVALID_IF(mInstance == VK_NULL_HANDLE, "Failed to create VkInstance");
 
     return usedKnobs;
 }

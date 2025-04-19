@@ -29,6 +29,7 @@
 #define INCLUDE_DAWN_WIRE_WIRECLIENT_H_
 
 #include <memory>
+#include <string_view>
 #include <vector>
 
 #include "dawn/dawn_proc_table.h"
@@ -61,8 +62,9 @@ struct ReservedSwapChain {
     Handle handle;
 };
 
-struct ReservedDevice {
-    WGPUDevice device;
+struct ReservedSurface {
+    WGPUSurface surface;
+    Handle instanceHandle;
     Handle handle;
 };
 
@@ -87,12 +89,14 @@ class DAWN_WIRE_EXPORT WireClient : public CommandHandler {
     ReservedTexture ReserveTexture(WGPUDevice device, const WGPUTextureDescriptor* descriptor);
     ReservedSwapChain ReserveSwapChain(WGPUDevice device,
                                        const WGPUSwapChainDescriptor* descriptor);
+    ReservedSurface ReserveSurface(WGPUInstance instance,
+                                   const WGPUSurfaceCapabilities* capabilities);
     ReservedInstance ReserveInstance(const WGPUInstanceDescriptor* descriptor = nullptr);
 
     void ReclaimBufferReservation(const ReservedBuffer& reservation);
     void ReclaimTextureReservation(const ReservedTexture& reservation);
     void ReclaimSwapChainReservation(const ReservedSwapChain& reservation);
-    void ReclaimDeviceReservation(const ReservedDevice& reservation);
+    void ReclaimSurfaceReservation(const ReservedSurface& reservation);
     void ReclaimInstanceReservation(const ReservedInstance& reservation);
 
     // Disconnects the client.
@@ -188,7 +192,7 @@ class DAWN_WIRE_EXPORT MemoryTransferService {
 };
 
 // Backdoor to get the order of the ProcMap for testing
-DAWN_WIRE_EXPORT std::vector<const char*> GetProcMapNamesForTesting();
+DAWN_WIRE_EXPORT std::vector<std::string_view> GetProcMapNamesForTesting();
 }  // namespace client
 }  // namespace dawn::wire
 

@@ -33,12 +33,13 @@
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/core_builtin_call.h"
 #include "src/tint/lang/core/ir/load.h"
+#include "src/tint/lang/core/ir/transform/rename_conflicts.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/wgsl/builtin_fn.h"
 #include "src/tint/lang/wgsl/ir/builtin_call.h"
 #include "src/tint/lang/wgsl/writer/raise/ptr_to_ref.h"
-#include "src/tint/lang/wgsl/writer/raise/rename_conflicts.h"
 #include "src/tint/lang/wgsl/writer/raise/value_to_let.h"
+#include "src/tint/utils/result/result.h"
 
 namespace tint::wgsl::writer {
 namespace {
@@ -169,7 +170,25 @@ wgsl::BuiltinFn Convert(core::BuiltinFn fn) {
         CASE(kAtomicExchange)
         CASE(kAtomicCompareExchangeWeak)
         CASE(kSubgroupBallot)
+        CASE(kSubgroupElect)
         CASE(kSubgroupBroadcast)
+        CASE(kSubgroupBroadcastFirst)
+        CASE(kSubgroupShuffle)
+        CASE(kSubgroupShuffleXor)
+        CASE(kSubgroupShuffleUp)
+        CASE(kSubgroupShuffleDown)
+        CASE(kSubgroupAdd)
+        CASE(kSubgroupExclusiveAdd)
+        CASE(kSubgroupMul)
+        CASE(kSubgroupExclusiveMul)
+        CASE(kInputAttachmentLoad)
+        CASE(kSubgroupAnd)
+        CASE(kSubgroupOr)
+        CASE(kSubgroupXor)
+        CASE(kSubgroupMin)
+        CASE(kSubgroupMax)
+        CASE(kSubgroupAny)
+        CASE(kSubgroupAll)
         case core::BuiltinFn::kNone:
             break;
     }
@@ -235,7 +254,7 @@ Result<SuccessType> Raise(core::ir::Module& mod) {
         }
     }
 
-    if (auto result = raise::RenameConflicts(mod); result != Success) {
+    if (auto result = core::ir::transform::RenameConflicts(mod); result != Success) {
         return result.Failure();
     }
     if (auto result = raise::ValueToLet(mod); result != Success) {

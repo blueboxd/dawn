@@ -28,13 +28,13 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreVideo/CVPixelBuffer.h>
 #include <IOSurface/IOSurface.h>
+#include <webgpu/webgpu_cpp.h>
 
 #import <Metal/Metal.h>
 
 #include "dawn/common/CoreFoundationRef.h"
 #include "dawn/common/NSRef.h"
 #include "dawn/tests/white_box/SharedTextureMemoryTests.h"
-#include "dawn/webgpu_cpp.h"
 
 namespace dawn {
 namespace {
@@ -111,7 +111,7 @@ class Backend : public SharedTextureMemoryTestBackend {
         struct IOSurfaceFormat {
             uint32_t format;
             uint32_t bytesPerElement;
-            wgpu::FeatureName requiredFeature = wgpu::FeatureName::Undefined;
+            wgpu::FeatureName requiredFeature = wgpu::FeatureName(0u);
         };
         const std::array<IOSurfaceFormat, 17> kFormats{
             {{kCVPixelFormatType_64RGBAHalf, 8},
@@ -163,7 +163,7 @@ class Backend : public SharedTextureMemoryTestBackend {
 
                 std::vector<wgpu::SharedTextureMemory> perDeviceMemories;
                 for (auto& device : devices) {
-                    if (f.requiredFeature != wgpu::FeatureName::Undefined &&
+                    if (f.requiredFeature != wgpu::FeatureName(0u) &&
                         !device.HasFeature(f.requiredFeature)) {
                         continue;
                     }

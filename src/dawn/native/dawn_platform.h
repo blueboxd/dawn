@@ -29,7 +29,7 @@
 #define SRC_DAWN_NATIVE_DAWN_PLATFORM_H_
 
 // Use webgpu_cpp to have the enum and bitfield definitions
-#include "dawn/webgpu_cpp.h"
+#include <webgpu/webgpu_cpp.h>
 
 #include "dawn/native/dawn_platform_autogen.h"
 
@@ -51,8 +51,9 @@ static constexpr wgpu::BufferUsage kInternalStorageBuffer =
 static constexpr wgpu::BufferUsage kReadOnlyStorageBuffer =
     static_cast<wgpu::BufferUsage>(1u << 30);
 
-static constexpr wgpu::BufferUsage kAllInternalBufferUsages =
-    kInternalStorageBuffer | kReadOnlyStorageBuffer;
+// Add an extra buffer usage (copy-src buffer usage) that can be combined with MapRead
+static constexpr wgpu::BufferUsage kInternalCopySrcBuffer =
+    static_cast<wgpu::BufferUsage>(1u << 29);
 
 // Extra texture usages
 // Usage to denote an extra tag value used in system specific ways.
@@ -93,6 +94,21 @@ static constexpr wgpu::BufferBindingType kInternalStorageBufferBinding =
 // Extra TextureSampleType for sampling from a resolve attachment.
 static constexpr wgpu::TextureSampleType kInternalResolveAttachmentSampleType =
     static_cast<wgpu::TextureSampleType>(~0u);
+
+// Extra TextureViewDimension for input attachment.
+static constexpr wgpu::TextureViewDimension kInternalInputAttachmentDim =
+    static_cast<wgpu::TextureViewDimension>(~0u);
+
+static constexpr uint32_t kEnumPrefixMask = 0xFFFF'0000;
+static constexpr uint32_t kDawnEnumPrefix = 0x0005'0000;
+
+struct Rect2D {
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+};
+
 }  // namespace dawn::native
 
 #endif  // SRC_DAWN_NATIVE_DAWN_PLATFORM_H_

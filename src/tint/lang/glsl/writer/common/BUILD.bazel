@@ -39,18 +39,20 @@ load("@bazel_skylib//lib:selects.bzl", "selects")
 cc_library(
   name = "common",
   srcs = [
+    "option_helpers.cc",
     "options.cc",
     "printer_support.cc",
   ],
   hdrs = [
+    "option_helpers.h",
     "options.h",
     "printer_support.h",
     "version.h",
   ],
   deps = [
     "//src/tint/api/common",
-    "//src/tint/api/options",
     "//src/tint/lang/core",
+    "//src/tint/lang/core/common",
     "//src/tint/lang/core/constant",
     "//src/tint/lang/core/type",
     "//src/tint/lang/wgsl",
@@ -85,7 +87,6 @@ cc_library(
   ],
   deps = [
     "//src/tint/api/common",
-    "//src/tint/api/options",
     "//src/tint/lang/core",
     "//src/tint/lang/core/constant",
     "//src/tint/lang/core/type",

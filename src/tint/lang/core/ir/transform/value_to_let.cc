@@ -92,8 +92,8 @@ struct State {
 
         auto maybe_put_in_let = [&](auto* inst) {
             if (auto* result = inst->Result(0)) {
-                auto& usages = result->Usages();
-                switch (usages.Count()) {
+                auto& usages = result->UsagesUnsorted();
+                switch (result->NumUsages()) {
                     case 0:  // No usage
                         break;
                     case 1: {  // Single usage
@@ -141,6 +141,7 @@ struct State {
 
             if (accesses.Contains(Access::kStore)) {  // Note: Also handles load + store
                 put_pending_in_lets();
+                pending_access = Access::kStore;
                 maybe_put_in_let(inst);
             } else if (accesses.Contains(Access::kLoad)) {
                 if (pending_access != Access::kLoad) {
@@ -173,7 +174,12 @@ struct State {
 }  // namespace
 
 Result<SuccessType> ValueToLet(Module& ir) {
-    auto result = ValidateAndDumpIfNeeded(ir, "ValueToLet transform");
+    auto result = ValidateAndDumpIfNeeded(ir, "ValueToLet transform",
+                                          core::ir::Capabilities{
+                                              core::ir::Capability::kAllow8BitIntegers,
+                                              core::ir::Capability::kAllowPointersInStructures,
+                                              core::ir::Capability::kAllowVectorElementPointer,
+                                          });
     if (result != Success) {
         return result;
     }

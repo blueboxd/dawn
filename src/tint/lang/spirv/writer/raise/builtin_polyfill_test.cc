@@ -34,6 +34,7 @@
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/core/type/builtin_structs.h"
 #include "src/tint/lang/core/type/depth_texture.h"
+#include "src/tint/lang/core/type/input_attachment.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
@@ -2948,6 +2949,107 @@ TEST_F(SpirvWriter_BuiltinPolyfillTest, QuantizeToF16_Vector) {
     %10:f32 = quantizeToF16 %9
     %11:vec4<f32> = construct %4, %6, %8, %10
     ret %11
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(SpirvWriter_BuiltinPolyfillTest, InputAttachmentLoad) {
+    auto* t = b.FunctionParam("t", ty.Get<core::type::InputAttachment>(ty.f32()));
+    auto* func = b.Function("foo", ty.vec4<f32>());
+    func->SetParams({t});
+
+    b.Append(func->Block(), [&] {
+        auto* result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kInputAttachmentLoad, t);
+        b.Return(func, result);
+    });
+
+    auto* src = R"(
+%foo = func(%t:input_attachment<f32>):vec4<f32> {
+  $B1: {
+    %3:vec4<f32> = inputAttachmentLoad %t
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%t:input_attachment<f32>):vec4<f32> {
+  $B1: {
+    %3:vec4<f32> = spirv.image_read %t, vec2<i32>(0i)
+    ret %3
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupShuffle) {
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        b.Let("a", b.Call(ty.i32(), core::BuiltinFn::kSubgroupShuffle, 1_i, 1_i));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %2:i32 = subgroupShuffle 1i, 1i
+    %a:i32 = let %2
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %2:u32 = bitcast 1i
+    %3:i32 = subgroupShuffle 1i, %2
+    %a:i32 = let %3
+    ret
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(SpirvWriter_BuiltinPolyfillTest, SubgroupBroadcastConstSignedId) {
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        b.Let("a", b.Call(ty.i32(), core::BuiltinFn::kSubgroupBroadcast, 1_i, 1_i));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %2:i32 = subgroupBroadcast 1i, 1i
+    %a:i32 = let %2
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %2:i32 = subgroupBroadcast 1i, 1u
+    %a:i32 = let %2
+    ret
   }
 }
 )";

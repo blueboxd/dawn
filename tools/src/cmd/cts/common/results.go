@@ -154,16 +154,16 @@ func (r *ResultSource) GetResults(ctx context.Context, cfg Config, auth auth.Opt
 }
 
 // CacheResults looks in the cache at 'cacheDir' for the results for the given patchset.
-// If the cache contains the results, then these are loaded, transformed with CleanTags() and
+// If the cache contains the results, then these are loaded, transformed with CleanResults() and
 // returned.
 // If the cache does not contain the results, then they are fetched using GetRawResults(), saved to
-// the cache directory, transformed with CleanTags() and then returned.
+// the cache directory, transformed with CleanResults() and then returned.
 func CacheResults(
 	ctx context.Context,
 	cfg Config,
 	ps gerrit.Patchset,
 	cacheDir string,
-	client *resultsdb.BigQueryClient,
+	client resultsdb.Querier,
 	builds BuildsByName) (result.ResultsByExecutionMode, error) {
 
 	var cachePath string
@@ -189,7 +189,7 @@ func CacheResults(
 
 	// Expand aliased tags, remove specific tags
 	for i, results := range resultsByExecutionMode {
-		CleanTags(cfg, &results)
+		CleanResults(cfg, &results)
 		results.Sort()
 		resultsByExecutionMode[i] = results
 	}
@@ -197,12 +197,12 @@ func CacheResults(
 	return resultsByExecutionMode, nil
 }
 
-// GetResults calls GetRawResults() to fetch the build results from ResultDB and applies CleanTags().
+// GetResults calls GetRawResults() to fetch the build results from ResultDB and applies CleanResults().
 // GetResults does not trigger new builds.
 func GetResults(
 	ctx context.Context,
 	cfg Config,
-	client *resultsdb.BigQueryClient,
+	client resultsdb.Querier,
 	builds BuildsByName) (result.ResultsByExecutionMode, error) {
 
 	resultsByExecutionMode, err := GetRawResults(ctx, cfg, client, builds)
@@ -212,7 +212,7 @@ func GetResults(
 
 	// Expand aliased tags, remove specific tags
 	for i, results := range resultsByExecutionMode {
-		CleanTags(cfg, &results)
+		CleanResults(cfg, &results)
 		results.Sort()
 		resultsByExecutionMode[i] = results
 	}
@@ -220,12 +220,12 @@ func GetResults(
 	return resultsByExecutionMode, err
 }
 
-// GetRawResults fetches the build results from ResultDB, without applying CleanTags().
+// GetRawResults fetches the build results from ResultDB, without applying CleanResults().
 // GetRawResults does not trigger new builds.
 func GetRawResults(
 	ctx context.Context,
 	cfg Config,
-	client *resultsdb.BigQueryClient,
+	client resultsdb.Querier,
 	builds BuildsByName) (result.ResultsByExecutionMode, error) {
 
 	fmt.Printf("fetching results from resultdb...")
@@ -350,7 +350,7 @@ func MostRecentResultsForChange(
 	cacheDir string,
 	g *gerrit.Gerrit,
 	bb *buildbucket.Buildbucket,
-	client *resultsdb.BigQueryClient,
+	client resultsdb.Querier,
 	change int) (result.ResultsByExecutionMode, gerrit.Patchset, error) {
 
 	ps, err := LatestPatchset(g, change)
@@ -383,10 +383,10 @@ func MostRecentResultsForChange(
 	return nil, gerrit.Patchset{}, fmt.Errorf("no builds found for change %v", change)
 }
 
-// CleanTags modifies each result so that tags in cfg.Tag.Remove are removed and
+// CleanResults modifies each result so that tags in cfg.Tag.Remove are removed and
 // duplicate results are removed by erring towards Failure.
 // See: crbug.com/dawn/1387, crbug.com/dawn/1401
-func CleanTags(cfg Config, results *result.List) {
+func CleanResults(cfg Config, results *result.List) {
 	// Remove any tags found in cfg.Tag.Remove
 	remove := result.NewTags(cfg.Tag.Remove...)
 	for _, r := range *results {

@@ -75,7 +75,7 @@ namespace {{native_namespace}} {
     {% set ChainedStructName = Name("chained struct") %}
     {{render_structure_conversions(ChainedStructName)|indent}}
 
-    {% for type in by_category["structure"] %}
+    {% for type in by_category["structure"] if type.name.get() != "string view" and type.name.get() != "nullable string view" %}
         {{render_structure_conversions(type.name)|indent}}
 
     {% endfor %}
@@ -112,7 +112,9 @@ namespace {{native_namespace}} {
         inline {{as_cType(type.name)}} ToAPI({{namespace}}::{{as_cppType(type.name)}} rhs) {
             return static_cast<{{as_cType(type.name)}}>(rhs);
         }
+    {% endfor %}
 
+    {% for type in by_category["enum"] %}
         inline {{namespace}}::{{as_cppType(type.name)}} FromAPI({{as_cType(type.name)}} rhs) {
             return static_cast<{{namespace}}::{{as_cppType(type.name)}}>(rhs);
         }

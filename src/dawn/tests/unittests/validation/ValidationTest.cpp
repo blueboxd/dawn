@@ -25,7 +25,10 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <webgpu/webgpu.h>
+
 #include <algorithm>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -38,7 +41,6 @@
 #include "dawn/tests/ToggleParser.h"
 #include "dawn/tests/unittests/validation/ValidationTest.h"
 #include "dawn/utils/WireHelper.h"
-#include "dawn/webgpu.h"
 
 namespace {
 
@@ -257,22 +259,13 @@ void ValidationTest::FlushWire() {
     EXPECT_TRUE(mWireHelper->FlushServer());
 }
 
-void ValidationTest::WaitForAllOperations(const wgpu::Device& waitDevice) {
-    bool done = false;
-    waitDevice.GetQueue().OnSubmittedWorkDone(
-        [](WGPUQueueWorkDoneStatus, void* userdata) { *static_cast<bool*>(userdata) = true; },
-        &done);
-
-    // Force the currently submitted operations to completed.
-    while (!done) {
-        instance.ProcessEvents();
+void ValidationTest::WaitForAllOperations() {
+    do {
         FlushWire();
-    }
-
-    // TODO(cwallez@chromium.org): It's not clear why we need this additional tick. Investigate it
-    // once WebGPU has defined the ordering of callbacks firing.
-    waitDevice.Tick();
-    FlushWire();
+        if (UsesWire()) {
+            instance.ProcessEvents();
+        }
+    } while (dawn::native::InstanceProcessEvents(mDawnInstance->Get()) || !mWireHelper->IsIdle());
 }
 
 const dawn::native::ToggleInfo* ValidationTest::GetToggleInfo(const char* name) const {
@@ -312,20 +305,38 @@ dawn::utils::WireHelper* ValidationTest::GetWireHelper() const {
     return mWireHelper.get();
 }
 
+uint32_t ValidationTest::GetDeviceCreationDeprecationWarningExpectation(
+    const wgpu::DeviceDescriptor& descriptor) {
+    uint32_t expectedDeprecatedCount = 0;
+
+    std::unordered_set<wgpu::FeatureName> requiredFeatureSet;
+    for (uint32_t i = 0; i < descriptor.requiredFeatureCount; ++i) {
+        requiredFeatureSet.insert(descriptor.requiredFeatures[i]);
+    }
+    // ChromiumExperimentalSubgroups feature is deprecated.
+    // TODO(349125474): Remove deprecated ChromiumExperimentalSubgroups.
+    if (requiredFeatureSet.count(wgpu::FeatureName::ChromiumExperimentalSubgroups)) {
+        expectedDeprecatedCount++;
+    }
+
+    return expectedDeprecatedCount;
+}
+
 wgpu::Device ValidationTest::RequestDeviceSync(const wgpu::DeviceDescriptor& deviceDesc) {
     DAWN_ASSERT(adapter);
 
     wgpu::Device apiDevice;
-    adapter.RequestDevice(
-        &deviceDesc, wgpu::CallbackMode::AllowSpontaneous,
-        [&apiDevice](wgpu::RequestDeviceStatus status, wgpu::Device result, const char* message) {
-            if (status != wgpu::RequestDeviceStatus::Success) {
-                ADD_FAILURE() << "Unable to create device: " << message;
-                DAWN_ASSERT(false);
-            }
-            apiDevice = std::move(result);
-        });
-    FlushWire();
+    EXPECT_DEPRECATION_WARNINGS(
+        adapter.RequestDevice(&deviceDesc, wgpu::CallbackMode::AllowSpontaneous,
+                              [&apiDevice](wgpu::RequestDeviceStatus status, wgpu::Device result,
+                                           const char* message) {
+                                  if (status != wgpu::RequestDeviceStatus::Success) {
+                                      ADD_FAILURE() << "Unable to create device: " << message;
+                                      DAWN_ASSERT(false);
+                                  }
+                                  apiDevice = std::move(result);
+                              }),
+        GetDeviceCreationDeprecationWarningExpectation(deviceDesc));
 
     DAWN_ASSERT(apiDevice);
     return apiDevice;
@@ -357,9 +368,33 @@ void ValidationTest::SetUp(const wgpu::InstanceDescriptor* nativeDesc,
 
     // Initialize the device.
     wgpu::DeviceDescriptor deviceDescriptor = {};
-    deviceDescriptor.deviceLostCallbackInfo = {nullptr, wgpu::CallbackMode::AllowSpontaneous,
-                                               ValidationTest::OnDeviceLost, this};
-    deviceDescriptor.uncapturedErrorCallbackInfo = {nullptr, ValidationTest::OnDeviceError, this};
+    deviceDescriptor.SetDeviceLostCallback(
+        wgpu::CallbackMode::AllowSpontaneous,
+        [this](const wgpu::Device&, wgpu::DeviceLostReason reason, const char* message) {
+            if (mExpectDestruction) {
+                EXPECT_EQ(reason, wgpu::DeviceLostReason::Destroyed);
+                return;
+            }
+            ADD_FAILURE() << "Device lost during test: " << message;
+            DAWN_ASSERT(false);
+        });
+    deviceDescriptor.SetUncapturedErrorCallback(
+        [](const wgpu::Device&, wgpu::ErrorType type, const char* message, ValidationTest* self) {
+            DAWN_ASSERT(type != wgpu::ErrorType::NoError);
+
+            ASSERT_TRUE(self->mExpectError) << "Got unexpected device error: " << message;
+            ASSERT_FALSE(self->mError) << "Got two errors in expect block, first one is:\n"  //
+                                       << self->mDeviceErrorMessage                          //
+                                       << "\nsecond one is:\n"                               //
+                                       << message;
+
+            self->mDeviceErrorMessage = message;
+            if (self->mExpectError) {
+                ASSERT_THAT(message, self->mErrorMatcher);
+            }
+            self->mError = true;
+        },
+        this);
 
     // Set the required features for the device.
     auto requiredFeatures = GetRequiredFeatures();
@@ -375,37 +410,6 @@ void ValidationTest::SetUp(const wgpu::InstanceDescriptor* nativeDesc,
 
 bool ValidationTest::UseCompatibilityMode() const {
     return false;
-}
-
-// static
-void ValidationTest::OnDeviceError(WGPUErrorType type, const char* message, void* userdata) {
-    DAWN_ASSERT(type != WGPUErrorType_NoError);
-    auto* self = static_cast<ValidationTest*>(userdata);
-
-    ASSERT_TRUE(self->mExpectError) << "Got unexpected device error: " << message;
-    ASSERT_FALSE(self->mError) << "Got two errors in expect block, first one is:\n"  //
-                               << self->mDeviceErrorMessage                          //
-                               << "\nsecond one is:\n"                               //
-                               << message;
-
-    self->mDeviceErrorMessage = message;
-    if (self->mExpectError) {
-        ASSERT_THAT(message, self->mErrorMatcher);
-    }
-    self->mError = true;
-}
-
-void ValidationTest::OnDeviceLost(WGPUDevice const* device,
-                                  WGPUDeviceLostReason reason,
-                                  const char* message,
-                                  void* userdata) {
-    auto* self = static_cast<ValidationTest*>(userdata);
-    if (self->mExpectDestruction) {
-        EXPECT_EQ(reason, WGPUDeviceLostReason_Destroyed);
-        return;
-    }
-    ADD_FAILURE() << "Device lost during test: " << message;
-    DAWN_ASSERT(false);
 }
 
 ValidationTest::PlaceholderRenderPass::PlaceholderRenderPass(const wgpu::Device& device)

@@ -75,7 +75,8 @@ class Device final : public d3d::Device {
     float GetTimestampPeriodInNS() const override;
     bool MayRequireDuplicationOfIndirectParameters() const override;
     uint64_t GetBufferCopyOffsetAlignmentForDepthStencil() const override;
-    bool IsResolveTextureBlitWithDrawSupported() const override;
+    bool CanTextureLoadResolveTargetInTheSameRenderpass() const override;
+    bool PreferNotUsingMappableOrUniformBufferAsStorage() const override;
     void SetLabelImpl() override;
 
     void DisposeKeyedMutex(ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex) override;
@@ -112,6 +113,7 @@ class Device final : public d3d::Device {
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
+        const std::vector<tint::wgsl::Extension>& internalExtensions,
         ShaderModuleParseResult* parseResult,
         OwnedCompilationMessages* compilationMessages) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(

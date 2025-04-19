@@ -36,12 +36,14 @@
 #include "src/tint/lang/core/type/f16.h"
 #include "src/tint/lang/core/type/f32.h"
 #include "src/tint/lang/core/type/i32.h"
+#include "src/tint/lang/core/type/i8.h"
 #include "src/tint/lang/core/type/invalid.h"
 #include "src/tint/lang/core/type/matrix.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/lang/core/type/u32.h"
+#include "src/tint/lang/core/type/u8.h"
 #include "src/tint/lang/core/type/vector.h"
 #include "src/tint/lang/core/type/void.h"
 #include "src/tint/utils/macros/compiler.h"
@@ -68,8 +70,16 @@ const core::type::Bool* Manager::bool_() {
     return Get<core::type::Bool>();
 }
 
+const core::type::I8* Manager::i8() {
+    return Get<core::type::I8>();
+}
+
 const core::type::I32* Manager::i32() {
     return Get<core::type::I32>();
+}
+
+const core::type::U8* Manager::u8() {
+    return Get<core::type::U8>();
 }
 
 const core::type::U32* Manager::u32() {
@@ -98,6 +108,14 @@ const core::type::Atomic* Manager::atomic(const core::type::Type* inner) {
 
 const core::type::Vector* Manager::packed_vec(const core::type::Type* inner, uint32_t size) {
     return Get<core::type::Vector>(inner, size, true);
+}
+
+const core::type::Type* Manager::match_width(const core::type::Type* el_ty,
+                                             const core::type::Type* match) {
+    if (auto* m = match->As<core::type::Vector>()) {
+        return vec(el_ty, m->Width());
+    }
+    return el_ty;
 }
 
 const core::type::Vector* Manager::vec(const core::type::Type* inner, uint32_t size) {
